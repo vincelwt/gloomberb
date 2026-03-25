@@ -9,6 +9,40 @@ import type { Quote } from "../../types/financials";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 
+function UpdateStatus() {
+  const { state } = useAppState();
+  const { updateAvailable, updateProgress } = state;
+
+  if (updateProgress) {
+    if (updateProgress.phase === "downloading") {
+      return (
+        <text fg={colors.headerText}>
+          Downloading v{updateAvailable?.version}... {updateProgress.percent ?? 0}%
+        </text>
+      );
+    }
+    if (updateProgress.phase === "replacing") {
+      return <text fg={colors.headerText}>Installing update...</text>;
+    }
+    if (updateProgress.phase === "done") {
+      return <text fg={colors.headerText}>Update installed — restart to apply</text>;
+    }
+    if (updateProgress.phase === "error") {
+      return <text fg={colors.headerText}>Update failed: {updateProgress.error}</text>;
+    }
+  }
+
+  if (updateAvailable) {
+    return (
+      <text fg={colors.headerText}>
+        v{updateAvailable.version} available — press <span fg={colors.headerText}>u</span> to update
+      </text>
+    );
+  }
+
+  return null;
+}
+
 export function Header({ dataProvider }: { dataProvider: DataProvider }) {
   const { state } = useAppState();
   const [spyQuote, setSpyQuote] = useState<Quote | null>(null);
@@ -45,10 +79,13 @@ export function Header({ dataProvider }: { dataProvider: DataProvider }) {
       height={1}
       backgroundColor={colors.header}
     >
-      <box flexGrow={1} paddingLeft={1}>
+      <box paddingLeft={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.headerText}>
           GLOOMBERB TERMINAL
         </text>
+      </box>
+      <box flexGrow={1} paddingLeft={2}>
+        <UpdateStatus />
       </box>
       {mktLabel && (
         <box paddingRight={1}>

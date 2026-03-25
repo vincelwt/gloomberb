@@ -85,17 +85,14 @@ export const commands: Command[] = [
     execute: () => {},
   },
 
-  // Settings
+  // Columns
   {
-    id: "settings",
-    prefix: "S",
-    label: "Settings",
-    description: "Open settings page",
-    shortcut: "Ctrl+,",
+    id: "columns",
+    prefix: "COL",
+    label: "Edit Columns",
+    description: "Toggle visible table columns",
     category: "Config",
-    execute: (dispatch) => {
-      dispatch({ type: "TOGGLE_CONFIG" });
-    },
+    execute: () => {}, // handled by command bar
   },
   {
     id: "toggle-status-bar",

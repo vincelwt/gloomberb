@@ -22,7 +22,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
   // Panes are unfocused when overlays or dialogs are open
   const dialogOpen = useDialogState((s) => s.isOpen);
-  const overlayOpen = state.commandBarOpen || state.configOpen || dialogOpen;
+  const overlayOpen = state.commandBarOpen || dialogOpen;
   const leftFocused = state.activePanel === "left" && !overlayOpen;
   const rightFocused = state.activePanel === "right" && !overlayOpen;
 

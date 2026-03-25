@@ -6,7 +6,6 @@ import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { CommandBar } from "./components/command-bar/command-bar";
-import { ConfigPage } from "./components/config/config-page";
 import { DialogProvider, useDialogState } from "@opentui-ui/dialog/react";
 import { PluginRegistry } from "./plugins/registry";
 import { MarkdownStore } from "./data/markdown-store";
@@ -45,12 +44,27 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     try {
       const data = await dataProvider.getTickerFinancials(symbol, exchange);
       dispatch({ type: "SET_FINANCIALS", symbol, data });
+
+      // Cache exchange rate for this ticker's currency
+      const currency = data.quote?.currency;
+      if (currency && !state.exchangeRates.has(currency)) {
+        dataProvider.getExchangeRate(currency).then((rate) => {
+          dispatch({ type: "SET_EXCHANGE_RATE", currency, rate });
+        }).catch(() => {});
+      }
+      // Also ensure base currency rate is cached
+      const base = state.config.baseCurrency;
+      if (!state.exchangeRates.has(base)) {
+        dataProvider.getExchangeRate(base).then((rate) => {
+          dispatch({ type: "SET_EXCHANGE_RATE", currency: base, rate });
+        }).catch(() => {});
+      }
     } catch {
       // Silently fail - will show "—" for missing data
     } finally {
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
-  }, [dataProvider, dispatch]);
+  }, [dataProvider, dispatch, state.exchangeRates, state.config.baseCurrency]);
 
   // Ensure a portfolio exists in config, creating it if needed
   const ensurePortfolio = useCallback(async (portfolioId: string, name: string, currency = "USD") => {
@@ -185,7 +199,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
         // Select first ticker if any
         if (tickers.length > 0) {
-          dispatch({ type: "SELECT_TICKER", symbol: tickers[0]!.frontmatter.ticker });
+          dispatch({ type: "PREVIEW_TICKER", symbol: tickers[0]!.frontmatter.ticker });
         }
 
         dispatch({ type: "SET_INITIALIZED" });
@@ -231,20 +245,14 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       return;
     }
     // Backtick opens command bar (close is handled in command-bar.tsx)
-    if (event.name === "`" && !state.commandBarOpen && !state.configOpen) {
+    if (event.name === "`" && !state.commandBarOpen) {
       dispatch({ type: "SET_COMMAND_BAR", open: true });
-      return;
-    }
-
-    // Ctrl+, for config
-    if (event.name === "," && event.ctrl) {
-      dispatch({ type: "TOGGLE_CONFIG" });
       return;
     }
 
     // Don't process main shortcuts when overlays are open or input is captured
     // (panes already get focused=false via shell.tsx)
-    if (state.commandBarOpen || state.configOpen || state.inputCaptured) return;
+    if (state.commandBarOpen || state.inputCaptured) return;
 
     if (event.name === "tab") {
       dispatch({
@@ -279,7 +287,6 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       {state.commandBarOpen && (
         <CommandBar dataProvider={dataProvider} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
       )}
-      {state.configOpen && <ConfigPage />}
     </box>
   );
 }
