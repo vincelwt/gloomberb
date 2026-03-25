@@ -1,24 +1,34 @@
 import { useState, useEffect } from "react";
 import { TextAttributes } from "@opentui/core";
-import { colors } from "../../theme/colors";
+import { colors, priceColor } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
+import { formatPercentRaw } from "../../utils/format";
+import type { YahooFinanceClient } from "../../sources/yahoo-finance";
+import type { Quote } from "../../types/financials";
 
-function useClock() {
-  const [time, setTime] = useState(formatTime());
-  useEffect(() => {
-    const interval = setInterval(() => setTime(formatTime()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-  return time;
-}
+const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 
-function formatTime() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false });
-}
-
-export function Header() {
-  const time = useClock();
+export function Header({ yahoo }: { yahoo: YahooFinanceClient }) {
   const { state } = useAppState();
+  const [spyQuote, setSpyQuote] = useState<Quote | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchSpy = async () => {
+      try {
+        const quote = await yahoo.getQuote("SPY");
+        if (!cancelled) setSpyQuote(quote);
+      } catch {}
+    };
+    fetchSpy();
+    const id = setInterval(fetchSpy, SPY_REFRESH_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [yahoo]);
+
+  const spyColor = spyQuote ? priceColor(spyQuote.change) : colors.headerText;
+  const spyText = spyQuote
+    ? `SPY ${spyQuote.price.toFixed(2)} ${formatPercentRaw(spyQuote.changePercent)}`
+    : "SPY —";
 
   return (
     <box
@@ -32,8 +42,11 @@ export function Header() {
         </text>
       </box>
       <box paddingRight={1}>
+        <text fg={spyColor}>{spyText}</text>
+      </box>
+      <box paddingRight={1}>
         <text fg={colors.headerText}>
-          {time}  {state.config.baseCurrency}
+          {state.config.baseCurrency}
         </text>
       </box>
     </box>
