@@ -1,4 +1,5 @@
 import { useTerminalDimensions } from "@opentui/react";
+import { useDialogState } from "@opentui-ui/dialog/react";
 import { useAppState } from "../../state/app-context";
 import { resolvePanes, getPanesByPosition, parseWidth } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -19,8 +20,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
   // Calculate available height (minus header and optional status bar)
   const contentHeight = height - (state.statusBarVisible ? 2 : 1);
 
-  // Panes are unfocused when overlays are open
-  const overlayOpen = state.commandBarOpen || state.configOpen;
+  // Panes are unfocused when overlays or dialogs are open
+  const dialogOpen = useDialogState((s) => s.isOpen);
+  const overlayOpen = state.commandBarOpen || state.configOpen || dialogOpen;
   const leftFocused = state.activePanel === "left" && !overlayOpen;
   const rightFocused = state.activePanel === "right" && !overlayOpen;
 

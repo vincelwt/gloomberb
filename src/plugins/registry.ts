@@ -18,6 +18,9 @@ export class PluginRegistry {
   // External data accessors (set by app)
   getTickerFn: ((symbol: string) => TickerFile | null) = () => null;
   getDataFn: ((symbol: string) => TickerFinancials | null) = () => null;
+  getConfigFn: (() => import("../types/config").AppConfig) = () => { throw new Error("getConfigFn not set"); };
+  updateBrokerConfigFn: ((brokerId: string, values: Record<string, unknown>) => Promise<void>) = async () => {};
+  syncBrokerFn: ((brokerId: string) => Promise<void>) = async () => {};
 
   readonly Slot;
 
@@ -51,6 +54,9 @@ export class PluginRegistry {
       registerBroker: (broker) => this._brokers.set(broker.id, broker),
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (ticker) => this.getTickerFn(ticker),
+      getConfig: () => this.getConfigFn(),
+      updateBrokerConfig: (brokerId, values) => this.updateBrokerConfigFn(brokerId, values),
+      syncBroker: (brokerId) => this.syncBrokerFn(brokerId),
     };
   }
 
