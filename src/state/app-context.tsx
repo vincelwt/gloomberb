@@ -39,6 +39,7 @@ export type AppAction =
   | { type: "REMOVE_TICKER"; symbol: string }
   | { type: "SET_FINANCIALS"; symbol: string; data: TickerFinancials }
   | { type: "SELECT_TICKER"; symbol: string | null }
+  | { type: "PREVIEW_TICKER"; symbol: string | null }
   | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right" }
   | { type: "SET_LEFT_TAB"; tab: string }
   | { type: "SET_RIGHT_TAB"; tab: string }
@@ -88,6 +89,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SELECT_TICKER":
       return { ...state, selectedTicker: action.symbol, activePanel: "right" };
+
+    case "PREVIEW_TICKER":
+      return { ...state, selectedTicker: action.symbol };
 
     case "SET_ACTIVE_PANEL":
       return { ...state, activePanel: action.panel };
