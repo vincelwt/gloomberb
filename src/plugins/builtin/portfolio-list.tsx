@@ -1,11 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { TabSelectRenderable } from "@opentui/core";
+import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
 import { getActiveTabTickers, getLeftTabs } from "../../state/selectors";
-import { colors, priceColor } from "../../theme/colors";
+import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel } from "../../utils/market-status";
 import type { ColumnConfig } from "../../types/config";
@@ -106,16 +106,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const tabs = getLeftTabs(state);
   const tickers = getActiveTabTickers(state);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
-  const tabOptions = tabs.map((t) => ({ name: t.name, description: "", value: t.id }));
   const currentTabIdx = tabs.findIndex((t) => t.id === state.activeLeftTab);
-  const tabRef = useRef<TabSelectRenderable>(null);
-
-  useEffect(() => {
-    if (tabRef.current && currentTabIdx >= 0) {
-      tabRef.current.setSelectedIndex(currentTabIdx);
-    }
-  }, [currentTabIdx]);
 
   useKeyboard((event) => {
     if (!focused) return;
@@ -136,7 +129,8 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       const newIdx = Math.min(currentTabIdx + 1, tabs.length - 1);
       if (tabs[newIdx]) dispatch({ type: "SET_LEFT_TAB", tab: tabs[newIdx]!.id });
     } else if (key === "enter") {
-      dispatch({ type: "SET_ACTIVE_PANEL", panel: "right" });
+      // SELECT_TICKER already focuses the right panel
+      if (tickers[selectedIdx]) dispatch({ type: "SELECT_TICKER", symbol: tickers[selectedIdx]!.frontmatter.ticker });
     }
   });
 
@@ -150,19 +144,10 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      {/* Tab bar */}
-      <tab-select
-        ref={tabRef}
-        options={tabOptions}
-        focused={false}
-        showUnderline
-        textColor={colors.textDim}
-        selectedTextColor={colors.text}
-        backgroundColor={colors.bg}
-        selectedBackgroundColor={colors.bg}
-        onChange={(idx) => {
-          if (tabs[idx]) dispatch({ type: "SET_LEFT_TAB", tab: tabs[idx]!.id });
-        }}
+      <TabBar
+        tabs={tabs.map((t) => ({ label: t.name, value: t.id }))}
+        activeValue={state.activeLeftTab}
+        onSelect={(val) => dispatch({ type: "SET_LEFT_TAB", tab: val })}
       />
 
       {/* Column headers */}
@@ -185,7 +170,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
         ) : (
           tickers.map((ticker, idx) => {
             const isSelected = idx === selectedIdx;
+            const isHovered = idx === hoveredIdx && !isSelected;
             const fin = state.financials.get(ticker.frontmatter.ticker);
+            const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
 
             return (
               <box
@@ -193,7 +180,12 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
                 flexDirection="row"
                 height={1}
                 paddingX={1}
-                backgroundColor={isSelected ? colors.selected : colors.bg}
+                backgroundColor={rowBg}
+                onMouseMove={() => setHoveredIdx(idx)}
+                onMouseDown={() => {
+                  setSelectedIdx(idx);
+                  dispatch({ type: "SELECT_TICKER", symbol: ticker.frontmatter.ticker });
+                }}
               >
                 {cols.map((col) => {
                   const { text, color } = getColumnValue(col, ticker, fin, state.activeLeftTab);
