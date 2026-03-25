@@ -14,11 +14,16 @@ const osMap = { darwin: "darwin", linux: "linux" };
 const archMap = { arm64: "arm64", x64: "x64" };
 
 const os = osMap[platform];
-const cpu = archMap[arch];
+let cpu = archMap[arch];
 
 if (!os || !cpu) {
   console.error(`Unsupported platform: ${platform}-${arch}`);
   process.exit(1);
+}
+
+// macOS x64 uses arm64 binary (runs via Rosetta 2)
+if (os === "darwin" && cpu === "x64") {
+  cpu = "arm64";
 }
 
 const asset = `gloomberb-${os}-${cpu}`;

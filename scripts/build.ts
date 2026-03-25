@@ -19,7 +19,6 @@ writeFileSync(npmPkgPath, JSON.stringify(npmPkg, null, 2) + "\n");
 
 const targets = [
   { os: "darwin", arch: "arm64" },
-  { os: "darwin", arch: "x64" },
   { os: "linux", arch: "x64" },
   { os: "linux", arch: "arm64" },
 ];

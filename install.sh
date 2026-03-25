@@ -26,6 +26,11 @@ case "$ARCH" in
     ;;
 esac
 
+# macOS x64 uses arm64 binary (runs via Rosetta 2)
+if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
+  arch="arm64"
+fi
+
 ASSET="gloomberb-${os}-${arch}"
 
 # Get latest release download URL
