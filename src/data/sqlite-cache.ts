@@ -106,6 +106,11 @@ export class SqliteCache {
       .run(pair, rate, Date.now());
   }
 
+  /** Clear cached entries by data type (e.g. "full" to force re-fetch of financials) */
+  clearByType(dataType: string): void {
+    this.db.query("DELETE FROM yahoo_cache WHERE data_type = ?").run(dataType);
+  }
+
   close(): void {
     this.db.close();
   }
