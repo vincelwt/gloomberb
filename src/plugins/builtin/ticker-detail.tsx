@@ -132,15 +132,54 @@ function OverviewTab({ width }: { width?: number }) {
           />
         </box>
 
-        {/* Sector info */}
-        {(ticker.frontmatter.sector || ticker.frontmatter.industry) && (
+        {/* Sector / classification */}
+        {(ticker.frontmatter.sector || ticker.frontmatter.industry || ticker.frontmatter.asset_category || ticker.frontmatter.isin) && (
           <box flexDirection="column">
+            {ticker.frontmatter.asset_category && (
+              <MetricRow label="Type" value={ticker.frontmatter.asset_category} />
+            )}
             {ticker.frontmatter.sector && (
               <MetricRow label="Sector" value={ticker.frontmatter.sector} />
             )}
             {ticker.frontmatter.industry && (
               <MetricRow label="Industry" value={ticker.frontmatter.industry} />
             )}
+            {ticker.frontmatter.isin && (
+              <MetricRow label="ISIN" value={ticker.frontmatter.isin} />
+            )}
+          </box>
+        )}
+
+        {/* Positions */}
+        {ticker.frontmatter.positions.length > 0 && (
+          <box flexDirection="column">
+            <box height={1}>
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Positions</text>
+            </box>
+            {ticker.frontmatter.positions.map((pos, i) => {
+              const costBasis = pos.shares * pos.avg_cost * (pos.multiplier || 1);
+              const pnlText = pos.unrealized_pnl != null
+                ? `  P&L: ${pos.unrealized_pnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealized_pnl, pos.currency)}`
+                : "";
+              return (
+                <box key={i} flexDirection="column">
+                  <box flexDirection="row" height={1}>
+                    <text fg={colors.textDim}>{pos.portfolio}</text>
+                    <text fg={colors.textMuted}>{" via "}{pos.broker}</text>
+                    {pos.side === "short" && <text fg={colors.negative}>{" SHORT"}</text>}
+                  </box>
+                  <box flexDirection="row" height={1}>
+                    <text fg={colors.text}>
+                      {pos.shares} shares @ {formatCurrency(pos.avg_cost, pos.currency)}
+                      {" = "}{formatCurrency(costBasis, pos.currency)}
+                    </text>
+                    {pnlText && (
+                      <text fg={priceColor(pos.unrealized_pnl!)}>{pnlText}</text>
+                    )}
+                  </box>
+                </box>
+              );
+            })}
           </box>
         )}
       </box>
@@ -214,19 +253,42 @@ function NotesTab({ markdownStore, notesFocused }: { markdownStore?: MarkdownSto
   const { dispatch } = useAppState();
   const textareaRef = useRef<TextareaRenderable>(null);
 
+  // Save helper that persists textarea text for a given ticker
+  const saveNotesFor = useCallback((t: typeof ticker, text: string) => {
+    if (t && text !== t.notes) {
+      const updated = { ...t, notes: text };
+      dispatch({ type: "UPDATE_TICKER", ticker: updated });
+      if (markdownStore) {
+        markdownStore.saveTicker(updated).catch(() => {});
+      }
+    }
+  }, [dispatch, markdownStore]);
+
   // Save notes when unfocusing
   useEffect(() => {
     if (!notesFocused && textareaRef.current && ticker) {
-      const text = textareaRef.current.editBuffer.getText();
-      if (text !== ticker.notes) {
-        const updated = { ...ticker, notes: text };
-        dispatch({ type: "UPDATE_TICKER", ticker: updated });
-        if (markdownStore) {
-          markdownStore.saveTicker(updated).catch(() => {});
-        }
-      }
+      saveNotesFor(ticker, textareaRef.current.editBuffer.getText());
     }
   }, [notesFocused]);
+
+  // When the selected ticker changes, save pending edits and load new notes
+  const tickerSymbol = ticker?.frontmatter.ticker ?? null;
+  const prevTickerRef = useRef(ticker);
+  const prevSymbolRef = useRef(tickerSymbol);
+  useEffect(() => {
+    if (tickerSymbol !== prevSymbolRef.current) {
+      // Save edits for the previous ticker
+      if (textareaRef.current && prevTickerRef.current) {
+        saveNotesFor(prevTickerRef.current, textareaRef.current.editBuffer.getText());
+      }
+      prevSymbolRef.current = tickerSymbol;
+      prevTickerRef.current = ticker;
+      // Update textarea content to new ticker's notes
+      if (textareaRef.current) {
+        textareaRef.current.setText(ticker?.notes || "");
+      }
+    }
+  }, [tickerSymbol, ticker, saveNotesFor]);
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view notes.</text>;
 

@@ -42,6 +42,7 @@ export type AppAction =
   | { type: "TOGGLE_CONFIG" }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
+  | { type: "UPDATE_BROKER_CONFIG"; brokerId: string; values: Record<string, unknown> }
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string };
 
@@ -108,6 +109,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
+
+    case "UPDATE_BROKER_CONFIG": {
+      const brokers = { ...state.config.brokers };
+      brokers[action.brokerId] = { ...brokers[action.brokerId], ...action.values };
+      return { ...state, config: { ...state.config, brokers } };
+    }
 
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };

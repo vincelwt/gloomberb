@@ -5,6 +5,28 @@ export interface BrokerPosition {
   avgCost: number;
   currency: string;
   dateAcquired?: string;
+  /** Optional account/portfolio identifier from the broker */
+  accountId?: string;
+  /** Full security name from broker */
+  name?: string;
+  /** Asset type: STK, ETF, OPT, FUT, BOND, etc. */
+  assetCategory?: string;
+  /** ISIN identifier */
+  isin?: string;
+  /** Current market price from broker snapshot */
+  markPrice?: number;
+  /** Total market value from broker */
+  marketValue?: number;
+  /** Unrealized P&L from broker */
+  unrealizedPnl?: number;
+  /** FX rate to account base currency */
+  fxRateToBase?: number;
+  /** Position side: "long" or "short" */
+  side?: "long" | "short";
+  /** Contract multiplier (e.g. 100 for options) */
+  multiplier?: number;
+  /** Percentage of portfolio NAV */
+  percentOfNav?: number;
 }
 
 export interface BrokerConfigField {
