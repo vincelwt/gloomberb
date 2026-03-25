@@ -35,12 +35,40 @@ export interface Fundamentals {
 
 export interface FinancialStatement {
   date: string;
+  // Income Statement
   totalRevenue?: number;
+  costOfRevenue?: number;
+  grossProfit?: number;
+  sellingGeneralAndAdministration?: number;
+  researchAndDevelopment?: number;
+  operatingExpense?: number;
+  operatingIncome?: number;
+  interestExpense?: number;
+  taxProvision?: number;
   netIncome?: number;
   ebitda?: number;
-  eps?: number;
-  totalDebt?: number;
+  basicEps?: number;
+  eps?: number; // diluted
   dilutedShares?: number;
+  // Cash Flow
+  operatingCashFlow?: number;
+  capitalExpenditure?: number;
+  freeCashFlow?: number;
+  investingCashFlow?: number;
+  financingCashFlow?: number;
+  issuanceOfDebt?: number;
+  repurchaseOfCapitalStock?: number;
+  cashDividendsPaid?: number;
+  // Balance Sheet
+  totalAssets?: number;
+  currentAssets?: number;
+  cashAndCashEquivalents?: number;
+  totalLiabilities?: number;
+  currentLiabilities?: number;
+  longTermDebt?: number;
+  totalDebt?: number;
+  totalEquity?: number;
+  retainedEarnings?: number;
 }
 
 export interface PricePoint {

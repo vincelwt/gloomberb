@@ -105,7 +105,7 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
         type: "SET_ACTIVE_PANEL",
         panel: state.activePanel === "left" ? "right" : "left",
       });
-    } else if (event.name === "q") {
+    } else if (event.name === "q" && !(state.activePanel === "right" && state.activeRightTab === "financials")) {
       renderer.destroy();
     } else if (event.name === "r") {
       // Refresh selected ticker
@@ -145,6 +145,7 @@ export function App({ config, renderer }: AppProps) {
 
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const cache = new SqliteCache(dbPath);
+  cache.clearByType("full"); // Clear stale financials cache on startup
   const markdownStore = new MarkdownStore(config.dataDir);
   setMarkdownStore(markdownStore);
   const yahoo = new YahooFinanceClient(cache);
