@@ -1,10 +1,13 @@
-import { execSync } from "child_process";
-import { createWriteStream, chmodSync, mkdirSync, existsSync } from "fs";
+import { createWriteStream, chmodSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import https from "https";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Skip when running in the source repo (dev install)
+const pkg = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf-8"));
+if (pkg.dependencies) process.exit(0);
 const REPO = "vincelwt/gloomberb";
 
 const platform = process.platform;
