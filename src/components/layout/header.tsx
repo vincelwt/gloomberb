@@ -4,12 +4,12 @@ import { colors, priceColor } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { formatPercentRaw } from "../../utils/format";
 import { marketStateLabel, marketStateColor } from "../../utils/market-status";
-import type { YahooFinanceClient } from "../../sources/yahoo-finance";
+import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 
-export function Header({ yahoo }: { yahoo: YahooFinanceClient }) {
+export function Header({ dataProvider }: { dataProvider: DataProvider }) {
   const { state } = useAppState();
   const [spyQuote, setSpyQuote] = useState<Quote | null>(null);
 
@@ -17,14 +17,14 @@ export function Header({ yahoo }: { yahoo: YahooFinanceClient }) {
     let cancelled = false;
     const fetchSpy = async () => {
       try {
-        const quote = await yahoo.getQuote("SPY");
+        const quote = await dataProvider.getQuote("SPY");
         if (!cancelled) setSpyQuote(quote);
       } catch {}
     };
     fetchSpy();
     const id = setInterval(fetchSpy, SPY_REFRESH_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [yahoo]);
+  }, [dataProvider]);
 
   const spyColor = spyQuote ? priceColor(spyQuote.change) : colors.headerText;
   const spyText = spyQuote

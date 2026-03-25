@@ -15,10 +15,11 @@ import { YahooFinanceClient } from "./sources/yahoo-finance";
 import { colors, applyTheme } from "./theme/colors";
 import type { AppConfig } from "./types/config";
 import type { TickerFile, TickerFrontmatter, Portfolio } from "./types/ticker";
+import type { DataProvider } from "./types/data-provider";
 
 // Built-in plugins
 import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
-import { tickerDetailPlugin, setMarkdownStore } from "./plugins/builtin/ticker-detail";
+import { tickerDetailPlugin, setMarkdownStore, setDataProvider } from "./plugins/builtin/ticker-detail";
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
 import { saveConfig } from "./data/config-store";
@@ -29,24 +30,24 @@ import { join } from "path";
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
   markdownStore: MarkdownStore;
-  yahoo: YahooFinanceClient;
+  dataProvider: DataProvider;
 }
 
-function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
+function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
 
   const refreshTicker = useCallback(async (symbol: string, exchange = "") => {
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
     try {
-      const data = await yahoo.getTickerFinancials(symbol, exchange);
+      const data = await dataProvider.getTickerFinancials(symbol, exchange);
       dispatch({ type: "SET_FINANCIALS", symbol, data });
     } catch {
       // Silently fail - will show "—" for missing data
     } finally {
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
-  }, [yahoo, dispatch]);
+  }, [dataProvider, dispatch]);
 
   // Ensure a portfolio exists in config, creating it if needed
   const ensurePortfolio = useCallback(async (portfolioId: string, name: string, currency = "USD") => {
@@ -269,11 +270,11 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
-      <Header yahoo={yahoo} />
+      <Header dataProvider={dataProvider} />
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
       {state.commandBarOpen && (
-        <CommandBar yahoo={yahoo} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
+        <CommandBar dataProvider={dataProvider} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
       )}
       {state.configOpen && <ConfigPage />}
     </box>
@@ -294,7 +295,8 @@ export function App({ config, renderer }: AppProps) {
   cache.clearByType("full"); // Clear stale financials cache on startup
   const markdownStore = new MarkdownStore(config.dataDir);
   setMarkdownStore(markdownStore);
-  const yahoo = new YahooFinanceClient(cache);
+  const dataProvider: DataProvider = new YahooFinanceClient(cache);
+  setDataProvider(dataProvider);
   const pluginRegistry = new PluginRegistry(renderer);
 
   // Register built-in plugins synchronously
@@ -315,7 +317,7 @@ export function App({ config, renderer }: AppProps) {
         <AppInner
           pluginRegistry={pluginRegistry}
           markdownStore={markdownStore}
-          yahoo={yahoo}
+          dataProvider={dataProvider}
         />
       </DialogProvider>
     </AppProvider>
