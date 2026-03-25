@@ -69,12 +69,31 @@ export interface CustomColumnDef extends ColumnConfig {
   render: (ticker: TickerFile, financials: TickerFinancials | null) => string;
 }
 
+/** Props passed to dynamic detail tabs registered by plugins */
+export interface DetailTabProps {
+  width: number;
+  height: number;
+  focused: boolean;
+  /** Call with true when tab captures keyboard (e.g. editing mode), false when releasing */
+  onCapture: (capturing: boolean) => void;
+}
+
+/** Definition for a detail tab contributed by a plugin */
+export interface DetailTabDef {
+  id: string;
+  name: string;
+  /** Controls tab ordering — lower numbers appear first (core tabs use 10/20/30) */
+  order: number;
+  component: (props: DetailTabProps) => ReactNode;
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
   registerDataProvider(provider: DataProvider): void;
+  registerDetailTab(tab: DetailTabDef): void;
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerFile | null;
   getConfig(): import("./config").AppConfig;
@@ -87,6 +106,9 @@ export interface GloomPlugin {
   id: string;
   name: string;
   version: string;
+  description?: string;
+  /** If true, this plugin can be toggled on/off by the user */
+  toggleable?: boolean;
   order?: number;
 
   setup?(ctx: GloomPluginContext): void | Promise<void>;

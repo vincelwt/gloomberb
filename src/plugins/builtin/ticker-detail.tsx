@@ -1,23 +1,20 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { TextareaRenderable, ScrollBoxRenderable } from "@opentui/core";
-import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin, PaneProps, DetailTabDef } from "../../types/plugin";
+import type { PluginRegistry } from "../../plugins/registry";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { StockChart, setChartDataProvider } from "../../components/chart/stock-chart";
-import type { MarkdownStore } from "../../data/markdown-store";
-import type { DataProvider, NewsItem } from "../../types/data-provider";
+import type { DataProvider } from "../../types/data-provider";
 
-const DETAIL_TABS = [
-  { name: "Overview", description: "", value: "overview" },
-  { name: "Financials", description: "", value: "financials" },
-  { name: "Chart", description: "", value: "chart" },
-  { name: "News", description: "", value: "news" },
-  { name: "Notes", description: "", value: "notes" },
+const CORE_TABS = [
+  { id: "overview", name: "Overview", order: 10 },
+  { id: "financials", name: "Financials", order: 20 },
+  { id: "chart", name: "Chart", order: 30 },
 ];
 
 function MetricRow({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -435,321 +432,75 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
   );
 }
 
-function formatTimeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-}
-
-function NewsTab({ width, height, focused }: { width: number; height: number; focused: boolean }) {
-  const { ticker } = useSelectedTicker();
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const newsScrollRef = useRef<ScrollBoxRenderable>(null);
-  const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
-  const [loadingSummary, setLoadingSummary] = useState(false);
-  const summaryFetchRef = useRef(0);
-
-  useEffect(() => {
-    if (!ticker || !_dataProvider) return;
-    let cancelled = false;
-    setLoading(true);
-    setSelectedIdx(0);
-    setSummaryCache(new Map());
-    _dataProvider.getNews(ticker.frontmatter.ticker, 15, ticker.frontmatter.exchange).then((items) => {
-      if (!cancelled) setNews(items);
-    }).catch(() => {}).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [ticker?.frontmatter.ticker]);
-
-  // Lazy-load summary when selection changes
-  const selected = news[selectedIdx];
-  useEffect(() => {
-    if (!selected || !_dataProvider) return;
-    if (summaryCache.has(selected.url)) return;
-    const id = ++summaryFetchRef.current;
-    setLoadingSummary(true);
-    _dataProvider.getArticleSummary(selected.url).then((summary) => {
-      if (id !== summaryFetchRef.current) return;
-      if (summary) {
-        setSummaryCache((prev) => new Map(prev).set(selected.url, summary));
-      }
-    }).catch(() => {}).finally(() => {
-      if (id === summaryFetchRef.current) setLoadingSummary(false);
-    });
-  }, [selected?.url]);
-
-  useKeyboard((event) => {
-    if (!focused || news.length === 0) return;
-    if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((i) => Math.min(i + 1, news.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((i) => Math.max(i - 1, 0));
-    }
-  });
-
-  // Auto-scroll to keep selected news item visible
-  useEffect(() => {
-    const sb = newsScrollRef.current;
-    if (!sb) return;
-    const viewportH = sb.viewport.height;
-    if (selectedIdx < sb.scrollTop) {
-      sb.scrollTo(selectedIdx);
-    } else if (selectedIdx >= sb.scrollTop + viewportH) {
-      sb.scrollTo(selectedIdx - viewportH + 1);
-    }
-  }, [selectedIdx]);
-
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
-  if (loading && news.length === 0) return <text fg={colors.textDim}>Loading news...</text>;
-  if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
-
-  const innerWidth = Math.max(width - 4, 40);
-  const timeColW = 9;
-  const sourceColW = 16;
-  const titleColW = Math.max(innerWidth - timeColW - sourceColW - 2, 10);
-  const summary = selected ? summaryCache.get(selected.url) : undefined;
-
-  // Detail pane height: roughly 1/3 of available space, min 4 lines
-  const detailHeight = Math.max(Math.floor((height - 3) / 3), 4);
-  const listHeight = Math.max(height - detailHeight - 3, 4); // 3 = header + divider + help
-
-  return (
-    <box flexDirection="column" flexGrow={1} paddingX={1}>
-      {/* Header */}
-      <box flexDirection="row" height={1}>
-        <box width={titleColW + 1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("Title", titleColW)}
-          </text>
-        </box>
-        <box width={sourceColW + 1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("Source", sourceColW)}
-          </text>
-        </box>
-        <box width={timeColW}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("When", timeColW, "right")}
-          </text>
-        </box>
-      </box>
-
-      {/* News list */}
-      <scrollbox ref={newsScrollRef} height={listHeight} scrollY>
-        {news.map((item, i) => {
-          const isSelected = i === selectedIdx;
-          const title = item.title.length > titleColW
-            ? item.title.slice(0, titleColW - 1) + "\u2026"
-            : item.title;
-          const source = item.source.length > sourceColW
-            ? item.source.slice(0, sourceColW - 1) + "\u2026"
-            : item.source;
-          return (
-            <box
-              key={i}
-              flexDirection="row"
-              height={1}
-              backgroundColor={isSelected ? colors.selected : colors.bg}
-            >
-              <box width={titleColW + 1}>
-                <text fg={isSelected ? colors.selectedText : colors.text}>
-                  {padTo(title, titleColW)}
-                </text>
-              </box>
-              <box width={sourceColW + 1}>
-                <text fg={colors.textMuted}>
-                  {padTo(source, sourceColW)}
-                </text>
-              </box>
-              <box width={timeColW}>
-                <text fg={colors.textDim}>
-                  {padTo(formatTimeAgo(item.publishedAt), timeColW, "right")}
-                </text>
-              </box>
-            </box>
-          );
-        })}
-      </scrollbox>
-
-      {/* Divider */}
-      <box height={1}>
-        <text fg={colors.textDim}>{"\u2500".repeat(innerWidth)}</text>
-      </box>
-
-      {/* Detail pane for selected article */}
-      {selected && (
-        <scrollbox height={detailHeight} scrollY>
-          <box flexDirection="column">
-            <box height={1}>
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-                {selected.title}
-              </text>
-            </box>
-            <box flexDirection="row" height={1} gap={2}>
-              <text fg={colors.textMuted}>{selected.source}</text>
-              <text fg={colors.textDim}>{formatTimeAgo(selected.publishedAt)}</text>
-            </box>
-            <box paddingTop={1}>
-              <text fg={colors.text}>
-                {summary
-                  ? summary
-                  : loadingSummary
-                    ? "Loading..."
-                    : "No preview available."}
-              </text>
-            </box>
-          </box>
-        </scrollbox>
-      )}
-
-      {/* Help */}
-      <box height={1}>
-        <text fg={colors.textMuted}>j/k navigate</text>
-      </box>
-    </box>
-  );
-}
-
-function NotesTab({ markdownStore, notesFocused, onActivate }: { markdownStore?: MarkdownStore; notesFocused: boolean; onActivate?: () => void }) {
-  const { ticker } = useSelectedTicker();
-  const { dispatch } = useAppState();
-  const textareaRef = useRef<TextareaRenderable>(null);
-
-  // Save helper that persists textarea text for a given ticker
-  const saveNotesFor = useCallback((t: typeof ticker, text: string) => {
-    if (t && text !== t.notes) {
-      const updated = { ...t, notes: text };
-      dispatch({ type: "UPDATE_TICKER", ticker: updated });
-      if (markdownStore) {
-        markdownStore.saveTicker(updated).catch(() => {});
-      }
-    }
-  }, [dispatch, markdownStore]);
-
-  // Save notes when unfocusing
-  useEffect(() => {
-    if (!notesFocused && textareaRef.current && ticker) {
-      saveNotesFor(ticker, textareaRef.current.editBuffer.getText());
-    }
-  }, [notesFocused]);
-
-  // When the selected ticker changes, save pending edits and load new notes
-  const tickerSymbol = ticker?.frontmatter.ticker ?? null;
-  const prevTickerRef = useRef(ticker);
-  const prevSymbolRef = useRef(tickerSymbol);
-  useEffect(() => {
-    if (tickerSymbol !== prevSymbolRef.current) {
-      // Save edits for the previous ticker
-      if (textareaRef.current && prevTickerRef.current) {
-        saveNotesFor(prevTickerRef.current, textareaRef.current.editBuffer.getText());
-      }
-      prevSymbolRef.current = tickerSymbol;
-      prevTickerRef.current = ticker;
-      // Update textarea content to new ticker's notes
-      if (textareaRef.current) {
-        textareaRef.current.setText(ticker?.notes || "");
-      }
-    }
-  }, [tickerSymbol, ticker, saveNotesFor]);
-
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view notes.</text>;
-
-  return (
-    <box flexDirection="column" padding={1} flexGrow={1}>
-      <box flexDirection="row" height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</text>
-        <box flexGrow={1} />
-        <text fg={colors.textMuted}>
-          {notesFocused ? "editing (Esc to stop)" : "Enter to edit"}
-        </text>
-      </box>
-      <box height={1} />
-      <box flexGrow={1} onMouseDown={() => { if (!notesFocused && onActivate) onActivate(); }}>
-        <textarea
-          ref={textareaRef}
-          initialValue={ticker.notes || ""}
-          placeholder="Write notes about this ticker..."
-          focused={notesFocused}
-          textColor={colors.text}
-          placeholderColor={colors.textDim}
-          backgroundColor={notesFocused ? colors.panel : colors.bg}
-          flexGrow={1}
-        />
-      </box>
-    </box>
-  );
-}
-
 // Store refs are set from the plugin setup
-let _markdownStore: MarkdownStore | undefined;
-export function setMarkdownStore(store: MarkdownStore) {
-  _markdownStore = store;
-}
-
 let _dataProvider: DataProvider | undefined;
 export function setDataProvider(provider: DataProvider) {
   _dataProvider = provider;
   setChartDataProvider(provider);
 }
 
+let _pluginRegistry: PluginRegistry | undefined;
+export function setPluginRegistry(registry: PluginRegistry) {
+  _pluginRegistry = registry;
+}
+
 function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
-  const [notesFocused, setNotesFocused] = useState(false);
   const [chartInteractive, setChartInteractive] = useState(false);
-  const tabIdx = DETAIL_TABS.findIndex((t) => t.value === state.activeRightTab);
+  const [pluginCaptured, setPluginCaptured] = useState(false);
+
+  // Build dynamic tab list: core tabs + enabled plugin tabs
+  const disabledPlugins = state.config.disabledPlugins || [];
+  const pluginTabs: DetailTabDef[] = _pluginRegistry
+    ? [..._pluginRegistry.detailTabs.values()].filter((t) => !disabledPlugins.includes(t.id))
+    : [];
+
+  const allTabs = [
+    ...CORE_TABS,
+    ...pluginTabs.map((t) => ({ id: t.id, name: t.name, order: t.order })),
+  ].sort((a, b) => a.order - b.order);
+
+  const tabIdx = allTabs.findIndex((t) => t.id === state.activeRightTab);
+  const isPluginTab = pluginTabs.some((t) => t.id === state.activeRightTab);
+  const activePluginTab = isPluginTab ? pluginTabs.find((t) => t.id === state.activeRightTab) : null;
 
   // Refs to avoid stale closures in useKeyboard
-  const stateRef = useRef({ focused, notesFocused, chartInteractive, activeRightTab: state.activeRightTab, tabIdx });
-  stateRef.current = { focused, notesFocused, chartInteractive, activeRightTab: state.activeRightTab, tabIdx };
+  const allTabsRef = useRef(allTabs);
+  allTabsRef.current = allTabs;
+  const stateRef = useRef({ focused, chartInteractive, pluginCaptured, activeRightTab: state.activeRightTab, tabIdx, allTabCount: allTabs.length });
+  stateRef.current = { focused, chartInteractive, pluginCaptured, activeRightTab: state.activeRightTab, tabIdx, allTabCount: allTabs.length };
 
-  // Eagerly update ref + state together so subsequent key events see the change immediately
   const setChartInteractiveEager = useCallback((val: boolean) => {
     stateRef.current = { ...stateRef.current, chartInteractive: val };
     setChartInteractive(val);
   }, []);
-  const setNotesFocusedEager = useCallback((val: boolean) => {
-    stateRef.current = { ...stateRef.current, notesFocused: val };
-    setNotesFocused(val);
-  }, []);
+
+  const handlePluginCapture = useCallback((capturing: boolean) => {
+    stateRef.current = { ...stateRef.current, pluginCaptured: capturing };
+    setPluginCaptured(capturing);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: capturing });
+  }, [dispatch]);
 
   // Exit chart interactive mode when switching away from chart tab
   useEffect(() => {
     if (state.activeRightTab !== "chart") {
       setChartInteractive(false);
     }
-  }, [state.activeRightTab]);
+    // Reset plugin capture when switching tabs
+    setPluginCaptured(false);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [state.activeRightTab, dispatch]);
 
   useKeyboard((event) => {
     const s = stateRef.current;
     if (!s.focused) return;
 
-    const isEnter = event.name === "enter" || event.name === "return";
-
-    // Handle notes focus toggle
-    if (s.activeRightTab === "notes") {
-      if (isEnter && !s.notesFocused) {
-        setNotesFocusedEager(true);
-        return;
-      }
-      if (event.name === "escape" && s.notesFocused) {
-        setNotesFocusedEager(false);
-        return;
-      }
-      if (s.notesFocused) return;
-    }
+    // If a plugin tab is capturing keyboard, don't handle tab switching
+    if (s.pluginCaptured) return;
 
     // Handle chart interactive mode
     if (s.activeRightTab === "chart") {
+      const isEnter = event.name === "enter" || event.name === "return";
       if (event.name === "escape" && s.chartInteractive) {
         setChartInteractiveEager(false);
         return;
@@ -758,25 +509,24 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
         setChartInteractiveEager(true);
         return;
       }
-      // When chart is interactive, consume all keys so they don't switch tabs
       if (s.chartInteractive) return;
     }
 
-    // Tab switching — only h/l keys, not arrow keys on chart tab
-    // (arrow keys on chart tab would conflict with chart navigation)
+    // Tab switching
+    const tabs = allTabsRef.current;
     if (event.name === "h" || event.name === "left") {
       const newIdx = Math.max(s.tabIdx - 1, 0);
-      dispatch({ type: "SET_RIGHT_TAB", tab: DETAIL_TABS[newIdx]!.value });
+      dispatch({ type: "SET_RIGHT_TAB", tab: tabs[newIdx]!.id });
     } else if (event.name === "l" || event.name === "right") {
-      const newIdx = Math.min(s.tabIdx + 1, DETAIL_TABS.length - 1);
-      dispatch({ type: "SET_RIGHT_TAB", tab: DETAIL_TABS[newIdx]!.value });
+      const newIdx = Math.min(s.tabIdx + 1, s.allTabCount - 1);
+      dispatch({ type: "SET_RIGHT_TAB", tab: tabs[newIdx]!.id });
     }
   });
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <TabBar
-        tabs={DETAIL_TABS.map((t) => ({ label: t.name, value: t.value }))}
+        tabs={allTabs.map((t) => ({ label: t.name, value: t.id }))}
         activeValue={state.activeRightTab}
         onSelect={(val) => dispatch({ type: "SET_RIGHT_TAB", tab: val })}
       />
@@ -784,8 +534,16 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
       {state.activeRightTab === "overview" && <OverviewTab width={width} />}
       {state.activeRightTab === "financials" && <FinancialsTab focused={focused} />}
       {state.activeRightTab === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
-      {state.activeRightTab === "news" && <NewsTab width={width} height={height} focused={focused} />}
-      {state.activeRightTab === "notes" && <NotesTab markdownStore={_markdownStore} notesFocused={notesFocused} onActivate={() => setNotesFocusedEager(true)} />}
+
+      {/* Dynamic plugin tabs */}
+      {activePluginTab && (
+        <activePluginTab.component
+          width={width}
+          height={height}
+          focused={focused}
+          onCapture={handlePluginCapture}
+        />
+      )}
     </box>
   );
 }

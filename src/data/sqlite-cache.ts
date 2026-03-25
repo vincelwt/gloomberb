@@ -26,6 +26,12 @@ const SCHEMA = `
     rate REAL NOT NULL,
     fetched_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS tickers (
+    symbol TEXT PRIMARY KEY,
+    frontmatter TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `;
 
 export class SqliteCache {
@@ -104,6 +110,44 @@ export class SqliteCache {
         `INSERT OR REPLACE INTO exchange_rates (pair, rate, fetched_at) VALUES (?, ?, ?)`,
       )
       .run(pair, rate, Date.now());
+  }
+
+  // --- Ticker Metadata ---
+
+  getAllTickers(): Array<{ symbol: string; frontmatter: string }> {
+    return this.db
+      .query<{ symbol: string; frontmatter: string }, []>(
+        "SELECT symbol, frontmatter FROM tickers ORDER BY symbol",
+      )
+      .all();
+  }
+
+  getTicker(symbol: string): string | null {
+    const row = this.db
+      .query<{ frontmatter: string }, [string]>(
+        "SELECT frontmatter FROM tickers WHERE symbol = ?",
+      )
+      .get(symbol);
+    return row?.frontmatter ?? null;
+  }
+
+  saveTicker(symbol: string, frontmatter: unknown): void {
+    this.db
+      .query(
+        `INSERT OR REPLACE INTO tickers (symbol, frontmatter, updated_at) VALUES (?, ?, ?)`,
+      )
+      .run(symbol, JSON.stringify(frontmatter), Date.now());
+  }
+
+  deleteTicker(symbol: string): void {
+    this.db.query("DELETE FROM tickers WHERE symbol = ?").run(symbol);
+  }
+
+  tickerCount(): number {
+    const row = this.db
+      .query<{ count: number }, []>("SELECT COUNT(*) as count FROM tickers")
+      .get();
+    return row?.count ?? 0;
   }
 
   /** Clear cached entries by data type (e.g. "full" to force re-fetch of financials) */

@@ -24,6 +24,7 @@ export interface AppConfig {
   layout: PaneLayoutEntry[];
   brokers: Record<string, Record<string, unknown>>;
   plugins: string[];
+  disabledPlugins: string[];
   theme: string;
 }
 
@@ -53,6 +54,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     layout: DEFAULT_LAYOUT,
     brokers: {},
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr-flex"],
+    disabledPlugins: [],
     theme: "amber",
   };
 }
