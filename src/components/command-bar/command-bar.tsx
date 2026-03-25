@@ -301,8 +301,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }));
   }, [pluginRegistry.commands, close, runWizard]);
 
-  // Detect if we're in theme mode
+  // Detect if we're in theme mode or plugin mode
   const isThemeMode = matchPrefix(query)?.command.id === "theme";
+  const isPluginMode = matchPrefix(query)?.command.id === "plugins";
 
   // Build results based on query and prefix matching
   useEffect(() => {
@@ -372,7 +373,32 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
     let initialIdx = 0;
 
-    if (match && match.command.id === "theme") {
+    if (match && match.command.id === "plugins") {
+      // Plugin management mode
+      const toggleablePlugins = [...pluginRegistry.allPlugins.values()].filter((p) => p.toggleable);
+      const disabledPlugins = state.config.disabledPlugins || [];
+      const filtered = match.arg
+        ? toggleablePlugins.filter((p) => p.name.toLowerCase().includes(match.arg.toLowerCase()) || p.id.includes(match.arg.toLowerCase()))
+        : toggleablePlugins;
+      for (const p of filtered) {
+        const isEnabled = !disabledPlugins.includes(p.id);
+        items.push({
+          id: `plugin:${p.id}`,
+          label: `${isEnabled ? "[on]" : "[off]"} ${p.name}`,
+          detail: p.description || "",
+          category: "Plugins",
+          action: () => {
+            dispatch({ type: "TOGGLE_PLUGIN", pluginId: p.id });
+            const newDisabled = isEnabled
+              ? [...disabledPlugins, p.id]
+              : disabledPlugins.filter((id) => id !== p.id);
+            saveConfig({ ...state.config, disabledPlugins: newDisabled }).catch(() => {});
+            // Stay in plugin mode — re-trigger by keeping query
+            setQuery(query);
+          },
+        });
+      }
+    } else if (match && match.command.id === "theme") {
       // Theme selection mode
       const themeOptions = getThemeOptions();
       const savedThemeId = originalThemeRef.current;
@@ -483,7 +509,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers]);
+  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers, state.config.disabledPlugins]);
 
   // Live preview: apply theme as user arrows through the list
   useEffect(() => {
@@ -618,6 +644,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
               {group.items.map((item) => {
                 const isSel = item.globalIdx === selectedIdx;
                 const isThemeItem = !!item.themeId;
+                const isPluginItem = item.id.startsWith("plugin:");
                 const isSearchResult = item.id.startsWith("yahoo:") || item.id.startsWith("goto:");
                 return (
                   <box
@@ -627,14 +654,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                     paddingX={2}
                     backgroundColor={isSel ? colors.selected : colors.commandBg}
                   >
-                    {/* Prefix shortcut column — shown only for commands (not tickers/themes) */}
-                    {!isThemeItem && !isSearchResult && (
+                    {/* Prefix shortcut column — shown only for commands (not tickers/themes/plugins) */}
+                    {!isThemeItem && !isPluginItem && !isSearchResult && (
                       <box width={5}>
                         <text fg={colors.textMuted}>{item.right || ""}</text>
                       </box>
                     )}
                     {/* Label */}
-                    <box width={isThemeItem ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
+                    <box width={isThemeItem || isPluginItem ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
                       <text fg={isSel ? colors.text : colors.textDim}>{item.label}</text>
                     </box>
                     <box flexGrow={1}>

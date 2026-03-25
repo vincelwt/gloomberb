@@ -1,7 +1,7 @@
 import { createReactSlotRegistry, createSlot } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import type { ReactNode } from "react";
-import type { GloomSlots, GloomPlugin, GloomPluginContext, PaneDef, CommandDef, CustomColumnDef } from "../types/plugin";
+import type { GloomSlots, GloomPlugin, GloomPluginContext, PaneDef, CommandDef, CustomColumnDef, DetailTabDef } from "../types/plugin";
 import type { BrokerAdapter } from "../types/broker";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
@@ -16,6 +16,7 @@ export class PluginRegistry {
   private _columns = new Map<string, CustomColumnDef>();
   private _brokers = new Map<string, BrokerAdapter>();
   private _dataProviders = new Map<string, DataProvider>();
+  private _detailTabs = new Map<string, DetailTabDef>();
 
   // External data accessors (set by app)
   getTickerFn: ((symbol: string) => TickerFile | null) = () => null;
@@ -52,6 +53,15 @@ export class PluginRegistry {
     return this._dataProviders;
   }
 
+  get detailTabs(): ReadonlyMap<string, DetailTabDef> {
+    return this._detailTabs;
+  }
+
+  /** Returns all registered plugins */
+  get allPlugins(): ReadonlyMap<string, GloomPlugin> {
+    return this.plugins;
+  }
+
   /** Returns the last registered provider (paid providers override the default Yahoo) */
   getActiveProvider(): DataProvider | undefined {
     let last: DataProvider | undefined;
@@ -66,6 +76,7 @@ export class PluginRegistry {
       registerColumn: (col) => this._columns.set(col.id, col),
       registerBroker: (broker) => this._brokers.set(broker.id, broker),
       registerDataProvider: (provider) => this._dataProviders.set(provider.id, provider),
+      registerDetailTab: (tab) => this._detailTabs.set(tab.id, tab),
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (ticker) => this.getTickerFn(ticker),
       getConfig: () => this.getConfigFn(),

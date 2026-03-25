@@ -51,7 +51,8 @@ export type AppAction =
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
-  | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null };
+  | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
+  | { type: "TOGGLE_PLUGIN"; pluginId: string };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -136,6 +137,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_UPDATE_PROGRESS":
       return { ...state, updateProgress: action.progress };
+
+    case "TOGGLE_PLUGIN": {
+      const disabled = state.config.disabledPlugins || [];
+      const isDisabled = disabled.includes(action.pluginId);
+      const disabledPlugins = isDisabled
+        ? disabled.filter((id) => id !== action.pluginId)
+        : [...disabled, action.pluginId];
+      return { ...state, config: { ...state.config, disabledPlugins } };
+    }
 
     default:
       return state;
