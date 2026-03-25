@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import { useSelectedTicker } from "../../state/app-context";
@@ -8,7 +8,16 @@ import { getVisibleWindow, downsample } from "./chart-data";
 import { renderChart, formatDateShort } from "./chart-renderer";
 import type { StyledContent } from "./chart-renderer";
 import type { ChartViewState, ChartColors } from "./chart-types";
+import type { TimeRange } from "./chart-types";
 import { TIME_RANGES } from "./chart-types";
+import type { DataProvider } from "../../types/data-provider";
+import type { PricePoint } from "../../types/financials";
+
+// Module-level data provider ref (set from ticker-detail plugin)
+let _chartDataProvider: DataProvider | undefined;
+export function setChartDataProvider(provider: DataProvider) {
+  _chartDataProvider = provider;
+}
 
 function getChartColors(isPositive: boolean): ChartColors {
   return {
@@ -42,8 +51,26 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     cursorX: null,
   });
   const [showVolume, setShowVolume] = useState(!compact);
+  const [rangeHistory, setRangeHistory] = useState<PricePoint[] | null>(null);
+  const fetchIdRef = useRef(0);
 
-  const history = financials?.priceHistory ?? [];
+  // Fetch range-specific history when time range changes
+  useEffect(() => {
+    if (!_chartDataProvider || !ticker || compact) return;
+    const id = ++fetchIdRef.current;
+    setRangeHistory(null); // show fallback while loading
+    _chartDataProvider
+      .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange)
+      .then((points) => {
+        if (id === fetchIdRef.current) setRangeHistory(points);
+      })
+      .catch(() => {
+        if (id === fetchIdRef.current) setRangeHistory(null);
+      });
+  }, [ticker?.frontmatter.ticker, viewState.timeRange, compact]);
+
+  // Use range-specific data when available, fall back to financials.priceHistory
+  const history = rangeHistory ?? financials?.priceHistory ?? [];
 
   const axisWidth = compact ? 0 : 10;
   const chartWidth = Math.max(width - axisWidth - 2, 20); // 2 for padding

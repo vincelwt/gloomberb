@@ -1,5 +1,7 @@
 import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials } from "../types/financials";
 import type { SqliteCache } from "../data/sqlite-cache";
+import type { DataProvider, NewsItem } from "../types/data-provider";
+import type { TimeRange } from "../components/chart/chart-types";
 
 // Exchange suffix mapping for Yahoo Finance ticker symbols
 const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
@@ -64,8 +66,24 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const QUOTE_TTL = 5 * 60_000; // 5 min
 const FUNDAMENTALS_TTL = 60 * 60_000; // 1 hour
 const HISTORY_TTL = 24 * 60 * 60_000; // 24 hours
+const NEWS_TTL = 15 * 60_000; // 15 min
+const INTRADAY_HISTORY_TTL = 5 * 60_000; // 5 min for intraday ranges
 
-export class YahooFinanceClient {
+// Maps TimeRange → Yahoo API { range, interval } for optimal granularity
+const RANGE_PARAMS: Record<TimeRange, { range: string; interval: string; ttl: number }> = {
+  "1W": { range: "5d", interval: "5m", ttl: INTRADAY_HISTORY_TTL },
+  "1M": { range: "1mo", interval: "15m", ttl: INTRADAY_HISTORY_TTL },
+  "3M": { range: "3mo", interval: "1h", ttl: QUOTE_TTL },
+  "6M": { range: "6mo", interval: "1d", ttl: HISTORY_TTL },
+  "1Y": { range: "1y", interval: "1d", ttl: HISTORY_TTL },
+  "5Y": { range: "5y", interval: "1d", ttl: HISTORY_TTL },
+  "ALL": { range: "max", interval: "1wk", ttl: HISTORY_TTL },
+};
+
+export class YahooFinanceClient implements DataProvider {
+  readonly id = "yahoo";
+  readonly name = "Yahoo Finance";
+
   constructor(private cache?: SqliteCache) {}
 
   private defaultHeaders() {
@@ -362,5 +380,88 @@ export class YahooFinanceClient {
     } catch {
       return [];
     }
+  }
+
+  /** Fetch news for a ticker */
+  async getNews(ticker: string, count = 10): Promise<NewsItem[]> {
+    if (this.cache) {
+      const cached = this.cache.getCached<NewsItem[]>(ticker, "news");
+      if (cached) return cached.map((n) => ({ ...n, publishedAt: new Date(n.publishedAt) }));
+    }
+
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=0&newsCount=${count}`;
+    try {
+      const resp = await fetch(url, {
+        headers: this.defaultHeaders(),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!resp.ok) return [];
+      const data = await resp.json() as any;
+      const items: NewsItem[] = (data.news || []).map((n: any) => ({
+        title: n.title || "",
+        url: n.link || "",
+        source: n.publisher || "",
+        publishedAt: new Date((n.providerPublishTime || 0) * 1000),
+        summary: n.summary || undefined,
+      }));
+
+      if (this.cache) this.cache.setCache(ticker, "news", items, NEWS_TTL);
+      return items;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Fetch article summary by scraping og:description from the article page */
+  async getArticleSummary(url: string): Promise<string | null> {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          ...this.defaultHeaders(),
+          Accept: "text/html",
+        },
+        signal: AbortSignal.timeout(8000),
+        redirect: "follow",
+      });
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      // Extract og:description content
+      const match = html.match(/og:description"\s+content="([^"]*?)"/);
+      if (!match?.[1]) return null;
+      // Decode HTML entities
+      return match[1]
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .replace(/&#39;/g, "'");
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch price history with appropriate granularity for the given time range */
+  async getPriceHistory(ticker: string, exchange = "", range: TimeRange): Promise<PricePoint[]> {
+    const cacheKey = `history:${range}`;
+    if (this.cache) {
+      const cached = this.cache.getCached<PricePoint[]>(ticker, cacheKey);
+      if (cached) return cached.map((p) => ({ ...p, date: new Date(p.date) }));
+    }
+
+    const params = RANGE_PARAMS[range];
+    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    let lastError: any;
+
+    for (const symbol of symbolsToTry) {
+      try {
+        const { history } = await this.fetchChart(symbol, params.range, params.interval);
+        if (this.cache) this.cache.setCache(ticker, cacheKey, history, params.ttl);
+        return history;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error(`No history for ${ticker}`);
   }
 }

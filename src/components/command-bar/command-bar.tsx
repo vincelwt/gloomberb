@@ -9,7 +9,7 @@ import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, matchPrefix, getThemeOptions, type Command } from "./command-registry";
 import { getCurrentThemeId, applyTheme } from "../../theme/colors";
 import { saveConfig } from "../../data/config-store";
-import type { YahooFinanceClient } from "../../sources/yahoo-finance";
+import type { DataProvider } from "../../types/data-provider";
 import type { MarkdownStore } from "../../data/markdown-store";
 import type { TickerFrontmatter } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -17,7 +17,7 @@ import type { CommandDef, WizardStep } from "../../types/plugin";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 
 interface CommandBarProps {
-  yahoo: YahooFinanceClient;
+  dataProvider: DataProvider;
   markdownStore: MarkdownStore;
   pluginRegistry: PluginRegistry;
 }
@@ -132,7 +132,7 @@ function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & {
   );
 }
 
-export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarProps) {
+export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: CommandBarProps) {
   const { state, dispatch } = useAppState();
   const dialog = useDialog();
   const { width: termWidth } = useTerminalDimensions();
@@ -398,20 +398,20 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
       setSearching(true);
       searchTimerRef.current = setTimeout(async () => {
         try {
-          const searchResults = await yahoo.search(searchQuery);
-          const yahooItems: ResultItem[] = searchResults
+          const searchResults = await dataProvider.search(searchQuery);
+          const searchItems: ResultItem[] = searchResults
             .filter((r) => r.type === "EQUITY" || r.type === "ETF")
             .slice(0, 8)
             .map((r) => {
               const sym = r.symbol.split(".")[0]!;
               const isExisting = state.tickers.has(sym);
               return {
-                id: `yahoo:${r.symbol}`, label: sym, detail: r.name,
+                id: `search:${r.symbol}`, label: sym, detail: r.name,
                 right: r.exchange, category: isExisting ? "Open" : "Search Results",
                 action: () => openTickerDetail(sym, r.name, r.exchange),
               };
             });
-          setResults(yahooItems.length > 0 ? yahooItems : [{
+          setResults(searchItems.length > 0 ? searchItems : [{
             id: "no-results", label: "No results", detail: `for "${searchQuery}"`, category: "Search", action: () => {},
           }]);
         } catch {
