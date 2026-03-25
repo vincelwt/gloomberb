@@ -6,10 +6,11 @@ interface PaneWrapperProps {
   focused: boolean;
   width?: number | `${number}%` | "auto";
   flexGrow?: number;
+  onMouseDown?: () => void;
   children: ReactNode;
 }
 
-export function PaneWrapper({ title, focused, width, flexGrow, children }: PaneWrapperProps) {
+export function PaneWrapper({ title, focused, width, flexGrow, onMouseDown, children }: PaneWrapperProps) {
   return (
     <box
       flexDirection="column"
@@ -20,6 +21,7 @@ export function PaneWrapper({ title, focused, width, flexGrow, children }: PaneW
       title={title}
       titleAlignment="left"
       backgroundColor={colors.bg}
+      onMouseDown={onMouseDown}
     >
       {children}
     </box>

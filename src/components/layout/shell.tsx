@@ -11,7 +11,7 @@ interface ShellProps {
 }
 
 export function Shell({ pluginRegistry }: ShellProps) {
-  const { state } = useAppState();
+  const { state, dispatch } = useAppState();
   const { width, height } = useTerminalDimensions();
   const resolved = resolvePanes(state.config.layout, pluginRegistry.panes);
   const leftPanes = getPanesByPosition(resolved, "left");
@@ -36,6 +36,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
             title={` ${pane.def.name} `}
             focused={leftFocused}
             width={w}
+            onMouseDown={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "left" })}
           >
             <pane.def.component
               focused={leftFocused}
@@ -51,6 +52,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
           title={` ${pane.def.name} `}
           focused={rightFocused}
           flexGrow={1}
+          onMouseDown={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "right" })}
         >
           <pane.def.component
             focused={rightFocused}

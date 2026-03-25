@@ -87,7 +87,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "SELECT_TICKER":
-      return { ...state, selectedTicker: action.symbol };
+      return { ...state, selectedTicker: action.symbol, activePanel: "right" };
 
     case "SET_ACTIVE_PANEL":
       return { ...state, activePanel: action.panel };
