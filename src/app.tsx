@@ -182,7 +182,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
         // Select first ticker if any
         if (tickers.length > 0) {
-          dispatch({ type: "SELECT_TICKER", symbol: tickers[0]!.frontmatter.ticker });
+          dispatch({ type: "PREVIEW_TICKER", symbol: tickers[0]!.frontmatter.ticker });
         }
 
         dispatch({ type: "SET_INITIALIZED" });

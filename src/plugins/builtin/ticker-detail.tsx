@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { TextareaRenderable } from "@opentui/core";
+import type { TextareaRenderable, ScrollBoxRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
@@ -444,7 +444,7 @@ function formatTimeAgo(date: Date): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
 }
 
 function NewsTab({ width, height, focused }: { width: number; height: number; focused: boolean }) {
@@ -452,6 +452,7 @@ function NewsTab({ width, height, focused }: { width: number; height: number; fo
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const newsScrollRef = useRef<ScrollBoxRenderable>(null);
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
   const [loadingSummary, setLoadingSummary] = useState(false);
   const summaryFetchRef = useRef(0);
@@ -462,7 +463,7 @@ function NewsTab({ width, height, focused }: { width: number; height: number; fo
     setLoading(true);
     setSelectedIdx(0);
     setSummaryCache(new Map());
-    _dataProvider.getNews(ticker.frontmatter.ticker, 15).then((items) => {
+    _dataProvider.getNews(ticker.frontmatter.ticker, 15, ticker.frontmatter.exchange).then((items) => {
       if (!cancelled) setNews(items);
     }).catch(() => {}).finally(() => {
       if (!cancelled) setLoading(false);
@@ -496,12 +497,24 @@ function NewsTab({ width, height, focused }: { width: number; height: number; fo
     }
   });
 
+  // Auto-scroll to keep selected news item visible
+  useEffect(() => {
+    const sb = newsScrollRef.current;
+    if (!sb) return;
+    const viewportH = sb.viewport.height;
+    if (selectedIdx < sb.scrollTop) {
+      sb.scrollTo(selectedIdx);
+    } else if (selectedIdx >= sb.scrollTop + viewportH) {
+      sb.scrollTo(selectedIdx - viewportH + 1);
+    }
+  }, [selectedIdx]);
+
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
   if (loading && news.length === 0) return <text fg={colors.textDim}>Loading news...</text>;
   if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
 
   const innerWidth = Math.max(width - 4, 40);
-  const timeColW = 7;
+  const timeColW = 9;
   const sourceColW = 16;
   const titleColW = Math.max(innerWidth - timeColW - sourceColW - 2, 10);
   const summary = selected ? summaryCache.get(selected.url) : undefined;
@@ -532,7 +545,7 @@ function NewsTab({ width, height, focused }: { width: number; height: number; fo
       </box>
 
       {/* News list */}
-      <scrollbox height={listHeight} scrollY>
+      <scrollbox ref={newsScrollRef} height={listHeight} scrollY>
         {news.map((item, i) => {
           const isSelected = i === selectedIdx;
           const title = item.title.length > titleColW

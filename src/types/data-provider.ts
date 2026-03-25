@@ -17,7 +17,7 @@ export interface DataProvider {
   getQuote(ticker: string, exchange?: string): Promise<Quote>;
   getExchangeRate(fromCurrency: string): Promise<number>;
   search(query: string): Promise<Array<{ symbol: string; name: string; exchange: string; type: string }>>;
-  getNews(ticker: string, count?: number): Promise<NewsItem[]>;
+  getNews(ticker: string, count?: number, exchange?: string): Promise<NewsItem[]>;
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;
   getPriceHistory(ticker: string, exchange: string, range: TimeRange): Promise<PricePoint[]>;
