@@ -121,6 +121,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
         market_value: pos.marketValue,
         unrealized_pnl: pos.unrealizedPnl,
         multiplier: pos.multiplier,
+        mark_price: pos.markPrice,
       };
 
       let ticker = existingTickers.get(pos.ticker);
@@ -163,7 +164,11 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       }
       existingTickers.set(pos.ticker, ticker);
       dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
-      refreshTicker(pos.ticker, pos.exchange);
+      // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
+      // Position data (mark_price, market_value, unrealized_pnl) is used directly.
+      if (pos.assetCategory !== "OPT") {
+        refreshTicker(pos.ticker, pos.exchange);
+      }
     }
   }, [pluginRegistry.brokers, state.config, state.tickers, markdownStore, dispatch, refreshTicker, ensurePortfolio]);
 
