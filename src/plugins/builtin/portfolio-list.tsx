@@ -12,6 +12,23 @@ import type { ColumnConfig } from "../../types/config";
 import type { TickerFile } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
 
+const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Parse IBKR option symbol like "UBER 260821C00090000" into a readable form.
+ * Format: UNDERLYING YYMMDD{C|P}SSSSSSSS (strike in 1/1000 dollars, 8 digits)
+ */
+function formatOptionTicker(symbol: string): string {
+  // Match: TICKER(space)YYMMDDX00SSSSSS  where X is C or P
+  const m = symbol.match(/^(\S+)\s+(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
+  if (!m) return symbol;
+  const [, underlying, yy, mm, , side, rawStrike] = m;
+  const strike = parseInt(rawStrike!, 10) / 1000;
+  const month = MONTH_ABBREV[parseInt(mm!, 10) - 1] || mm;
+  const strikeStr = strike % 1 === 0 ? String(strike) : strike.toFixed(1);
+  return `${underlying} ${side === "C" ? "C" : "P"} $${strikeStr} ${month}'${yy}`;
+}
+
 /** Convert a value from one currency to base currency using cached exchange rates */
 function convertCurrency(
   value: number,
@@ -55,19 +72,39 @@ function getColumnValue(
     0,
   );
 
+  // For options without Yahoo quotes, use broker-provided position data
+  const isOption = ticker.frontmatter.asset_category === "OPT";
+  const brokerMktValue = tabPositions.reduce(
+    (sum, p) => sum + (p.market_value || 0),
+    0,
+  );
+  const brokerPnl = tabPositions.reduce(
+    (sum, p) => sum + (p.unrealized_pnl || 0),
+    0,
+  );
+  const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.mark_price : undefined;
+
   switch (col.id) {
     case "ticker": {
       const mkt = q?.marketState;
       const statusDot = mkt === "REGULAR" ? "\u25CF" : "\u25CB";
-      return { text: `${statusDot} ${ticker.frontmatter.ticker}` };
+      const displayName = isOption
+        ? formatOptionTicker(ticker.frontmatter.ticker)
+        : ticker.frontmatter.ticker;
+      return { text: `${statusDot} ${displayName}` };
     }
     case "price": {
-      if (!q) return { text: "—" };
-      const converted = toBase(q.price);
-      return {
-        text: formatCurrency(converted, ctx.baseCurrency),
-        color: priceColor(q.change),
-      };
+      if (q) {
+        const converted = toBase(q.price);
+        return {
+          text: formatCurrency(converted, ctx.baseCurrency),
+          color: priceColor(q.change),
+        };
+      }
+      if (isOption && brokerMarkPrice != null) {
+        return { text: formatCurrency(toBase(brokerMarkPrice), ctx.baseCurrency) };
+      }
+      return { text: "—" };
     }
     case "change": {
       if (!q) return { text: "—" };
@@ -117,21 +154,38 @@ function getColumnValue(
       return { text: formatCompact(toBase(totalCost)) };
     }
     case "mkt_value": {
-      if (!q || totalShares === 0) return { text: "—" };
-      const mv = Math.abs(totalShares) * q.price;
-      return { text: formatCompact(toBase(mv)) };
+      if (q && totalShares !== 0) {
+        const mv = Math.abs(totalShares) * q.price;
+        return { text: formatCompact(toBase(mv)) };
+      }
+      if (isOption && brokerMktValue !== 0) {
+        return { text: formatCompact(toBase(brokerMktValue)) };
+      }
+      return { text: "—" };
     }
     case "pnl": {
-      if (!q || totalShares === 0) return { text: "—" };
-      const mv = Math.abs(totalShares) * q.price;
-      const pnl = toBase(mv - totalCost);
-      return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
+      if (q && totalShares !== 0) {
+        const mv = Math.abs(totalShares) * q.price;
+        const pnl = toBase(mv - totalCost);
+        return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
+      }
+      if (isOption && brokerPnl !== 0) {
+        const pnl = toBase(brokerPnl);
+        return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
+      }
+      return { text: "—" };
     }
     case "pnl_pct": {
-      if (!q || totalCost === 0) return { text: "—" };
-      const mv = Math.abs(totalShares) * q.price;
-      const pct = ((mv - totalCost) / totalCost) * 100;
-      return { text: formatPercentRaw(pct), color: priceColor(pct) };
+      if (q && totalCost !== 0) {
+        const mv = Math.abs(totalShares) * q.price;
+        const pct = ((mv - totalCost) / totalCost) * 100;
+        return { text: formatPercentRaw(pct), color: priceColor(pct) };
+      }
+      if (isOption && brokerPnl !== 0 && totalCost !== 0) {
+        const pct = (brokerPnl / totalCost) * 100;
+        return { text: formatPercentRaw(pct), color: priceColor(pct) };
+      }
+      return { text: "—" };
     }
     default:
       return { text: "—" };
@@ -160,11 +214,18 @@ function getSortValue(
     0,
   );
 
+  const isOption = ticker.frontmatter.asset_category === "OPT";
+  const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
+  const brokerPnl = tabPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+  const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.mark_price : undefined;
+
   switch (col.id) {
     case "ticker":
       return ticker.frontmatter.ticker;
     case "price":
-      return q ? toBase(q.price) : null;
+      if (q) return toBase(q.price);
+      if (isOption && brokerMarkPrice != null) return toBase(brokerMarkPrice);
+      return null;
     case "change":
       return q ? toBase(q.change) : null;
     case "change_pct":
@@ -189,18 +250,25 @@ function getSortValue(
     case "cost_basis":
       return totalCost !== 0 ? toBase(totalCost) : null;
     case "mkt_value": {
-      if (!q || totalShares === 0) return null;
-      return toBase(Math.abs(totalShares) * q.price);
+      if (q && totalShares !== 0) return toBase(Math.abs(totalShares) * q.price);
+      if (isOption && brokerMktValue !== 0) return toBase(brokerMktValue);
+      return null;
     }
     case "pnl": {
-      if (!q || totalShares === 0) return null;
-      const mv = Math.abs(totalShares) * q.price;
-      return toBase(mv - totalCost);
+      if (q && totalShares !== 0) {
+        const mv = Math.abs(totalShares) * q.price;
+        return toBase(mv - totalCost);
+      }
+      if (isOption && brokerPnl !== 0) return toBase(brokerPnl);
+      return null;
     }
     case "pnl_pct": {
-      if (!q || totalCost === 0) return null;
-      const mv = Math.abs(totalShares) * q.price;
-      return ((mv - totalCost) / totalCost) * 100;
+      if (q && totalCost !== 0) {
+        const mv = Math.abs(totalShares) * q.price;
+        return ((mv - totalCost) / totalCost) * 100;
+      }
+      if (isOption && brokerPnl !== 0 && totalCost !== 0) return (brokerPnl / totalCost) * 100;
+      return null;
     }
     default:
       return null;

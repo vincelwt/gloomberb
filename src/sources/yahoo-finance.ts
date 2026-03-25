@@ -139,6 +139,24 @@ type TimeseriesResponse = { timeseries?: { result?: Array<Record<string, any>>; 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Sub-unit currency normalization.
+ * Yahoo Finance returns prices for some exchanges in sub-units (e.g. pence instead of pounds).
+ * IBKR and most brokers report in the main currency unit, so we normalize here to avoid mismatches.
+ */
+const SUB_UNIT_CURRENCIES: Record<string, { main: string; divisor: number }> = {
+  GBp: { main: "GBP", divisor: 100 },
+  GBX: { main: "GBP", divisor: 100 },
+  ILA: { main: "ILS", divisor: 100 },
+  ZAc: { main: "ZAR", divisor: 100 },
+};
+
+function normalizeSubUnitCurrency(currency: string): { currency: string; divisor: number } {
+  const sub = SUB_UNIT_CURRENCIES[currency];
+  if (sub) return { currency: sub.main, divisor: sub.divisor };
+  return { currency, divisor: 1 };
+}
+
 function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
   const ctp = meta.currentTradingPeriod;
   if (!ctp) return "CLOSED";
@@ -282,7 +300,8 @@ export class YahooFinanceClient implements DataProvider {
     if (this.isHKExchange(exchange) && /^\d+$/.test(ticker)) {
       return ticker.padStart(4, "0");
     }
-    return ticker;
+    // Yahoo Finance uses hyphens where IBKR uses spaces (e.g. "HEXA B" → "HEXA-B")
+    return ticker.replace(/ /g, "-");
   }
 
   private getSymbol(ticker: string, exchange: string): string {
@@ -297,11 +316,17 @@ export class YahooFinanceClient implements DataProvider {
     if (this.tickerHasSuffix(ticker)) return [ticker];
 
     const normalized = this.normalizeTicker(ticker, exchange);
+
+    // For tickers with dots that aren't Yahoo suffixes (e.g. "BTC.USD"),
+    // also try replacing the dot with a hyphen (Yahoo uses "BTC-USD" for crypto pairs)
+    const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
+
     const ex = (exchange || "").toUpperCase();
     if (!ex) {
       const symbols = new Set<string>();
       // For numeric tickers with no exchange, also try HK-padded variant
       const candidates = [normalized];
+      if (dotVariant) candidates.unshift(dotVariant); // Try hyphen variant first
       if (/^\d+$/.test(normalized) && normalized.length < 4) {
         candidates.push(normalized.padStart(4, "0"));
       }
@@ -311,8 +336,17 @@ export class YahooFinanceClient implements DataProvider {
       return Array.from(symbols);
     }
     const fallbacks = EXCHANGE_FALLBACKS[exchange];
-    if (fallbacks) return fallbacks.map((s) => `${normalized}${s}`);
-    return [this.getSymbol(ticker, exchange)];
+    if (fallbacks) {
+      const results = fallbacks.map((s) => `${normalized}${s}`);
+      if (dotVariant) results.unshift(...fallbacks.map((s) => `${dotVariant}${s}`));
+      return results;
+    }
+    const primary = this.getSymbol(ticker, exchange);
+    if (dotVariant) {
+      const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
+      return [`${dotVariant}${suffix}`, primary];
+    }
+    return [primary];
   }
 
   private async fetchChart(symbol: string, range: string, interval = "1d", includePrePost = false) {
@@ -438,6 +472,25 @@ export class YahooFinanceClient implements DataProvider {
       return pts?.length ? pts[pts.length - 1]!.value : undefined;
     };
 
+    // Normalize sub-unit currencies (e.g. GBp → GBP, dividing prices by 100)
+    const rawCurrency = meta.currency || "USD";
+    const { currency: normalizedCurrency, divisor: currencyDivisor } = normalizeSubUnitCurrency(rawCurrency);
+
+    if (currencyDivisor !== 1) {
+      // Normalize price history points
+      for (const point of history) {
+        point.close /= currencyDivisor;
+        if (point.open != null) point.open /= currencyDivisor;
+        if (point.high != null) point.high /= currencyDivisor;
+        if (point.low != null) point.low /= currencyDivisor;
+      }
+      // Normalize meta prices
+      if (meta.regularMarketPrice != null) meta.regularMarketPrice /= currencyDivisor;
+      if (meta.chartPreviousClose != null) meta.chartPreviousClose /= currencyDivisor;
+      if (meta.fiftyTwoWeekHigh != null) meta.fiftyTwoWeekHigh /= currencyDivisor;
+      if (meta.fiftyTwoWeekLow != null) meta.fiftyTwoWeekLow /= currencyDivisor;
+    }
+
     const currentPrice = meta.regularMarketPrice ?? history[history.length - 1]!.close;
     const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
     const change = prev != null ? currentPrice - prev : 0;
@@ -446,10 +499,18 @@ export class YahooFinanceClient implements DataProvider {
     const marketState = deriveMarketState(meta);
     const extHours = await this.fetchExtendedHoursData(symbol, currentPrice, meta);
 
+    // Normalize extended hours prices too
+    if (currencyDivisor !== 1) {
+      if (extHours.preMarketPrice != null) extHours.preMarketPrice /= currencyDivisor;
+      if (extHours.preMarketChange != null) extHours.preMarketChange /= currencyDivisor;
+      if (extHours.postMarketPrice != null) extHours.postMarketPrice /= currencyDivisor;
+      if (extHours.postMarketChange != null) extHours.postMarketChange /= currencyDivisor;
+    }
+
     const quote: Quote = {
       symbol,
       price: currentPrice,
-      currency: meta.currency || "USD",
+      currency: normalizedCurrency,
       change,
       changePercent: changePct,
       high52w: meta.fiftyTwoWeekHigh,
@@ -553,6 +614,24 @@ export class YahooFinanceClient implements DataProvider {
     for (const symbol of symbolsToTry) {
       try {
         const { meta, history } = await this.fetchChart(symbol, "1mo");
+
+        // Normalize sub-unit currencies
+        const rawCurrency = meta.currency || "USD";
+        const { currency: normalizedCurrency, divisor: currencyDivisor } = normalizeSubUnitCurrency(rawCurrency);
+
+        if (currencyDivisor !== 1) {
+          for (const point of history) {
+            point.close /= currencyDivisor;
+            if (point.open != null) point.open /= currencyDivisor;
+            if (point.high != null) point.high /= currencyDivisor;
+            if (point.low != null) point.low /= currencyDivisor;
+          }
+          if (meta.regularMarketPrice != null) meta.regularMarketPrice /= currencyDivisor;
+          if (meta.chartPreviousClose != null) meta.chartPreviousClose /= currencyDivisor;
+          if (meta.fiftyTwoWeekHigh != null) meta.fiftyTwoWeekHigh /= currencyDivisor;
+          if (meta.fiftyTwoWeekLow != null) meta.fiftyTwoWeekLow /= currencyDivisor;
+        }
+
         const latest = history[history.length - 1]!;
         const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
         const price = meta.regularMarketPrice ?? latest.close;
@@ -561,10 +640,17 @@ export class YahooFinanceClient implements DataProvider {
         const marketState = deriveMarketState(meta);
         const extHours = await this.fetchExtendedHoursData(symbol, price, meta);
 
+        if (currencyDivisor !== 1) {
+          if (extHours.preMarketPrice != null) extHours.preMarketPrice /= currencyDivisor;
+          if (extHours.preMarketChange != null) extHours.preMarketChange /= currencyDivisor;
+          if (extHours.postMarketPrice != null) extHours.postMarketPrice /= currencyDivisor;
+          if (extHours.postMarketChange != null) extHours.postMarketChange /= currencyDivisor;
+        }
+
         const quote: Quote = {
           symbol,
           price,
-          currency: meta.currency || "USD",
+          currency: normalizedCurrency,
           change,
           changePercent: prev ? (change / prev) * 100 : 0,
           high52w: meta.fiftyTwoWeekHigh,
@@ -588,6 +674,9 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch exchange rate to USD */
   async getExchangeRate(fromCurrency: string): Promise<number> {
+    // Normalize sub-unit currencies to their main unit
+    const { currency: normalized } = normalizeSubUnitCurrency(fromCurrency);
+    fromCurrency = normalized;
     if (fromCurrency === "USD") return 1;
 
     if (this.cache) {
@@ -701,7 +790,19 @@ export class YahooFinanceClient implements DataProvider {
 
     for (const symbol of symbolsToTry) {
       try {
-        const { history } = await this.fetchChart(symbol, params.range, params.interval);
+        const { meta, history } = await this.fetchChart(symbol, params.range, params.interval);
+
+        // Normalize sub-unit currencies in price history
+        const { divisor } = normalizeSubUnitCurrency(meta.currency || "USD");
+        if (divisor !== 1) {
+          for (const point of history) {
+            point.close /= divisor;
+            if (point.open != null) point.open /= divisor;
+            if (point.high != null) point.high /= divisor;
+            if (point.low != null) point.low /= divisor;
+          }
+        }
+
         if (this.cache) this.cache.setCache(ticker, cacheKey, history, params.ttl);
         return history;
       } catch (err) {
