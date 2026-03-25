@@ -29,6 +29,7 @@ interface ResultItem {
   right?: string;
   category: string;
   themeId?: string; // for theme items — enables live preview
+  pluginToggle?: () => void; // for plugin items — toggle with space
   action: () => void | Promise<void>;
 }
 
@@ -392,20 +393,20 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         : toggleablePlugins;
       for (const p of filtered) {
         const isEnabled = !disabledPlugins.includes(p.id);
+        const toggleAction = () => {
+          dispatch({ type: "TOGGLE_PLUGIN", pluginId: p.id });
+          const newDisabled = isEnabled
+            ? [...disabledPlugins, p.id]
+            : disabledPlugins.filter((id) => id !== p.id);
+          saveConfig({ ...state.config, disabledPlugins: newDisabled }).catch(() => {});
+        };
         items.push({
           id: `plugin:${p.id}`,
-          label: `${isEnabled ? "[on]" : "[off]"} ${p.name}`,
+          label: `${isEnabled ? "\u2713" : "\u2717"} ${p.name}`,
           detail: p.description || "",
           category: "Plugins",
-          action: () => {
-            dispatch({ type: "TOGGLE_PLUGIN", pluginId: p.id });
-            const newDisabled = isEnabled
-              ? [...disabledPlugins, p.id]
-              : disabledPlugins.filter((id) => id !== p.id);
-            saveConfig({ ...state.config, disabledPlugins: newDisabled }).catch(() => {});
-            // Stay in plugin mode — re-trigger by keeping query
-            setQuery(query);
-          },
+          pluginToggle: toggleAction,
+          action: toggleAction,
         });
       }
     } else if (match && match.command.id === "theme") {
@@ -543,6 +544,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
     } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
       setSelectedIdx((i) => Math.max(i - 1, 0));
+    } else if (event.name === "space" && isPluginMode) {
+      // Space toggles plugins without closing
+      const selected = results[selectedIdx];
+      if (selected?.pluginToggle) selected.pluginToggle();
     } else if (event.name === "return" || event.name === "enter") {
       const selected = results[selectedIdx];
       if (selected) selected.action();
@@ -700,6 +705,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
       {/* Bottom padding + esc hint */}
       <box flexDirection="row" height={1} paddingX={2}>
+        {isPluginMode && <text fg={colors.textMuted}>space toggle</text>}
         <box flexGrow={1} />
         <text fg={colors.textMuted}>esc to close</text>
       </box>
