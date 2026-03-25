@@ -57,7 +57,8 @@ export type AppAction =
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
   | { type: "TOGGLE_PLUGIN"; pluginId: string }
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
-  | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number };
+  | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
+  | { type: "UPDATE_LAYOUT"; layout: import("../types/config").PaneLayoutEntry[] };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -161,6 +162,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, exchangeRates };
     }
 
+    case "UPDATE_LAYOUT":
+      return { ...state, config: { ...state.config, layout: action.layout } };
 
     default:
       return state;
