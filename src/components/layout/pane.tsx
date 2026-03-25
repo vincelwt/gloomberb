@@ -21,6 +21,7 @@ export function PaneWrapper({ title, focused, width, flexGrow, onMouseDown, chil
       title={title}
       titleAlignment="left"
       backgroundColor={colors.bg}
+      overflow="hidden"
       onMouseDown={onMouseDown}
     >
       {children}
