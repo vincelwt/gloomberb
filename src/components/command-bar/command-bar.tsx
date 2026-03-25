@@ -195,6 +195,16 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         break;
       }
       default:
+        // Commands with hasArg are prefix-driven modes (theme, plugins, search)
+        // — enter them by setting the query to their prefix instead of closing
+        if (cmd.hasArg) {
+          setQuery(cmd.prefix + " ");
+          if (inputRef.current) {
+            (inputRef.current as any).editBuffer?.setText?.(cmd.prefix + " ") ||
+              (inputRef.current as any).setText?.(cmd.prefix + " ");
+          }
+          return;
+        }
         cmd.execute(dispatch, ctx);
         close();
     }
