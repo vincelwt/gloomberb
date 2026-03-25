@@ -24,6 +24,8 @@ export interface AppState {
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
+  /** True when a plugin/tab is capturing keyboard input (e.g. text editing) */
+  inputCaptured: boolean;
 
   // Updates
   updateAvailable: ReleaseInfo | null;
@@ -52,7 +54,8 @@ export type AppAction =
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
-  | { type: "TOGGLE_PLUGIN"; pluginId: string };
+  | { type: "TOGGLE_PLUGIN"; pluginId: string }
+  | { type: "SET_INPUT_CAPTURED"; captured: boolean };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -147,6 +150,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, config: { ...state.config, disabledPlugins } };
     }
 
+    case "SET_INPUT_CAPTURED":
+      return { ...state, inputCaptured: action.captured };
+
     default:
       return state;
   }
@@ -190,6 +196,7 @@ export function createInitialState(config: AppConfig): AppState {
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: true,
+    inputCaptured: false,
     updateAvailable: null,
     updateProgress: null,
   };

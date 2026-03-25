@@ -242,9 +242,9 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       return;
     }
 
-    // Don't process main shortcuts when overlays are open
+    // Don't process main shortcuts when overlays are open or input is captured
     // (panes already get focused=false via shell.tsx)
-    if (state.commandBarOpen || state.configOpen) return;
+    if (state.commandBarOpen || state.configOpen || state.inputCaptured) return;
 
     if (event.name === "tab") {
       dispatch({

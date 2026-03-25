@@ -478,7 +478,8 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const handlePluginCapture = useCallback((capturing: boolean) => {
     stateRef.current = { ...stateRef.current, pluginCaptured: capturing };
     setPluginCaptured(capturing);
-  }, []);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: capturing });
+  }, [dispatch]);
 
   // Exit chart interactive mode when switching away from chart tab
   useEffect(() => {
@@ -487,7 +488,8 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     }
     // Reset plugin capture when switching tabs
     setPluginCaptured(false);
-  }, [state.activeRightTab]);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [state.activeRightTab, dispatch]);
 
   useKeyboard((event) => {
     const s = stateRef.current;
