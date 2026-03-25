@@ -22,6 +22,8 @@ import { tickerDetailPlugin, setMarkdownStore } from "./plugins/builtin/ticker-d
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
 import { saveConfig } from "./data/config-store";
+import { checkForUpdate, performUpdate } from "./updater";
+import { VERSION } from "./version";
 import { join } from "path";
 
 interface AppInnerProps {
@@ -158,6 +160,13 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
     }
   }, [pluginRegistry.brokers, importBrokerPositions]);
 
+  // Check for updates on mount
+  useEffect(() => {
+    checkForUpdate(VERSION).then((release) => {
+      if (release) dispatch({ type: "SET_UPDATE_AVAILABLE", release });
+    });
+  }, []);
+
   // Load tickers on mount
   useEffect(() => {
     if (state.initialized) return;
@@ -251,6 +260,10 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
       for (const t of state.tickers.values()) {
         refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
       }
+    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress) {
+      performUpdate(state.updateAvailable, (progress) => {
+        dispatch({ type: "SET_UPDATE_PROGRESS", progress });
+      });
     }
   });
 
