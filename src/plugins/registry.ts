@@ -5,6 +5,7 @@ import type { GloomSlots, GloomPlugin, GloomPluginContext, PaneDef, CommandDef, 
 import type { BrokerAdapter } from "../types/broker";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
+import type { DataProvider } from "../types/data-provider";
 
 export class PluginRegistry {
   private slotRegistry;
@@ -14,6 +15,7 @@ export class PluginRegistry {
   private _commands = new Map<string, CommandDef>();
   private _columns = new Map<string, CustomColumnDef>();
   private _brokers = new Map<string, BrokerAdapter>();
+  private _dataProviders = new Map<string, DataProvider>();
 
   // External data accessors (set by app)
   getTickerFn: ((symbol: string) => TickerFile | null) = () => null;
@@ -46,12 +48,24 @@ export class PluginRegistry {
     return this._brokers;
   }
 
+  get dataProviders(): ReadonlyMap<string, DataProvider> {
+    return this._dataProviders;
+  }
+
+  /** Returns the last registered provider (paid providers override the default Yahoo) */
+  getActiveProvider(): DataProvider | undefined {
+    let last: DataProvider | undefined;
+    for (const p of this._dataProviders.values()) last = p;
+    return last;
+  }
+
   private createContext(): GloomPluginContext {
     return {
       registerPane: (pane) => this._panes.set(pane.id, pane),
       registerCommand: (cmd) => this._commands.set(cmd.id, cmd),
       registerColumn: (col) => this._columns.set(col.id, col),
       registerBroker: (broker) => this._brokers.set(broker.id, broker),
+      registerDataProvider: (provider) => this._dataProviders.set(provider.id, provider),
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (ticker) => this.getTickerFn(ticker),
       getConfig: () => this.getConfigFn(),
@@ -71,6 +85,11 @@ export class PluginRegistry {
     // Register broker
     if (plugin.broker) {
       this._brokers.set(plugin.broker.id, plugin.broker);
+    }
+
+    // Register data provider
+    if (plugin.dataProvider) {
+      this._dataProviders.set(plugin.dataProvider.id, plugin.dataProvider);
     }
 
     // Register slot renderers with OpenTUI's registry
@@ -114,6 +133,10 @@ export class PluginRegistry {
 
     if (plugin.broker) {
       this._brokers.delete(plugin.broker.id);
+    }
+
+    if (plugin.dataProvider) {
+      this._dataProviders.delete(plugin.dataProvider.id);
     }
 
     this.plugins.delete(pluginId);

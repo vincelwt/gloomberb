@@ -3,6 +3,7 @@ import type { TickerFile } from "./ticker";
 import type { TickerFinancials } from "./financials";
 import type { BrokerAdapter } from "./broker";
 import type { ColumnConfig } from "./config";
+import type { DataProvider } from "./data-provider";
 
 /** All available slot definitions for plugins */
 export interface GloomSlots {
@@ -73,6 +74,7 @@ export interface GloomPluginContext {
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
+  registerDataProvider(provider: DataProvider): void;
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerFile | null;
   getConfig(): import("./config").AppConfig;
@@ -92,6 +94,7 @@ export interface GloomPlugin {
 
   panes?: PaneDef[];
   broker?: BrokerAdapter;
+  dataProvider?: DataProvider;
   slots?: Partial<{
     [K in keyof GloomSlots]: (props: GloomSlots[K]) => ReactNode;
   }>;
