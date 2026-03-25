@@ -62,7 +62,6 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Publish to npm
-        working-directory: npm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           node -e "const p=require('./package.json'); p.version='$VERSION'; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2)+'\n')"
