@@ -1,5 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
@@ -107,6 +108,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const tickers = getActiveTabTickers(state);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const currentTabIdx = tabs.findIndex((t) => t.id === state.activeLeftTab);
 
@@ -117,11 +119,11 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     if (key === "j" || key === "down") {
       const next = Math.min(selectedIdx + 1, tickers.length - 1);
       setSelectedIdx(next);
-      if (tickers[next]) dispatch({ type: "SELECT_TICKER", symbol: tickers[next]!.frontmatter.ticker });
+      if (tickers[next]) dispatch({ type: "PREVIEW_TICKER", symbol: tickers[next]!.frontmatter.ticker });
     } else if (key === "k" || key === "up") {
       const next = Math.max(selectedIdx - 1, 0);
       setSelectedIdx(next);
-      if (tickers[next]) dispatch({ type: "SELECT_TICKER", symbol: tickers[next]!.frontmatter.ticker });
+      if (tickers[next]) dispatch({ type: "PREVIEW_TICKER", symbol: tickers[next]!.frontmatter.ticker });
     } else if (key === "h" || key === "left") {
       const newIdx = Math.max(currentTabIdx - 1, 0);
       if (tabs[newIdx]) dispatch({ type: "SET_LEFT_TAB", tab: tabs[newIdx]!.id });
@@ -133,6 +135,18 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       if (tickers[selectedIdx]) dispatch({ type: "SELECT_TICKER", symbol: tickers[selectedIdx]!.frontmatter.ticker });
     }
   });
+
+  // Auto-scroll to keep selected row visible
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb) return;
+    const viewportH = sb.viewport.height;
+    if (selectedIdx < sb.scrollTop) {
+      sb.scrollTo(selectedIdx);
+    } else if (selectedIdx >= sb.scrollTop + viewportH) {
+      sb.scrollTo(selectedIdx - viewportH + 1);
+    }
+  }, [selectedIdx]);
 
   // Auto-select first ticker when list changes
   if (tickers.length > 0 && selectedIdx >= tickers.length) {
@@ -162,7 +176,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       </box>
 
       {/* Ticker rows */}
-      <scrollbox flexGrow={1} scrollY>
+      <scrollbox ref={scrollRef} flexGrow={1} scrollY>
         {tickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
             <text fg={colors.textDim}>No tickers. Press Cmd+K to add one.</text>

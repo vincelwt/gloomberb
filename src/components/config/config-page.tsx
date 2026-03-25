@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { SelectRenderable } from "@opentui/core";
+import type { SelectRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { colors } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { saveConfig } from "../../data/config-store";
@@ -81,6 +81,19 @@ function ColumnsSection({ focused }: { focused: boolean }) {
   );
 
   const addSelectRef = useRef<SelectRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+
+  // Auto-scroll to keep selected column visible
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb) return;
+    const viewportH = sb.viewport.height;
+    if (selectedIdx < sb.scrollTop) {
+      sb.scrollTo(selectedIdx);
+    } else if (selectedIdx >= sb.scrollTop + viewportH) {
+      sb.scrollTo(selectedIdx - viewportH + 1);
+    }
+  }, [selectedIdx]);
 
   useKeyboard((event) => {
     if (!focused) return;
@@ -205,7 +218,7 @@ function ColumnsSection({ focused }: { focused: boolean }) {
       </box>
 
       {/* Column rows */}
-      <scrollbox flexGrow={1} scrollY>
+      <scrollbox ref={scrollRef} flexGrow={1} scrollY>
         {columns.map((col, idx) => {
           const isSel = idx === selectedIdx && mode === "list";
           return (
