@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import { AppProvider, useAppState } from "./state/app-context";
@@ -6,6 +6,7 @@ import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { CommandBar } from "./components/command-bar/command-bar";
+import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { DialogProvider, useDialogState } from "@opentui-ui/dialog/react";
 import { PluginRegistry } from "./plugins/registry";
 import { MarkdownStore } from "./data/markdown-store";
@@ -302,7 +303,10 @@ interface AppProps {
   renderer: CliRenderer;
 }
 
-export function App({ config, renderer }: AppProps) {
+export function App({ config: initialConfig, renderer }: AppProps) {
+  const [config, setConfig] = useState(initialConfig);
+  const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
+
   // Apply saved theme before first render
   if (config.theme) applyTheme(config.theme);
 
@@ -332,6 +336,19 @@ export function App({ config, renderer }: AppProps) {
   pluginRegistry.register(optionsPlugin);
   pluginRegistry.register(notesPlugin);
   pluginRegistry.register(askAiPlugin);
+
+  if (showOnboarding) {
+    return (
+      <OnboardingWizard
+        config={config}
+        pluginRegistry={pluginRegistry}
+        onComplete={(updatedConfig) => {
+          setConfig(updatedConfig);
+          setShowOnboarding(false);
+        }}
+      />
+    );
+  }
 
   return (
     <AppProvider config={config}>

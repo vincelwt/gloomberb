@@ -381,7 +381,7 @@ export const themes: Record<string, Theme> = {
 
   midnight: {
     name: "Midnight Blue",
-    description: "Deep blue Bloomberg-inspired",
+    description: "",
     bg: "#000022",
     panel: "#000033",
     border: "#003366",
