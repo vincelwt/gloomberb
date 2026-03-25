@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
@@ -225,6 +226,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const currentTabIdx = tabs.findIndex((t) => t.id === state.activeLeftTab);
   const isPortfolioTab = state.config.portfolios.some((p) => p.id === state.activeLeftTab);
@@ -294,11 +296,11 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     if (key === "j" || key === "down") {
       const next = Math.min(selectedIdx + 1, sortedTickers.length - 1);
       setSelectedIdx(next);
-      if (sortedTickers[next]) dispatch({ type: "SELECT_TICKER", symbol: sortedTickers[next]!.frontmatter.ticker });
+      if (sortedTickers[next]) dispatch({ type: "PREVIEW_TICKER", symbol: sortedTickers[next]!.frontmatter.ticker });
     } else if (key === "k" || key === "up") {
       const next = Math.max(selectedIdx - 1, 0);
       setSelectedIdx(next);
-      if (sortedTickers[next]) dispatch({ type: "SELECT_TICKER", symbol: sortedTickers[next]!.frontmatter.ticker });
+      if (sortedTickers[next]) dispatch({ type: "PREVIEW_TICKER", symbol: sortedTickers[next]!.frontmatter.ticker });
     } else if (key === "h" || key === "left") {
       const newIdx = Math.max(currentTabIdx - 1, 0);
       if (tabs[newIdx]) dispatch({ type: "SET_LEFT_TAB", tab: tabs[newIdx]!.id });
@@ -309,6 +311,18 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       if (sortedTickers[selectedIdx]) dispatch({ type: "SELECT_TICKER", symbol: sortedTickers[selectedIdx]!.frontmatter.ticker });
     }
   });
+
+  // Auto-scroll to keep selected row visible
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb) return;
+    const viewportH = sb.viewport.height;
+    if (selectedIdx < sb.scrollTop) {
+      sb.scrollTo(selectedIdx);
+    } else if (selectedIdx >= sb.scrollTop + viewportH) {
+      sb.scrollTo(selectedIdx - viewportH + 1);
+    }
+  }, [selectedIdx]);
 
   // Auto-select first ticker when list changes
   if (sortedTickers.length > 0 && selectedIdx >= sortedTickers.length) {
@@ -324,7 +338,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       />
 
       {/* Scrollable table with headers + rows */}
-      <scrollbox flexGrow={1} scrollX scrollY>
+      <scrollbox ref={scrollRef} flexGrow={1} scrollX scrollY>
         {/* Column headers — clickable for sorting */}
         <box flexDirection="row" height={1} paddingX={1}>
           {cols.map((col) => {

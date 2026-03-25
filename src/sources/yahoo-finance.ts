@@ -4,26 +4,69 @@ import type { DataProvider, NewsItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 
 // Exchange suffix mapping for Yahoo Finance ticker symbols
+// Includes both canonical codes and common IBKR listing exchange aliases
 const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
-  NASDAQ: "", NYSE: "", AMEX: "",
-  TYO: ".T", HKEX: ".HK", SGX: ".SI", IDX: ".JK",
-  KRX: ".KS", KOSDAQ: ".KQ",
+  // US exchanges
+  NASDAQ: "", NMS: "", NYSE: "", AMEX: "", ARCA: "", NYSEArca: "", BATS: "", BYX: "", IEX: "", PINK: "", OTC: "",
+  // Canada
+  TSX: ".TO", VENTURE: ".V", CSE2: ".CN", CNSX: ".CN",
+  // Japan (note: TSE is ambiguous — handled via EXCHANGE_FALLBACKS)
+  TYO: ".T", JPX: ".T", TSEJ: ".T",
+  // Hong Kong
+  HKEX: ".HK", SEHK: ".HK", HKG: ".HK",
+  // China
+  SSE: ".SS", SHG: ".SS", SZSE: ".SZ", SHE: ".SZ",
+  // Taiwan
   TWSE: ".TW", TPE: ".TW",
-  SSE: ".SS", SZSE: ".SZ",
-  EURONEXT: ".AS", XETRA: ".DE",
-  LSE: ".L", ASX: ".AX", OSE: ".OL",
+  // Korea
+  KRX: ".KS", KSE: ".KS", KOSDAQ: ".KQ",
+  // Singapore
+  SGX: ".SI", SES: ".SI",
+  // Indonesia
+  IDX: ".JK",
+  // India
+  NSE: ".NS", BSE: ".BO",
+  // Australia & New Zealand
+  ASX: ".AX", NZE: ".NZ",
+  // Thailand, Malaysia, Philippines, Vietnam
+  SET: ".BK", BKK: ".BK", KLSE: ".KL", MYX: ".KL", PSE: ".PS", HOSE: ".VN", HNX: ".VN",
+  // UK
+  LSE: ".L", LSEETF: ".L",
+  // Germany
+  XETRA: ".DE", IBIS: ".DE", IBIS2: ".DE", FWB: ".F", FWB2: ".DE", GETTEX: ".DE", TGATE: ".DE", SWB: ".SG",
+  // France, Netherlands, Belgium, Portugal (Euronext)
+  EURONEXT: ".AS", AEB: ".AS", SBF: ".PA", "ENEXT.BE": ".BR", BVL: ".LS",
+  // Italy & Spain
+  BVME: ".MI", BM: ".MC",
+  // Switzerland
+  EBS: ".SW", SWX: ".SW",
+  // Nordics
+  SFB: ".ST", Stockholm: ".ST", OMX: ".ST", CPH: ".CO", HEX: ".HE", OSE: ".OL", OMXNO: ".OL", ICEX: ".IC",
+  // Central/Eastern Europe
+  VSE: ".VI", WSE: ".WA", PRA: ".PR", BUX: ".BD", ATHEX: ".AT", BVB: ".RO", BIST: ".IS",
+  // Israel
+  TASE: ".TA",
+  // South Africa
+  JSE: ".JO",
+  // Brazil & Latin America
+  BVMF: ".SA", MEXI: ".MX", BYMA: ".BA", BCS: ".SN",
+  // Middle East
+  TADAWUL: ".SAU", QSE: ".QA", DFM: ".AE",
 };
 
 const EXCHANGE_FALLBACKS: Record<string, string[]> = {
-  KRX: [".KS", ".KQ"],
-  TWSE: [".TW", ".TWO"],
-  TPE: [".TW", ".TWO"],
-  EURONEXT: [".AS", ".PA", ".BR"],
+  // TSE is ambiguous: Toronto (.TO) vs Tokyo (.T) — try both
+  TSE: [".TO", ".T"],
+  KRX: [".KS", ".KQ"], KSE: [".KS", ".KQ"],
+  TWSE: [".TW", ".TWO"], TPE: [".TW", ".TWO"],
+  EURONEXT: [".AS", ".PA", ".BR"], AEB: [".AS", ".PA", ".BR"], SBF: [".PA", ".AS", ".BR"],
 };
 
 const GENERIC_SUFFIX_FALLBACKS = [
-  "", ".HK", ".T", ".KS", ".KQ", ".TW", ".TWO", ".SS", ".SZ",
-  ".AS", ".PA", ".BR", ".DE", ".L", ".AX", ".SI", ".JK", ".OL", ".NS", ".BO", ".SA",
+  "", ".HK", ".T", ".TO", ".KS", ".KQ", ".TW", ".TWO", ".SS", ".SZ",
+  ".AS", ".PA", ".BR", ".DE", ".F", ".L", ".MI", ".MC", ".SW", ".AX",
+  ".SI", ".JK", ".OL", ".ST", ".CO", ".HE", ".NS", ".BO", ".SA",
+  ".BK", ".KL", ".NZ", ".JO", ".TA", ".WA", ".VI",
 ];
 
 const MAX_RETRIES = 3;
@@ -217,18 +260,54 @@ export class YahooFinanceClient implements DataProvider {
     });
   }
 
+  /** All known Yahoo Finance suffixes — used to detect tickers that already include one */
+  private static KNOWN_SUFFIXES = new Set(
+    Object.values(EXCHANGE_SUFFIX_MAP).filter(Boolean)
+      .concat(GENERIC_SUFFIX_FALLBACKS.filter(Boolean)),
+  );
+
+  /** Check if the ticker already ends with a known Yahoo suffix (e.g. "6324.T") */
+  private tickerHasSuffix(ticker: string): boolean {
+    const dot = ticker.indexOf(".");
+    if (dot < 0) return false;
+    return YahooFinanceClient.KNOWN_SUFFIXES.has(ticker.slice(dot));
+  }
+
+  private isHKExchange(exchange: string): boolean {
+    return exchange === "HKEX" || exchange === "SEHK" || exchange === "HKG";
+  }
+
+  private normalizeTicker(ticker: string, exchange: string): string {
+    // Hong Kong stocks need 4-digit codes with leading zeros
+    if (this.isHKExchange(exchange) && /^\d+$/.test(ticker)) {
+      return ticker.padStart(4, "0");
+    }
+    return ticker;
+  }
+
   private getSymbol(ticker: string, exchange: string): string {
+    // If ticker already contains a Yahoo suffix, use it as-is
+    if (this.tickerHasSuffix(ticker)) return ticker;
     const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
-    const normalized = exchange === "HKEX" && /^\d+$/.test(ticker) ? ticker.padStart(4, "0") : ticker;
-    return `${normalized}${suffix}`;
+    return `${this.normalizeTicker(ticker, exchange)}${suffix}`;
   }
 
   private getSymbolsToTry(ticker: string, exchange: string): string[] {
-    const normalized = exchange === "HKEX" && /^\d+$/.test(ticker) ? ticker.padStart(4, "0") : ticker;
+    // If ticker already contains a Yahoo suffix, use it as-is
+    if (this.tickerHasSuffix(ticker)) return [ticker];
+
+    const normalized = this.normalizeTicker(ticker, exchange);
     const ex = (exchange || "").toUpperCase();
     if (!ex) {
       const symbols = new Set<string>();
-      for (const suffix of GENERIC_SUFFIX_FALLBACKS) symbols.add(`${normalized}${suffix}`);
+      // For numeric tickers with no exchange, also try HK-padded variant
+      const candidates = [normalized];
+      if (/^\d+$/.test(normalized) && normalized.length < 4) {
+        candidates.push(normalized.padStart(4, "0"));
+      }
+      for (const candidate of candidates) {
+        for (const suffix of GENERIC_SUFFIX_FALLBACKS) symbols.add(`${candidate}${suffix}`);
+      }
       return Array.from(symbols);
     }
     const fallbacks = EXCHANGE_FALLBACKS[exchange];
@@ -468,34 +547,43 @@ export class YahooFinanceClient implements DataProvider {
       if (cached) return cached;
     }
 
-    const symbol = this.getSymbol(ticker, exchange);
-    const { meta, history } = await this.fetchChart(symbol, "1mo");
-    const latest = history[history.length - 1]!;
-    const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
-    const price = meta.regularMarketPrice ?? latest.close;
-    const change = prev != null ? price - prev : 0;
+    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    let lastError: any;
 
-    const marketState = deriveMarketState(meta);
-    const extHours = await this.fetchExtendedHoursData(symbol, price, meta);
+    for (const symbol of symbolsToTry) {
+      try {
+        const { meta, history } = await this.fetchChart(symbol, "1mo");
+        const latest = history[history.length - 1]!;
+        const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
+        const price = meta.regularMarketPrice ?? latest.close;
+        const change = prev != null ? price - prev : 0;
 
-    const quote: Quote = {
-      symbol,
-      price,
-      currency: meta.currency || "USD",
-      change,
-      changePercent: prev ? (change / prev) * 100 : 0,
-      high52w: meta.fiftyTwoWeekHigh,
-      low52w: meta.fiftyTwoWeekLow,
-      name: meta.shortName || meta.longName,
-      lastUpdated: Date.now(),
-      exchangeName: meta.exchangeName,
-      fullExchangeName: meta.fullExchangeName,
-      marketState,
-      ...extHours,
-    };
+        const marketState = deriveMarketState(meta);
+        const extHours = await this.fetchExtendedHoursData(symbol, price, meta);
 
-    if (this.cache) this.cache.setCache(ticker, "quote", quote, QUOTE_TTL);
-    return quote;
+        const quote: Quote = {
+          symbol,
+          price,
+          currency: meta.currency || "USD",
+          change,
+          changePercent: prev ? (change / prev) * 100 : 0,
+          high52w: meta.fiftyTwoWeekHigh,
+          low52w: meta.fiftyTwoWeekLow,
+          name: meta.shortName || meta.longName,
+          lastUpdated: Date.now(),
+          exchangeName: meta.exchangeName,
+          fullExchangeName: meta.fullExchangeName,
+          marketState,
+          ...extHours,
+        };
+
+        if (this.cache) this.cache.setCache(ticker, "quote", quote, QUOTE_TTL);
+        return quote;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error(`No quote for ${ticker}`);
   }
 
   /** Fetch exchange rate to USD */
@@ -539,13 +627,15 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch news for a ticker */
-  async getNews(ticker: string, count = 10): Promise<NewsItem[]> {
+  async getNews(ticker: string, count = 10, exchange = ""): Promise<NewsItem[]> {
     if (this.cache) {
       const cached = this.cache.getCached<NewsItem[]>(ticker, "news");
       if (cached) return cached.map((n) => ({ ...n, publishedAt: new Date(n.publishedAt) }));
     }
 
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=0&newsCount=${count}`;
+    // Use the Yahoo symbol for better search results on international tickers
+    const symbol = this.getSymbol(ticker, exchange);
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=${count}`;
     try {
       const resp = await fetch(url, {
         headers: this.defaultHeaders(),
