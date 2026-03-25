@@ -1,0 +1,382 @@
+import { useEffect, useState } from "react";
+import { useKeyboard } from "@opentui/react";
+import { TextAttributes } from "@opentui/core";
+import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
+import type { DataProvider } from "../../types/data-provider";
+import type { OptionContract, OptionsChain } from "../../types/financials";
+import { useSelectedTicker } from "../../state/app-context";
+import { colors, hoverBg } from "../../theme/colors";
+import { padTo, formatCompact, formatNumber } from "../../utils/format";
+
+let _dataProvider: DataProvider | undefined;
+export function setOptionsDataProvider(provider: DataProvider) {
+  _dataProvider = provider;
+}
+
+const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatExpDate(ts: number): string {
+  const d = new Date(ts * 1000);
+  const month = MONTH_ABBREV[d.getMonth()] || String(d.getMonth() + 1);
+  const yy = String(d.getFullYear()).slice(2);
+  return `${month} ${d.getDate()} '${yy}`;
+}
+
+/**
+ * Parse IBKR option symbol like "UBER 260821C00090000" into components.
+ * Returns null if not a recognized option symbol.
+ */
+function parseOptionSymbol(symbol: string): { underlying: string; expTs: number; strike: number; side: "C" | "P" } | null {
+  const m = symbol.match(/^(\S+)\s+(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
+  if (!m) return null;
+  const [, underlying, yy, mm, dd, side, rawStrike] = m;
+  const strike = parseInt(rawStrike!, 10) / 1000;
+  const year = 2000 + parseInt(yy!, 10);
+  const month = parseInt(mm!, 10) - 1;
+  const day = parseInt(dd!, 10);
+  const expTs = Math.floor(new Date(year, month, day).getTime() / 1000);
+  return { underlying: underlying!, expTs, strike, side: side as "C" | "P" };
+}
+
+function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
+  const { ticker } = useSelectedTicker();
+  const [chain, setChain] = useState<OptionsChain | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expIdx, setExpIdx] = useState(0);
+  const [strikeIdx, setStrikeIdx] = useState(0);
+  const [interactive, setInteractive] = useState(false);
+  const [hoveredStrikeIdx, setHoveredStrikeIdx] = useState<number | null>(null);
+  const [hoveredExpIdx, setHoveredExpIdx] = useState<number | null>(null);
+
+  // Determine if we're viewing an option position — if so, resolve the underlying
+  const isOpt = ticker?.frontmatter.asset_category === "OPT";
+  const parsed = isOpt ? parseOptionSymbol(ticker!.frontmatter.ticker) : null;
+  const effectiveTicker = parsed?.underlying ?? ticker?.frontmatter.ticker ?? "";
+  const effectiveExchange = isOpt ? "" : (ticker?.frontmatter.exchange ?? "");
+
+  const enterInteractive = () => {
+    if (!interactive) {
+      setInteractive(true);
+      onCapture(true);
+    }
+  };
+
+  const exitInteractive = () => {
+    if (interactive) {
+      setInteractive(false);
+      onCapture(false);
+    }
+  };
+
+  // Exit interactive mode when ticker changes
+  useEffect(() => {
+    exitInteractive();
+  }, [effectiveTicker]);
+
+  // Fetch initial chain (all expirations list + nearest expiration data)
+  useEffect(() => {
+    if (!effectiveTicker || !_dataProvider?.getOptionsChain) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setChain(null);
+    setExpIdx(0);
+    setStrikeIdx(0);
+
+    _dataProvider.getOptionsChain(effectiveTicker, effectiveExchange).then((data) => {
+      if (cancelled) return;
+      setChain(data);
+
+      // If viewing an option position, find the matching expiration
+      if (parsed && data.expirationDates.length > 0) {
+        const bestExpIdx = data.expirationDates.reduce((best, ts, i) =>
+          Math.abs(ts - parsed.expTs) < Math.abs(data.expirationDates[best]! - parsed.expTs) ? i : best, 0);
+        if (bestExpIdx !== 0) {
+          setExpIdx(bestExpIdx);
+          _dataProvider!.getOptionsChain!(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx]).then((expData) => {
+            if (!cancelled) setChain(expData);
+          }).catch(() => {});
+        }
+      }
+    }).catch((err) => {
+      if (!cancelled) setError(err?.message || "Failed to load options");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveTicker]);
+
+  // Fetch chain when expiration changes (after initial load)
+  useEffect(() => {
+    if (!chain || !effectiveTicker || !_dataProvider?.getOptionsChain) return;
+    const expDate = chain.expirationDates[expIdx];
+    if (expDate == null) return;
+    let cancelled = false;
+    setLoading(true);
+
+    _dataProvider.getOptionsChain(effectiveTicker, effectiveExchange, expDate).then((data) => {
+      if (!cancelled) {
+        setChain(data);
+        setStrikeIdx(0);
+      }
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [expIdx]);
+
+  // Build sorted strike list from the union of calls and puts
+  const strikes = chain ? buildStrikeList(chain) : [];
+
+  // Auto-scroll to matching strike when viewing an option position
+  useEffect(() => {
+    if (!parsed || strikes.length === 0) return;
+    const matchIdx = strikes.findIndex((s) => Math.abs(s - parsed.strike) < 0.01);
+    if (matchIdx >= 0) setStrikeIdx(matchIdx);
+  }, [strikes.length, parsed?.strike]);
+
+  // Keyboard navigation
+  useKeyboard((event) => {
+    if (!focused || !chain) return;
+
+    const isEnter = event.name === "enter" || event.name === "return";
+
+    // Enter/Escape for interactive mode
+    if (isEnter && !interactive) {
+      enterInteractive();
+      return;
+    }
+    if (event.name === "escape" && interactive) {
+      exitInteractive();
+      return;
+    }
+
+    if (!interactive) return;
+
+    // Arrow keys + j/k/h/l in interactive mode
+    const numExp = chain.expirationDates.length;
+    if (event.name === "j" || event.name === "down") {
+      setStrikeIdx((i) => Math.min(i + 1, strikes.length - 1));
+    } else if (event.name === "k" || event.name === "up") {
+      setStrikeIdx((i) => Math.max(i - 1, 0));
+    } else if (event.name === "h" || event.name === "left") {
+      setExpIdx((i) => Math.max(i - 1, 0));
+    } else if (event.name === "l" || event.name === "right") {
+      setExpIdx((i) => Math.min(i + 1, numExp - 1));
+    }
+  });
+
+  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view options.</text>;
+  if (!_dataProvider?.getOptionsChain) return <text fg={colors.textDim}>Options data not available.</text>;
+  if (loading && !chain) return <text fg={colors.textDim}>Loading options chain...</text>;
+  if (error) return <text fg={colors.textDim}>{error}</text>;
+  if (!chain || chain.expirationDates.length === 0) return <text fg={colors.textDim}>No options available for {effectiveTicker}.</text>;
+
+  const innerWidth = Math.max(width - 4, 60);
+  const callsByStrike = new Map<number, OptionContract>(chain.calls.map((c) => [c.strike, c]));
+  const putsByStrike = new Map<number, OptionContract>(chain.puts.map((p) => [p.strike, p]));
+
+  // Column widths for each side
+  const colW = { last: 7, bid: 7, ask: 7, vol: 6, oi: 6 };
+  const sideW = colW.last + colW.bid + colW.ask + colW.vol + colW.oi + 4; // 4 gaps
+  const strikeW = 9;
+  const divW = 1;
+
+  // Position info
+  const posShares = isOpt && parsed
+    ? ticker!.frontmatter.positions.reduce((sum, p) => sum + p.shares, 0)
+    : 0;
+
+  // Expiration selector — show a window of dates around the current selection
+  const maxExpVisible = Math.max(Math.floor((innerWidth - 14) / 13), 3);
+  const expStart = Math.max(0, Math.min(expIdx - Math.floor(maxExpVisible / 2), chain.expirationDates.length - maxExpVisible));
+  const visibleExps = chain.expirationDates.slice(expStart, expStart + maxExpVisible);
+
+  // Selected row detail
+  const selectedStrike = strikes[strikeIdx];
+  const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
+  const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
+
+  const hoverColor = hoverBg();
+
+  return (
+    <box flexDirection="column" flexGrow={1} paddingX={1} onMouseDown={() => { if (!interactive) enterInteractive(); }}>
+      {/* Expiration selector */}
+      <box flexDirection="row" height={1} gap={1}>
+        <text fg={colors.textDim}>Exp:</text>
+        {visibleExps.map((ts, i) => {
+          const realIdx = expStart + i;
+          const isActive = realIdx === expIdx;
+          const isHovered = realIdx === hoveredExpIdx && !isActive;
+          return (
+            <box
+              key={ts}
+              onMouseMove={() => setHoveredExpIdx(realIdx)}
+              onMouseDown={() => { enterInteractive(); setExpIdx(realIdx); }}
+            >
+              <text
+                fg={isActive ? colors.textBright : isHovered ? colors.text : colors.textMuted}
+                attributes={isActive ? TextAttributes.BOLD : isHovered ? TextAttributes.UNDERLINE : 0}
+              >
+                {isActive ? `[${formatExpDate(ts)}]` : ` ${formatExpDate(ts)} `}
+              </text>
+            </box>
+          );
+        })}
+        {loading && <text fg={colors.textDim}> ...</text>}
+      </box>
+
+      {/* Position banner */}
+      {isOpt && parsed && (
+        <box height={1}>
+          <text fg={colors.textBright}>
+            {`Position: ${posShares} ${parsed.side === "C" ? "call" : "put"} contract${posShares !== 1 ? "s" : ""} @ $${parsed.strike}`}
+          </text>
+        </box>
+      )}
+
+      {/* Header labels */}
+      <box flexDirection="row" height={1}>
+        <box width={sideW}><text attributes={TextAttributes.BOLD} fg={colors.positive}>CALLS</text></box>
+        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
+        <box width={strikeW} />
+        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
+        <box width={sideW}><text attributes={TextAttributes.BOLD} fg={colors.negative}>PUTS</text></box>
+      </box>
+
+      {/* Column headers */}
+      <box flexDirection="row" height={1}>
+        <box width={sideW}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+            {padTo("Last", colW.last)} {padTo("Bid", colW.bid)} {padTo("Ask", colW.ask)} {padTo("Vol", colW.vol)} {padTo("OI", colW.oi)}
+          </text>
+        </box>
+        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
+        <box width={strikeW}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>{padTo("Strike", strikeW, "right")}</text>
+        </box>
+        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
+        <box width={sideW}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+            {padTo("Last", colW.last)} {padTo("Bid", colW.bid)} {padTo("Ask", colW.ask)} {padTo("Vol", colW.vol)} {padTo("OI", colW.oi)}
+          </text>
+        </box>
+      </box>
+
+      {/* Chain rows */}
+      <scrollbox flexGrow={1} scrollY>
+        {strikes.map((strike, i) => {
+          const call = callsByStrike.get(strike);
+          const put = putsByStrike.get(strike);
+          const isSelected = interactive && i === strikeIdx;
+          const isHovered = i === hoveredStrikeIdx && !isSelected;
+          const isPositionStrike = parsed && Math.abs(strike - parsed.strike) < 0.01;
+          const bg = isSelected
+            ? colors.selected
+            : isHovered
+              ? hoverColor
+              : isPositionStrike
+                ? colors.selected
+                : colors.bg;
+          const callItm = call?.inTheMoney;
+          const putItm = put?.inTheMoney;
+
+          return (
+            <box
+              key={strike}
+              flexDirection="row"
+              height={1}
+              backgroundColor={bg}
+              onMouseMove={() => setHoveredStrikeIdx(i)}
+              onMouseDown={() => { enterInteractive(); setStrikeIdx(i); }}
+            >
+              <box width={sideW}>
+                <text fg={callItm ? colors.textBright : colors.text}>
+                  {formatContractRow(call, colW)}
+                </text>
+              </box>
+              <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
+              <box width={strikeW}>
+                <text fg={isSelected ? colors.textBright : colors.neutral} attributes={isSelected ? TextAttributes.BOLD : 0}>
+                  {padTo(formatNumber(strike, strike % 1 === 0 ? 0 : 2), strikeW, "right")}
+                </text>
+              </box>
+              <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
+              <box width={sideW}>
+                <text fg={putItm ? colors.textBright : colors.text}>
+                  {formatContractRow(put, colW)}
+                </text>
+              </box>
+            </box>
+          );
+        })}
+      </scrollbox>
+
+      {/* Detail for selected row */}
+      {interactive && (selectedCall || selectedPut) && (
+        <box height={1}>
+          <text fg={colors.textDim}>
+            {selectedCall ? `Call IV: ${(selectedCall.impliedVolatility * 100).toFixed(1)}%` : ""}
+            {selectedCall && selectedPut ? "  |  " : ""}
+            {selectedPut ? `Put IV: ${(selectedPut.impliedVolatility * 100).toFixed(1)}%` : ""}
+          </text>
+        </box>
+      )}
+
+      {/* Help */}
+      <box height={1}>
+        <text fg={colors.textMuted}>
+          {interactive
+            ? "j/k/\u2191\u2193 strike  h/l/\u2190\u2192 expiration  Esc exit"
+            : "Enter to interact"}
+        </text>
+      </box>
+    </box>
+  );
+}
+
+function buildStrikeList(chain: OptionsChain): number[] {
+  const set = new Set<number>();
+  for (const c of chain.calls) set.add(c.strike);
+  for (const p of chain.puts) set.add(p.strike);
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+interface ColWidths {
+  last: number;
+  bid: number;
+  ask: number;
+  vol: number;
+  oi: number;
+}
+
+function formatContractRow(contract: { lastPrice: number; bid: number; ask: number; volume: number; openInterest: number } | undefined, w: ColWidths): string {
+  if (!contract) {
+    return padTo("—", w.last) + " " + padTo("—", w.bid) + " " + padTo("—", w.ask) + " " + padTo("—", w.vol) + " " + padTo("—", w.oi);
+  }
+  return (
+    padTo(contract.lastPrice.toFixed(2), w.last) + " " +
+    padTo(contract.bid.toFixed(2), w.bid) + " " +
+    padTo(contract.ask.toFixed(2), w.ask) + " " +
+    padTo(formatCompact(contract.volume), w.vol) + " " +
+    padTo(formatCompact(contract.openInterest), w.oi)
+  );
+}
+
+export const optionsPlugin: GloomPlugin = {
+  id: "options",
+  name: "Options",
+  version: "1.0.0",
+  description: "View options chain for tickers",
+  toggleable: true,
+
+  setup(ctx) {
+    ctx.registerDetailTab({
+      id: "options",
+      name: "Options",
+      order: 35, // after Chart (30), before News (40)
+      component: OptionsTab,
+    });
+  },
+};

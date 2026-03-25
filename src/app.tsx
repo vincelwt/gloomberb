@@ -22,6 +22,7 @@ import { tickerDetailPlugin, setDataProvider, setPluginRegistry } from "./plugin
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
 import { newsPlugin, setNewsDataProvider } from "./plugins/builtin/news";
+import { optionsPlugin, setOptionsDataProvider } from "./plugins/builtin/options";
 import { notesPlugin, setNotesMarkdownStore } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { saveConfig } from "./data/config-store";
@@ -315,6 +316,7 @@ export function App({ config, renderer }: AppProps) {
   const dataProvider: DataProvider = new YahooFinanceClient(cache);
   setDataProvider(dataProvider);
   setNewsDataProvider(dataProvider);
+  setOptionsDataProvider(dataProvider);
   const pluginRegistry = new PluginRegistry(renderer);
   setPluginRegistry(pluginRegistry);
 
@@ -327,6 +329,7 @@ export function App({ config, renderer }: AppProps) {
 
   // Feature plugins (toggleable by user)
   pluginRegistry.register(newsPlugin);
+  pluginRegistry.register(optionsPlugin);
   pluginRegistry.register(notesPlugin);
   pluginRegistry.register(askAiPlugin);
 
