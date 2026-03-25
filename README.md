@@ -16,14 +16,13 @@ An open-source, extensible portfolio tracker and stock terminal for your command
 
 ## Install
 
-Requires [Bun](https://bun.sh).
-
 ```bash
-git clone https://github.com/vincelwt/gloomberb.git
-cd gloomberb
-bun install
-bun dev
+bun install -g gloomberb
+# or
+npm install -g gloomberb
 ```
+
+Then run `gloomberb` to start.
 
 Your data is stored in `~/gloomberb-data/`. Each ticker gets its own markdown file with YAML frontmatter — easy to read, edit, and version control.
 
@@ -31,17 +30,31 @@ Your data is stored in `~/gloomberb-data/`. Each ticker gets its own markdown fi
 
 Gloomberb has a plugin architecture where everything — from the portfolio list to broker integrations — is a plugin. Plugins can add tabs, columns, commands, status bar widgets, and more.
 
-### Default plugins
+### Core & UI plugins
 
 | Plugin | Description | Toggleable |
 |--------|-------------|------------|
 | **Portfolio List** | Main ticker list with portfolios & watchlists | No (core) |
 | **Ticker Detail** | Overview, financials, and chart tabs | No (core) |
-| **Manual Entry** | Manually add positions | No (core) |
-| **IBKR Flex Query** | Import positions from Interactive Brokers | No (core) |
-| **News** | View latest news for each ticker | Yes |
-| **Notes** | Write and save notes per ticker | Yes |
+| **News** | View latest news for each ticker (via Yahoo Finance) | Yes |
+| **Notes** | Write and save markdown notes per ticker, stored locally | Yes |
 | **Ask AI** | Chat with AI about tickers using local CLI tools | Yes |
+| **Charts** | _WIP_ | — |
+
+### Data providers
+
+| Provider | Description |
+|----------|-------------|
+| **Yahoo Finance** | Real-time quotes, fundamentals, and historical data |
+| **Options Data** | Options chain data |
+| **Twitter** | _WIP_ |
+
+### Brokers / Portfolio
+
+| Plugin | Description |
+|--------|-------------|
+| **Manual Entry** | Manually add positions |
+| **IBKR Flex Query** | Import positions from Interactive Brokers |
 
 Toggleable plugins can be enabled/disabled from the settings screen (`Ctrl+,`).
 
