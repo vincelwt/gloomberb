@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, TickerFinancials, PricePoint } from "./financials";
+import type { Quote, Fundamentals, TickerFinancials, PricePoint, OptionsChain } from "./financials";
 import type { TimeRange } from "../components/chart/chart-types";
 
 export interface NewsItem {
@@ -21,4 +21,5 @@ export interface DataProvider {
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;
   getPriceHistory(ticker: string, exchange: string, range: TimeRange): Promise<PricePoint[]>;
+  getOptionsChain?(ticker: string, exchange?: string, expirationDate?: number): Promise<OptionsChain>;
 }
