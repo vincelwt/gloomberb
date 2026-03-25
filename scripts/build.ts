@@ -11,11 +11,6 @@ writeFileSync(
   `export const VERSION = "${version}";\n`,
 );
 
-// Sync npm wrapper package version
-const npmPkgPath = join(rootDir, "npm/package.json");
-const npmPkg = JSON.parse(readFileSync(npmPkgPath, "utf-8"));
-npmPkg.version = version;
-writeFileSync(npmPkgPath, JSON.stringify(npmPkg, null, 2) + "\n");
 
 const targets = [
   { os: "darwin", arch: "arm64" },
