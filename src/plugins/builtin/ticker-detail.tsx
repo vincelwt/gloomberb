@@ -6,7 +6,7 @@ import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber } from "../../utils/format";
-import { inlineSparkline, renderStockChart } from "../../utils/ascii-chart";
+import { StockChart } from "../../components/chart/stock-chart";
 import type { MarkdownStore } from "../../data/markdown-store";
 
 const DETAIL_TABS = [
@@ -35,22 +35,8 @@ function OverviewTab({ width }: { width?: number }) {
   const q = financials?.quote;
   const f = financials?.fundamentals;
 
-  // Use last 1 year of data for overview chart, full available width
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
-  const history = financials?.priceHistory || [];
-  const last1y = history.slice(-252); // ~1 year of trading days
-  const chartData = last1y.map((p) => p.close);
-  const chartDates = last1y.map((p) => p.date);
-  const chartColor = chartData.length >= 2
-    ? priceColor(chartData[chartData.length - 1]! - chartData[0]!)
-    : colors.neutral;
-
-  const chartLines = chartData.length > 2
-    ? renderStockChart(
-        { dates: chartDates, prices: chartData },
-        { width: chartWidth, height: 6, showAxis: true, showLabels: true },
-      )
-    : [];
+  const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
 
   return (
     <scrollbox flexGrow={1} scrollY>
@@ -78,14 +64,8 @@ function OverviewTab({ width }: { width?: number }) {
         )}
 
         {/* 1Y Chart */}
-        {chartLines.length > 0 && (
-          <box flexDirection="column">
-            {chartLines.map((line, i) => (
-              <box key={i} height={1}>
-                <text fg={i < chartLines.length - 1 ? chartColor : colors.textDim}>{line}</text>
-              </box>
-            ))}
-          </box>
+        {hasHistory && (
+          <StockChart width={chartWidth} height={8} focused={false} compact />
         )}
 
         {/* Key metrics */}
@@ -181,48 +161,15 @@ function FinancialsTab() {
   );
 }
 
-function ChartTab({ width, height }: { width?: number; height?: number }) {
-  const { ticker, financials } = useSelectedTicker();
+function ChartTab({ width, height, focused, interactive }: { width?: number; height?: number; focused: boolean; interactive: boolean }) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
-  if (!financials?.priceHistory.length) {
-    return <text fg={colors.textDim}>No price history available.</text>;
-  }
-
-  const prices = financials.priceHistory.map((p) => p.close);
-  const dates = financials.priceHistory.map((p) => p.date);
-  const color = prices.length >= 2 ? priceColor(prices[prices.length - 1]! - prices[0]!) : colors.neutral;
-  const change = prices.length >= 2 ? prices[prices.length - 1]! - prices[0]! : 0;
-  const changePct = prices[0] ? (change / prices[0]) * 100 : 0;
-
-  // Use available space for chart
-  const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 4, 30);
-  const chartHeight = Math.max((height || termHeight - 8) - 6, 8);
-
-  const chartLines = renderStockChart(
-    { dates, prices },
-    { width: chartWidth, height: chartHeight, showAxis: true, showLabels: true },
-  );
+  const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
+  const chartHeight = Math.max((height || termHeight - 8) - 2, 10);
 
   return (
-    <box flexDirection="column" paddingX={1} paddingY={1} flexGrow={1}>
-      {/* Title with price change */}
-      <box flexDirection="row" gap={2}>
-        <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {ticker?.frontmatter.ticker || ""} - 5Y
-        </text>
-        <text fg={color}>
-          {change >= 0 ? "+" : ""}{formatCurrency(change)} ({changePct >= 0 ? "+" : ""}{changePct.toFixed(2)}%)
-        </text>
-      </box>
-      <box height={1} />
-
-      {/* Chart */}
-      {chartLines.map((line, i) => (
-        <box key={i} height={1}>
-          <text fg={i < chartLines.length - 1 ? color : colors.textDim}>{line}</text>
-        </box>
-      ))}
+    <box flexDirection="column" paddingX={1} flexGrow={1}>
+      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} />
     </box>
   );
 }
@@ -281,8 +228,23 @@ export function setMarkdownStore(store: MarkdownStore) {
 function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
   const [notesFocused, setNotesFocused] = useState(false);
+  const [chartInteractive, setChartInteractive] = useState(false);
   const tabIdx = DETAIL_TABS.findIndex((t) => t.value === state.activeRightTab);
   const tabRef = useRef<TabSelectRenderable>(null);
+
+  // Refs to avoid stale closures in useKeyboard
+  const stateRef = useRef({ focused, notesFocused, chartInteractive, activeRightTab: state.activeRightTab, tabIdx });
+  stateRef.current = { focused, notesFocused, chartInteractive, activeRightTab: state.activeRightTab, tabIdx };
+
+  // Eagerly update ref + state together so subsequent key events see the change immediately
+  const setChartInteractiveEager = useCallback((val: boolean) => {
+    stateRef.current = { ...stateRef.current, chartInteractive: val };
+    setChartInteractive(val);
+  }, []);
+  const setNotesFocusedEager = useCallback((val: boolean) => {
+    stateRef.current = { ...stateRef.current, notesFocused: val };
+    setNotesFocused(val);
+  }, []);
 
   useEffect(() => {
     if (tabRef.current && tabIdx >= 0) {
@@ -290,27 +252,53 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     }
   }, [tabIdx]);
 
+  // Exit chart interactive mode when switching away from chart tab
+  useEffect(() => {
+    if (state.activeRightTab !== "chart") {
+      setChartInteractive(false);
+    }
+  }, [state.activeRightTab]);
+
   useKeyboard((event) => {
-    if (!focused) return;
+    const s = stateRef.current;
+    if (!s.focused) return;
+
+    const isEnter = event.name === "enter" || event.name === "return";
 
     // Handle notes focus toggle
-    if (state.activeRightTab === "notes") {
-      if (event.name === "enter" && !notesFocused) {
-        setNotesFocused(true);
+    if (s.activeRightTab === "notes") {
+      if (isEnter && !s.notesFocused) {
+        setNotesFocusedEager(true);
         return;
       }
-      if (event.name === "escape" && notesFocused) {
-        setNotesFocused(false);
+      if (event.name === "escape" && s.notesFocused) {
+        setNotesFocusedEager(false);
         return;
       }
-      if (notesFocused) return; // Let textarea handle keys
+      if (s.notesFocused) return;
     }
 
+    // Handle chart interactive mode
+    if (s.activeRightTab === "chart") {
+      if (event.name === "escape" && s.chartInteractive) {
+        setChartInteractiveEager(false);
+        return;
+      }
+      if (isEnter && !s.chartInteractive) {
+        setChartInteractiveEager(true);
+        return;
+      }
+      // When chart is interactive, consume all keys so they don't switch tabs
+      if (s.chartInteractive) return;
+    }
+
+    // Tab switching — only h/l keys, not arrow keys on chart tab
+    // (arrow keys on chart tab would conflict with chart navigation)
     if (event.name === "h" || event.name === "left") {
-      const newIdx = Math.max(tabIdx - 1, 0);
+      const newIdx = Math.max(s.tabIdx - 1, 0);
       dispatch({ type: "SET_RIGHT_TAB", tab: DETAIL_TABS[newIdx]!.value });
     } else if (event.name === "l" || event.name === "right") {
-      const newIdx = Math.min(tabIdx + 1, DETAIL_TABS.length - 1);
+      const newIdx = Math.min(s.tabIdx + 1, DETAIL_TABS.length - 1);
       dispatch({ type: "SET_RIGHT_TAB", tab: DETAIL_TABS[newIdx]!.value });
     }
   });
@@ -331,7 +319,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
       {state.activeRightTab === "overview" && <OverviewTab width={width} />}
       {state.activeRightTab === "financials" && <FinancialsTab />}
-      {state.activeRightTab === "chart" && <ChartTab width={width} height={height} />}
+      {state.activeRightTab === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} />}
       {state.activeRightTab === "notes" && <NotesTab markdownStore={_markdownStore} notesFocused={notesFocused} />}
     </box>
   );
