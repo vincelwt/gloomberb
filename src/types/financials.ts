@@ -1,3 +1,5 @@
+export type MarketState = "PRE" | "REGULAR" | "POST" | "PREPRE" | "POSTPOST" | "CLOSED";
+
 export interface Quote {
   symbol: string;
   price: number;
@@ -11,6 +13,15 @@ export interface Quote {
   volume?: number;
   name?: string;
   lastUpdated: number; // timestamp ms
+  exchangeName?: string;
+  fullExchangeName?: string;
+  marketState?: MarketState;
+  preMarketPrice?: number;
+  preMarketChange?: number;
+  preMarketChangePercent?: number;
+  postMarketPrice?: number;
+  postMarketChange?: number;
+  postMarketChangePercent?: number;
 }
 
 export interface Fundamentals {

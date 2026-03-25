@@ -3,6 +3,7 @@ import { TextAttributes } from "@opentui/core";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { formatPercentRaw } from "../../utils/format";
+import { marketStateLabel, marketStateColor } from "../../utils/market-status";
 import type { YahooFinanceClient } from "../../sources/yahoo-finance";
 import type { Quote } from "../../types/financials";
 
@@ -30,6 +31,14 @@ export function Header({ yahoo }: { yahoo: YahooFinanceClient }) {
     ? `SPY ${spyQuote.price.toFixed(2)} ${formatPercentRaw(spyQuote.changePercent)}`
     : "SPY —";
 
+  // Extended hours info
+  const extText = getExtendedHoursText(spyQuote);
+
+  // Market status
+  const mktState = spyQuote?.marketState;
+  const mktLabel = mktState ? marketStateLabel(mktState) : "";
+  const mktColor = mktState ? marketStateColor(mktState) : colors.headerText;
+
   return (
     <box
       flexDirection="row"
@@ -41,9 +50,19 @@ export function Header({ yahoo }: { yahoo: YahooFinanceClient }) {
           GLOOMBERB TERMINAL
         </text>
       </box>
-      <box paddingRight={1}>
+      {mktLabel && (
+        <box paddingRight={1}>
+          <text fg={mktColor}>{mktLabel}</text>
+        </box>
+      )}
+      <box paddingRight={extText ? 0 : 1}>
         <text fg={spyColor}>{spyText}</text>
       </box>
+      {extText && (
+        <box paddingRight={1} paddingLeft={1}>
+          <text fg={extText.color}>{extText.text}</text>
+        </box>
+      )}
       <box paddingRight={1}>
         <text fg={colors.headerText}>
           {state.config.baseCurrency}
@@ -51,4 +70,17 @@ export function Header({ yahoo }: { yahoo: YahooFinanceClient }) {
       </box>
     </box>
   );
+}
+
+function getExtendedHoursText(quote: Quote | null): { text: string; color: string } | null {
+  if (!quote) return null;
+  if (quote.marketState === "PRE" && quote.preMarketPrice != null) {
+    const chg = quote.preMarketChangePercent ?? 0;
+    return { text: `Pre ${quote.preMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
+  }
+  if (quote.marketState === "POST" && quote.postMarketPrice != null) {
+    const chg = quote.postMarketChangePercent ?? 0;
+    return { text: `AH ${quote.postMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
+  }
+  return null;
 }

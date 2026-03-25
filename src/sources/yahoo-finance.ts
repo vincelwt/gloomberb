@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials } from "../types/financials";
+import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState } from "../types/financials";
 import type { SqliteCache } from "../data/sqlite-cache";
 
 // Exchange suffix mapping for Yahoo Finance ticker symbols
@@ -73,11 +73,17 @@ const TIMESERIES_TYPES = {
   ],
 };
 
+type TradingPeriod = { start?: number; end?: number; gmtoffset?: number; timezone?: string };
+
 type ChartResult = {
   meta?: {
     currency?: string; longName?: string; shortName?: string;
     regularMarketPrice?: number; chartPreviousClose?: number;
     fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number;
+    exchangeName?: string; fullExchangeName?: string;
+    regularMarketTime?: number;
+    currentTradingPeriod?: { pre?: TradingPeriod; regular?: TradingPeriod; post?: TradingPeriod };
+    preMarketPrice?: number; postMarketPrice?: number;
   };
   timestamp?: number[];
   indicators?: { quote?: Array<{ open?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; close?: (number | null)[]; volume?: (number | null)[] }> };
@@ -87,6 +93,68 @@ type ChartResponse = { chart?: { result?: ChartResult[]; error?: { description?:
 type TimeseriesResponse = { timeseries?: { result?: Array<Record<string, any>>; error?: { description?: string } | null } };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
+  const ctp = meta.currentTradingPeriod;
+  if (!ctp) return "CLOSED";
+  const now = Math.floor(Date.now() / 1000);
+  if (ctp.regular?.start && ctp.regular?.end && now >= ctp.regular.start && now < ctp.regular.end) return "REGULAR";
+  if (ctp.pre?.start && ctp.pre?.end && now >= ctp.pre.start && now < ctp.pre.end) return "PRE";
+  if (ctp.post?.start && ctp.post?.end && now >= ctp.post.start && now < ctp.post.end) return "POST";
+  return "CLOSED";
+}
+
+function computeExtendedHoursChange(extPrice: number | undefined, regularPrice: number | undefined): { change?: number; changePct?: number } {
+  if (extPrice == null || regularPrice == null || regularPrice === 0) return {};
+  const change = extPrice - regularPrice;
+  return { change, changePct: (change / regularPrice) * 100 };
+}
+
+type ExtendedHoursData = {
+  preMarketPrice?: number;
+  preMarketChange?: number;
+  preMarketChangePercent?: number;
+  postMarketPrice?: number;
+  postMarketChange?: number;
+  postMarketChangePercent?: number;
+};
+
+/**
+ * Extract extended hours prices from a 1d intraday chart with includePrePost=true.
+ * Pre/post market data points sit outside the regular trading period timestamps.
+ */
+function extractExtendedHoursPrices(
+  meta: NonNullable<ChartResult["meta"]>,
+  timestamps: number[],
+  closes: (number | null)[],
+  marketState: MarketState,
+): ExtendedHoursData {
+  const ctp = meta.currentTradingPeriod;
+  if (!ctp || !timestamps.length) return {};
+
+  const regStart = ctp.regular?.start ?? 0;
+  const regEnd = ctp.regular?.end ?? Infinity;
+  const regularClose = meta.regularMarketPrice ?? meta.chartPreviousClose;
+
+  if (marketState === "PRE") {
+    // Find the last pre-market data point (before regular open)
+    for (let i = timestamps.length - 1; i >= 0; i--) {
+      if (timestamps[i]! < regStart && closes[i] != null) {
+        const ext = computeExtendedHoursChange(closes[i]!, regularClose);
+        return { preMarketPrice: closes[i]!, preMarketChange: ext.change, preMarketChangePercent: ext.changePct };
+      }
+    }
+  } else if (marketState === "POST") {
+    // Find the last post-market data point (after regular close)
+    for (let i = timestamps.length - 1; i >= 0; i--) {
+      if (timestamps[i]! >= regEnd && closes[i] != null) {
+        const ext = computeExtendedHoursChange(closes[i]!, regularClose);
+        return { postMarketPrice: closes[i]!, postMarketChange: ext.change, postMarketChangePercent: ext.changePct };
+      }
+    }
+  }
+  return {};
+}
 
 // Cache TTLs
 const QUOTE_TTL = 5 * 60_000; // 5 min
@@ -150,8 +218,8 @@ export class YahooFinanceClient {
     return [this.getSymbol(ticker, exchange)];
   }
 
-  private async fetchChart(symbol: string, range: string, interval = "1d") {
-    const params = new URLSearchParams({ interval, range, includePrePost: "false", events: "div,split" });
+  private async fetchChart(symbol: string, range: string, interval = "1d", includePrePost = false) {
+    const params = new URLSearchParams({ interval, range, includePrePost: String(includePrePost), events: "div,split" });
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
     const data = await this.fetchJson<ChartResponse>(`chart ${symbol}`, url);
     const result = data.chart?.result?.[0];
@@ -173,6 +241,24 @@ export class YahooFinanceClient {
       });
     }
     return { meta: result.meta || {}, history };
+  }
+
+  /** Fetch extended hours data using 1d intraday chart with pre/post market included */
+  private async fetchExtendedHoursData(symbol: string, regularPrice: number, meta: NonNullable<ChartResult["meta"]>): Promise<ExtendedHoursData> {
+    const marketState = deriveMarketState(meta);
+    if (marketState !== "PRE" && marketState !== "POST") return {};
+
+    try {
+      const params = new URLSearchParams({ interval: "5m", range: "1d", includePrePost: "true" });
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
+      const data = await this.fetchJson<ChartResponse>(`ext-hours ${symbol}`, url);
+      const result = data.chart?.result?.[0];
+      if (!result?.timestamp?.length) return {};
+      const closes = result.indicators?.quote?.[0]?.close || [];
+      return extractExtendedHoursPrices(meta, result.timestamp, closes, marketState);
+    } catch {
+      return {};
+    }
   }
 
   private async fetchTimeseries(symbol: string, types: string[], period1 = "2010-01-01") {
@@ -260,6 +346,9 @@ export class YahooFinanceClient {
     const change = prev != null ? currentPrice - prev : 0;
     const changePct = prev ? (change / prev) * 100 : 0;
 
+    const marketState = deriveMarketState(meta);
+    const extHours = await this.fetchExtendedHoursData(symbol, currentPrice, meta);
+
     const quote: Quote = {
       symbol,
       price: currentPrice,
@@ -271,6 +360,10 @@ export class YahooFinanceClient {
       marketCap: latest("trailingMarketCap"),
       name: meta.shortName || meta.longName,
       lastUpdated: Date.now(),
+      exchangeName: meta.exchangeName,
+      fullExchangeName: meta.fullExchangeName,
+      marketState,
+      ...extHours,
     };
 
     const revenue = latest("annualTotalRevenue");
@@ -364,6 +457,9 @@ export class YahooFinanceClient {
     const price = meta.regularMarketPrice ?? latest.close;
     const change = prev != null ? price - prev : 0;
 
+    const marketState = deriveMarketState(meta);
+    const extHours = await this.fetchExtendedHoursData(symbol, price, meta);
+
     const quote: Quote = {
       symbol,
       price,
@@ -374,6 +470,10 @@ export class YahooFinanceClient {
       low52w: meta.fiftyTwoWeekLow,
       name: meta.shortName || meta.longName,
       lastUpdated: Date.now(),
+      exchangeName: meta.exchangeName,
+      fullExchangeName: meta.fullExchangeName,
+      marketState,
+      ...extHours,
     };
 
     if (this.cache) this.cache.setCache(ticker, "quote", quote, QUOTE_TTL);

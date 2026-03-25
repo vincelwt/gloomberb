@@ -6,6 +6,7 @@ import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor } from "../../utils/format";
+import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { StockChart } from "../../components/chart/stock-chart";
 import type { MarkdownStore } from "../../data/markdown-store";
 
@@ -41,7 +42,7 @@ function OverviewTab({ width }: { width?: number }) {
   return (
     <scrollbox flexGrow={1} scrollY>
       <box flexDirection="column" padding={1} gap={1}>
-        {/* Title */}
+        {/* Title with exchange and market state */}
         <box flexDirection="row">
           <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
             {ticker.frontmatter.ticker}
@@ -49,17 +50,51 @@ function OverviewTab({ width }: { width?: number }) {
           <text fg={colors.textDim}>
             {" "}- {ticker.frontmatter.name || q?.name || ""}
           </text>
+          {q?.exchangeName && (
+            <text fg={colors.textDim}>
+              {" "}({exchangeShortName(q.exchangeName, q.fullExchangeName)})
+            </text>
+          )}
+          {q?.marketState && (
+            <text fg={marketStateColor(q.marketState)}>
+              {" "}{marketStateLabel(q.marketState)}
+            </text>
+          )}
         </box>
 
         {/* Price */}
         {q && (
-          <box flexDirection="row" gap={2}>
-            <text attributes={TextAttributes.BOLD} fg={priceColor(q.change)}>
-              {formatCurrency(q.price, q.currency)}
-            </text>
-            <text fg={priceColor(q.change)}>
-              {q.change >= 0 ? "+" : ""}{q.change.toFixed(2)} ({formatPercentRaw(q.changePercent)})
-            </text>
+          <box flexDirection="column" gap={0}>
+            <box flexDirection="row" gap={2}>
+              <text attributes={TextAttributes.BOLD} fg={priceColor(q.change)}>
+                {formatCurrency(q.price, q.currency)}
+              </text>
+              <text fg={priceColor(q.change)}>
+                {q.change >= 0 ? "+" : ""}{q.change.toFixed(2)} ({formatPercentRaw(q.changePercent)})
+              </text>
+            </box>
+            {q.marketState === "PRE" && q.preMarketPrice != null && (
+              <box flexDirection="row" gap={2}>
+                <text fg={colors.textDim}>Pre-Market:</text>
+                <text fg={priceColor(q.preMarketChange ?? 0)}>
+                  {formatCurrency(q.preMarketPrice, q.currency)}
+                </text>
+                <text fg={priceColor(q.preMarketChange ?? 0)}>
+                  {(q.preMarketChange ?? 0) >= 0 ? "+" : ""}{(q.preMarketChange ?? 0).toFixed(2)} ({formatPercentRaw(q.preMarketChangePercent ?? 0)})
+                </text>
+              </box>
+            )}
+            {q.marketState === "POST" && q.postMarketPrice != null && (
+              <box flexDirection="row" gap={2}>
+                <text fg={colors.textDim}>After-Hours:</text>
+                <text fg={priceColor(q.postMarketChange ?? 0)}>
+                  {formatCurrency(q.postMarketPrice, q.currency)}
+                </text>
+                <text fg={priceColor(q.postMarketChange ?? 0)}>
+                  {(q.postMarketChange ?? 0) >= 0 ? "+" : ""}{(q.postMarketChange ?? 0).toFixed(2)} ({formatPercentRaw(q.postMarketChangePercent ?? 0)})
+                </text>
+              </box>
+            )}
           </box>
         )}
 
