@@ -31,12 +31,40 @@ const RETRYABLE_ERROR = /429|403|401|Too Many Requests|Forbidden|Unauthorized|EC
 
 const TIMESERIES_TYPES = {
   annual: [
-    "annualTotalRevenue", "annualNetIncome", "annualEBITDA",
-    "annualDilutedEPS", "annualTotalDebt", "annualDilutedAverageShares",
+    // Income Statement
+    "annualTotalRevenue", "annualCostOfRevenue", "annualGrossProfit",
+    "annualSellingGeneralAndAdministration", "annualResearchAndDevelopment",
+    "annualOperatingExpense", "annualOperatingIncome",
+    "annualInterestExpense", "annualTaxProvision",
+    "annualNetIncome", "annualEBITDA",
+    "annualBasicEPS", "annualDilutedEPS", "annualDilutedAverageShares",
+    // Cash Flow
+    "annualOperatingCashFlow", "annualCapitalExpenditure", "annualFreeCashFlow",
+    "annualInvestingCashFlow", "annualFinancingCashFlow",
+    "annualIssuanceOfDebt", "annualRepurchaseOfCapitalStock", "annualCashDividendsPaid",
+    // Balance Sheet
+    "annualTotalAssets", "annualCurrentAssets", "annualCashAndCashEquivalents",
+    "annualTotalLiabilitiesNetMinorityInterest", "annualCurrentLiabilities",
+    "annualLongTermDebt", "annualTotalDebt",
+    "annualStockholdersEquity", "annualRetainedEarnings",
   ],
   quarterly: [
-    "quarterlyTotalRevenue", "quarterlyNetIncome", "quarterlyEBITDA",
-    "quarterlyDilutedEPS", "quarterlyTotalDebt", "quarterlyDilutedAverageShares",
+    // Income Statement
+    "quarterlyTotalRevenue", "quarterlyCostOfRevenue", "quarterlyGrossProfit",
+    "quarterlySellingGeneralAndAdministration", "quarterlyResearchAndDevelopment",
+    "quarterlyOperatingExpense", "quarterlyOperatingIncome",
+    "quarterlyInterestExpense", "quarterlyTaxProvision",
+    "quarterlyNetIncome", "quarterlyEBITDA",
+    "quarterlyBasicEPS", "quarterlyDilutedEPS", "quarterlyDilutedAverageShares",
+    // Cash Flow
+    "quarterlyOperatingCashFlow", "quarterlyCapitalExpenditure", "quarterlyFreeCashFlow",
+    "quarterlyInvestingCashFlow", "quarterlyFinancingCashFlow",
+    "quarterlyIssuanceOfDebt", "quarterlyRepurchaseOfCapitalStock", "quarterlyCashDividendsPaid",
+    // Balance Sheet
+    "quarterlyTotalAssets", "quarterlyCurrentAssets", "quarterlyCashAndCashEquivalents",
+    "quarterlyTotalLiabilitiesNetMinorityInterest", "quarterlyCurrentLiabilities",
+    "quarterlyLongTermDebt", "quarterlyTotalDebt",
+    "quarterlyStockholdersEquity", "quarterlyRetainedEarnings",
   ],
   trailing: [
     "trailingMarketCap", "trailingPeRatio", "trailingForwardPeRatio",
@@ -276,12 +304,40 @@ export class YahooFinanceClient {
           byDate.set(pt.asOfDate, row);
         }
       };
+      // Income Statement
       assign(`${prefix}TotalRevenue`, "totalRevenue");
+      assign(`${prefix}CostOfRevenue`, "costOfRevenue");
+      assign(`${prefix}GrossProfit`, "grossProfit");
+      assign(`${prefix}SellingGeneralAndAdministration`, "sellingGeneralAndAdministration");
+      assign(`${prefix}ResearchAndDevelopment`, "researchAndDevelopment");
+      assign(`${prefix}OperatingExpense`, "operatingExpense");
+      assign(`${prefix}OperatingIncome`, "operatingIncome");
+      assign(`${prefix}InterestExpense`, "interestExpense");
+      assign(`${prefix}TaxProvision`, "taxProvision");
       assign(`${prefix}NetIncome`, "netIncome");
       assign(`${prefix}EBITDA`, "ebitda");
+      assign(`${prefix}BasicEPS`, "basicEps");
       assign(`${prefix}DilutedEPS`, "eps");
-      assign(`${prefix}TotalDebt`, "totalDebt");
       assign(`${prefix}DilutedAverageShares`, "dilutedShares");
+      // Cash Flow
+      assign(`${prefix}OperatingCashFlow`, "operatingCashFlow");
+      assign(`${prefix}CapitalExpenditure`, "capitalExpenditure");
+      assign(`${prefix}FreeCashFlow`, "freeCashFlow");
+      assign(`${prefix}InvestingCashFlow`, "investingCashFlow");
+      assign(`${prefix}FinancingCashFlow`, "financingCashFlow");
+      assign(`${prefix}IssuanceOfDebt`, "issuanceOfDebt");
+      assign(`${prefix}RepurchaseOfCapitalStock`, "repurchaseOfCapitalStock");
+      assign(`${prefix}CashDividendsPaid`, "cashDividendsPaid");
+      // Balance Sheet
+      assign(`${prefix}TotalAssets`, "totalAssets");
+      assign(`${prefix}CurrentAssets`, "currentAssets");
+      assign(`${prefix}CashAndCashEquivalents`, "cashAndCashEquivalents");
+      assign(`${prefix}TotalLiabilitiesNetMinorityInterest`, "totalLiabilities");
+      assign(`${prefix}CurrentLiabilities`, "currentLiabilities");
+      assign(`${prefix}LongTermDebt`, "longTermDebt");
+      assign(`${prefix}TotalDebt`, "totalDebt");
+      assign(`${prefix}StockholdersEquity`, "totalEquity");
+      assign(`${prefix}RetainedEarnings`, "retainedEarnings");
       return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
     };
 
