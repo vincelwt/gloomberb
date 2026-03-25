@@ -11,7 +11,7 @@ import { PluginRegistry } from "./plugins/registry";
 import { MarkdownStore } from "./data/markdown-store";
 import { SqliteCache } from "./data/sqlite-cache";
 import { YahooFinanceClient } from "./sources/yahoo-finance";
-import { colors } from "./theme/colors";
+import { colors, applyTheme } from "./theme/colors";
 import type { AppConfig } from "./types/config";
 import type { TickerFile } from "./types/ticker";
 
@@ -140,6 +140,9 @@ interface AppProps {
 }
 
 export function App({ config, renderer }: AppProps) {
+  // Apply saved theme before first render
+  if (config.theme) applyTheme(config.theme);
+
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const cache = new SqliteCache(dbPath);
   const markdownStore = new MarkdownStore(config.dataDir);

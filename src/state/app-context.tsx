@@ -2,6 +2,7 @@ import { createContext, useContext, useReducer, type ReactNode } from "react";
 import type { AppConfig } from "../types/config";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
+import { applyTheme } from "../theme/colors";
 
 // --- State ---
 
@@ -41,7 +42,8 @@ export type AppAction =
   | { type: "TOGGLE_CONFIG" }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
-  | { type: "TOGGLE_STATUS_BAR" };
+  | { type: "TOGGLE_STATUS_BAR" }
+  | { type: "SET_THEME"; theme: string };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -109,6 +111,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };
+
+    case "SET_THEME": {
+      applyTheme(action.theme);
+      return { ...state, config: { ...state.config, theme: action.theme } };
+    }
 
     default:
       return state;
