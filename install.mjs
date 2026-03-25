@@ -6,8 +6,7 @@ import https from "https";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Skip when running in the source repo (dev install)
-const pkg = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf-8"));
-if (pkg.dependencies) process.exit(0);
+if (existsSync(join(__dirname, "src"))) process.exit(0);
 const REPO = "vincelwt/gloomberb";
 
 const platform = process.platform;
