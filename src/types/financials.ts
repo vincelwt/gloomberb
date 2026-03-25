@@ -98,3 +98,27 @@ export interface TickerFinancials {
   quarterlyStatements: FinancialStatement[];
   priceHistory: PricePoint[];
 }
+
+export interface OptionContract {
+  contractSymbol: string;
+  strike: number;
+  currency: string;
+  lastPrice: number;
+  change: number;
+  percentChange: number;
+  volume: number;
+  openInterest: number;
+  bid: number;
+  ask: number;
+  impliedVolatility: number;
+  inTheMoney: boolean;
+  expiration: number;
+  lastTradeDate: number;
+}
+
+export interface OptionsChain {
+  underlyingSymbol: string;
+  expirationDates: number[];
+  calls: OptionContract[];
+  puts: OptionContract[];
+}

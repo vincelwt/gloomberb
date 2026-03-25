@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState } from "../types/financials";
+import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain } from "../types/financials";
 import type { SqliteCache } from "../data/sqlite-cache";
 import type { DataProvider, NewsItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
@@ -224,6 +224,7 @@ const QUOTE_TTL = 5 * 60_000; // 5 min
 const FUNDAMENTALS_TTL = 60 * 60_000; // 1 hour
 const HISTORY_TTL = 24 * 60 * 60_000; // 24 hours
 const NEWS_TTL = 15 * 60_000; // 15 min
+const OPTIONS_TTL = 5 * 60_000; // 5 min
 const INTRADAY_HISTORY_TTL = 5 * 60_000; // 5 min for intraday ranges
 
 // Maps TimeRange → Yahoo API { range, interval } for optimal granularity
@@ -241,6 +242,10 @@ export class YahooFinanceClient implements DataProvider {
   readonly id = "yahoo";
   readonly name = "Yahoo Finance";
 
+  private crumb: string | null = null;
+  private cookie: string | null = null;
+  private crumbPromise: Promise<void> | null = null;
+
   constructor(private cache?: SqliteCache) {}
 
   private defaultHeaders() {
@@ -250,6 +255,63 @@ export class YahooFinanceClient implements DataProvider {
       "Accept-Language": "en-US,en;q=0.9",
       Referer: "https://finance.yahoo.com/",
     };
+  }
+
+  /** Fetch a crumb + cookie pair needed by some Yahoo endpoints (e.g. options). */
+  private async ensureCrumb(): Promise<void> {
+    if (this.crumb && this.cookie) return;
+    if (this.crumbPromise) return this.crumbPromise;
+    this.crumbPromise = (async () => {
+      try {
+        // Step 1: get a cookie from Yahoo
+        const cookieResp = await fetch("https://fc.yahoo.com/", {
+          headers: this.defaultHeaders(),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          redirect: "manual",
+        });
+        const setCookie = cookieResp.headers.get("set-cookie");
+        if (!setCookie) throw new Error("Failed to get Yahoo cookie");
+        // Extract just the cookie key=value pairs
+        this.cookie = setCookie.split(",").map((c) => c.split(";")[0]!.trim()).join("; ");
+
+        // Step 2: get the crumb value
+        const crumbResp = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+          headers: { ...this.defaultHeaders(), Cookie: this.cookie },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!crumbResp.ok) throw new Error(`Failed to get crumb: ${crumbResp.status}`);
+        this.crumb = await crumbResp.text();
+        if (!this.crumb) throw new Error("Empty crumb response");
+      } catch (err) {
+        this.crumb = null;
+        this.cookie = null;
+        throw err;
+      } finally {
+        this.crumbPromise = null;
+      }
+    })();
+    return this.crumbPromise;
+  }
+
+  /** Fetch JSON from a Yahoo endpoint that requires crumb authentication. */
+  private async fetchJsonWithCrumb<T>(label: string, url: string): Promise<T> {
+    return this.withRetry(label, async () => {
+      await this.ensureCrumb();
+      const separator = url.includes("?") ? "&" : "?";
+      const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
+      const resp = await fetch(fullUrl, {
+        headers: { ...this.defaultHeaders(), Cookie: this.cookie! },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (resp.status === 401) {
+        // Crumb expired — clear and let retry logic re-fetch
+        this.crumb = null;
+        this.cookie = null;
+        throw new Error(`[401] Invalid Crumb`);
+      }
+      if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
+      return resp.json() as Promise<T>;
+    });
   }
 
   private async withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
@@ -810,5 +872,74 @@ export class YahooFinanceClient implements DataProvider {
       }
     }
     throw lastError || new Error(`No history for ${ticker}`);
+  }
+
+  // ── Options Chain ──────────────────────────────────────────────────
+
+  private mapContract(raw: Record<string, any>): OptionContract {
+    return {
+      contractSymbol: raw.contractSymbol ?? "",
+      strike: raw.strike ?? 0,
+      currency: raw.currency ?? "USD",
+      lastPrice: raw.lastPrice ?? 0,
+      change: raw.change ?? 0,
+      percentChange: raw.percentChange ?? 0,
+      volume: raw.volume ?? 0,
+      openInterest: raw.openInterest ?? 0,
+      bid: raw.bid ?? 0,
+      ask: raw.ask ?? 0,
+      impliedVolatility: raw.impliedVolatility ?? 0,
+      inTheMoney: raw.inTheMoney ?? false,
+      expiration: raw.expiration ?? 0,
+      lastTradeDate: raw.lastTradeDate ?? 0,
+    };
+  }
+
+  async getOptionsChain(ticker: string, exchange = "", expirationDate?: number): Promise<OptionsChain> {
+    const cacheKey = `options:${expirationDate ?? "all"}`;
+    if (this.cache) {
+      const cached = this.cache.getCached<OptionsChain>(ticker, cacheKey);
+      if (cached) return cached;
+    }
+
+    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    let lastError: any;
+
+    for (const symbol of symbolsToTry) {
+      try {
+        let url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}`;
+        if (expirationDate != null) url += `?date=${expirationDate}`;
+
+        const data = await this.fetchJsonWithCrumb<{
+          optionChain?: {
+            result?: Array<{
+              underlyingSymbol?: string;
+              expirationDates?: number[];
+              options?: Array<{
+                calls?: Array<Record<string, any>>;
+                puts?: Array<Record<string, any>>;
+              }>;
+            }>;
+          };
+        }>("options " + symbol, url);
+
+        const result = data.optionChain?.result?.[0];
+        if (!result) throw new Error("No options data");
+
+        const opts = result.options?.[0];
+        const chain: OptionsChain = {
+          underlyingSymbol: result.underlyingSymbol ?? symbol,
+          expirationDates: result.expirationDates ?? [],
+          calls: (opts?.calls ?? []).map((c) => this.mapContract(c)),
+          puts: (opts?.puts ?? []).map((p) => this.mapContract(p)),
+        };
+
+        if (this.cache) this.cache.setCache(ticker, cacheKey, chain, OPTIONS_TTL);
+        return chain;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error(`No options chain for ${ticker}`);
   }
 }
