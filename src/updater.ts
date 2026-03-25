@@ -28,7 +28,8 @@ function compareSemver(a: string, b: string): number {
 
 function getAssetName(): string {
   const os = process.platform === "darwin" ? "darwin" : "linux";
-  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  // macOS x64 uses arm64 binary (runs via Rosetta 2)
+  const arch = os === "darwin" || process.arch === "arm64" ? "arm64" : "x64";
   return `gloomberb-${os}-${arch}`;
 }
 

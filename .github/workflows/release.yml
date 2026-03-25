@@ -14,20 +14,10 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            arch: arm64
-            target: bun-darwin-arm64
             asset: gloomberb-darwin-arm64
-          - os: macos-15
-            arch: x64
-            target: bun-darwin-x64
-            asset: gloomberb-darwin-x64
           - os: ubuntu-latest
-            arch: x64
-            target: bun-linux-x64
             asset: gloomberb-linux-x64
           - os: ubuntu-24.04-arm
-            arch: arm64
-            target: bun-linux-arm64
             asset: gloomberb-linux-arm64
     runs-on: ${{ matrix.os }}
     steps:
