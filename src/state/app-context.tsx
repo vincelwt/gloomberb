@@ -22,6 +22,7 @@ export interface AppState {
   // Loading
   refreshing: Set<string>;
   initialized: boolean;
+  statusBarVisible: boolean;
 }
 
 // --- Actions ---
@@ -41,6 +42,7 @@ export type AppAction =
   | { type: "TOGGLE_CONFIG" }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
+  | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -107,6 +109,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
 
+    case "TOGGLE_STATUS_BAR":
+      return { ...state, statusBarVisible: !state.statusBarVisible };
+
     case "SET_THEME": {
       applyTheme(action.theme);
       return { ...state, config: { ...state.config, theme: action.theme } };
@@ -154,6 +159,7 @@ export function createInitialState(config: AppConfig): AppState {
     configOpen: false,
     refreshing: new Set(),
     initialized: false,
+    statusBarVisible: true,
   };
 }
 

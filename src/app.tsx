@@ -123,7 +123,7 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
-      <Header />
+      <Header yahoo={yahoo} />
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
       {state.commandBarOpen && (

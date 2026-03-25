@@ -125,6 +125,16 @@ export const commands: Command[] = [
       dispatch({ type: "TOGGLE_CONFIG" });
     },
   },
+  {
+    id: "toggle-status-bar",
+    prefix: "SB",
+    label: "Toggle Status Bar",
+    description: "Show or hide the keyboard shortcuts bar",
+    category: "Config",
+    execute: (dispatch) => {
+      dispatch({ type: "TOGGLE_STATUS_BAR" });
+    },
+  },
 
   // Theme
   {
