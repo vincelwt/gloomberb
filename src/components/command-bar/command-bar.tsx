@@ -14,7 +14,27 @@ import type { MarkdownStore } from "../../data/markdown-store";
 import type { TickerFrontmatter } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, WizardStep } from "../../types/plugin";
+import type { ColumnConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
+
+/** All available columns that can be toggled */
+const ALL_COLUMNS: ColumnConfig[] = [
+  { id: "ticker", label: "TICKER", width: 8, align: "left" },
+  { id: "price", label: "PRICE", width: 10, align: "right", format: "currency" },
+  { id: "change", label: "CHG", width: 9, align: "right", format: "currency" },
+  { id: "change_pct", label: "CHG%", width: 8, align: "right", format: "percent" },
+  { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
+  { id: "market_cap", label: "MCAP", width: 10, align: "right", format: "compact" },
+  { id: "pe", label: "P/E", width: 7, align: "right", format: "number" },
+  { id: "forward_pe", label: "FWD P/E", width: 8, align: "right", format: "number" },
+  { id: "dividend_yield", label: "DIV%", width: 7, align: "right", format: "percent" },
+  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
+  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
+  { id: "cost_basis", label: "COST", width: 10, align: "right", format: "compact" },
+  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
+  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
+  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
+];
 
 interface CommandBarProps {
   dataProvider: DataProvider;
@@ -166,6 +186,11 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     const ctx = { selectedTicker: state.selectedTicker, activeLeftTab: state.activeLeftTab };
 
     switch (cmd.id) {
+      case "columns": {
+        // Enter columns mode by setting the prefix
+        setQuery("COL ");
+        return;
+      }
       case "add-watchlist":
       case "add-portfolio": {
         const ticker = state.tickers.get(state.selectedTicker || "");
@@ -301,8 +326,28 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }));
   }, [pluginRegistry.commands, close, runWizard]);
 
-  // Detect if we're in theme mode
+  // Detect special modes
   const isThemeMode = matchPrefix(query)?.command.id === "theme";
+  const isColumnsMode = matchPrefix(query)?.command.id === "columns";
+
+  // Toggle a column on/off
+  const toggleColumn = useCallback((colId: string) => {
+    const current = state.config.columns;
+    const isActive = current.some((c) => c.id === colId);
+    let newCols: ColumnConfig[];
+    if (isActive) {
+      // Don't allow removing all columns
+      if (current.length <= 1) return;
+      newCols = current.filter((c) => c.id !== colId);
+    } else {
+      const colDef = ALL_COLUMNS.find((c) => c.id === colId);
+      if (!colDef) return;
+      newCols = [...current, colDef];
+    }
+    const newConfig = { ...state.config, columns: newCols };
+    dispatch({ type: "SET_CONFIG", config: newConfig });
+    saveConfig(newConfig).catch(() => {});
+  }, [state.config, dispatch]);
 
   // Build results based on query and prefix matching
   useEffect(() => {
@@ -372,7 +417,21 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
     let initialIdx = 0;
 
-    if (match && match.command.id === "theme") {
+    if (match && match.command.id === "columns") {
+      // Column toggle mode — show all available columns as a checklist
+      const activeIds = new Set(state.config.columns.map((c) => c.id));
+      for (const col of ALL_COLUMNS) {
+        const isOn = activeIds.has(col.id);
+        items.push({
+          id: `col:${col.id}`,
+          label: `${isOn ? "[\u2713]" : "[ ]"} ${col.label}`,
+          detail: `${col.id}  w:${col.width}  ${col.align}`,
+          right: col.format || "",
+          category: "Columns",
+          action: () => toggleColumn(col.id),
+        });
+      }
+    } else if (match && match.command.id === "theme") {
       // Theme selection mode
       const themeOptions = getThemeOptions();
       const savedThemeId = originalThemeRef.current;
@@ -447,7 +506,12 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     setResults(items);
-    setSelectedIdx(initialIdx);
+    // In columns mode, preserve the selected index across re-renders (toggling)
+    if (match?.command.id === "columns") {
+      setSelectedIdx((prev) => Math.min(prev, items.length - 1));
+    } else {
+      setSelectedIdx(initialIdx);
+    }
 
     // Yahoo search when in ticker search mode (prefix "T")
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -483,7 +547,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers]);
+  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers, state.config.columns, toggleColumn]);
 
   // Live preview: apply theme as user arrows through the list
   useEffect(() => {
@@ -507,9 +571,19 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
     } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
       setSelectedIdx((i) => Math.max(i - 1, 0));
-    } else if (event.name === "return" || event.name === "enter") {
+    } else if (event.name === "space" && isColumnsMode) {
+      // Toggle column with space
       const selected = results[selectedIdx];
       if (selected) selected.action();
+    } else if (event.name === "return" || event.name === "enter") {
+      if (isColumnsMode) {
+        // Enter also toggles in columns mode
+        const selected = results[selectedIdx];
+        if (selected) selected.action();
+      } else {
+        const selected = results[selectedIdx];
+        if (selected) selected.action();
+      }
     }
   });
 
@@ -618,7 +692,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
               {group.items.map((item) => {
                 const isSel = item.globalIdx === selectedIdx;
                 const isThemeItem = !!item.themeId;
+                const isColumnItem = item.id.startsWith("col:");
                 const isSearchResult = item.id.startsWith("yahoo:") || item.id.startsWith("goto:");
+                const isChecked = isColumnItem && item.label.includes("\u2713");
                 return (
                   <box
                     key={item.id}
@@ -626,22 +702,33 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                     height={1}
                     paddingX={2}
                     backgroundColor={isSel ? colors.selected : colors.commandBg}
+                    onMouseDown={() => {
+                      setSelectedIdx(item.globalIdx);
+                      item.action();
+                    }}
                   >
-                    {/* Prefix shortcut column — shown only for commands (not tickers/themes) */}
-                    {!isThemeItem && !isSearchResult && (
+                    {/* Prefix shortcut column — shown only for commands (not tickers/themes/columns) */}
+                    {!isThemeItem && !isSearchResult && !isColumnItem && (
                       <box width={5}>
                         <text fg={colors.textMuted}>{item.right || ""}</text>
                       </box>
                     )}
                     {/* Label */}
-                    <box width={isThemeItem ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
-                      <text fg={isSel ? colors.text : colors.textDim}>{item.label}</text>
+                    <box width={isColumnItem ? Math.floor(barWidth * 0.4) : isThemeItem ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
+                      <text fg={isColumnItem ? (isChecked ? colors.text : colors.textDim) : (isSel ? colors.text : colors.textDim)}>
+                        {item.label}
+                      </text>
                     </box>
                     <box flexGrow={1}>
                       <text fg={colors.textMuted}>{item.detail}</text>
                     </box>
-                    {/* Right-side tag (exchange for search results, "current" for themes) */}
+                    {/* Right-side tag */}
                     {(isThemeItem || isSearchResult) && item.right && (
+                      <box>
+                        <text fg={colors.textMuted}>{item.right}</text>
+                      </box>
+                    )}
+                    {isColumnItem && item.right && (
                       <box>
                         <text fg={colors.textMuted}>{item.right}</text>
                       </box>
@@ -661,9 +748,13 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         </box>
       )}
 
-      {/* Bottom padding + esc hint */}
+      {/* Bottom padding + hint */}
       <box flexDirection="row" height={1} paddingX={2}>
-        <box flexGrow={1} />
+        <box flexGrow={1}>
+          {isColumnsMode && (
+            <text fg={colors.textMuted}>space/enter toggle</text>
+          )}
+        </box>
         <text fg={colors.textMuted}>esc to close</text>
       </box>
     </box>

@@ -11,6 +11,8 @@ export interface AppState {
   config: AppConfig;
   tickers: Map<string, TickerFile>;
   financials: Map<string, TickerFinancials>;
+  /** Exchange rates: currency code -> USD rate */
+  exchangeRates: Map<string, number>;
 
   // UI state
   activePanel: "left" | "right";
@@ -18,7 +20,6 @@ export interface AppState {
   activeRightTab: string;
   selectedTicker: string | null;
   commandBarOpen: boolean;
-  configOpen: boolean;
 
   // Loading
   refreshing: Set<string>;
@@ -45,14 +46,14 @@ export type AppAction =
   | { type: "SET_RIGHT_TAB"; tab: string }
   | { type: "TOGGLE_COMMAND_BAR" }
   | { type: "SET_COMMAND_BAR"; open: boolean }
-  | { type: "TOGGLE_CONFIG" }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
   | { type: "UPDATE_BROKER_CONFIG"; brokerId: string; values: Record<string, unknown> }
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
-  | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null };
+  | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
+  | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -108,9 +109,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_COMMAND_BAR":
       return { ...state, commandBarOpen: action.open };
 
-    case "TOGGLE_CONFIG":
-      return { ...state, configOpen: !state.configOpen };
-
     case "SET_REFRESHING": {
       const refreshing = new Set(state.refreshing);
       if (action.refreshing) refreshing.add(action.symbol);
@@ -140,6 +138,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_UPDATE_PROGRESS":
       return { ...state, updateProgress: action.progress };
+
+    case "SET_EXCHANGE_RATE": {
+      const exchangeRates = new Map(state.exchangeRates);
+      exchangeRates.set(action.currency, action.rate);
+      return { ...state, exchangeRates };
+    }
 
     default:
       return state;
@@ -175,12 +179,12 @@ export function createInitialState(config: AppConfig): AppState {
     config,
     tickers: new Map(),
     financials: new Map(),
+    exchangeRates: new Map([["USD", 1]]),
     activePanel: "left",
     activeLeftTab: config.portfolios[0]?.id || "main",
     activeRightTab: "overview",
     selectedTicker: null,
     commandBarOpen: false,
-    configOpen: false,
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: true,
