@@ -218,19 +218,42 @@ function NotesTab({ markdownStore, notesFocused }: { markdownStore?: MarkdownSto
   const { dispatch } = useAppState();
   const textareaRef = useRef<TextareaRenderable>(null);
 
+  // Save helper that persists textarea text for a given ticker
+  const saveNotesFor = useCallback((t: typeof ticker, text: string) => {
+    if (t && text !== t.notes) {
+      const updated = { ...t, notes: text };
+      dispatch({ type: "UPDATE_TICKER", ticker: updated });
+      if (markdownStore) {
+        markdownStore.saveTicker(updated).catch(() => {});
+      }
+    }
+  }, [dispatch, markdownStore]);
+
   // Save notes when unfocusing
   useEffect(() => {
     if (!notesFocused && textareaRef.current && ticker) {
-      const text = textareaRef.current.editBuffer.getText();
-      if (text !== ticker.notes) {
-        const updated = { ...ticker, notes: text };
-        dispatch({ type: "UPDATE_TICKER", ticker: updated });
-        if (markdownStore) {
-          markdownStore.saveTicker(updated).catch(() => {});
-        }
-      }
+      saveNotesFor(ticker, textareaRef.current.editBuffer.getText());
     }
   }, [notesFocused]);
+
+  // When the selected ticker changes, save pending edits and load new notes
+  const tickerSymbol = ticker?.frontmatter.ticker ?? null;
+  const prevTickerRef = useRef(ticker);
+  const prevSymbolRef = useRef(tickerSymbol);
+  useEffect(() => {
+    if (tickerSymbol !== prevSymbolRef.current) {
+      // Save edits for the previous ticker
+      if (textareaRef.current && prevTickerRef.current) {
+        saveNotesFor(prevTickerRef.current, textareaRef.current.editBuffer.getText());
+      }
+      prevSymbolRef.current = tickerSymbol;
+      prevTickerRef.current = ticker;
+      // Update textarea content to new ticker's notes
+      if (textareaRef.current) {
+        textareaRef.current.setText(ticker?.notes || "");
+      }
+    }
+  }, [tickerSymbol, ticker, saveNotesFor]);
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view notes.</text>;
 
