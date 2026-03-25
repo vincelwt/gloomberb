@@ -97,15 +97,54 @@ function OverviewTab({ width }: { width?: number }) {
           />
         </box>
 
-        {/* Sector info */}
-        {(ticker.frontmatter.sector || ticker.frontmatter.industry) && (
+        {/* Sector / classification */}
+        {(ticker.frontmatter.sector || ticker.frontmatter.industry || ticker.frontmatter.asset_category || ticker.frontmatter.isin) && (
           <box flexDirection="column">
+            {ticker.frontmatter.asset_category && (
+              <MetricRow label="Type" value={ticker.frontmatter.asset_category} />
+            )}
             {ticker.frontmatter.sector && (
               <MetricRow label="Sector" value={ticker.frontmatter.sector} />
             )}
             {ticker.frontmatter.industry && (
               <MetricRow label="Industry" value={ticker.frontmatter.industry} />
             )}
+            {ticker.frontmatter.isin && (
+              <MetricRow label="ISIN" value={ticker.frontmatter.isin} />
+            )}
+          </box>
+        )}
+
+        {/* Positions */}
+        {ticker.frontmatter.positions.length > 0 && (
+          <box flexDirection="column">
+            <box height={1}>
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Positions</text>
+            </box>
+            {ticker.frontmatter.positions.map((pos, i) => {
+              const costBasis = pos.shares * pos.avg_cost * (pos.multiplier || 1);
+              const pnlText = pos.unrealized_pnl != null
+                ? `  P&L: ${pos.unrealized_pnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealized_pnl, pos.currency)}`
+                : "";
+              return (
+                <box key={i} flexDirection="column">
+                  <box flexDirection="row" height={1}>
+                    <text fg={colors.textDim}>{pos.portfolio}</text>
+                    <text fg={colors.textMuted}>{" via "}{pos.broker}</text>
+                    {pos.side === "short" && <text fg={colors.negative}>{" SHORT"}</text>}
+                  </box>
+                  <box flexDirection="row" height={1}>
+                    <text fg={colors.text}>
+                      {pos.shares} shares @ {formatCurrency(pos.avg_cost, pos.currency)}
+                      {" = "}{formatCurrency(costBasis, pos.currency)}
+                    </text>
+                    {pnlText && (
+                      <text fg={priceColor(pos.unrealized_pnl!)}>{pnlText}</text>
+                    )}
+                  </box>
+                </box>
+              );
+            })}
           </box>
         )}
       </box>

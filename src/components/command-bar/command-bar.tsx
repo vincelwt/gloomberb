@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { InputRenderable } from "@opentui/core";
+import { useDialog, useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { colors } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
@@ -11,10 +12,14 @@ import { saveConfig } from "../../data/config-store";
 import type { YahooFinanceClient } from "../../sources/yahoo-finance";
 import type { MarkdownStore } from "../../data/markdown-store";
 import type { TickerFrontmatter } from "../../types/ticker";
+import type { PluginRegistry } from "../../plugins/registry";
+import type { CommandDef, WizardStep } from "../../types/plugin";
+import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 
 interface CommandBarProps {
   yahoo: YahooFinanceClient;
   markdownStore: MarkdownStore;
+  pluginRegistry: PluginRegistry;
 }
 
 interface ResultItem {
@@ -27,9 +32,110 @@ interface ResultItem {
   action: () => void | Promise<void>;
 }
 
-export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
+// --- Wizard dialog content components ---
+
+function InfoStepContent({ dismiss, dialogId, step }: AlertContext & { step: WizardStep }) {
+  useDialogKeyboard((event) => {
+    event.stopPropagation();
+    if (event.name === "return") dismiss();
+  }, dialogId);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
+      </box>
+      <box height={1} />
+      {step.body?.map((line, i) => (
+        <box key={i} height={1}>
+          <text fg={
+            line.startsWith("  ") && (line.includes("interactivebrokers") || line.includes("http"))
+              ? colors.textBright
+              : line.startsWith("  - ") ? colors.text : colors.textDim
+          }>{line || " "}</text>
+        </box>
+      ))}
+      <box height={1} />
+      <text fg={colors.textMuted}>Press Enter to continue</text>
+    </box>
+  );
+}
+
+function InputStepContent({ resolve, step }: PromptContext<string> & { step: WizardStep }) {
+  const inputRef = useRef<InputRenderable>(null);
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
+      </box>
+      <box height={1} />
+      {step.body?.map((line, i) => (
+        <box key={i} height={1}>
+          <text fg={colors.textDim}>{line || " "}</text>
+        </box>
+      ))}
+      <box height={1} />
+      <box height={1}>
+        <input
+          ref={inputRef}
+          placeholder={step.placeholder || ""}
+          focused
+          textColor={colors.text}
+          placeholderColor={colors.textDim}
+          backgroundColor={colors.bg}
+          onInput={(val) => setValue(val)}
+          onChange={(val) => setValue(val)}
+          onSubmit={() => { if (value.trim()) resolve(value.trim()); }}
+        />
+      </box>
+    </box>
+  );
+}
+
+function ValidatingContent({ dismiss, dialogId, step }: AlertContext & { step: WizardStep }) {
+  // No keyboard — auto-dismissed by the caller after execute
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
+      </box>
+      <box height={1} />
+      <text fg={colors.textDim}>{step.body?.[0] || "Processing..."}</text>
+    </box>
+  );
+}
+
+function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & { message: string; isError: boolean }) {
+  useDialogKeyboard((event) => {
+    event.stopPropagation();
+    if (event.name === "return" || event.name === "escape") dismiss();
+  }, dialogId);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={isError ? colors.negative : colors.positive}>
+          {isError ? "Connection Failed" : "Success"}
+        </text>
+      </box>
+      <box height={1} />
+      <text fg={isError ? colors.negative : colors.positive}>{message}</text>
+      <box height={1} />
+      <text fg={colors.textMuted}>Press Enter to close</text>
+    </box>
+  );
+}
+
+export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarProps) {
   const { state, dispatch } = useAppState();
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const dialog = useDialog();
+  const { width: termWidth } = useTerminalDimensions();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ResultItem[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -88,15 +194,10 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
         close();
         break;
       }
-      case "refresh": {
-        // Trigger via keyboard event passthrough
+      case "refresh":
+      case "refresh-all":
         close();
         break;
-      }
-      case "refresh-all": {
-        close();
-        break;
-      }
       default:
         cmd.execute(dispatch, ctx);
         close();
@@ -104,7 +205,6 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
   }, [state, dispatch, markdownStore, close]);
 
   const openTickerDetail = useCallback((symbol: string, name: string, exchange: string) => {
-    // Create markdown file if it doesn't exist, then select it
     (async () => {
       let existing = await markdownStore.loadTicker(symbol);
       if (!existing) {
@@ -119,6 +219,91 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
       close();
     })();
   }, [markdownStore, dispatch, close]);
+
+  // Run a wizard command through sequential dialogs
+  const runWizard = useCallback(async (cmd: CommandDef) => {
+    const steps = cmd.wizard!;
+    const values: Record<string, string> = {};
+
+    for (const step of steps) {
+      const isValidate = step.type === "info" && step.key.startsWith("_validate");
+
+      if (isValidate) {
+        // Show a non-interactive "connecting" dialog, run execute, then show result
+        const dialogId = dialog.show({
+          content: () => (
+            <box flexDirection="column">
+              <box height={1}>
+                <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
+              </box>
+              <box height={1} />
+              <text fg={colors.textDim}>{step.body?.[0] || "Processing..."}</text>
+            </box>
+          ),
+        });
+
+        try {
+          await cmd.execute(values);
+          dialog.close(dialogId);
+          await dialog.alert({
+            content: (ctx) => <ResultContent {...ctx} message="Connected! Positions will sync automatically." isError={false} />,
+          });
+        } catch (err: any) {
+          dialog.close(dialogId);
+          await dialog.alert({
+            content: (ctx) => <ResultContent {...ctx} message={err.message || "Connection failed"} isError={true} />,
+          });
+        }
+        return; // Wizard complete after validate step
+      }
+
+      if (step.type === "info") {
+        await dialog.alert({
+          content: (ctx) => <InfoStepContent {...ctx} step={step} />,
+        });
+        continue;
+      }
+
+      // text or password step
+      const result = await dialog.prompt<string>({
+        content: (ctx) => <InputStepContent {...ctx} step={step} />,
+      });
+
+      if (result === undefined) return; // User cancelled (Esc)
+      values[step.key] = result;
+    }
+
+    // If no validate step, just execute
+    try {
+      await cmd.execute(values);
+    } catch {
+      // silently fail
+    }
+  }, [dialog]);
+
+  // Convert plugin commands to ResultItems
+  const pluginCommandItems = useCallback((): ResultItem[] => {
+    return [...pluginRegistry.commands.values()].map((cmd) => ({
+      id: cmd.id,
+      label: cmd.label,
+      detail: cmd.description || "",
+      category: "Plugins",
+      action: () => {
+        close();
+        if (cmd.wizard && cmd.wizard.length > 0) {
+          runWizard(cmd);
+        } else {
+          (async () => {
+            try {
+              await cmd.execute();
+            } catch {
+              // silently fail
+            }
+          })();
+        }
+      },
+    }));
+  }, [pluginRegistry.commands, close, runWizard]);
 
   // Detect if we're in theme mode
   const isThemeMode = matchPrefix(query)?.command.id === "theme";
@@ -157,13 +342,10 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
         });
       }
     } else if (match && match.command.id === "search-ticker") {
-      // Ticker search mode - show "Searching..." until results come in
-      // Don't show anything else, just Yahoo results
       if (!match.arg) {
         items.push({ id: "hint", label: "Type a ticker symbol...", detail: "", category: "Search", action: () => {} });
       }
     } else if (match && !match.command.hasArg) {
-      // Direct command match - show it as the only option for quick execute
       items.push({
         id: match.command.id,
         label: match.command.label,
@@ -173,7 +355,6 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
         action: () => executeCommand(match.command, match.arg),
       });
     } else if (!query) {
-      // Empty query - show existing tickers and all commands
       for (const t of state.tickers.values()) {
         items.push({
           id: `goto:${t.frontmatter.ticker}`,
@@ -185,33 +366,24 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
       }
       for (const cmd of commands) {
         items.push({
-          id: cmd.id,
-          label: cmd.label,
-          detail: cmd.description,
-          right: cmd.prefix,
-          category: cmd.category,
+          id: cmd.id, label: cmd.label, detail: cmd.description,
+          right: cmd.prefix, category: cmd.category,
           action: () => executeCommand(cmd, ""),
         });
       }
+      items.push(...pluginCommandItems());
     } else {
-      // Fuzzy filter across tickers and commands
       const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
-        id: `goto:${t.frontmatter.ticker}`,
-        label: t.frontmatter.ticker,
-        detail: t.frontmatter.name,
-        category: "Tickers",
+        id: `goto:${t.frontmatter.ticker}`, label: t.frontmatter.ticker,
+        detail: t.frontmatter.name, category: "Tickers",
         action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
       }));
       const cmdItems: ResultItem[] = commands.map((cmd) => ({
-        id: cmd.id,
-        label: cmd.label,
-        detail: cmd.description,
-        right: cmd.prefix,
-        category: cmd.category,
+        id: cmd.id, label: cmd.label, detail: cmd.description,
+        right: cmd.prefix, category: cmd.category,
         action: () => executeCommand(cmd, ""),
       }));
-
-      const allItems: ResultItem[] = [...tickerItems, ...cmdItems];
+      const allItems = [...tickerItems, ...cmdItems, ...pluginCommandItems()];
       const filtered = fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`);
       items.push(...filtered);
     }
@@ -234,11 +406,8 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
               const sym = r.symbol.split(".")[0]!;
               const isExisting = state.tickers.has(sym);
               return {
-                id: `yahoo:${r.symbol}`,
-                label: sym,
-                detail: r.name,
-                right: r.exchange,
-                category: isExisting ? "Open" : "Search Results",
+                id: `yahoo:${r.symbol}`, label: sym, detail: r.name,
+                right: r.exchange, category: isExisting ? "Open" : "Search Results",
                 action: () => openTickerDetail(sym, r.name, r.exchange),
               };
             });
@@ -280,7 +449,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
       setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
     } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
       setSelectedIdx((i) => Math.max(i - 1, 0));
-    } else if (event.name === "enter") {
+    } else if (event.name === "return" || event.name === "enter") {
       const selected = results[selectedIdx];
       if (selected) selected.action();
     }
@@ -304,7 +473,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
   // Detect active prefix for hint display
   const activeMatch = matchPrefix(query);
   const prefixHint = activeMatch
-    ? `${activeMatch.command.prefix}: ${activeMatch.command.label}${activeMatch.command.hasArg ? ` — ${activeMatch.command.argPlaceholder}` : ""}`
+    ? `${activeMatch.command.prefix}: ${activeMatch.command.label}${activeMatch.command.hasArg ? ` \u2014 ${activeMatch.command.argPlaceholder}` : ""}`
     : null;
 
   return (
@@ -364,15 +533,12 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
         ) : (
           grouped.map((group, gi) => (
             <box key={group.category} flexDirection="column">
-              {/* Spacing between groups */}
               {gi > 0 && <box height={1} />}
-              {/* Category header */}
               <box height={1} paddingX={2}>
                 <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
                   {group.category}
                 </text>
               </box>
-              {/* Items */}
               {group.items.map((item) => {
                 const isSel = item.globalIdx === selectedIdx;
                 const isThemeItem = !!item.themeId;
@@ -394,7 +560,6 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
                     <box width={isThemeItem ? Math.floor(barWidth * 0.35) : Math.floor(barWidth * 0.3)}>
                       <text fg={isSel ? colors.text : colors.textDim}>{item.label}</text>
                     </box>
-                    {/* Description */}
                     <box flexGrow={1}>
                       <text fg={colors.textMuted}>{item.detail}</text>
                     </box>

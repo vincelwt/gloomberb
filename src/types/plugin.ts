@@ -41,13 +41,27 @@ export interface PaneDef {
   defaultWidth?: string;
 }
 
+export interface WizardStep {
+  key: string;
+  label: string;
+  placeholder?: string;
+  type?: "text" | "password" | "info";
+  /** Lines of text displayed above the input (or as the body for info steps) */
+  body?: string[];
+}
+
 export interface CommandDef {
   id: string;
   label: string;
   keywords: string[];
   shortcut?: string;
-  execute: () => void | Promise<void>;
+  /** Called with wizard values (if wizard is defined) or no args */
+  execute: (values?: Record<string, string>) => void | Promise<void>;
   category: "navigation" | "data" | "portfolio" | "config";
+  /** Short description shown in command bar */
+  description?: string;
+  /** Multi-step wizard flow. When present, selecting this command starts the wizard. */
+  wizard?: WizardStep[];
 }
 
 export interface CustomColumnDef extends ColumnConfig {
@@ -61,6 +75,10 @@ export interface GloomPluginContext {
   registerBroker(broker: BrokerAdapter): void;
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerFile | null;
+  getConfig(): import("./config").AppConfig;
+  updateBrokerConfig(brokerId: string, values: Record<string, unknown>): Promise<void>;
+  /** Trigger position sync for a specific broker */
+  syncBroker(brokerId: string): Promise<void>;
 }
 
 export interface GloomPlugin {
