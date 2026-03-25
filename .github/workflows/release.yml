@@ -17,7 +17,7 @@ jobs:
             arch: arm64
             target: bun-darwin-arm64
             asset: gloomberb-darwin-arm64
-          - os: macos-13
+          - os: macos-15
             arch: x64
             target: bun-darwin-x64
             asset: gloomberb-darwin-x64
