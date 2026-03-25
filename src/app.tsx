@@ -7,19 +7,21 @@ import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { CommandBar } from "./components/command-bar/command-bar";
 import { ConfigPage } from "./components/config/config-page";
+import { DialogProvider, useDialogState } from "@opentui-ui/dialog/react";
 import { PluginRegistry } from "./plugins/registry";
 import { MarkdownStore } from "./data/markdown-store";
 import { SqliteCache } from "./data/sqlite-cache";
 import { YahooFinanceClient } from "./sources/yahoo-finance";
 import { colors } from "./theme/colors";
 import type { AppConfig } from "./types/config";
-import type { TickerFile } from "./types/ticker";
+import type { TickerFile, TickerFrontmatter, Portfolio } from "./types/ticker";
 
 // Built-in plugins
 import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
 import { tickerDetailPlugin, setMarkdownStore } from "./plugins/builtin/ticker-detail";
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
-import { ibkrFlexPlugin } from "./plugins/builtin/ibkr-flex";
+import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
+import { saveConfig } from "./data/config-store";
 import { join } from "path";
 
 interface AppInnerProps {
@@ -31,6 +33,130 @@ interface AppInnerProps {
 function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
+
+  const refreshTicker = useCallback(async (symbol: string, exchange = "") => {
+    dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
+    try {
+      const data = await yahoo.getTickerFinancials(symbol, exchange);
+      dispatch({ type: "SET_FINANCIALS", symbol, data });
+    } catch {
+      // Silently fail - will show "—" for missing data
+    } finally {
+      dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
+    }
+  }, [yahoo, dispatch]);
+
+  // Ensure a portfolio exists in config, creating it if needed
+  const ensurePortfolio = useCallback(async (portfolioId: string, name: string, currency = "USD") => {
+    const existing = state.config.portfolios.find((p) => p.id === portfolioId);
+    if (existing) return;
+
+    const portfolio: Portfolio = { id: portfolioId, name, currency };
+    const updatedConfig = {
+      ...state.config,
+      portfolios: [...state.config.portfolios, portfolio],
+    };
+    dispatch({ type: "SET_CONFIG", config: updatedConfig });
+    await saveConfig(updatedConfig);
+  }, [state.config, dispatch]);
+
+  // Import positions from a single broker
+  const importBrokerPositions = useCallback(async (brokerId: string, tickerMap?: Map<string, TickerFile>) => {
+    const broker = pluginRegistry.brokers.get(brokerId);
+    if (!broker) return;
+
+    const brokerConfig = state.config.brokers[brokerId];
+    if (!brokerConfig) return;
+
+    const valid = await broker.validate(brokerConfig).catch(() => false);
+    if (!valid) return;
+
+    const existingTickers = tickerMap ?? new Map(state.tickers);
+    const positions = await broker.importPositions(brokerConfig);
+
+    // Group positions by account (or use broker name as fallback)
+    const accountIds = new Set(positions.map((p) => p.accountId).filter(Boolean));
+    const brokerName = broker.name;
+
+    // Create portfolios for each account
+    if (accountIds.size > 0) {
+      for (const accountId of accountIds) {
+        const portfolioId = `${brokerId}-${accountId}`;
+        await ensurePortfolio(portfolioId, `IBKR ${accountId}`);
+      }
+    } else {
+      await ensurePortfolio(brokerId, brokerName);
+    }
+
+    for (const pos of positions) {
+      const portfolioId = pos.accountId ? `${brokerId}-${pos.accountId}` : brokerId;
+
+      const positionEntry = {
+        portfolio: portfolioId,
+        shares: pos.shares,
+        avg_cost: pos.avgCost,
+        currency: pos.currency,
+        broker: brokerId,
+        side: pos.side,
+        market_value: pos.marketValue,
+        unrealized_pnl: pos.unrealizedPnl,
+        multiplier: pos.multiplier,
+      };
+
+      let ticker = existingTickers.get(pos.ticker);
+      if (!ticker) {
+        const frontmatter: TickerFrontmatter = {
+          ticker: pos.ticker,
+          exchange: pos.exchange,
+          currency: pos.currency,
+          name: pos.name || pos.ticker,
+          asset_category: pos.assetCategory,
+          isin: pos.isin,
+          portfolios: [portfolioId],
+          watchlists: [],
+          positions: [positionEntry],
+          custom: {},
+          tags: [],
+        };
+        ticker = await markdownStore.createTicker(frontmatter);
+      } else {
+        // Update ticker-level fields from broker if richer
+        if (pos.name && ticker.frontmatter.name === ticker.frontmatter.ticker) {
+          ticker.frontmatter.name = pos.name;
+        }
+        if (pos.assetCategory && !ticker.frontmatter.asset_category) {
+          ticker.frontmatter.asset_category = pos.assetCategory;
+        }
+        if (pos.isin && !ticker.frontmatter.isin) {
+          ticker.frontmatter.isin = pos.isin;
+        }
+
+        // Remove old positions from this broker for this account
+        const otherPositions = ticker.frontmatter.positions.filter(
+          (p) => !(p.broker === brokerId && p.portfolio === portfolioId),
+        );
+        ticker.frontmatter.positions = [...otherPositions, positionEntry];
+        if (!ticker.frontmatter.portfolios.includes(portfolioId)) {
+          ticker.frontmatter.portfolios.push(portfolioId);
+        }
+        await markdownStore.saveTicker(ticker);
+      }
+      existingTickers.set(pos.ticker, ticker);
+      dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
+      refreshTicker(pos.ticker, pos.exchange);
+    }
+  }, [pluginRegistry.brokers, state.config, state.tickers, markdownStore, dispatch, refreshTicker, ensurePortfolio]);
+
+  // Auto-import positions from all configured brokers
+  const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerFile>) => {
+    for (const [brokerId] of pluginRegistry.brokers) {
+      try {
+        await importBrokerPositions(brokerId, tickerMap);
+      } catch {
+        // Silently fail — broker import is best-effort on startup
+      }
+    }
+  }, [pluginRegistry.brokers, importBrokerPositions]);
 
   // Load tickers on mount
   useEffect(() => {
@@ -55,30 +181,37 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
         for (const t of tickers) {
           refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
         }
+
+        // Auto-import from configured brokers
+        autoImportBrokerPositions(tickerMap);
       } catch (err) {
         // Will show empty state
       }
     })();
   }, [state.initialized]);
 
-  const refreshTicker = useCallback(async (symbol: string, exchange = "") => {
-    dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
-    try {
-      const data = await yahoo.getTickerFinancials(symbol, exchange);
-      dispatch({ type: "SET_FINANCIALS", symbol, data });
-    } catch {
-      // Silently fail - will show "—" for missing data
-    } finally {
-      dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
-    }
-  }, [yahoo, dispatch]);
-
   // Wire up plugin registry data accessors
   pluginRegistry.getTickerFn = (symbol) => state.tickers.get(symbol) ?? null;
   pluginRegistry.getDataFn = (symbol) => state.financials.get(symbol) ?? null;
+  pluginRegistry.getConfigFn = () => state.config;
+  pluginRegistry.updateBrokerConfigFn = async (brokerId, values) => {
+    dispatch({ type: "UPDATE_BROKER_CONFIG", brokerId, values });
+    const updatedBrokers = { ...state.config.brokers };
+    updatedBrokers[brokerId] = { ...updatedBrokers[brokerId], ...values };
+    await saveConfig({ ...state.config, brokers: updatedBrokers });
+  };
+  pluginRegistry.syncBrokerFn = async (brokerId) => {
+    await importBrokerPositions(brokerId);
+  };
+
+  // Check if a dialog is currently open (wizard, confirm, etc.)
+  const dialogOpen = useDialogState((s) => s.isOpen);
 
   // Global keyboard shortcuts
   useKeyboard((event) => {
+    // Skip all global shortcuts when a dialog is open
+    if (dialogOpen) return;
+
     // Ctrl+P: toggle command bar (backtick handled in command-bar itself for close)
     if (event.name === "p" && event.ctrl) {
       dispatch({ type: "TOGGLE_COMMAND_BAR" });
@@ -127,7 +260,7 @@ function AppInner({ pluginRegistry, markdownStore, yahoo }: AppInnerProps) {
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
       {state.commandBarOpen && (
-        <CommandBar yahoo={yahoo} markdownStore={markdownStore} />
+        <CommandBar yahoo={yahoo} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
       )}
       {state.configOpen && <ConfigPage />}
     </box>
@@ -156,11 +289,18 @@ export function App({ config, renderer }: AppProps) {
 
   return (
     <AppProvider config={config}>
-      <AppInner
-        pluginRegistry={pluginRegistry}
-        markdownStore={markdownStore}
-        yahoo={yahoo}
-      />
+      <DialogProvider
+        size="medium"
+        dialogOptions={{ style: { backgroundColor: colors.bg, borderColor: colors.borderFocused, borderStyle: "single", paddingX: 2, paddingY: 1 } }}
+        backdropColor="#000000"
+        backdropOpacity={0.8}
+      >
+        <AppInner
+          pluginRegistry={pluginRegistry}
+          markdownStore={markdownStore}
+          yahoo={yahoo}
+        />
+      </DialogProvider>
     </AppProvider>
   );
 }

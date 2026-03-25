@@ -13,6 +13,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@opentui-ui/dialog": "^0.1.2",
     "@opentui/core": "^0.1.90",
     "@opentui/react": "^0.1.90",
     "gray-matter": "^4.0.3",

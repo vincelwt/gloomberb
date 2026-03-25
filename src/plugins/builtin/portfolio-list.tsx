@@ -15,9 +15,18 @@ function getColumnValue(
   col: ColumnConfig,
   ticker: TickerFile,
   financials: TickerFinancials | undefined,
+  activeTab?: string,
 ): { text: string; color?: string } {
   const q = financials?.quote;
   const f = financials?.fundamentals;
+
+  // Helper to get positions relevant to the active portfolio tab
+  const tabPositions = activeTab
+    ? ticker.frontmatter.positions.filter((p) => p.portfolio === activeTab)
+    : ticker.frontmatter.positions;
+  const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
+  const totalCost = tabPositions.reduce((sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1), 0);
+
   switch (col.id) {
     case "ticker":
       return { text: ticker.frontmatter.ticker };
@@ -46,6 +55,29 @@ function getColumnValue(
       return {
         text: f?.dividendYield != null ? (f.dividendYield * 100).toFixed(2) + "%" : "—",
       };
+    case "shares":
+      return { text: totalShares !== 0 ? formatNumber(totalShares, 2) : "—" };
+    case "avg_cost":
+      return { text: totalShares !== 0 ? formatCurrency(totalCost / Math.abs(totalShares)) : "—" };
+    case "cost_basis":
+      return { text: totalCost !== 0 ? formatCompact(totalCost) : "—" };
+    case "mkt_value": {
+      if (!q || totalShares === 0) return { text: "—" };
+      const mv = Math.abs(totalShares) * q.price;
+      return { text: formatCompact(mv) };
+    }
+    case "pnl": {
+      if (!q || totalShares === 0) return { text: "—" };
+      const mv = Math.abs(totalShares) * q.price;
+      const pnl = mv - totalCost;
+      return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
+    }
+    case "pnl_pct": {
+      if (!q || totalCost === 0) return { text: "—" };
+      const mv = Math.abs(totalShares) * q.price;
+      const pct = ((mv - totalCost) / totalCost) * 100;
+      return { text: formatPercentRaw(pct), color: priceColor(pct) };
+    }
     default:
       return { text: "—" };
   }
@@ -146,7 +178,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
                 backgroundColor={isSelected ? colors.selected : colors.bg}
               >
                 {cols.map((col) => {
-                  const { text, color } = getColumnValue(col, ticker, fin);
+                  const { text, color } = getColumnValue(col, ticker, fin, state.activeLeftTab);
                   return (
                     <box key={col.id} width={col.width + 1}>
                       <text

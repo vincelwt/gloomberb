@@ -39,7 +39,8 @@ export type AppAction =
   | { type: "SET_COMMAND_BAR"; open: boolean }
   | { type: "TOGGLE_CONFIG" }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
-  | { type: "SET_INITIALIZED" };
+  | { type: "SET_INITIALIZED" }
+  | { type: "UPDATE_BROKER_CONFIG"; brokerId: string; values: Record<string, unknown> };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -104,6 +105,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
+
+    case "UPDATE_BROKER_CONFIG": {
+      const brokers = { ...state.config.brokers };
+      brokers[action.brokerId] = { ...brokers[action.brokerId], ...action.values };
+      return { ...state, config: { ...state.config, brokers } };
+    }
 
     default:
       return state;

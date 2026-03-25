@@ -103,15 +103,6 @@ export const commands: Command[] = [
     category: "Data",
     execute: () => {},
   },
-  {
-    id: "import-ibkr",
-    prefix: "IB",
-    label: "Import IBKR",
-    description: "Import positions from Interactive Brokers",
-    category: "Data",
-    execute: () => {},
-  },
-
   // Settings
   {
     id: "settings",
