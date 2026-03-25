@@ -7,6 +7,7 @@ import { useAppState } from "../../state/app-context";
 import { getActiveTabTickers, getLeftTabs } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo } from "../../utils/format";
+import { exchangeShortName, marketStateLabel } from "../../utils/market-status";
 import type { ColumnConfig } from "../../types/config";
 import type { TickerFile } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
@@ -55,6 +56,23 @@ function getColumnValue(
       return {
         text: f?.dividendYield != null ? (f.dividendYield * 100).toFixed(2) + "%" : "—",
       };
+    case "exchange": {
+      const exch = exchangeShortName(q?.exchangeName, q?.fullExchangeName) || ticker.frontmatter.exchange;
+      const mkt = q?.marketState;
+      const statusDot = mkt === "REGULAR" ? "\u25CF" : mkt === "PRE" || mkt === "POST" ? "\u25CB" : "\u25CB";
+      return { text: exch ? `${statusDot} ${exch}` : "—" };
+    }
+    case "ext_hours": {
+      if (q?.marketState === "PRE" && q.preMarketPrice != null) {
+        const chg = q.preMarketChangePercent ?? 0;
+        return { text: formatPercentRaw(chg), color: priceColor(chg) };
+      }
+      if (q?.marketState === "POST" && q.postMarketPrice != null) {
+        const chg = q.postMarketChangePercent ?? 0;
+        return { text: formatPercentRaw(chg), color: priceColor(chg) };
+      }
+      return { text: "—" };
+    }
     case "shares":
       return { text: totalShares !== 0 ? formatNumber(totalShares, 2) : "—" };
     case "avg_cost":

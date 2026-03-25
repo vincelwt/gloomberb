@@ -44,6 +44,36 @@ export function formatNumber(value: number | undefined, decimals = 2): string {
   });
 }
 
+/** Format a growth rate compactly (e.g., +12%, -5%) */
+export function formatGrowthShort(value: number): string {
+  const pct = value * 100;
+  const sign = pct > 0 ? "+" : "";
+  return Math.abs(pct) >= 10
+    ? `${sign}${Math.round(pct)}%`
+    : `${sign}${pct.toFixed(1)}%`;
+}
+
+/** Pick a common unit suffix for a set of numbers */
+export function pickUnit(values: (number | undefined)[]): { suffix: string; divisor: number } {
+  const defined = values.filter((v): v is number => v != null);
+  if (!defined.length) return { suffix: "", divisor: 1 };
+  const maxAbs = Math.max(...defined.map(Math.abs));
+  if (maxAbs >= 1e12) return { suffix: "T", divisor: 1e12 };
+  if (maxAbs >= 1e9) return { suffix: "B", divisor: 1e9 };
+  if (maxAbs >= 1e6) return { suffix: "M", divisor: 1e6 };
+  if (maxAbs >= 1e3) return { suffix: "K", divisor: 1e3 };
+  return { suffix: "", divisor: 1 };
+}
+
+/** Format a number using a pre-determined divisor (no unit suffix) */
+export function formatWithDivisor(value: number | undefined, divisor: number): string {
+  if (value === undefined || value === null) return "—";
+  const scaled = value / divisor;
+  const abs = Math.abs(scaled);
+  const decimals = abs >= 100 ? 1 : 2;
+  return scaled.toFixed(decimals);
+}
+
 /** Pad/truncate a string to a fixed width */
 export function padTo(str: string, width: number, align: "left" | "right" = "left"): string {
   if (str.length > width) return str.slice(0, width);

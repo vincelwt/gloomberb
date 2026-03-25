@@ -23,6 +23,8 @@ import { tickerDetailPlugin, setMarkdownStore, setDataProvider } from "./plugins
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
 import { saveConfig } from "./data/config-store";
+import { checkForUpdate, performUpdate } from "./updater";
+import { VERSION } from "./version";
 import { join } from "path";
 
 interface AppInnerProps {
@@ -159,6 +161,13 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     }
   }, [pluginRegistry.brokers, importBrokerPositions]);
 
+  // Check for updates on mount
+  useEffect(() => {
+    checkForUpdate(VERSION).then((release) => {
+      if (release) dispatch({ type: "SET_UPDATE_AVAILABLE", release });
+    });
+  }, []);
+
   // Load tickers on mount
   useEffect(() => {
     if (state.initialized) return;
@@ -239,7 +248,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
         type: "SET_ACTIVE_PANEL",
         panel: state.activePanel === "left" ? "right" : "left",
       });
-    } else if (event.name === "q") {
+    } else if (event.name === "q" && !(state.activePanel === "right" && state.activeRightTab === "financials")) {
       renderer.destroy();
     } else if (event.name === "r") {
       // Refresh selected ticker
@@ -252,6 +261,10 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       for (const t of state.tickers.values()) {
         refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
       }
+    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress) {
+      performUpdate(state.updateAvailable, (progress) => {
+        dispatch({ type: "SET_UPDATE_PROGRESS", progress });
+      });
     }
   });
 
@@ -279,6 +292,7 @@ export function App({ config, renderer }: AppProps) {
 
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const cache = new SqliteCache(dbPath);
+  cache.clearByType("full"); // Clear stale financials cache on startup
   const markdownStore = new MarkdownStore(config.dataDir);
   setMarkdownStore(markdownStore);
   const dataProvider: DataProvider = new YahooFinanceClient(cache);
