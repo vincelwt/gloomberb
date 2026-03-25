@@ -5,7 +5,9 @@ import type { InputRenderable } from "@opentui/core";
 import { colors } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
-import { commands, matchPrefix, type Command } from "./command-registry";
+import { commands, matchPrefix, getThemeOptions, type Command } from "./command-registry";
+import { getCurrentThemeId, applyTheme } from "../../theme/colors";
+import { saveConfig } from "../../data/config-store";
 import type { YahooFinanceClient } from "../../sources/yahoo-finance";
 import type { MarkdownStore } from "../../data/markdown-store";
 import type { TickerFrontmatter } from "../../types/ticker";
@@ -21,6 +23,7 @@ interface ResultItem {
   detail: string;
   right?: string;
   category: string;
+  themeId?: string; // for theme items — enables live preview
   action: () => void | Promise<void>;
 }
 
@@ -33,6 +36,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
   const [searching, setSearching] = useState(false);
   const inputRef = useRef<InputRenderable>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originalThemeRef = useRef<string>(getCurrentThemeId());
 
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
@@ -44,6 +48,12 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
     setResults([]);
     setSelectedIdx(0);
   }, [dispatch]);
+
+  // Revert theme on close without selection
+  const closeAndRevert = useCallback(() => {
+    dispatch({ type: "SET_THEME", theme: originalThemeRef.current });
+    close();
+  }, [dispatch, close]);
 
   // Handle prefix-based command execution
   const executeCommand = useCallback((cmd: Command, arg: string) => {
@@ -110,12 +120,43 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
     })();
   }, [markdownStore, dispatch, close]);
 
+  // Detect if we're in theme mode
+  const isThemeMode = matchPrefix(query)?.command.id === "theme";
+
   // Build results based on query and prefix matching
   useEffect(() => {
     const items: ResultItem[] = [];
     const match = matchPrefix(query);
 
-    if (match && match.command.id === "search-ticker") {
+    let initialIdx = 0;
+
+    if (match && match.command.id === "theme") {
+      // Theme selection mode
+      const themeOptions = getThemeOptions();
+      const savedThemeId = originalThemeRef.current;
+      const filtered = match.arg
+        ? themeOptions.filter((t) => t.name.toLowerCase().includes(match.arg.toLowerCase()) || t.id.includes(match.arg.toLowerCase()))
+        : themeOptions;
+      for (let i = 0; i < filtered.length; i++) {
+        const t = filtered[i]!;
+        const isSaved = t.id === savedThemeId;
+        if (isSaved) initialIdx = i;
+        items.push({
+          id: `theme:${t.id}`,
+          label: t.name,
+          detail: t.description,
+          right: isSaved ? "current" : undefined,
+          themeId: t.id,
+          category: "Themes",
+          action: () => {
+            originalThemeRef.current = t.id;
+            dispatch({ type: "SET_THEME", theme: t.id });
+            saveConfig({ ...state.config, theme: t.id }).catch(() => {});
+            close();
+          },
+        });
+      }
+    } else if (match && match.command.id === "search-ticker") {
       // Ticker search mode - show "Searching..." until results come in
       // Don't show anything else, just Yahoo results
       if (!match.arg) {
@@ -176,7 +217,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
     }
 
     setResults(items);
-    setSelectedIdx(0);
+    setSelectedIdx(initialIdx);
 
     // Yahoo search when in ticker search mode (prefix "T")
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -217,9 +258,24 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
   }, [query, state.tickers, state.selectedTicker]);
 
+  // Live preview: apply theme as user arrows through the list
+  useEffect(() => {
+    if (!isThemeMode) return;
+    const selected = results[selectedIdx];
+    if (selected?.themeId) {
+      applyTheme(selected.themeId);
+      // Force a re-render by dispatching a no-op-like action
+      dispatch({ type: "SET_THEME", theme: selected.themeId });
+    }
+  }, [selectedIdx, isThemeMode, results]);
+
   useKeyboard((event) => {
     if (event.name === "escape" || event.name === "`") {
-      close();
+      if (isThemeMode) {
+        closeAndRevert();
+      } else {
+        close();
+      }
     } else if (event.name === "down" || (event.name === "n" && event.ctrl)) {
       setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
     } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
@@ -233,7 +289,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
   // Layout
   const barWidth = Math.min(Math.floor(termWidth * 0.6), 72);
   const barLeft = Math.floor((termWidth - barWidth) / 2);
-  const maxVisible = 10;
+  const maxVisible = 12;
   const visibleResults = results.slice(0, maxVisible);
 
   // Group by category
@@ -296,7 +352,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
       )}
 
       {/* Results */}
-      <scrollbox flexGrow={1} scrollY maxHeight={Math.min(gIdx + grouped.length * 2 + 2, 18)}>
+      <scrollbox flexGrow={1} scrollY maxHeight={Math.min(gIdx + grouped.length * 2 + 2, 20)}>
         {searching ? (
           <box paddingX={2} height={1}>
             <text fg={colors.textDim}>Searching Yahoo Finance...</text>
@@ -319,6 +375,7 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
               {/* Items */}
               {group.items.map((item) => {
                 const isSel = item.globalIdx === selectedIdx;
+                const isThemeItem = !!item.themeId;
                 return (
                   <box
                     key={item.id}
@@ -327,18 +384,26 @@ export function CommandBar({ yahoo, markdownStore }: CommandBarProps) {
                     paddingX={2}
                     backgroundColor={isSel ? colors.selected : colors.commandBg}
                   >
-                    {/* Prefix shortcut on the left */}
-                    <box width={5}>
-                      <text fg={colors.textMuted}>{item.right || ""}</text>
-                    </box>
+                    {/* Prefix shortcut column — hidden for theme items */}
+                    {!isThemeItem && (
+                      <box width={5}>
+                        <text fg={colors.textMuted}>{item.right || ""}</text>
+                      </box>
+                    )}
                     {/* Label */}
-                    <box width={Math.floor(barWidth * 0.3)}>
+                    <box width={isThemeItem ? Math.floor(barWidth * 0.35) : Math.floor(barWidth * 0.3)}>
                       <text fg={isSel ? colors.text : colors.textDim}>{item.label}</text>
                     </box>
                     {/* Description */}
                     <box flexGrow={1}>
                       <text fg={colors.textMuted}>{item.detail}</text>
                     </box>
+                    {/* Right-side tag for theme items */}
+                    {isThemeItem && item.right && (
+                      <box>
+                        <text fg={colors.textMuted}>{item.right}</text>
+                      </box>
+                    )}
                   </box>
                 );
               })}

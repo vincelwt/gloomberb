@@ -1,27 +1,21 @@
-export const colors = {
-  bg: "#000000",
-  panel: "#0a0a14",
-  border: "#1a3a5c",
-  borderFocused: "#ff8800",
+import { getTheme, DEFAULT_THEME, type Theme } from "./themes";
 
-  text: "#ff8800", // amber primary
-  textDim: "#886622",
-  textBright: "#ffaa00",
-  textMuted: "#555555",
+// Mutable colors object — properties are updated in-place when the theme changes.
+// React components re-read these on each render triggered by the SET_THEME action.
+export const colors: Omit<Theme, "name" | "description"> = { ...getTheme(DEFAULT_THEME) };
 
-  positive: "#00cc66", // green for gains
-  negative: "#ff3333", // red for losses
-  neutral: "#888888",
+let currentThemeId = DEFAULT_THEME;
 
-  header: "#0044aa",
-  headerText: "#ffffff",
+export function getCurrentThemeId(): string {
+  return currentThemeId;
+}
 
-  selected: "#1a3a5c",
-  selectedText: "#ffaa00",
-
-  commandBg: "#111122",
-  commandBorder: "#ff8800",
-} as const;
+export function applyTheme(id: string): void {
+  const theme = getTheme(id);
+  currentThemeId = id;
+  // Mutate in-place so every existing import sees the new values
+  Object.assign(colors, theme);
+}
 
 export type ColorKey = keyof typeof colors;
 
