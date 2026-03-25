@@ -6,15 +6,17 @@ import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { TabBar } from "../../components/tab-bar";
-import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor } from "../../utils/format";
+import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
-import { StockChart } from "../../components/chart/stock-chart";
+import { StockChart, setChartDataProvider } from "../../components/chart/stock-chart";
 import type { MarkdownStore } from "../../data/markdown-store";
+import type { DataProvider, NewsItem } from "../../types/data-provider";
 
 const DETAIL_TABS = [
   { name: "Overview", description: "", value: "overview" },
   { name: "Financials", description: "", value: "financials" },
   { name: "Chart", description: "", value: "chart" },
+  { name: "News", description: "", value: "news" },
   { name: "Notes", description: "", value: "notes" },
 ];
 
@@ -360,11 +362,11 @@ function FinancialsTab({ focused }: { focused: boolean }) {
           ))}
           <box flexGrow={1} />
           <box onMouseDown={() => setPeriod("annual")}>
-            <text fg={isAnnual ? colors.accent : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
+            <text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
           </box>
           <text fg={colors.textMuted}>/</text>
           <box onMouseDown={() => setPeriod("quarterly")}>
-            <text fg={!isAnnual ? colors.accent : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
+            <text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
           </box>
         </box>
         <box height={1} />
@@ -374,7 +376,7 @@ function FinancialsTab({ focused }: { focused: boolean }) {
           <box width={LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
           {displayStmts.map((s) => (
             <box key={s.date} width={COL_W}>
-              <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.accent : colors.textDim}>
+              <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.textBright : colors.textDim}>
                 {s.date === "TTM" ? "TTM" : s.date.slice(0, 7)}
               </text>
             </box>
@@ -429,6 +431,178 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
   return (
     <box flexDirection="column" paddingX={1} flexGrow={1} onMouseDown={() => { if (!interactive && onActivate) onActivate(); }}>
       <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} />
+    </box>
+  );
+}
+
+function formatTimeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+function NewsTab({ width, height, focused }: { width: number; height: number; focused: boolean }) {
+  const { ticker } = useSelectedTicker();
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const summaryFetchRef = useRef(0);
+
+  useEffect(() => {
+    if (!ticker || !_dataProvider) return;
+    let cancelled = false;
+    setLoading(true);
+    setSelectedIdx(0);
+    setSummaryCache(new Map());
+    _dataProvider.getNews(ticker.frontmatter.ticker, 15).then((items) => {
+      if (!cancelled) setNews(items);
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [ticker?.frontmatter.ticker]);
+
+  // Lazy-load summary when selection changes
+  const selected = news[selectedIdx];
+  useEffect(() => {
+    if (!selected || !_dataProvider) return;
+    if (summaryCache.has(selected.url)) return;
+    const id = ++summaryFetchRef.current;
+    setLoadingSummary(true);
+    _dataProvider.getArticleSummary(selected.url).then((summary) => {
+      if (id !== summaryFetchRef.current) return;
+      if (summary) {
+        setSummaryCache((prev) => new Map(prev).set(selected.url, summary));
+      }
+    }).catch(() => {}).finally(() => {
+      if (id === summaryFetchRef.current) setLoadingSummary(false);
+    });
+  }, [selected?.url]);
+
+  useKeyboard((event) => {
+    if (!focused || news.length === 0) return;
+    if (event.name === "j" || event.name === "down") {
+      setSelectedIdx((i) => Math.min(i + 1, news.length - 1));
+    } else if (event.name === "k" || event.name === "up") {
+      setSelectedIdx((i) => Math.max(i - 1, 0));
+    }
+  });
+
+  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
+  if (loading && news.length === 0) return <text fg={colors.textDim}>Loading news...</text>;
+  if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
+
+  const innerWidth = Math.max(width - 4, 40);
+  const timeColW = 7;
+  const sourceColW = 16;
+  const titleColW = Math.max(innerWidth - timeColW - sourceColW - 2, 10);
+  const summary = selected ? summaryCache.get(selected.url) : undefined;
+
+  // Detail pane height: roughly 1/3 of available space, min 4 lines
+  const detailHeight = Math.max(Math.floor((height - 3) / 3), 4);
+  const listHeight = Math.max(height - detailHeight - 3, 4); // 3 = header + divider + help
+
+  return (
+    <box flexDirection="column" flexGrow={1} paddingX={1}>
+      {/* Header */}
+      <box flexDirection="row" height={1}>
+        <box width={titleColW + 1}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+            {padTo("Title", titleColW)}
+          </text>
+        </box>
+        <box width={sourceColW + 1}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+            {padTo("Source", sourceColW)}
+          </text>
+        </box>
+        <box width={timeColW}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+            {padTo("When", timeColW, "right")}
+          </text>
+        </box>
+      </box>
+
+      {/* News list */}
+      <scrollbox height={listHeight} scrollY>
+        {news.map((item, i) => {
+          const isSelected = i === selectedIdx;
+          const title = item.title.length > titleColW
+            ? item.title.slice(0, titleColW - 1) + "\u2026"
+            : item.title;
+          const source = item.source.length > sourceColW
+            ? item.source.slice(0, sourceColW - 1) + "\u2026"
+            : item.source;
+          return (
+            <box
+              key={i}
+              flexDirection="row"
+              height={1}
+              backgroundColor={isSelected ? colors.selected : colors.bg}
+            >
+              <box width={titleColW + 1}>
+                <text fg={isSelected ? colors.selectedText : colors.text}>
+                  {padTo(title, titleColW)}
+                </text>
+              </box>
+              <box width={sourceColW + 1}>
+                <text fg={colors.textMuted}>
+                  {padTo(source, sourceColW)}
+                </text>
+              </box>
+              <box width={timeColW}>
+                <text fg={colors.textDim}>
+                  {padTo(formatTimeAgo(item.publishedAt), timeColW, "right")}
+                </text>
+              </box>
+            </box>
+          );
+        })}
+      </scrollbox>
+
+      {/* Divider */}
+      <box height={1}>
+        <text fg={colors.textDim}>{"\u2500".repeat(innerWidth)}</text>
+      </box>
+
+      {/* Detail pane for selected article */}
+      {selected && (
+        <scrollbox height={detailHeight} scrollY>
+          <box flexDirection="column">
+            <box height={1}>
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+                {selected.title}
+              </text>
+            </box>
+            <box flexDirection="row" height={1} gap={2}>
+              <text fg={colors.textMuted}>{selected.source}</text>
+              <text fg={colors.textDim}>{formatTimeAgo(selected.publishedAt)}</text>
+            </box>
+            <box paddingTop={1}>
+              <text fg={colors.text}>
+                {summary
+                  ? summary
+                  : loadingSummary
+                    ? "Loading..."
+                    : "No preview available."}
+              </text>
+            </box>
+          </box>
+        </scrollbox>
+      )}
+
+      {/* Help */}
+      <box height={1}>
+        <text fg={colors.textMuted}>j/k navigate</text>
+      </box>
     </box>
   );
 }
@@ -503,10 +677,16 @@ function NotesTab({ markdownStore, notesFocused, onActivate }: { markdownStore?:
   );
 }
 
-// Store ref is set from the plugin setup
+// Store refs are set from the plugin setup
 let _markdownStore: MarkdownStore | undefined;
 export function setMarkdownStore(store: MarkdownStore) {
   _markdownStore = store;
+}
+
+let _dataProvider: DataProvider | undefined;
+export function setDataProvider(provider: DataProvider) {
+  _dataProvider = provider;
+  setChartDataProvider(provider);
 }
 
 function TickerDetailPane({ focused, width, height }: PaneProps) {
@@ -591,6 +771,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
       {state.activeRightTab === "overview" && <OverviewTab width={width} />}
       {state.activeRightTab === "financials" && <FinancialsTab focused={focused} />}
       {state.activeRightTab === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {state.activeRightTab === "news" && <NewsTab width={width} height={height} focused={focused} />}
       {state.activeRightTab === "notes" && <NotesTab markdownStore={_markdownStore} notesFocused={notesFocused} onActivate={() => setNotesFocusedEager(true)} />}
     </box>
   );

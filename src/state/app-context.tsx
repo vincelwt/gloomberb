@@ -2,6 +2,7 @@ import { createContext, useContext, useReducer, type ReactNode } from "react";
 import type { AppConfig } from "../types/config";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
+import type { ReleaseInfo, UpdateProgress } from "../updater";
 import { applyTheme } from "../theme/colors";
 
 // --- State ---
@@ -23,6 +24,10 @@ export interface AppState {
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
+
+  // Updates
+  updateAvailable: ReleaseInfo | null;
+  updateProgress: UpdateProgress | null;
 }
 
 // --- Actions ---
@@ -44,7 +49,9 @@ export type AppAction =
   | { type: "SET_INITIALIZED" }
   | { type: "UPDATE_BROKER_CONFIG"; brokerId: string; values: Record<string, unknown> }
   | { type: "TOGGLE_STATUS_BAR" }
-  | { type: "SET_THEME"; theme: string };
+  | { type: "SET_THEME"; theme: string }
+  | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
+  | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -124,6 +131,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, config: { ...state.config, theme: action.theme } };
     }
 
+    case "SET_UPDATE_AVAILABLE":
+      return { ...state, updateAvailable: action.release };
+
+    case "SET_UPDATE_PROGRESS":
+      return { ...state, updateProgress: action.progress };
+
     default:
       return state;
   }
@@ -167,6 +180,8 @@ export function createInitialState(config: AppConfig): AppState {
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: true,
+    updateAvailable: null,
+    updateProgress: null,
   };
 }
 
