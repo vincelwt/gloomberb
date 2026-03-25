@@ -1,10 +1,11 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { TabSelectRenderable, TextareaRenderable } from "@opentui/core";
+import type { TextareaRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
+import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { StockChart } from "../../components/chart/stock-chart";
@@ -41,7 +42,7 @@ function OverviewTab({ width }: { width?: number }) {
 
   return (
     <scrollbox flexGrow={1} scrollY>
-      <box flexDirection="column" padding={1} gap={1}>
+      <box flexDirection="column" paddingX={1} paddingBottom={1} gap={1}>
         {/* Title with exchange and market state */}
         <box flexDirection="row">
           <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
@@ -343,11 +344,11 @@ function FinancialsTab({ focused }: { focused: boolean }) {
 
   return (
     <scrollbox flexGrow={1} scrollY>
-      <box flexDirection="column" paddingX={2} paddingY={1}>
+      <box flexDirection="column" paddingX={2} paddingBottom={1}>
         {/* Sub-tab selector + period toggle */}
         <box flexDirection="row" height={1}>
           {FINANCIAL_SUB_TABS.map((tab, i) => (
-            <box key={tab.key} flexDirection="row">
+            <box key={tab.key} flexDirection="row" onMouseDown={() => setSubTabIdx(i)}>
               <text
                 fg={i === subTabIdx ? colors.textBright : colors.textDim}
                 attributes={i === subTabIdx ? TextAttributes.BOLD : 0}
@@ -358,9 +359,13 @@ function FinancialsTab({ focused }: { focused: boolean }) {
             </box>
           ))}
           <box flexGrow={1} />
-          <text fg={isAnnual ? colors.accent : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
+          <box onMouseDown={() => setPeriod("annual")}>
+            <text fg={isAnnual ? colors.accent : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
+          </box>
           <text fg={colors.textMuted}>/</text>
-          <text fg={!isAnnual ? colors.accent : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
+          <box onMouseDown={() => setPeriod("quarterly")}>
+            <text fg={!isAnnual ? colors.accent : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
+          </box>
         </box>
         <box height={1} />
 
@@ -415,20 +420,20 @@ function FinancialsTab({ focused }: { focused: boolean }) {
   );
 }
 
-function ChartTab({ width, height, focused, interactive }: { width?: number; height?: number; focused: boolean; interactive: boolean }) {
+function ChartTab({ width, height, focused, interactive, onActivate }: { width?: number; height?: number; focused: boolean; interactive: boolean; onActivate?: () => void }) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
   const chartHeight = Math.max((height || termHeight - 8) - 2, 10);
 
   return (
-    <box flexDirection="column" paddingX={1} flexGrow={1}>
+    <box flexDirection="column" paddingX={1} flexGrow={1} onMouseDown={() => { if (!interactive && onActivate) onActivate(); }}>
       <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} />
     </box>
   );
 }
 
-function NotesTab({ markdownStore, notesFocused }: { markdownStore?: MarkdownStore; notesFocused: boolean }) {
+function NotesTab({ markdownStore, notesFocused, onActivate }: { markdownStore?: MarkdownStore; notesFocused: boolean; onActivate?: () => void }) {
   const { ticker } = useSelectedTicker();
   const { dispatch } = useAppState();
   const textareaRef = useRef<TextareaRenderable>(null);
@@ -482,16 +487,18 @@ function NotesTab({ markdownStore, notesFocused }: { markdownStore?: MarkdownSto
         </text>
       </box>
       <box height={1} />
-      <textarea
-        ref={textareaRef}
-        initialValue={ticker.notes || ""}
-        placeholder="Write notes about this ticker..."
-        focused={notesFocused}
-        textColor={colors.text}
-        placeholderColor={colors.textDim}
-        backgroundColor={notesFocused ? colors.panel : colors.bg}
-        flexGrow={1}
-      />
+      <box flexGrow={1} onMouseDown={() => { if (!notesFocused && onActivate) onActivate(); }}>
+        <textarea
+          ref={textareaRef}
+          initialValue={ticker.notes || ""}
+          placeholder="Write notes about this ticker..."
+          focused={notesFocused}
+          textColor={colors.text}
+          placeholderColor={colors.textDim}
+          backgroundColor={notesFocused ? colors.panel : colors.bg}
+          flexGrow={1}
+        />
+      </box>
     </box>
   );
 }
@@ -507,7 +514,6 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const [notesFocused, setNotesFocused] = useState(false);
   const [chartInteractive, setChartInteractive] = useState(false);
   const tabIdx = DETAIL_TABS.findIndex((t) => t.value === state.activeRightTab);
-  const tabRef = useRef<TabSelectRenderable>(null);
 
   // Refs to avoid stale closures in useKeyboard
   const stateRef = useRef({ focused, notesFocused, chartInteractive, activeRightTab: state.activeRightTab, tabIdx });
@@ -522,12 +528,6 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     stateRef.current = { ...stateRef.current, notesFocused: val };
     setNotesFocused(val);
   }, []);
-
-  useEffect(() => {
-    if (tabRef.current && tabIdx >= 0) {
-      tabRef.current.setSelectedIndex(tabIdx);
-    }
-  }, [tabIdx]);
 
   // Exit chart interactive mode when switching away from chart tab
   useEffect(() => {
@@ -582,22 +582,16 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <tab-select
-        ref={tabRef}
-        options={DETAIL_TABS}
-        focused={false}
-        showUnderline
-        textColor={colors.textDim}
-        selectedTextColor={colors.text}
-        backgroundColor={colors.bg}
-        selectedBackgroundColor={colors.bg}
-        onChange={(idx) => dispatch({ type: "SET_RIGHT_TAB", tab: DETAIL_TABS[idx]!.value })}
+      <TabBar
+        tabs={DETAIL_TABS.map((t) => ({ label: t.name, value: t.value }))}
+        activeValue={state.activeRightTab}
+        onSelect={(val) => dispatch({ type: "SET_RIGHT_TAB", tab: val })}
       />
 
       {state.activeRightTab === "overview" && <OverviewTab width={width} />}
       {state.activeRightTab === "financials" && <FinancialsTab focused={focused} />}
-      {state.activeRightTab === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} />}
-      {state.activeRightTab === "notes" && <NotesTab markdownStore={_markdownStore} notesFocused={notesFocused} />}
+      {state.activeRightTab === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {state.activeRightTab === "notes" && <NotesTab markdownStore={_markdownStore} notesFocused={notesFocused} onActivate={() => setNotesFocusedEager(true)} />}
     </box>
   );
 }
