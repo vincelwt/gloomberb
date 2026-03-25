@@ -290,25 +290,27 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
   }
 
   const innerWidth = Math.max(width - 4, 40);
-  const chatHeight = Math.max(height - 5, 4); // Reserve space for input + header
+  // Reserve: header(1) + chat + divider(1) + input(1) + padding(2 top+bottom)
+  const chatHeight = Math.max(height - 7, 4);
+
+  const providerLabel = availableProviders.length > 1
+    ? `${currentProvider?.name || "None"} (t to switch)`
+    : currentProvider?.name || "None";
 
   return (
-    <box flexDirection="column" padding={1} flexGrow={1}>
+    <box flexDirection="column" paddingX={1} paddingTop={1} height={height - 2}>
       {/* Header */}
       <box flexDirection="row" height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</text>
         <box flexGrow={1} />
         <box onMouseDown={cycleProvider}>
           <text fg={colors.textMuted}>Provider: </text>
-          <text fg={colors.textBright}>{currentProvider?.name || "None"}</text>
+          <text fg={colors.textBright}>{providerLabel}</text>
         </box>
-        {availableProviders.length > 1 && (
-          <text fg={colors.textMuted}> (t to switch)</text>
-        )}
       </box>
 
       {/* Chat history */}
-      <scrollbox height={chatHeight} scrollY flexGrow={1}>
+      <scrollbox height={chatHeight} scrollY>
         <box flexDirection="column">
           {messages.length === 0 ? (
             <box paddingTop={1}>
