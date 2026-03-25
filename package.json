@@ -1,16 +1,35 @@
 {
   "name": "gloomberb",
   "version": "0.1.0",
+  "description": "Bloomberg-style stock portfolio tracker for the terminal",
   "module": "src/index.tsx",
   "type": "module",
   "bin": {
-    "gloomberb": "src/index.tsx"
+    "gloomberb": "bin/gloomberb"
   },
+  "files": [
+    "bin",
+    "install.mjs"
+  ],
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
     "build": "bun run scripts/build.ts",
-    "build:all": "bun run scripts/build.ts --all"
+    "build:all": "bun run scripts/build.ts --all",
+    "postinstall": "node install.mjs"
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vincelwt/gloomberb"
+  },
+  "keywords": [
+    "terminal",
+    "tui",
+    "stocks",
+    "portfolio",
+    "bloomberg",
+    "finance"
+  ],
   "devDependencies": {
     "@types/bun": "latest"
   },
