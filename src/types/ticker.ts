@@ -10,6 +10,8 @@ export interface TickerPosition {
   unrealized_pnl?: number;
   /** Contract multiplier (e.g. 100 for options) */
   multiplier?: number;
+  /** Last known mark price from broker snapshot */
+  mark_price?: number;
 }
 
 export interface TickerFrontmatter {

@@ -47,9 +47,11 @@ function OverviewTab({ width }: { width?: number }) {
           <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
             {ticker.frontmatter.ticker}
           </text>
+          {ticker.frontmatter.name && ticker.frontmatter.name !== ticker.frontmatter.ticker && (
           <text fg={colors.textDim}>
             {" "}- {ticker.frontmatter.name || q?.name || ""}
           </text>
+          )}
           {q?.exchangeName && (
             <text fg={colors.textDim}>
               {" "}({exchangeShortName(q.exchangeName, q.fullExchangeName)})
@@ -170,13 +172,21 @@ function OverviewTab({ width }: { width?: number }) {
                   </box>
                   <box flexDirection="row" height={1}>
                     <text fg={colors.text}>
-                      {pos.shares} shares @ {formatCurrency(pos.avg_cost, pos.currency)}
+                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avg_cost, pos.currency)}
                       {" = "}{formatCurrency(costBasis, pos.currency)}
                     </text>
                     {pnlText && (
                       <text fg={priceColor(pos.unrealized_pnl!)}>{pnlText}</text>
                     )}
                   </box>
+                  {pos.mark_price != null && (
+                    <box flexDirection="row" height={1}>
+                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.mark_price, pos.currency)}</text>
+                      {pos.market_value != null && (
+                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(pos.market_value, pos.currency)}</text>
+                      )}
+                    </box>
+                  )}
                 </box>
               );
             })}

@@ -21,7 +21,7 @@ function formatTimeAgo(date: Date): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
+  return date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
 }
 
 function NewsTab({ width, height, focused }: DetailTabProps) {
@@ -78,7 +78,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
 
   const innerWidth = Math.max(width - 4, 40);
-  const timeColW = 7;
+  const timeColW = 8;
   const sourceColW = 16;
   const titleColW = Math.max(innerWidth - timeColW - sourceColW - 2, 10);
   const summary = selected ? summaryCache.get(selected.url) : undefined;
