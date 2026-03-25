@@ -135,7 +135,7 @@ function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & {
 export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarProps) {
   const { state, dispatch } = useAppState();
   const dialog = useDialog();
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useTerminalDimensions();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ResultItem[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -194,10 +194,6 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
         close();
         break;
       }
-      case "refresh":
-      case "refresh-all":
-        close();
-        break;
       default:
         cmd.execute(dispatch, ctx);
         close();
@@ -310,6 +306,67 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
 
   // Build results based on query and prefix matching
   useEffect(() => {
+    // --- Smart command filtering (computed fresh each effect run) ---
+    const isWatchlistTab = state.config.watchlists.some((w) => w.id === state.activeLeftTab);
+    const isPortfolioTab = state.config.portfolios.some((p) => p.id === state.activeLeftTab);
+    const isBrokerManaged = Object.keys(state.config.brokers).some((brokerId) =>
+      state.activeLeftTab.startsWith(brokerId),
+    );
+    const activeTabName = isWatchlistTab
+      ? state.config.watchlists.find((w) => w.id === state.activeLeftTab)?.name
+      : state.config.portfolios.find((p) => p.id === state.activeLeftTab)?.name;
+    const tickerData = state.selectedTicker ? state.tickers.get(state.selectedTicker) : null;
+
+    function shouldShow(cmd: Command): boolean {
+      switch (cmd.id) {
+        case "add-watchlist":
+          if (!tickerData || !isWatchlistTab) return false;
+          return !tickerData.frontmatter.watchlists.includes(state.activeLeftTab);
+        case "remove-watchlist":
+          if (!tickerData || !isWatchlistTab) return false;
+          return tickerData.frontmatter.watchlists.includes(state.activeLeftTab);
+        case "add-portfolio":
+          if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
+          return !tickerData.frontmatter.portfolios.includes(state.activeLeftTab);
+        case "remove-portfolio":
+          if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
+          return tickerData.frontmatter.portfolios.includes(state.activeLeftTab);
+        default:
+          return true;
+      }
+    }
+
+    function smartLabel(cmd: Command): string {
+      const sym = state.selectedTicker;
+      switch (cmd.id) {
+        case "add-watchlist": return sym ? `Add ${sym} to Watchlist` : cmd.label;
+        case "remove-watchlist": return sym ? `Remove ${sym} from Watchlist` : cmd.label;
+        case "add-portfolio": return sym ? `Add ${sym} to Portfolio` : cmd.label;
+        case "remove-portfolio": return sym ? `Remove ${sym} from Portfolio` : cmd.label;
+        default: return cmd.label;
+      }
+    }
+
+    function smartDetail(cmd: Command): string {
+      switch (cmd.id) {
+        case "add-watchlist":
+        case "remove-watchlist":
+        case "add-portfolio":
+        case "remove-portfolio":
+          return activeTabName ? `in "${activeTabName}"` : cmd.description;
+        default:
+          return cmd.description;
+      }
+    }
+
+    function cmdToItem(cmd: Command): ResultItem | null {
+      if (!shouldShow(cmd)) return null;
+      return {
+        id: cmd.id, label: smartLabel(cmd), detail: smartDetail(cmd),
+        right: cmd.prefix, category: cmd.category,
+        action: () => executeCommand(cmd, ""),
+      };
+    }
     const items: ResultItem[] = [];
     const match = matchPrefix(query);
 
@@ -346,16 +403,23 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
         items.push({ id: "hint", label: "Type a ticker symbol...", detail: "", category: "Search", action: () => {} });
       }
     } else if (match && !match.command.hasArg) {
-      items.push({
-        id: match.command.id,
-        label: match.command.label,
-        detail: match.command.description,
-        right: match.command.prefix,
-        category: match.command.category,
-        action: () => executeCommand(match.command, match.arg),
-      });
+      // Direct prefix match — still filter for smart commands
+      if (shouldShow(match.command)) {
+        items.push({
+          id: match.command.id,
+          label: smartLabel(match.command),
+          detail: smartDetail(match.command),
+          right: match.command.prefix,
+          category: match.command.category,
+          action: () => executeCommand(match.command, match.arg),
+        });
+      }
     } else if (!query) {
+      // Show a limited set of tickers in the default view to avoid overwhelming the list
+      const maxDefaultTickers = 5;
+      let tickerCount = 0;
       for (const t of state.tickers.values()) {
+        if (tickerCount >= maxDefaultTickers) break;
         items.push({
           id: `goto:${t.frontmatter.ticker}`,
           label: t.frontmatter.ticker,
@@ -363,13 +427,11 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
           category: "Tickers",
           action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
         });
+        tickerCount++;
       }
       for (const cmd of commands) {
-        items.push({
-          id: cmd.id, label: cmd.label, detail: cmd.description,
-          right: cmd.prefix, category: cmd.category,
-          action: () => executeCommand(cmd, ""),
-        });
+        const item = cmdToItem(cmd);
+        if (item) items.push(item);
       }
       items.push(...pluginCommandItems());
     } else {
@@ -378,11 +440,7 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
         detail: t.frontmatter.name, category: "Tickers",
         action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
       }));
-      const cmdItems: ResultItem[] = commands.map((cmd) => ({
-        id: cmd.id, label: cmd.label, detail: cmd.description,
-        right: cmd.prefix, category: cmd.category,
-        action: () => executeCommand(cmd, ""),
-      }));
+      const cmdItems: ResultItem[] = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
       const allItems = [...tickerItems, ...cmdItems, ...pluginCommandItems()];
       const filtered = fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`);
       items.push(...filtered);
@@ -425,7 +483,7 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
     }
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [query, state.tickers, state.selectedTicker]);
+  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers]);
 
   // Live preview: apply theme as user arrows through the list
   useEffect(() => {
@@ -458,16 +516,26 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
   // Layout
   const barWidth = Math.min(Math.floor(termWidth * 0.6), 72);
   const barLeft = Math.floor((termWidth - barWidth) / 2);
-  const maxVisible = 12;
-  const visibleResults = results.slice(0, maxVisible);
+  // Cap visible results based on terminal height
+  // Reserve rows for: top offset (3) + border (2) + input (2) + separator (1) + esc hint (1) + scroll indicators (2)
+  const maxVisible = Math.min(16, Math.max(4, termHeight - 11));
 
-  // Group by category
+  // Compute a window of results centered on selectedIdx
+  const halfWindow = Math.floor(maxVisible / 2);
+  let windowStart = Math.max(0, Math.min(selectedIdx - halfWindow, results.length - maxVisible));
+  if (windowStart < 0) windowStart = 0;
+  const windowEnd = Math.min(results.length, windowStart + maxVisible);
+  const windowedResults = results.slice(windowStart, windowEnd);
+  const hasMoreAbove = windowStart > 0;
+  const hasMoreBelow = windowEnd < results.length;
+
+  // Group by category (preserving global indices for selection highlight)
   const grouped: Array<{ category: string; items: Array<ResultItem & { globalIdx: number }> }> = [];
-  let gIdx = 0;
-  for (const result of visibleResults) {
+  for (let i = 0; i < windowedResults.length; i++) {
+    const result = windowedResults[i]!;
     let group = grouped.find((g) => g.category === result.category);
     if (!group) { group = { category: result.category, items: [] }; grouped.push(group); }
-    group.items.push({ ...result, globalIdx: gIdx++ });
+    group.items.push({ ...result, globalIdx: windowStart + i });
   }
 
   // Detect active prefix for hint display
@@ -488,18 +556,14 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
       borderColor={colors.border}
       zIndex={100}
     >
-      {/* Title */}
-      <box flexDirection="row" height={1} paddingX={2}>
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>Commands</text>
-        <box flexGrow={1} />
-        <text fg={colors.textMuted}>esc</text>
-      </box>
+      {/* Spacer above input */}
+      <box height={1} />
 
       {/* Search input */}
       <box height={1} paddingX={2}>
         <input
           ref={inputRef}
-          placeholder="Type a command prefix or search..."
+          placeholder="> Type a command or search..."
           focused
           textColor={colors.text}
           placeholderColor={colors.textDim}
@@ -520,8 +584,20 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
         </box>
       )}
 
+      {/* Separator between input and results */}
+      <box height={1} paddingX={1}>
+        <text fg={colors.border}>{"\u2500".repeat(barWidth - 2)}</text>
+      </box>
+
+      {/* Scroll-up indicator */}
+      {hasMoreAbove && (
+        <box height={1} paddingX={2}>
+          <text fg={colors.textMuted}>{"  \u2191 more"}</text>
+        </box>
+      )}
+
       {/* Results */}
-      <scrollbox flexGrow={1} scrollY maxHeight={Math.min(gIdx + grouped.length * 2 + 2, 20)}>
+      <box flexDirection="column" flexGrow={1}>
         {searching ? (
           <box paddingX={2} height={1}>
             <text fg={colors.textDim}>Searching Yahoo Finance...</text>
@@ -542,6 +618,7 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
               {group.items.map((item) => {
                 const isSel = item.globalIdx === selectedIdx;
                 const isThemeItem = !!item.themeId;
+                const isSearchResult = item.id.startsWith("yahoo:") || item.id.startsWith("goto:");
                 return (
                   <box
                     key={item.id}
@@ -550,21 +627,21 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
                     paddingX={2}
                     backgroundColor={isSel ? colors.selected : colors.commandBg}
                   >
-                    {/* Prefix shortcut column — hidden for theme items */}
-                    {!isThemeItem && (
+                    {/* Prefix shortcut column — shown only for commands (not tickers/themes) */}
+                    {!isThemeItem && !isSearchResult && (
                       <box width={5}>
                         <text fg={colors.textMuted}>{item.right || ""}</text>
                       </box>
                     )}
                     {/* Label */}
-                    <box width={isThemeItem ? Math.floor(barWidth * 0.35) : Math.floor(barWidth * 0.3)}>
+                    <box width={isThemeItem ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
                       <text fg={isSel ? colors.text : colors.textDim}>{item.label}</text>
                     </box>
                     <box flexGrow={1}>
                       <text fg={colors.textMuted}>{item.detail}</text>
                     </box>
-                    {/* Right-side tag for theme items */}
-                    {isThemeItem && item.right && (
+                    {/* Right-side tag (exchange for search results, "current" for themes) */}
+                    {(isThemeItem || isSearchResult) && item.right && (
                       <box>
                         <text fg={colors.textMuted}>{item.right}</text>
                       </box>
@@ -575,7 +652,20 @@ export function CommandBar({ yahoo, markdownStore, pluginRegistry }: CommandBarP
             </box>
           ))
         )}
-      </scrollbox>
+      </box>
+
+      {/* Scroll-down indicator */}
+      {hasMoreBelow && (
+        <box height={1} paddingX={2}>
+          <text fg={colors.textMuted}>{"  \u2193 more"}</text>
+        </box>
+      )}
+
+      {/* Bottom padding + esc hint */}
+      <box flexDirection="row" height={1} paddingX={2}>
+        <box flexGrow={1} />
+        <text fg={colors.textMuted}>esc to close</text>
+      </box>
     </box>
   );
 }
