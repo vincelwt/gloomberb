@@ -85,25 +85,6 @@ export const commands: Command[] = [
     execute: () => {},
   },
 
-  // Data
-  {
-    id: "refresh",
-    prefix: "R",
-    label: "Refresh",
-    description: "Refresh current ticker data",
-    shortcut: "r",
-    category: "Data",
-    execute: () => {},
-  },
-  {
-    id: "refresh-all",
-    prefix: "RA",
-    label: "Refresh All",
-    description: "Refresh all ticker data",
-    shortcut: "Shift+R",
-    category: "Data",
-    execute: () => {},
-  },
   // Settings
   {
     id: "settings",
