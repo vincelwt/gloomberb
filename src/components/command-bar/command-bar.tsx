@@ -49,6 +49,7 @@ interface ResultItem {
   right?: string;
   category: string;
   themeId?: string; // for theme items — enables live preview
+  pluginToggle?: () => void; // for plugin items — toggle with space
   action: () => void | Promise<void>;
 }
 
@@ -220,6 +221,16 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         break;
       }
       default:
+        // Commands with hasArg are prefix-driven modes (theme, plugins, search)
+        // — enter them by setting the query to their prefix instead of closing
+        if (cmd.hasArg) {
+          setQuery(cmd.prefix + " ");
+          if (inputRef.current) {
+            (inputRef.current as any).editBuffer?.setText?.(cmd.prefix + " ") ||
+              (inputRef.current as any).setText?.(cmd.prefix + " ");
+          }
+          return;
+        }
         cmd.execute(dispatch, ctx);
         close();
     }
@@ -328,6 +339,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
   // Detect special modes
   const isThemeMode = matchPrefix(query)?.command.id === "theme";
+  const isPluginMode = matchPrefix(query)?.command.id === "plugins";
   const isColumnsMode = matchPrefix(query)?.command.id === "columns";
 
   // Toggle a column on/off
@@ -417,7 +429,32 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
     let initialIdx = 0;
 
-    if (match && match.command.id === "columns") {
+    if (match && match.command.id === "plugins") {
+      // Plugin management mode
+      const toggleablePlugins = [...pluginRegistry.allPlugins.values()].filter((p) => p.toggleable);
+      const disabledPlugins = state.config.disabledPlugins || [];
+      const filtered = match.arg
+        ? toggleablePlugins.filter((p) => p.name.toLowerCase().includes(match.arg.toLowerCase()) || p.id.includes(match.arg.toLowerCase()))
+        : toggleablePlugins;
+      for (const p of filtered) {
+        const isEnabled = !disabledPlugins.includes(p.id);
+        const toggleAction = () => {
+          dispatch({ type: "TOGGLE_PLUGIN", pluginId: p.id });
+          const newDisabled = isEnabled
+            ? [...disabledPlugins, p.id]
+            : disabledPlugins.filter((id) => id !== p.id);
+          saveConfig({ ...state.config, disabledPlugins: newDisabled }).catch(() => {});
+        };
+        items.push({
+          id: `plugin:${p.id}`,
+          label: `${isEnabled ? "\u2713" : "\u2717"} ${p.name}`,
+          detail: p.description || "",
+          category: "Plugins",
+          pluginToggle: toggleAction,
+          action: toggleAction,
+        });
+      }
+    } else if (match && match.command.id === "columns") {
       // Column toggle mode — show all available columns as a checklist
       const activeIds = new Set(state.config.columns.map((c) => c.id));
       for (const col of ALL_COLUMNS) {
@@ -547,7 +584,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers, state.config.columns, toggleColumn]);
+  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers, state.config.disabledPlugins, state.config.columns, toggleColumn]);
 
   // Live preview: apply theme as user arrows through the list
   useEffect(() => {
@@ -571,13 +608,16 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
     } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
       setSelectedIdx((i) => Math.max(i - 1, 0));
+    } else if (event.name === "space" && isPluginMode) {
+      // Space toggles plugins without closing
+      const selected = results[selectedIdx];
+      if (selected?.pluginToggle) selected.pluginToggle();
     } else if (event.name === "space" && isColumnsMode) {
       // Toggle column with space
       const selected = results[selectedIdx];
       if (selected) selected.action();
     } else if (event.name === "return" || event.name === "enter") {
       if (isColumnsMode) {
-        // Enter also toggles in columns mode
         const selected = results[selectedIdx];
         if (selected) selected.action();
       } else {
@@ -692,6 +732,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
               {group.items.map((item) => {
                 const isSel = item.globalIdx === selectedIdx;
                 const isThemeItem = !!item.themeId;
+                const isPluginItem = item.id.startsWith("plugin:");
                 const isColumnItem = item.id.startsWith("col:");
                 const isSearchResult = item.id.startsWith("yahoo:") || item.id.startsWith("goto:");
                 const isChecked = isColumnItem && item.label.includes("\u2713");
@@ -707,14 +748,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                       item.action();
                     }}
                   >
-                    {/* Prefix shortcut column — shown only for commands (not tickers/themes/columns) */}
-                    {!isThemeItem && !isSearchResult && !isColumnItem && (
+                    {/* Prefix shortcut column — shown only for commands (not tickers/themes/plugins/columns) */}
+                    {!isThemeItem && !isPluginItem && !isSearchResult && !isColumnItem && (
                       <box width={5}>
                         <text fg={colors.textMuted}>{item.right || ""}</text>
                       </box>
                     )}
                     {/* Label */}
-                    <box width={isColumnItem ? Math.floor(barWidth * 0.4) : isThemeItem ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
+                    <box width={isColumnItem ? Math.floor(barWidth * 0.4) : (isThemeItem || isPluginItem) ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
                       <text fg={isColumnItem ? (isChecked ? colors.text : colors.textDim) : (isSel ? colors.text : colors.textDim)}>
                         {item.label}
                       </text>
@@ -751,9 +792,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       {/* Bottom padding + hint */}
       <box flexDirection="row" height={1} paddingX={2}>
         <box flexGrow={1}>
-          {isColumnsMode && (
-            <text fg={colors.textMuted}>space/enter toggle</text>
-          )}
+          {isPluginMode && <text fg={colors.textMuted}>space toggle</text>}
+          {isColumnsMode && <text fg={colors.textMuted}>space/enter toggle</text>}
         </box>
         <text fg={colors.textMuted}>esc to close</text>
       </box>

@@ -18,9 +18,12 @@ import type { DataProvider } from "./types/data-provider";
 
 // Built-in plugins
 import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
-import { tickerDetailPlugin, setMarkdownStore, setDataProvider } from "./plugins/builtin/ticker-detail";
+import { tickerDetailPlugin, setDataProvider, setPluginRegistry } from "./plugins/builtin/ticker-detail";
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
+import { newsPlugin, setNewsDataProvider } from "./plugins/builtin/news";
+import { notesPlugin, setNotesMarkdownStore } from "./plugins/builtin/notes";
+import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { saveConfig } from "./data/config-store";
 import { checkForUpdate, performUpdate } from "./updater";
 import { VERSION } from "./version";
@@ -247,9 +250,9 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       return;
     }
 
-    // Don't process main shortcuts when overlays are open
+    // Don't process main shortcuts when overlays are open or input is captured
     // (panes already get focused=false via shell.tsx)
-    if (state.commandBarOpen) return;
+    if (state.commandBarOpen || state.inputCaptured) return;
 
     if (event.name === "tab") {
       dispatch({
@@ -300,11 +303,15 @@ export function App({ config, renderer }: AppProps) {
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const cache = new SqliteCache(dbPath);
   cache.clearByType("full"); // Clear stale financials cache on startup
-  const markdownStore = new MarkdownStore(config.dataDir);
-  setMarkdownStore(markdownStore);
+  const markdownStore = new MarkdownStore(config.dataDir, cache);
+  // Migrate old YAML-frontmatter .md files to SQLite on first run
+  markdownStore.migrate();
+  setNotesMarkdownStore(markdownStore);
   const dataProvider: DataProvider = new YahooFinanceClient(cache);
   setDataProvider(dataProvider);
+  setNewsDataProvider(dataProvider);
   const pluginRegistry = new PluginRegistry(renderer);
+  setPluginRegistry(pluginRegistry);
 
   // Register built-in plugins synchronously
   // (setup is async but panes are registered immediately via the panes property)
@@ -312,6 +319,11 @@ export function App({ config, renderer }: AppProps) {
   pluginRegistry.register(tickerDetailPlugin);
   pluginRegistry.register(manualEntryPlugin);
   pluginRegistry.register(ibkrFlexPlugin);
+
+  // Feature plugins (toggleable by user)
+  pluginRegistry.register(newsPlugin);
+  pluginRegistry.register(notesPlugin);
+  pluginRegistry.register(askAiPlugin);
 
   return (
     <AppProvider config={config}>

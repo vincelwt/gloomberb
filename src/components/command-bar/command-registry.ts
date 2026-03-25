@@ -116,6 +116,18 @@ export const commands: Command[] = [
     category: "Config",
     execute: () => {}, // handled by command bar
   },
+
+  // Plugins
+  {
+    id: "plugins",
+    prefix: "PL",
+    label: "Manage Plugins",
+    description: "Toggle plugins on/off",
+    hasArg: true,
+    argPlaceholder: "plugin name",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
 ];
 
 /** Get theme options for the command bar */
