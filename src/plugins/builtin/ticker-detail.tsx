@@ -358,9 +358,9 @@ function FinancialsTab({ focused }: { focused: boolean }) {
             </box>
           ))}
           <box flexGrow={1} />
-          <text fg={isAnnual ? colors.accent : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
+          <text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
           <text fg={colors.textMuted}>/</text>
-          <text fg={!isAnnual ? colors.accent : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
+          <text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
         </box>
         <box height={1} />
 
@@ -369,7 +369,7 @@ function FinancialsTab({ focused }: { focused: boolean }) {
           <box width={LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
           {displayStmts.map((s) => (
             <box key={s.date} width={COL_W}>
-              <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.accent : colors.textDim}>
+              <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.textBright : colors.textDim}>
                 {s.date === "TTM" ? "TTM" : s.date.slice(0, 7)}
               </text>
             </box>
