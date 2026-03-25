@@ -5,14 +5,13 @@ export function StatusBar() {
   const { state } = useAppState();
   const refreshCount = state.refreshing.size;
 
+  if (!state.statusBarVisible) return null;
+
   return (
     <box
       flexDirection="row"
       height={1}
       backgroundColor={colors.panel}
-      borderStyle="single"
-      border={["top"]}
-      borderColor={colors.border}
     >
       <box flexGrow={1} paddingLeft={1}>
         <text fg={colors.textDim}>

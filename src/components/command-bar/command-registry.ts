@@ -1,4 +1,5 @@
 import type { AppAction } from "../../state/app-context";
+import { themes, getThemeIds } from "../../theme/themes";
 
 export type CommandExecutor = (dispatch: React.Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
 
@@ -115,7 +116,38 @@ export const commands: Command[] = [
       dispatch({ type: "TOGGLE_CONFIG" });
     },
   },
+  {
+    id: "toggle-status-bar",
+    prefix: "SB",
+    label: "Toggle Status Bar",
+    description: "Show or hide the keyboard shortcuts bar",
+    category: "Config",
+    execute: (dispatch) => {
+      dispatch({ type: "TOGGLE_STATUS_BAR" });
+    },
+  },
+
+  // Theme
+  {
+    id: "theme",
+    prefix: "TH",
+    label: "Change Theme",
+    description: "Switch color theme",
+    hasArg: true,
+    argPlaceholder: "theme name",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
 ];
+
+/** Get theme options for the command bar */
+export function getThemeOptions(): Array<{ id: string; name: string; description: string }> {
+  return getThemeIds().map((id) => ({
+    id,
+    name: themes[id]!.name,
+    description: themes[id]!.description,
+  }));
+}
 
 /** Find a command whose prefix matches the start of the input */
 export function matchPrefix(input: string): { command: Command; arg: string } | null {

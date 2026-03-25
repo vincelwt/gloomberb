@@ -63,7 +63,7 @@ export function renderStockChart(
     (v) => Math.round(((v - min) / range) * (totalDotsV - 1))
   );
 
-  // Build braille chart rows
+  // Build braille chart rows with connected lines
   const chartLines: string[] = [];
   for (let row = 0; row < chartHeight; row++) {
     let line = "";
@@ -72,17 +72,17 @@ export function renderStockChart(
       for (let subCol = 0; subCol < 2; subCol++) {
         const valueIdx = col * 2 + subCol;
         const dotY = dotPositions[valueIdx] ?? 0;
+        // Get previous data point to interpolate a connected line
+        const prevIdx = valueIdx - 1;
+        const prevDotY = prevIdx >= 0 ? (dotPositions[prevIdx] ?? dotY) : dotY;
+        const lo = Math.min(dotY, prevDotY);
+        const hi = Math.max(dotY, prevDotY);
 
-        // Fill from bottom to the data point for a filled area look
         const rowBottomDot = (chartHeight - 1 - row) * 4;
         for (let subRow = 0; subRow < 4; subRow++) {
           const absoluteDot = rowBottomDot + subRow;
-          // Draw the line point
-          if (absoluteDot === dotY) {
-            bits |= DOT_BITS[subCol]![subRow]!;
-          }
-          // Also fill area below the line for a filled chart effect
-          if (absoluteDot <= dotY && absoluteDot >= dotY - 1) {
+          // Draw connected line: fill between current and previous point
+          if (absoluteDot >= lo && absoluteDot <= hi) {
             bits |= DOT_BITS[subCol]![subRow]!;
           }
         }
