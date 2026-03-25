@@ -26,6 +26,7 @@ export interface AppConfig {
   plugins: string[];
   disabledPlugins: string[];
   theme: string;
+  onboardingComplete?: boolean;
 }
 
 export const DEFAULT_COLUMNS: ColumnConfig[] = [

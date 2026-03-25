@@ -128,6 +128,34 @@ export const commands: Command[] = [
     category: "Config",
     execute: () => {}, // handled by command bar
   },
+
+  // Import/Export
+  {
+    id: "export-config",
+    prefix: "",
+    label: "Export Config",
+    description: "Save config to ~/gloomberb-config-backup.json",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
+  {
+    id: "import-config",
+    prefix: "",
+    label: "Import Config",
+    description: "Load config from ~/gloomberb-config-backup.json",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
+
+  // Danger zone
+  {
+    id: "reset-all-data",
+    prefix: "",
+    label: "Reset All Data",
+    description: "Delete all data and reset to first-run state",
+    category: "Danger",
+    execute: () => {}, // handled by command bar (needs confirm dialog)
+  },
 ];
 
 /** Get theme options for the command bar */

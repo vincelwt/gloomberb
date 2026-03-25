@@ -8,7 +8,7 @@ import { useAppState } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, matchPrefix, getThemeOptions, type Command } from "./command-registry";
 import { getCurrentThemeId, applyTheme } from "../../theme/colors";
-import { saveConfig } from "../../data/config-store";
+import { saveConfig, resetAllData, exportConfig, importConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { MarkdownStore } from "../../data/markdown-store";
 import type { TickerFrontmatter } from "../../types/ticker";
@@ -132,6 +132,32 @@ function ValidatingContent({ dismiss, dialogId, step }: AlertContext & { step: W
   );
 }
 
+function ConfirmDestroyContent({ resolve, dialogId }: PromptContext<boolean>) {
+  useDialogKeyboard((event) => {
+    event.stopPropagation();
+    if (event.name === "return" || event.name === "y") resolve(true);
+    if (event.name === "escape" || event.name === "n") resolve(false);
+  }, dialogId);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.negative}>{"Reset All Data"}</text>
+      </box>
+      <box height={1} />
+      <text fg={colors.text}>This will permanently delete all portfolios, tickers,</text>
+      <text fg={colors.text}>notes, broker credentials, and settings.</text>
+      <box height={1} />
+      <text fg={colors.text}>Gloomberb will quit and show the setup wizard on</text>
+      <text fg={colors.text}>next launch.</text>
+      <box height={1} />
+      <text fg={colors.negative} attributes={TextAttributes.BOLD}>This cannot be undone.</text>
+      <box height={1} />
+      <text fg={colors.textMuted}>Press Y or Enter to confirm, Esc or N to cancel</text>
+    </box>
+  );
+}
+
 function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & { message: string; isError: boolean }) {
   useDialogKeyboard((event) => {
     event.stopPropagation();
@@ -187,6 +213,56 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     const ctx = { selectedTicker: state.selectedTicker, activeLeftTab: state.activeLeftTab };
 
     switch (cmd.id) {
+      case "export-config": {
+        const exportPath = (process.env.HOME || "~") + "/gloomberb-config-backup.json";
+        close();
+        (async () => {
+          try {
+            await exportConfig(state.config, exportPath);
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={`Config exported to ${exportPath}`} isError={false} />,
+            });
+          } catch (err: any) {
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={err.message || "Export failed"} isError={true} />,
+            });
+          }
+        })();
+        return;
+      }
+      case "import-config": {
+        const importPath = (process.env.HOME || "~") + "/gloomberb-config-backup.json";
+        close();
+        (async () => {
+          try {
+            const imported = await importConfig(state.config.dataDir, importPath);
+            dispatch({ type: "SET_CONFIG", config: imported });
+            applyTheme(imported.theme);
+            dispatch({ type: "SET_THEME", theme: imported.theme });
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={`Config imported from ${importPath}. Restart for full effect.`} isError={false} />,
+            });
+          } catch (err: any) {
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={err.message || "Import failed — file not found?"} isError={true} />,
+            });
+          }
+        })();
+        return;
+      }
+      case "reset-all-data": {
+        close();
+        (async () => {
+          const confirmed = await dialog.prompt<boolean>({
+            content: (ctx) => <ConfirmDestroyContent {...ctx} />,
+          });
+          if (confirmed) {
+            await resetAllData(state.config.dataDir);
+            process.exit(0);
+          }
+        })();
+        return;
+      }
       case "columns": {
         // Enter columns mode by setting the prefix
         setQuery("COL ");

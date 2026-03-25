@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, writeFile, mkdir, rm } from "fs/promises";
 import { join, dirname } from "path";
 import { existsSync } from "fs";
 import type { AppConfig } from "../types/config";
@@ -51,5 +51,29 @@ export async function initDataDir(dataDir: string): Promise<AppConfig> {
   const config = await loadConfig(dataDir);
   await saveConfig(config);
   await setDataDir(dataDir);
+  return config;
+}
+
+/** Delete all data (data dir contents + global config) and exit so the app restarts fresh */
+export async function resetAllData(dataDir: string): Promise<void> {
+  // Remove the data directory
+  await rm(dataDir, { recursive: true, force: true });
+  // Remove the global config so first-run detection triggers
+  await rm(GLOBAL_CONFIG_DIR, { recursive: true, force: true });
+}
+
+/** Export the full config to a JSON file at the given path */
+export async function exportConfig(config: AppConfig, destPath: string): Promise<void> {
+  const { dataDir, ...rest } = config;
+  await writeFile(destPath, JSON.stringify(rest, null, 2), "utf-8");
+}
+
+/** Import config from a JSON file, merging with defaults for the given data dir */
+export async function importConfig(dataDir: string, srcPath: string): Promise<AppConfig> {
+  const raw = await readFile(srcPath, "utf-8");
+  const imported = JSON.parse(raw);
+  const defaults = createDefaultConfig(dataDir);
+  const config: AppConfig = { ...defaults, ...imported, dataDir };
+  await saveConfig(config);
   return config;
 }
