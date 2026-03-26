@@ -26,6 +26,7 @@ import { newsPlugin } from "./plugins/builtin/news";
 import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
+import { chatPlugin } from "./plugins/builtin/chat";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
 import { checkForUpdate, performUpdate } from "./updater";
@@ -378,6 +379,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
   pluginRegistry.register(optionsPlugin);
   pluginRegistry.register(notesPlugin);
   pluginRegistry.register(askAiPlugin);
+  pluginRegistry.register(chatPlugin);
 
   // External plugins (loaded from ~/.gloomberb/plugins/)
   for (const { plugin, error } of externalPlugins) {
