@@ -5,6 +5,7 @@ import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { useSelectedTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { padTo } from "../../utils/format";
+import { Spinner } from "../../components/spinner";
 import type { DataProvider, NewsItem } from "../../types/data-provider";
 
 let _dataProvider: DataProvider | undefined;
@@ -74,7 +75,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   });
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
-  if (loading && news.length === 0) return <text fg={colors.textDim}>Loading news...</text>;
+  if (loading && news.length === 0) return <Spinner label="Loading news..." />;
   if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
 
   const innerWidth = Math.max(width - 4, 40);
@@ -167,7 +168,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
                 {summary
                   ? summary
                   : loadingSummary
-                    ? "Loading..."
+                    ? <Spinner label="Loading..." />
                     : "No preview available."}
               </text>
             </box>
