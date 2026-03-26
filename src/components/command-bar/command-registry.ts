@@ -67,10 +67,10 @@ export const commands: Command[] = [
     execute: () => {},
   },
 
-  // Create
+  // Create / Delete
   {
     id: "new-portfolio",
-    prefix: "NP",
+    prefix: "",
     label: "New Portfolio",
     description: "Create a new portfolio",
     category: "Create",
@@ -78,10 +78,26 @@ export const commands: Command[] = [
   },
   {
     id: "new-watchlist",
-    prefix: "NW",
+    prefix: "",
     label: "New Watchlist",
     description: "Create a new watchlist",
     category: "Create",
+    execute: () => {},
+  },
+  {
+    id: "delete-portfolio",
+    prefix: "",
+    label: "Delete Portfolio",
+    description: "Remove a portfolio and its data",
+    category: "Danger",
+    execute: () => {},
+  },
+  {
+    id: "delete-watchlist",
+    prefix: "",
+    label: "Delete Watchlist",
+    description: "Remove a watchlist",
+    category: "Danger",
     execute: () => {},
   },
 

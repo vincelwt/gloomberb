@@ -218,12 +218,14 @@ export class PluginRegistry {
       this.unregisterFns.set(plugin.id, unregister);
     }
 
+    // Add to plugin map before async setup so allPlugins is available synchronously
+    this.plugins.set(plugin.id, plugin);
+
     // Call setup with enriched context
     if (plugin.setup) {
       await plugin.setup(this.createContext(plugin.id));
     }
 
-    this.plugins.set(plugin.id, plugin);
     this.events.emit("plugin:registered", { pluginId: plugin.id });
   }
 

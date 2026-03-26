@@ -158,6 +158,65 @@ function ConfirmDestroyContent({ resolve, dialogId }: PromptContext<boolean>) {
   );
 }
 
+function ChoiceContent({ resolve, dialogId, title, choices }: PromptContext<string> & { title: string; choices: Array<{ id: string; label: string; desc: string }> }) {
+  const [idx, setIdx] = useState(0);
+  useDialogKeyboard((event) => {
+    event.stopPropagation();
+    if (event.name === "up" || event.name === "k") setIdx((i) => Math.max(0, i - 1));
+    else if (event.name === "down" || event.name === "j") setIdx((i) => Math.min(choices.length - 1, i + 1));
+    else if (event.name === "return") resolve(choices[idx]!.id);
+    else if (event.name === "escape") resolve("");
+  }, dialogId);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.text}>{title}</text>
+      </box>
+      <box height={1} />
+      {choices.map((c, i) => {
+        const isSel = i === idx;
+        return (
+          <box key={c.id} height={1} backgroundColor={isSel ? colors.selected : colors.commandBg}>
+            <text fg={isSel ? colors.selectedText : colors.textDim}>
+              {isSel ? "\u25b8 " : "  "}
+            </text>
+            <text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
+              {c.label}
+            </text>
+          </box>
+        );
+      })}
+      <box height={1} />
+      <box height={1}>
+        <text fg={colors.textDim}>{choices[idx]?.desc}</text>
+      </box>
+      <box height={1} />
+      <text fg={colors.textMuted}>Use ↑↓ to choose · enter to select · esc to cancel</text>
+    </box>
+  );
+}
+
+function ConfirmContent({ resolve, dialogId, title, message }: PromptContext<boolean> & { title: string; message: string }) {
+  useDialogKeyboard((event) => {
+    event.stopPropagation();
+    if (event.name === "return" || event.name === "y") resolve(true);
+    if (event.name === "escape" || event.name === "n") resolve(false);
+  }, dialogId);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.negative}>{title}</text>
+      </box>
+      <box height={1} />
+      <text fg={colors.text}>{message}</text>
+      <box height={1} />
+      <text fg={colors.textMuted}>Press Y or Enter to confirm, Esc or N to cancel</text>
+    </box>
+  );
+}
+
 function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & { message: string; isError: boolean }) {
   useDialogKeyboard((event) => {
     event.stopPropagation();
@@ -296,6 +355,178 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         close();
         break;
       }
+      case "new-watchlist": {
+        close();
+        (async () => {
+          const name = await dialog.prompt<string>({
+            content: (ctx) => <InputStepContent {...ctx} step={{
+              key: "name", type: "text",
+              label: "New Watchlist",
+              body: ["Enter a name for your watchlist."],
+              placeholder: "My Watchlist",
+            }} />,
+          });
+          if (!name) return;
+          const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `watchlist-${Date.now()}`;
+          const newWatchlist = { id, name };
+          const newConfig = { ...state.config, watchlists: [...state.config.watchlists, newWatchlist] };
+          dispatch({ type: "SET_CONFIG", config: newConfig });
+          dispatch({ type: "SET_LEFT_TAB", tab: id });
+          saveConfig(newConfig).catch(() => {});
+        })();
+        return;
+      }
+      case "new-portfolio": {
+        close();
+        (async () => {
+          // Build choices: manual + connectable brokers
+          const choices: Array<{ id: string; label: string; desc: string }> = [
+            { id: "manual", label: "Create Manual Portfolio", desc: "Add tickers and positions by hand" },
+          ];
+          for (const [brokerId, adapter] of pluginRegistry.brokers) {
+            if (adapter.configSchema.length > 0) {
+              choices.push({
+                id: brokerId,
+                label: `Connect ${adapter.name}`,
+                desc: `Auto-import positions via ${adapter.name}`,
+              });
+            }
+          }
+
+          const choiceId = await dialog.prompt<string>({
+            content: (ctx) => <ChoiceContent {...ctx} title="New Portfolio" choices={choices} />,
+          });
+          if (!choiceId) return;
+
+          if (choiceId === "manual") {
+            const name = await dialog.prompt<string>({
+              content: (ctx) => <InputStepContent {...ctx} step={{
+                key: "name", type: "text",
+                label: "Name Your Portfolio",
+                body: ["A portfolio tracks your positions with cost basis."],
+                placeholder: "Main Portfolio",
+              }} />,
+            });
+            if (!name) return;
+            const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `portfolio-${Date.now()}`;
+            const newPortfolio = { id, name, currency: state.config.baseCurrency || "USD" };
+            const newConfig = { ...state.config, portfolios: [...state.config.portfolios, newPortfolio] };
+            dispatch({ type: "SET_CONFIG", config: newConfig });
+            dispatch({ type: "SET_LEFT_TAB", tab: id });
+            saveConfig(newConfig).catch(() => {});
+          } else {
+            // Broker connect flow
+            const adapter = [...pluginRegistry.brokers.values()].find((b) => b.id === choiceId);
+            if (!adapter) return;
+            const fields = adapter.configSchema.filter((f) => f.required);
+            const values: Record<string, string> = {};
+
+            for (const field of fields) {
+              const val = await dialog.prompt<string>({
+                content: (ctx) => <InputStepContent {...ctx} step={{
+                  key: field.key,
+                  type: field.type === "password" ? "password" : "text",
+                  label: field.label,
+                  body: field.placeholder ? [`${field.placeholder}`] : [],
+                  placeholder: field.placeholder || `Enter ${field.label.toLowerCase()}`,
+                }} />,
+              });
+              if (val === undefined) return; // User cancelled
+              values[field.key] = val;
+            }
+
+            // Show connecting dialog and validate
+            const dialogId = dialog.show({
+              content: () => (
+                <box flexDirection="column">
+                  <box height={1}>
+                    <text attributes={TextAttributes.BOLD} fg={colors.text}>{"Connecting..."}</text>
+                  </box>
+                  <box height={1} />
+                  <text fg={colors.textDim}>Validating credentials and importing positions...</text>
+                </box>
+              ),
+            });
+
+            try {
+              await pluginRegistry.updateBrokerConfigFn(choiceId, values);
+              await pluginRegistry.syncBrokerFn(choiceId);
+              dialog.close(dialogId);
+              // Reload config to pick up broker-created portfolios
+              const freshConfig = pluginRegistry.getConfigFn();
+              dispatch({ type: "SET_CONFIG", config: freshConfig });
+              // Switch to the broker's portfolio tab if one was created
+              const brokerTab = freshConfig.portfolios.find((p) => p.id.startsWith(choiceId));
+              if (brokerTab) dispatch({ type: "SET_LEFT_TAB", tab: brokerTab.id });
+              await dialog.alert({
+                content: (ctx) => <ResultContent {...ctx} message="Connected! Positions will sync automatically." isError={false} />,
+              });
+            } catch (err: any) {
+              dialog.close(dialogId);
+              await dialog.alert({
+                content: (ctx) => <ResultContent {...ctx} message={err.message || "Connection failed"} isError={true} />,
+              });
+            }
+          }
+        })();
+        return;
+      }
+      case "delete-watchlist": {
+        close();
+        (async () => {
+          if (state.config.watchlists.length === 0) return;
+          const choices = state.config.watchlists.map((w) => ({
+            id: w.id, label: w.name, desc: `Delete watchlist "${w.name}"`,
+          }));
+          const choiceId = await dialog.prompt<string>({
+            content: (ctx) => <ChoiceContent {...ctx} title="Delete Watchlist" choices={choices} />,
+          });
+          if (!choiceId) return;
+          const wlName = state.config.watchlists.find((w) => w.id === choiceId)?.name || choiceId;
+          const confirmed = await dialog.prompt<boolean>({
+            content: (ctx) => <ConfirmContent {...ctx} title="Delete Watchlist" message={`Are you sure you want to delete "${wlName}"? Tickers will not be deleted.`} />,
+          });
+          if (!confirmed) return;
+          const newConfig = { ...state.config, watchlists: state.config.watchlists.filter((w) => w.id !== choiceId) };
+          dispatch({ type: "SET_CONFIG", config: newConfig });
+          if (state.activeLeftTab === choiceId) {
+            const fallback = newConfig.portfolios[0]?.id || newConfig.watchlists[0]?.id || "";
+            dispatch({ type: "SET_LEFT_TAB", tab: fallback });
+          }
+          saveConfig(newConfig).catch(() => {});
+        })();
+        return;
+      }
+      case "delete-portfolio": {
+        close();
+        (async () => {
+          // Only show non-broker-managed portfolios for deletion
+          const deletable = state.config.portfolios.filter((p) =>
+            !Object.keys(state.config.brokers).some((bId) => p.id.startsWith(bId))
+          );
+          if (deletable.length === 0) return;
+          const choices = deletable.map((p) => ({
+            id: p.id, label: p.name, desc: `Delete portfolio "${p.name}"`,
+          }));
+          const choiceId = await dialog.prompt<string>({
+            content: (ctx) => <ChoiceContent {...ctx} title="Delete Portfolio" choices={choices} />,
+          });
+          if (!choiceId) return;
+          const pName = state.config.portfolios.find((p) => p.id === choiceId)?.name || choiceId;
+          const confirmed = await dialog.prompt<boolean>({
+            content: (ctx) => <ConfirmContent {...ctx} title="Delete Portfolio" message={`Are you sure you want to delete "${pName}"? Tickers will not be deleted.`} />,
+          });
+          if (!confirmed) return;
+          const newConfig = { ...state.config, portfolios: state.config.portfolios.filter((p) => p.id !== choiceId) };
+          dispatch({ type: "SET_CONFIG", config: newConfig });
+          if (state.activeLeftTab === choiceId) {
+            const fallback = newConfig.portfolios[0]?.id || newConfig.watchlists[0]?.id || "";
+            dispatch({ type: "SET_LEFT_TAB", tab: fallback });
+          }
+          saveConfig(newConfig).catch(() => {});
+        })();
+        return;
+      }
       default:
         // Commands with hasArg are prefix-driven modes (theme, plugins, search)
         // — enter them by setting the query to their prefix instead of closing
@@ -310,7 +541,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         cmd.execute(dispatch, ctx);
         close();
     }
-  }, [state, dispatch, markdownStore, close]);
+  }, [state, dispatch, markdownStore, close, dialog, pluginRegistry]);
 
   const openTickerDetail = useCallback((symbol: string, name: string, exchange: string) => {
     (async () => {

@@ -7,6 +7,7 @@ import { useSelectedTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
+import { Spinner } from "../../components/spinner";
 
 const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -164,7 +165,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view options.</text>;
   if (!getSharedDataProvider()?.getOptionsChain) return <text fg={colors.textDim}>Options data not available.</text>;
-  if (loading && !chain) return <text fg={colors.textDim}>Loading options chain...</text>;
+  if (loading && !chain) return <Spinner label="Loading options chain..." />;
   if (error) return <text fg={colors.textDim}>{error}</text>;
   if (!chain || chain.expirationDates.length === 0) return <text fg={colors.textDim}>No options available for {effectiveTicker}.</text>;
 
@@ -219,7 +220,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
             </box>
           );
         })}
-        {loading && <text fg={colors.textDim}> ...</text>}
+        {loading && <spinner name="dots" color={colors.textDim} />}
       </box>
 
       {/* Position banner */}
