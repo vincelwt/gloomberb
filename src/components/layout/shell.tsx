@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect, useReducer } from "react";
 import { useTerminalDimensions } from "@opentui/react";
 import { useDialogState } from "@opentui-ui/dialog/react";
 import { useAppState } from "../../state/app-context";
@@ -18,7 +18,21 @@ const GRAB_ZONE = 3;
 export function Shell({ pluginRegistry }: ShellProps) {
   const { state, dispatch } = useAppState();
   const { width, height } = useTerminalDimensions();
-  const resolved = resolvePanes(state.config.layout, pluginRegistry.panes);
+
+  // Force re-render when floating widget visibility changes
+  const [, forceRender] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    return pluginRegistry.onWidgetVisibilityChange(forceRender);
+  }, [pluginRegistry]);
+  const disabledPlugins = new Set(state.config.disabledPlugins || []);
+  const disabledPaneIds = new Set<string>();
+  for (const pluginId of disabledPlugins) {
+    for (const paneId of pluginRegistry.getPluginPaneIds(pluginId)) {
+      disabledPaneIds.add(paneId);
+    }
+  }
+  const resolved = resolvePanes(state.config.layout, pluginRegistry.panes)
+    .filter((p) => !disabledPaneIds.has(p.def.id));
   const leftPanes = getPanesByPosition(resolved, "left");
   const rightPanes = getPanesByPosition(resolved, "right");
 

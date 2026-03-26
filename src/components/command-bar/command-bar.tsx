@@ -250,6 +250,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   const inputRef = useRef<InputRenderable>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalThemeRef = useRef<string>(getCurrentThemeId());
+  const spaceConsumedRef = useRef(false);
 
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
@@ -751,6 +752,12 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           const newDisabled = isEnabled
             ? [...disabledPlugins, p.id]
             : disabledPlugins.filter((id) => id !== p.id);
+          // When disabling, hide any floating widgets owned by this plugin
+          if (isEnabled) {
+            for (const widgetId of pluginRegistry.getPluginWidgetIds(p.id)) {
+              pluginRegistry.hideWidget(widgetId);
+            }
+          }
           saveConfig({ ...state.config, disabledPlugins: newDisabled }).catch(() => {});
         };
         items.push({
@@ -860,8 +867,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     setResults(items);
-    // In columns mode, preserve the selected index across re-renders (toggling)
-    if (match?.command.id === "columns") {
+    // In columns/plugin mode, preserve the selected index across re-renders (toggling)
+    if (match?.command.id === "columns" || match?.command.id === "plugins") {
       setSelectedIdx((prev) => Math.min(prev, items.length - 1));
     } else {
       setSelectedIdx(initialIdx);
@@ -927,10 +934,12 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSelectedIdx((i) => Math.max(i - 1, 0));
     } else if (event.name === "space" && isPluginMode) {
       // Space toggles plugins without closing
+      spaceConsumedRef.current = true;
       const selected = results[selectedIdx];
       if (selected?.pluginToggle) selected.pluginToggle();
     } else if (event.name === "space" && isColumnsMode) {
       // Toggle column with space
+      spaceConsumedRef.current = true;
       const selected = results[selectedIdx];
       if (selected) selected.action();
     } else if (event.name === "return" || event.name === "enter") {
@@ -999,8 +1008,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           textColor={colors.text}
           placeholderColor={colors.textDim}
           backgroundColor={colors.commandBg}
-          onInput={(val) => setQuery(val)}
-          onChange={(val) => setQuery(val)}
+          onInput={(val) => {
+            if (spaceConsumedRef.current) { spaceConsumedRef.current = false; return; }
+            setQuery(val);
+          }}
+          onChange={(val) => {
+            if (spaceConsumedRef.current) { spaceConsumedRef.current = false; return; }
+            setQuery(val);
+          }}
           onSubmit={() => {
             const selected = results[selectedIdx];
             if (selected) selected.action();
