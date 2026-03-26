@@ -5,12 +5,7 @@ import type { TextareaRenderable } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
-import type { MarkdownStore } from "../../data/markdown-store";
-
-let _markdownStore: MarkdownStore | undefined;
-export function setNotesMarkdownStore(store: MarkdownStore) {
-  _markdownStore = store;
-}
+import { getSharedMarkdownStore } from "../../plugins/registry";
 
 function NotesTab({ focused, onCapture }: DetailTabProps) {
   const { ticker } = useSelectedTicker();
@@ -28,8 +23,8 @@ function NotesTab({ focused, onCapture }: DetailTabProps) {
     if (t && text !== t.notes) {
       const updated = { ...t, notes: text };
       dispatch({ type: "UPDATE_TICKER", ticker: updated });
-      if (_markdownStore) {
-        _markdownStore.saveTicker(updated).catch(() => {});
+      if (getSharedMarkdownStore()) {
+        getSharedMarkdownStore().saveTicker(updated).catch(() => {});
       }
     }
   }, [dispatch]);

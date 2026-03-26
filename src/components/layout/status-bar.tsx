@@ -3,8 +3,10 @@ import { useAppState } from "../../state/app-context";
 import { marketStateLabel, marketStateColor, exchangeShortName } from "../../utils/market-status";
 import { formatPercentRaw } from "../../utils/format";
 import { priceColor } from "../../theme/colors";
+import { getSharedRegistry } from "../../plugins/registry";
 
 export function StatusBar() {
+  const registry = getSharedRegistry();
   const { state } = useAppState();
   const refreshCount = state.refreshing.size;
 
@@ -54,6 +56,8 @@ export function StatusBar() {
           </text>
         </box>
       )}
+      {/* Plugin status widgets */}
+      {registry && <registry.Slot name="status:widget" />}
       {refreshCount > 0 && (
         <box paddingRight={1}>
           <text fg={colors.textDim}>

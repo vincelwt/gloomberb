@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import { AppProvider, useAppState } from "./state/app-context";
@@ -19,14 +19,15 @@ import type { DataProvider } from "./types/data-provider";
 
 // Built-in plugins
 import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
-import { tickerDetailPlugin, setDataProvider, setPluginRegistry } from "./plugins/builtin/ticker-detail";
+import { tickerDetailPlugin } from "./plugins/builtin/ticker-detail";
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
-import { newsPlugin, setNewsDataProvider } from "./plugins/builtin/news";
-import { optionsPlugin, setOptionsDataProvider } from "./plugins/builtin/options";
-import { notesPlugin, setNotesMarkdownStore } from "./plugins/builtin/notes";
+import { newsPlugin } from "./plugins/builtin/news";
+import { optionsPlugin } from "./plugins/builtin/options";
+import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { saveConfig } from "./data/config-store";
+import { Toaster, toast } from "@opentui-ui/toast/react";
 import { checkForUpdate, performUpdate } from "./updater";
 import { VERSION } from "./version";
 import { join } from "path";
@@ -46,6 +47,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     try {
       const data = await dataProvider.getTickerFinancials(symbol, exchange);
       dispatch({ type: "SET_FINANCIALS", symbol, data });
+      pluginRegistry.events.emit("ticker:refreshed", { symbol, financials: data });
 
       // Cache exchange rate for this ticker's currency
       const currency = data.quote?.currency;
@@ -238,6 +240,33 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     await importBrokerPositions(brokerId);
   };
 
+  // Wire up navigation functions
+  pluginRegistry.selectTickerFn = (symbol) => dispatch({ type: "SELECT_TICKER", symbol });
+  pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
+  pluginRegistry.switchTabFn = (tabId) => dispatch({ type: "SET_RIGHT_TAB", tab: tabId });
+  pluginRegistry.openCommandBarFn = () => dispatch({ type: "SET_COMMAND_BAR", open: true });
+
+  // Wire up toast
+  pluginRegistry.showToastFn = (message, options) => {
+    const type = options?.type ?? "info";
+    const duration = options?.duration;
+    if (type === "success") toast.success(message, { duration });
+    else if (type === "error") toast.error(message, { duration });
+    else toast.info(message, { duration });
+  };
+
+  // Emit ticker:selected events
+  const prevSelectedRef = useRef(state.selectedTicker);
+  useEffect(() => {
+    if (state.selectedTicker !== prevSelectedRef.current) {
+      pluginRegistry.events.emit("ticker:selected", {
+        symbol: state.selectedTicker,
+        previous: prevSelectedRef.current,
+      });
+      prevSelectedRef.current = state.selectedTicker;
+    }
+  }, [state.selectedTicker]);
+
   // Check if a dialog is currently open (wizard, confirm, etc.)
   const dialogOpen = useDialogState((s) => s.isOpen);
 
@@ -279,10 +308,27 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       for (const t of state.tickers.values()) {
         refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
       }
+    } else if (event.name === "a" && state.selectedTicker) {
+      // Open ticker actions
+      const actions = [...pluginRegistry.tickerActions.values()];
+      const ticker = state.tickers.get(state.selectedTicker);
+      if (actions.length > 0 && ticker) {
+        dispatch({ type: "SET_COMMAND_BAR", open: true });
+      }
     } else if (event.name === "u" && state.updateAvailable && !state.updateProgress) {
       performUpdate(state.updateAvailable, (progress) => {
         dispatch({ type: "SET_UPDATE_PROGRESS", progress });
       });
+    } else {
+      // Plugin keyboard shortcuts (built-ins take priority)
+      for (const shortcut of pluginRegistry.shortcuts.values()) {
+        if (shortcut.key === event.name
+            && (shortcut.ctrl ?? false) === (event.ctrl ?? false)
+            && (shortcut.shift ?? false) === (event.shift ?? false)) {
+          shortcut.execute();
+          break;
+        }
+      }
     }
   });
 
@@ -294,6 +340,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       {state.commandBarOpen && (
         <CommandBar dataProvider={dataProvider} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
       )}
+      <Toaster position="bottom-right" />
     </box>
   );
 }
@@ -301,9 +348,10 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 interface AppProps {
   config: AppConfig;
   renderer: CliRenderer;
+  externalPlugins?: import("./plugins/loader").LoadedExternalPlugin[];
 }
 
-export function App({ config: initialConfig, renderer }: AppProps) {
+export function App({ config: initialConfig, renderer, externalPlugins = [] }: AppProps) {
   const [config, setConfig] = useState(initialConfig);
   const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
 
@@ -316,13 +364,8 @@ export function App({ config: initialConfig, renderer }: AppProps) {
   const markdownStore = new MarkdownStore(config.dataDir, cache);
   // Migrate old YAML-frontmatter .md files to SQLite on first run
   markdownStore.migrate();
-  setNotesMarkdownStore(markdownStore);
   const dataProvider: DataProvider = new YahooFinanceClient(cache);
-  setDataProvider(dataProvider);
-  setNewsDataProvider(dataProvider);
-  setOptionsDataProvider(dataProvider);
-  const pluginRegistry = new PluginRegistry(renderer);
-  setPluginRegistry(pluginRegistry);
+  const pluginRegistry = new PluginRegistry(renderer, dataProvider, markdownStore, cache);
 
   // Register built-in plugins synchronously
   // (setup is async but panes are registered immediately via the panes property)
@@ -336,6 +379,11 @@ export function App({ config: initialConfig, renderer }: AppProps) {
   pluginRegistry.register(optionsPlugin);
   pluginRegistry.register(notesPlugin);
   pluginRegistry.register(askAiPlugin);
+
+  // External plugins (loaded from ~/.gloomberb/plugins/)
+  for (const { plugin, error } of externalPlugins) {
+    if (!error) pluginRegistry.register(plugin);
+  }
 
   if (showOnboarding) {
     return (

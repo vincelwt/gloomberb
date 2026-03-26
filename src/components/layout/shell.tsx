@@ -138,6 +138,52 @@ export function Shell({ pluginRegistry }: ShellProps) {
           <text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</text>
         </box>
       )}
+
+      {/* Floating widgets from plugins */}
+      {[...pluginRegistry.floatingWidgets.values()]
+        .filter((w) => pluginRegistry.visibleWidgets.has(w.id))
+        .map((widget) => {
+          const ww = typeof widget.width === "number" ? widget.width : Math.floor(width * parseInt(widget.width) / 100);
+          const wh = typeof widget.height === "number" ? widget.height : Math.floor(contentHeight * parseInt(widget.height) / 100);
+          const pos = computeWidgetPosition(widget.position, width, contentHeight, ww, wh);
+          return (
+            <box
+              key={widget.id}
+              position="absolute"
+              top={pos.top}
+              left={pos.left}
+              width={ww}
+              height={wh}
+              zIndex={widget.zIndex ?? 50}
+              backgroundColor={colors.bg}
+              borderStyle="single"
+              borderColor={colors.borderFocused}
+            >
+              <widget.component
+                width={ww - 2}
+                height={wh - 2}
+                focused={!overlayOpen}
+                close={() => pluginRegistry.hideWidget(widget.id)}
+              />
+            </box>
+          );
+        })}
     </box>
   );
+}
+
+function computeWidgetPosition(
+  anchor: "top-right" | "top-left" | "bottom-right" | "bottom-left" | "center",
+  termWidth: number, termHeight: number, widgetWidth: number, widgetHeight: number,
+): { top: number; left: number } {
+  switch (anchor) {
+    case "top-left": return { top: 1, left: 1 };
+    case "top-right": return { top: 1, left: termWidth - widgetWidth - 1 };
+    case "bottom-left": return { top: termHeight - widgetHeight - 1, left: 1 };
+    case "bottom-right": return { top: termHeight - widgetHeight - 1, left: termWidth - widgetWidth - 1 };
+    case "center": return {
+      top: Math.floor((termHeight - widgetHeight) / 2),
+      left: Math.floor((termWidth - widgetWidth) / 2),
+    };
+  }
 }

@@ -32,6 +32,14 @@ const SCHEMA = `
     frontmatter TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS plugin_storage (
+    plugin_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (plugin_id, key)
+  );
 `;
 
 export class SqliteCache {
@@ -153,6 +161,42 @@ export class SqliteCache {
   /** Clear cached entries by data type (e.g. "full" to force re-fetch of financials) */
   clearByType(dataType: string): void {
     this.db.query("DELETE FROM yahoo_cache WHERE data_type = ?").run(dataType);
+  }
+
+  // --- Plugin Storage ---
+
+  getPluginData(pluginId: string, key: string): string | null {
+    const row = this.db
+      .query<{ value: string }, [string, string]>(
+        "SELECT value FROM plugin_storage WHERE plugin_id = ? AND key = ?",
+      )
+      .get(pluginId, key);
+    return row?.value ?? null;
+  }
+
+  setPluginData(pluginId: string, key: string, value: string): void {
+    this.db
+      .query(
+        `INSERT OR REPLACE INTO plugin_storage (plugin_id, key, value, updated_at) VALUES (?, ?, ?, ?)`,
+      )
+      .run(pluginId, key, value, Date.now());
+  }
+
+  deletePluginData(pluginId: string, key: string): void {
+    this.db.query("DELETE FROM plugin_storage WHERE plugin_id = ? AND key = ?").run(pluginId, key);
+  }
+
+  getPluginKeys(pluginId: string): string[] {
+    return this.db
+      .query<{ key: string }, [string]>(
+        "SELECT key FROM plugin_storage WHERE plugin_id = ? ORDER BY key",
+      )
+      .all(pluginId)
+      .map((r) => r.key);
+  }
+
+  clearPluginData(pluginId: string): void {
+    this.db.query("DELETE FROM plugin_storage WHERE plugin_id = ?").run(pluginId);
   }
 
   close(): void {

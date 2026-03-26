@@ -8,7 +8,7 @@ export interface ToggleListItem {
   description?: string;
 }
 
-interface ToggleListProps {
+export interface ToggleListProps {
   items: ToggleListItem[];
   selectedIdx: number;
   onToggle?: (id: string) => void;
