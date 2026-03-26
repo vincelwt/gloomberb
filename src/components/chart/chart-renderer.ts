@@ -1,8 +1,7 @@
 import { RGBA } from "@opentui/core";
-import type { PricePoint } from "../../types/financials";
-import type { PixelBuffer, ChartColors } from "./chart-types";
+import type { ChartColors, PixelBuffer, ChartRenderMode } from "./chart-types";
+import type { ProjectedChartPoint } from "./chart-data";
 
-/** A styled chunk for OpenTUI text rendering */
 interface StyledChunk {
   __isChunk: true;
   text: string;
@@ -11,10 +10,28 @@ interface StyledChunk {
   attributes: number;
 }
 
-/** Styled content object passable to <text content={...}> */
 export interface StyledContent {
   chunks: StyledChunk[];
 }
+
+interface ChartPaletteInput {
+  bg: string;
+  border: string;
+  borderFocused: string;
+  text: string;
+  textDim: string;
+  positive: string;
+  negative: string;
+}
+
+export interface ResolvedChartPalette extends ChartColors {
+  candleUp: string;
+  candleDown: string;
+  wickUp: string;
+  wickDown: string;
+}
+
+type VolumeTrendMode = "previousClose" | "openClose";
 
 function makeChunk(text: string, fgColor: string, bgColor: string): StyledChunk {
   return {
@@ -26,7 +43,45 @@ function makeChunk(text: string, fgColor: string, bgColor: string): StyledChunk 
   };
 }
 
-// ─── Pixel Buffer ───────────────────────────────────────────────
+function blendHex(a: string, b: string, ratio: number): string {
+  const parse = (hex: string) => {
+    const h = hex.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)] as const;
+  };
+
+  const [ar, ag, ab] = parse(a);
+  const [br, bg, bb] = parse(b);
+  const mix = (x: number, y: number) => Math.round(x + (y - x) * ratio).toString(16).padStart(2, "0");
+  return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
+}
+
+export function resolveChartPalette(
+  baseColors: ChartPaletteInput,
+  trend: "positive" | "negative" | "neutral" = "positive",
+): ResolvedChartPalette {
+  const lineColor = trend === "negative"
+    ? baseColors.negative
+    : trend === "neutral"
+      ? baseColors.text
+      : baseColors.positive;
+
+  return {
+    lineColor,
+    fillColor: blendHex(baseColors.bg, lineColor, 0.22),
+    volumeUp: blendHex(baseColors.bg, baseColors.positive, 0.35),
+    volumeDown: blendHex(baseColors.bg, baseColors.negative, 0.35),
+    gridColor: blendHex(baseColors.bg, baseColors.border, 0.55),
+    crosshairColor: baseColors.borderFocused,
+    bgColor: baseColors.bg,
+    axisColor: baseColors.textDim,
+    activeRangeColor: baseColors.text,
+    inactiveRangeColor: blendHex(baseColors.bg, baseColors.textDim, 0.75),
+    candleUp: baseColors.positive,
+    candleDown: baseColors.negative,
+    wickUp: blendHex(baseColors.positive, baseColors.text, 0.35),
+    wickDown: blendHex(baseColors.negative, baseColors.text, 0.35),
+  };
+}
 
 export function createPixelBuffer(width: number, heightPixels: number): PixelBuffer {
   const pixels: (string | null)[][] = [];
@@ -42,13 +97,12 @@ function setPixel(buf: PixelBuffer, x: number, y: number, color: string) {
   }
 }
 
-// ─── Drawing Primitives ─────────────────────────────────────────
-
-/** Bresenham line drawing */
 export function drawLine(
   buf: PixelBuffer,
-  x0: number, y0: number,
-  x1: number, y1: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
   color: string,
 ) {
   let dx = Math.abs(x1 - x0);
@@ -56,70 +110,94 @@ export function drawLine(
   const sx = x0 < x1 ? 1 : -1;
   const sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
-  let x = x0, y = y0;
+  let x = x0;
+  let y = y0;
 
   while (true) {
     setPixel(buf, x, y, color);
     if (x === x1 && y === y1) break;
     const e2 = 2 * err;
-    if (e2 > -dy) { err -= dy; x += sx; }
-    if (e2 < dx) { err += dx; y += sy; }
+    if (e2 > -dy) {
+      err -= dy;
+      x += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y += sy;
+    }
   }
 }
 
-/** Fill a vertical column from y0 down to yMax */
-function fillColumn(buf: PixelBuffer, x: number, y0: number, yMax: number, color: string) {
-  for (let y = y0; y <= yMax; y++) {
+function fillColumn(buf: PixelBuffer, x: number, y0: number, y1: number, color: string) {
+  const start = Math.min(y0, y1);
+  const end = Math.max(y0, y1);
+  for (let y = start; y <= end; y++) {
     setPixel(buf, x, y, color);
   }
 }
 
-// ─── Chart Drawing ──────────────────────────────────────────────
+function getX(index: number, pointCount: number, width: number): number {
+  if (pointCount <= 1) return Math.floor(width / 2);
+  return Math.round((index / (pointCount - 1)) * (width - 1));
+}
 
-/**
- * Draw area chart: line + filled area below.
- */
-export function drawAreaChart(
+function getScaledY(value: number, min: number, max: number, chartTop: number, chartBottom: number): number {
+  const range = max - min || 1;
+  const chartH = chartBottom - chartTop;
+  return chartTop + Math.round((1 - (value - min) / range) * chartH);
+}
+
+function drawLineSeries(
   buf: PixelBuffer,
-  points: PricePoint[],
+  points: ProjectedChartPoint[],
+  chartTop: number,
+  chartBottom: number,
+  lineColor: string,
+  min: number,
+  max: number,
+) {
+  if (points.length === 0) return;
+
+  for (let i = 0; i < points.length; i++) {
+    const x = getX(i, points.length, buf.width);
+    const y = getScaledY(points[i]!.close, min, max, chartTop, chartBottom);
+    if (i < points.length - 1) {
+      const x1 = getX(i + 1, points.length, buf.width);
+      const y1 = getScaledY(points[i + 1]!.close, min, max, chartTop, chartBottom);
+      drawLine(buf, x, y, x1, y1, lineColor);
+    } else {
+      setPixel(buf, x, y, lineColor);
+    }
+  }
+}
+
+function drawAreaChart(
+  buf: PixelBuffer,
+  points: ProjectedChartPoint[],
   chartTop: number,
   chartBottom: number,
   lineColor: string,
   fillColor: string,
+  min: number,
+  max: number,
 ) {
   if (points.length === 0) return;
 
-  const closes = points.map(p => p.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = max - min || 1;
-  const chartH = chartBottom - chartTop;
-
-  const pixelYs = closes.map(v =>
-    chartTop + Math.round((1 - (v - min) / range) * chartH)
-  );
-
-  const getX = (i: number) =>
-    points.length === 1 ? Math.floor(buf.width / 2) :
-    Math.round((i / (points.length - 1)) * (buf.width - 1));
-
   for (let i = 0; i < points.length; i++) {
-    const x = getX(i);
-    const y = pixelYs[i]!;
+    const x = getX(i, points.length, buf.width);
+    const y = getScaledY(points[i]!.close, min, max, chartTop, chartBottom);
 
-    // Fill area below line
     fillColumn(buf, x, y + 1, chartBottom, fillColor);
 
     if (i < points.length - 1) {
-      const x1 = getX(i + 1);
-      const y1 = pixelYs[i + 1]!;
+      const x1 = getX(i + 1, points.length, buf.width);
+      const y1 = getScaledY(points[i + 1]!.close, min, max, chartTop, chartBottom);
       drawLine(buf, x, y, x1, y1, lineColor);
 
-      // Fill area between line segments
       for (let cx = Math.min(x, x1); cx <= Math.max(x, x1); cx++) {
         if (cx === x || cx === x1) continue;
-        const tVal = (cx - x) / (x1 - x);
-        const iy = Math.round(y + tVal * (y1 - y));
+        const t = (cx - x) / Math.max(Math.abs(x1 - x), 1);
+        const iy = Math.round(y + t * (y1 - y));
         fillColumn(buf, cx, iy + 1, chartBottom, fillColor);
       }
     } else {
@@ -128,32 +206,89 @@ export function drawAreaChart(
   }
 }
 
-/**
- * Draw volume bars at the bottom of the chart.
- */
+function drawCandlestickChart(
+  buf: PixelBuffer,
+  points: ProjectedChartPoint[],
+  chartTop: number,
+  chartBottom: number,
+  palette: ResolvedChartPalette,
+  min: number,
+  max: number,
+) {
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]!;
+    const x = getX(i, points.length, buf.width);
+    const highY = getScaledY(point.high, min, max, chartTop, chartBottom);
+    const lowY = getScaledY(point.low, min, max, chartTop, chartBottom);
+    const openY = getScaledY(point.open, min, max, chartTop, chartBottom);
+    const closeY = getScaledY(point.close, min, max, chartTop, chartBottom);
+    const isUp = point.close >= point.open;
+    const wickColor = isUp ? palette.wickUp : palette.wickDown;
+    const bodyColor = isUp ? palette.candleUp : palette.candleDown;
+
+    drawLine(buf, x, highY, x, lowY, wickColor);
+
+    const bodyTop = Math.min(openY, closeY);
+    const bodyBottom = Math.max(openY, closeY);
+    if (bodyTop === bodyBottom) {
+      const dojiBottom = Math.min(bodyBottom + 1, chartBottom);
+      const dojiTop = Math.max(chartTop, dojiBottom - 1);
+      fillColumn(buf, x, dojiTop, dojiBottom, bodyColor);
+    } else {
+      fillColumn(buf, x, bodyTop, bodyBottom, bodyColor);
+    }
+  }
+}
+
+function drawOhlcChart(
+  buf: PixelBuffer,
+  points: ProjectedChartPoint[],
+  chartTop: number,
+  chartBottom: number,
+  palette: ResolvedChartPalette,
+  min: number,
+  max: number,
+) {
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]!;
+    const x = getX(i, points.length, buf.width);
+    const highY = getScaledY(point.high, min, max, chartTop, chartBottom);
+    const lowY = getScaledY(point.low, min, max, chartTop, chartBottom);
+    const openY = getScaledY(point.open, min, max, chartTop, chartBottom);
+    const closeY = getScaledY(point.close, min, max, chartTop, chartBottom);
+    const isUp = point.close >= point.open;
+    const color = isUp ? palette.candleUp : palette.candleDown;
+
+    drawLine(buf, x, highY, x, lowY, color);
+    setPixel(buf, x, openY, color);
+    setPixel(buf, Math.max(x - 1, 0), openY, color);
+    setPixel(buf, x, closeY, color);
+    setPixel(buf, Math.min(x + 1, buf.width - 1), closeY, color);
+  }
+}
+
 export function drawVolumeBars(
   buf: PixelBuffer,
-  points: PricePoint[],
+  points: ProjectedChartPoint[],
   yTop: number,
   yBottom: number,
   upColor: string,
   downColor: string,
+  trendMode: VolumeTrendMode,
 ) {
-  const volumes = points.map(p => p.volume ?? 0);
+  const volumes = points.map((point) => point.volume);
   const maxVol = Math.max(...volumes, 1);
   const volH = yBottom - yTop;
 
-  const getX = (i: number) =>
-    points.length === 1 ? Math.floor(buf.width / 2) :
-    Math.round((i / (points.length - 1)) * (buf.width - 1));
-
   for (let i = 0; i < points.length; i++) {
-    const x = getX(i);
-    const vol = volumes[i]!;
-    const barH = Math.round((vol / maxVol) * volH);
+    const point = points[i]!;
+    const x = getX(i, points.length, buf.width);
+    const barH = Math.round((point.volume / maxVol) * volH);
     if (barH === 0) continue;
 
-    const isUp = i === 0 || points[i]!.close >= points[i - 1]!.close;
+    const isUp = trendMode === "openClose"
+      ? point.close >= point.open
+      : i === 0 || point.close >= points[i - 1]!.close;
     const color = isUp ? upColor : downColor;
 
     for (let y = yBottom - barH; y <= yBottom; y++) {
@@ -162,9 +297,6 @@ export function drawVolumeBars(
   }
 }
 
-/**
- * Draw vertical crosshair line (dashed).
- */
 export function drawCrosshair(
   buf: PixelBuffer,
   x: number,
@@ -180,9 +312,6 @@ export function drawCrosshair(
   }
 }
 
-/**
- * Draw subtle horizontal grid lines (dotted).
- */
 export function drawGridLines(
   buf: PixelBuffer,
   yPositions: number[],
@@ -198,13 +327,6 @@ export function drawGridLines(
   }
 }
 
-// ─── Output Conversion ─────────────────────────────────────────
-
-/**
- * Convert pixel buffer to styled content lines using half-block characters.
- * Each terminal row = 2 virtual pixel rows.
- * Returns StyledContent objects for <text content={...}>.
- */
 export function bufferToStyledLines(buf: PixelBuffer, bgColor: string): StyledContent[] {
   const lines: StyledContent[] = [];
   const termRows = Math.ceil(buf.height / 2);
@@ -214,7 +336,6 @@ export function bufferToStyledLines(buf: PixelBuffer, bgColor: string): StyledCo
     const botY = row * 2 + 1;
     const chunks: StyledChunk[] = [];
 
-    // Track runs of identical styling for coalescing
     let runChar = "";
     let runFg = "";
     let runBg = "";
@@ -257,7 +378,6 @@ export function bufferToStyledLines(buf: PixelBuffer, bgColor: string): StyledCo
         cellBg = bot!;
       }
 
-      // Coalesce runs of identical char+fg+bg
       if (char === runChar && cellFg === runFg && cellBg === runBg) {
         runLen++;
       } else {
@@ -268,15 +388,13 @@ export function bufferToStyledLines(buf: PixelBuffer, bgColor: string): StyledCo
         runLen = 1;
       }
     }
-    flushRun();
 
+    flushRun();
     lines.push({ chunks });
   }
 
   return lines;
 }
-
-// ─── Axis Rendering ─────────────────────────────────────────────
 
 export function formatPrice(value: number): string {
   if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
@@ -286,25 +404,19 @@ export function formatPrice(value: number): string {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export function formatDate(date: Date): string {
+export function formatDate(date: Date | string | number): string {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return "—";
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-export function formatDateShort(date: Date): string {
+export function formatDateShort(date: Date | string | number): string {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return "—";
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
-/**
- * Format a date label appropriate to the time span being displayed.
- * - < 30 days: "Mar 15"
- * - 30-365 days: "Mar 15" (but labels placed at month boundaries)
- * - > 365 days: "Mar 2025"
- */
-function formatDateForSpan(date: Date, spanDays: number): string {
+function formatDateForSpan(date: Date | string | number, spanDays: number): string {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return "—";
   if (spanDays <= 365) {
@@ -313,46 +425,39 @@ function formatDateForSpan(date: Date, spanDays: number): string {
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/**
- * Build a smart time axis string with evenly-spaced labels
- * that adapt to the zoom level and time span.
- */
-export function buildTimeAxis(dates: Date[], width: number): string {
+export function buildTimeAxis(dates: Array<Date | string | number>, width: number): string {
   if (dates.length === 0) return "";
 
-  const toDate = (d: Date | string | number) => d instanceof Date ? d : new Date(d);
-  const first = toDate(dates[0]!);
-  const last = toDate(dates[dates.length - 1]!);
+  const first = dates[0] instanceof Date ? dates[0]! : new Date(dates[0]!);
+  const lastRaw = dates[dates.length - 1]!;
+  const last = lastRaw instanceof Date ? lastRaw : new Date(lastRaw);
   const spanMs = last.getTime() - first.getTime();
   const spanDays = Math.max(spanMs / (1000 * 60 * 60 * 24), 1);
-
-  // Determine label format and compute how wide each label is
   const sampleLabel = formatDateForSpan(first, spanDays);
-  const labelWidth = sampleLabel.length + 2; // padding between labels
-
-  // How many labels can fit
+  const labelWidth = sampleLabel.length + 2;
   const maxLabels = Math.max(Math.floor(width / labelWidth), 2);
   const numLabels = Math.min(maxLabels, dates.length);
 
-  // Pick evenly-spaced date indices
   const labels: { pos: number; text: string }[] = [];
   for (let i = 0; i < numLabels; i++) {
     const frac = numLabels === 1 ? 0 : i / (numLabels - 1);
     const dateIdx = Math.round(frac * (dates.length - 1));
     const xPos = Math.round(frac * (width - 1));
-    const text = formatDateForSpan(toDate(dates[dateIdx]!), spanDays);
-    labels.push({ pos: xPos, text });
+    labels.push({
+      pos: xPos,
+      text: formatDateForSpan(dates[dateIdx]!, spanDays),
+    });
   }
 
-  // Render into a fixed-width string, avoiding overlaps
   const axis = new Array(width).fill(" ");
   for (const label of labels) {
-    // Center the label around its position
     const start = Math.max(Math.min(label.pos - Math.floor(label.text.length / 2), width - label.text.length), 0);
-    // Check for overlap with existing text
     let overlaps = false;
     for (let j = start; j < start + label.text.length && j < width; j++) {
-      if (axis[j] !== " ") { overlaps = true; break; }
+      if (axis[j] !== " ") {
+        overlaps = true;
+        break;
+      }
     }
     if (overlaps) continue;
     for (let j = 0; j < label.text.length && start + j < width; j++) {
@@ -363,9 +468,6 @@ export function buildTimeAxis(dates: Date[], width: number): string {
   return axis.join("");
 }
 
-/**
- * Compute grid line Y positions and their price labels.
- */
 export function computeGridLines(
   min: number,
   max: number,
@@ -379,15 +481,14 @@ export function computeGridLines(
 
   for (let i = 0; i <= numLines; i++) {
     const frac = i / numLines;
-    const price = max - frac * range;
-    const y = chartTop + Math.round(frac * chartH);
-    result.push({ y, price });
+    result.push({
+      y: chartTop + Math.round(frac * chartH),
+      price: max - frac * range,
+    });
   }
 
   return result;
 }
-
-// ─── Full Chart Render ──────────────────────────────────────────
 
 export interface RenderChartOptions {
   width: number;
@@ -395,13 +496,15 @@ export interface RenderChartOptions {
   showVolume: boolean;
   volumeHeight: number;
   cursorX: number | null;
-  colors: ChartColors;
+  mode: ChartRenderMode;
+  colors: ResolvedChartPalette;
 }
 
 export interface RenderChartResult {
   lines: StyledContent[];
   axisLabels: { row: number; label: string }[];
   timeLabels: string;
+  activePoint: ProjectedChartPoint | null;
   priceAtCursor: number | null;
   dateAtCursor: Date | null;
   changeAtCursor: number | null;
@@ -409,7 +512,7 @@ export interface RenderChartResult {
 }
 
 export function renderChart(
-  points: PricePoint[],
+  points: ProjectedChartPoint[],
   opts: RenderChartOptions,
 ): RenderChartResult {
   if (points.length === 0) {
@@ -417,6 +520,7 @@ export function renderChart(
       lines: [],
       axisLabels: [],
       timeLabels: "",
+      activePoint: null,
       priceAtCursor: null,
       dateAtCursor: null,
       changeAtCursor: null,
@@ -424,7 +528,7 @@ export function renderChart(
     };
   }
 
-  const { width, colors: c } = opts;
+  const { width, colors: palette, mode } = opts;
   const volTermRows = opts.showVolume ? opts.volumeHeight : 0;
   const chartTermRows = opts.height - volTermRows;
   const totalPixelH = opts.height * 2;
@@ -433,56 +537,67 @@ export function renderChart(
   const volPixelBottom = totalPixelH - 1;
 
   const buf = createPixelBuffer(width, totalPixelH);
+  const min = mode === "candles" || mode === "ohlc"
+    ? Math.min(...points.map((point) => point.low))
+    : Math.min(...points.map((point) => point.close));
+  const max = mode === "candles" || mode === "ohlc"
+    ? Math.max(...points.map((point) => point.high))
+    : Math.max(...points.map((point) => point.close));
 
-  const closes = points.map(p => p.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-
-  // Grid lines
   const gridLines = computeGridLines(min, max, 0, chartPixelBottom, 3);
-  drawGridLines(buf, gridLines.map(g => g.y), c.gridColor);
+  drawGridLines(buf, gridLines.map((line) => line.y), palette.gridColor);
 
-  // Area chart
-  drawAreaChart(buf, points, 0, chartPixelBottom, c.lineColor, c.fillColor);
+  switch (mode) {
+    case "area":
+      drawAreaChart(buf, points, 0, chartPixelBottom, palette.lineColor, palette.fillColor, min, max);
+      break;
+    case "line":
+      drawLineSeries(buf, points, 0, chartPixelBottom, palette.lineColor, min, max);
+      break;
+    case "candles":
+      drawCandlestickChart(buf, points, 0, chartPixelBottom, palette, min, max);
+      break;
+    case "ohlc":
+      drawOhlcChart(buf, points, 0, chartPixelBottom, palette, min, max);
+      break;
+  }
 
-  // Volume
   if (opts.showVolume && volTermRows > 0) {
-    drawVolumeBars(buf, points, volPixelTop, volPixelBottom, c.volumeUp, c.volumeDown);
+    drawVolumeBars(
+      buf,
+      points,
+      volPixelTop,
+      volPixelBottom,
+      palette.volumeUp,
+      palette.volumeDown,
+      mode === "candles" || mode === "ohlc" ? "openClose" : "previousClose",
+    );
   }
 
-  // Cursor
-  let priceAtCursor: number | null = null;
-  let dateAtCursor: Date | null = null;
-  let changeAtCursor: number | null = null;
-  let changePctAtCursor: number | null = null;
+  const activeIdx = opts.cursorX !== null && opts.cursorX >= 0 && opts.cursorX < width
+    ? Math.min(
+      Math.max(Math.round((opts.cursorX / Math.max(width - 1, 1)) * (points.length - 1)), 0),
+      points.length - 1,
+    )
+    : points.length - 1;
+  const activePoint = points[activeIdx]!;
+  const priceAtCursor = activePoint.close;
+  const dateAtCursor = activePoint.date;
+  const changeAtCursor = activePoint.close - points[0]!.close;
+  const changePctAtCursor = points[0]!.close ? ((activePoint.close - points[0]!.close) / points[0]!.close) * 100 : 0;
 
-  if (opts.cursorX !== null && opts.cursorX >= 0 && opts.cursorX < width) {
-    const dataIdx = Math.round((opts.cursorX / Math.max(width - 1, 1)) * (points.length - 1));
-    const clamped = Math.min(Math.max(dataIdx, 0), points.length - 1);
-    const point = points[clamped]!;
-    priceAtCursor = point.close;
-    dateAtCursor = point.date;
-    changeAtCursor = point.close - points[0]!.close;
-    changePctAtCursor = points[0]!.close ? ((point.close - points[0]!.close) / points[0]!.close) * 100 : 0;
-
-    drawCrosshair(buf, opts.cursorX, 0, opts.showVolume ? volPixelBottom : chartPixelBottom, c.crosshairColor);
+  if (opts.cursorX !== null) {
+    drawCrosshair(buf, opts.cursorX, 0, opts.showVolume ? volPixelBottom : chartPixelBottom, palette.crosshairColor);
   }
-
-  const lines = bufferToStyledLines(buf, c.bgColor);
-
-  const axisLabels = gridLines.map(g => ({
-    row: Math.floor(g.y / 2),
-    label: formatPrice(g.price),
-  }));
-
-  // Time axis
-  const dates = points.map(p => p.date);
-  const timeLabels = buildTimeAxis(dates, width);
 
   return {
-    lines,
-    axisLabels,
-    timeLabels,
+    lines: bufferToStyledLines(buf, palette.bgColor),
+    axisLabels: gridLines.map((line) => ({
+      row: Math.floor(line.y / 2),
+      label: formatPrice(line.price),
+    })),
+    timeLabels: buildTimeAxis(points.map((point) => point.date), width),
+    activePoint,
     priceAtCursor,
     dateAtCursor,
     changeAtCursor,

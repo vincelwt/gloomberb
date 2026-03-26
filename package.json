@@ -15,6 +15,7 @@
     "dev": "bun run --watch src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
+    "test": "bun test",
     "postinstall": "node install.mjs"
   },
   "license": "MIT",

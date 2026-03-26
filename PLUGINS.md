@@ -160,7 +160,7 @@ import { formatCurrency, formatCompact, padTo } from "gloomberb/components";
 ```
 
 Available components:
-- `StockChart` — interactive candlestick/area chart
+- `StockChart` — interactive area, line, candlestick, and OHLC chart
 - `TabBar` — tab navigation bar
 - `ToggleList` — checkbox list with selection
 - `colors` — theme color palette
