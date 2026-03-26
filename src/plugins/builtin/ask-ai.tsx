@@ -10,6 +10,7 @@ import { colors } from "../../theme/colors";
 import { formatCurrency, formatCompact, formatPercent } from "../../utils/format";
 import type { TickerFile } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
+import { Spinner } from "../../components/spinner";
 
 // --- AI Provider Detection ---
 
@@ -331,7 +332,13 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
                   </text>
                 </box>
                 <box>
-                  <text fg={colors.text}>{msg.content || (msg.loading ? "..." : "")}</text>
+                  {msg.content ? (
+                    <text fg={colors.text}>{msg.content}</text>
+                  ) : msg.loading ? (
+                    <Spinner label="Generating..." />
+                  ) : (
+                    <text fg={colors.text}>{""}</text>
+                  )}
                 </box>
               </box>
             ))
