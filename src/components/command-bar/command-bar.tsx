@@ -11,7 +11,7 @@ import { getCurrentThemeId, applyTheme } from "../../theme/colors";
 import { saveConfig, resetAllData, exportConfig, importConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { MarkdownStore } from "../../data/markdown-store";
-import type { TickerFrontmatter } from "../../types/ticker";
+import type { TickerFile, TickerFrontmatter } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, WizardStep } from "../../types/plugin";
 import type { ColumnConfig } from "../../types/config";
@@ -34,6 +34,7 @@ const ALL_COLUMNS: ColumnConfig[] = [
   { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
   { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
   { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
+  { id: "latency", label: "AGE", width: 6, align: "right" },
 ];
 
 interface CommandBarProps {
@@ -818,11 +819,21 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         });
       }
     } else if (!query) {
-      // Show a limited set of tickers in the default view to avoid overwhelming the list
+      // Show recently visited tickers (or first tickers if no history)
       const maxDefaultTickers = 5;
-      let tickerCount = 0;
-      for (const t of state.tickers.values()) {
-        if (tickerCount >= maxDefaultTickers) break;
+      const recentSymbols = state.recentTickers.slice(0, maxDefaultTickers);
+      const recentTickers = recentSymbols
+        .map((s) => state.tickers.get(s))
+        .filter((t): t is TickerFile => t != null);
+      // Fill remaining slots with other tickers if not enough recent ones
+      if (recentTickers.length < maxDefaultTickers) {
+        const recentSet = new Set(recentSymbols);
+        for (const t of state.tickers.values()) {
+          if (recentTickers.length >= maxDefaultTickers) break;
+          if (!recentSet.has(t.frontmatter.ticker)) recentTickers.push(t);
+        }
+      }
+      for (const t of recentTickers) {
         items.push({
           id: `goto:${t.frontmatter.ticker}`,
           label: t.frontmatter.ticker,
@@ -830,7 +841,6 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           category: "Tickers",
           action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
         });
-        tickerCount++;
       }
       for (const cmd of commands) {
         const item = cmdToItem(cmd);
@@ -1050,6 +1060,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                     height={1}
                     paddingX={2}
                     backgroundColor={isSel ? colors.selected : colors.commandBg}
+                    onMouseMove={() => setSelectedIdx(item.globalIdx)}
                     onMouseDown={() => {
                       setSelectedIdx(item.globalIdx);
                       item.action();

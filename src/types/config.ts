@@ -26,6 +26,7 @@ export interface AppConfig {
   plugins: string[];
   disabledPlugins: string[];
   theme: string;
+  recentTickers: string[];
   onboardingComplete?: boolean;
 }
 
@@ -36,6 +37,7 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "market_cap", label: "MCAP", width: 10, align: "right", format: "compact" },
   { id: "pe", label: "P/E", width: 7, align: "right", format: "number" },
   { id: "forward_pe", label: "FWD P/E", width: 8, align: "right", format: "number" },
+  { id: "latency", label: "AGE", width: 6, align: "right" },
 ];
 
 export const DEFAULT_LAYOUT: PaneLayoutEntry[] = [
@@ -56,5 +58,6 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr-flex"],
     disabledPlugins: [],
     theme: "amber",
+    recentTickers: [],
   };
 }
