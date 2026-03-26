@@ -33,7 +33,6 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "ticker", label: "TICKER", width: 8, align: "left" },
   { id: "price", label: "PRICE", width: 10, align: "right", format: "currency" },
   { id: "change_pct", label: "CHG%", width: 8, align: "right", format: "percent" },
-  { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
   { id: "market_cap", label: "MCAP", width: 10, align: "right", format: "compact" },
   { id: "pe", label: "P/E", width: 7, align: "right", format: "number" },
   { id: "forward_pe", label: "FWD P/E", width: 8, align: "right", format: "number" },

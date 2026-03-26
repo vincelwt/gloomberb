@@ -31,7 +31,12 @@ export async function loadConfig(dataDir: string): Promise<AppConfig> {
     const raw = await readFile(configPath, "utf-8");
     const saved = JSON.parse(raw);
     const defaults = createDefaultConfig(dataDir);
-    return { ...defaults, ...saved, dataDir };
+    const config = { ...defaults, ...saved, dataDir };
+    // Migration: ext_hours is now merged into change_pct
+    if (config.columns) {
+      config.columns = config.columns.filter((c: { id: string }) => c.id !== "ext_hours");
+    }
+    return config;
   } catch {
     return createDefaultConfig(dataDir);
   }
