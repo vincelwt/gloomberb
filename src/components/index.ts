@@ -1,6 +1,6 @@
 // Reusable components for plugins
 export { StockChart } from "./chart/stock-chart";
-export type { ChartViewState, TimeRange, ChartColors } from "./chart/chart-types";
+export type { ChartViewState, TimeRange, ChartRenderMode, ChartColors } from "./chart/chart-types";
 export { ToggleList } from "./toggle-list";
 export type { ToggleListItem, ToggleListProps } from "./toggle-list";
 export { TabBar } from "./tab-bar";
