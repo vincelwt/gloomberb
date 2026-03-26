@@ -7,6 +7,7 @@ import type { OptionContract, OptionsChain } from "../../types/financials";
 import { useSelectedTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
+import { Spinner } from "../../components/spinner";
 
 let _dataProvider: DataProvider | undefined;
 export function setOptionsDataProvider(provider: DataProvider) {
@@ -169,7 +170,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view options.</text>;
   if (!_dataProvider?.getOptionsChain) return <text fg={colors.textDim}>Options data not available.</text>;
-  if (loading && !chain) return <text fg={colors.textDim}>Loading options chain...</text>;
+  if (loading && !chain) return <Spinner label="Loading options chain..." />;
   if (error) return <text fg={colors.textDim}>{error}</text>;
   if (!chain || chain.expirationDates.length === 0) return <text fg={colors.textDim}>No options available for {effectiveTicker}.</text>;
 
@@ -224,7 +225,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
             </box>
           );
         })}
-        {loading && <text fg={colors.textDim}> ...</text>}
+        {loading && <spinner name="dots" color={colors.textDim} />}
       </box>
 
       {/* Position banner */}

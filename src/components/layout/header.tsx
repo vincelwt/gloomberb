@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { TextAttributes } from "@opentui/core";
+import "opentui-spinner/react";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { formatPercentRaw } from "../../utils/format";
@@ -16,13 +17,21 @@ function UpdateStatus() {
   if (updateProgress) {
     if (updateProgress.phase === "downloading") {
       return (
-        <text fg={colors.headerText}>
-          Downloading v{updateAvailable?.version}... {updateProgress.percent ?? 0}%
-        </text>
+        <box flexDirection="row" gap={1}>
+          <spinner name="dots" color={colors.headerText} />
+          <text fg={colors.headerText}>
+            Downloading v{updateAvailable?.version}... {updateProgress.percent ?? 0}%
+          </text>
+        </box>
       );
     }
     if (updateProgress.phase === "replacing") {
-      return <text fg={colors.headerText}>Installing update...</text>;
+      return (
+        <box flexDirection="row" gap={1}>
+          <spinner name="dots" color={colors.headerText} />
+          <text fg={colors.headerText}>Installing update...</text>
+        </box>
+      );
     }
     if (updateProgress.phase === "done") {
       return <text fg={colors.headerText}>Update installed — restart to apply</text>;
