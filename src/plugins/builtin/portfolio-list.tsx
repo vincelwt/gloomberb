@@ -406,7 +406,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       />
 
       {/* Scrollable table with headers + rows */}
-      <scrollbox ref={scrollRef} flexGrow={1} scrollX scrollY>
+      <scrollbox ref={scrollRef} flexGrow={1} scrollX scrollY focusable={false}>
         {/* Column headers — clickable for sorting */}
         <box flexDirection="row" height={1} paddingX={1}>
           {cols.map((col) => {
