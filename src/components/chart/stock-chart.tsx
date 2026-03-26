@@ -1,32 +1,28 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
 import { useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
-import { formatCurrency, formatPercentRaw } from "../../utils/format";
-import { getVisibleWindow, downsample } from "./chart-data";
-import { renderChart, formatDateShort } from "./chart-renderer";
-import type { StyledContent } from "./chart-renderer";
-import type { ChartViewState, ChartColors } from "./chart-types";
-import type { TimeRange } from "./chart-types";
-import { TIME_RANGES } from "./chart-types";
-import type { PricePoint } from "../../types/financials";
+import { formatCompact, formatCurrency } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
+import { getVisibleWindow, projectChartData } from "./chart-data";
+import { formatDateShort, renderChart, resolveChartPalette } from "./chart-renderer";
+import { CHART_RENDER_MODES, TIME_RANGES, type ChartRenderMode, type ChartViewState } from "./chart-types";
+import type { PricePoint } from "../../types/financials";
 
-function getChartColors(isPositive: boolean): ChartColors {
-  return {
-    lineColor: isPositive ? "#00cc66" : "#ff3333",
-    fillColor: isPositive ? "#003d1e" : "#3d0000",
-    volumeUp: "#004d2e",
-    volumeDown: "#4d0000",
-    gridColor: "#0d1a2d",
-    crosshairColor: "#ffaa00",
-    bgColor: colors.bg,
-    axisColor: colors.textDim,
-    activeRangeColor: colors.text,
-    inactiveRangeColor: "#555555",
-  };
-}
+const MODE_CHIPS: Record<ChartRenderMode, string> = {
+  area: "A",
+  line: "L",
+  candles: "C",
+  ohlc: "O",
+};
+
+const MODE_LABELS: Record<ChartRenderMode, string> = {
+  area: "AREA",
+  line: "LINE",
+  candles: "CANDLES",
+  ohlc: "OHLC",
+};
 
 interface StockChartProps {
   width: number;
@@ -43,17 +39,18 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,
+    renderMode: "area",
   });
   const [showVolume, setShowVolume] = useState(!compact);
   const [rangeHistory, setRangeHistory] = useState<PricePoint[] | null>(null);
   const fetchIdRef = useRef(0);
 
-  // Fetch range-specific history when time range changes
   useEffect(() => {
-    if (!getSharedDataProvider() || !ticker || compact) return;
+    const dataProvider = getSharedDataProvider();
+    if (!dataProvider || !ticker || compact) return;
     const id = ++fetchIdRef.current;
-    setRangeHistory(null); // show fallback while loading
-    getSharedDataProvider()
+    setRangeHistory(null);
+    dataProvider
       .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange)
       .then((points) => {
         if (id === fetchIdRef.current) setRangeHistory(points);
@@ -63,56 +60,58 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
       });
   }, [ticker?.frontmatter.ticker, viewState.timeRange, compact]);
 
-  // Use range-specific data when available, fall back to financials.priceHistory
   const history = rangeHistory ?? financials?.priceHistory ?? [];
-
   const axisWidth = compact ? 0 : 10;
-  const chartWidth = Math.max(width - axisWidth - 2, 20); // 2 for padding
+  const chartWidth = Math.max(width - axisWidth - 2, 20);
 
-  // Show crosshair at rightmost position when entering interactive mode
   useEffect(() => {
     if (interactive) {
-      setViewState(s => s.cursorX === null ? { ...s, cursorX: chartWidth - 1 } : s);
+      setViewState((state) => (state.cursorX === null ? { ...state, cursorX: chartWidth - 1 } : state));
     } else {
-      setViewState(s => s.cursorX !== null ? { ...s, cursorX: null } : s);
+      setViewState((state) => (state.cursorX !== null ? { ...state, cursorX: null } : state));
     }
   }, [interactive, chartWidth]);
 
-  // Keyboard controls (full mode only)
   useKeyboard((event) => {
     if (!focused || compact) return;
 
     const maxCursorX = chartWidth - 1;
     const panStep = Math.max(Math.floor(chartWidth / 10), 1);
 
-    // These keys always work when focused on chart tab (no interactive mode needed)
     switch (event.name) {
       case "=":
-        setViewState(s => ({ ...s, zoomLevel: Math.min(s.zoomLevel * 1.5, 10) }));
+        setViewState((state) => ({ ...state, zoomLevel: Math.min(state.zoomLevel * 1.5, 10) }));
         return;
       case "-":
-        setViewState(s => ({ ...s, zoomLevel: Math.max(s.zoomLevel / 1.5, 0.5) }));
+        setViewState((state) => ({ ...state, zoomLevel: Math.max(state.zoomLevel / 1.5, 0.5) }));
         return;
       case "0":
-        setViewState(s => ({ ...s, panOffset: 0, zoomLevel: 1, cursorX: null }));
+        setViewState((state) => ({ ...state, panOffset: 0, zoomLevel: 1, cursorX: null }));
         return;
       case "v":
-        setShowVolume(v => !v);
+        setShowVolume((value) => !value);
         return;
       case "a":
-        setViewState(s => ({ ...s, panOffset: s.panOffset + panStep }));
+        setViewState((state) => ({ ...state, panOffset: state.panOffset + panStep }));
         return;
       case "d":
-        setViewState(s => ({ ...s, panOffset: Math.max(s.panOffset - panStep, 0) }));
+        setViewState((state) => ({ ...state, panOffset: Math.max(state.panOffset - panStep, 0) }));
+        return;
+      case "m":
+        setViewState((state) => {
+          const current = state.renderMode ?? "area";
+          const idx = CHART_RENDER_MODES.indexOf(current);
+          const next = CHART_RENDER_MODES[(idx + 1) % CHART_RENDER_MODES.length]!;
+          return { ...state, renderMode: next };
+        });
         return;
     }
 
-    // Number keys for time ranges
     if (event.name >= "1" && event.name <= "7") {
       const idx = parseInt(event.name) - 1;
       if (idx < TIME_RANGES.length) {
-        setViewState(s => ({
-          ...s,
+        setViewState((state) => ({
+          ...state,
           timeRange: TIME_RANGES[idx]!,
           panOffset: 0,
           zoomLevel: 1,
@@ -122,66 +121,72 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
       return;
     }
 
-    // Arrow keys only work in interactive mode (Enter to activate, Escape to exit)
     if (!interactive) return;
 
     switch (event.name) {
       case "left":
         if (event.shift) {
-          setViewState(s => ({ ...s, panOffset: s.panOffset + panStep }));
+          setViewState((state) => ({ ...state, panOffset: state.panOffset + panStep }));
         } else {
-          setViewState(s => {
-            const cur = s.cursorX === null ? maxCursorX : s.cursorX - 1;
-            if (cur < 0) {
-              // At left edge — pan left and keep cursor at 0
-              return { ...s, cursorX: 0, panOffset: s.panOffset + 1 };
+          setViewState((state) => {
+            const nextCursor = state.cursorX === null ? maxCursorX : state.cursorX - 1;
+            if (nextCursor < 0) {
+              return { ...state, cursorX: 0, panOffset: state.panOffset + 1 };
             }
-            return { ...s, cursorX: cur };
+            return { ...state, cursorX: nextCursor };
           });
         }
-        break;
+        return;
       case "right":
         if (event.shift) {
-          setViewState(s => ({ ...s, panOffset: Math.max(s.panOffset - panStep, 0) }));
+          setViewState((state) => ({ ...state, panOffset: Math.max(state.panOffset - panStep, 0) }));
         } else {
-          setViewState(s => {
-            const cur = s.cursorX === null ? 0 : s.cursorX + 1;
-            if (cur > maxCursorX) {
-              // At right edge — pan right and keep cursor at max
-              return { ...s, cursorX: maxCursorX, panOffset: Math.max(s.panOffset - 1, 0) };
+          setViewState((state) => {
+            const nextCursor = state.cursorX === null ? 0 : state.cursorX + 1;
+            if (nextCursor > maxCursorX) {
+              return { ...state, cursorX: maxCursorX, panOffset: Math.max(state.panOffset - 1, 0) };
             }
-            return { ...s, cursorX: cur };
+            return { ...state, cursorX: nextCursor };
           });
         }
-        break;
+        return;
     }
   });
-  const headerRows = compact ? 0 : 3; // header + range bar + spacer
+
+  const headerRows = compact ? 0 : 3;
   const helpRow = compact ? 0 : 1;
   const timeAxisRow = 1;
   const volumeHeight = showVolume && !compact ? 3 : 0;
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
 
-  // Compute visible data
-  const { window: visibleWindow, chartColors, result } = useMemo(() => {
-    const w = getVisibleWindow(history, viewState, chartWidth);
-    const sampled = downsample(w.points, chartWidth);
+  const { window: visibleWindow, projection, chartColors, result } = useMemo(() => {
+    const window = getVisibleWindow(history, viewState, chartWidth);
+    const projection = projectChartData(window.points, chartWidth, viewState.renderMode, !!compact);
+    const rawChange = window.points.length >= 2
+      ? window.points[window.points.length - 1]!.close - window.points[0]!.close
+      : 0;
+    const trend = rawChange < 0 ? "negative" : rawChange > 0 ? "positive" : "neutral";
+    const chartColors = resolveChartPalette({
+      bg: colors.bg,
+      border: colors.border,
+      borderFocused: colors.borderFocused,
+      text: colors.text,
+      textDim: colors.textDim,
+      positive: colors.positive,
+      negative: colors.negative,
+    }, trend);
 
-    const isPositive = sampled.length >= 2
-      ? sampled[sampled.length - 1]!.close >= sampled[0]!.close
-      : true;
-    const cc = getChartColors(isPositive);
-
-    const r = renderChart(sampled, {
+    const result = renderChart(projection.points, {
       width: chartWidth,
       height: chartHeight,
       showVolume: showVolume && !compact,
       volumeHeight,
       cursorX: viewState.cursorX !== null ? Math.min(viewState.cursorX, chartWidth - 1) : null,
-      colors: cc,
+      mode: projection.effectiveMode,
+      colors: chartColors,
     });
 
-    return { window: w, chartColors: cc, result: r };
+    return { window, projection, chartColors, result };
   }, [history, viewState, chartWidth, chartHeight, showVolume, compact, volumeHeight]);
 
   if (history.length === 0) {
@@ -192,16 +197,18 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const lastPrice = visibleWindow.points[visibleWindow.points.length - 1]?.close ?? 0;
   const change = lastPrice - firstPrice;
   const changePct = firstPrice ? (change / firstPrice) * 100 : 0;
-  const changeColor = priceColor(change);
-
-  // Cursor display values
-  const displayPrice = result.priceAtCursor ?? lastPrice;
-  const displayChange = result.changeAtCursor ?? change;
-  const displayChangePct = result.changePctAtCursor ?? changePct;
-  const displayDate = result.dateAtCursor ? formatDateShort(result.dateAtCursor) : null;
+  const requestedMode = projection.requestedMode;
+  const showOhlcSummary = projection.effectiveMode === "candles" || projection.effectiveMode === "ohlc";
+  const hasCursor = viewState.cursorX !== null;
+  const displayPrice = hasCursor ? (result.priceAtCursor ?? lastPrice) : lastPrice;
+  const displayChange = hasCursor ? (result.changeAtCursor ?? change) : change;
+  const displayChangePct = hasCursor ? (result.changePctAtCursor ?? changePct) : changePct;
+  const displayDate = hasCursor || showOhlcSummary
+    ? (result.dateAtCursor ? formatDateShort(result.dateAtCursor) : null)
+    : null;
+  const activePoint = showOhlcSummary ? result.activePoint : null;
 
   if (compact) {
-    // Compact mode: just the chart lines
     return (
       <box flexDirection="column">
         {result.lines.map((line, i) => (
@@ -209,7 +216,6 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
             <text content={line as any} />
           </box>
         ))}
-        {/* Time axis */}
         <box height={1}>
           <text fg={colors.textDim}>{result.timeLabels}</text>
         </box>
@@ -217,47 +223,75 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     );
   }
 
-  // Full interactive mode
   return (
     <box flexDirection="column" flexGrow={1}>
-      {/* Header: ticker + price at cursor */}
       <box flexDirection="row" gap={2} height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
           {ticker?.frontmatter.ticker ?? ""} - {viewState.timeRange}
         </text>
-        <text fg={changeColor}>
+        <text fg={priceColor(displayChange)}>
           {formatCurrency(displayPrice)}
         </text>
         <text fg={priceColor(displayChange)}>
           {displayChange >= 0 ? "+" : ""}{displayChange.toFixed(2)} ({displayChangePct >= 0 ? "+" : ""}{displayChangePct.toFixed(2)}%)
         </text>
-        {displayDate && (
-          <text fg={colors.textDim}>{displayDate}</text>
+        {displayDate && <text fg={colors.textDim}>{displayDate}</text>}
+        {showOhlcSummary && activePoint && (
+          <>
+            <text fg={colors.textDim}>O {formatCurrency(activePoint.open)}</text>
+            <text fg={colors.textDim}>H {formatCurrency(activePoint.high)}</text>
+            <text fg={colors.textDim}>L {formatCurrency(activePoint.low)}</text>
+            <text fg={colors.textDim}>C {formatCurrency(activePoint.close)}</text>
+            <text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</text>
+          </>
         )}
       </box>
 
-      {/* Time range bar */}
-      <box flexDirection="row" gap={1} height={1}>
-        {TIME_RANGES.map((r, i) => (
-          <text
-            key={r}
-            fg={viewState.timeRange === r ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
-            attributes={viewState.timeRange === r ? TextAttributes.BOLD : 0}
-          >
-            {`${i + 1}:${r}`}
-          </text>
-        ))}
-        {viewState.zoomLevel !== 1 && (
-          <text fg={colors.textDim}> zoom:{viewState.zoomLevel.toFixed(1)}x</text>
+      <box flexDirection="row" height={1}>
+        <box flexDirection="row" gap={1}>
+          {TIME_RANGES.map((range, i) => (
+            <text
+              key={range}
+              fg={viewState.timeRange === range ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
+              attributes={viewState.timeRange === range ? TextAttributes.BOLD : 0}
+            >
+              {`${i + 1}:${range}`}
+            </text>
+          ))}
+          {viewState.zoomLevel !== 1 && (
+            <text fg={colors.textDim}> zoom:{viewState.zoomLevel.toFixed(1)}x</text>
+          )}
+        </box>
+        <box flexGrow={1} />
+        {chartWidth >= 72 ? (
+          <box flexDirection="row" gap={1}>
+            {CHART_RENDER_MODES.map((mode) => (
+              <text
+                key={mode}
+                fg={requestedMode === mode ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
+                attributes={requestedMode === mode ? TextAttributes.BOLD : 0}
+              >
+                {MODE_CHIPS[mode]}
+              </text>
+            ))}
+            {projection.fallbackMode && (
+              <text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</text>
+            )}
+          </box>
+        ) : (
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.textDim}>mode:{MODE_LABELS[requestedMode]}</text>
+            {projection.fallbackMode && (
+              <text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</text>
+            )}
+          </box>
         )}
       </box>
 
-      {/* Spacer */}
       <box height={1} />
 
-      {/* Chart area with axis labels */}
       {result.lines.map((line, i) => {
-        const axisLabel = result.axisLabels.find(a => a.row === i);
+        const axisLabel = result.axisLabels.find((entry) => entry.row === i);
         return (
           <box key={i} flexDirection="row" height={1}>
             <text content={line as any} />
@@ -268,17 +302,15 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
         );
       })}
 
-      {/* Time axis */}
       <box height={1}>
         <text fg={colors.textDim}>{result.timeLabels}</text>
       </box>
 
-      {/* Help bar */}
       <box height={1}>
         <text fg={colors.textMuted}>
           {interactive
-            ? "←→ cursor  ⇧←→ pan  a/d pan  +/- zoom  1-7 range  v vol  Esc exit"
-            : "Enter crosshair  a/d pan  +/- zoom  1-7 range  v volume  0 reset"}
+            ? "←→ cursor  ⇧←→ pan  a/d pan  +/- zoom  m mode  1-7 range  v vol  Esc exit"
+            : "Enter crosshair  a/d pan  +/- zoom  m mode  1-7 range  v volume  0 reset"}
         </text>
       </box>
     </box>

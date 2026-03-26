@@ -8,7 +8,7 @@ An open-source, extensible portfolio tracker and stock terminal for your command
 
 - **Track portfolios & watchlists** — manage multiple portfolios and watchlists with customizable, sortable columns
 - **Real-time quotes & fundamentals** — powered by Yahoo Finance with automatic caching
-- **ASCII stock charts** — 5-year price history rendered with braille characters
+- **Terminal stock charts** — interactive area, line, candlestick, and OHLC render modes
 - **Multi-currency** — automatic exchange rate conversion
 - **Keyboard-driven** — fast command bar (`Ctrl+P`) and vim-style navigation
 - **Extensible via plugins** — everything is a plugin, including core features
@@ -82,6 +82,7 @@ Plugins extend the UI through defined slots:
 | `r` | Refresh selected ticker |
 | `Shift+R` | Refresh all tickers |
 | `Ctrl+,` | Open settings |
+| `m` | Cycle chart mode in the chart tab |
 | `q` | Quit |
 
 ## License
