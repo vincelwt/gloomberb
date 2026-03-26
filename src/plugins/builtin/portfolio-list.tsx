@@ -299,6 +299,147 @@ const POSITION_COLUMNS: ColumnConfig[] = [
   { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
 ];
 
+function PortfolioSummaryBar({
+  tickers,
+  state,
+  isPortfolio,
+}: {
+  tickers: TickerFile[];
+  state: ReturnType<typeof useAppState>["state"];
+  isPortfolio: boolean;
+}) {
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  // Track last refresh time — update whenever refreshing set goes from non-empty to empty
+  const wasRefreshing = useRef(false);
+  useEffect(() => {
+    if (state.refreshing.size > 0) {
+      wasRefreshing.current = true;
+    } else if (wasRefreshing.current) {
+      wasRefreshing.current = false;
+      setLastRefresh(new Date());
+    }
+  }, [state.refreshing.size]);
+
+  // Also set initial refresh time when financials first appear
+  useEffect(() => {
+    if (state.financials.size > 0 && !lastRefresh) {
+      setLastRefresh(new Date());
+    }
+  }, [state.financials.size, lastRefresh]);
+
+  const baseCurrency = state.config.baseCurrency;
+  const exchangeRates = state.exchangeRates;
+
+  const totals = useMemo(() => {
+    let totalMktValue = 0;
+    let totalPrevValue = 0;
+    let totalCostBasis = 0;
+    let hasPositions = false;
+    // For watchlists: average daily change %
+    let watchlistChangeSum = 0;
+    let watchlistCount = 0;
+
+    for (const ticker of tickers) {
+      const fin = state.financials.get(ticker.frontmatter.ticker);
+      const q = fin?.quote;
+      const quoteCurrency = q?.currency || ticker.frontmatter.currency || "USD";
+      const toBase = (v: number) => convertCurrency(v, quoteCurrency, baseCurrency, exchangeRates);
+
+      if (!isPortfolio) {
+        if (q?.changePercent != null) {
+          watchlistChangeSum += q.changePercent;
+          watchlistCount++;
+        }
+        continue;
+      }
+
+      const tabPositions = state.activeLeftTab
+        ? ticker.frontmatter.positions.filter((p) => p.portfolio === state.activeLeftTab)
+        : ticker.frontmatter.positions;
+      const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
+      const totalCost = tabPositions.reduce(
+        (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+        0,
+      );
+
+      const isOption = ticker.frontmatter.asset_category === "OPT";
+      const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
+
+      if (q && totalShares !== 0) {
+        hasPositions = true;
+        const mv = Math.abs(totalShares) * q.price;
+        totalMktValue += toBase(mv);
+        const prevClose = q.previousClose || (q.price - q.change);
+        totalPrevValue += toBase(Math.abs(totalShares) * prevClose);
+        totalCostBasis += toBase(totalCost);
+      } else if (isOption && brokerMktValue !== 0) {
+        hasPositions = true;
+        totalMktValue += toBase(brokerMktValue);
+        totalCostBasis += toBase(totalCost);
+        totalPrevValue += toBase(brokerMktValue);
+      }
+    }
+
+    const dailyPnl = totalMktValue - totalPrevValue;
+    const dailyPnlPct = totalPrevValue !== 0 ? (dailyPnl / totalPrevValue) * 100 : 0;
+    const unrealizedPnl = totalMktValue - totalCostBasis;
+    const unrealizedPnlPct = totalCostBasis !== 0 ? (unrealizedPnl / totalCostBasis) * 100 : 0;
+    const avgWatchlistChange = watchlistCount > 0 ? watchlistChangeSum / watchlistCount : 0;
+
+    return {
+      totalMktValue, dailyPnl, dailyPnlPct, totalCostBasis, hasPositions,
+      unrealizedPnl, unrealizedPnlPct,
+      avgWatchlistChange, watchlistCount,
+    };
+  }, [tickers, state.financials, state.activeLeftTab, baseCurrency, exchangeRates, isPortfolio]);
+
+  const refreshText = lastRefresh
+    ? lastRefresh.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    : "—";
+  const isRefreshing = state.refreshing.size > 0;
+
+  // Watchlist: show average daily change %
+  if (!isPortfolio) {
+    if (totals.watchlistCount === 0) return null;
+    return (
+      <box flexDirection="row" height={1} paddingRight={1}>
+        <text fg={colors.textDim}>{"Avg Day "}</text>
+        <text fg={priceColor(totals.avgWatchlistChange)} attributes={TextAttributes.BOLD}>
+          {formatPercentRaw(totals.avgWatchlistChange)}
+        </text>
+        <text fg={colors.textDim}>{"  " + (isRefreshing ? "Refreshing…" : refreshText)}</text>
+      </box>
+    );
+  }
+
+  if (!totals.hasPositions) return null;
+
+  return (
+    <box flexDirection="row" height={1} paddingRight={1}>
+      <text fg={colors.textDim}>{"Val "}</text>
+      <text fg={colors.text} attributes={TextAttributes.BOLD}>
+        {formatCompact(totals.totalMktValue)}
+      </text>
+      <text fg={colors.textDim}>{"  Day "}</text>
+      <text fg={priceColor(totals.dailyPnl)} attributes={TextAttributes.BOLD}>
+        {(totals.dailyPnl >= 0 ? "+" : "") + formatCompact(totals.dailyPnl)}
+      </text>
+      <text fg={priceColor(totals.dailyPnlPct)}>
+        {" (" + formatPercentRaw(totals.dailyPnlPct) + ")"}
+      </text>
+      <text fg={colors.textDim}>{"  P&L "}</text>
+      <text fg={priceColor(totals.unrealizedPnl)} attributes={TextAttributes.BOLD}>
+        {(totals.unrealizedPnl >= 0 ? "+" : "") + formatCompact(totals.unrealizedPnl)}
+      </text>
+      <text fg={priceColor(totals.unrealizedPnlPct)}>
+        {" (" + formatPercentRaw(totals.unrealizedPnlPct) + ")"}
+      </text>
+      <text fg={colors.textDim}>{"  " + (isRefreshing ? "Refreshing…" : refreshText)}</text>
+    </box>
+  );
+}
+
 function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
   const tabs = getLeftTabs(state);
@@ -308,6 +449,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
 
   const currentTabIdx = tabs.findIndex((t) => t.id === state.activeLeftTab);
   const isPortfolioTab = state.config.portfolios.some((p) => p.id === state.activeLeftTab);
@@ -393,6 +535,21 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   });
 
+  // Hide header scrollbar and sync horizontal scroll with body
+  useEffect(() => {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.horizontalScrollBar.visible = false;
+    }
+    const id = setInterval(() => {
+      const body = scrollRef.current;
+      const header = headerScrollRef.current;
+      if (body && header && header.scrollLeft !== body.scrollLeft) {
+        header.scrollLeft = body.scrollLeft;
+      }
+    }, 16);
+    return () => clearInterval(id);
+  }, []);
+
   // Auto-scroll to keep selected row visible
   useEffect(() => {
     const sb = scrollRef.current;
@@ -412,15 +569,22 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <TabBar
-        tabs={tabs.map((t) => ({ label: t.name, value: t.id }))}
-        activeValue={state.activeLeftTab}
-        onSelect={(val) => dispatch({ type: "SET_LEFT_TAB", tab: val })}
-      />
+      <box flexDirection="row" height={2} justifyContent="space-between">
+        <TabBar
+          tabs={tabs.map((t) => ({ label: t.name, value: t.id }))}
+          activeValue={state.activeLeftTab}
+          onSelect={(val) => dispatch({ type: "SET_LEFT_TAB", tab: val })}
+        />
+        <PortfolioSummaryBar tickers={sortedTickers} state={state} isPortfolio={isPortfolioTab} />
+      </box>
 
-      {/* Scrollable table with headers + rows */}
-      <scrollbox ref={scrollRef} flexGrow={1} scrollX scrollY focusable={false}>
-        {/* Column headers — clickable for sorting */}
+      {/* Fixed column headers — synced horizontally with rows */}
+      <scrollbox
+        ref={headerScrollRef}
+        height={1}
+        scrollX
+        focusable={false}
+      >
         <box flexDirection="row" height={1} paddingX={1}>
           {cols.map((col) => {
             const isSorted = sortCol === col.id;
@@ -442,8 +606,16 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
             );
           })}
         </box>
+      </scrollbox>
 
-        {/* Ticker rows */}
+      {/* Scrollable ticker rows */}
+      <scrollbox
+        ref={scrollRef}
+        flexGrow={1}
+        scrollX
+        scrollY
+        focusable={false}
+      >
         {sortedTickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
             <text fg={colors.textDim}>No tickers. Press Cmd+K to add one.</text>
