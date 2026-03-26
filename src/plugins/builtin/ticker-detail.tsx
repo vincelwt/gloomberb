@@ -2,14 +2,13 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, PaneProps, DetailTabDef } from "../../types/plugin";
-import type { PluginRegistry } from "../../plugins/registry";
+import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, useSelectedTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
-import { StockChart, setChartDataProvider } from "../../components/chart/stock-chart";
-import type { DataProvider } from "../../types/data-provider";
+import { StockChart } from "../../components/chart/stock-chart";
 
 const CORE_TABS = [
   { id: "overview", name: "Overview", order: 10 },
@@ -442,17 +441,6 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
   );
 }
 
-// Store refs are set from the plugin setup
-let _dataProvider: DataProvider | undefined;
-export function setDataProvider(provider: DataProvider) {
-  _dataProvider = provider;
-  setChartDataProvider(provider);
-}
-
-let _pluginRegistry: PluginRegistry | undefined;
-export function setPluginRegistry(registry: PluginRegistry) {
-  _pluginRegistry = registry;
-}
 
 function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
@@ -461,8 +449,8 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   // Build dynamic tab list: core tabs + enabled plugin tabs
   const disabledPlugins = state.config.disabledPlugins || [];
-  const pluginTabs: DetailTabDef[] = _pluginRegistry
-    ? [..._pluginRegistry.detailTabs.values()].filter((t) => !disabledPlugins.includes(t.id))
+  const pluginTabs: DetailTabDef[] = getSharedRegistry()
+    ? [...getSharedRegistry().detailTabs.values()].filter((t) => !disabledPlugins.includes(t.id))
     : [];
 
   const allTabs = [

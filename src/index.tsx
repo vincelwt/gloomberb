@@ -4,8 +4,17 @@ import { App } from "./app";
 import { getDataDir, initDataDir } from "./data/config-store";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
+import { runCli } from "./cli";
+import { loadExternalPlugins } from "./plugins/loader";
 
 async function main() {
+  // Handle CLI subcommands (install, remove, update, plugins)
+  const cliArgs = process.argv.slice(2);
+  if (cliArgs.length > 0) {
+    const handled = await runCli(cliArgs);
+    if (handled) return;
+  }
+
   // Determine data directory
   let dataDir = await getDataDir();
 
@@ -22,6 +31,9 @@ async function main() {
   // Load or create config
   const config = await initDataDir(dataDir);
 
+  // Load external plugins from ~/.gloomberb/plugins/
+  const externalPlugins = await loadExternalPlugins();
+
   // Create renderer
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
@@ -29,7 +41,9 @@ async function main() {
   });
 
   // Render app
-  createRoot(renderer).render(<App config={config} renderer={renderer} />);
+  createRoot(renderer).render(
+    <App config={config} renderer={renderer} externalPlugins={externalPlugins} />
+  );
 }
 
 main().catch((err) => {

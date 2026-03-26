@@ -5,7 +5,7 @@ export interface Tab {
   value: string;
 }
 
-interface TabBarProps {
+export interface TabBarProps {
   tabs: Tab[];
   activeValue: string;
   onSelect: (value: string) => void;

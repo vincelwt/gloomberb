@@ -2,17 +2,12 @@ import { useEffect, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
-import type { DataProvider } from "../../types/data-provider";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { useSelectedTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
+import { getSharedDataProvider } from "../../plugins/registry";
 import { Spinner } from "../../components/spinner";
-
-let _dataProvider: DataProvider | undefined;
-export function setOptionsDataProvider(provider: DataProvider) {
-  _dataProvider = provider;
-}
 
 const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -77,7 +72,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Fetch initial chain (all expirations list + nearest expiration data)
   useEffect(() => {
-    if (!effectiveTicker || !_dataProvider?.getOptionsChain) return;
+    if (!effectiveTicker || !getSharedDataProvider()?.getOptionsChain) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -85,7 +80,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     setExpIdx(0);
     setStrikeIdx(0);
 
-    _dataProvider.getOptionsChain(effectiveTicker, effectiveExchange).then((data) => {
+    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange).then((data) => {
       if (cancelled) return;
       setChain(data);
 
@@ -95,7 +90,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
           Math.abs(ts - parsed.expTs) < Math.abs(data.expirationDates[best]! - parsed.expTs) ? i : best, 0);
         if (bestExpIdx !== 0) {
           setExpIdx(bestExpIdx);
-          _dataProvider!.getOptionsChain!(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx]).then((expData) => {
+          getSharedDataProvider()!.getOptionsChain!(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx]).then((expData) => {
             if (!cancelled) setChain(expData);
           }).catch(() => {});
         }
@@ -110,13 +105,13 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Fetch chain when expiration changes (after initial load)
   useEffect(() => {
-    if (!chain || !effectiveTicker || !_dataProvider?.getOptionsChain) return;
+    if (!chain || !effectiveTicker || !getSharedDataProvider()?.getOptionsChain) return;
     const expDate = chain.expirationDates[expIdx];
     if (expDate == null) return;
     let cancelled = false;
     setLoading(true);
 
-    _dataProvider.getOptionsChain(effectiveTicker, effectiveExchange, expDate).then((data) => {
+    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange, expDate).then((data) => {
       if (!cancelled) {
         setChain(data);
         setStrikeIdx(0);
@@ -169,7 +164,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   });
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view options.</text>;
-  if (!_dataProvider?.getOptionsChain) return <text fg={colors.textDim}>Options data not available.</text>;
+  if (!getSharedDataProvider()?.getOptionsChain) return <text fg={colors.textDim}>Options data not available.</text>;
   if (loading && !chain) return <Spinner label="Loading options chain..." />;
   if (error) return <text fg={colors.textDim}>{error}</text>;
   if (!chain || chain.expirationDates.length === 0) return <text fg={colors.textDim}>No options available for {effectiveTicker}.</text>;
