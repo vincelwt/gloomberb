@@ -312,7 +312,6 @@ export function App({ config: initialConfig, renderer }: AppProps) {
 
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const cache = new SqliteCache(dbPath);
-  cache.clearByType("full"); // Clear stale financials cache on startup
   const markdownStore = new MarkdownStore(config.dataDir, cache);
   // Migrate old YAML-frontmatter .md files to SQLite on first run
   markdownStore.migrate();
