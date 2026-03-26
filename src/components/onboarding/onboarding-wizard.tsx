@@ -256,12 +256,14 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         setPluginIdx((i) => Math.min(toggleablePlugins.length - 1, i + 1));
       } else if (event.name === "space" || event.name === " ") {
         event.stopPropagation?.();
-        const plugin = toggleablePlugins[pluginIdx]!;
-        setDisabledPlugins((prev) =>
-          prev.includes(plugin.id)
-            ? prev.filter((id) => id !== plugin.id)
-            : [...prev, plugin.id]
-        );
+        const plugin = toggleablePlugins[pluginIdx];
+        if (plugin) {
+          setDisabledPlugins((prev) =>
+            prev.includes(plugin.id)
+              ? prev.filter((id) => id !== plugin.id)
+              : [...prev, plugin.id]
+          );
+        }
       }
     }
   });
