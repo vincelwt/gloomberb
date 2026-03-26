@@ -8,14 +8,14 @@ import { colors } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { getSharedRegistry } from "../../plugins/registry";
 
-const POLL_INTERVAL = 5000;
 const CHANNEL_ID = "everyone";
 
 // --- Relative time formatting ---
 
 function relativeTime(dateStr: string): string {
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  // Server returns UTC timestamps — ensure they're parsed as UTC
+  const then = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z").getTime();
   const diffS = Math.floor((now - then) / 1000);
   if (diffS < 60) return "just now";
   const diffM = Math.floor(diffS / 60);
@@ -94,61 +94,54 @@ function ChatContent({ width, height, focused, selectTicker }: ChatContentProps)
     return () => { cancelled = true; };
   }, []);
 
-  // Poll for messages
+  // WebSocket connection + initial history fetch
+  const wsRef = useRef<{ send: (content: string, replyToId?: string) => void; close: () => void } | null>(null);
+
   useEffect(() => {
-    if (!user || !focused) return;
-    let cancelled = false;
+    if (!user) return;
 
-    const fetchMessages = async () => {
-      try {
-        const afterId = lastMessageIdRef.current;
-        if (afterId) {
-          // Incremental poll
-          const newMsgs = await apiClient.getMessages(CHANNEL_ID, { after: afterId });
-          if (!cancelled && newMsgs.length > 0) {
-            setMessages((prev) => {
-              const merged = [...prev, ...newMsgs];
-              lastMessageIdRef.current = merged[merged.length - 1].id;
-              return merged;
-            });
-          }
-        } else {
-          // Initial fetch
-          const msgs = await apiClient.getMessages(CHANNEL_ID, { limit: 50 });
-          if (!cancelled) {
-            setMessages(msgs);
-            if (msgs.length > 0) lastMessageIdRef.current = msgs[msgs.length - 1].id;
-          }
-        }
-      } catch {
-        // Silently ignore poll errors
-      }
+    // Fetch message history via REST
+    apiClient.getMessages(CHANNEL_ID, { limit: 50 }).then((msgs) => {
+      setMessages(msgs);
+      if (msgs.length > 0) lastMessageIdRef.current = msgs[msgs.length - 1].id;
+    }).catch(() => {});
+
+    // Connect WebSocket for live updates
+    const conn = apiClient.connectChannel(
+      CHANNEL_ID,
+      (msg) => {
+        setMessages((prev) => {
+          // Deduplicate by ID
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          const updated = [...prev, msg];
+          lastMessageIdRef.current = msg.id;
+          return updated;
+        });
+      },
+    );
+    wsRef.current = conn;
+
+    return () => {
+      conn.close();
+      wsRef.current = null;
     };
+  }, [user]);
 
-    fetchMessages();
-    const interval = setInterval(fetchMessages, POLL_INTERVAL);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [user, focused]);
+  // Send message via WebSocket
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
+  const replyToRef = useRef(replyTo);
+  replyToRef.current = replyTo;
 
-  // Send message
-  const sendMessage = useCallback(async () => {
-    const content = inputValue.trim();
+  const sendMessage = useCallback(() => {
+    const content = inputValueRef.current.trim();
     if (!content) return;
-    try {
-      const msg = await apiClient.sendMessage(CHANNEL_ID, content, replyTo?.id);
-      setMessages((prev) => {
-        const updated = [...prev, msg];
-        lastMessageIdRef.current = msg.id;
-        return updated;
-      });
-      setInputValue("");
-      setReplyTo(null);
-      setScrollOffset(0);
-      setSelectedIdx(-1);
-    } catch {
-      // Could show toast on error
-    }
-  }, [inputValue, replyTo]);
+    wsRef.current?.send(content, replyToRef.current?.id);
+    setInputValue("");
+    setReplyTo(null);
+    setScrollOffset(0);
+    setSelectedIdx(-1);
+  }, []);
 
   // Keyboard handling
   useKeyboard((event) => {
@@ -330,8 +323,14 @@ function ChatContent({ width, height, focused, selectTicker }: ChatContentProps)
           backgroundColor={colors.bg}
           flexGrow={1}
           onInput={(val) => setInputValue(val)}
-          onChange={(val) => setInputValue(val)}
-          onSubmit={() => sendMessage()}
+          onSubmit={() => {
+            if (inputValue.trim()) {
+              sendMessage();
+              if (inputRef.current) {
+                (inputRef.current as any).editBuffer?.setText?.("") || (inputRef.current as any).setText?.("");
+              }
+            }
+          }}
         />
       </box>
     </box>
@@ -356,6 +355,50 @@ function ChatPane({ focused, width, height }: PaneProps) {
   );
 }
 
+// --- Status bar widget ---
+
+function ChatStatusWidget() {
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = apiClient.getSessionToken();
+    if (!token) {
+      setUsername(null);
+      return;
+    }
+    apiClient.getSession().then((u) => setUsername(u?.username ?? u?.name ?? null)).catch(() => setUsername(null));
+  }, []);
+
+  // Re-check when token changes (poll every 10s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const token = apiClient.getSessionToken();
+      if (!token) {
+        setUsername(null);
+        return;
+      }
+      apiClient.getSession().then((u) => setUsername(u?.username ?? u?.name ?? null)).catch(() => setUsername(null));
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <box flexDirection="row" paddingRight={1}>
+      {username ? (
+        <text fg={colors.textDim}>
+          <span fg={colors.positive}>{username}</span>
+          {"  "}
+          <span fg={colors.text}>Shift+C</span> chat
+        </text>
+      ) : (
+        <text fg={colors.textDim}>
+          <span fg={colors.text}>Shift+C</span> chat
+        </text>
+      )}
+    </box>
+  );
+}
+
 // --- Plugin definition ---
 
 let _ctx: GloomPluginContext | null = null;
@@ -366,6 +409,10 @@ export const chatPlugin: GloomPlugin = {
   version: "1.0.0",
   description: "Chat with other Gloomberb users",
   toggleable: true,
+
+  slots: {
+    "status:widget": () => <ChatStatusWidget />,
+  },
 
   setup(ctx) {
     _ctx = ctx;
@@ -431,13 +478,14 @@ export const chatPlugin: GloomPlugin = {
       wizard: [
         { key: "email", label: "Email", type: "text", placeholder: "email@example.com" },
         { key: "password", label: "Password", type: "password", placeholder: "Your password" },
+        { key: "_validate", label: "Signing in...", type: "info", body: ["Connecting to Gloomberb...", "Logged in successfully!"] },
       ],
       execute: async (values) => {
         if (!values) return;
         await apiClient.signIn(values.email, values.password);
         const token = apiClient.getSessionToken();
         if (token) ctx.storage.set("session_token", token);
-        ctx.showToast("Logged in successfully!", { type: "success" });
+        ctx.showWidget("chat-widget");
       },
     });
 
@@ -460,6 +508,7 @@ export const chatPlugin: GloomPlugin = {
         { key: "name", label: "Display Name", type: "text", placeholder: "Your name" },
         { key: "password", label: "Password", type: "password", placeholder: "Min 8 characters" },
         { key: "confirmPassword", label: "Confirm Password", type: "password", placeholder: "Re-enter password" },
+        { key: "_validate", label: "Creating account...", type: "info", body: ["Registering with Gloomberb...", "Account created! Welcome to Gloomberb."] },
       ],
       execute: async (values) => {
         if (!values) return;
@@ -469,11 +518,11 @@ export const chatPlugin: GloomPlugin = {
         await apiClient.signUp(values.email, values.username, values.name, values.password);
         const token = apiClient.getSessionToken();
         if (token) ctx.storage.set("session_token", token);
-        ctx.showToast("Account created! Welcome to Gloomberb.", { type: "success" });
+        ctx.showWidget("chat-widget");
       },
     });
 
-    // Logout command
+    // Logout command — only visible when logged in
     ctx.registerCommand({
       id: "auth-logout",
       label: "Logout",
@@ -481,10 +530,16 @@ export const chatPlugin: GloomPlugin = {
       keywords: ["logout", "sign out"],
       category: "config",
       execute: async () => {
+        if (!apiClient.getSessionToken()) {
+          ctx.showToast("Not logged in.", { type: "error" });
+          return;
+        }
         await apiClient.signOut();
         ctx.storage.delete("session_token");
         ctx.showToast("Logged out.", { type: "info" });
       },
+      // Hide when not authenticated
+      hidden: () => !apiClient.getSessionToken(),
     });
   },
 };
