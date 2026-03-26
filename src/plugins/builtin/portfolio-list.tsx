@@ -114,11 +114,21 @@ function getColumnValue(
         color: priceColor(q.change),
       };
     }
-    case "change_pct":
+    case "change_pct": {
+      // During pre/post market, show extended-hours change instead
+      if (q?.marketState === "PRE" && q.preMarketPrice != null) {
+        const chg = q.preMarketChangePercent ?? 0;
+        return { text: formatPercentRaw(chg), color: priceColor(chg) };
+      }
+      if (q?.marketState === "POST" && q.postMarketPrice != null) {
+        const chg = q.postMarketChangePercent ?? 0;
+        return { text: formatPercentRaw(chg), color: priceColor(chg) };
+      }
       return {
         text: q ? formatPercentRaw(q.changePercent) : "—",
         color: q ? priceColor(q.changePercent) : undefined,
       };
+    }
     case "market_cap": {
       if (!q?.marketCap) return { text: "—" };
       return { text: formatCompact(toBase(q.marketCap)) };
@@ -143,7 +153,7 @@ function getColumnValue(
       return { text: "—" };
     }
     case "shares":
-      return { text: totalShares !== 0 ? formatNumber(totalShares, 2) : "—" };
+      return { text: totalShares !== 0 ? formatCompact(totalShares) : "—" };
     case "avg_cost": {
       if (totalShares === 0) return { text: "—" };
       const avgCost = totalCost / Math.abs(totalShares);
@@ -228,8 +238,11 @@ function getSortValue(
       return null;
     case "change":
       return q ? toBase(q.change) : null;
-    case "change_pct":
+    case "change_pct": {
+      if (q?.marketState === "PRE" && q.preMarketPrice != null) return q.preMarketChangePercent ?? 0;
+      if (q?.marketState === "POST" && q.postMarketPrice != null) return q.postMarketChangePercent ?? 0;
       return q?.changePercent ?? null;
+    }
     case "market_cap":
       return q?.marketCap ? toBase(q.marketCap) : null;
     case "pe":

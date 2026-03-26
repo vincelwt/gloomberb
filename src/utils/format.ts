@@ -23,16 +23,22 @@ export function formatPercentRaw(value: number | undefined): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
-/** Format large numbers compactly (e.g., 1.5T, 234B, 12.3M) */
+/** Format large numbers compactly (e.g., 1.5T, 234B, 12.3M, 5k) */
 export function formatCompact(value: number | undefined): string {
   if (value === undefined || value === null) return "—";
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";
-  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(1)}K`;
-  return `${sign}${abs.toFixed(2)}`;
+  const fmt = (n: number, decimals: number, suffix: string) => {
+    const fixed = n.toFixed(decimals);
+    // Strip unnecessary trailing zeros after decimal point
+    const trimmed = fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
+    return `${sign}${trimmed}${suffix}`;
+  };
+  if (abs >= 1e12) return fmt(abs / 1e12, 2, "T");
+  if (abs >= 1e9) return fmt(abs / 1e9, 2, "B");
+  if (abs >= 1e6) return fmt(abs / 1e6, 2, "M");
+  if (abs >= 1e3) return fmt(abs / 1e3, 1, "k");
+  return fmt(abs, 2, "");
 }
 
 /** Format a plain number with commas */
