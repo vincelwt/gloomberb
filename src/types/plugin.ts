@@ -4,6 +4,8 @@ import type { TickerFinancials } from "./financials";
 import type { BrokerAdapter } from "./broker";
 import type { ColumnConfig } from "./config";
 import type { DataProvider } from "./data-provider";
+import type { PluginEvents } from "../plugins/event-bus";
+import type { MarkdownStore } from "../data/markdown-store";
 
 /** All available slot definitions for plugins */
 export interface GloomSlots {
@@ -87,19 +89,86 @@ export interface DetailTabDef {
   component: (props: DetailTabProps) => ReactNode;
 }
 
+/** Keyboard shortcut registered by a plugin */
+export interface KeyboardShortcut {
+  id: string;
+  key: string;
+  ctrl?: boolean;
+  shift?: boolean;
+  description: string;
+  execute: () => void;
+}
+
+/** Ticker action registered by a plugin */
+export interface TickerAction {
+  id: string;
+  label: string;
+  keywords: string[];
+  /** Only show for tickers matching this filter */
+  filter?: (ticker: TickerFile) => boolean;
+  execute: (ticker: TickerFile, financials: TickerFinancials | null) => void | Promise<void>;
+}
+
+/** Floating widget overlay registered by a plugin */
+export interface FloatingWidgetDef {
+  id: string;
+  name: string;
+  position: "top-right" | "top-left" | "bottom-right" | "bottom-left" | "center";
+  width: number | string;
+  height: number | string;
+  captureInput?: boolean;
+  zIndex?: number;
+  component: (props: { width: number; height: number; focused: boolean; close: () => void }) => ReactNode;
+}
+
+/** Scoped key-value storage for a plugin */
+export interface PluginStorage {
+  get<T = unknown>(key: string): T | null;
+  set(key: string, value: unknown): void;
+  delete(key: string): void;
+  keys(): string[];
+}
+
 export interface GloomPluginContext {
+  // --- Registration ---
   registerPane(pane: PaneDef): void;
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
   registerDataProvider(provider: DataProvider): void;
   registerDetailTab(tab: DetailTabDef): void;
+  registerShortcut(shortcut: KeyboardShortcut): void;
+  registerTickerAction(action: TickerAction): void;
+  registerFloatingWidget(widget: FloatingWidgetDef): void;
+
+  // --- Data access ---
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerFile | null;
   getConfig(): import("./config").AppConfig;
+
+  // --- Services ---
+  readonly dataProvider: DataProvider;
+  readonly markdownStore: MarkdownStore;
+  readonly storage: PluginStorage;
+
+  // --- Broker ---
   updateBrokerConfig(brokerId: string, values: Record<string, unknown>): Promise<void>;
-  /** Trigger position sync for a specific broker */
   syncBroker(brokerId: string): Promise<void>;
+
+  // --- Navigation ---
+  selectTicker(symbol: string): void;
+  switchPanel(panel: "left" | "right"): void;
+  switchTab(tabId: string): void;
+  openCommandBar(query?: string): void;
+
+  // --- Events ---
+  on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
+  emit<K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]): void;
+
+  // --- UI ---
+  showWidget(widgetId: string): void;
+  hideWidget(widgetId: string): void;
+  showToast(message: string, options?: { duration?: number; type?: "info" | "success" | "error" }): void;
 }
 
 export interface GloomPlugin {

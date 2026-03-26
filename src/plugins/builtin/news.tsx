@@ -5,13 +5,9 @@ import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { useSelectedTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { padTo } from "../../utils/format";
+import type { NewsItem } from "../../types/data-provider";
+import { getSharedDataProvider } from "../../plugins/registry";
 import { Spinner } from "../../components/spinner";
-import type { DataProvider, NewsItem } from "../../types/data-provider";
-
-let _dataProvider: DataProvider | undefined;
-export function setNewsDataProvider(provider: DataProvider) {
-  _dataProvider = provider;
-}
 
 function formatTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -35,12 +31,12 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   const summaryFetchRef = useRef(0);
 
   useEffect(() => {
-    if (!ticker || !_dataProvider) return;
+    if (!ticker || !getSharedDataProvider()) return;
     let cancelled = false;
     setLoading(true);
     setSelectedIdx(0);
     setSummaryCache(new Map());
-    _dataProvider.getNews(ticker.frontmatter.ticker, 15).then((items) => {
+    getSharedDataProvider().getNews(ticker.frontmatter.ticker, 15).then((items) => {
       if (!cancelled) setNews(items);
     }).catch(() => {}).finally(() => {
       if (!cancelled) setLoading(false);
@@ -51,11 +47,11 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   // Lazy-load summary when selection changes
   const selected = news[selectedIdx];
   useEffect(() => {
-    if (!selected || !_dataProvider) return;
+    if (!selected || !getSharedDataProvider()) return;
     if (summaryCache.has(selected.url)) return;
     const id = ++summaryFetchRef.current;
     setLoadingSummary(true);
-    _dataProvider.getArticleSummary(selected.url).then((summary) => {
+    getSharedDataProvider().getArticleSummary(selected.url).then((summary) => {
       if (id !== summaryFetchRef.current) return;
       if (summary) {
         setSummaryCache((prev) => new Map(prev).set(selected.url, summary));

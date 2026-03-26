@@ -10,14 +10,8 @@ import type { StyledContent } from "./chart-renderer";
 import type { ChartViewState, ChartColors } from "./chart-types";
 import type { TimeRange } from "./chart-types";
 import { TIME_RANGES } from "./chart-types";
-import type { DataProvider } from "../../types/data-provider";
 import type { PricePoint } from "../../types/financials";
-
-// Module-level data provider ref (set from ticker-detail plugin)
-let _chartDataProvider: DataProvider | undefined;
-export function setChartDataProvider(provider: DataProvider) {
-  _chartDataProvider = provider;
-}
+import { getSharedDataProvider } from "../../plugins/registry";
 
 function getChartColors(isPositive: boolean): ChartColors {
   return {
@@ -56,10 +50,10 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
 
   // Fetch range-specific history when time range changes
   useEffect(() => {
-    if (!_chartDataProvider || !ticker || compact) return;
+    if (!getSharedDataProvider() || !ticker || compact) return;
     const id = ++fetchIdRef.current;
     setRangeHistory(null); // show fallback while loading
-    _chartDataProvider
+    getSharedDataProvider()
       .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange)
       .then((points) => {
         if (id === fetchIdRef.current) setRangeHistory(points);
