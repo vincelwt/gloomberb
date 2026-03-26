@@ -112,8 +112,47 @@ export class PluginRegistry {
     return last;
   }
 
-  showWidget(widgetId: string): void { this._visibleWidgets.add(widgetId); }
-  hideWidget(widgetId: string): void { this._visibleWidgets.delete(widgetId); }
+  private _widgetChangeListeners = new Set<() => void>();
+
+  onWidgetVisibilityChange(listener: () => void): () => void {
+    this._widgetChangeListeners.add(listener);
+    return () => { this._widgetChangeListeners.delete(listener); };
+  }
+
+  private _notifyWidgetChange(): void {
+    for (const listener of this._widgetChangeListeners) {
+      try { listener(); } catch { /* ignore */ }
+    }
+  }
+
+  /** Get floating widget IDs registered by a specific plugin */
+  getPluginWidgetIds(pluginId: string): string[] {
+    return this._pluginItems.get(pluginId)?.floatingWidgets ?? [];
+  }
+
+  /** Get pane IDs registered by a specific plugin */
+  getPluginPaneIds(pluginId: string): string[] {
+    return this._pluginItems.get(pluginId)?.panes ?? [];
+  }
+
+  showWidget(widgetId: string): void {
+    // Don't show widgets from disabled plugins
+    try {
+      const disabledPlugins = new Set(this.getConfigFn().disabledPlugins || []);
+      for (const [pluginId, items] of this._pluginItems) {
+        if (items.floatingWidgets.includes(widgetId) && disabledPlugins.has(pluginId)) {
+          return;
+        }
+      }
+    } catch { /* getConfigFn not set yet during init — allow */ }
+    this._visibleWidgets.add(widgetId);
+    this._notifyWidgetChange();
+  }
+
+  hideWidget(widgetId: string): void {
+    this._visibleWidgets.delete(widgetId);
+    this._notifyWidgetChange();
+  }
 
   private createContext(pluginId: string): GloomPluginContext {
     const items: PluginItems = {
