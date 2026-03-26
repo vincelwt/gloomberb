@@ -1,5 +1,6 @@
-import { createContext, useContext, useReducer, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from "react";
 import type { AppConfig } from "../types/config";
+import { saveConfig } from "../data/config-store";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
@@ -19,6 +20,8 @@ export interface AppState {
   activeLeftTab: string;
   activeRightTab: string;
   selectedTicker: string | null;
+  /** Most-recently-visited ticker symbols (newest first) */
+  recentTickers: string[];
   commandBarOpen: boolean;
 
   // Loading
@@ -93,8 +96,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, financials };
     }
 
-    case "SELECT_TICKER":
-      return { ...state, selectedTicker: action.symbol, activePanel: "right" };
+    case "SELECT_TICKER": {
+      const recentTickers = action.symbol
+        ? [action.symbol, ...state.recentTickers.filter((s) => s !== action.symbol)].slice(0, 50)
+        : state.recentTickers;
+      return { ...state, selectedTicker: action.symbol, recentTickers, activePanel: "right" };
+    }
 
     case "PREVIEW_TICKER":
       return { ...state, selectedTicker: action.symbol };
@@ -204,6 +211,7 @@ export function createInitialState(config: AppConfig): AppState {
     activeLeftTab: config.portfolios[0]?.id || "main",
     activeRightTab: "overview",
     selectedTicker: null,
+    recentTickers: config.recentTickers || [],
     commandBarOpen: false,
     refreshing: new Set(),
     initialized: false,
@@ -222,6 +230,13 @@ export function AppProvider({
   children: ReactNode;
 }) {
   const [state, dispatch] = useReducer(appReducer, config, createInitialState);
+  const prevRecent = useRef(state.recentTickers);
+  useEffect(() => {
+    if (prevRecent.current !== state.recentTickers) {
+      prevRecent.current = state.recentTickers;
+      saveConfig({ ...state.config, recentTickers: state.recentTickers }).catch(() => {});
+    }
+  }, [state.recentTickers, state.config]);
   return (
     <AppContext value={{ state, dispatch }}>
       {children}
