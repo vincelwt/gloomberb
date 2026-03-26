@@ -460,7 +460,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
               const brokerTab = freshConfig.portfolios.find((p) => p.id.startsWith(choiceId));
               if (brokerTab) dispatch({ type: "SET_LEFT_TAB", tab: brokerTab.id });
               await dialog.alert({
-                content: (ctx) => <ResultContent {...ctx} message="Connected! Positions will sync automatically." isError={false} />,
+                content: (ctx) => <ResultContent {...ctx} message={step.body?.[1] || "Done!"} isError={false} />,
               });
             } catch (err: any) {
               dialog.close(dialogId);
@@ -586,7 +586,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           await cmd.execute(values);
           dialog.close(dialogId);
           await dialog.alert({
-            content: (ctx) => <ResultContent {...ctx} message="Connected! Positions will sync automatically." isError={false} />,
+            content: (ctx) => <ResultContent {...ctx} message={step.body?.[1] || "Done!"} isError={false} />,
           });
         } catch (err: any) {
           dialog.close(dialogId);
@@ -623,7 +623,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
   // Convert plugin commands to ResultItems
   const pluginCommandItems = useCallback((): ResultItem[] => {
-    return [...pluginRegistry.commands.values()].map((cmd) => ({
+    return [...pluginRegistry.commands.values()].filter((cmd) => !cmd.hidden?.()).map((cmd) => ({
       id: cmd.id,
       label: cmd.label,
       detail: cmd.description || "",

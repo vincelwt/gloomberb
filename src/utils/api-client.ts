@@ -1,4 +1,4 @@
-const DEFAULT_API_URL = "https://api.gloomberb.com";
+const DEFAULT_API_URL = "https://api.gloom.sh";
 
 export interface ChatMessage {
   id: string;
@@ -62,6 +62,7 @@ class GloomApiClient {
     if (this.sessionToken) {
       headers.set("Cookie", `gloomberb.session_token=${this.sessionToken}`);
     }
+    headers.set("Origin", this.baseUrl);
 
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...options,
@@ -144,6 +145,73 @@ class GloomApiClient {
       method: "POST",
       body: JSON.stringify({ content, replyToId }),
     });
+  }
+
+  // --- WebSocket ---
+
+  connectChannel(
+    channelId: string,
+    onMessage: (msg: ChatMessage) => void,
+    onError?: (err: string) => void,
+  ): { send: (content: string, replyToId?: string) => void; close: () => void } {
+    const wsProtocol = this.baseUrl.startsWith("https") ? "wss" : "ws";
+    const wsBase = this.baseUrl.replace(/^https?/, wsProtocol);
+    const url = `${wsBase}/chat/channels/${channelId}/ws?token=${encodeURIComponent(this.sessionToken ?? "")}`;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 1000;
+    let closed = false;
+
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        reconnectDelay = 1000; // reset on successful connect
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(String(event.data));
+          if (parsed.type === "message" && parsed.data) {
+            onMessage(parsed.data as ChatMessage);
+          } else if (parsed.type === "error" && onError) {
+            onError(parsed.message);
+          }
+        } catch {
+          // ignore malformed messages
+        }
+      };
+
+      ws.onclose = () => {
+        if (closed) return;
+        // Reconnect with exponential backoff
+        reconnectTimer = setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+          connect();
+        }, reconnectDelay);
+      };
+
+      ws.onerror = () => {
+        // onclose will fire after this, triggering reconnect
+      };
+    };
+
+    connect();
+
+    return {
+      send(content: string, replyToId?: string) {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "message", content, replyToId }));
+        }
+      },
+      close() {
+        closed = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        ws?.close();
+      },
+    };
   }
 }
 

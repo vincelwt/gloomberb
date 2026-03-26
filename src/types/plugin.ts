@@ -65,6 +65,8 @@ export interface CommandDef {
   description?: string;
   /** Multi-step wizard flow. When present, selecting this command starts the wizard. */
   wizard?: WizardStep[];
+  /** When provided and returns true, the command is hidden from the command bar */
+  hidden?: () => boolean;
 }
 
 export interface CustomColumnDef extends ColumnConfig {
