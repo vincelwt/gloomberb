@@ -47,6 +47,7 @@ interface ColumnContext {
   activeTab?: string;
   baseCurrency: string;
   exchangeRates: Map<string, number>;
+  now: number;
 }
 
 function getColumnValue(
@@ -197,6 +198,14 @@ function getColumnValue(
       }
       return { text: "—" };
     }
+    case "latency": {
+      if (!q?.lastUpdated) return { text: "—" };
+      const ago = (ctx.now - q.lastUpdated) / 1000;
+      if (ago < 60) return { text: `${Math.floor(ago)}s` };
+      if (ago < 3600) return { text: `${Math.floor(ago / 60)}m` };
+      if (ago < 86400) return { text: `${Math.floor(ago / 3600)}h` };
+      return { text: `${Math.floor(ago / 86400)}d` };
+    }
     default:
       return { text: "—" };
   }
@@ -283,6 +292,8 @@ function getSortValue(
       if (isOption && brokerPnl !== 0 && totalCost !== 0) return (brokerPnl / totalCost) * 100;
       return null;
     }
+    case "latency":
+      return q?.lastUpdated ?? null;
     default:
       return null;
   }
@@ -448,6 +459,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [now, setNow] = useState(Date.now());
+  const [flashSymbols, setFlashSymbols] = useState<Set<string>>(new Set());
+  const prevPrices = useRef<Map<string, number>>(new Map());
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
 
@@ -468,6 +482,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     activeTab: state.activeLeftTab,
     baseCurrency: state.config.baseCurrency,
     exchangeRates: state.exchangeRates,
+    now,
   };
 
   // Sort tickers
@@ -562,6 +577,31 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [selectedIdx]);
 
+  // Tick every 5s to keep latency column fresh
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Detect price changes and trigger flash
+  useEffect(() => {
+    const changed = new Set<string>();
+    for (const [symbol, fin] of state.financials) {
+      const price = fin.quote?.price;
+      if (price == null) continue;
+      const prev = prevPrices.current.get(symbol);
+      if (prev != null && prev !== price) {
+        changed.add(symbol);
+      }
+      prevPrices.current.set(symbol, price);
+    }
+    if (changed.size > 0) {
+      setFlashSymbols(changed);
+      const tid = setTimeout(() => setFlashSymbols(new Set()), 600);
+      return () => clearTimeout(tid);
+    }
+  }, [state.financials]);
+
   // Auto-select first ticker when list changes
   if (sortedTickers.length > 0 && selectedIdx >= sortedTickers.length) {
     setSelectedIdx(0);
@@ -626,6 +666,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
             const isHovered = idx === hoveredIdx && !isSelected;
             const fin = state.financials.get(ticker.frontmatter.ticker);
             const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
+            const isFlashing = flashSymbols.has(ticker.frontmatter.ticker);
 
             return (
               <box
@@ -642,10 +683,12 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
               >
                 {cols.map((col) => {
                   const { text, color } = getColumnValue(col, ticker, fin, columnCtx);
+                  const shouldFlash = isFlashing && col.id !== "ticker" && col.id !== "latency";
                   return (
                     <box key={col.id} width={col.width + 1}>
                       <text
                         fg={color || (isSelected ? colors.selectedText : colors.text)}
+                        attributes={shouldFlash ? TextAttributes.DIM : 0}
                       >
                         {padTo(text, col.width, col.align)}
                       </text>
