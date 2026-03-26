@@ -10,6 +10,42 @@ import { getSharedRegistry } from "../../plugins/registry";
 
 const CHANNEL_ID = "everyone";
 
+// Module-level caches so re-opening the widget is instant
+let _cachedUser: { id: string; username: string } | null = null;
+let _sessionChecked = false;
+let _cachedMessages: ChatMessage[] = [];
+let _wsConn: { send: (content: string, replyToId?: string) => void; close: () => void } | null = null;
+let _wsConnected = false;
+let _messageListeners = new Set<(msgs: ChatMessage[]) => void>();
+
+function _notifyMessageListeners() {
+  for (const listener of _messageListeners) {
+    try { listener(_cachedMessages); } catch { /* ignore */ }
+  }
+}
+
+/** Start the persistent WebSocket connection + fetch history (called once after auth) */
+function _ensureConnection() {
+  if (_wsConnected || !_cachedUser) return;
+  _wsConnected = true;
+
+  // Fetch message history via REST
+  apiClient.getMessages(CHANNEL_ID, { limit: 50 }).then((msgs) => {
+    _cachedMessages = msgs;
+    _notifyMessageListeners();
+  }).catch(() => {});
+
+  // Connect WebSocket for live updates
+  _wsConn = apiClient.connectChannel(
+    CHANNEL_ID,
+    (msg) => {
+      if (_cachedMessages.some((m) => m.id === msg.id)) return;
+      _cachedMessages = [..._cachedMessages, msg];
+      _notifyMessageListeners();
+    },
+  );
+}
+
 // --- Relative time formatting ---
 
 function relativeTime(dateStr: string): string {
@@ -42,9 +78,8 @@ function renderMessageContent(
           return (
             <text
               key={i}
-              fg={colors.bg}
-              backgroundColor={colors.positive}
-              attributes={TextAttributes.BOLD}
+              fg={colors.positive}
+              attributes={TextAttributes.BOLD | TextAttributes.INVERSE}
               onMouseDown={() => selectTicker(symbol)}
             >
               {` ${part} `}
@@ -65,66 +100,47 @@ interface ChatContentProps {
   height: number;
   focused: boolean;
   selectTicker: (symbol: string) => void;
+  close?: () => void;
 }
 
-function ChatContent({ width, height, focused, selectTicker }: ChatContentProps) {
+function ChatContent({ width, height, focused, selectTicker, close }: ChatContentProps) {
   const { dispatch } = useAppState();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [user, setUser] = useState<{ id: string; username: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<ChatMessage[]>(_cachedMessages);
+  const [user, setUser] = useState<{ id: string; username: string } | null>(_cachedUser);
+  const [loading, setLoading] = useState(!_sessionChecked);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
-  const lastMessageIdRef = useRef<string | null>(null);
 
-  // Check auth state
+  // Check auth state (uses module-level cache for instant re-opens)
   useEffect(() => {
+    if (_sessionChecked) return;
     let cancelled = false;
     const check = async () => {
       const session = await apiClient.getSession();
       if (!cancelled) {
-        setUser(session ? { id: session.id, username: session.username ?? session.name } : null);
+        const u = session ? { id: session.id, username: session.username ?? session.name } : null;
+        _cachedUser = u;
+        _sessionChecked = true;
+        setUser(u);
         setLoading(false);
+        _ensureConnection();
       }
     };
     check();
     return () => { cancelled = true; };
   }, []);
 
-  // WebSocket connection + initial history fetch
-  const wsRef = useRef<{ send: (content: string, replyToId?: string) => void; close: () => void } | null>(null);
-
+  // Subscribe to module-level message updates
   useEffect(() => {
     if (!user) return;
-
-    // Fetch message history via REST
-    apiClient.getMessages(CHANNEL_ID, { limit: 50 }).then((msgs) => {
-      setMessages(msgs);
-      if (msgs.length > 0) lastMessageIdRef.current = msgs[msgs.length - 1].id;
-    }).catch(() => {});
-
-    // Connect WebSocket for live updates
-    const conn = apiClient.connectChannel(
-      CHANNEL_ID,
-      (msg) => {
-        setMessages((prev) => {
-          // Deduplicate by ID
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          const updated = [...prev, msg];
-          lastMessageIdRef.current = msg.id;
-          return updated;
-        });
-      },
-    );
-    wsRef.current = conn;
-
-    return () => {
-      conn.close();
-      wsRef.current = null;
-    };
+    _ensureConnection();
+    const listener = (msgs: ChatMessage[]) => setMessages(msgs);
+    _messageListeners.add(listener);
+    return () => { _messageListeners.delete(listener); };
   }, [user]);
 
   // Send message via WebSocket
@@ -136,7 +152,7 @@ function ChatContent({ width, height, focused, selectTicker }: ChatContentProps)
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
-    wsRef.current?.send(content, replyToRef.current?.id);
+    _wsConn?.send(content, replyToRef.current?.id);
     setInputValue("");
     setReplyTo(null);
     setScrollOffset(0);
@@ -146,6 +162,16 @@ function ChatContent({ width, height, focused, selectTicker }: ChatContentProps)
   // Keyboard handling
   useKeyboard((event) => {
     if (!focused) return;
+
+    // Shift+C always closes the widget (even when input is captured)
+    if (event.name === "c" && event.shift) {
+      if (inputFocused) {
+        setInputFocused(false);
+        dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+      }
+      close?.();
+      return;
+    }
 
     if (inputFocused) {
       if (event.name === "escape") {
@@ -165,8 +191,9 @@ function ChatContent({ width, height, focused, selectTicker }: ChatContentProps)
       return;
     }
 
+    // Escape closes the widget
     if (event.name === "escape") {
-      setSelectedIdx(-1);
+      close?.();
       return;
     }
 
@@ -438,15 +465,20 @@ export const chatPlugin: GloomPlugin = {
       width: "90%",
       height: "90%",
       captureInput: true,
-      component: ({ width, height, focused }) => {
+      component: ({ width, height, focused, close }) => {
         const registry = getSharedRegistry();
-        const selectTicker = (symbol: string) => registry?.selectTickerFn(symbol);
+        const selectTicker = (symbol: string) => {
+          registry?.selectTickerFn(symbol);
+          registry?.switchTabFn("overview");
+          close?.();
+        };
         return (
           <ChatContent
             width={width}
             height={height}
             focused={focused}
             selectTicker={selectTicker}
+            close={close}
           />
         );
       },
@@ -485,6 +517,12 @@ export const chatPlugin: GloomPlugin = {
         await apiClient.signIn(values.email, values.password);
         const token = apiClient.getSessionToken();
         if (token) ctx.storage.set("session_token", token);
+        _sessionChecked = false;
+        _cachedUser = null;
+        _wsConn?.close();
+        _wsConn = null;
+        _wsConnected = false;
+        _cachedMessages = [];
         ctx.showWidget("chat-widget");
       },
     });
@@ -518,6 +556,12 @@ export const chatPlugin: GloomPlugin = {
         await apiClient.signUp(values.email, values.username, values.name, values.password);
         const token = apiClient.getSessionToken();
         if (token) ctx.storage.set("session_token", token);
+        _sessionChecked = false;
+        _cachedUser = null;
+        _wsConn?.close();
+        _wsConn = null;
+        _wsConnected = false;
+        _cachedMessages = [];
         ctx.showWidget("chat-widget");
       },
     });
@@ -536,6 +580,12 @@ export const chatPlugin: GloomPlugin = {
         }
         await apiClient.signOut();
         ctx.storage.delete("session_token");
+        _sessionChecked = false;
+        _cachedUser = null;
+        _wsConn?.close();
+        _wsConn = null;
+        _wsConnected = false;
+        _cachedMessages = [];
         ctx.showToast("Logged out.", { type: "info" });
       },
       // Hide when not authenticated
