@@ -370,17 +370,6 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
     const targetPane = findPaneInstance(currentState.config.layout, paneId);
     if (!targetPane || targetPane.paneId !== "ticker-detail") return;
 
-    const existingInstance = currentState.config.layout.instances.find((instance) =>
-      instance.instanceId !== targetPane.instanceId
-      && instance.paneId === "ticker-detail"
-      && instance.binding?.kind === "fixed"
-      && instance.binding.symbol === symbol,
-    );
-    if (existingInstance) {
-      pluginRegistry.focusPaneFn(existingInstance.instanceId);
-      return;
-    }
-
     const nextLayout = {
       ...currentState.config.layout,
       instances: currentState.config.layout.instances.map((instance) => (
