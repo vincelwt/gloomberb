@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 2;
+export const CURRENT_CONFIG_VERSION = 3;
 
 export interface BrokerInstanceConfig {
   id: string;
@@ -23,6 +23,7 @@ export interface DockedPaneEntry {
   paneId: string;
   columnIndex: number;
   order?: number;
+  height?: string;
 }
 
 export interface LayoutColumnConfig {
@@ -44,6 +45,11 @@ export interface LayoutConfig {
   floating: FloatingPaneEntry[];
 }
 
+export interface SavedLayout {
+  name: string;
+  layout: LayoutConfig;
+}
+
 export interface AppConfig {
   dataDir: string;
   configVersion: number;
@@ -53,6 +59,8 @@ export interface AppConfig {
   watchlists: Watchlist[];
   columns: ColumnConfig[];
   layout: LayoutConfig;
+  layouts: SavedLayout[];
+  activeLayoutIndex: number;
   brokerInstances: BrokerInstanceConfig[];
   plugins: string[];
   disabledPlugins: string[];
@@ -80,7 +88,16 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
   floating: [],
 };
 
+export function cloneLayout(layout: LayoutConfig): LayoutConfig {
+  return {
+    columns: layout.columns.map((column) => ({ ...column })),
+    docked: layout.docked.map((entry) => ({ ...entry })),
+    floating: layout.floating.map((entry) => ({ ...entry })),
+  };
+}
+
 export function createDefaultConfig(dataDir: string): AppConfig {
+  const layout = cloneLayout(DEFAULT_LAYOUT);
   return {
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
@@ -89,11 +106,9 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
     watchlists: [{ id: "watchlist", name: "Watchlist" }],
     columns: DEFAULT_COLUMNS.map((column) => ({ ...column })),
-    layout: {
-      columns: DEFAULT_LAYOUT.columns.map((column) => ({ ...column })),
-      docked: DEFAULT_LAYOUT.docked.map((entry) => ({ ...entry })),
-      floating: [],
-    },
+    layout,
+    layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+    activeLayoutIndex: 0,
     brokerInstances: [],
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr"],
     disabledPlugins: [],

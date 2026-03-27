@@ -139,7 +139,7 @@ export class PluginRegistry {
         }
       }
     } catch {
-      // Ignore until config is wired.
+      return;
     }
 
     const layout = this.getLayoutFn();
@@ -256,12 +256,12 @@ export class PluginRegistry {
       const corePlugin = {
         id: plugin.id,
         order: plugin.order,
-        slots: {} as Record<string, any>,
+        slots: {} as Record<string, unknown>,
       };
 
       for (const [slotName, renderer] of Object.entries(plugin.slots)) {
         if (renderer) {
-          corePlugin.slots[slotName] = (_ctx: any, props: any) => (renderer as any)(props);
+          corePlugin.slots[slotName] = (_ctx: unknown, props: unknown) => (renderer as any)(props);
         }
       }
 

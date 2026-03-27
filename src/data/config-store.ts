@@ -1,7 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { dirname, join } from "path";
-import type { AppConfig, BrokerInstanceConfig, ColumnConfig, LayoutConfig } from "../types/config";
-import { createDefaultConfig, CURRENT_CONFIG_VERSION } from "../types/config";
+import type {
+  AppConfig,
+  BrokerInstanceConfig,
+  ColumnConfig,
+  LayoutConfig,
+  SavedLayout,
+} from "../types/config";
+import { cloneLayout, createDefaultConfig, CURRENT_CONFIG_VERSION } from "../types/config";
 import type { Portfolio, Watchlist } from "../types/ticker";
 
 const GLOBAL_CONFIG_DIR = join(process.env.HOME || "~", ".gloomberb");
@@ -41,22 +47,26 @@ async function loadConfigState(dataDir: string): Promise<{ config: AppConfig; ne
 
 function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
-  const layout = sanitizeLayout(saved.layout, defaults.layout);
-  const brokerInstances = sanitizeBrokerInstances(saved.brokerInstances);
-  const portfolios = sanitizePortfolios(saved.portfolios, defaults.portfolios);
-  const watchlists = sanitizeWatchlists(saved.watchlists, defaults.watchlists);
-  const columns = sanitizeColumns(saved.columns, defaults.columns);
+  const directLayout = sanitizeLayout(saved.layout, defaults.layout);
+  const layouts = sanitizeSavedLayouts(saved.layouts, directLayout);
+  const activeLayoutIndex = sanitizeActiveLayoutIndex(saved.activeLayoutIndex, layouts.length);
+  const layout = cloneLayout(layouts[activeLayoutIndex]?.layout ?? directLayout);
+  const syncedLayouts = layouts.map((entry, index) => (
+    index === activeLayoutIndex ? { ...entry, layout: cloneLayout(layout) } : entry
+  ));
 
   const config: AppConfig = {
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
     baseCurrency: typeof saved.baseCurrency === "string" ? saved.baseCurrency : defaults.baseCurrency,
     refreshIntervalMinutes: typeof saved.refreshIntervalMinutes === "number" ? saved.refreshIntervalMinutes : defaults.refreshIntervalMinutes,
-    portfolios,
-    watchlists,
-    columns,
+    portfolios: sanitizePortfolios(saved.portfolios, defaults.portfolios),
+    watchlists: sanitizeWatchlists(saved.watchlists, defaults.watchlists),
+    columns: sanitizeColumns(saved.columns, defaults.columns),
     layout,
-    brokerInstances,
+    layouts: syncedLayouts,
+    activeLayoutIndex,
+    brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
     disabledPlugins: sanitizeStringArray(saved.disabledPlugins, defaults.disabledPlugins),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
@@ -67,7 +77,9 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
   const needsSave =
     saved.configVersion !== CURRENT_CONFIG_VERSION
     || !isLayoutConfig(saved.layout)
-    || !Array.isArray(saved.brokerInstances);
+    || !Array.isArray(saved.layouts)
+    || !Array.isArray(saved.brokerInstances)
+    || typeof saved.activeLayoutIndex !== "number";
 
   return { config, needsSave };
 }
@@ -76,14 +88,22 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   const configPath = join(config.dataDir, "config.json");
   await mkdir(dirname(configPath), { recursive: true });
 
+  const activeLayoutIndex = sanitizeActiveLayoutIndex(config.activeLayoutIndex, config.layouts.length || 1);
+  const layout = sanitizeLayout(config.layout, createDefaultConfig(config.dataDir).layout);
+  const layouts = sanitizeSavedLayouts(config.layouts, layout).map((entry, index) => (
+    index === activeLayoutIndex ? { ...entry, layout: cloneLayout(layout) } : entry
+  ));
+
   const persisted: AppConfig = {
     ...config,
     configVersion: CURRENT_CONFIG_VERSION,
-    layout: sanitizeLayout(config.layout, createDefaultConfig(config.dataDir).layout),
-    brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
+    columns: sanitizeColumns(config.columns, createDefaultConfig(config.dataDir).columns),
     portfolios: sanitizePortfolios(config.portfolios, []),
     watchlists: sanitizeWatchlists(config.watchlists, []),
-    columns: sanitizeColumns(config.columns, createDefaultConfig(config.dataDir).columns),
+    layout,
+    layouts,
+    activeLayoutIndex,
+    brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
     disabledPlugins: sanitizeStringArray(config.disabledPlugins, []),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
@@ -195,11 +215,7 @@ function isLayoutConfig(value: unknown): value is LayoutConfig {
 
 function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
   if (!isLayoutConfig(value)) {
-    return {
-      columns: fallback.columns.map((column) => ({ ...column })),
-      docked: fallback.docked.map((entry) => ({ ...entry })),
-      floating: fallback.floating.map((entry) => ({ ...entry })),
-    };
+    return cloneLayout(fallback);
   }
 
   const columns = value.columns
@@ -230,8 +246,34 @@ function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
     .map((entry) => ({ ...entry }));
 
   return {
-    columns: columns.length > 0 ? columns : fallback.columns.map((column) => ({ ...column })),
+    columns: columns.length > 0 ? columns : cloneLayout(fallback).columns,
     docked,
     floating,
   };
+}
+
+function sanitizeSavedLayouts(value: unknown, fallbackLayout: LayoutConfig): SavedLayout[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [{ name: "Default", layout: cloneLayout(fallbackLayout) }];
+  }
+
+  const layouts = value
+    .filter((entry): entry is SavedLayout =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as SavedLayout).name === "string",
+    )
+    .map((entry) => ({
+      name: entry.name,
+      layout: sanitizeLayout(entry.layout, fallbackLayout),
+    }));
+
+  return layouts.length > 0 ? layouts : [{ name: "Default", layout: cloneLayout(fallbackLayout) }];
+}
+
+function sanitizeActiveLayoutIndex(value: unknown, layoutCount: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value >= layoutCount) {
+    return 0;
+  }
+  return value;
 }

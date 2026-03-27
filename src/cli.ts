@@ -2,6 +2,14 @@ import { join } from "path";
 import { existsSync, mkdirSync, rmSync, readdirSync } from "fs";
 import { execSync } from "child_process";
 import { getPluginsDir } from "./plugins/loader";
+import { getDataDir, loadConfig } from "./data/config-store";
+import { SqliteCache } from "./data/sqlite-cache";
+import { MarkdownStore } from "./data/markdown-store";
+import { YahooFinanceClient } from "./sources/yahoo-finance";
+import { VERSION } from "./version";
+import { formatCurrency, formatPercentRaw, formatCompact, formatNumber } from "./utils/format";
+import type { AppConfig } from "./types/config";
+import type { TickerFile } from "./types/ticker";
 
 const PLUGINS_DIR = getPluginsDir();
 
@@ -159,10 +167,267 @@ function list() {
   console.log(`\nPlugin directory: ${PLUGINS_DIR}`);
 }
 
+// --- Data init helper for commands that need the data layer ---
+
+async function initData() {
+  const dataDir = await getDataDir();
+  if (!dataDir || !existsSync(dataDir)) {
+    console.error("No data directory configured. Run gloomberb first to set up.");
+    process.exit(1);
+  }
+  const config = await loadConfig(dataDir);
+  const cache = new SqliteCache(join(dataDir, ".gloomberb-cache.db"));
+  const store = new MarkdownStore(dataDir, cache);
+  const yahoo = new YahooFinanceClient(cache);
+  return { config, cache, store, yahoo, dataDir };
+}
+
+// --- Help command ---
+
+function help() {
+  console.log(`gloomberb v${VERSION} — Bloomberg-style portfolio tracker
+
+Usage: gloomberb [command]
+
+Commands:
+  (no command)          Launch the terminal UI
+  help                  Show this help message
+  portfolio [name]      List portfolios or show portfolio details
+  ticker <symbol>       Show quote and fundamentals for a ticker
+  install <user/repo>   Install a plugin from GitHub
+  remove <name>         Remove an installed plugin
+  update [name]         Update plugins
+  plugins               List installed plugins`);
+}
+
+// --- Portfolio command ---
+
+async function portfolio(name?: string) {
+  const { config, store, yahoo, cache } = await initData();
+  const tickers = await store.loadAllTickers();
+
+  if (!name) {
+    // List all portfolios and watchlists with ticker counts
+    console.log("Portfolios:");
+    for (const p of config.portfolios) {
+      const count = tickers.filter((t) => t.frontmatter.portfolios.includes(p.id)).length;
+      console.log(`  ${p.name} (${p.currency})    ${count} ticker${count !== 1 ? "s" : ""}`);
+    }
+    if (config.watchlists.length > 0) {
+      console.log("\nWatchlists:");
+      for (const w of config.watchlists) {
+        const count = tickers.filter((t) => t.frontmatter.watchlists.includes(w.id)).length;
+        console.log(`  ${w.name}    ${count} ticker${count !== 1 ? "s" : ""}`);
+      }
+    }
+    cache.close();
+    return;
+  }
+
+  // Find the portfolio or watchlist by name (case-insensitive)
+  const lowerName = name.toLowerCase();
+  const matchedPortfolio = config.portfolios.find((p) => p.name.toLowerCase() === lowerName || p.id.toLowerCase() === lowerName);
+  const matchedWatchlist = config.watchlists.find((w) => w.name.toLowerCase() === lowerName || w.id.toLowerCase() === lowerName);
+
+  if (!matchedPortfolio && !matchedWatchlist) {
+    console.error(`Portfolio or watchlist "${name}" not found.`);
+    console.error(`Available: ${[...config.portfolios.map((p) => p.name), ...config.watchlists.map((w) => w.name)].join(", ")}`);
+    cache.close();
+    process.exit(1);
+  }
+
+  const isPortfolio = !!matchedPortfolio;
+  const id = matchedPortfolio?.id ?? matchedWatchlist!.id;
+  const displayName = matchedPortfolio?.name ?? matchedWatchlist!.name;
+  const currency = matchedPortfolio?.currency ?? config.baseCurrency;
+
+  const filtered = tickers.filter((t) =>
+    isPortfolio ? t.frontmatter.portfolios.includes(id) : t.frontmatter.watchlists.includes(id),
+  );
+
+  if (filtered.length === 0) {
+    console.log(`${displayName} — no tickers`);
+    cache.close();
+    return;
+  }
+
+  console.log(`${displayName}${isPortfolio ? ` (${currency})` : ""}\n`);
+
+  // Fetch quotes for all tickers
+  const quotes = new Map<string, Awaited<ReturnType<typeof yahoo.getQuote>>>();
+  await Promise.all(
+    filtered.map(async (t) => {
+      try {
+        const q = await yahoo.getQuote(t.frontmatter.ticker, t.frontmatter.exchange);
+        quotes.set(t.frontmatter.ticker, q);
+      } catch { /* skip failed quotes */ }
+    }),
+  );
+
+  if (isPortfolio) {
+    // Show position details
+    const header = "TICKER    PRICE         CHG%    SHARES  AVG COST      P&L";
+    console.log(header);
+    console.log("-".repeat(header.length));
+    let totalPnl = 0;
+
+    for (const t of filtered) {
+      const q = quotes.get(t.frontmatter.ticker);
+      const price = q ? formatCurrency(q.price, q.currency) : "—";
+      const chg = q ? formatPercentRaw(q.changePercent) : "—";
+      const positions = t.frontmatter.positions.filter((p) => p.portfolio === id);
+
+      if (positions.length === 0) {
+        console.log(`${t.frontmatter.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}`);
+      } else {
+        for (const pos of positions) {
+          const shares = pos.shares;
+          const avgCost = pos.avg_cost;
+          const currentPrice = q?.price ?? 0;
+          const pnl = (currentPrice - avgCost) * shares * (pos.multiplier ?? 1);
+          totalPnl += pnl;
+          const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, currency)}` : formatCurrency(pnl, currency);
+          console.log(
+            `${t.frontmatter.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${String(shares).padStart(6)}  ${formatCurrency(avgCost, currency).padStart(10)}  ${pnlStr.padStart(12)}`,
+          );
+        }
+      }
+    }
+
+    console.log("-".repeat(header.length));
+    const totalStr = totalPnl >= 0 ? `+${formatCurrency(totalPnl, currency)}` : formatCurrency(totalPnl, currency);
+    console.log(`${"".padEnd(46)}Total: ${totalStr.padStart(12)}`);
+  } else {
+    // Watchlist: simpler view
+    const header = "TICKER    PRICE         CHG%    MCAP";
+    console.log(header);
+    console.log("-".repeat(header.length));
+    for (const t of filtered) {
+      const q = quotes.get(t.frontmatter.ticker);
+      const price = q ? formatCurrency(q.price, q.currency) : "—";
+      const chg = q ? formatPercentRaw(q.changePercent) : "—";
+      const mcap = q?.marketCap ? formatCompact(q.marketCap) : "—";
+      console.log(`${t.frontmatter.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${mcap.padStart(6)}`);
+    }
+  }
+
+  cache.close();
+}
+
+// --- Ticker command ---
+
+async function ticker(symbol: string) {
+  const { config, store, yahoo, cache } = await initData();
+
+  // Fetch quote and fundamentals
+  const tickerFile = await store.loadTicker(symbol.toUpperCase());
+  const exchange = tickerFile?.frontmatter.exchange ?? "";
+
+  let financials;
+  try {
+    financials = await yahoo.getTickerFinancials(symbol, exchange);
+  } catch (err: any) {
+    console.error(`Failed to fetch data for ${symbol}: ${err.message}`);
+    cache.close();
+    process.exit(1);
+  }
+
+  const q = financials.quote;
+  const f = financials.fundamentals;
+
+  if (!q) {
+    console.error(`No quote data for ${symbol}`);
+    cache.close();
+    process.exit(1);
+  }
+
+  // Header
+  const name = q.name || tickerFile?.frontmatter.name || symbol;
+  console.log(`${q.symbol} — ${name}`);
+  const parts = [];
+  if (q.fullExchangeName || q.exchangeName) parts.push(`Exchange: ${q.fullExchangeName || q.exchangeName}`);
+  parts.push(`Currency: ${q.currency}`);
+  if (q.marketState) parts.push(`Market: ${q.marketState}`);
+  console.log(parts.join("    "));
+
+  // Price
+  console.log(`\nPrice:     ${formatCurrency(q.price, q.currency)}  (${formatPercentRaw(q.changePercent)})`);
+  if (q.high52w != null || q.low52w != null) {
+    console.log(`52w High:  ${q.high52w != null ? formatCurrency(q.high52w, q.currency) : "—"}    52w Low: ${q.low52w != null ? formatCurrency(q.low52w, q.currency) : "—"}`);
+  }
+
+  // Extended hours
+  if (q.preMarketPrice != null) {
+    console.log(`Pre-Mkt:   ${formatCurrency(q.preMarketPrice, q.currency)}  (${formatPercentRaw(q.preMarketChangePercent)})`);
+  }
+  if (q.postMarketPrice != null) {
+    console.log(`Post-Mkt:  ${formatCurrency(q.postMarketPrice, q.currency)}  (${formatPercentRaw(q.postMarketChangePercent)})`);
+  }
+
+  // Fundamentals
+  if (f) {
+    console.log("");
+    const rows: [string, string, string, string][] = [];
+    if (q.marketCap != null || f.trailingPE != null) {
+      rows.push(["Market Cap", q.marketCap != null ? formatCompact(q.marketCap) : "—", "P/E", f.trailingPE != null ? formatNumber(f.trailingPE) : "—"]);
+    }
+    if (f.forwardPE != null || f.pegRatio != null) {
+      rows.push(["Fwd P/E", f.forwardPE != null ? formatNumber(f.forwardPE) : "—", "PEG", f.pegRatio != null ? formatNumber(f.pegRatio) : "—"]);
+    }
+    if (f.eps != null || f.dividendYield != null) {
+      rows.push(["EPS", f.eps != null ? formatCurrency(f.eps, q.currency) : "—", "Div Yield", f.dividendYield != null ? formatPercentRaw(f.dividendYield * 100) : "—"]);
+    }
+    if (f.revenue != null || f.netIncome != null) {
+      rows.push(["Revenue", f.revenue != null ? formatCompact(f.revenue) : "—", "Net Income", f.netIncome != null ? formatCompact(f.netIncome) : "—"]);
+    }
+    if (f.operatingMargin != null || f.profitMargin != null) {
+      rows.push(["Op Margin", f.operatingMargin != null ? formatPercentRaw(f.operatingMargin * 100) : "—", "Profit", f.profitMargin != null ? formatPercentRaw(f.profitMargin * 100) : "—"]);
+    }
+
+    for (const [k1, v1, k2, v2] of rows) {
+      console.log(`${(k1 + ":").padEnd(12)} ${v1.padStart(8)}    ${(k2 + ":").padEnd(12)} ${v2.padStart(8)}`);
+    }
+  }
+
+  // Position info if in a portfolio
+  if (tickerFile && tickerFile.frontmatter.positions.length > 0) {
+    console.log("");
+    for (const pos of tickerFile.frontmatter.positions) {
+      const portfolioName = config.portfolios.find((p) => p.id === pos.portfolio)?.name ?? pos.portfolio;
+      const value = q.price * pos.shares * (pos.multiplier ?? 1);
+      const pnl = (q.price - pos.avg_cost) * pos.shares * (pos.multiplier ?? 1);
+      const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, q.currency)}` : formatCurrency(pnl, q.currency);
+      console.log(`Position (${portfolioName}):`);
+      console.log(`  ${pos.shares} shares @ ${formatCurrency(pos.avg_cost, q.currency)} = ${formatCurrency(value, q.currency)} (P&L: ${pnlStr})`);
+    }
+  }
+
+  cache.close();
+}
+
 export async function runCli(args: string[]): Promise<boolean> {
   const command = args[0];
 
   switch (command) {
+    case "help":
+    case "--help":
+    case "-h": {
+      help();
+      return true;
+    }
+    case "portfolio": {
+      await portfolio(args.slice(1).join(" ") || undefined);
+      return true;
+    }
+    case "ticker": {
+      const symbol = args[1];
+      if (!symbol) {
+        console.error("Usage: gloomberb ticker <symbol>");
+        process.exit(1);
+      }
+      await ticker(symbol);
+      return true;
+    }
     case "install": {
       const ref = args[1];
       if (!ref) {

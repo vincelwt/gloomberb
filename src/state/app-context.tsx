@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from "react";
 import { saveConfig } from "../data/config-store";
 import { applyTheme } from "../theme/colors";
-import type { AppConfig, LayoutConfig } from "../types/config";
+import { cloneLayout, DEFAULT_LAYOUT } from "../types/config";
+import type { AppConfig, LayoutConfig, SavedLayout } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerFile } from "../types/ticker";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
@@ -49,9 +50,20 @@ export type AppAction =
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
   | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig }
+  | { type: "SWITCH_LAYOUT"; index: number }
+  | { type: "NEW_LAYOUT"; name: string }
+  | { type: "DELETE_LAYOUT"; index: number }
+  | { type: "RENAME_LAYOUT"; index: number; name: string }
+  | { type: "DUPLICATE_LAYOUT"; index: number }
   | { type: "FOCUS_PANE"; paneId: string }
   | { type: "FOCUS_NEXT"; paneOrder: string[] }
   | { type: "FOCUS_PREV"; paneOrder: string[] };
+
+function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: LayoutConfig): SavedLayout[] {
+  return layouts.map((savedLayout, index) => (
+    index === activeLayoutIndex ? { ...savedLayout, layout: cloneLayout(layout) } : savedLayout
+  ));
+}
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -165,8 +177,91 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, exchangeRates };
     }
 
-    case "UPDATE_LAYOUT":
-      return { ...state, config: { ...state.config, layout: action.layout } };
+    case "UPDATE_LAYOUT": {
+      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, action.layout);
+      return { ...state, config: { ...state.config, layout: action.layout, layouts } };
+    }
+
+    case "SWITCH_LAYOUT": {
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout);
+      const target = layouts[action.index]!;
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: cloneLayout(target.layout),
+          layouts,
+          activeLayoutIndex: action.index,
+        },
+        focusedPaneId: target.layout.docked[0]?.paneId ?? null,
+      };
+    }
+
+    case "NEW_LAYOUT": {
+      const newLayout: SavedLayout = {
+        name: action.name,
+        layout: cloneLayout(DEFAULT_LAYOUT),
+      };
+      const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), newLayout];
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: cloneLayout(newLayout.layout),
+          layouts,
+          activeLayoutIndex: layouts.length - 1,
+        },
+        focusedPaneId: newLayout.layout.docked[0]?.paneId ?? null,
+      };
+    }
+
+    case "DELETE_LAYOUT": {
+      if (state.config.layouts.length <= 1) return state;
+      const layouts = state.config.layouts.filter((_, index) => index !== action.index);
+      const nextActiveLayoutIndex = action.index <= state.config.activeLayoutIndex
+        ? Math.max(0, state.config.activeLayoutIndex - 1)
+        : state.config.activeLayoutIndex;
+      const nextLayout = layouts[nextActiveLayoutIndex]!;
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: cloneLayout(nextLayout.layout),
+          layouts,
+          activeLayoutIndex: nextActiveLayoutIndex,
+        },
+        focusedPaneId: nextLayout.layout.docked[0]?.paneId ?? null,
+      };
+    }
+
+    case "RENAME_LAYOUT": {
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const layouts = state.config.layouts.map((savedLayout, index) => (
+        index === action.index ? { ...savedLayout, name: action.name } : savedLayout
+      ));
+      return { ...state, config: { ...state.config, layouts } };
+    }
+
+    case "DUPLICATE_LAYOUT": {
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const source = state.config.layouts[action.index]!;
+      const duplicate: SavedLayout = {
+        name: `${source.name} Copy`,
+        layout: cloneLayout(source.layout),
+      };
+      const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), duplicate];
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: cloneLayout(duplicate.layout),
+          layouts,
+          activeLayoutIndex: layouts.length - 1,
+        },
+        focusedPaneId: duplicate.layout.docked[0]?.paneId ?? null,
+      };
+    }
 
     case "FOCUS_PANE":
       return { ...state, focusedPaneId: action.paneId };

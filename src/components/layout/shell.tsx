@@ -37,6 +37,7 @@ type DragMode =
 export function Shell({ pluginRegistry }: ShellProps) {
   const { state, dispatch } = useAppState();
   const { width, height } = useTerminalDimensions();
+
   const layout = state.config.layout;
   const contentHeight = height - (state.statusBarVisible ? 2 : 1);
   pluginRegistry.getTermSizeFn = () => ({ width, height: contentHeight });
@@ -73,7 +74,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       order.push(pane.def.id);
     }
     return order;
-  }, [columnIndices, filteredColumns, filteredFloating]);
+  }, [columnIndices.join(","), filteredColumns, filteredFloating]);
 
   const dialogOpen = useDialogState((dialog) => dialog.isOpen);
   const overlayOpen = state.commandBarOpen || dialogOpen;
@@ -91,10 +92,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
     let unspecified = 0;
 
     for (const columnIndex of columnIndices) {
-      const parsedWidth = parseWidth(layout.columns[columnIndex]?.width, availableWidth);
-      if (parsedWidth !== undefined) {
-        widths.push(parsedWidth);
-        specified += parsedWidth;
+      const parsed = parseWidth(layout.columns[columnIndex]?.width, availableWidth);
+      if (parsed !== undefined) {
+        widths.push(parsed);
+        specified += parsed;
       } else {
         widths.push(0);
         unspecified += 1;
@@ -108,7 +109,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       widths[index] = Math.max(MIN_PANE_WIDTH, widths[index] ?? MIN_PANE_WIDTH);
     }
     return widths;
-  }, [availableWidth, columnIndices, layout.columns]);
+  }, [availableWidth, columnIndices.join(","), layout.columns]);
 
   const effectiveColumnWidths = [...columnWidths];
   if (dragColumnIndex !== null && dragColumnWidth !== null) {
@@ -116,16 +117,16 @@ export function Shell({ pluginRegistry }: ShellProps) {
     if (localIndex >= 0 && localIndex < effectiveColumnWidths.length - 1) {
       const delta = dragColumnWidth - (columnWidths[localIndex] ?? 0);
       effectiveColumnWidths[localIndex] = Math.max(MIN_PANE_WIDTH, dragColumnWidth);
-      effectiveColumnWidths[localIndex + 1] = Math.max(
-        MIN_PANE_WIDTH,
-        (columnWidths[localIndex + 1] ?? MIN_PANE_WIDTH) - delta,
-      );
+      effectiveColumnWidths[localIndex + 1] = Math.max(MIN_PANE_WIDTH, (columnWidths[localIndex + 1] ?? MIN_PANE_WIDTH) - delta);
     }
   }
 
   const persistLayout = useCallback((nextLayout: LayoutConfig) => {
     dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
-    saveConfig({ ...state.config, layout: nextLayout }).catch(() => {});
+    const layouts = state.config.layouts.map((savedLayout, index) => (
+      index === state.config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
+    ));
+    saveConfig({ ...state.config, layout: nextLayout, layouts }).catch(() => {});
   }, [dispatch, state.config]);
 
   const allFloatingRects = useMemo(() => {
@@ -243,24 +244,28 @@ export function Shell({ pluginRegistry }: ShellProps) {
     }
 
     if (event.type === "up" || event.type === "drag-end") {
-      if (drag.type === "column-divider" && dragColumnWidth !== null) {
-        const localIndex = columnIndices.indexOf(drag.colIdx);
-        let nextLayout = updateColumnWidth(layout, drag.colIdx, `${Math.round((dragColumnWidth / availableWidth) * 100)}%`);
-        if (localIndex >= 0 && localIndex < numColumns - 1) {
-          const nextColumnIndex = columnIndices[localIndex + 1]!;
-          nextLayout = updateColumnWidth(
-            nextLayout,
-            nextColumnIndex,
-            `${Math.round(((effectiveColumnWidths[localIndex + 1] ?? MIN_PANE_WIDTH) / availableWidth) * 100)}%`,
-          );
+      if (drag.type === "column-divider") {
+        if (dragColumnWidth !== null) {
+          const localIndex = columnIndices.indexOf(drag.colIdx);
+          let nextLayout = updateColumnWidth(layout, drag.colIdx, `${Math.round((dragColumnWidth / availableWidth) * 100)}%`);
+          if (localIndex >= 0 && localIndex < numColumns - 1) {
+            const nextColumnIndex = columnIndices[localIndex + 1]!;
+            nextLayout = updateColumnWidth(
+              nextLayout,
+              nextColumnIndex,
+              `${Math.round(((effectiveColumnWidths[localIndex + 1] ?? MIN_PANE_WIDTH) / availableWidth) * 100)}%`,
+            );
+          }
+          persistLayout(nextLayout);
         }
-        persistLayout(nextLayout);
         setDragColumnIndex(null);
         setDragColumnWidth(null);
       } else if (drag.type === "float-move" || drag.type === "float-resize") {
-        saveConfig({ ...state.config, layout }).catch(() => {});
+        const layouts = state.config.layouts.map((savedLayout, index) => (
+          index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+        ));
+        saveConfig({ ...state.config, layout, layouts }).catch(() => {});
       }
-
       dragRef.current = null;
       event.stopPropagation();
       event.preventDefault();
@@ -287,8 +292,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
   return (
     <box flexDirection="row" flexGrow={1} height={contentHeight} onMouse={handleMouse}>
       {columnIndices.map((columnIndex, localIndex) => {
-        const panes = filteredColumns.get(columnIndex) ?? [];
-        const columnWidth = effectiveColumnWidths[localIndex] ?? MIN_PANE_WIDTH;
+        const panes = filteredColumns.get(columnIndex)!;
+        const columnWidth = effectiveColumnWidths[localIndex]!;
 
         return (
           <box key={`column-${columnIndex}`} flexDirection="row">
@@ -335,24 +340,24 @@ export function Shell({ pluginRegistry }: ShellProps) {
       )}
 
       {filteredFloating.map((pane) => {
-        const floating = pane.floating!;
+        const entry = pane.floating!;
         const focused = state.focusedPaneId === pane.def.id && !overlayOpen;
 
         return (
           <FloatingPaneWrapper
             key={pane.def.id}
             title={pane.def.name}
-            x={floating.x}
-            y={floating.y}
-            width={floating.width}
-            height={floating.height}
-            zIndex={floating.zIndex ?? 50}
+            x={entry.x}
+            y={entry.y}
+            width={entry.width}
+            height={entry.height}
+            zIndex={entry.zIndex ?? 50}
             focused={focused}
           >
             <pane.def.component
               focused={focused}
-              width={floating.width - 2}
-              height={floating.height - 4}
+              width={entry.width - 2}
+              height={entry.height - 4}
               close={() => handleFloatingClose(pane.def.id)}
             />
           </FloatingPaneWrapper>

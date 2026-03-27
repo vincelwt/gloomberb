@@ -33,13 +33,11 @@ export function resolveFloating(
   registeredPanes: ReadonlyMap<string, PaneDef>,
 ): ResolvedPane[] {
   const result: ResolvedPane[] = [];
-
   for (const entry of layout.floating) {
     const def = registeredPanes.get(entry.paneId);
     if (!def) continue;
     result.push({ def, floating: entry });
   }
-
   result.sort((a, b) => (a.floating?.zIndex ?? 50) - (b.floating?.zIndex ?? 50));
   return result;
 }
@@ -91,13 +89,13 @@ export function dockPane(layout: LayoutConfig, paneId: string, target: DockTarge
   }
 
   const insertIndex = target.position === "left" ? targetPane.columnIndex : targetPane.columnIndex + 1;
-  docked = docked.map((entry) => ({
+  const shiftedDocked = docked.map((entry) => ({
     ...entry,
     columnIndex: entry.columnIndex >= insertIndex ? entry.columnIndex + 1 : entry.columnIndex,
   }));
   columns.splice(insertIndex, 0, {});
-  docked.push({ paneId, columnIndex: insertIndex, order: 0 });
-  return normalizeColumns({ columns, docked, floating });
+  shiftedDocked.push({ paneId, columnIndex: insertIndex, order: 0 });
+  return normalizeColumns({ columns, docked: shiftedDocked, floating });
 }
 
 export function addPaneToLayout(layout: LayoutConfig, paneId: string, target: DockTarget): LayoutConfig {
