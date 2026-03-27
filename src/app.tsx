@@ -27,6 +27,7 @@ import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { chatPlugin } from "./plugins/builtin/chat";
+import { layoutManagerPlugin, setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
 import { checkForUpdate, performUpdate } from "./updater";
@@ -246,6 +247,19 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
   pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
   pluginRegistry.switchTabFn = (tabId) => dispatch({ type: "SET_RIGHT_TAB", tab: tabId });
   pluginRegistry.openCommandBarFn = () => dispatch({ type: "SET_COMMAND_BAR", open: true });
+  pluginRegistry.focusPaneFn = (paneId) => dispatch({ type: "FOCUS_PANE", paneId });
+  pluginRegistry.getLayoutFn = () => state.config.layout;
+  pluginRegistry.updateLayoutFn = (layout) => {
+    dispatch({ type: "UPDATE_LAYOUT", layout });
+    saveConfig({ ...state.config, layout }).catch(() => {});
+  };
+
+  // Wire up layout manager
+  setLayoutManagerDispatch(dispatch, () => ({
+    layout: state.config.layout,
+    termWidth: 120, // approximate — will be exact when Shell renders
+    termHeight: 40,
+  }));
 
   // Wire up toast
   pluginRegistry.showToastFn = (message, options) => {
@@ -292,10 +306,26 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     if (state.commandBarOpen || state.inputCaptured) return;
 
     if (event.name === "tab") {
-      dispatch({
-        type: "SET_ACTIVE_PANEL",
-        panel: state.activePanel === "left" ? "right" : "left",
-      });
+      // Build pane order from current layout for cycling
+      const layout = state.config.layout;
+      const paneOrder: string[] = [];
+      // Docked panes by column, then floating
+      const byCol = new Map<number, string[]>();
+      for (const d of layout.docked) {
+        const list = byCol.get(d.columnIndex) ?? [];
+        list.push(d.paneId);
+        byCol.set(d.columnIndex, list);
+      }
+      for (const colIdx of [...byCol.keys()].sort((a, b) => a - b)) {
+        paneOrder.push(...byCol.get(colIdx)!);
+      }
+      for (const f of layout.floating) paneOrder.push(f.paneId);
+
+      if (event.shift) {
+        dispatch({ type: "FOCUS_PREV", paneOrder });
+      } else {
+        dispatch({ type: "FOCUS_NEXT", paneOrder });
+      }
     } else if (event.name === "q" && !(state.activePanel === "right" && state.activeRightTab === "financials")) {
       renderer.destroy();
     } else if (event.name === "r") {
@@ -373,6 +403,9 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
   pluginRegistry.register(tickerDetailPlugin);
   pluginRegistry.register(manualEntryPlugin);
   pluginRegistry.register(ibkrFlexPlugin);
+
+  // Core utility plugins
+  pluginRegistry.register(layoutManagerPlugin);
 
   // Feature plugins (toggleable by user)
   pluginRegistry.register(newsPlugin);

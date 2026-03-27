@@ -33,6 +33,8 @@ export interface PaneProps {
   focused: boolean;
   width: number;
   height: number;
+  /** Present when pane is floating — call to dock back or hide */
+  close?: () => void;
 }
 
 export interface PaneDef {
@@ -42,6 +44,10 @@ export interface PaneDef {
   component: (props: PaneProps) => ReactNode;
   defaultPosition: "left" | "right" | "bottom";
   defaultWidth?: string;
+  /** Hint for initial floating size (character columns/rows) */
+  defaultFloatingSize?: { width: number; height: number };
+  /** Whether this pane starts docked or floating. Default: "docked" */
+  defaultMode?: "docked" | "floating";
 }
 
 export interface WizardStep {
@@ -111,18 +117,6 @@ export interface TickerAction {
   execute: (ticker: TickerFile, financials: TickerFinancials | null) => void | Promise<void>;
 }
 
-/** Floating widget overlay registered by a plugin */
-export interface FloatingWidgetDef {
-  id: string;
-  name: string;
-  position: "top-right" | "top-left" | "bottom-right" | "bottom-left" | "center";
-  width: number | string;
-  height: number | string;
-  captureInput?: boolean;
-  zIndex?: number;
-  component: (props: { width: number; height: number; focused: boolean; close: () => void }) => ReactNode;
-}
-
 /** Scoped key-value storage for a plugin */
 export interface PluginStorage {
   get<T = unknown>(key: string): T | null;
@@ -141,7 +135,6 @@ export interface GloomPluginContext {
   registerDetailTab(tab: DetailTabDef): void;
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
-  registerFloatingWidget(widget: FloatingWidgetDef): void;
 
   // --- Data access ---
   getData(ticker: string): TickerFinancials | null;

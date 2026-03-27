@@ -8,10 +8,41 @@ export interface ColumnConfig {
   format?: "currency" | "percent" | "number" | "compact";
 }
 
+/** @deprecated Use LayoutConfig instead. Kept for migration from old configs. */
 export interface PaneLayoutEntry {
   paneId: string;
   position: "left" | "right" | "bottom";
-  width?: string; // e.g., "40%", "60"
+  width?: string;
+}
+
+/** A pane docked into the tiled layout */
+export interface DockedPaneEntry {
+  paneId: string;
+  columnIndex: number;       // 0-based column index
+  order?: number;            // vertical order within column (lower = higher)
+  height?: string;           // e.g. "50%", "200" — omit = equal split
+}
+
+/** Configuration for a single layout column */
+export interface LayoutColumnConfig {
+  width?: string;            // e.g. "40%", "300" — omit = equal split
+}
+
+/** A pane floating as a draggable overlay */
+export interface FloatingPaneEntry {
+  paneId: string;
+  x: number;                 // absolute terminal column
+  y: number;                 // absolute terminal row
+  width: number;             // character columns
+  height: number;            // character rows
+  zIndex?: number;
+}
+
+/** The unified layout config */
+export interface LayoutConfig {
+  columns: LayoutColumnConfig[];    // ordered list of columns
+  docked: DockedPaneEntry[];       // panes placed in columns
+  floating: FloatingPaneEntry[];   // panes in floating windows
 }
 
 export interface AppConfig {
@@ -21,7 +52,7 @@ export interface AppConfig {
   portfolios: Portfolio[];
   watchlists: Watchlist[];
   columns: ColumnConfig[];
-  layout: PaneLayoutEntry[];
+  layout: LayoutConfig;
   brokers: Record<string, Record<string, unknown>>;
   plugins: string[];
   disabledPlugins: string[];
@@ -40,10 +71,14 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "latency", label: "AGE", width: 6, align: "right" },
 ];
 
-export const DEFAULT_LAYOUT: PaneLayoutEntry[] = [
-  { paneId: "portfolio-list", position: "left", width: "40%" },
-  { paneId: "ticker-detail", position: "right", width: "60%" },
-];
+export const DEFAULT_LAYOUT: LayoutConfig = {
+  columns: [{ width: "40%" }, { width: "60%" }],
+  docked: [
+    { paneId: "portfolio-list", columnIndex: 0 },
+    { paneId: "ticker-detail", columnIndex: 1 },
+  ],
+  floating: [],
+};
 
 export function createDefaultConfig(dataDir: string): AppConfig {
   return {
