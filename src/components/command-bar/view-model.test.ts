@@ -1,0 +1,80 @@
+import { describe, expect, test } from "bun:test";
+import {
+  buildSections,
+  getEmptyState,
+  getFooterHints,
+  getRowPresentation,
+  resolveCommandBarMode,
+} from "./view-model";
+
+describe("command bar view model helpers", () => {
+  test("resolves prefix-driven modes", () => {
+    expect(resolveCommandBarMode("")).toMatchObject({ kind: "default", badge: "BROWSE" });
+    expect(resolveCommandBarMode("T NVDA")).toMatchObject({ kind: "search", badge: "SEARCH" });
+    expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
+    expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
+    expect(resolveCommandBarMode("COL price")).toMatchObject({ kind: "columns", badge: "COLUMNS" });
+    expect(resolveCommandBarMode("AW")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
+  });
+
+  test("builds sections while preserving order", () => {
+    const sections = buildSections([
+      { id: "a", category: "Tickers" },
+      { id: "b", category: "Commands" },
+      { id: "c", category: "Tickers" },
+    ]);
+
+    expect(sections.map((section) => section.category)).toEqual(["Tickers", "Commands"]);
+    expect(sections[0]?.items.map((item) => item.id)).toEqual(["a", "c"]);
+  });
+
+  test("returns footer hints for plugin toggles", () => {
+    expect(getFooterHints("plugins", false)).toEqual({
+      left: "up/down move  enter select  space toggle",
+      right: "esc close",
+    });
+  });
+
+  test("returns specific empty states", () => {
+    expect(getEmptyState("search", "T ", "")).toEqual({
+      label: "Type a ticker symbol",
+      detail: "Search Yahoo Finance and connected brokers",
+    });
+    expect(getEmptyState("search", "T zom", "zom")).toEqual({
+      label: 'No matches for "zom"',
+      detail: "Try a symbol, company name, or exchange variant",
+    });
+    expect(getEmptyState("default", "abc")).toEqual({
+      label: 'No matches for "abc"',
+      detail: "Try a ticker, command name, or prefix",
+    });
+  });
+
+  test("derives row presentation for toggles and current theme rows", () => {
+    expect(getRowPresentation({
+      id: "plugin:news",
+      label: "News",
+      detail: "Latest headlines",
+      category: "Plugins",
+      kind: "plugin",
+      checked: true,
+    }, false, true)).toMatchObject({
+      glyph: " ",
+      trailing: "on",
+      primaryMuted: false,
+    });
+
+    expect(getRowPresentation({
+      id: "theme:amber",
+      label: "Amber",
+      detail: "Warm terminal palette",
+      category: "Themes",
+      kind: "theme",
+      right: "amber",
+      current: true,
+    }, false, true)).toMatchObject({
+      glyph: " ",
+      trailing: "current",
+    });
+  });
+});
