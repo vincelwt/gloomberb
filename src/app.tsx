@@ -32,7 +32,7 @@ import {
   type PaneBinding,
   type PaneInstanceConfig,
 } from "./types/config";
-import type { TickerFile, TickerFrontmatter, Portfolio } from "./types/ticker";
+import type { TickerFile, TickerFrontmatter, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { BrokerContractRef } from "./types/instrument";
 
@@ -409,20 +409,20 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
         ? { ...pos.brokerContract, brokerId: instance.brokerType, brokerInstanceId: instance.id }
         : undefined;
 
-      const positionEntry = {
+      const positionEntry: TickerPosition = {
         portfolio: portfolioId,
         shares: pos.shares,
-        avg_cost: pos.avgCost,
+        avgCost: pos.avgCost,
         currency: pos.currency,
         broker: instance.brokerType,
         side: pos.side,
-        market_value: pos.marketValue,
-        unrealized_pnl: pos.unrealizedPnl,
+        marketValue: pos.marketValue,
+        unrealizedPnl: pos.unrealizedPnl,
         multiplier: pos.multiplier,
-        mark_price: pos.markPrice,
-        broker_instance_id: instance.id,
-        broker_account_id: pos.accountId,
-        broker_contract_id: brokerContract?.conId,
+        markPrice: pos.markPrice,
+        brokerInstanceId: instance.id,
+        brokerAccountId: pos.accountId,
+        brokerContractId: brokerContract?.conId,
       };
 
       let ticker = existingTickers.get(pos.ticker);
@@ -432,7 +432,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
           exchange: pos.exchange,
           currency: pos.currency,
           name: pos.name || pos.ticker,
-          asset_category: pos.assetCategory,
+          assetCategory: pos.assetCategory,
           isin: pos.isin,
           portfolios: [portfolioId],
           watchlists: [],
@@ -447,8 +447,8 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
         if (pos.name && ticker.frontmatter.name === ticker.frontmatter.ticker) {
           ticker.frontmatter.name = pos.name;
         }
-        if (pos.assetCategory && !ticker.frontmatter.asset_category) {
-          ticker.frontmatter.asset_category = pos.assetCategory;
+        if (pos.assetCategory && !ticker.frontmatter.assetCategory) {
+          ticker.frontmatter.assetCategory = pos.assetCategory;
         }
         if (pos.isin && !ticker.frontmatter.isin) {
           ticker.frontmatter.isin = pos.isin;
@@ -456,7 +456,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
         // Remove old positions from this broker for this account
         const otherPositions = ticker.frontmatter.positions.filter(
-          (p) => !(p.broker_instance_id === instance.id && p.portfolio === portfolioId),
+          (p) => !(p.brokerInstanceId === instance.id && p.portfolio === portfolioId),
         );
         ticker.frontmatter.positions = [...otherPositions, positionEntry];
         ticker.frontmatter.broker_contracts = mergeBrokerContracts(
@@ -471,7 +471,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       existingTickers.set(pos.ticker, ticker);
       dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
       // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
-      // Position data (mark_price, market_value, unrealized_pnl) is used directly.
+      // Position data (markPrice, marketValue, unrealizedPnl) is used directly.
       if (pos.assetCategory !== "OPT") {
         refreshTicker(pos.ticker, pos.exchange);
       }
@@ -616,7 +616,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     const nextTickers = new Map(state.tickers);
 
     for (const ticker of state.tickers.values()) {
-      const nextPositions = ticker.frontmatter.positions.filter((position) => position.broker_instance_id !== instanceId);
+      const nextPositions = ticker.frontmatter.positions.filter((position) => position.brokerInstanceId !== instanceId);
       const nextPortfolioRefs = ticker.frontmatter.portfolios.filter((portfolioId) => !removedPortfolioIds.has(portfolioId));
       const nextBrokerContracts = (ticker.frontmatter.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
 

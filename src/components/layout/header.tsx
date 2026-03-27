@@ -4,7 +4,7 @@ import "opentui-spinner/react";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppState } from "../../state/app-context";
 import { formatPercentRaw } from "../../utils/format";
-import { marketStateLabel, marketStateColor } from "../../utils/market-status";
+import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
 import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 
@@ -75,7 +75,7 @@ export function Header({ dataProvider }: { dataProvider: DataProvider }) {
     : "SPY —";
 
   // Extended hours info
-  const extText = getExtendedHoursText(spyQuote);
+  const extText = getExtendedHoursInfo(spyQuote);
 
   // Market status
   const mktState = spyQuote?.marketState;
@@ -116,17 +116,4 @@ export function Header({ dataProvider }: { dataProvider: DataProvider }) {
       </box>
     </box>
   );
-}
-
-function getExtendedHoursText(quote: Quote | null): { text: string; color: string } | null {
-  if (!quote) return null;
-  if (quote.marketState === "PRE" && quote.preMarketPrice != null) {
-    const chg = quote.preMarketChangePercent ?? 0;
-    return { text: `Pre ${quote.preMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
-  }
-  if (quote.marketState === "POST" && quote.postMarketPrice != null) {
-    const chg = quote.postMarketChangePercent ?? 0;
-    return { text: `AH ${quote.postMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
-  }
-  return null;
 }

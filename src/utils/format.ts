@@ -86,3 +86,33 @@ export function padTo(str: string, width: number, align: "left" | "right" = "lef
   if (align === "right") return str.padStart(width);
   return str.padEnd(width);
 }
+
+/** Convert a value from one currency to base currency using cached exchange rates */
+export function convertCurrency(
+  value: number,
+  fromCurrency: string,
+  baseCurrency: string,
+  exchangeRates: Map<string, number>,
+): number {
+  if (fromCurrency === baseCurrency) return value;
+  const fromRate = exchangeRates.get(fromCurrency);
+  const baseRate = exchangeRates.get(baseCurrency);
+  if (fromRate == null || baseRate == null || baseRate === 0) return value;
+  return (value * fromRate) / baseRate;
+}
+
+/** Format a date/timestamp as relative time (e.g., "5m ago", "2h ago") */
+export function formatTimeAgo(date: Date | string): string {
+  const ts = typeof date === "string"
+    ? new Date(date.endsWith("Z") ? date : date + "Z").getTime()
+    : date.getTime();
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
+}

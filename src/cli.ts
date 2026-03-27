@@ -282,7 +282,7 @@ async function portfolio(name?: string) {
       } else {
         for (const pos of positions) {
           const shares = pos.shares;
-          const avgCost = pos.avg_cost;
+          const avgCost = pos.avgCost;
           const currentPrice = q?.price ?? 0;
           const pnl = (currentPrice - avgCost) * shares * (pos.multiplier ?? 1);
           totalPnl += pnl;
@@ -395,10 +395,10 @@ async function ticker(symbol: string) {
     for (const pos of tickerFile.frontmatter.positions) {
       const portfolioName = config.portfolios.find((p) => p.id === pos.portfolio)?.name ?? pos.portfolio;
       const value = q.price * pos.shares * (pos.multiplier ?? 1);
-      const pnl = (q.price - pos.avg_cost) * pos.shares * (pos.multiplier ?? 1);
+      const pnl = (q.price - pos.avgCost) * pos.shares * (pos.multiplier ?? 1);
       const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, q.currency)}` : formatCurrency(pnl, q.currency);
       console.log(`Position (${portfolioName}):`);
-      console.log(`  ${pos.shares} shares @ ${formatCurrency(pos.avg_cost, q.currency)} = ${formatCurrency(value, q.currency)} (P&L: ${pnlStr})`);
+      console.log(`  ${pos.shares} shares @ ${formatCurrency(pos.avgCost, q.currency)} = ${formatCurrency(value, q.currency)} (P&L: ${pnlStr})`);
     }
   }
 

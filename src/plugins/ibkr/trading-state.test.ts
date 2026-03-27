@@ -16,7 +16,7 @@ function createTicker(symbol: string, brokerInstanceId?: string): TickerFile {
       exchange: "NASDAQ",
       currency: "USD",
       name: symbol,
-      asset_category: "STK",
+      assetCategory: "STK",
       portfolios: [],
       watchlists: [],
       positions: [],

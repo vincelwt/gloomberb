@@ -3,20 +3,20 @@ import type { BrokerContractRef } from "./instrument";
 export interface TickerPosition {
   portfolio: string;
   shares: number;
-  avg_cost: number;
+  avgCost: number;
   currency?: string;
-  date_acquired?: string;
+  dateAcquired?: string;
   broker: string; // "manual" | future broker plugin IDs
   side?: "long" | "short";
-  market_value?: number;
-  unrealized_pnl?: number;
+  marketValue?: number;
+  unrealizedPnl?: number;
   /** Contract multiplier (e.g. 100 for options) */
   multiplier?: number;
   /** Last known mark price from broker snapshot */
-  mark_price?: number;
-  broker_instance_id?: string;
-  broker_account_id?: string;
-  broker_contract_id?: number;
+  markPrice?: number;
+  brokerInstanceId?: string;
+  brokerAccountId?: string;
+  brokerContractId?: number;
 }
 
 export interface TickerFrontmatter {
@@ -26,7 +26,7 @@ export interface TickerFrontmatter {
   name: string;
   sector?: string;
   industry?: string;
-  asset_category?: string; // STK, ETF, OPT, FUT, BOND, etc.
+  assetCategory?: string; // STK, ETF, OPT, FUT, BOND, etc.
   isin?: string;
   cusip?: string;
   portfolios: string[];

@@ -69,7 +69,7 @@ function normalizeContract(ticker: TickerFile): BrokerContractRef {
     brokerId: "ibkr",
     symbol: ticker.frontmatter.ticker,
     localSymbol: ticker.frontmatter.ticker,
-    secType: ticker.frontmatter.asset_category || "STK",
+    secType: ticker.frontmatter.assetCategory || "STK",
     exchange: ticker.frontmatter.exchange || "SMART",
     primaryExchange: ticker.frontmatter.exchange || undefined,
     currency: ticker.frontmatter.currency || "USD",
