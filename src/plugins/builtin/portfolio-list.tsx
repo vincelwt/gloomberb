@@ -577,6 +577,13 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [selectedIdx]);
 
+  // Hide vertical scrollbar when content fits in viewport
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb) return;
+    sb.verticalScrollBar.visible = sortedTickers.length > sb.viewport.height;
+  }, [sortedTickers.length]);
+
   // Tick every 5s to keep latency column fresh
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5000);
