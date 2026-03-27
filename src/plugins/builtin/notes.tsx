@@ -3,12 +3,12 @@ import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { TextareaRenderable } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
-import { useAppState, useSelectedTicker } from "../../state/app-context";
+import { useAppState, usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { getSharedMarkdownStore } from "../../plugins/registry";
 
 function NotesTab({ focused, onCapture }: DetailTabProps) {
-  const { ticker } = useSelectedTicker();
+  const { ticker } = usePaneTicker();
   const { dispatch } = useAppState();
   const textareaRef = useRef<TextareaRenderable>(null);
   const [notesFocused, setNotesFocused] = useState(false);
@@ -23,18 +23,20 @@ function NotesTab({ focused, onCapture }: DetailTabProps) {
     if (t && text !== t.notes) {
       const updated = { ...t, notes: text };
       dispatch({ type: "UPDATE_TICKER", ticker: updated });
-      if (getSharedMarkdownStore()) {
-        getSharedMarkdownStore().saveTicker(updated).catch(() => {});
+      const markdownStore = getSharedMarkdownStore();
+      if (markdownStore) {
+        markdownStore.saveTicker(updated).catch(() => {});
       }
     }
   }, [dispatch]);
 
   // Save notes when unfocusing
   useEffect(() => {
-    if (!notesFocused && textareaRef.current && ticker) {
-      saveNotesFor(ticker, textareaRef.current.editBuffer.getText());
+    const textarea = textareaRef.current;
+    if (!notesFocused && textarea && ticker) {
+      saveNotesFor(ticker, textarea.editBuffer.getText());
     }
-  }, [notesFocused]);
+  }, [notesFocused, ticker, saveNotesFor]);
 
   // When the selected ticker changes, save pending edits and load new notes
   const tickerSymbol = ticker?.frontmatter.ticker ?? null;

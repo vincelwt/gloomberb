@@ -13,7 +13,12 @@ import {
   updateFloatingPane,
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
-import { useAppState } from "../../state/app-context";
+import {
+  PaneInstanceProvider,
+  resolveCollectionForPane,
+  resolveTickerForPane,
+  useAppState,
+} from "../../state/app-context";
 import type { LayoutConfig } from "../../types/config";
 import { colors } from "../../theme/colors";
 import { FloatingPaneWrapper } from "./floating-pane";
@@ -67,11 +72,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
     const order: string[] = [];
     for (const columnIndex of columnIndices) {
       for (const pane of filteredColumns.get(columnIndex) ?? []) {
-        order.push(pane.def.id);
+        order.push(pane.instance.instanceId);
       }
     }
     for (const pane of filteredFloating) {
-      order.push(pane.def.id);
+      order.push(pane.instance.instanceId);
     }
     return order;
   }, [columnIndices.join(","), filteredColumns, filteredFloating]);
@@ -131,7 +136,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
   const allFloatingRects = useMemo(() => {
     const rects = filteredFloating.map((pane) => ({
-      id: pane.def.id,
+      id: pane.instance.instanceId,
       x: pane.floating!.x,
       y: pane.floating!.y,
       w: pane.floating!.width,
@@ -289,6 +294,27 @@ export function Shell({ pluginRegistry }: ShellProps) {
     persistLayout(removePane(layout, paneId));
   }, [layout, persistLayout]);
 
+  const getPaneTitle = useCallback((pane: ResolvedPane): string => {
+    if (pane.instance.paneId === "ticker-detail") {
+      const ticker = resolveTickerForPane(state, pane.instance.instanceId);
+      if (ticker) return ticker;
+      const collectionId = resolveCollectionForPane(state, pane.instance.instanceId);
+      return state.config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
+        ?? state.config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
+        ?? pane.instance.title
+        ?? pane.def.name;
+    }
+    if (pane.instance.title) return pane.instance.title;
+    if (pane.instance.paneId === "portfolio-list") {
+      const collectionId = resolveCollectionForPane(state, pane.instance.instanceId);
+      return state.config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
+        ?? state.config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
+        ?? pane.def.name;
+    }
+    const ticker = resolveTickerForPane(state, pane.instance.instanceId);
+    return ticker ? `${pane.def.name}: ${ticker}` : pane.def.name;
+  }, [state]);
+
   return (
     <box flexDirection="row" flexGrow={1} height={contentHeight} onMouse={handleMouse}>
       {columnIndices.map((columnIndex, localIndex) => {
@@ -299,22 +325,26 @@ export function Shell({ pluginRegistry }: ShellProps) {
           <box key={`column-${columnIndex}`} flexDirection="row">
             <box flexDirection="column" width={columnWidth}>
               {panes.map((pane) => {
-                const focused = state.focusedPaneId === pane.def.id && !overlayOpen;
+                const focused = state.focusedPaneId === pane.instance.instanceId && !overlayOpen;
                 const paneHeight = Math.floor(contentHeight / panes.length);
 
                 return (
                   <PaneWrapper
-                    key={pane.def.id}
-                    title={` ${pane.def.name} `}
+                    key={pane.instance.instanceId}
+                    title={` ${getPaneTitle(pane)} `}
                     focused={focused}
                     flexGrow={1}
-                    onMouseDown={() => dispatch({ type: "FOCUS_PANE", paneId: pane.def.id })}
+                    onMouseDown={() => dispatch({ type: "FOCUS_PANE", paneId: pane.instance.instanceId })}
                   >
-                    <pane.def.component
-                      focused={focused}
-                      width={columnWidth - 2}
-                      height={paneHeight - 2}
-                    />
+                    <PaneInstanceProvider paneId={pane.instance.instanceId}>
+                      <pane.def.component
+                        paneId={pane.instance.instanceId}
+                        paneType={pane.instance.paneId}
+                        focused={focused}
+                        width={columnWidth - 2}
+                        height={paneHeight - 2}
+                      />
+                    </PaneInstanceProvider>
                   </PaneWrapper>
                 );
               })}
@@ -341,12 +371,12 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
       {filteredFloating.map((pane) => {
         const entry = pane.floating!;
-        const focused = state.focusedPaneId === pane.def.id && !overlayOpen;
+        const focused = state.focusedPaneId === pane.instance.instanceId && !overlayOpen;
 
         return (
           <FloatingPaneWrapper
-            key={pane.def.id}
-            title={pane.def.name}
+            key={pane.instance.instanceId}
+            title={getPaneTitle(pane)}
             x={entry.x}
             y={entry.y}
             width={entry.width}
@@ -354,12 +384,16 @@ export function Shell({ pluginRegistry }: ShellProps) {
             zIndex={entry.zIndex ?? 50}
             focused={focused}
           >
-            <pane.def.component
-              focused={focused}
-              width={entry.width - 2}
-              height={entry.height - 4}
-              close={() => handleFloatingClose(pane.def.id)}
-            />
+            <PaneInstanceProvider paneId={pane.instance.instanceId}>
+              <pane.def.component
+                paneId={pane.instance.instanceId}
+                paneType={pane.instance.paneId}
+                focused={focused}
+                width={entry.width - 2}
+                height={entry.height - 4}
+                close={() => handleFloatingClose(pane.instance.instanceId)}
+              />
+            </PaneInstanceProvider>
           </FloatingPaneWrapper>
         );
       })}

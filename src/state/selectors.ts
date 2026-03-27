@@ -1,4 +1,5 @@
 import type { AppState } from "./app-context";
+import { resolveCollectionForPane } from "./app-context";
 import type { TickerFile } from "../types/ticker";
 
 /** Get tickers belonging to a specific portfolio */
@@ -23,41 +24,44 @@ export function getWatchlistTickers(state: AppState, watchlistId: string): Ticke
   return result.sort((a, b) => a.frontmatter.ticker.localeCompare(b.frontmatter.ticker));
 }
 
-/** Get all tickers for the currently active left tab */
-export function getActiveTabTickers(state: AppState): TickerFile[] {
-  const { activeLeftTab, config } = state;
-
-  // Check if it's a portfolio
-  if (config.portfolios.some((p) => p.id === activeLeftTab)) {
-    return getPortfolioTickers(state, activeLeftTab);
+export function getCollectionTickers(state: AppState, collectionId: string | null): TickerFile[] {
+  if (!collectionId) return [];
+  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) {
+    return getPortfolioTickers(state, collectionId);
   }
-
-  // Check if it's a watchlist
-  if (config.watchlists.some((w) => w.id === activeLeftTab)) {
-    return getWatchlistTickers(state, activeLeftTab);
+  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) {
+    return getWatchlistTickers(state, collectionId);
   }
-
   return [];
 }
 
-/** Get the display name for the current left tab */
-export function getActiveTabName(state: AppState): string {
-  const { activeLeftTab, config } = state;
-  const portfolio = config.portfolios.find((p) => p.id === activeLeftTab);
+export function getCollectionName(state: AppState, collectionId: string | null): string {
+  if (!collectionId) return "";
+  const portfolio = state.config.portfolios.find((entry) => entry.id === collectionId);
   if (portfolio) return portfolio.name;
-  const watchlist = config.watchlists.find((w) => w.id === activeLeftTab);
+  const watchlist = state.config.watchlists.find((entry) => entry.id === collectionId);
   if (watchlist) return watchlist.name;
-  return activeLeftTab;
+  return collectionId;
 }
 
-/** Get all tab options for the left panel */
-export function getLeftTabs(state: AppState): Array<{ id: string; name: string; type: "portfolio" | "watchlist" }> {
-  const tabs: Array<{ id: string; name: string; type: "portfolio" | "watchlist" }> = [];
-  for (const p of state.config.portfolios) {
-    tabs.push({ id: p.id, name: p.name, type: "portfolio" });
+export function getCollectionType(state: AppState, collectionId: string | null): "portfolio" | "watchlist" | null {
+  if (!collectionId) return null;
+  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) return "portfolio";
+  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) return "watchlist";
+  return null;
+}
+
+export function getPaneCollectionTickers(state: AppState, paneId: string): TickerFile[] {
+  return getCollectionTickers(state, resolveCollectionForPane(state, paneId));
+}
+
+export function getAllCollections(state: AppState): Array<{ id: string; name: string; type: "portfolio" | "watchlist" }> {
+  const collections: Array<{ id: string; name: string; type: "portfolio" | "watchlist" }> = [];
+  for (const portfolio of state.config.portfolios) {
+    collections.push({ id: portfolio.id, name: portfolio.name, type: "portfolio" });
   }
-  for (const w of state.config.watchlists) {
-    tabs.push({ id: w.id, name: w.name, type: "watchlist" });
+  for (const watchlist of state.config.watchlists) {
+    collections.push({ id: watchlist.id, name: watchlist.name, type: "watchlist" });
   }
-  return tabs;
+  return collections;
 }

@@ -12,7 +12,7 @@ export type { Tab, TabBarProps } from "./tab-bar";
 export { colors, priceColor, hoverBg } from "../theme/colors";
 
 // Hooks
-export { useAppState, useSelectedTicker } from "../state/app-context";
+export { useAppState, useFocusedTicker, usePaneTicker } from "../state/app-context";
 
 // Format utilities
 export {
