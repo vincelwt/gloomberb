@@ -100,6 +100,30 @@ export const commands: Command[] = [
     category: "Danger",
     execute: () => {},
   },
+  {
+    id: "add-broker-account",
+    prefix: "",
+    label: "Add Broker Account",
+    description: "Connect a new broker profile",
+    category: "Config",
+    execute: () => {},
+  },
+  {
+    id: "sync-broker-account",
+    prefix: "",
+    label: "Sync Broker Account",
+    description: "Sync positions for a connected broker profile",
+    category: "Data",
+    execute: () => {},
+  },
+  {
+    id: "disconnect-broker-account",
+    prefix: "",
+    label: "Disconnect Broker Account",
+    description: "Remove one connected broker profile and its imported data",
+    category: "Danger",
+    execute: () => {},
+  },
 
   // Columns
   {

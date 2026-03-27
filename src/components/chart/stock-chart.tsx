@@ -46,12 +46,17 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const fetchIdRef = useRef(0);
 
   useEffect(() => {
-    const dataProvider = getSharedDataProvider();
-    if (!dataProvider || !ticker || compact) return;
+    const provider = getSharedDataProvider();
+    if (!provider || !ticker || compact) return;
     const id = ++fetchIdRef.current;
     setRangeHistory(null);
-    dataProvider
-      .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange)
+    const instrument = ticker.frontmatter.broker_contracts?.[0] ?? null;
+    provider
+      .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange, {
+        brokerId: instrument?.brokerId,
+        brokerInstanceId: instrument?.brokerInstanceId,
+        instrument,
+      })
       .then((points) => {
         if (id === fetchIdRef.current) setRangeHistory(points);
       })

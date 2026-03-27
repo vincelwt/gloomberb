@@ -1,10 +1,12 @@
+import type { BrokerContractRef } from "./instrument";
+
 export interface TickerPosition {
   portfolio: string;
   shares: number;
   avg_cost: number;
   currency?: string;
   date_acquired?: string;
-  broker: string; // "ibkr-flex" | "manual" | future broker plugin IDs
+  broker: string; // "manual" | future broker plugin IDs
   side?: "long" | "short";
   market_value?: number;
   unrealized_pnl?: number;
@@ -12,6 +14,9 @@ export interface TickerPosition {
   multiplier?: number;
   /** Last known mark price from broker snapshot */
   mark_price?: number;
+  broker_instance_id?: string;
+  broker_account_id?: string;
+  broker_contract_id?: number;
 }
 
 export interface TickerFrontmatter {
@@ -27,6 +32,7 @@ export interface TickerFrontmatter {
   portfolios: string[];
   watchlists: string[];
   positions: TickerPosition[];
+  broker_contracts?: BrokerContractRef[];
   custom: Record<string, unknown>;
   tags: string[];
 }
@@ -42,6 +48,9 @@ export interface Portfolio {
   name: string;
   description?: string;
   currency: string;
+  brokerId?: string;
+  brokerInstanceId?: string;
+  brokerAccountId?: string;
 }
 
 export interface Watchlist {

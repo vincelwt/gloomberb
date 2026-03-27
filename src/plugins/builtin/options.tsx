@@ -50,6 +50,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const parsed = isOpt ? parseOptionSymbol(ticker!.frontmatter.ticker) : null;
   const effectiveTicker = parsed?.underlying ?? ticker?.frontmatter.ticker ?? "";
   const effectiveExchange = isOpt ? "" : (ticker?.frontmatter.exchange ?? "");
+  const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
 
   const enterInteractive = () => {
     if (!interactive) {
@@ -80,7 +81,11 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     setExpIdx(0);
     setStrikeIdx(0);
 
-    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange).then((data) => {
+    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange, undefined, {
+      brokerId: instrument?.brokerId,
+      brokerInstanceId: instrument?.brokerInstanceId,
+      instrument,
+    }).then((data) => {
       if (cancelled) return;
       setChain(data);
 
@@ -90,7 +95,11 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
           Math.abs(ts - parsed.expTs) < Math.abs(data.expirationDates[best]! - parsed.expTs) ? i : best, 0);
         if (bestExpIdx !== 0) {
           setExpIdx(bestExpIdx);
-          getSharedDataProvider()!.getOptionsChain!(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx]).then((expData) => {
+          getSharedDataProvider()!.getOptionsChain!(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx], {
+            brokerId: instrument?.brokerId,
+            brokerInstanceId: instrument?.brokerInstanceId,
+            instrument,
+          }).then((expData) => {
             if (!cancelled) setChain(expData);
           }).catch(() => {});
         }
@@ -101,7 +110,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [effectiveTicker]);
+  }, [effectiveTicker, instrument?.brokerId, instrument?.brokerInstanceId, instrument?.conId]);
 
   // Fetch chain when expiration changes (after initial load)
   useEffect(() => {
@@ -111,7 +120,11 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     let cancelled = false;
     setLoading(true);
 
-    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange, expDate).then((data) => {
+    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange, expDate, {
+      brokerId: instrument?.brokerId,
+      brokerInstanceId: instrument?.brokerInstanceId,
+      instrument,
+    }).then((data) => {
       if (!cancelled) {
         setChain(data);
         setStrikeIdx(0);
@@ -120,7 +133,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [expIdx]);
+  }, [expIdx, instrument?.brokerId, instrument?.brokerInstanceId, instrument?.conId]);
 
   // Build sorted strike list from the union of calls and puts
   const strikes = chain ? buildStrikeList(chain) : [];
