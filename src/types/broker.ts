@@ -8,7 +8,7 @@ export interface BrokerPosition {
   ticker: string;
   exchange: string;
   shares: number;
-  avgCost: number;
+  avgCost?: number;
   currency: string;
   dateAcquired?: string;
   /** Optional account/portfolio identifier from the broker */
@@ -74,6 +74,8 @@ export interface BrokerAdapter {
   getTickerFinancials?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<TickerFinancials>;
   getQuote?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<Quote>;
   getPriceHistory?(ticker: string, instance: BrokerInstanceConfig, exchange: string, range: TimeRange, instrument?: BrokerContractRef | null): Promise<PricePoint[]>;
+  /** Fetch higher-resolution price data for a specific date window (e.g. when zoomed in). */
+  getDetailedPriceHistory?(ticker: string, instance: BrokerInstanceConfig, exchange: string, startDate: Date, endDate: Date, barSize: string, instrument?: BrokerContractRef | null): Promise<PricePoint[]>;
   getOptionsChain?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, expirationDate?: number, instrument?: BrokerContractRef | null): Promise<OptionsChain>;
   listOpenOrders?(instance: BrokerInstanceConfig): Promise<BrokerOrder[]>;
   listExecutions?(instance: BrokerInstanceConfig): Promise<BrokerExecution[]>;

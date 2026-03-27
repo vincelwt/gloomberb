@@ -20,9 +20,10 @@ import {
 import { firstValueFrom, filter, take, timeout } from "rxjs";
 import type { TimeRange } from "../../components/chart/chart-types";
 import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
-import type { Quote, PricePoint, TickerFinancials } from "../../types/financials";
+import type { Fundamentals, FinancialStatement, Quote, PricePoint, TickerFinancials } from "../../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";
 import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "../../types/trading";
+import { parseReportSnapshot, parseFinStatements } from "./fundamental-parser";
 
 export interface IbkrGatewayConfig {
   host: string;
@@ -67,6 +68,17 @@ const HISTORY_PARAMS: Record<TimeRange, { duration: string; size: BarSizeSetting
   "1Y": { duration: "1 Y", size: BarSizeSetting.DAYS_ONE },
   "5Y": { duration: "5 Y", size: BarSizeSetting.WEEKS_ONE },
   "ALL": { duration: "10 Y", size: BarSizeSetting.MONTHS_ONE },
+};
+
+/** Map generic bar size labels to IBKR BarSizeSetting values. */
+const GENERIC_BAR_SIZE_MAP: Record<string, BarSizeSetting> = {
+  "1m": BarSizeSetting.MINUTES_ONE,
+  "5m": BarSizeSetting.MINUTES_FIVE,
+  "15m": BarSizeSetting.MINUTES_FIFTEEN,
+  "30m": BarSizeSetting.MINUTES_THIRTY,
+  "1h": BarSizeSetting.HOURS_ONE,
+  "1d": BarSizeSetting.DAYS_ONE,
+  "1w": BarSizeSetting.WEEKS_ONE,
 };
 
 function marketDataTypeFromConfig(config?: IbkrGatewayConfig): MarketDataType {
@@ -136,6 +148,8 @@ export class IbkrGatewayService {
   private api: IBApiNext | null = null;
   private configKey: string | null = null;
   private connecting: Promise<void> | null = null;
+  /** Account IDs captured from the managedAccounts event on initial connection. */
+  private cachedAccountIds: string[] = [];
   private snapshot: IbkrSnapshot = DEFAULT_SNAPSHOT;
   private listeners = new Set<() => void>();
   private activeMarketDataType: MarketDataType = MarketDataType.REALTIME;
@@ -240,7 +254,7 @@ export class IbkrGatewayService {
           ticker: position.contract.localSymbol || position.contract.symbol,
           exchange: position.contract.primaryExch || position.contract.exchange || "",
           shares: Math.abs(position.pos),
-          avgCost: position.avgCost ?? 0,
+          avgCost: position.avgCost,
           currency: position.contract.currency || "USD",
           accountId,
           name: position.contract.description || position.contract.localSymbol || position.contract.symbol,
@@ -284,19 +298,48 @@ export class IbkrGatewayService {
     instrument?: BrokerContractRef | null,
   ): Promise<TickerFinancials> {
     return this.dedup(`financials:${ticker}:${exchange}`, async () => {
-      const [quote, priceHistory] = await Promise.all([
+      await this.connect(config);
+      const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+
+      const [quote, priceHistory, snapshotXml, statementsXml] = await Promise.all([
         this.getQuote(ticker, config, exchange, instrument),
         this.getPriceHistory(ticker, config, exchange, "1Y", instrument),
+        this.fetchFundamentalData(contract, "ReportSnapshot"),
+        this.fetchFundamentalData(contract, "ReportsFinStatements"),
       ]);
+
+      const fundamentals = snapshotXml ? parseReportSnapshot(snapshotXml) : {};
+      const statements = statementsXml ? parseFinStatements(statementsXml) : { annual: [], quarterly: [] };
+
+      // Compute 1Y return from price history
+      if (priceHistory.length >= 2) {
+        const oldest = priceHistory[0]!.close;
+        const newest = priceHistory[priceHistory.length - 1]!.close;
+        if (oldest > 0) {
+          fundamentals.return1Y = (newest - oldest) / oldest;
+        }
+      }
 
       return {
         quote,
-        fundamentals: {},
-        annualStatements: [],
-        quarterlyStatements: [],
+        fundamentals,
+        annualStatements: statements.annual,
+        quarterlyStatements: statements.quarterly,
         priceHistory,
       };
     });
+  }
+
+  private async fetchFundamentalData(contract: Contract, reportType: string): Promise<string | null> {
+    try {
+      return await withTimeout(
+        this.api!.getFundamentalData(contract, reportType),
+        IBKR_DATA_TIMEOUT,
+        `getFundamentalData(${reportType})`,
+      );
+    } catch {
+      return null; // Paper account or no Reuters subscription — Yahoo fallback handles it
+    }
   }
 
   async getPriceHistory(
@@ -334,9 +377,63 @@ export class IbkrGatewayService {
     });
   }
 
+  async getDetailedPriceHistory(
+    ticker: string,
+    config: IbkrGatewayConfig,
+    exchange: string,
+    startDate: Date,
+    endDate: Date,
+    barSize: string,
+    instrument?: BrokerContractRef | null,
+  ): Promise<PricePoint[]> {
+    const ibkrBarSize = GENERIC_BAR_SIZE_MAP[barSize];
+    if (!ibkrBarSize) return [];
+
+    const key = `detail:${ticker}:${exchange}:${barSize}:${startDate.getTime()}:${endDate.getTime()}`;
+    return this.dedup(key, async () => {
+      await this.connect(config);
+      const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+
+      // Format endDateTime as "yyyyMMdd HH:mm:ss" for IBKR
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const endDateTime = `${endDate.getFullYear()}${pad(endDate.getMonth() + 1)}${pad(endDate.getDate())} ${pad(endDate.getHours())}:${pad(endDate.getMinutes())}:${pad(endDate.getSeconds())}`;
+
+      // Compute duration from date range
+      const spanMs = endDate.getTime() - startDate.getTime();
+      const spanDays = Math.ceil(spanMs / (1000 * 60 * 60 * 24));
+      let durationStr: string;
+      if (spanDays <= 1) durationStr = `${Math.max(Math.ceil(spanMs / (1000 * 60 * 60)), 1)} hours`;
+      else if (spanDays <= 30) durationStr = `${spanDays} D`;
+      else if (spanDays <= 365) durationStr = `${Math.ceil(spanDays / 30)} M`;
+      else durationStr = `${Math.ceil(spanDays / 365)} Y`;
+
+      const bars = await this.withMarketDataFallback(
+        config,
+        () => withTimeout(this.api!.getHistoricalData(
+          contract,
+          endDateTime,
+          durationStr,
+          ibkrBarSize,
+          WhatToShow.TRADES,
+          1,
+          1,
+        ), IBKR_DATA_TIMEOUT, "getDetailedHistoricalData"),
+      );
+
+      return bars.map((bar) => ({
+        date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0,
+        volume: bar.volume,
+      }));
+    });
+  }
+
   async listOpenOrders(config: IbkrGatewayConfig): Promise<BrokerOrder[]> {
     await this.connect(config);
-    const orders = await this.api!.getAllOpenOrders();
+    const orders = await withTimeout(this.api!.getAllOpenOrders(), IBKR_DATA_TIMEOUT, "getAllOpenOrders");
     const mapped = orders.map((order) => this.openOrderToBrokerOrder(order));
     this.updateSnapshot({ ...this.snapshot, openOrders: mapped });
     return mapped;
@@ -344,7 +441,7 @@ export class IbkrGatewayService {
 
   async listExecutions(config: IbkrGatewayConfig): Promise<BrokerExecution[]> {
     await this.connect(config);
-    const executions = await this.api!.getExecutionDetails({});
+    const executions = await withTimeout(this.api!.getExecutionDetails({}), IBKR_DATA_TIMEOUT, "getExecutionDetails");
     const mapped = executions.map((detail) => ({
       execId: detail.execution.execId || `${detail.execution.orderId ?? "exec"}-${detail.execution.time ?? Date.now()}`,
       brokerInstanceId: this.instanceId,
@@ -397,7 +494,7 @@ export class IbkrGatewayService {
       };
 
       const onError = (error: Error, code: number, reqId: number) => {
-        if (reqId !== orderId || !isRetryableErrorCode(code)) return;
+        if (reqId !== orderId) return;
         cleanup();
         reject(new Error(error.message || `IBKR error ${code}`));
       };
@@ -412,7 +509,46 @@ export class IbkrGatewayService {
     await this.connect(config);
     const contract = await this.resolveContract(request.contract.symbol, request.contract.exchange || "", request.contract);
     const order = this.buildOrder(request, false);
-    const orderId = await this.api!.placeNewOrder(contract, order);
+    const rawApi = this.getRawApi();
+    const orderId = await this.api!.getNextValidOrderId();
+
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out waiting for order acknowledgement"));
+      }, 10_000);
+
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        rawApi.off(EventName.openOrder, onOpenOrder);
+        rawApi.off(EventName.orderStatus, onOrderStatus);
+        rawApi.off(EventName.error, onError);
+      };
+
+      const onOpenOrder = (incomingOrderId: number) => {
+        if (incomingOrderId !== orderId) return;
+        cleanup();
+        resolve();
+      };
+
+      const onOrderStatus = (incomingOrderId: number, status: string) => {
+        if (incomingOrderId !== orderId) return;
+        cleanup();
+        resolve();
+      };
+
+      const onError = (error: Error, code: number, reqId: number) => {
+        if (reqId !== orderId) return;
+        cleanup();
+        reject(new Error(error.message || `IBKR error ${code}`));
+      };
+
+      rawApi.on(EventName.openOrder, onOpenOrder);
+      rawApi.on(EventName.orderStatus, onOrderStatus);
+      rawApi.on(EventName.error, onError);
+      rawApi.placeOrder(orderId, contract, order);
+    });
+
     const openOrders = await this.listOpenOrders(config);
     return openOrders.find((openOrder) => openOrder.orderId === orderId) ?? {
       orderId,
@@ -435,7 +571,46 @@ export class IbkrGatewayService {
   async modifyOrder(config: IbkrGatewayConfig, orderId: number, request: BrokerOrderRequest): Promise<BrokerOrder> {
     await this.connect(config);
     const contract = await this.resolveContract(request.contract.symbol, request.contract.exchange || "", request.contract);
-    this.api!.modifyOrder(orderId, contract, this.buildOrder({ ...request }, false));
+    const rawApi = this.getRawApi();
+    const order = this.buildOrder({ ...request }, false);
+
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out waiting for order modification acknowledgement"));
+      }, 10_000);
+
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        rawApi.off(EventName.openOrder, onOpenOrder);
+        rawApi.off(EventName.orderStatus, onOrderStatus);
+        rawApi.off(EventName.error, onError);
+      };
+
+      const onOpenOrder = (incomingOrderId: number) => {
+        if (incomingOrderId !== orderId) return;
+        cleanup();
+        resolve();
+      };
+
+      const onOrderStatus = (incomingOrderId: number, status: string) => {
+        if (incomingOrderId !== orderId) return;
+        cleanup();
+        resolve();
+      };
+
+      const onError = (error: Error, code: number, reqId: number) => {
+        if (reqId !== orderId) return;
+        cleanup();
+        reject(new Error(error.message || `IBKR error ${code}`));
+      };
+
+      rawApi.on(EventName.openOrder, onOpenOrder);
+      rawApi.on(EventName.orderStatus, onOrderStatus);
+      rawApi.on(EventName.error, onError);
+      rawApi.placeOrder(orderId, contract, order);
+    });
+
     const openOrders = await this.listOpenOrders(config);
     return openOrders.find((openOrder) => openOrder.orderId === orderId) ?? {
       orderId,
@@ -522,6 +697,12 @@ export class IbkrGatewayService {
       }
     });
 
+    // Capture account IDs as they arrive from the managedAccounts event on connection.
+    const rawApi = this.getRawApi();
+    rawApi.on(EventName.managedAccounts, (accountsList: string) => {
+      this.cachedAccountIds = accountsList.split(",").map((s: string) => s.trim()).filter(Boolean);
+    });
+
     api.error.subscribe((err) => {
       const code = getIbErrorCode(err);
       const message = getIbErrorMessage(err);
@@ -589,14 +770,45 @@ export class IbkrGatewayService {
   }
 
   private async loadAccounts(): Promise<BrokerAccount[]> {
-    const managedAccounts = await this.api!.getManagedAccounts();
-    const summary = await firstValueFrom(
-      this.api!.getAccountSummary("All", "NetLiquidation,AvailableFunds,BuyingPower,ExcessLiquidity,$LEDGER:ALL")
-        .pipe(take(1), timeout(10_000)),
-    );
+    let managedAccounts: string[];
+    try {
+      managedAccounts = await withTimeout(this.api!.getManagedAccounts(), IBKR_DATA_TIMEOUT, "getManagedAccounts");
+    } catch {
+      // getManagedAccounts() can hang after reconnects or when another client with the same
+      // clientId is connected. Fall back to requesting via the raw event API, or use cached IDs.
+      if (this.cachedAccountIds.length > 0) {
+        managedAccounts = this.cachedAccountIds;
+      } else {
+        managedAccounts = await withTimeout(
+          new Promise<string[]>((resolve) => {
+            const rawApi = this.getRawApi();
+            const handler = (accountsList: string) => {
+              rawApi.off(EventName.managedAccounts, handler);
+              resolve(accountsList.split(",").map((s: string) => s.trim()).filter(Boolean));
+            };
+            rawApi.on(EventName.managedAccounts, handler);
+            rawApi.reqManagedAccts();
+          }),
+          IBKR_DATA_TIMEOUT,
+          "getManagedAccounts-fallback",
+        );
+        this.cachedAccountIds = managedAccounts;
+      }
+    }
+    if (!managedAccounts.length) return [];
+    let summary: ReadonlyMap<string, ReadonlyMap<string, ReadonlyMap<string, { value: string }>>> | undefined;
+    try {
+      const result = await firstValueFrom(
+        this.api!.getAccountSummary("All", "NetLiquidation,AvailableFunds,BuyingPower,ExcessLiquidity,$LEDGER:ALL")
+          .pipe(take(1), timeout(10_000)),
+      );
+      summary = result.all;
+    } catch {
+      // Account summary may fail; return accounts with basic info only.
+    }
 
     return managedAccounts.map((accountId) => {
-      const tags = summary.all.get(accountId);
+      const tags = summary?.get(accountId);
       return {
         accountId,
         name: accountId,
@@ -858,7 +1070,7 @@ export class IbkrGatewayService {
       tif: (request.tif ?? TimeInForce.DAY) as typeof TimeInForce[keyof typeof TimeInForce],
       outsideRth: request.outsideRth ?? false,
       whatIf,
-      transmit: !whatIf,
+      transmit: true,
     };
   }
 

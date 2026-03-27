@@ -15,12 +15,12 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
                   Search Ticker                                                 
                                                                                 
                   Portfolio                                                     
+                  Add AAPL to Watchlist                                         
                   Add AAPL to Portfolio                                         
                                                                                 
                   Create                                                        
                   New Portfolio                                                 
                   New Watchlist                                                 
-                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -99,8 +99,8 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
        Search Ticker                      
                                           
        Portfolio                          
+       Add AAPL to Watchlist              
        Add AAPL to Portfolio              
-                                          
                                           
                                           
                                           

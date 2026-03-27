@@ -203,6 +203,21 @@ export function bucketOhlcSeries(
   return result;
 }
 
+const MS_HOUR = 3600_000;
+const MS_DAY = 86400_000;
+
+/**
+ * Given the visible time span in milliseconds, return a generic bar size label
+ * for fetching higher-resolution data, or null if the base data is sufficient.
+ */
+export function resolveBarSize(visibleTimeSpanMs: number): string | null {
+  if (visibleTimeSpanMs < MS_DAY) return "5m";
+  if (visibleTimeSpanMs < 3 * MS_DAY) return "15m";
+  if (visibleTimeSpanMs < 28 * MS_DAY) return "1h";
+  if (visibleTimeSpanMs < 90 * MS_DAY) return "1d";
+  return null; // base data is sufficient
+}
+
 export function projectChartData(
   points: PricePoint[],
   targetWidth: number,

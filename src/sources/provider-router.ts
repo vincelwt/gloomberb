@@ -76,14 +76,29 @@ export class ProviderRouter implements DataProvider {
 
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
     const brokerResult = await withBrokerTimeout(this.tryBrokerTickerFinancials(ticker, exchange, context));
-    if (brokerResult) return brokerResult;
 
-    const base = await this.firstProvider((provider) => provider.getTickerFinancials(ticker, exchange, context));
-    if (!base) {
+    const hasFundamentals = brokerResult && Object.keys(brokerResult.fundamentals ?? {}).length > 0;
+
+    if (brokerResult && hasFundamentals) return brokerResult;
+
+    // Fetch from fallback provider (e.g. Yahoo Finance) for fundamentals/statements
+    const fallback = await this.firstProvider((provider) => provider.getTickerFinancials(ticker, exchange, context));
+
+    if (brokerResult) {
+      // Merge: use broker quote/priceHistory, fallback fundamentals/statements
+      return {
+        ...brokerResult,
+        fundamentals: fallback?.fundamentals ?? {},
+        annualStatements: fallback?.annualStatements ?? [],
+        quarterlyStatements: fallback?.quarterlyStatements ?? [],
+      };
+    }
+
+    if (!fallback) {
       throw new Error(`No provider available for ${ticker}`);
     }
 
-    return base;
+    return fallback;
   }
 
   async getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote> {
@@ -168,6 +183,25 @@ export class ProviderRouter implements DataProvider {
     return providerHistory;
   }
 
+  async getDetailedPriceHistory(
+    ticker: string,
+    exchange: string,
+    startDate: Date,
+    endDate: Date,
+    barSize: string,
+    context?: MarketDataRequestContext,
+  ): Promise<PricePoint[]> {
+    const brokerResult = await withBrokerTimeout(this.tryBrokerDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
+    if (brokerResult && brokerResult.length > 0) return brokerResult;
+
+    // Try providers that support detailed history
+    const providerResult = await this.firstProvider(async (provider) => {
+      if (!provider.getDetailedPriceHistory) return null;
+      return provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
+    });
+    return providerResult ?? [];
+  }
+
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
     const brokerChain = await withBrokerTimeout(this.tryBrokerOptionsChain(ticker, exchange, expirationDate, context));
     if (brokerChain) return brokerChain;
@@ -245,8 +279,8 @@ export class ProviderRouter implements DataProvider {
       try {
         const result = await fn(provider);
         if (result != null) return result;
-      } catch {
-        // continue to the next provider
+      } catch (err) {
+        console.error(`[ProviderRouter] ${provider.id} failed:`, err);
       }
     }
     return null;
@@ -314,6 +348,35 @@ export class ProviderRouter implements DataProvider {
           candidate.instance,
           exchange,
           range,
+          context?.instrument ?? null,
+        );
+      } catch {
+        // continue
+      }
+    }
+    return null;
+  }
+
+  private async tryBrokerDetailedPriceHistory(
+    ticker: string,
+    exchange: string,
+    startDate: Date,
+    endDate: Date,
+    barSize: string,
+    context?: MarketDataRequestContext,
+  ): Promise<PricePoint[] | null> {
+    const preferredBrokerInstanceId = context?.instrument?.brokerInstanceId ?? context?.brokerInstanceId;
+    const preferredBrokerId = context?.instrument?.brokerId ?? context?.brokerId;
+    for (const candidate of this.getBrokerCandidates(preferredBrokerInstanceId, preferredBrokerId)) {
+      if (!candidate.broker.getDetailedPriceHistory) continue;
+      try {
+        return await candidate.broker.getDetailedPriceHistory(
+          ticker,
+          candidate.instance,
+          exchange,
+          startDate,
+          endDate,
+          barSize,
           context?.instrument ?? null,
         );
       } catch {

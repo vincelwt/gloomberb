@@ -36,5 +36,7 @@ export interface DataProvider {
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;
   getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]>;
+  /** Fetch higher-resolution price data for a specific date window (e.g. when zoomed in). */
+  getDetailedPriceHistory?(ticker: string, exchange: string, startDate: Date, endDate: Date, barSize: string, context?: MarketDataRequestContext): Promise<PricePoint[]>;
   getOptionsChain?(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain>;
 }
