@@ -1,59 +1,59 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
+export const CURRENT_CONFIG_VERSION = 2;
+
+export interface BrokerInstanceConfig {
+  id: string;
+  brokerType: string;
+  label: string;
+  connectionMode?: string;
+  config: Record<string, unknown>;
+  enabled?: boolean;
+}
+
 export interface ColumnConfig {
   id: string;
   label: string;
-  width: number; // character width
+  width: number;
   align: "left" | "right";
   format?: "currency" | "percent" | "number" | "compact";
 }
 
-/** @deprecated Use LayoutConfig instead. Kept for migration from old configs. */
-export interface PaneLayoutEntry {
+export interface DockedPaneEntry {
   paneId: string;
-  position: "left" | "right" | "bottom";
+  columnIndex: number;
+  order?: number;
+}
+
+export interface LayoutColumnConfig {
   width?: string;
 }
 
-/** A pane docked into the tiled layout */
-export interface DockedPaneEntry {
-  paneId: string;
-  columnIndex: number;       // 0-based column index
-  order?: number;            // vertical order within column (lower = higher)
-  height?: string;           // e.g. "50%", "200" — omit = equal split
-}
-
-/** Configuration for a single layout column */
-export interface LayoutColumnConfig {
-  width?: string;            // e.g. "40%", "300" — omit = equal split
-}
-
-/** A pane floating as a draggable overlay */
 export interface FloatingPaneEntry {
   paneId: string;
-  x: number;                 // absolute terminal column
-  y: number;                 // absolute terminal row
-  width: number;             // character columns
-  height: number;            // character rows
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   zIndex?: number;
 }
 
-/** The unified layout config */
 export interface LayoutConfig {
-  columns: LayoutColumnConfig[];    // ordered list of columns
-  docked: DockedPaneEntry[];       // panes placed in columns
-  floating: FloatingPaneEntry[];   // panes in floating windows
+  columns: LayoutColumnConfig[];
+  docked: DockedPaneEntry[];
+  floating: FloatingPaneEntry[];
 }
 
 export interface AppConfig {
   dataDir: string;
+  configVersion: number;
   baseCurrency: string;
   refreshIntervalMinutes: number;
   portfolios: Portfolio[];
   watchlists: Watchlist[];
   columns: ColumnConfig[];
   layout: LayoutConfig;
-  brokers: Record<string, Record<string, unknown>>;
+  brokerInstances: BrokerInstanceConfig[];
   plugins: string[];
   disabledPlugins: string[];
   theme: string;
@@ -83,14 +83,19 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
 export function createDefaultConfig(dataDir: string): AppConfig {
   return {
     dataDir,
+    configVersion: CURRENT_CONFIG_VERSION,
     baseCurrency: "USD",
     refreshIntervalMinutes: 30,
     portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
     watchlists: [{ id: "watchlist", name: "Watchlist" }],
-    columns: DEFAULT_COLUMNS,
-    layout: DEFAULT_LAYOUT,
-    brokers: {},
-    plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr-flex"],
+    columns: DEFAULT_COLUMNS.map((column) => ({ ...column })),
+    layout: {
+      columns: DEFAULT_LAYOUT.columns.map((column) => ({ ...column })),
+      docked: DEFAULT_LAYOUT.docked.map((entry) => ({ ...entry })),
+      floating: [],
+    },
+    brokerInstances: [],
+    plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr"],
     disabledPlugins: [],
     theme: "amber",
     recentTickers: [],

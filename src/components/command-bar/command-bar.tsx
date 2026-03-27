@@ -16,6 +16,9 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, WizardStep } from "../../types/plugin";
 import type { ColumnConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
+import { resolveBrokerConfigFields } from "../../types/broker";
+import type { InstrumentSearchResult } from "../../types/instrument";
+import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
 
 /** All available columns that can be toggled */
 const ALL_COLUMNS: ColumnConfig[] = [
@@ -113,9 +116,61 @@ function InputStepContent({ resolve, step }: PromptContext<string> & { step: Wiz
           backgroundColor={colors.bg}
           onInput={(val) => setValue(val)}
           onChange={(val) => setValue(val)}
-          onSubmit={() => { if (value.trim()) resolve(value.trim()); }}
+          onSubmit={() => {
+            const submitted = value.trim() || step.defaultValue || "";
+            if (submitted) resolve(submitted);
+          }}
         />
       </box>
+      {step.defaultValue && (
+        <>
+          <box height={1} />
+          <text fg={colors.textMuted}>{`Press Enter to use ${step.defaultValue}`}</text>
+        </>
+      )}
+    </box>
+  );
+}
+
+function SelectStepContent({ resolve, step, dialogId }: PromptContext<string> & { step: WizardStep }) {
+  const options = step.options ?? [];
+  const [idx, setIdx] = useState(0);
+
+  useDialogKeyboard((event) => {
+    event.stopPropagation();
+    if (event.name === "up" || event.name === "k") setIdx((i) => Math.max(0, i - 1));
+    else if (event.name === "down" || event.name === "j") setIdx((i) => Math.min(options.length - 1, i + 1));
+    else if (event.name === "return") resolve(options[idx]?.value ?? "");
+    else if (event.name === "escape") resolve("");
+  }, dialogId);
+
+  return (
+    <box flexDirection="column">
+      <box height={1}>
+        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
+      </box>
+      <box height={1} />
+      {step.body?.map((line, i) => (
+        <box key={i} height={1}>
+          <text fg={colors.textDim}>{line || " "}</text>
+        </box>
+      ))}
+      <box height={1} />
+      {options.map((option, optionIdx) => {
+        const selected = optionIdx === idx;
+        return (
+          <box key={option.value} height={1} backgroundColor={selected ? colors.selected : colors.commandBg}>
+            <text fg={selected ? colors.selectedText : colors.textDim}>
+              {selected ? "\u25b8 " : "  "}
+            </text>
+            <text fg={selected ? colors.text : colors.textDim} attributes={selected ? TextAttributes.BOLD : 0}>
+              {option.label}
+            </text>
+          </box>
+        );
+      })}
+      <box height={1} />
+      <text fg={colors.textMuted}>Use ↑↓ to choose · enter to select · esc to cancel</text>
     </box>
   );
 }
@@ -269,6 +324,130 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     close();
   }, [dispatch, close]);
 
+  const connectBrokerProfile = useCallback(async (preselectedBrokerId?: string) => {
+    let choiceId = preselectedBrokerId;
+    if (!choiceId) {
+      const choices: Array<{ id: string; label: string; desc: string }> = [];
+      for (const [brokerId, adapter] of pluginRegistry.brokers) {
+        if (adapter.configSchema.length > 0) {
+          choices.push({
+            id: brokerId,
+            label: `Connect ${adapter.name}`,
+            desc: `Create a new ${adapter.name} profile`,
+          });
+        }
+      }
+      if (choices.length === 0) return null;
+      choiceId = await dialog.prompt<string>({
+        content: (ctx) => <ChoiceContent {...ctx} title="Add Broker Account" choices={choices} />,
+      });
+      if (!choiceId) return null;
+    }
+
+    const adapter = [...pluginRegistry.brokers.values()].find((broker) => broker.id === choiceId);
+    if (!adapter) return null;
+    const profileLabel = await dialog.prompt<string>({
+      content: (ctx) => <InputStepContent {...ctx} step={{
+        key: "profileLabel",
+        type: "text",
+        label: "Broker Profile Label",
+        body: ["Label this broker connection, for example Work, Personal, or Paper."],
+        placeholder: "Work",
+      }} />,
+    });
+    if (!profileLabel?.trim()) return null;
+
+    const values: Record<string, string> = {};
+    const prompted = new Set<string>();
+    while (true) {
+      const fields = resolveBrokerConfigFields(adapter, values).filter((field) => field.required);
+      const nextField = fields.find((field) => !prompted.has(field.key));
+      if (!nextField) break;
+
+      const val = nextField.type === "select"
+        ? await dialog.prompt<string>({
+          content: (ctx) => <SelectStepContent {...ctx} step={{
+            key: nextField.key,
+            type: "select",
+            label: nextField.label,
+            options: nextField.options?.map((option) => ({ label: option.label, value: option.value })) ?? [],
+            body: nextField.placeholder ? [nextField.placeholder] : [],
+          }} />,
+        })
+        : await dialog.prompt<string>({
+                  content: (ctx) => <InputStepContent {...ctx} step={{
+                    key: nextField.key,
+                    type: nextField.type === "password" ? "password" : nextField.type === "number" ? "number" : "text",
+                    label: nextField.label,
+                    body: nextField.placeholder ? [`${nextField.placeholder}`] : [],
+                    defaultValue: nextField.defaultValue,
+                    placeholder: nextField.placeholder || `Enter ${nextField.label.toLowerCase()}`,
+                  }} />,
+                });
+      if (val === undefined || (nextField.type === "select" && !val)) return null;
+      values[nextField.key] = val;
+      prompted.add(nextField.key);
+    }
+
+    const dialogId = dialog.show({
+      content: () => (
+        <box flexDirection="column">
+          <box height={1}>
+            <text attributes={TextAttributes.BOLD} fg={colors.text}>{"Connecting..."}</text>
+          </box>
+          <box height={1} />
+          <text fg={colors.textDim}>Validating credentials and importing positions...</text>
+        </box>
+      ),
+    });
+
+    try {
+      const brokerValues = choiceId === "ibkr"
+        ? buildIbkrConfigFromValues(values)
+        : values;
+      const instance = await pluginRegistry.createBrokerInstanceFn(
+        choiceId,
+        profileLabel.trim(),
+        brokerValues as Record<string, unknown>,
+      );
+      await pluginRegistry.syncBrokerInstanceFn(instance.id);
+      dialog.close(dialogId);
+      const freshConfig = pluginRegistry.getConfigFn();
+      dispatch({ type: "SET_CONFIG", config: freshConfig });
+      const brokerTab = freshConfig.portfolios.find((portfolio) => portfolio.brokerInstanceId === instance.id);
+      if (brokerTab) dispatch({ type: "SET_LEFT_TAB", tab: brokerTab.id });
+      await dialog.alert({
+        content: (ctx) => <ResultContent {...ctx} message="Connected! Positions will sync automatically." isError={false} />,
+      });
+      return instance;
+    } catch (err: any) {
+      dialog.close(dialogId);
+      await dialog.alert({
+        content: (ctx) => <ResultContent {...ctx} message={err.message || "Connection failed"} isError={true} />,
+      });
+      return null;
+    }
+  }, [dialog, dispatch, pluginRegistry]);
+
+  const pickBrokerInstance = useCallback(async (title: string, brokerType?: string) => {
+    const instances = state.config.brokerInstances.filter((instance) => !brokerType || instance.brokerType === brokerType);
+    if (instances.length === 0) return null;
+    if (instances.length === 1) return instances[0]!;
+    const selectedId = await dialog.prompt<string>({
+      content: (ctx) => <ChoiceContent
+        {...ctx}
+        title={title}
+        choices={instances.map((instance) => ({
+          id: instance.id,
+          label: instance.label,
+          desc: `${instance.brokerType.toUpperCase()} · ${instance.connectionMode || String(instance.config.connectionMode || "configured")}`,
+        }))}
+      />,
+    });
+    if (!selectedId) return null;
+    return state.config.brokerInstances.find((instance) => instance.id === selectedId) ?? null;
+  }, [dialog, state.config.brokerInstances]);
+
   // Handle prefix-based command execution
   const executeCommand = useCallback((cmd: Command, arg: string) => {
     const ctx = { selectedTicker: state.selectedTicker, activeLeftTab: state.activeLeftTab };
@@ -306,6 +485,59 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           } catch (err: any) {
             await dialog.alert({
               content: (ctx) => <ResultContent {...ctx} message={err.message || "Import failed — file not found?"} isError={true} />,
+            });
+          }
+        })();
+        return;
+      }
+      case "add-broker-account": {
+        close();
+        void connectBrokerProfile();
+        return;
+      }
+      case "sync-broker-account": {
+        close();
+        (async () => {
+          const instance = await pickBrokerInstance("Sync Broker Account");
+          if (!instance) return;
+          try {
+            await pluginRegistry.syncBrokerInstanceFn(instance.id);
+            const freshConfig = pluginRegistry.getConfigFn();
+            dispatch({ type: "SET_CONFIG", config: freshConfig });
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={`Synced ${instance.label}.`} isError={false} />,
+            });
+          } catch (err: any) {
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={err.message || "Sync failed"} isError={true} />,
+            });
+          }
+        })();
+        return;
+      }
+      case "disconnect-broker-account": {
+        close();
+        (async () => {
+          const instance = await pickBrokerInstance("Disconnect Broker Account");
+          if (!instance) return;
+          const confirmed = await dialog.prompt<boolean>({
+            content: (ctx) => <ConfirmContent
+              {...ctx}
+              title="Disconnect Broker Account"
+              message={`Remove "${instance.label}" and all imported broker portfolios, positions, and contracts?`}
+            />,
+          });
+          if (!confirmed) return;
+          try {
+            await pluginRegistry.removeBrokerInstanceFn(instance.id);
+            const freshConfig = pluginRegistry.getConfigFn();
+            dispatch({ type: "SET_CONFIG", config: freshConfig });
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={`Removed ${instance.label}.`} isError={false} />,
+            });
+          } catch (err: any) {
+            await dialog.alert({
+              content: (ctx) => <ResultContent {...ctx} message={err.message || "Disconnect failed"} isError={true} />,
             });
           }
         })();
@@ -417,58 +649,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
             dispatch({ type: "SET_LEFT_TAB", tab: id });
             saveConfig(newConfig).catch(() => {});
           } else {
-            // Broker connect flow
-            const adapter = [...pluginRegistry.brokers.values()].find((b) => b.id === choiceId);
-            if (!adapter) return;
-            const fields = adapter.configSchema.filter((f) => f.required);
-            const values: Record<string, string> = {};
-
-            for (const field of fields) {
-              const val = await dialog.prompt<string>({
-                content: (ctx) => <InputStepContent {...ctx} step={{
-                  key: field.key,
-                  type: field.type === "password" ? "password" : "text",
-                  label: field.label,
-                  body: field.placeholder ? [`${field.placeholder}`] : [],
-                  placeholder: field.placeholder || `Enter ${field.label.toLowerCase()}`,
-                }} />,
-              });
-              if (val === undefined) return; // User cancelled
-              values[field.key] = val;
-            }
-
-            // Show connecting dialog and validate
-            const dialogId = dialog.show({
-              content: () => (
-                <box flexDirection="column">
-                  <box height={1}>
-                    <text attributes={TextAttributes.BOLD} fg={colors.text}>{"Connecting..."}</text>
-                  </box>
-                  <box height={1} />
-                  <text fg={colors.textDim}>Validating credentials and importing positions...</text>
-                </box>
-              ),
-            });
-
-            try {
-              await pluginRegistry.updateBrokerConfigFn(choiceId, values);
-              await pluginRegistry.syncBrokerFn(choiceId);
-              dialog.close(dialogId);
-              // Reload config to pick up broker-created portfolios
-              const freshConfig = pluginRegistry.getConfigFn();
-              dispatch({ type: "SET_CONFIG", config: freshConfig });
-              // Switch to the broker's portfolio tab if one was created
-              const brokerTab = freshConfig.portfolios.find((p) => p.id.startsWith(choiceId));
-              if (brokerTab) dispatch({ type: "SET_LEFT_TAB", tab: brokerTab.id });
-              await dialog.alert({
-                content: (ctx) => <ResultContent {...ctx} message={step.body?.[1] || "Done!"} isError={false} />,
-              });
-            } catch (err: any) {
-              dialog.close(dialogId);
-              await dialog.alert({
-                content: (ctx) => <ResultContent {...ctx} message={err.message || "Connection failed"} isError={true} />,
-              });
-            }
+            await connectBrokerProfile(choiceId);
           }
         })();
         return;
@@ -503,9 +684,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         close();
         (async () => {
           // Only show non-broker-managed portfolios for deletion
-          const deletable = state.config.portfolios.filter((p) =>
-            !Object.keys(state.config.brokers).some((bId) => p.id.startsWith(bId))
-          );
+          const deletable = state.config.portfolios.filter((p) => !p.brokerId && !p.brokerInstanceId);
           if (deletable.length === 0) return;
           const choices = deletable.map((p) => ({
             id: p.id, label: p.name, desc: `Delete portfolio "${p.name}"`,
@@ -545,15 +724,43 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
   }, [state, dispatch, markdownStore, close, dialog, pluginRegistry]);
 
-  const openTickerDetail = useCallback((symbol: string, name: string, exchange: string) => {
+  const openTickerDetail = useCallback((result: InstrumentSearchResult) => {
     (async () => {
+      const symbol = result.brokerContract?.localSymbol || result.symbol.split(".")[0]!;
       let existing = await markdownStore.loadTicker(symbol);
       if (!existing) {
         const frontmatter: TickerFrontmatter = {
-          ticker: symbol, exchange, currency: "USD", name,
-          portfolios: [], watchlists: [], positions: [], custom: {}, tags: [],
+          ticker: symbol,
+          exchange: result.exchange,
+          currency: result.currency || result.brokerContract?.currency || "USD",
+          name: result.name,
+          asset_category: result.brokerContract?.secType || result.type || undefined,
+          broker_contracts: result.brokerContract ? [result.brokerContract] : [],
+          portfolios: [],
+          watchlists: [],
+          positions: [],
+          custom: {},
+          tags: [],
         };
         existing = await markdownStore.createTicker(frontmatter);
+      } else {
+        existing.frontmatter.name = existing.frontmatter.name || result.name;
+        existing.frontmatter.exchange = existing.frontmatter.exchange || result.exchange;
+        existing.frontmatter.currency = existing.frontmatter.currency || result.currency || "USD";
+        existing.frontmatter.asset_category = existing.frontmatter.asset_category || result.brokerContract?.secType || result.type || undefined;
+        const existingContracts = existing.frontmatter.broker_contracts ?? [];
+        if (result.brokerContract) {
+          const nextContracts = [...existingContracts];
+          const hasContract = nextContracts.some((contract) =>
+            contract.brokerId === result.brokerContract!.brokerId
+            && contract.brokerInstanceId === result.brokerContract!.brokerInstanceId
+            && contract.conId === result.brokerContract!.conId
+            && contract.localSymbol === result.brokerContract!.localSymbol,
+          );
+          if (!hasContract) nextContracts.push(result.brokerContract);
+          existing.frontmatter.broker_contracts = nextContracts;
+        }
+        await markdownStore.saveTicker(existing);
       }
       dispatch({ type: "UPDATE_TICKER", ticker: existing });
       dispatch({ type: "SELECT_TICKER", symbol });
@@ -567,6 +774,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     const values: Record<string, string> = {};
 
     for (const step of steps) {
+      if (step.dependsOn && values[step.dependsOn.key] !== step.dependsOn.value) {
+        continue;
+      }
       const isValidate = step.type === "info" && step.key.startsWith("_validate");
 
       if (isValidate) {
@@ -605,12 +815,15 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         continue;
       }
 
-      // text or password step
-      const result = await dialog.prompt<string>({
-        content: (ctx) => <InputStepContent {...ctx} step={step} />,
-      });
+      const result = step.type === "select"
+        ? await dialog.prompt<string>({
+          content: (ctx) => <SelectStepContent {...ctx} step={step} />,
+        })
+        : await dialog.prompt<string>({
+          content: (ctx) => <InputStepContent {...ctx} step={step} />,
+        });
 
-      if (result === undefined) return; // User cancelled (Esc)
+      if (result === undefined || (step.type === "select" && !result)) return; // User cancelled
       values[step.key] = result;
     }
 
@@ -646,6 +859,26 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }));
   }, [pluginRegistry.commands, close, runWizard]);
 
+  const tickerActionItems = useCallback((): ResultItem[] => {
+    if (!state.selectedTicker) return [];
+    const ticker = state.tickers.get(state.selectedTicker);
+    const financials = state.selectedTicker ? state.financials.get(state.selectedTicker) ?? null : null;
+    if (!ticker) return [];
+
+    return [...pluginRegistry.tickerActions.values()]
+      .filter((action) => !action.filter || action.filter(ticker))
+      .map((action) => ({
+        id: `ticker-action:${action.id}`,
+        label: action.label,
+        detail: ticker.frontmatter.ticker,
+        category: "Actions",
+        action: () => {
+          close();
+          void action.execute(ticker, financials);
+        },
+      }));
+  }, [pluginRegistry.tickerActions, state.selectedTicker, state.tickers, state.financials, close]);
+
   // Detect special modes
   const isThemeMode = matchPrefix(query)?.command.id === "theme";
   const isPluginMode = matchPrefix(query)?.command.id === "plugins";
@@ -675,9 +908,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     // --- Smart command filtering (computed fresh each effect run) ---
     const isWatchlistTab = state.config.watchlists.some((w) => w.id === state.activeLeftTab);
     const isPortfolioTab = state.config.portfolios.some((p) => p.id === state.activeLeftTab);
-    const isBrokerManaged = Object.keys(state.config.brokers).some((brokerId) =>
-      state.activeLeftTab.startsWith(brokerId),
-    );
+    const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+    const isBrokerManaged = !!activePortfolio?.brokerId;
     const activeTabName = isWatchlistTab
       ? state.config.watchlists.find((w) => w.id === state.activeLeftTab)?.name
       : state.config.portfolios.find((p) => p.id === state.activeLeftTab)?.name;
@@ -853,6 +1085,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         const item = cmdToItem(cmd);
         if (item) items.push(item);
       }
+      items.push(...tickerActionItems());
       items.push(...pluginCommandItems());
     } else {
       const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
@@ -861,7 +1094,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
       }));
       const cmdItems: ResultItem[] = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
-      const allItems = [...tickerItems, ...cmdItems, ...pluginCommandItems()];
+      const allItems = [...tickerItems, ...cmdItems, ...tickerActionItems(), ...pluginCommandItems()];
       const filtered = fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`);
       items.push(...filtered);
     }
@@ -881,17 +1114,22 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSearching(true);
       searchTimerRef.current = setTimeout(async () => {
         try {
-          const searchResults = await dataProvider.search(searchQuery);
+          const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+          const searchResults = await dataProvider.search(searchQuery, {
+            preferBroker: true,
+            brokerId: activePortfolio?.brokerId,
+            brokerInstanceId: activePortfolio?.brokerInstanceId,
+          });
           const searchItems: ResultItem[] = searchResults
-            .filter((r) => r.type === "EQUITY" || r.type === "ETF")
             .slice(0, 8)
             .map((r) => {
-              const sym = r.symbol.split(".")[0]!;
+              const sym = r.brokerContract?.localSymbol || r.symbol.split(".")[0]!;
               const isExisting = state.tickers.has(sym);
               return {
                 id: `search:${r.symbol}`, label: sym, detail: r.name,
-                right: r.exchange, category: isExisting ? "Open" : "Search Results",
-                action: () => openTickerDetail(sym, r.name, r.exchange),
+                right: [r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" · "),
+                category: isExisting ? "Open" : "Search Results",
+                action: () => openTickerDetail(r),
               };
             });
           setResults(searchItems.length > 0 ? searchItems : [{
@@ -908,7 +1146,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokers, state.config.disabledPlugins, state.config.columns, toggleColumn]);
+  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems]);
 
   // Live preview: apply theme as user arrows through the list
   useEffect(() => {
@@ -1046,7 +1284,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       <box flexDirection="column" flexGrow={1}>
         {searching ? (
           <box paddingX={2} height={1}>
-            <text fg={colors.textDim}>Searching Yahoo Finance...</text>
+            <text fg={colors.textDim}>Searching providers...</text>
           </box>
         ) : grouped.length === 0 ? (
           <box paddingX={2} height={1}>
@@ -1066,7 +1304,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                 const isThemeItem = !!item.themeId;
                 const isPluginItem = item.id.startsWith("plugin:");
                 const isColumnItem = item.id.startsWith("col:");
-                const isSearchResult = item.id.startsWith("yahoo:") || item.id.startsWith("goto:");
+                const isSearchResult = item.id.startsWith("search:") || item.id.startsWith("goto:");
                 const isChecked = isColumnItem && item.label.includes("\u2713");
                 return (
                   <box

@@ -42,6 +42,7 @@
     "@opentui-ui/toast": "^0.0.5",
     "@opentui/core": "^0.1.90",
     "@opentui/react": "^0.1.90",
+    "@stoqey/ib": "^1.5.3",
     "gray-matter": "^4.0.3",
     "opentui-spinner": "^0.0.6",
     "react": "^19.2.4",

@@ -3,31 +3,27 @@ import { join } from "path";
 import { existsSync } from "fs";
 import type { TickerFile, TickerFrontmatter } from "../types/ticker";
 import type { SqliteCache } from "./sqlite-cache";
-import { parseTicker } from "../utils/frontmatter";
+import { hydrateTickerFrontmatter, parseTicker } from "../utils/frontmatter";
 
 const DEFAULT_FRONTMATTER: Omit<TickerFrontmatter, "ticker" | "exchange" | "currency" | "name"> = {
   portfolios: [],
   watchlists: [],
   positions: [],
+  broker_contracts: [],
   custom: {},
   tags: [],
 };
 
 function parseFrontmatter(json: string): TickerFrontmatter {
   const data = JSON.parse(json);
-  return {
+  return hydrateTickerFrontmatter({
     ...DEFAULT_FRONTMATTER,
     ticker: "",
     exchange: "",
     currency: "USD",
     name: "",
     ...data,
-    portfolios: data.portfolios ?? [],
-    watchlists: data.watchlists ?? [],
-    positions: data.positions ?? [],
-    custom: data.custom ?? {},
-    tags: data.tags ?? [],
-  };
+  });
 }
 
 /**

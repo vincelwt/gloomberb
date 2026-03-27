@@ -1,44 +1,30 @@
 import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from "react";
-import type { AppConfig, LayoutConfig } from "../types/config";
 import { saveConfig } from "../data/config-store";
-import type { TickerFile } from "../types/ticker";
-import type { TickerFinancials } from "../types/financials";
-import type { ReleaseInfo, UpdateProgress } from "../updater";
 import { applyTheme } from "../theme/colors";
-
-// --- State ---
+import type { AppConfig, LayoutConfig } from "../types/config";
+import type { TickerFinancials } from "../types/financials";
+import type { TickerFile } from "../types/ticker";
+import type { ReleaseInfo, UpdateProgress } from "../updater";
 
 export interface AppState {
   config: AppConfig;
   tickers: Map<string, TickerFile>;
   financials: Map<string, TickerFinancials>;
-  /** Exchange rates: currency code -> USD rate */
   exchangeRates: Map<string, number>;
-
-  // UI state
-  /** @deprecated Use focusedPaneId instead */
   activePanel: "left" | "right";
   focusedPaneId: string | null;
   activeLeftTab: string;
   activeRightTab: string;
   selectedTicker: string | null;
-  /** Most-recently-visited ticker symbols (newest first) */
   recentTickers: string[];
   commandBarOpen: boolean;
-
-  // Loading
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
-  /** True when a plugin/tab is capturing keyboard input (e.g. text editing) */
   inputCaptured: boolean;
-
-  // Updates
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
 }
-
-// --- Actions ---
 
 export type AppAction =
   | { type: "SET_CONFIG"; config: AppConfig }
@@ -55,7 +41,6 @@ export type AppAction =
   | { type: "SET_COMMAND_BAR"; open: boolean }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
-  | { type: "UPDATE_BROKER_CONFIG"; brokerId: string; values: Record<string, unknown> }
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
@@ -103,11 +88,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SELECT_TICKER": {
       const recentTickers = action.symbol
-        ? [action.symbol, ...state.recentTickers.filter((s) => s !== action.symbol)].slice(0, 50)
+        ? [action.symbol, ...state.recentTickers.filter((symbol) => symbol !== action.symbol)].slice(0, 50)
         : state.recentTickers;
-      // Focus the ticker-detail pane (or keep current focus if not found)
-      const tickerPaneId = state.config.layout.docked.find((d) => d.paneId === "ticker-detail")?.paneId
-        ?? state.config.layout.floating.find((f) => f.paneId === "ticker-detail")?.paneId;
+      const tickerPaneId = state.config.layout.docked.find((entry) => entry.paneId === "ticker-detail")?.paneId
+        ?? state.config.layout.floating.find((entry) => entry.paneId === "ticker-detail")?.paneId;
       return {
         ...state,
         selectedTicker: action.symbol,
@@ -121,13 +105,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, selectedTicker: action.symbol };
 
     case "SET_ACTIVE_PANEL": {
-      // Backward compat: map "left"/"right" to first pane in that column
-      const colIdx = action.panel === "left" ? 0 : (state.config.layout.columns.length - 1);
-      const firstInCol = state.config.layout.docked.find((d) => d.columnIndex === colIdx);
+      const columnIndex = action.panel === "left" ? 0 : Math.max(0, state.config.layout.columns.length - 1);
+      const firstPane = state.config.layout.docked.find((entry) => entry.columnIndex === columnIndex);
       return {
         ...state,
         activePanel: action.panel,
-        focusedPaneId: firstInCol?.paneId ?? state.focusedPaneId,
+        focusedPaneId: firstPane?.paneId ?? state.focusedPaneId,
       };
     }
 
@@ -153,19 +136,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
 
-    case "UPDATE_BROKER_CONFIG": {
-      const brokers = { ...state.config.brokers };
-      brokers[action.brokerId] = { ...brokers[action.brokerId], ...action.values };
-      return { ...state, config: { ...state.config, brokers } };
-    }
-
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };
 
-    case "SET_THEME": {
+    case "SET_THEME":
       applyTheme(action.theme);
       return { ...state, config: { ...state.config, theme: action.theme } };
-    }
 
     case "SET_UPDATE_AVAILABLE":
       return { ...state, updateAvailable: action.release };
@@ -174,11 +150,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, updateProgress: action.progress };
 
     case "TOGGLE_PLUGIN": {
-      const disabled = state.config.disabledPlugins || [];
-      const isDisabled = disabled.includes(action.pluginId);
-      const disabledPlugins = isDisabled
-        ? disabled.filter((id) => id !== action.pluginId)
-        : [...disabled, action.pluginId];
+      const disabledPlugins = state.config.disabledPlugins.includes(action.pluginId)
+        ? state.config.disabledPlugins.filter((pluginId) => pluginId !== action.pluginId)
+        : [...state.config.disabledPlugins, action.pluginId];
       return { ...state, config: { ...state.config, disabledPlugins } };
     }
 
@@ -198,27 +172,23 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, focusedPaneId: action.paneId };
 
     case "FOCUS_NEXT": {
-      const order = action.paneOrder;
-      if (order.length === 0) return state;
-      const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : -1;
-      const next = order[(idx + 1) % order.length]!;
-      return { ...state, focusedPaneId: next };
+      if (action.paneOrder.length === 0) return state;
+      const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : -1;
+      const nextPaneId = action.paneOrder[(currentIndex + 1) % action.paneOrder.length]!;
+      return { ...state, focusedPaneId: nextPaneId };
     }
 
     case "FOCUS_PREV": {
-      const order = action.paneOrder;
-      if (order.length === 0) return state;
-      const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : 0;
-      const prev = order[(idx - 1 + order.length) % order.length]!;
-      return { ...state, focusedPaneId: prev };
+      if (action.paneOrder.length === 0) return state;
+      const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : 0;
+      const nextPaneId = action.paneOrder[(currentIndex - 1 + action.paneOrder.length) % action.paneOrder.length]!;
+      return { ...state, focusedPaneId: nextPaneId };
     }
 
     default:
       return state;
   }
 }
-
-// --- Context ---
 
 interface AppContextValue {
   state: AppState;
@@ -228,9 +198,9 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function useAppState(): AppContextValue {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useAppState must be used within AppProvider");
-  return ctx;
+  const context = useContext(AppContext);
+  if (!context) throw new Error("useAppState must be used within AppProvider");
+  return context;
 }
 
 export function useSelectedTicker() {
@@ -253,7 +223,7 @@ export function createInitialState(config: AppConfig): AppState {
     activeLeftTab: config.portfolios[0]?.id || "main",
     activeRightTab: "overview",
     selectedTicker: null,
-    recentTickers: config.recentTickers || [],
+    recentTickers: config.recentTickers,
     commandBarOpen: false,
     refreshing: new Set(),
     initialized: false,
@@ -264,24 +234,16 @@ export function createInitialState(config: AppConfig): AppState {
   };
 }
 
-export function AppProvider({
-  config,
-  children,
-}: {
-  config: AppConfig;
-  children: ReactNode;
-}) {
+export function AppProvider({ config, children }: { config: AppConfig; children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, config, createInitialState);
-  const prevRecent = useRef(state.recentTickers);
+  const previousRecentTickers = useRef(state.recentTickers);
+
   useEffect(() => {
-    if (prevRecent.current !== state.recentTickers) {
-      prevRecent.current = state.recentTickers;
+    if (previousRecentTickers.current !== state.recentTickers) {
+      previousRecentTickers.current = state.recentTickers;
       saveConfig({ ...state.config, recentTickers: state.recentTickers }).catch(() => {});
     }
-  }, [state.recentTickers, state.config]);
-  return (
-    <AppContext value={{ state, dispatch }}>
-      {children}
-    </AppContext>
-  );
+  }, [state.config, state.recentTickers]);
+
+  return <AppContext value={{ state, dispatch }}>{children}</AppContext>;
 }
