@@ -490,6 +490,7 @@ export const chatPlugin: GloomPlugin = {
       description: "Log in to your Gloomberb account",
       keywords: ["login", "sign in", "auth", "account"],
       category: "config",
+      hidden: () => !!apiClient.getSessionToken(),
       wizard: [
         { key: "email", label: "Email", type: "text", placeholder: "email@example.com" },
         { key: "password", label: "Password", type: "password", placeholder: "Your password" },
@@ -520,6 +521,7 @@ export const chatPlugin: GloomPlugin = {
       description: "Create a Gloomberb account",
       keywords: ["signup", "register", "create account"],
       category: "config",
+      hidden: () => !!apiClient.getSessionToken(),
       wizard: [
         { key: "email", label: "Email", type: "text", placeholder: "email@example.com" },
         {
