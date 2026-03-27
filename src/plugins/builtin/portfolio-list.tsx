@@ -70,7 +70,7 @@ function getColumnValue(
     : ticker.frontmatter.positions;
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
-    (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+    (sum, p) => sum + p.shares * (p.avg_cost ?? 0) * (p.multiplier || 1),
     0,
   );
 
@@ -234,7 +234,7 @@ function getSortValue(
     : ticker.frontmatter.positions;
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
-    (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+    (sum, p) => sum + p.shares * (p.avg_cost ?? 0) * (p.multiplier || 1),
     0,
   );
 
@@ -377,7 +377,7 @@ function PortfolioSummaryBar({
         : ticker.frontmatter.positions;
       const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
       const totalCost = tabPositions.reduce(
-        (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+        (sum, p) => sum + p.shares * (p.avg_cost ?? 0) * (p.multiplier || 1),
         0,
       );
 

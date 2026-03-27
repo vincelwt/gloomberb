@@ -14,6 +14,8 @@ export interface TradeTicketState {
   busy: boolean;
   lastError?: string;
   lastInfo?: string;
+  /** When true, lastInfo is a success message (rendered in positive color). */
+  isSuccess?: boolean;
 }
 
 export interface TradingPaneState {
@@ -167,8 +169,9 @@ export function setTradeTicketMessage(
   lastInfo: string | undefined,
   lastError: string | undefined,
   ticker?: TickerFile | null,
+  isSuccess?: boolean,
 ): void {
-  updateTicketState(symbol, ticker, (current) => ({ ...current, lastInfo, lastError }));
+  updateTicketState(symbol, ticker, (current) => ({ ...current, lastInfo, lastError, isSuccess: isSuccess ?? false }));
 }
 
 export function setTradeTicketDraft(

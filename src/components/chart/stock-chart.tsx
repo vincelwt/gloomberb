@@ -5,7 +5,7 @@ import { usePaneTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
-import { getVisibleWindow, projectChartData } from "./chart-data";
+import { getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
 import { formatDateShort, renderChart, resolveChartPalette } from "./chart-renderer";
 import { CHART_RENDER_MODES, TIME_RANGES, type ChartRenderMode, type ChartViewState } from "./chart-types";
 import type { PricePoint } from "../../types/financials";
@@ -43,13 +43,17 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   });
   const [showVolume, setShowVolume] = useState(!compact);
   const [rangeHistory, setRangeHistory] = useState<PricePoint[] | null>(null);
+  const [detailHistory, setDetailHistory] = useState<PricePoint[] | null>(null);
   const fetchIdRef = useRef(0);
+  const detailFetchIdRef = useRef(0);
+  const detailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const provider = getSharedDataProvider();
     if (!provider || !ticker || compact) return;
     const id = ++fetchIdRef.current;
     setRangeHistory(null);
+    setDetailHistory(null);
     const instrument = ticker.frontmatter.broker_contracts?.[0] ?? null;
     provider
       .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange, {
@@ -65,9 +69,66 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
       });
   }, [ticker?.frontmatter.ticker, viewState.timeRange, compact]);
 
-  const history = rangeHistory ?? financials?.priceHistory ?? [];
+  const baseHistory = rangeHistory ?? financials?.priceHistory ?? [];
   const axisWidth = compact ? 0 : 10;
   const chartWidth = Math.max(width - axisWidth - 2, 20);
+
+  // Fetch higher-resolution data when zoomed in
+  useEffect(() => {
+    if (compact || baseHistory.length < 2 || viewState.zoomLevel <= 1) {
+      setDetailHistory(null);
+      return;
+    }
+
+    if (detailDebounceRef.current) clearTimeout(detailDebounceRef.current);
+    detailDebounceRef.current = setTimeout(() => {
+      const window = getVisibleWindow(baseHistory, viewState, chartWidth);
+      if (window.points.length < 2) return;
+
+      const startDate = window.points[0]!.date;
+      const endDate = window.points[window.points.length - 1]!.date;
+      const spanMs = endDate.getTime() - startDate.getTime();
+      const barSize = resolveBarSize(spanMs);
+      if (!barSize) {
+        setDetailHistory(null);
+        return;
+      }
+
+      const provider = getSharedDataProvider();
+      if (!provider?.getDetailedPriceHistory) return;
+
+      const id = ++detailFetchIdRef.current;
+      const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
+      provider
+        .getDetailedPriceHistory(
+          ticker!.frontmatter.ticker,
+          ticker!.frontmatter.exchange || "",
+          startDate,
+          endDate,
+          barSize,
+          {
+            brokerId: instrument?.brokerId,
+            brokerInstanceId: instrument?.brokerInstanceId,
+            instrument,
+          },
+        )
+        .then((points) => {
+          if (id === detailFetchIdRef.current && points && points.length > 0) {
+            setDetailHistory(points);
+          }
+        })
+        .catch(() => {
+          if (id === detailFetchIdRef.current) setDetailHistory(null);
+        });
+    }, 300);
+
+    return () => {
+      if (detailDebounceRef.current) clearTimeout(detailDebounceRef.current);
+    };
+  }, [viewState.zoomLevel, viewState.panOffset, baseHistory.length, chartWidth, compact]);
+
+  // Use detail data when available and zoomed in, otherwise fall back to base
+  const history = (viewState.zoomLevel > 1 && detailHistory) ? detailHistory : baseHistory;
 
   useEffect(() => {
     if (interactive) {
@@ -164,8 +225,13 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const volumeHeight = showVolume && !compact ? 3 : 0;
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
 
+  const isDetailView = viewState.zoomLevel > 1 && detailHistory != null && detailHistory.length > 0;
+
   const { window: visibleWindow, projection, chartColors, result } = useMemo(() => {
-    const window = getVisibleWindow(history, viewState, chartWidth);
+    // When using detail data, it's already scoped to the visible window — skip zoom/pan windowing
+    const window = isDetailView
+      ? { points: history, startIdx: 0, endIdx: history.length }
+      : getVisibleWindow(history, viewState, chartWidth);
     const projection = projectChartData(window.points, chartWidth, viewState.renderMode, !!compact);
     const rawChange = window.points.length >= 2
       ? window.points[window.points.length - 1]!.close - window.points[0]!.close
@@ -192,7 +258,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     });
 
     return { window, projection, chartColors, result };
-  }, [history, viewState, chartWidth, chartHeight, showVolume, compact, volumeHeight]);
+  }, [history, viewState, chartWidth, chartHeight, showVolume, compact, volumeHeight, isDetailView]);
 
   if (history.length === 0) {
     return <text fg={colors.textDim}>No price history available.</text>;

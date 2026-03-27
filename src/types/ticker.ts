@@ -3,7 +3,7 @@ import type { BrokerContractRef } from "./instrument";
 export interface TickerPosition {
   portfolio: string;
   shares: number;
-  avg_cost: number;
+  avg_cost?: number;
   currency?: string;
   date_acquired?: string;
   broker: string; // "manual" | future broker plugin IDs

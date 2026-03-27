@@ -159,7 +159,7 @@ function OverviewTab({ width }: { width?: number }) {
               <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Positions</text>
             </box>
             {ticker.frontmatter.positions.map((pos, i) => {
-              const costBasis = pos.shares * pos.avg_cost * (pos.multiplier || 1);
+              const costBasis = pos.avg_cost != null ? pos.shares * pos.avg_cost * (pos.multiplier || 1) : undefined;
               const pnlText = pos.unrealized_pnl != null
                 ? `  P&L: ${pos.unrealized_pnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealized_pnl, pos.currency)}`
                 : "";
