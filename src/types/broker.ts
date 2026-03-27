@@ -1,3 +1,9 @@
+import type { Quote, TickerFinancials, PricePoint, OptionsChain } from "./financials";
+import type { TimeRange } from "../components/chart/chart-types";
+import type { BrokerInstanceConfig } from "./config";
+import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
+import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "./trading";
+
 export interface BrokerPosition {
   ticker: string;
   exchange: string;
@@ -27,21 +33,62 @@ export interface BrokerPosition {
   multiplier?: number;
   /** Percentage of portfolio NAV */
   percentOfNav?: number;
+  /** Serializable broker contract metadata */
+  brokerContract?: BrokerContractRef;
+}
+
+export interface BrokerConfigFieldOption {
+  label: string;
+  value: string;
 }
 
 export interface BrokerConfigField {
   key: string;
   label: string;
-  type: "text" | "password" | "file" | "select";
+  type: "text" | "password" | "file" | "select" | "number";
   required: boolean;
   placeholder?: string;
-  options?: string[]; // for select type
+  defaultValue?: string;
+  options?: BrokerConfigFieldOption[];
+  dependsOn?: { key: string; value: string };
+}
+
+export interface BrokerConnectionStatus {
+  state: "disconnected" | "connecting" | "connected" | "error";
+  message?: string;
+  mode?: string;
+  updatedAt: number;
 }
 
 export interface BrokerAdapter {
   readonly id: string;
   readonly name: string;
-  validate(config: Record<string, unknown>): Promise<boolean>;
-  importPositions(config: Record<string, unknown>): Promise<BrokerPosition[]>;
+  validate(instance: BrokerInstanceConfig): Promise<boolean>;
+  importPositions(instance: BrokerInstanceConfig): Promise<BrokerPosition[]>;
   configSchema: BrokerConfigField[];
+  connect?(instance: BrokerInstanceConfig): Promise<void>;
+  disconnect?(instance: BrokerInstanceConfig): Promise<void>;
+  getStatus?(instance: BrokerInstanceConfig): BrokerConnectionStatus;
+  listAccounts?(instance: BrokerInstanceConfig): Promise<BrokerAccount[]>;
+  searchInstruments?(query: string, instance: BrokerInstanceConfig): Promise<InstrumentSearchResult[]>;
+  getTickerFinancials?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<TickerFinancials>;
+  getQuote?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<Quote>;
+  getPriceHistory?(ticker: string, instance: BrokerInstanceConfig, exchange: string, range: TimeRange, instrument?: BrokerContractRef | null): Promise<PricePoint[]>;
+  getOptionsChain?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, expirationDate?: number, instrument?: BrokerContractRef | null): Promise<OptionsChain>;
+  listOpenOrders?(instance: BrokerInstanceConfig): Promise<BrokerOrder[]>;
+  listExecutions?(instance: BrokerInstanceConfig): Promise<BrokerExecution[]>;
+  previewOrder?(instance: BrokerInstanceConfig, request: BrokerOrderRequest): Promise<BrokerOrderPreview>;
+  placeOrder?(instance: BrokerInstanceConfig, request: BrokerOrderRequest): Promise<BrokerOrder>;
+  modifyOrder?(instance: BrokerInstanceConfig, orderId: number, request: BrokerOrderRequest): Promise<BrokerOrder>;
+  cancelOrder?(instance: BrokerInstanceConfig, orderId: number): Promise<void>;
+}
+
+export function resolveBrokerConfigFields(
+  adapter: BrokerAdapter,
+  values: Record<string, unknown> = {},
+): BrokerConfigField[] {
+  return adapter.configSchema.filter((field) => {
+    if (!field.dependsOn) return true;
+    return String(values[field.dependsOn.key] ?? "") === field.dependsOn.value;
+  });
 }

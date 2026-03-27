@@ -1,7 +1,8 @@
 import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain } from "../types/financials";
 import type { SqliteCache } from "../data/sqlite-cache";
-import type { DataProvider, NewsItem } from "../types/data-provider";
+import type { DataProvider, MarketDataRequestContext, NewsItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
+import type { InstrumentSearchResult } from "../types/instrument";
 
 // Exchange suffix mapping for Yahoo Finance ticker symbols
 // Includes both canonical codes and common IBKR listing exchange aliases
@@ -491,7 +492,7 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch full financials for a ticker */
-  async getTickerFinancials(ticker: string, exchange = ""): Promise<TickerFinancials> {
+  async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
     // Check cache first
     if (this.cache) {
       const cached = this.cache.getCached<TickerFinancials>(ticker, "full");
@@ -664,7 +665,7 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch just a quote (lighter weight) */
-  async getQuote(ticker: string, exchange = ""): Promise<Quote> {
+  async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
     if (this.cache) {
       const cached = this.cache.getCached<Quote>(ticker, "quote");
       if (cached) return cached;
@@ -757,7 +758,7 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Search for a ticker by name/symbol - uses direct fetch (no retry) for speed */
-  async search(query: string): Promise<Array<{ symbol: string; name: string; exchange: string; type: string }>> {
+  async search(query: string): Promise<InstrumentSearchResult[]> {
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
     try {
       const resp = await fetch(url, {
@@ -767,6 +768,7 @@ export class YahooFinanceClient implements DataProvider {
       if (!resp.ok) return [];
       const data = await resp.json() as any;
       return (data.quotes || []).map((q: any) => ({
+        providerId: this.id,
         symbol: q.symbol || "",
         name: q.shortname || q.longname || "",
         exchange: q.exchDisp || q.exchange || "",
@@ -778,7 +780,7 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch news for a ticker */
-  async getNews(ticker: string, count = 10, exchange = ""): Promise<NewsItem[]> {
+  async getNews(ticker: string, count = 10, exchange = "", _context?: MarketDataRequestContext): Promise<NewsItem[]> {
     if (this.cache) {
       const cached = this.cache.getCached<NewsItem[]>(ticker, "news");
       if (cached) return cached.map((n) => ({ ...n, publishedAt: new Date(n.publishedAt) }));
@@ -839,7 +841,7 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch price history with appropriate granularity for the given time range */
-  async getPriceHistory(ticker: string, exchange = "", range: TimeRange): Promise<PricePoint[]> {
+  async getPriceHistory(ticker: string, exchange = "", range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
     const cacheKey = `history:${range}`;
     if (this.cache) {
       const cached = this.cache.getCached<PricePoint[]>(ticker, cacheKey);
@@ -895,7 +897,7 @@ export class YahooFinanceClient implements DataProvider {
     };
   }
 
-  async getOptionsChain(ticker: string, exchange = "", expirationDate?: number): Promise<OptionsChain> {
+  async getOptionsChain(ticker: string, exchange = "", expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
     const cacheKey = `options:${expirationDate ?? "all"}`;
     if (this.cache) {
       const cached = this.cache.getCached<OptionsChain>(ticker, cacheKey);

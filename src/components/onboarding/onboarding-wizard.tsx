@@ -7,7 +7,9 @@ import { themes, getThemeIds } from "../../theme/themes";
 import { saveConfig } from "../../data/config-store";
 import type { AppConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { BrokerAdapter, BrokerConfigField } from "../../types/broker";
+import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField } from "../../types/broker";
+import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
 
 interface OnboardingWizardProps {
@@ -58,6 +60,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const [brokerValues, setBrokerValues] = useState<Record<string, Record<string, string>>>({});
   const [selectedBrokerId, setSelectedBrokerId] = useState<string | null>(null);
   const [brokerFieldIdx, setBrokerFieldIdx] = useState(0);
+  const [brokerSelectIdx, setBrokerSelectIdx] = useState(0);
   const [editingField, setEditingField] = useState(false);
 
   // Plugin state
@@ -99,8 +102,10 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const activeBrokerFields = useMemo((): BrokerConfigField[] => {
     if (!selectedBrokerId) return [];
     const broker = brokerOptions.find((b) => b.id === selectedBrokerId);
-    return broker?.adapter.configSchema.filter((f) => f.required) ?? [];
-  }, [selectedBrokerId, brokerOptions]);
+    return broker
+      ? resolveBrokerConfigFields(broker.adapter, brokerValues[selectedBrokerId] ?? {}).filter((field) => field.required)
+      : [];
+  }, [selectedBrokerId, brokerOptions, brokerValues]);
 
   // Apply theme preview synchronously so colors are correct for this render
   if (step === "theme") {
@@ -113,6 +118,15 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
       setTimeout(() => inputRef.current?.focus(), 10);
     }
   }, [editingField, portfolioSub, brokerFieldIdx]);
+
+  useEffect(() => {
+    if (!selectedBrokerId) return;
+    const field = activeBrokerFields[brokerFieldIdx];
+    if (!field || field.type !== "select") return;
+    const currentValue = brokerValues[selectedBrokerId]?.[field.key] ?? field.options?.[0]?.value ?? "";
+    const index = Math.max(0, field.options?.findIndex((option) => option.value === currentValue) ?? 0);
+    setBrokerSelectIdx(index);
+  }, [selectedBrokerId, brokerFieldIdx, activeBrokerFields, brokerValues]);
 
   const nextStep = useCallback(() => {
     const idx = STEPS.indexOf(step);
@@ -135,10 +149,22 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
     const isBroker = selectedBrokerId && selectedBrokerId !== "manual";
 
-    // Build broker config from collected values
-    const brokers = { ...config.brokers };
+    // Build initial broker instance from collected values
+    const brokerInstances = [...config.brokerInstances];
     if (isBroker && brokerValues[selectedBrokerId]) {
-      brokers[selectedBrokerId] = { ...brokerValues[selectedBrokerId] };
+      const brokerOption = brokerOptions.find((option) => option.id === selectedBrokerId);
+      const label = brokerOption?.name || selectedBrokerId;
+      const brokerConfig = (selectedBrokerId === "ibkr"
+        ? buildIbkrConfigFromValues(brokerValues[selectedBrokerId])
+        : { ...brokerValues[selectedBrokerId] }) as unknown as Record<string, unknown>;
+      brokerInstances.push({
+        id: createBrokerInstanceId(selectedBrokerId, label, brokerInstances.map((instance) => instance.id)),
+        brokerType: selectedBrokerId,
+        label,
+        connectionMode: typeof brokerConfig.connectionMode === "string" ? brokerConfig.connectionMode : undefined,
+        config: brokerConfig,
+        enabled: true,
+      });
     }
 
     const updatedConfig: AppConfig = {
@@ -149,11 +175,11 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         : [{ id: "main", name: portfolioName || "Main Portfolio", currency: "USD" }],
       disabledPlugins,
       onboardingComplete: true,
-      brokers,
+      brokerInstances,
     };
     saveConfig(updatedConfig).catch(() => {});
     onComplete(updatedConfig);
-  }, [config, themeIdx, themeIds, portfolioName, selectedBrokerId, brokerValues, disabledPlugins, onComplete]);
+  }, [config, themeIdx, themeIds, portfolioName, selectedBrokerId, brokerValues, disabledPlugins, onComplete, brokerOptions]);
 
   // Helper to update a broker field value
   const setBrokerFieldValue = useCallback((brokerId: string, key: string, value: string) => {
@@ -172,12 +198,22 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
           nextStep();
         } else if (portfolioSub === "broker-fields" && selectedBrokerId) {
           const currentField = activeBrokerFields[brokerFieldIdx];
-          const currentValue = brokerValues[selectedBrokerId]?.[currentField?.key ?? ""] ?? "";
-          if (currentValue.trim()) {
+          if (!currentField) {
+            nextStep();
+            return;
+          }
+          const rawValue = brokerValues[selectedBrokerId]?.[currentField.key] ?? "";
+          const currentValue = rawValue.trim() || currentField.defaultValue || "";
+          if (currentValue) {
+            if (!rawValue.trim() && currentField.defaultValue) {
+              setBrokerFieldValue(selectedBrokerId, currentField.key, currentField.defaultValue);
+            }
             // Move to next field, or advance to next step if all fields done
             if (brokerFieldIdx < activeBrokerFields.length - 1) {
-              setBrokerFieldIdx(brokerFieldIdx + 1);
-              setEditingField(true);
+              const nextIndex = brokerFieldIdx + 1;
+              const nextField = activeBrokerFields[nextIndex];
+              setBrokerFieldIdx(nextIndex);
+              setEditingField(nextField?.type !== "select");
             } else {
               nextStep();
             }
@@ -212,9 +248,46 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             setSelectedBrokerId(choice.id);
             setBrokerFieldIdx(0);
             setPortfolioSub("broker-fields");
-            setEditingField(true);
+            const broker = brokerOptions.find((option) => option.id === choice.id);
+            const initialField = broker
+              ? resolveBrokerConfigFields(broker.adapter, brokerValues[choice.id] ?? {}).filter((field) => field.required)[0]
+              : null;
+            setEditingField(initialField?.type !== "select");
           }
           return;
+        }
+        if (portfolioSub === "broker-fields" && selectedBrokerId) {
+          const currentField = activeBrokerFields[brokerFieldIdx];
+          if (!currentField) {
+            nextStep();
+            return;
+          }
+          if (currentField.type === "select") {
+            const option = currentField.options?.[brokerSelectIdx];
+            if (!option) return;
+            setBrokerFieldValue(selectedBrokerId, currentField.key, option.value);
+            if (brokerFieldIdx < activeBrokerFields.length - 1) {
+              const nextIndex = brokerFieldIdx + 1;
+              const nextValues = {
+                ...(brokerValues[selectedBrokerId] ?? {}),
+                [currentField.key]: option.value,
+              };
+              const broker = brokerOptions.find((entry) => entry.id === selectedBrokerId);
+              const fields = broker
+                ? resolveBrokerConfigFields(broker.adapter, nextValues).filter((field) => field.required)
+                : activeBrokerFields;
+              const nextField = fields[nextIndex];
+              setBrokerFieldIdx(nextIndex);
+              setEditingField(nextField?.type !== "select");
+            } else {
+              nextStep();
+            }
+            return;
+          }
+          if (!editingField) {
+            setEditingField(true);
+            return;
+          }
         }
       }
       nextStep();
@@ -248,6 +321,16 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         setPortfolioOptionIdx((i) => Math.max(0, i - 1));
       } else if (event.name === "down" || event.name === "j") {
         setPortfolioOptionIdx((i) => Math.min(portfolioChoices.length - 1, i + 1));
+      }
+    } else if (step === "portfolio" && portfolioSub === "broker-fields" && selectedBrokerId) {
+      const currentField = activeBrokerFields[brokerFieldIdx];
+      if (currentField?.type === "select") {
+        const optionCount = currentField.options?.length ?? 0;
+        if (event.name === "up" || event.name === "k") {
+          setBrokerSelectIdx((index) => Math.max(0, index - 1));
+        } else if (event.name === "down" || event.name === "j") {
+          setBrokerSelectIdx((index) => Math.min(optionCount - 1, index + 1));
+        }
       }
     } else if (step === "plugins") {
       if (event.name === "up" || event.name === "k") {
@@ -319,6 +402,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             selectedBrokerId={selectedBrokerId}
             brokerFields={activeBrokerFields}
             brokerFieldIdx={brokerFieldIdx}
+            brokerSelectIdx={brokerSelectIdx}
             brokerValues={brokerValues}
             onBrokerFieldChange={setBrokerFieldValue}
             editing={editingField}
@@ -341,7 +425,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         {step === "shortcuts" && <ShortcutsStep />}
         {step === "ready" && (
           <ReadyStep
-            brokerName={connectedBrokerName}
+            brokerName={connectedBrokerName ?? null}
             portfolioName={portfolioName}
           />
         )}
@@ -479,6 +563,7 @@ function PortfolioStep({
   selectedBrokerId,
   brokerFields,
   brokerFieldIdx,
+  brokerSelectIdx,
   brokerValues,
   onBrokerFieldChange,
   editing,
@@ -492,6 +577,7 @@ function PortfolioStep({
   selectedBrokerId: string | null;
   brokerFields: BrokerConfigField[];
   brokerFieldIdx: number;
+  brokerSelectIdx: number;
   brokerValues: Record<string, Record<string, string>>;
   onBrokerFieldChange: (brokerId: string, key: string, value: string) => void;
   editing: boolean;
@@ -617,15 +703,20 @@ function PortfolioStep({
         const isActive = i === brokerFieldIdx;
 
         if (!isActive && val) {
+          const selectedLabel = field.type === "select"
+            ? field.options?.find((option) => option.value === val)?.label ?? val
+            : val;
           return (
             <box key={field.key} height={1}>
               <text fg={colors.positive}>{"\u2713 "}</text>
-              <text fg={colors.text}>{field.label}</text>
+              <text fg={colors.text}>{`${field.label}: ${selectedLabel}`}</text>
             </box>
           );
         }
 
         if (isActive) {
+          const activeSelectValue = field.options?.[brokerSelectIdx]?.value ?? values[field.key] ?? "";
+          const effectiveValue = val || field.defaultValue || "";
           return (
             <box key={field.key} flexDirection="column">
               {i > 0 && <box height={1} />}
@@ -636,7 +727,7 @@ function PortfolioStep({
                 <text fg={colors.text}>{field.label}</text>
               </box>
               <box height={1}>
-                {editing ? (
+                {field.type !== "select" && (editing ? (
                   <input
                     ref={inputRef}
                     placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
@@ -648,11 +739,43 @@ function PortfolioStep({
                     onSubmit={() => {}}
                   />
                 ) : (
-                  <text fg={val ? colors.positive : colors.textMuted}>
-                    {val ? `\u2713 ${field.label} entered` : "Press enter to type..."}
+                  <text fg={effectiveValue ? colors.positive : colors.textMuted}>
+                    {effectiveValue
+                      ? `\u2713 ${field.label}: ${effectiveValue}`
+                      : "Press enter to type..."}
                   </text>
-                )}
+                ))}
               </box>
+              {field.type !== "select" && !val && field.defaultValue && (
+                <box height={1}>
+                  <text fg={colors.textMuted}>{`Press enter to use ${field.defaultValue}`}</text>
+                </box>
+              )}
+              {field.type === "select" && (
+                <box flexDirection="column">
+                  {(field.options ?? []).map((option, optionIdx) => {
+                    const selected = optionIdx === brokerSelectIdx;
+                    return (
+                      <box key={option.value} backgroundColor={selected ? colors.selected : colors.bg}>
+                        <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "\u25b8 " : "  "}</text>
+                        <text
+                          fg={selected ? colors.text : colors.textDim}
+                          attributes={selected ? TextAttributes.BOLD : 0}
+                        >
+                          {option.label}
+                        </text>
+                      </box>
+                    );
+                  })}
+                </box>
+              )}
+              {field.type === "select" && (
+                <box height={1}>
+                  <text fg={colors.textMuted}>
+                    {activeSelectValue ? `Selected: ${field.options?.find((option) => option.value === activeSelectValue)?.label ?? activeSelectValue}` : "Use \u2191\u2193 to choose"}
+                  </text>
+                </box>
+              )}
             </box>
           );
         }

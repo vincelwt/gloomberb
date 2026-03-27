@@ -5,33 +5,46 @@ const DEFAULT_FRONTMATTER: Omit<TickerFrontmatter, "ticker" | "exchange" | "curr
   portfolios: [],
   watchlists: [],
   positions: [],
+  broker_contracts: [],
   custom: {},
   tags: [],
 };
 
-export function parseTicker(filePath: string, content: string): TickerFile {
-  const { data, content: body } = matter(content);
-  const frontmatter: TickerFrontmatter = {
+export function hydrateTickerFrontmatter(data: Partial<TickerFrontmatter>): TickerFrontmatter {
+  return {
     ...DEFAULT_FRONTMATTER,
-    ticker: "",
-    exchange: "",
-    currency: "USD",
-    name: "",
-    ...data,
-    portfolios: data.portfolios ?? [],
-    watchlists: data.watchlists ?? [],
-    positions: data.positions ?? [],
-    custom: data.custom ?? {},
-    tags: data.tags ?? [],
+    ticker: data.ticker ?? "",
+    exchange: data.exchange ?? "",
+    currency: data.currency ?? "USD",
+    name: data.name ?? "",
+    sector: data.sector,
+    industry: data.industry,
+    asset_category: data.asset_category,
+    isin: data.isin,
+    cusip: data.cusip,
+    portfolios: Array.isArray(data.portfolios) ? [...data.portfolios] : [],
+    watchlists: Array.isArray(data.watchlists) ? [...data.watchlists] : [],
+    positions: Array.isArray(data.positions) ? [...data.positions] : [],
+    broker_contracts: Array.isArray(data.broker_contracts) ? [...data.broker_contracts] : [],
+    custom: data.custom && typeof data.custom === "object" ? { ...data.custom } : {},
+    tags: Array.isArray(data.tags) ? [...data.tags] : [],
   };
-  return { frontmatter, notes: body.trim(), filePath };
+}
+
+export function parseTicker(filePath: string, content: string): TickerFile {
+  const parsed = matter(content);
+  return {
+    frontmatter: hydrateTickerFrontmatter(parsed.data as Partial<TickerFrontmatter>),
+    notes: parsed.content.trim(),
+    filePath,
+  };
 }
 
 export function serializeTicker(ticker: TickerFile): string {
-  const fm = { ...ticker.frontmatter };
-  // Clean up empty arrays for cleaner files
-  if (fm.positions.length === 0) delete (fm as any).positions;
-  if (fm.tags.length === 0) delete (fm as any).tags;
-  if (Object.keys(fm.custom).length === 0) delete (fm as any).custom;
-  return matter.stringify(ticker.notes ? `\n${ticker.notes}\n` : "\n", fm);
+  const frontmatter = { ...ticker.frontmatter };
+  if (frontmatter.positions.length === 0) delete (frontmatter as Partial<TickerFrontmatter>).positions;
+  if ((frontmatter.broker_contracts ?? []).length === 0) delete (frontmatter as Partial<TickerFrontmatter>).broker_contracts;
+  if (frontmatter.tags.length === 0) delete (frontmatter as Partial<TickerFrontmatter>).tags;
+  if (Object.keys(frontmatter.custom).length === 0) delete (frontmatter as Partial<TickerFrontmatter>).custom;
+  return matter.stringify(ticker.notes ? `\n${ticker.notes}\n` : "\n", frontmatter);
 }
