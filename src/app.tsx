@@ -789,12 +789,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     const paneType = options?.paneType ?? "ticker-detail";
     const paneDef = pluginRegistry.panes.get(paneType);
     if (!paneDef) return;
-    const existingInstance = state.config.layout.instances.find((instance) =>
-      instance.paneId === paneType
-      && instance.binding?.kind === "fixed"
-      && instance.binding.symbol === symbol,
-    );
-    const instance = existingInstance ?? buildPaneInstance(paneType, {
+    const instance = buildPaneInstance(paneType, {
       title: symbol,
       binding: { kind: "fixed", symbol },
     });
