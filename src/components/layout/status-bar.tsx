@@ -1,4 +1,5 @@
-import { colors } from "../../theme/colors";
+import { useState } from "react";
+import { colors, hoverBg } from "../../theme/colors";
 import { useAppState, useFocusedTicker } from "../../state/app-context";
 import { marketStateLabel, marketStateColor, exchangeShortName } from "../../utils/market-status";
 import { formatPercentRaw } from "../../utils/format";
@@ -7,8 +8,9 @@ import { getSharedRegistry } from "../../plugins/registry";
 
 export function StatusBar() {
   const registry = getSharedRegistry();
-  const { state } = useAppState();
+  const { state, dispatch } = useAppState();
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
+  const [hoveredTab, setHoveredTab] = useState<number | null>(null);
   const refreshCount = state.refreshing.size;
 
   if (!state.statusBarVisible) return null;
@@ -44,14 +46,24 @@ export function StatusBar() {
       backgroundColor={colors.panel}
     >
       {hasMultipleLayouts ? (
-        <box paddingLeft={1} flexShrink={0} flexDirection="row">
+        <box paddingLeft={1} flexShrink={0} flexDirection="row" onMouseLeave={() => setHoveredTab(null)}>
           {layouts.map((l, i) => {
             const isActive = i === activeLayoutIdx;
+            const isHovered = hoveredTab === i && !isActive;
             const num = i + 1;
-            if (isActive) {
-              return <text key={i} fg={colors.headerText} bg={colors.header}>{` ^${num} ${l.name} `}</text>;
-            }
-            return <text key={i} fg={colors.textDim}>{` ^${num} `}<span fg={colors.text}>{l.name}</span>{" "}</text>;
+            const bg = isActive ? colors.header : isHovered ? hoverBg() : undefined;
+            const fg = isActive ? colors.headerText : isHovered ? colors.text : colors.textDim;
+            return (
+              <text
+                key={i}
+                fg={fg}
+                bg={bg}
+                onMouseMove={() => setHoveredTab(i)}
+                onMouseDown={() => dispatch({ type: "SWITCH_LAYOUT", index: i })}
+              >
+                {` ^${num} `}<span fg={isActive ? colors.headerText : colors.text}>{l.name}</span>{" "}
+              </text>
+            );
           })}
         </box>
       ) : (
