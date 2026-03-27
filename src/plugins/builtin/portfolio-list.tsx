@@ -8,41 +8,11 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, usePaneCollection, usePaneInstanceId, usePaneStateValue } from "../../state/app-context";
 import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
-import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo } from "../../utils/format";
+import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
 import type { ColumnConfig } from "../../types/config";
 import type { TickerFile } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
-
-const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/**
- * Parse IBKR option symbol like "UBER 260821C00090000" into a readable form.
- * Format: UNDERLYING YYMMDD{C|P}SSSSSSSS (strike in 1/1000 dollars, 8 digits)
- */
-function formatOptionTicker(symbol: string): string {
-  // Match: TICKER(space)YYMMDDX00SSSSSS  where X is C or P
-  const m = symbol.match(/^(\S+)\s+(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
-  if (!m) return symbol;
-  const [, underlying, yy, mm, , side, rawStrike] = m;
-  const strike = parseInt(rawStrike!, 10) / 1000;
-  const month = MONTH_ABBREV[parseInt(mm!, 10) - 1] || mm;
-  const strikeStr = strike % 1 === 0 ? String(strike) : strike.toFixed(1);
-  return `${underlying} ${side === "C" ? "C" : "P"} $${strikeStr} ${month}'${yy}`;
-}
-
-/** Convert a value from one currency to base currency using cached exchange rates */
-function convertCurrency(
-  value: number,
-  fromCurrency: string,
-  baseCurrency: string,
-  exchangeRates: Map<string, number>,
-): number {
-  if (fromCurrency === baseCurrency) return value;
-  const fromRate = exchangeRates.get(fromCurrency);
-  const baseRate = exchangeRates.get(baseCurrency);
-  if (fromRate == null || baseRate == null || baseRate === 0) return value;
-  return (value * fromRate) / baseRate;
-}
+import { formatOptionTicker } from "../../utils/options";
 
 interface ColumnContext {
   activeTab?: string;
@@ -70,21 +40,21 @@ function getColumnValue(
     : ticker.frontmatter.positions;
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
-    (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+    (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
     0,
   );
 
   // For options without Yahoo quotes, use broker-provided position data
-  const isOption = ticker.frontmatter.asset_category === "OPT";
+  const isOption = ticker.frontmatter.assetCategory === "OPT";
   const brokerMktValue = tabPositions.reduce(
-    (sum, p) => sum + (p.market_value || 0),
+    (sum, p) => sum + (p.marketValue || 0),
     0,
   );
   const brokerPnl = tabPositions.reduce(
-    (sum, p) => sum + (p.unrealized_pnl || 0),
+    (sum, p) => sum + (p.unrealizedPnl || 0),
     0,
   );
-  const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.mark_price : undefined;
+  const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.markPrice : undefined;
 
   switch (col.id) {
     case "ticker": {
@@ -234,14 +204,14 @@ function getSortValue(
     : ticker.frontmatter.positions;
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
-    (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+    (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
     0,
   );
 
-  const isOption = ticker.frontmatter.asset_category === "OPT";
-  const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
-  const brokerPnl = tabPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
-  const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.mark_price : undefined;
+  const isOption = ticker.frontmatter.assetCategory === "OPT";
+  const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
+  const brokerPnl = tabPositions.reduce((sum, p) => sum + (p.unrealizedPnl || 0), 0);
+  const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.markPrice : undefined;
 
   switch (col.id) {
     case "ticker":
@@ -377,12 +347,12 @@ function PortfolioSummaryBar({
         : ticker.frontmatter.positions;
       const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
       const totalCost = tabPositions.reduce(
-        (sum, p) => sum + p.shares * p.avg_cost * (p.multiplier || 1),
+        (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
         0,
       );
 
-      const isOption = ticker.frontmatter.asset_category === "OPT";
-      const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.market_value || 0), 0);
+      const isOption = ticker.frontmatter.assetCategory === "OPT";
+      const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
 
       if (q && totalShares !== 0) {
         hasPositions = true;
