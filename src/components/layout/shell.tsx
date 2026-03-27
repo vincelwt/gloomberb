@@ -113,6 +113,13 @@ export function Shell({ pluginRegistry }: ShellProps) {
       if (widths[index] === 0) widths[index] = perUnspecified;
       widths[index] = Math.max(MIN_PANE_WIDTH, widths[index] ?? MIN_PANE_WIDTH);
     }
+
+    // Distribute any leftover pixels (from rounding) to the last column
+    const totalUsed = widths.reduce((sum, w) => sum + w, 0);
+    if (widths.length > 0 && totalUsed < availableWidth) {
+      widths[widths.length - 1] += availableWidth - totalUsed;
+    }
+
     return widths;
   }, [availableWidth, columnIndices.join(","), layout.columns]);
 
@@ -159,7 +166,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
           dispatch({ type: "FOCUS_PANE", paneId: rect.id });
           dispatch({ type: "UPDATE_LAYOUT", layout: bringToFront(layout, rect.id) });
 
-          if (relativeX >= rect.w - 4 && relativeY >= rect.h - 2) {
+          if (relativeX >= rect.w - 3 && relativeY >= rect.h - 2) {
             dragRef.current = {
               type: "float-resize",
               paneId: rect.id,
@@ -175,8 +182,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
             return;
           }
 
-          if (relativeY <= 1) {
-            if (relativeX >= rect.w - 5) {
+          if (relativeY === 0) {
+            if (relativeX >= rect.w - 5 && relativeX < rect.w - 1) {
               persistLayout(removePane(layout, rect.id));
               event.stopPropagation();
               event.preventDefault();
@@ -322,7 +329,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         const columnWidth = effectiveColumnWidths[localIndex]!;
 
         return (
-          <box key={`column-${columnIndex}`} flexDirection="row">
+          <box key={`column-${columnIndex}`} flexDirection="row" height={contentHeight}>
             <box flexDirection="column" width={columnWidth}>
               {panes.map((pane) => {
                 const focused = state.focusedPaneId === pane.instance.instanceId && !overlayOpen;
@@ -341,8 +348,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
                         paneId={pane.instance.instanceId}
                         paneType={pane.instance.paneId}
                         focused={focused}
-                        width={columnWidth - 2}
-                        height={paneHeight - 2}
+                        width={columnWidth}
+                        height={paneHeight - 1}
                       />
                     </PaneInstanceProvider>
                   </PaneWrapper>
@@ -354,9 +361,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
               <box
                 width={1}
                 height={contentHeight}
-                backgroundColor={dragColumnIndex === columnIndex ? colors.borderFocused : undefined}
+                backgroundColor={dragColumnIndex === columnIndex ? colors.borderFocused : colors.border}
               >
-                <text fg={dragColumnIndex === columnIndex ? colors.bg : colors.border}>│</text>
+                <text fg={dragColumnIndex === columnIndex ? colors.bg : colors.border}> </text>
               </box>
             )}
           </box>
@@ -389,8 +396,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
                 paneId={pane.instance.instanceId}
                 paneType={pane.instance.paneId}
                 focused={focused}
-                width={entry.width - 2}
-                height={entry.height - 4}
+                width={entry.width}
+                height={entry.height - 1}
                 close={() => handleFloatingClose(pane.instance.instanceId)}
               />
             </PaneInstanceProvider>

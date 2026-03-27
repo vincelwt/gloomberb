@@ -114,6 +114,36 @@ export function commandBarSelectedText(): string {
   return blendForContrast(preferred, base, fallback, 4.5);
 }
 
+/** Background for docked pane bodies */
+export function paneBg(focused: boolean): string {
+  if (focused) return colors.bg;
+  return colors.panel;
+}
+
+/** Background for floating pane bodies — elevated above docked panes */
+export function floatingPaneBg(focused: boolean): string {
+  if (focused) return blendHex(colors.bg, colors.border, 0.12);
+  return blendHex(colors.panel, colors.border, 0.35);
+}
+
+/** Background for pane title bars */
+export function paneTitleBg(focused: boolean): string {
+  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.15);
+  return blendHex(colors.panel, colors.border, 0.25);
+}
+
+/** Background for floating pane title bars */
+export function floatingPaneTitleBg(focused: boolean): string {
+  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.18);
+  return blendHex(colors.panel, colors.border, 0.4);
+}
+
+/** Title text color for panes */
+export function paneTitleText(focused: boolean): string {
+  if (focused) return colors.textBright;
+  return colors.textDim;
+}
+
 /** Returns green for positive, red for negative, neutral for zero */
 export function priceColor(value: number): string {
   if (value > 0) return colors.positive;

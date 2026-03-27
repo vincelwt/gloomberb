@@ -76,16 +76,6 @@ function getIbkrInstances(appConfig: ReturnType<GloomPluginContext["getConfig"]>
   return getBrokerInstancesByType(appConfig.brokerInstances, "ibkr");
 }
 
-function firstIbkrAccount(
-  appConfig: ReturnType<GloomPluginContext["getConfig"]>,
-  brokerInstanceId?: string,
-): string | undefined {
-  return appConfig.portfolios.find((entry) =>
-    entry.brokerId === "ibkr"
-    && (!brokerInstanceId || entry.brokerInstanceId === brokerInstanceId)
-    && entry.brokerAccountId,
-  )?.brokerAccountId;
-}
 
 function inferDraftAccountId(
   appConfig: ReturnType<GloomPluginContext["getConfig"]>,
@@ -198,6 +188,7 @@ const ibkrBroker: BrokerAdapter = {
   async importPositions(instance) {
     const normalized = normalizeIbkrConfig(instance.config);
     if (normalized.connectionMode === "gateway") {
+      await refreshGatewayData(instance);
       return ibkrGatewayManager.getService(instance.id).getPositions(normalized.gateway);
     }
     return importFlexPositions(normalized.flex);
@@ -1469,81 +1460,6 @@ function TradingPane({ focused, width, height }: PaneProps) {
   );
 }
 
-function connectWizard(): WizardStep[] {
-  return [
-    {
-      key: "_intro",
-      type: "info",
-      label: "Connect Interactive Brokers",
-      body: [
-        "Choose Flex for read-only imports or Gateway / TWS for trading and broker market data.",
-        "Gateway / TWS runs locally; Gloomberb connects to your existing paper or live session.",
-      ],
-    },
-    {
-      key: "profileLabel",
-      type: "text",
-      label: "Profile Label",
-      placeholder: "Work, Personal, Paper",
-      body: ["This labels the IBKR connection profile. Portfolio names still use the account only."],
-    },
-    {
-      key: "connectionMode",
-      type: "select",
-      label: "Connection Mode",
-      options: [
-        { label: "Flex (read-only)", value: "flex" },
-        { label: "Gateway / TWS", value: "gateway" },
-      ],
-    },
-    {
-      key: "token",
-      type: "password",
-      label: "Flex Token",
-      placeholder: "Flex Web Service token",
-      body: ["Client Portal → Performance & Reports → Flex Queries → Flex Web Service"],
-      dependsOn: { key: "connectionMode", value: "flex" },
-    },
-    {
-      key: "queryId",
-      type: "text",
-      label: "Flex Query ID",
-      placeholder: "Numeric query id",
-      body: ["Use an Activity Flex Query with Open Positions enabled."],
-      dependsOn: { key: "connectionMode", value: "flex" },
-    },
-    {
-      key: "host",
-      type: "text",
-      label: "Gateway Host",
-      placeholder: "127.0.0.1",
-      defaultValue: "127.0.0.1",
-      dependsOn: { key: "connectionMode", value: "gateway" },
-    },
-    {
-      key: "port",
-      type: "number",
-      label: "Gateway Port",
-      placeholder: "4002",
-      defaultValue: "4002",
-      dependsOn: { key: "connectionMode", value: "gateway" },
-    },
-    {
-      key: "clientId",
-      type: "number",
-      label: "Client ID",
-      placeholder: "1",
-      defaultValue: "1",
-      dependsOn: { key: "connectionMode", value: "gateway" },
-    },
-    {
-      key: "_validate",
-      type: "info",
-      label: "Connecting",
-      body: ["Saving credentials and validating the Interactive Brokers connection..."],
-    },
-  ];
-}
 
 export const ibkrPlugin: GloomPlugin = {
   id: "ibkr",
@@ -1591,82 +1507,6 @@ export const ibkrPlugin: GloomPlugin = {
       }
     });
 
-    ctx.registerCommand({
-      id: "ibkr-connect",
-      label: "Connect IBKR",
-      description: "Configure Interactive Brokers via Flex or Gateway / TWS",
-      keywords: ["ibkr", "interactive brokers", "gateway", "tws", "flex", "connect", "setup"],
-      category: "config",
-      wizard: connectWizard(),
-      execute: async (values) => {
-        const brokerConfig = buildIbkrConfigFromValues(values ?? {});
-        const profileLabel = values?.profileLabel?.trim();
-        if (!profileLabel) {
-          throw new Error("Profile label is required.");
-        }
-        const instance = await ctx.createBrokerInstance("ibkr", profileLabel, brokerConfig as unknown as Record<string, unknown>);
-        if (brokerConfig.connectionMode === "gateway") {
-          await ibkrBroker.connect?.(instance);
-          await refreshGatewayData(instance);
-          updateTradingPaneState({ brokerInstanceId: instance.id, brokerLabel: instance.label });
-          const inferredAccount = firstIbkrAccount(ctx.getConfig(), instance.id);
-          if (inferredAccount) {
-            updateTradingPaneState({ brokerInstanceId: instance.id, brokerLabel: instance.label, accountId: inferredAccount });
-          }
-        }
-        await ctx.syncBrokerInstance(instance.id);
-        ctx.showPane("ibkr-trading");
-        ctx.switchPanel("right");
-        ctx.switchTab("ibkr-trade");
-      },
-    });
-
-    ctx.registerCommand({
-      id: "ibkr-disconnect",
-      label: "Disconnect IBKR",
-      description: "Remove the IBKR integration, managed portfolios, and imported positions",
-      keywords: ["ibkr", "gateway", "disconnect", "remove", "delete"],
-      category: "config",
-      execute: async () => {
-        const config = ctx.getConfig();
-        const ibkrInstances = getIbkrInstances(config);
-        const targetInstanceId = ibkrInstances.length === 1 ? ibkrInstances[0]!.id : undefined;
-        if (!targetInstanceId) {
-          ctx.openCommandBar("Disconnect Broker Account");
-          ctx.showToast("Choose which IBKR profile to remove.", { type: "info" });
-          return;
-        }
-        await ctx.removeBrokerInstance(targetInstanceId);
-        removeBrokerInstanceFromTradingState(targetInstanceId);
-        setTradingMessage("Removed IBKR integration.", undefined);
-      },
-    });
-
-    ctx.registerCommand({
-      id: "ibkr-sync",
-      label: "Sync IBKR",
-      description: "Import positions and refresh trading state from Interactive Brokers",
-      keywords: ["ibkr", "sync", "refresh", "positions"],
-      category: "data",
-      execute: async () => {
-        const config = ctx.getConfig();
-        const ibkrInstances = getIbkrInstances(config);
-        const targetInstanceId = ibkrInstances.length === 1 ? ibkrInstances[0]!.id : undefined;
-        if (!targetInstanceId) {
-          ctx.openCommandBar("Sync Broker Account");
-          ctx.showToast("Choose which IBKR profile to sync.", { type: "info" });
-          return;
-        }
-        const instance = getBrokerInstance(config.brokerInstances, targetInstanceId);
-        if (!instance) return;
-        const normalized = normalizeIbkrConfig(instance.config);
-        if (normalized.connectionMode === "gateway") {
-          await refreshGatewayData(instance);
-        }
-        await ctx.syncBrokerInstance(targetInstanceId);
-        ctx.showPane("ibkr-trading");
-      },
-    });
 
     ctx.registerCommand({
       id: "ibkr-open-trading",
@@ -1674,6 +1514,7 @@ export const ibkrPlugin: GloomPlugin = {
       description: "Open the IBKR trade tab for the selected ticker",
       keywords: ["ibkr", "trading", "orders", "trade", "ticker"],
       category: "navigation",
+      hidden: () => getIbkrInstances(ctx.getConfig()).length === 0,
       execute: async () => {
         if (lastSelectedTickerSymbol) {
           const ticker = ctx.getTicker(lastSelectedTickerSymbol);
@@ -1693,6 +1534,7 @@ export const ibkrPlugin: GloomPlugin = {
       description: "Prefill the trading pane with a BUY ticket for the selected ticker",
       keywords: ["buy", "trade", "order", "selected", "ibkr"],
       category: "portfolio",
+      hidden: () => getIbkrInstances(ctx.getConfig()).length === 0 || !lastSelectedTickerSymbol,
       execute: async () => {
         if (!lastSelectedTickerSymbol) return;
         const ticker = ctx.getTicker(lastSelectedTickerSymbol);
@@ -1709,6 +1551,7 @@ export const ibkrPlugin: GloomPlugin = {
       description: "Prefill the trading pane with a SELL ticket for the selected ticker",
       keywords: ["sell", "trade", "order", "selected", "ibkr"],
       category: "portfolio",
+      hidden: () => getIbkrInstances(ctx.getConfig()).length === 0 || !lastSelectedTickerSymbol,
       execute: async () => {
         if (!lastSelectedTickerSymbol) return;
         const ticker = ctx.getTicker(lastSelectedTickerSymbol);

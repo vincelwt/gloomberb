@@ -4,27 +4,16 @@ import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
-import { padTo } from "../../utils/format";
+import { padTo, formatTimeAgo } from "../../utils/format";
 import type { NewsItem } from "../../types/data-provider";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { Spinner } from "../../components/spinner";
-
-function formatTimeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" });
-}
 
 function NewsTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
@@ -36,11 +25,14 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     if (!ticker || !provider) return;
     let cancelled = false;
     setLoading(true);
+    setError(null);
     setSelectedIdx(0);
     setSummaryCache(new Map());
     provider.getNews(ticker.frontmatter.ticker, 15).then((items) => {
       if (!cancelled) setNews(items);
-    }).catch(() => {}).finally(() => {
+    }).catch((err) => {
+      if (!cancelled) setError(err?.message ?? "Failed to load news");
+    }).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
@@ -75,6 +67,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;
+  if (error) return <text fg={colors.textDim}>Error: {error}</text>;
   if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
 
   const innerWidth = Math.max(width - 4, 40);

@@ -6,33 +6,9 @@ import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
+import { formatExpDate, parseOptionSymbol } from "../../utils/options";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { Spinner } from "../../components/spinner";
-
-const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function formatExpDate(ts: number): string {
-  const d = new Date(ts * 1000);
-  const month = MONTH_ABBREV[d.getMonth()] || String(d.getMonth() + 1);
-  const yy = String(d.getFullYear()).slice(2);
-  return `${month} ${d.getDate()} '${yy}`;
-}
-
-/**
- * Parse IBKR option symbol like "UBER 260821C00090000" into components.
- * Returns null if not a recognized option symbol.
- */
-function parseOptionSymbol(symbol: string): { underlying: string; expTs: number; strike: number; side: "C" | "P" } | null {
-  const m = symbol.match(/^(\S+)\s+(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
-  if (!m) return null;
-  const [, underlying, yy, mm, dd, side, rawStrike] = m;
-  const strike = parseInt(rawStrike!, 10) / 1000;
-  const year = 2000 + parseInt(yy!, 10);
-  const month = parseInt(mm!, 10) - 1;
-  const day = parseInt(dd!, 10);
-  const expTs = Math.floor(new Date(year, month, day).getTime() / 1000);
-  return { underlying: underlying!, expTs, strike, side: side as "C" | "P" };
-}
 
 function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const { ticker } = usePaneTicker();
@@ -46,7 +22,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const [hoveredExpIdx, setHoveredExpIdx] = useState<number | null>(null);
 
   // Determine if we're viewing an option position — if so, resolve the underlying
-  const isOpt = ticker?.frontmatter.asset_category === "OPT";
+  const isOpt = ticker?.frontmatter.assetCategory === "OPT";
   const parsed = isOpt ? parseOptionSymbol(ticker!.frontmatter.ticker) : null;
   const effectiveTicker = parsed?.underlying ?? ticker?.frontmatter.ticker ?? "";
   const effectiveExchange = isOpt ? "" : (ticker?.frontmatter.exchange ?? "");
