@@ -1,10 +1,36 @@
-import type { DockedPaneEntry, FloatingPaneEntry, LayoutColumnConfig, LayoutConfig } from "../types/config";
+import type {
+  DockedPaneEntry,
+  FloatingPaneEntry,
+  LayoutColumnConfig,
+  LayoutConfig,
+  PaneInstanceConfig,
+} from "../types/config";
 import type { PaneDef } from "../types/plugin";
+import { createPaneInstance, findPaneInstance, normalizePaneLayout, removePaneInstances } from "../types/config";
 
 export interface ResolvedPane {
+  instance: PaneInstanceConfig;
   def: PaneDef;
   docked?: DockedPaneEntry;
   floating?: FloatingPaneEntry;
+}
+
+function pruneInstances(layout: LayoutConfig): LayoutConfig {
+  const activeInstanceIds = new Set<string>([
+    ...layout.docked.map((entry) => entry.instanceId),
+    ...layout.floating.map((entry) => entry.instanceId),
+  ]);
+  return normalizePaneLayout(removePaneInstances(
+    layout,
+    layout.instances
+      .filter((instance) => !activeInstanceIds.has(instance.instanceId))
+      .map((instance) => instance.instanceId),
+  ));
+}
+
+function ensurePaneInstance(layout: LayoutConfig, instance: PaneInstanceConfig): LayoutConfig {
+  if (layout.instances.some((entry) => entry.instanceId === instance.instanceId)) return layout;
+  return { ...layout, instances: [...layout.instances, instance] };
 }
 
 export function resolveDockedByColumn(
@@ -14,10 +40,12 @@ export function resolveDockedByColumn(
   const result = new Map<number, ResolvedPane[]>();
 
   for (const entry of layout.docked) {
-    const def = registeredPanes.get(entry.paneId);
+    const instance = findPaneInstance(layout, entry.instanceId);
+    if (!instance) continue;
+    const def = registeredPanes.get(instance.paneId);
     if (!def) continue;
     const panes = result.get(entry.columnIndex) ?? [];
-    panes.push({ def, docked: entry });
+    panes.push({ instance, def, docked: entry });
     result.set(entry.columnIndex, panes);
   }
 
@@ -34,9 +62,11 @@ export function resolveFloating(
 ): ResolvedPane[] {
   const result: ResolvedPane[] = [];
   for (const entry of layout.floating) {
-    const def = registeredPanes.get(entry.paneId);
+    const instance = findPaneInstance(layout, entry.instanceId);
+    if (!instance) continue;
+    const def = registeredPanes.get(instance.paneId);
     if (!def) continue;
-    result.push({ def, floating: entry });
+    result.push({ instance, def, floating: entry });
   }
   result.sort((a, b) => (a.floating?.zIndex ?? 50) - (b.floating?.zIndex ?? 50));
   return result;
@@ -44,12 +74,12 @@ export function resolveFloating(
 
 export function floatPane(
   layout: LayoutConfig,
-  paneId: string,
+  instanceId: string,
   termWidth: number,
   termHeight: number,
   def?: PaneDef,
 ): LayoutConfig {
-  const docked = layout.docked.find((entry) => entry.paneId === paneId);
+  const docked = layout.docked.find((entry) => entry.instanceId === instanceId);
   if (!docked) return layout;
 
   const floatingWidth = def?.defaultFloatingSize?.width ?? Math.floor(termWidth * 0.6);
@@ -60,8 +90,8 @@ export function floatPane(
 
   return normalizeColumns({
     ...layout,
-    docked: layout.docked.filter((entry) => entry.paneId !== paneId),
-    floating: [...layout.floating, { paneId, x, y, width: floatingWidth, height: floatingHeight, zIndex: maxZ + 1 }],
+    docked: layout.docked.filter((entry) => entry.instanceId !== instanceId),
+    floating: [...layout.floating, { instanceId, x, y, width: floatingWidth, height: floatingHeight, zIndex: maxZ + 1 }],
   });
 }
 
@@ -70,12 +100,12 @@ export interface DockTarget {
   position: "left" | "right" | "above" | "below";
 }
 
-export function dockPane(layout: LayoutConfig, paneId: string, target: DockTarget): LayoutConfig {
-  const targetPane = layout.docked.find((entry) => entry.paneId === target.relativeTo);
+export function dockPane(layout: LayoutConfig, instanceId: string, target: DockTarget): LayoutConfig {
+  const targetPane = layout.docked.find((entry) => entry.instanceId === target.relativeTo);
   if (!targetPane) return layout;
 
-  let docked = layout.docked.filter((entry) => entry.paneId !== paneId);
-  const floating = layout.floating.filter((entry) => entry.paneId !== paneId);
+  const docked = layout.docked.filter((entry) => entry.instanceId !== instanceId);
+  const floating = layout.floating.filter((entry) => entry.instanceId !== instanceId);
   const columns = [...layout.columns];
 
   if (target.position === "above" || target.position === "below") {
@@ -84,8 +114,7 @@ export function dockPane(layout: LayoutConfig, paneId: string, target: DockTarge
       .map((entry) => entry.order ?? 0);
     const baseOrder = siblingOrders.length > 0 ? Math.max(...siblingOrders) + 1 : 0;
     const order = target.position === "above" ? (targetPane.order ?? 0) - 1 : baseOrder;
-    docked.push({ paneId, columnIndex: targetPane.columnIndex, order });
-    return normalizeColumns({ columns, docked, floating });
+    return normalizeColumns({ columns, instances: layout.instances, docked: [...docked, { instanceId, columnIndex: targetPane.columnIndex, order }], floating });
   }
 
   const insertIndex = target.position === "left" ? targetPane.columnIndex : targetPane.columnIndex + 1;
@@ -94,43 +123,46 @@ export function dockPane(layout: LayoutConfig, paneId: string, target: DockTarge
     columnIndex: entry.columnIndex >= insertIndex ? entry.columnIndex + 1 : entry.columnIndex,
   }));
   columns.splice(insertIndex, 0, {});
-  shiftedDocked.push({ paneId, columnIndex: insertIndex, order: 0 });
-  return normalizeColumns({ columns, docked: shiftedDocked, floating });
+  shiftedDocked.push({ instanceId, columnIndex: insertIndex, order: 0 });
+  return normalizeColumns({ columns, instances: layout.instances, docked: shiftedDocked, floating });
 }
 
-export function addPaneToLayout(layout: LayoutConfig, paneId: string, target: DockTarget): LayoutConfig {
+export function addPaneToLayout(layout: LayoutConfig, instance: PaneInstanceConfig, target: DockTarget): LayoutConfig {
+  const withInstance = ensurePaneInstance(layout, instance);
   return dockPane(
-    { ...layout, floating: [...layout.floating, { paneId, x: 0, y: 0, width: 0, height: 0 }] },
-    paneId,
+    { ...withInstance, floating: [...withInstance.floating, { instanceId: instance.instanceId, x: 0, y: 0, width: 0, height: 0 }] },
+    instance.instanceId,
     target,
   );
 }
 
 export function addPaneFloating(
   layout: LayoutConfig,
-  paneId: string,
+  instance: PaneInstanceConfig | string,
   termWidth: number,
   termHeight: number,
   def?: PaneDef,
 ): LayoutConfig {
+  const resolvedInstance = typeof instance === "string" ? createPaneInstance(instance) : instance;
+  const withInstance = ensurePaneInstance(layout, resolvedInstance);
   const floatingWidth = def?.defaultFloatingSize?.width ?? Math.floor(termWidth * 0.6);
   const floatingHeight = def?.defaultFloatingSize?.height ?? Math.floor(termHeight * 0.6);
   const x = Math.floor((termWidth - floatingWidth) / 2);
   const y = Math.floor((termHeight - floatingHeight) / 2);
-  const maxZ = layout.floating.reduce((highest, entry) => Math.max(highest, entry.zIndex ?? 50), 50);
+  const maxZ = withInstance.floating.reduce((highest, entry) => Math.max(highest, entry.zIndex ?? 50), 50);
 
   return {
-    ...layout,
-    floating: [...layout.floating, { paneId, x, y, width: floatingWidth, height: floatingHeight, zIndex: maxZ + 1 }],
+    ...withInstance,
+    floating: [...withInstance.floating, { instanceId: resolvedInstance.instanceId, x, y, width: floatingWidth, height: floatingHeight, zIndex: maxZ + 1 }],
   };
 }
 
-export function removePane(layout: LayoutConfig, paneId: string): LayoutConfig {
-  return normalizeColumns({
+export function removePane(layout: LayoutConfig, instanceId: string): LayoutConfig {
+  return pruneInstances(normalizePaneLayout(normalizeColumns({
     ...layout,
-    docked: layout.docked.filter((entry) => entry.paneId !== paneId),
-    floating: layout.floating.filter((entry) => entry.paneId !== paneId),
-  });
+    docked: layout.docked.filter((entry) => entry.instanceId !== instanceId),
+    floating: layout.floating.filter((entry) => entry.instanceId !== instanceId),
+  })));
 }
 
 export function normalizeColumns(layout: LayoutConfig): LayoutConfig {
@@ -148,30 +180,30 @@ export function normalizeColumns(layout: LayoutConfig): LayoutConfig {
     columnIndex: indexMap.get(entry.columnIndex) ?? entry.columnIndex,
   }));
 
-  return { columns, docked, floating: layout.floating };
+  return { columns, instances: layout.instances, docked, floating: layout.floating };
 }
 
-export function isPaneInLayout(layout: LayoutConfig, paneId: string): boolean {
-  return layout.docked.some((entry) => entry.paneId === paneId)
-    || layout.floating.some((entry) => entry.paneId === paneId);
+export function isPaneInLayout(layout: LayoutConfig, instanceId: string): boolean {
+  return layout.docked.some((entry) => entry.instanceId === instanceId)
+    || layout.floating.some((entry) => entry.instanceId === instanceId);
 }
 
 export function updateFloatingPane(
   layout: LayoutConfig,
-  paneId: string,
+  instanceId: string,
   updates: Partial<Pick<FloatingPaneEntry, "x" | "y" | "width" | "height" | "zIndex">>,
 ): LayoutConfig {
   return {
     ...layout,
     floating: layout.floating.map((entry) => (
-      entry.paneId === paneId ? { ...entry, ...updates } : entry
+      entry.instanceId === instanceId ? { ...entry, ...updates } : entry
     )),
   };
 }
 
-export function bringToFront(layout: LayoutConfig, paneId: string): LayoutConfig {
+export function bringToFront(layout: LayoutConfig, instanceId: string): LayoutConfig {
   const maxZ = layout.floating.reduce((highest, entry) => Math.max(highest, entry.zIndex ?? 50), 50);
-  return updateFloatingPane(layout, paneId, { zIndex: maxZ + 1 });
+  return updateFloatingPane(layout, instanceId, { zIndex: maxZ + 1 });
 }
 
 export function updateColumnWidth(layout: LayoutConfig, columnIndex: number, width: string): LayoutConfig {

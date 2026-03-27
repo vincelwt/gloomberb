@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ProviderRouter } from "./provider-router";
 import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider } from "../types/data-provider";
+import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
 
 const fallbackProvider: DataProvider = {
   id: "fallback",
@@ -67,12 +68,15 @@ describe("ProviderRouter", () => {
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
       baseCurrency: "USD",
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
       columns: [],
-      layout: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
       brokerInstances: [{
         id: "ibkr-work",
         brokerType: "ibkr",
@@ -125,12 +129,15 @@ describe("ProviderRouter", () => {
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
       baseCurrency: "USD",
       refreshIntervalMinutes: 30,
       portfolios: [],
       watchlists: [],
       columns: [],
-      layout: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
       brokerInstances: [
         {
           id: "ibkr-work",

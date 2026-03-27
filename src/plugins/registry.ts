@@ -21,6 +21,7 @@ import type {
 import type { TickerFile } from "../types/ticker";
 import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
+import { createPaneInstance } from "../types/config";
 
 let sharedDataProvider: DataProvider | undefined;
 let sharedMarkdownStore: MarkdownStore | undefined;
@@ -47,6 +48,8 @@ export class PluginRegistry {
   private plugins = new Map<string, GloomPlugin>();
   private unregisterFns = new Map<string, () => void>();
   private pluginItems = new Map<string, PluginItems>();
+  private commandOwners = new Map<string, string>();
+  private shortcutOwners = new Map<string, string>();
 
   private panesMap = new Map<string, PaneDef>();
   private commandsMap = new Map<string, CommandDef>();
@@ -72,15 +75,16 @@ export class PluginRegistry {
   syncBrokerInstanceFn: ((instanceId: string) => Promise<void>) = async () => {};
   removeBrokerInstanceFn: ((instanceId: string) => Promise<void>) = async () => {};
 
-  selectTickerFn: ((symbol: string) => void) = () => {};
+  selectTickerFn: ((symbol: string, paneId?: string) => void) = () => {};
   switchPanelFn: ((panel: "left" | "right") => void) = () => {};
-  switchTabFn: ((tabId: string) => void) = () => {};
+  switchTabFn: ((tabId: string, paneId?: string) => void) = () => {};
   openCommandBarFn: ((query?: string) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
+  pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
 
-  getLayoutFn: (() => LayoutConfig) = () => ({ columns: [], docked: [], floating: [] });
+  getLayoutFn: (() => LayoutConfig) = () => ({ columns: [], instances: [], docked: [], floating: [] });
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
@@ -122,9 +126,30 @@ export class PluginRegistry {
     return this.pluginItems.get(pluginId)?.panes ?? [];
   }
 
+  private resolvePrimaryPaneInstanceId(paneId: string): string | undefined {
+    const layout = this.getLayoutFn();
+    return layout.instances.find((instance) => instance.paneId === paneId)?.instanceId;
+  }
+
+  private resolvePaneTarget(paneId: string): string | undefined {
+    const layout = this.getLayoutFn();
+    const isInstanceId = layout.instances.some((instance) => instance.instanceId === paneId);
+    if (isInstanceId) return paneId;
+    return this.resolvePrimaryPaneInstanceId(paneId);
+  }
+
+  getCommandPluginId(commandId: string): string | undefined {
+    return this.commandOwners.get(commandId);
+  }
+
+  getShortcutPluginId(shortcutId: string): string | undefined {
+    return this.shortcutOwners.get(shortcutId);
+  }
+
   isPaneFloating(paneId: string): boolean {
     try {
-      return this.getLayoutFn().floating.some((entry) => entry.paneId === paneId);
+      const target = this.resolvePaneTarget(paneId);
+      return !!target && this.getLayoutFn().floating.some((entry) => entry.instanceId === target);
     } catch {
       return false;
     }
@@ -143,26 +168,32 @@ export class PluginRegistry {
     }
 
     const layout = this.getLayoutFn();
-    if (layout.floating.some((entry) => entry.paneId === paneId)) {
-      this.focusPaneFn(paneId);
+    const existingInstanceId = this.resolvePaneTarget(paneId);
+    if (existingInstanceId && layout.floating.some((entry) => entry.instanceId === existingInstanceId)) {
+      this.focusPaneFn(existingInstanceId);
       return;
     }
 
     const def = this.panesMap.get(paneId);
     const { width, height } = this.getTermSizeFn();
+    const instance = existingInstanceId
+      ? layout.instances.find((entry) => entry.instanceId === existingInstanceId)!
+      : createPaneInstance(paneId, { instanceId: `${paneId}:main` });
     const nextLayout = addPaneFloating(
-      { ...layout, docked: layout.docked.filter((entry) => entry.paneId !== paneId) },
-      paneId,
+      { ...layout, docked: layout.docked.filter((entry) => entry.instanceId !== instance.instanceId) },
+      instance,
       width,
       height,
       def,
     );
     this.updateLayoutFn(nextLayout);
-    this.focusPaneFn(paneId);
+    this.focusPaneFn(instance.instanceId);
   }
 
   hideWidget(paneId: string): void {
-    this.updateLayoutFn(removePane(this.getLayoutFn(), paneId));
+    const target = this.resolvePaneTarget(paneId);
+    if (!target) return;
+    this.updateLayoutFn(removePane(this.getLayoutFn(), target));
   }
 
   private createContext(pluginId: string): GloomPluginContext {
@@ -195,12 +226,20 @@ export class PluginRegistry {
 
     return {
       registerPane: (pane) => { this.panesMap.set(pane.id, pane); items.panes.push(pane.id); },
-      registerCommand: (command) => { this.commandsMap.set(command.id, command); items.commands.push(command.id); },
+      registerCommand: (command) => {
+        this.commandsMap.set(command.id, command);
+        this.commandOwners.set(command.id, pluginId);
+        items.commands.push(command.id);
+      },
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
       registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
       registerDataProvider: (provider) => { this.dataProvidersMap.set(provider.id, provider); items.dataProviders.push(provider.id); },
       registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, tab); items.detailTabs.push(tab.id); },
-      registerShortcut: (shortcut) => { this.shortcutsMap.set(shortcut.id, shortcut); items.shortcuts.push(shortcut.id); },
+      registerShortcut: (shortcut) => {
+        this.shortcutsMap.set(shortcut.id, shortcut);
+        this.shortcutOwners.set(shortcut.id, pluginId);
+        items.shortcuts.push(shortcut.id);
+      },
       registerTickerAction: (action) => { this.tickerActionsMap.set(action.id, action); items.tickerActions.push(action.id); },
 
       getData: (ticker) => this.getDataFn(ticker),
@@ -216,13 +255,14 @@ export class PluginRegistry {
       syncBrokerInstance: (instanceId) => this.syncBrokerInstanceFn(instanceId),
       removeBrokerInstance: (instanceId) => this.removeBrokerInstanceFn(instanceId),
 
-      selectTicker: (symbol) => this.selectTickerFn(symbol),
+      selectTicker: (symbol, paneId) => this.selectTickerFn(symbol, paneId),
       switchPanel: (panel) => this.switchPanelFn(panel),
-      switchTab: (tabId) => this.switchTabFn(tabId),
+      switchTab: (tabId, paneId) => this.switchTabFn(tabId, paneId),
       openCommandBar: (query) => this.openCommandBarFn(query),
       showPane: (paneId) => this.showPaneFn(paneId),
       hidePane: (paneId) => this.hidePaneFn(paneId),
       focusPane: (paneId) => this.focusPaneFn(paneId),
+      pinTicker: (symbol, options) => this.pinTickerFn(symbol, options),
 
       on: <K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void) => {
         const dispose = this.events.on(event, handler);
@@ -289,12 +329,18 @@ export class PluginRegistry {
     const items = this.pluginItems.get(pluginId);
     if (items) {
       for (const paneId of items.panes) this.panesMap.delete(paneId);
-      for (const commandId of items.commands) this.commandsMap.delete(commandId);
+      for (const commandId of items.commands) {
+        this.commandsMap.delete(commandId);
+        this.commandOwners.delete(commandId);
+      }
       for (const columnId of items.columns) this.columnsMap.delete(columnId);
       for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
       for (const providerId of items.dataProviders) this.dataProvidersMap.delete(providerId);
       for (const tabId of items.detailTabs) this.detailTabsMap.delete(tabId);
-      for (const shortcutId of items.shortcuts) this.shortcutsMap.delete(shortcutId);
+      for (const shortcutId of items.shortcuts) {
+        this.shortcutsMap.delete(shortcutId);
+        this.shortcutOwners.delete(shortcutId);
+      }
       for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
       for (const dispose of items.eventDisposers) dispose();
       this.pluginItems.delete(pluginId);
