@@ -48,6 +48,8 @@ export class PluginRegistry {
   private plugins = new Map<string, GloomPlugin>();
   private unregisterFns = new Map<string, () => void>();
   private pluginItems = new Map<string, PluginItems>();
+  private commandOwners = new Map<string, string>();
+  private shortcutOwners = new Map<string, string>();
 
   private panesMap = new Map<string, PaneDef>();
   private commandsMap = new Map<string, CommandDef>();
@@ -136,6 +138,14 @@ export class PluginRegistry {
     return this.resolvePrimaryPaneInstanceId(paneId);
   }
 
+  getCommandPluginId(commandId: string): string | undefined {
+    return this.commandOwners.get(commandId);
+  }
+
+  getShortcutPluginId(shortcutId: string): string | undefined {
+    return this.shortcutOwners.get(shortcutId);
+  }
+
   isPaneFloating(paneId: string): boolean {
     try {
       const target = this.resolvePaneTarget(paneId);
@@ -216,12 +226,20 @@ export class PluginRegistry {
 
     return {
       registerPane: (pane) => { this.panesMap.set(pane.id, pane); items.panes.push(pane.id); },
-      registerCommand: (command) => { this.commandsMap.set(command.id, command); items.commands.push(command.id); },
+      registerCommand: (command) => {
+        this.commandsMap.set(command.id, command);
+        this.commandOwners.set(command.id, pluginId);
+        items.commands.push(command.id);
+      },
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
       registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
       registerDataProvider: (provider) => { this.dataProvidersMap.set(provider.id, provider); items.dataProviders.push(provider.id); },
       registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, tab); items.detailTabs.push(tab.id); },
-      registerShortcut: (shortcut) => { this.shortcutsMap.set(shortcut.id, shortcut); items.shortcuts.push(shortcut.id); },
+      registerShortcut: (shortcut) => {
+        this.shortcutsMap.set(shortcut.id, shortcut);
+        this.shortcutOwners.set(shortcut.id, pluginId);
+        items.shortcuts.push(shortcut.id);
+      },
       registerTickerAction: (action) => { this.tickerActionsMap.set(action.id, action); items.tickerActions.push(action.id); },
 
       getData: (ticker) => this.getDataFn(ticker),
@@ -311,12 +329,18 @@ export class PluginRegistry {
     const items = this.pluginItems.get(pluginId);
     if (items) {
       for (const paneId of items.panes) this.panesMap.delete(paneId);
-      for (const commandId of items.commands) this.commandsMap.delete(commandId);
+      for (const commandId of items.commands) {
+        this.commandsMap.delete(commandId);
+        this.commandOwners.delete(commandId);
+      }
       for (const columnId of items.columns) this.columnsMap.delete(columnId);
       for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
       for (const providerId of items.dataProviders) this.dataProvidersMap.delete(providerId);
       for (const tabId of items.detailTabs) this.detailTabsMap.delete(tabId);
-      for (const shortcutId of items.shortcuts) this.shortcutsMap.delete(shortcutId);
+      for (const shortcutId of items.shortcuts) {
+        this.shortcutsMap.delete(shortcutId);
+        this.shortcutOwners.delete(shortcutId);
+      }
       for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
       for (const dispose of items.eventDisposers) dispose();
       this.pluginItems.delete(pluginId);

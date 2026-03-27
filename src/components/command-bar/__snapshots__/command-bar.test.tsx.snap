@@ -1,0 +1,109 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`CommandBar renders the default layout with opencode-style chrome 1`] = `
+"                                                                                
+                                                                                
+                                                                                
+                  Commands                                esc                   
+                  Search                                                        
+                                                                                
+                  Tickers                                                       
+                  AAPL                                                          
+                  MSFT                                                          
+                                                                                
+                  Search                                                        
+                  Search Ticker                                                 
+                                                                                
+                  Portfolio                                                     
+                  Add AAPL to Portfolio                                         
+                                                                                
+                  Create                                                        
+                  New Portfolio                                                 
+                  New Watchlist                                                 
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+"
+`;
+
+exports[`CommandBar renders theme mode with the query line visible 1`] = `
+"                                                                                
+                                                                                
+                                                                                
+                  Commands                                esc                   
+                  TH                                                            
+                                                                                
+                  Themes                                                        
+                  Amber                                                         
+                  Green Phosphor                                                
+                  Cyan                                                          
+                  Red Phosphor                                                  
+                  Blue Phosphor                                                 
+                  Purple Phosphor                                               
+                  Hot Pink                                                      
+                  White Phosphor                                                
+                  Tokyo Night                                                   
+                  Solarized Dark                                                
+                  Dracula                                                       
+                  Nord                                                          
+                  Monokai                                                       
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+"
+`;
+
+exports[`CommandBar renders plugin toggle state 1`] = `
+"                                                                                
+                                                                                
+                                                                                
+                  Commands                                esc                   
+                  PL                                                            
+                                                                                
+                  Plugins                                                       
+                  News                                                          
+                  Notes                                                         
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+"
+`;
+
+exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
+"                                          
+                                          
+                                          
+       Commands                         es
+       Search                             
+                                          
+       Tickers                            
+       AAPL                               
+       MSFT                               
+                                          
+       Search                             
+       Search Ticker                      
+                                          
+       Portfolio                          
+       Add AAPL to Portfolio              
+                                          
+                                          
+                                          
+                                          
+                                          
+"
+`;

@@ -1,4 +1,6 @@
 // Reusable components for plugins
+export { PriceSelectorDialog } from "./price-selector-dialog";
+export type { PriceSelectorDialogProps } from "./price-selector-dialog";
 export { StockChart } from "./chart/stock-chart";
 export type { ChartViewState, TimeRange, ChartRenderMode, ChartColors } from "./chart/chart-types";
 export { ToggleList } from "./toggle-list";

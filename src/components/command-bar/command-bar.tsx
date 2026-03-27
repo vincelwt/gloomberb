@@ -1,9 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { InputRenderable } from "@opentui/core";
 import { useDialog, useDialogKeyboard } from "@opentui-ui/dialog/react";
-import { colors } from "../../theme/colors";
+import {
+  colors,
+  commandBarBg,
+  commandBarHeadingText,
+  commandBarHoverBg,
+  commandBarSelectedBg,
+  commandBarSelectedText,
+  commandBarSubtleText,
+  commandBarText,
+} from "../../theme/colors";
 import { getFocusedCollectionId, useAppState, useFocusedTicker } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, matchPrefix, getThemeOptions, type Command } from "./command-registry";
@@ -19,6 +28,12 @@ import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import {
+  getEmptyState,
+  getRowPresentation,
+  resolveCommandBarMode,
+  truncateText,
+} from "./view-model";
 
 /** All available columns that can be toggled */
 const ALL_COLUMNS: ColumnConfig[] = [
@@ -44,17 +59,21 @@ interface CommandBarProps {
   dataProvider: DataProvider;
   markdownStore: MarkdownStore;
   pluginRegistry: PluginRegistry;
+  quitApp: () => void;
 }
 
 interface ResultItem {
   id: string;
   label: string;
   detail: string;
-  right?: string;
   category: string;
+  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "column" | "action" | "info";
+  right?: string;
   themeId?: string; // for theme items — enables live preview
   pluginToggle?: () => void; // for plugin items — toggle with space
   secondaryAction?: () => void | Promise<void>;
+  checked?: boolean;
+  current?: boolean;
   action: () => void | Promise<void>;
 }
 
@@ -295,34 +314,28 @@ function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & {
   );
 }
 
-export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: CommandBarProps) {
+export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitApp }: CommandBarProps) {
   const { state, dispatch } = useAppState();
   const stateRef = useRef(state);
   stateRef.current = state;
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const dialog = useDialog();
+  const renderer = useRenderer();
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
-  const [query, setQuery] = useState("");
   const [results, setResults] = useState<ResultItem[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
-  const inputRef = useRef<InputRenderable>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalThemeRef = useRef<string>(getCurrentThemeId());
-  const spaceConsumedRef = useRef(false);
-  const scrollAnchorRef = useRef(0);
-  const suppressNextSubmitRef = useRef(false);
-
-  useEffect(() => {
-    if (inputRef.current) inputRef.current.focus();
-  }, []);
+  const previousSelectionContextRef = useRef<{ query: string; mode: string } | null>(null);
+  const query = state.commandBarQuery;
 
   const close = useCallback(() => {
     dispatch({ type: "SET_COMMAND_BAR", open: false });
-    setQuery("");
     setResults([]);
     setSelectedIdx(0);
-    scrollAnchorRef.current = 0;
+    setHoveredIdx(null);
   }, [dispatch]);
 
   // Revert theme on close without selection
@@ -636,14 +649,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           });
           if (confirmed) {
             await resetAllData(state.config.dataDir);
-            process.exit(0);
+            quitApp();
           }
         })();
         return;
       }
       case "columns": {
         // Enter columns mode by setting the prefix
-        setQuery("COL ");
+        dispatch({ type: "SET_COMMAND_BAR_QUERY", query: "COL " });
         return;
       }
       case "add-watchlist":
@@ -799,11 +812,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         // Commands with hasArg are prefix-driven modes (theme, plugins, search)
         // — enter them by setting the query to their prefix instead of closing
         if (cmd.hasArg) {
-          setQuery(cmd.prefix + " ");
-          if (inputRef.current) {
-            (inputRef.current as any).editBuffer?.setText?.(cmd.prefix + " ") ||
-              (inputRef.current as any).setText?.(cmd.prefix + " ");
-          }
+          dispatch({ type: "SET_COMMAND_BAR_QUERY", query: cmd.prefix + " " });
           return;
         }
         cmd.execute(dispatch, ctx);
@@ -924,27 +933,38 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
   // Convert plugin commands to ResultItems
   const pluginCommandItems = useCallback((): ResultItem[] => {
-    return [...pluginRegistry.commands.values()].filter((cmd) => !cmd.hidden?.()).map((cmd) => ({
-      id: cmd.id,
-      label: cmd.label,
-      detail: cmd.description || "",
-      category: "Plugins",
-      action: () => {
-        close();
-        if (cmd.wizard && cmd.wizard.length > 0) {
-          runWizard(cmd);
-        } else {
-          (async () => {
-            try {
-              await cmd.execute();
-            } catch {
-              // silently fail
-            }
-          })();
-        }
-      },
-    }));
-  }, [pluginRegistry.commands, close, runWizard]);
+    const disabledPlugins = new Set(state.config.disabledPlugins || []);
+    return [...pluginRegistry.commands.values()].filter((cmd) => {
+      if (cmd.hidden?.()) return false;
+      const pluginId = pluginRegistry.getCommandPluginId(cmd.id);
+      if (pluginId && disabledPlugins.has(pluginId)) return false;
+      return true;
+    }).map((cmd) => {
+      const pluginId = pluginRegistry.getCommandPluginId(cmd.id);
+      const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
+      return {
+        id: cmd.id,
+        label: cmd.label,
+        detail: cmd.description || "",
+        category: pluginName || "Plugin Commands",
+        kind: "command" as const,
+        action: () => {
+          close();
+          if (cmd.wizard && cmd.wizard.length > 0) {
+            runWizard(cmd);
+          } else {
+            (async () => {
+              try {
+                await cmd.execute();
+              } catch {
+                // silently fail
+              }
+            })();
+          }
+        },
+      };
+    });
+  }, [pluginRegistry, close, runWizard, state.config.disabledPlugins]);
 
   const tickerActionItems = useCallback((): ResultItem[] => {
     const ticker = activeTickerData;
@@ -958,6 +978,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         label: action.label,
         detail: ticker.frontmatter.ticker,
         category: "Actions",
+        kind: "action" as const,
         action: () => {
           close();
           void action.execute(ticker, financials);
@@ -965,10 +986,11 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       }));
   }, [pluginRegistry.tickerActions, activeTickerData, activeFinancials, close]);
 
-  // Detect special modes
-  const isThemeMode = matchPrefix(query)?.command.id === "theme";
-  const isPluginMode = matchPrefix(query)?.command.id === "plugins";
-  const isColumnsMode = matchPrefix(query)?.command.id === "columns";
+  const activeMatch = matchPrefix(query);
+  const modeInfo = resolveCommandBarMode(query);
+  const isThemeMode = modeInfo.kind === "themes";
+  const isPluginMode = modeInfo.kind === "plugins";
+  const isColumnsMode = modeInfo.kind === "columns";
 
   // Toggle a column on/off
   const toggleColumn = useCallback((colId: string) => {
@@ -989,9 +1011,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     saveConfig(newConfig).catch(() => {});
   }, [state.config, dispatch]);
 
-  // Build results based on query and prefix matching
   useEffect(() => {
-    // --- Smart command filtering (computed fresh each effect run) ---
     const isWatchlistTab = state.config.watchlists.some((w) => w.id === activeCollectionId);
     const isPortfolioTab = state.config.portfolios.some((p) => p.id === activeCollectionId);
     const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
@@ -1046,18 +1066,21 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     function cmdToItem(cmd: Command): ResultItem | null {
       if (!shouldShow(cmd)) return null;
       return {
-        id: cmd.id, label: smartLabel(cmd), detail: smartDetail(cmd),
-        right: cmd.prefix, category: cmd.category,
+        id: cmd.id,
+        label: smartLabel(cmd),
+        detail: smartDetail(cmd),
+        category: cmd.category,
+        kind: "command",
+        right: cmd.prefix || undefined,
         action: () => executeCommand(cmd, ""),
       };
     }
+
     const items: ResultItem[] = [];
     const match = matchPrefix(query);
-
     let initialIdx = 0;
 
     if (match && match.command.id === "plugins") {
-      // Plugin management mode
       const toggleablePlugins = [...pluginRegistry.allPlugins.values()].filter((p) => p.toggleable);
       const disabledPlugins = state.config.disabledPlugins || [];
       const filtered = match.arg
@@ -1070,7 +1093,6 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           const newDisabled = isEnabled
             ? [...disabledPlugins, p.id]
             : disabledPlugins.filter((id) => id !== p.id);
-          // When disabling, hide any floating panes owned by this plugin
           if (isEnabled) {
             for (const paneId of pluginRegistry.getPluginPaneIds(p.id)) {
               pluginRegistry.hideWidget(paneId);
@@ -1080,29 +1102,31 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         };
         items.push({
           id: `plugin:${p.id}`,
-          label: `${isEnabled ? "\u2713" : "\u2717"} ${p.name}`,
+          label: p.name,
           detail: p.description || "",
           category: "Plugins",
+          kind: "plugin",
+          checked: isEnabled,
           pluginToggle: toggleAction,
           action: toggleAction,
         });
       }
     } else if (match && match.command.id === "columns") {
-      // Column toggle mode — show all available columns as a checklist
       const activeIds = new Set(state.config.columns.map((c) => c.id));
       for (const col of ALL_COLUMNS) {
         const isOn = activeIds.has(col.id);
         items.push({
           id: `col:${col.id}`,
-          label: `${isOn ? "[\u2713]" : "[ ]"} ${col.label}`,
-          detail: `${col.id}  w:${col.width}  ${col.align}`,
+          label: col.label,
+          detail: `${col.id} | w:${col.width} | ${col.align}`,
           right: col.format || "",
           category: "Columns",
+          kind: "column",
+          checked: isOn,
           action: () => toggleColumn(col.id),
         });
       }
     } else if (match && match.command.id === "theme") {
-      // Theme selection mode
       const themeOptions = getThemeOptions();
       const savedThemeId = originalThemeRef.current;
       const filtered = match.arg
@@ -1116,9 +1140,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           id: `theme:${t.id}`,
           label: t.name,
           detail: t.description,
-          right: isSaved ? "current" : undefined,
-          themeId: t.id,
           category: "Themes",
+          kind: "theme",
+          current: isSaved,
+          themeId: t.id,
           action: () => {
             originalThemeRef.current = t.id;
             dispatch({ type: "SET_THEME", theme: t.id });
@@ -1129,28 +1154,33 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       }
     } else if (match && match.command.id === "search-ticker") {
       if (!match.arg) {
-        items.push({ id: "hint", label: "Type a ticker symbol...", detail: "", category: "Search", action: () => {} });
+        items.push({
+          id: "hint",
+          label: "Type a ticker symbol",
+          detail: "Search Yahoo Finance and connected brokers",
+          category: "Search",
+          kind: "info",
+          action: () => {},
+        });
       }
     } else if (match && !match.command.hasArg) {
-      // Direct prefix match — still filter for smart commands
       if (shouldShow(match.command)) {
         items.push({
           id: match.command.id,
           label: smartLabel(match.command),
           detail: smartDetail(match.command),
-          right: match.command.prefix,
+          right: match.command.prefix || undefined,
           category: match.command.category,
+          kind: "command",
           action: () => executeCommand(match.command, match.arg),
         });
       }
     } else if (!query) {
-      // Show recently visited tickers (or first tickers if no history)
       const maxDefaultTickers = 5;
       const recentSymbols = state.recentTickers.slice(0, maxDefaultTickers);
       const recentTickers = recentSymbols
         .map((s) => state.tickers.get(s))
         .filter((t): t is TickerFile => t != null);
-      // Fill remaining slots with other tickers if not enough recent ones
       if (recentTickers.length < maxDefaultTickers) {
         const recentSet = new Set(recentSymbols);
         for (const t of state.tickers.values()) {
@@ -1164,6 +1194,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           label: t.frontmatter.ticker,
           detail: t.frontmatter.name,
           category: "Tickers",
+          kind: "ticker",
           secondaryAction: () => { focusTicker(t.frontmatter.ticker, { forceNewPane: true }); close(); },
           action: () => { focusTicker(t.frontmatter.ticker); close(); },
         });
@@ -1176,31 +1207,32 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       items.push(...pluginCommandItems());
     } else {
       const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
-        id: `goto:${t.frontmatter.ticker}`, label: t.frontmatter.ticker,
-        detail: t.frontmatter.name, category: "Tickers",
+        id: `goto:${t.frontmatter.ticker}`,
+        label: t.frontmatter.ticker,
+        detail: t.frontmatter.name,
+        category: "Tickers",
+        kind: "ticker",
         secondaryAction: () => { focusTicker(t.frontmatter.ticker, { forceNewPane: true }); close(); },
         action: () => { focusTicker(t.frontmatter.ticker); close(); },
       }));
-      const cmdItems: ResultItem[] = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
+      const cmdItems = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
       const allItems = [...tickerItems, ...cmdItems, ...tickerActionItems(), ...pluginCommandItems()];
-      const filtered = fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`);
-      items.push(...filtered);
+      items.push(...fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`));
     }
 
     setResults(items);
-    // In columns/plugin mode, preserve the selected index across re-renders (toggling)
-    if (match?.command.id === "columns" || match?.command.id === "plugins") {
-      setSelectedIdx((prev) => {
-        const next = Math.min(prev, items.length - 1);
-        scrollAnchorRef.current = next;
-        return next;
-      });
+    setHoveredIdx((prev) => (prev != null && prev < items.length ? prev : null));
+    const selectionContextChanged =
+      previousSelectionContextRef.current?.query !== query
+      || previousSelectionContextRef.current?.mode !== modeInfo.kind;
+
+    if (match?.command.id === "columns" || match?.command.id === "plugins" || !selectionContextChanged) {
+      setSelectedIdx((prev) => Math.max(0, Math.min(prev, items.length - 1)));
     } else {
       setSelectedIdx(initialIdx);
-      scrollAnchorRef.current = initialIdx;
     }
+    previousSelectionContextRef.current = { query, mode: modeInfo.kind };
 
-    // Yahoo search when in ticker search mode (prefix "T")
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (match?.command.id === "search-ticker" && match.arg.length >= 1) {
       const searchQuery = match.arg;
@@ -1219,18 +1251,32 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
               const sym = r.brokerContract?.localSymbol || r.symbol.split(".")[0]!;
               const isExisting = state.tickers.has(sym);
               return {
-                id: `search:${r.symbol}`, label: sym, detail: r.name,
-                right: [r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" · "),
+                id: `search:${r.symbol}`,
+                label: sym,
+                detail: [r.name, r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" | "),
                 category: isExisting ? "Open" : "Search Results",
+                kind: "search",
                 secondaryAction: () => openTickerDetail(r, { forceNewPane: true }),
                 action: () => openTickerDetail(r),
               };
             });
           setResults(searchItems.length > 0 ? searchItems : [{
-            id: "no-results", label: "No results", detail: `for "${searchQuery}"`, category: "Search", action: () => {},
+            id: "no-results",
+            label: `No matches for "${searchQuery}"`,
+            detail: "Try a symbol, company name, or exchange variant",
+            category: "Search",
+            kind: "info",
+            action: () => {},
           }]);
         } catch {
-          setResults([{ id: "error", label: "Search failed", detail: "Check your connection", category: "Search", action: () => {} }]);
+          setResults([{
+            id: "error",
+            label: "Search failed",
+            detail: "Check your connection",
+            category: "Search",
+            kind: "info",
+            action: () => {},
+          }]);
         } finally {
           setSearching(false);
         }
@@ -1239,94 +1285,11 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSearching(false);
     }
 
-    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
   }, [query, state.tickers, activeTickerSymbol, activeTickerData, activeCollectionId, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems, focusTicker]);
 
-  // Live preview: apply theme as user arrows through the list
-  useEffect(() => {
-    if (!isThemeMode) return;
-    const selected = results[selectedIdx];
-    if (selected?.themeId) {
-      applyTheme(selected.themeId);
-      // Force a re-render by dispatching a no-op-like action
-      dispatch({ type: "SET_THEME", theme: selected.themeId });
-    }
-  }, [selectedIdx, isThemeMode, results]);
-
-  useKeyboard((event) => {
-    if (event.name === "escape" || event.name === "`") {
-      if (isThemeMode) {
-        closeAndRevert();
-      } else {
-        close();
-      }
-    } else if (event.name === "down" || (event.name === "n" && event.ctrl)) {
-      setSelectedIdx((i) => {
-        const next = Math.min(i + 1, results.length - 1);
-        scrollAnchorRef.current = next;
-        return next;
-      });
-    } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
-      setSelectedIdx((i) => {
-        const next = Math.max(i - 1, 0);
-        scrollAnchorRef.current = next;
-        return next;
-      });
-    } else if (event.name === "space" && isPluginMode) {
-      // Space toggles plugins without closing
-      spaceConsumedRef.current = true;
-      const selected = results[selectedIdx];
-      if (selected?.pluginToggle) selected.pluginToggle();
-    } else if (event.name === "space" && isColumnsMode) {
-      // Toggle column with space
-      spaceConsumedRef.current = true;
-      const selected = results[selectedIdx];
-      if (selected) selected.action();
-    } else if ((event.name === "return" || event.name === "enter") && event.shift) {
-      const selected = exactTickerResult?.secondaryAction ? exactTickerResult : results[selectedIdx];
-      if (selected?.secondaryAction) {
-        suppressNextSubmitRef.current = true;
-        selected.secondaryAction();
-      }
-    } else if (event.name === "return" || event.name === "enter") {
-      if (exactTickerResult) {
-        suppressNextSubmitRef.current = true;
-        exactTickerResult.action();
-      }
-    }
-  });
-
-  // Layout
-  const barWidth = Math.min(Math.floor(termWidth * 0.6), 72);
-  const barLeft = Math.floor((termWidth - barWidth) / 2);
-  // Cap visible results based on terminal height
-  // Reserve rows for: top offset (3) + border (2) + input (2) + separator (1) + esc hint (1) + scroll indicators (2)
-  const maxVisible = Math.min(16, Math.max(4, termHeight - 11));
-
-  // Compute a window of results centered on scroll anchor (keyboard-driven, not mouse)
-  const scrollAnchor = scrollAnchorRef.current;
-  const halfWindow = Math.floor(maxVisible / 2);
-  let windowStart = Math.max(0, Math.min(scrollAnchor - halfWindow, results.length - maxVisible));
-  if (windowStart < 0) windowStart = 0;
-  const windowEnd = Math.min(results.length, windowStart + maxVisible);
-  const windowedResults = results.slice(windowStart, windowEnd);
-  const hasMoreAbove = windowStart > 0;
-  const hasMoreBelow = windowEnd < results.length;
-
-  // Group by category (preserving global indices for selection highlight)
-  const grouped: Array<{ category: string; items: Array<ResultItem & { globalIdx: number }> }> = [];
-  for (let i = 0; i < windowedResults.length; i++) {
-    const result = windowedResults[i]!;
-    let group = grouped.find((g) => g.category === result.category);
-    if (!group) { group = { category: result.category, items: [] }; grouped.push(group); }
-    group.items.push({ ...result, globalIdx: windowStart + i });
-  }
-
-  // Detect active prefix for hint display
-  const activeMatch = matchPrefix(query);
-  const prefixHint = activeMatch
-    ? `${activeMatch.command.prefix}: ${activeMatch.command.label}${activeMatch.command.hasArg ? ` \u2014 ${activeMatch.command.argPlaceholder}` : ""}`
-    : null;
   const exactTickerResult = (() => {
     const normalizedQuery = query.trim().toUpperCase();
     if (!normalizedQuery) return null;
@@ -1335,162 +1298,284 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       && item.label.toUpperCase() === normalizedQuery,
     ) ?? null;
   })();
-  const selectedResult = results[selectedIdx];
-  const tickerActionHint = selectedResult?.secondaryAction
-    ? "enter retargets · shift+enter opens new pane"
-    : null;
+
+  // Live preview: apply theme as user arrows through the list
+  useEffect(() => {
+    if (!isThemeMode) return;
+    const selected = results[selectedIdx];
+    if (selected?.themeId && state.config.theme !== selected.themeId) {
+      applyTheme(selected.themeId);
+      dispatch({ type: "SET_THEME", theme: selected.themeId });
+    }
+  }, [selectedIdx, isThemeMode, results, state.config.theme, dispatch]);
+
+  const setCommandBarQuery = useCallback((nextQuery: string) => {
+    dispatch({ type: "SET_COMMAND_BAR_QUERY", query: nextQuery });
+  }, [dispatch]);
+
+  useEffect(() => {
+    const handleKeyPress = (event: {
+      name: string;
+      ctrl?: boolean;
+      meta?: boolean;
+      shift?: boolean;
+      stopPropagation: () => void;
+      preventDefault: () => void;
+    }) => {
+      setHoveredIdx(null);
+
+      if (event.name === "escape" || event.name === "`") {
+        event.stopPropagation();
+        event.preventDefault();
+        if (isThemeMode) {
+          closeAndRevert();
+        } else {
+          close();
+        }
+        return;
+      }
+
+      if (event.name === "down" || (event.name === "n" && event.ctrl)) {
+        event.stopPropagation();
+        event.preventDefault();
+        setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
+        return;
+      }
+
+      if (event.name === "up" || (event.name === "p" && event.ctrl)) {
+        event.stopPropagation();
+        event.preventDefault();
+        setSelectedIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+
+      if ((event.meta && (event.name === "backspace" || event.name === "delete")) || (event.ctrl && event.name === "u")) {
+        event.stopPropagation();
+        event.preventDefault();
+        setCommandBarQuery("");
+        return;
+      }
+
+      if ((event.ctrl && event.name === "w") || (event.meta && (event.name === "h" || event.name === "u"))) {
+        event.stopPropagation();
+        event.preventDefault();
+        const trimmed = query.replace(/\s+$/, "");
+        const nextQuery = trimmed.replace(/[^\s]+$/, "").replace(/\s+$/, "");
+        setCommandBarQuery(nextQuery);
+        return;
+      }
+
+      if (event.name === "space" && isPluginMode) {
+        event.stopPropagation();
+        event.preventDefault();
+        const selected = results[selectedIdx];
+        if (selected?.pluginToggle) selected.pluginToggle();
+        return;
+      }
+
+      if (event.name === "space" && isColumnsMode) {
+        event.stopPropagation();
+        event.preventDefault();
+        const selected = results[selectedIdx];
+        if (selected) selected.action();
+        return;
+      }
+
+      if (event.name === "return" || event.name === "enter") {
+        event.stopPropagation();
+        event.preventDefault();
+        if (event.shift) {
+          const selected = exactTickerResult?.secondaryAction ? exactTickerResult : results[selectedIdx];
+          if (selected?.secondaryAction) {
+            selected.secondaryAction();
+          }
+          return;
+        }
+        const selected = exactTickerResult ?? results[selectedIdx];
+        if (selected) selected.action();
+      }
+    };
+
+    renderer.keyInput.on("keypress", handleKeyPress);
+    return () => {
+      renderer.keyInput.off("keypress", handleKeyPress);
+    };
+  }, [close, closeAndRevert, exactTickerResult, isColumnsMode, isPluginMode, isThemeMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
+
+  const barWidth = Math.max(42, Math.min(64, termWidth - 8, Math.floor(termWidth * 0.62)));
+  const isNarrow = barWidth < 52;
+  const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
+  const contentPadding = 3;
+  const bodyHeight = Math.min(14, Math.max(8, termHeight - 10));
+  const barHeight = bodyHeight + 5;
+  const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
+  const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
+  const paletteBg = commandBarBg();
+  const paletteHeadingText = commandBarHeadingText();
+  const paletteHoverBg = commandBarHoverBg();
+  const paletteSelectedBg = commandBarSelectedBg();
+  const paletteText = commandBarText();
+  const paletteSubtleText = commandBarSubtleText();
+  const paletteSelectedText = commandBarSelectedText();
+
+  const allRows: Array<
+    | { kind: "spacer"; id: string }
+    | { kind: "heading"; id: string; label: string }
+    | { kind: "item"; item: ResultItem; globalIdx: number }
+    | { kind: "message"; id: string; label: string; dim?: boolean }
+    | { kind: "filler"; id: string }
+  > = [];
+  let previousCategory: string | null = null;
+  for (let i = 0; i < results.length; i++) {
+    const item = results[i]!;
+    if (previousCategory !== null && item.category !== previousCategory) {
+      allRows.push({
+        kind: "spacer",
+        id: `spacer:${i}:${item.category}`,
+      });
+    }
+    if (item.category !== previousCategory) {
+      allRows.push({
+        kind: "heading",
+        id: `heading:${i}:${item.category}`,
+        label: item.category,
+      });
+    }
+    previousCategory = item.category;
+    allRows.push({ kind: "item", item, globalIdx: i });
+  }
+  const emptyState = getEmptyState(modeInfo.kind, query, searchModeQuery);
+  const resultsInnerWidth = Math.max(12, barWidth - contentPadding * 2);
+  const trailingWidth = isNarrow ? 0 : Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
+  const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
+  const queryDisplayWidth = Math.max(8, barWidth - contentPadding * 2);
+
+  let visibleRows: typeof allRows;
+  if (searching) {
+    visibleRows = [{ kind: "message", id: "searching", label: "Searching providers...", dim: true }];
+  } else if (allRows.length === 0) {
+    visibleRows = [{ kind: "message", id: "empty", label: emptyState.label }];
+  } else {
+    const selectedRowIdx = allRows.findIndex((row) => row.kind === "item" && row.globalIdx === selectedIdx);
+    const halfWindow = Math.floor(bodyHeight / 2);
+    let windowStart = Math.max(0, Math.min(selectedRowIdx - halfWindow, allRows.length - bodyHeight));
+    if (windowStart < 0) windowStart = 0;
+    visibleRows = allRows.slice(windowStart, windowStart + bodyHeight);
+  }
+
+  while (visibleRows.length < bodyHeight) {
+    visibleRows.push({ kind: "filler", id: `filler:${visibleRows.length}` });
+  }
 
   return (
     <box
       position="absolute"
-      top={3}
+      top={barTop}
       left={barLeft}
       width={barWidth}
+      height={barHeight}
       flexDirection="column"
-      backgroundColor={colors.commandBg}
-      borderStyle="rounded"
-      borderColor={colors.border}
+      backgroundColor={paletteBg}
       zIndex={100}
     >
-      {/* Spacer above input */}
       <box height={1} />
 
-      {/* Search input */}
-      <box height={1} paddingX={2}>
+      <box height={1} paddingX={contentPadding} flexDirection="row">
+        <box flexGrow={1}>
+          <text fg={paletteText}>Commands</text>
+        </box>
+        <text fg={paletteSubtleText}>esc</text>
+      </box>
+
+      <box height={1} paddingX={contentPadding}>
         <input
-          ref={inputRef}
-          placeholder="> Type a command or search..."
+          value={query}
+          onInput={setCommandBarQuery}
+          onChange={setCommandBarQuery}
+          placeholder="Search"
           focused
-          textColor={colors.text}
-          placeholderColor={colors.textDim}
-          backgroundColor={colors.commandBg}
-          onInput={(val) => {
-            if (spaceConsumedRef.current) { spaceConsumedRef.current = false; return; }
-            setQuery(val);
-          }}
-          onChange={(val) => {
-            if (spaceConsumedRef.current) { spaceConsumedRef.current = false; return; }
-            setQuery(val);
-          }}
           onSubmit={() => {
-            if (suppressNextSubmitRef.current) {
-              suppressNextSubmitRef.current = false;
-              return;
-            }
             const selected = exactTickerResult ?? results[selectedIdx];
             if (selected) selected.action();
           }}
+          width={queryDisplayWidth}
+          backgroundColor={paletteBg}
+          focusedBackgroundColor={paletteBg}
+          textColor={paletteText}
+          focusedTextColor={paletteText}
+          placeholderColor={paletteSubtleText}
+          cursorColor={colors.textBright}
         />
       </box>
 
-      {/* Prefix hint */}
-      {prefixHint && (
-        <box height={1} paddingX={2}>
-          <text fg={colors.textBright}>{prefixHint}</text>
-        </box>
-      )}
+      <box height={1} />
 
-      {/* Separator between input and results */}
-      <box height={1} paddingX={1}>
-        <text fg={colors.border}>{"\u2500".repeat(barWidth - 2)}</text>
-      </box>
+      <box flexDirection="column" height={bodyHeight}>
+        {visibleRows.map((row) => {
+          if (row.kind === "filler") {
+            return <box key={row.id} height={1} />;
+          }
 
-      {/* Scroll-up indicator */}
-      {hasMoreAbove && (
-        <box height={1} paddingX={2}>
-          <text fg={colors.textMuted}>{"  \u2191 more"}</text>
-        </box>
-      )}
+          if (row.kind === "spacer") {
+            return <box key={row.id} height={1} />;
+          }
 
-      {/* Results */}
-      <box flexDirection="column" flexGrow={1}>
-        {searching ? (
-          <box paddingX={2} height={1}>
-            <text fg={colors.textDim}>Searching providers...</text>
-          </box>
-        ) : grouped.length === 0 ? (
-          <box paddingX={2} height={1}>
-            <text fg={colors.textDim}>No results</text>
-          </box>
-        ) : (
-          grouped.map((group, gi) => (
-            <box key={group.category} flexDirection="column">
-              {gi > 0 && <box height={1} />}
-              <box height={1} paddingX={2}>
-                <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-                  {group.category}
+          if (row.kind === "message") {
+            return (
+              <box key={row.id} height={1} paddingX={contentPadding}>
+                <text fg={row.dim ? paletteSubtleText : paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</text>
+              </box>
+            );
+          }
+
+          if (row.kind === "heading") {
+            return (
+              <box key={row.id} height={1} paddingX={contentPadding}>
+                <text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
+                  {truncateText(row.label, barWidth - contentPadding * 2)}
                 </text>
               </box>
-              {group.items.map((item) => {
-                const isSel = item.globalIdx === selectedIdx;
-                const isThemeItem = !!item.themeId;
-                const isPluginItem = item.id.startsWith("plugin:");
-                const isColumnItem = item.id.startsWith("col:");
-                const isSearchResult = item.id.startsWith("search:") || item.id.startsWith("goto:");
-                const isChecked = isColumnItem && item.label.includes("\u2713");
-                return (
-                  <box
-                    key={item.id}
-                    flexDirection="row"
-                    height={1}
-                    paddingX={2}
-                    backgroundColor={isSel ? colors.selected : colors.commandBg}
-                    onMouseMove={() => setSelectedIdx(item.globalIdx)}
-                    onMouseDown={() => {
-                      setSelectedIdx(item.globalIdx);
-                      item.action();
-                    }}
-                  >
-                    {/* Prefix shortcut column — shown only for commands (not tickers/themes/plugins/columns) */}
-                    {!isThemeItem && !isPluginItem && !isSearchResult && !isColumnItem && (
-                      <box width={5}>
-                        <text fg={colors.textMuted}>{item.right || ""}</text>
-                      </box>
-                    )}
-                    {/* Label */}
-                    <box width={isColumnItem ? Math.floor(barWidth * 0.4) : (isThemeItem || isPluginItem) ? Math.floor(barWidth * 0.35) : isSearchResult ? 10 : Math.floor(barWidth * 0.3)}>
-                      <text fg={isColumnItem ? (isChecked ? colors.text : colors.textDim) : (isSel ? colors.text : colors.textDim)}>
-                        {item.label}
-                      </text>
-                    </box>
-                    <box flexGrow={1}>
-                      <text fg={colors.textMuted}>{item.detail}</text>
-                    </box>
-                    {/* Right-side tag */}
-                    {(isThemeItem || isSearchResult) && item.right && (
-                      <box>
-                        <text fg={colors.textMuted}>{item.right}</text>
-                      </box>
-                    )}
-                    {isColumnItem && item.right && (
-                      <box>
-                        <text fg={colors.textMuted}>{item.right}</text>
-                      </box>
-                    )}
-                  </box>
-                );
-              })}
+            );
+          }
+
+          const isSel = row.globalIdx === selectedIdx;
+          const isHovered = row.globalIdx === hoveredIdx && !isSel;
+          const presentation = getRowPresentation(row.item, isSel, trailingWidth > 0);
+          const label = truncateText(presentation.label, labelWidth);
+          const trailing = truncateText(presentation.trailing, trailingWidth);
+
+          return (
+            <box
+              key={row.item.id}
+              flexDirection="row"
+              height={1}
+              paddingX={contentPadding}
+              backgroundColor={isSel ? paletteSelectedBg : isHovered ? paletteHoverBg : paletteBg}
+              onMouseMove={() => {
+                setHoveredIdx((current) => (current === row.globalIdx ? current : row.globalIdx));
+              }}
+              onMouseDown={() => {
+                setHoveredIdx(row.globalIdx);
+                setSelectedIdx(row.globalIdx);
+                row.item.action();
+              }}
+            >
+              <box width={labelWidth}>
+                <text fg={isSel ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
+                  {label}
+                </text>
+              </box>
+              {trailingWidth > 0 && (
+                <box width={trailingWidth}>
+                  <text fg={isSel ? paletteSelectedText : paletteSubtleText}>{trailing}</text>
+                </box>
+              )}
             </box>
-          ))
-        )}
+          );
+        })}
       </box>
 
-      {/* Scroll-down indicator */}
-      {hasMoreBelow && (
-        <box height={1} paddingX={2}>
-          <text fg={colors.textMuted}>{"  \u2193 more"}</text>
-        </box>
-      )}
-
-      {/* Bottom padding + hint */}
-      <box flexDirection="row" height={1} paddingX={2}>
-        <box flexGrow={1}>
-          {isPluginMode && <text fg={colors.textMuted}>space toggle</text>}
-          {isColumnsMode && <text fg={colors.textMuted}>space/enter toggle</text>}
-          {!isPluginMode && !isColumnsMode && tickerActionHint && <text fg={colors.textMuted}>{tickerActionHint}</text>}
-        </box>
-        <text fg={colors.textMuted}>esc to close</text>
-      </box>
+      <box height={1} />
     </box>
   );
 }

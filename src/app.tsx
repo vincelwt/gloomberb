@@ -659,7 +659,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
   pluginRegistry.selectTickerFn = (symbol, paneId) => selectTickerInPane(symbol, paneId);
   pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
   pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
-  pluginRegistry.openCommandBarFn = () => dispatch({ type: "SET_COMMAND_BAR", open: true });
+  pluginRegistry.openCommandBarFn = (query) => dispatch({ type: "SET_COMMAND_BAR", open: true, query });
   const persistLayout = (layout: LayoutConfig) => {
     const normalizedLayout = normalizePaneLayout(layout);
     const layouts = state.config.layouts.map((savedLayout, index) => (
@@ -864,7 +864,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     }
     // Backtick opens command bar (close is handled in command-bar.tsx)
     if (event.name === "`" && !state.commandBarOpen) {
-      dispatch({ type: "SET_COMMAND_BAR", open: true });
+      dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       return;
     }
     // Ctrl+1-9: switch layouts (works even when input is captured)
@@ -920,7 +920,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       const actions = [...pluginRegistry.tickerActions.values()];
       const ticker = state.tickers.get(focusedTickerSymbol);
       if (actions.length > 0 && ticker) {
-        dispatch({ type: "SET_COMMAND_BAR", open: true });
+        dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       }
     } else if (event.name === "u" && state.updateAvailable && !state.updateProgress) {
       performUpdate(state.updateAvailable, (progress) => {
@@ -928,7 +928,10 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       });
     } else {
       // Plugin keyboard shortcuts (built-ins take priority)
+      const disabledPlugins = new Set(state.config.disabledPlugins || []);
       for (const shortcut of pluginRegistry.shortcuts.values()) {
+        const ownerId = pluginRegistry.getShortcutPluginId(shortcut.id);
+        if (ownerId && disabledPlugins.has(ownerId)) continue;
         if (shortcut.key === event.name
             && (shortcut.ctrl ?? false) === (event.ctrl ?? false)
             && (shortcut.shift ?? false) === (event.shift ?? false)) {
@@ -945,7 +948,12 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
       {state.commandBarOpen && (
-        <CommandBar dataProvider={dataProvider} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
+        <CommandBar
+          dataProvider={dataProvider}
+          markdownStore={markdownStore}
+          pluginRegistry={pluginRegistry}
+          quitApp={() => renderer.destroy()}
+        />
       )}
       <Toaster position="bottom-right" />
     </box>

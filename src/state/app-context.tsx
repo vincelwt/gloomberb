@@ -40,6 +40,7 @@ export interface AppState {
   paneState: Record<string, PaneRuntimeState>;
   recentTickers: string[];
   commandBarOpen: boolean;
+  commandBarQuery: string;
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
@@ -57,7 +58,8 @@ export type AppAction =
   | { type: "TRACK_TICKER"; symbol: string | null }
   | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right" }
   | { type: "TOGGLE_COMMAND_BAR" }
-  | { type: "SET_COMMAND_BAR"; open: boolean }
+  | { type: "SET_COMMAND_BAR"; open: boolean; query?: string }
+  | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
@@ -217,7 +219,7 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
   return { ...state, config: nextConfig, paneState: nextPaneState, focusedPaneId };
 }
 
-function appReducer(state: AppState, action: AppAction): AppState {
+export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_CONFIG":
       return withFocusedPane(state, action.config);
@@ -274,10 +276,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "TOGGLE_COMMAND_BAR":
-      return { ...state, commandBarOpen: !state.commandBarOpen };
+      return state.commandBarOpen
+        ? { ...state, commandBarOpen: false, commandBarQuery: "" }
+        : { ...state, commandBarOpen: true, commandBarQuery: "" };
 
     case "SET_COMMAND_BAR":
-      return { ...state, commandBarOpen: action.open };
+      return {
+        ...state,
+        commandBarOpen: action.open,
+        commandBarQuery: action.open ? (action.query ?? "") : "",
+      };
+
+    case "SET_COMMAND_BAR_QUERY":
+      return { ...state, commandBarQuery: action.query };
 
     case "SET_REFRESHING": {
       const refreshing = new Set(state.refreshing);
@@ -448,7 +459,7 @@ interface AppContextValue {
   dispatch: React.Dispatch<AppAction>;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+export const AppContext = createContext<AppContextValue | null>(null);
 const PaneContext = createContext<string | null>(null);
 
 export function useAppState(): AppContextValue {
@@ -535,6 +546,7 @@ export function createInitialState(config: AppConfig): AppState {
     paneState,
     recentTickers: config.recentTickers,
     commandBarOpen: false,
+    commandBarQuery: "",
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: true,

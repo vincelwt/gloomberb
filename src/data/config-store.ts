@@ -32,10 +32,6 @@ export async function getDataDir(): Promise<string | null> {
   }
 }
 
-export async function setDataDir(dataDir: string): Promise<void> {
-  await mkdir(GLOBAL_CONFIG_DIR, { recursive: true });
-  await writeFile(GLOBAL_CONFIG_FILE, JSON.stringify({ dataDir }, null, 2), "utf-8");
-}
 
 export async function loadConfig(dataDir: string): Promise<AppConfig> {
   const { config } = await loadConfigState(dataDir);
@@ -119,8 +115,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
 
-  const { dataDir, ...rest } = persisted;
-  await writeFile(configPath, JSON.stringify(rest, null, 2), "utf-8");
+  await writeFile(configPath, JSON.stringify(persisted, null, 2), "utf-8");
 }
 
 export async function initDataDir(dataDir: string): Promise<AppConfig> {
@@ -129,13 +124,11 @@ export async function initDataDir(dataDir: string): Promise<AppConfig> {
   if (needsSave) {
     await saveConfig(config);
   }
-  await setDataDir(dataDir);
   return config;
 }
 
 export async function resetAllData(dataDir: string): Promise<void> {
   await rm(dataDir, { recursive: true, force: true });
-  await rm(GLOBAL_CONFIG_DIR, { recursive: true, force: true });
 }
 
 export async function exportConfig(config: AppConfig, destPath: string): Promise<void> {

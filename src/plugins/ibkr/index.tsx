@@ -15,7 +15,8 @@ import {
   usePaneInstanceId,
   usePaneTicker,
 } from "../../state/app-context";
-import { colors, priceColor } from "../../theme/colors";
+import { PriceSelectorDialog } from "../../components";
+import { colors, hoverBg, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, padTo } from "../../utils/format";
 import { getBrokerInstance, getBrokerInstancesByType } from "../../utils/broker-instances";
 import { getSharedRegistry } from "../registry";
@@ -117,7 +118,11 @@ function formatContractLabel(contract: BrokerContractRef): string {
 function formatQuoteSummary(quote?: Quote): string {
   if (!quote) return "No broker quote loaded";
   const change = `${quote.change >= 0 ? "+" : ""}${quote.change.toFixed(2)}`;
-  return `${formatCurrency(quote.price, quote.currency)}  ${change}`;
+  const parts = [`${formatCurrency(quote.price, quote.currency)}  ${change}`];
+  if (quote.bid != null) parts.push(`Bid ${quote.bid.toFixed(2)}`);
+  if (quote.ask != null) parts.push(`Ask ${quote.ask.toFixed(2)}`);
+  if (quote.bid != null && quote.ask != null) parts.push(`Spd ${(quote.ask - quote.bid).toFixed(2)}`);
+  return parts.join(" · ");
 }
 
 function formatPreviewSummary(preview: import("../../types/trading").BrokerOrderPreview | null): string {
@@ -354,7 +359,14 @@ function ChoiceDialog({
       {choices.map((choice, choiceIndex) => {
         const selected = choiceIndex === index;
         return (
-          <box key={choice.id} backgroundColor={selected ? colors.selected : colors.bg}>
+          <box
+            key={choice.id}
+            flexDirection="row"
+            height={1}
+            backgroundColor={selected ? colors.selected : colors.bg}
+            onMouseMove={() => setIndex(choiceIndex)}
+            onMouseDown={() => resolve(choice.id)}
+          >
             <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "▸ " : "  "}</text>
             <text fg={selected ? colors.text : colors.textDim} attributes={selected ? TextAttributes.BOLD : 0}>
               {choice.label}
@@ -365,7 +377,7 @@ function ChoiceDialog({
       <box height={1} />
       <text fg={colors.textDim}>{choices[index]?.desc || ""}</text>
       <box height={1} />
-      <text fg={colors.textMuted}>Use ↑↓ to choose · Enter to select · Esc to cancel</text>
+      <text fg={colors.textMuted}>↑↓ choose · Enter/click select · Esc cancel</text>
     </box>
   );
 }
@@ -378,6 +390,8 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
   const dialog = useDialog();
   const tradeState = useTradingPaneState();
   const [interactive, setInteractive] = useState(false);
+  const [hoveredField, setHoveredField] = useState<string | null>(null);
+  const fieldHoverBg = hoverBg();
 
   const symbol = ticker?.frontmatter.ticker ?? null;
   const ticketState = getTradeTicketState(symbol, ticker);
@@ -407,18 +421,14 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
   const activeAccount = gatewaySnapshot.accounts.find((account) => account.accountId === currentAccountId);
 
   const enterInteractive = useCallback(() => {
-    if (!interactive) {
-      setInteractive(true);
-      onCapture(true);
-    }
-  }, [interactive, onCapture]);
+    setInteractive(true);
+    onCapture(true);
+  }, [onCapture]);
 
   const exitInteractive = useCallback(() => {
-    if (interactive) {
-      setInteractive(false);
-      onCapture(false);
-    }
-  }, [interactive, onCapture]);
+    setInteractive(false);
+    onCapture(false);
+  }, [onCapture]);
 
   useEffect(() => {
     if (!focused) {
@@ -428,7 +438,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
 
   useEffect(() => {
     exitInteractive();
-  }, [symbol, exitInteractive]);
+  }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!symbol || !ticker || !selectedInstance) return;
@@ -682,6 +692,32 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     onCommit(numeric);
   }, [dialog, symbol, ticker]);
 
+  const editPriceField = useCallback(async (
+    label: string,
+    currentValue: number | undefined,
+    onCommit: (value: number | undefined) => void,
+  ) => {
+    const response = await dialog.prompt<string>({
+      content: (ctx) => <PriceSelectorDialog
+        {...ctx}
+        label={label}
+        currentValue={currentValue}
+        quote={financials?.quote}
+      />,
+    });
+    if (response === undefined) return;
+    if (!response.trim()) {
+      onCommit(undefined);
+      return;
+    }
+    const numeric = Number(response);
+    if (!Number.isFinite(numeric)) {
+      if (symbol && ticker) setTradeTicketMessage(symbol, undefined, `${label} must be numeric.`, ticker);
+      return;
+    }
+    onCommit(numeric);
+  }, [dialog, symbol, ticker, financials]);
+
   const editOrderType = useCallback(async () => {
     if (!symbol || !ticker) return;
     const choice = await dialog.prompt<string>({
@@ -837,14 +873,18 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
         editOrderType().catch(() => {});
         break;
       case "l":
-        editNumericField("Limit Price", ticketState.draft.limitPrice, (value) => {
-          setTradeTicketDraft(symbol, { limitPrice: value }, ticker);
-        }).catch(() => {});
+        if (isLimitOrder(ticketState.draft.orderType)) {
+          editPriceField("Limit Price", ticketState.draft.limitPrice, (value) => {
+            setTradeTicketDraft(symbol, { limitPrice: value }, ticker);
+          }).catch(() => {});
+        }
         break;
       case "x":
-        editNumericField("Stop Price", ticketState.draft.stopPrice, (value) => {
-          setTradeTicketDraft(symbol, { stopPrice: value }, ticker);
-        }).catch(() => {});
+        if (isStopOrder(ticketState.draft.orderType)) {
+          editPriceField("Stop Price", ticketState.draft.stopPrice, (value) => {
+            setTradeTicketDraft(symbol, { stopPrice: value }, ticker);
+          }).catch(() => {});
+        }
         break;
       case "p":
         previewOrder().catch(() => {});
@@ -865,19 +905,20 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
   }
 
   const rowWidth = Math.max(20, Math.floor((width - 4) / 4));
-  const detailHeight = Math.max(6, height - 9);
+  const showLimit = isLimitOrder(ticketState.draft.orderType);
+  const showStop = isStopOrder(ticketState.draft.orderType);
 
   return (
     <scrollbox flexGrow={1} scrollY>
       <box flexDirection="column" paddingX={1} paddingBottom={1} onMouseDown={enterInteractive}>
-        <box height={1}>
+        <box height={1} flexDirection="row">
           <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.frontmatter.ticker}`}</text>
           {ticker.frontmatter.name && ticker.frontmatter.name !== ticker.frontmatter.ticker && (
             <text fg={colors.textDim}>{` · ${ticker.frontmatter.name}`}</text>
           )}
         </box>
 
-        <box height={1}>
+        <box height={1} flexDirection="row" onMouseDown={() => { enterInteractive(); chooseBrokerInstance().catch(() => {}); }}>
           <text fg={
             gatewaySnapshot.status.state === "connected"
               ? colors.positive
@@ -892,7 +933,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
           <text fg={colors.textMuted}>{` · ${interactive ? "ticket active" : "press Enter to activate ticket"}`}</text>
         </box>
 
-        <box height={1}>
+        <box height={1} flexDirection="row" onMouseDown={() => { enterInteractive(); chooseAccount().catch(() => {}); }}>
           <text fg={colors.textDim}>
             {activeAccount
               ? `${selectedInstance?.label || "IBKR"} → ${activeAccount.accountId} · ${formatCurrency(activeAccount.netLiquidation || 0, activeAccount.currency || "USD")} net liq`
@@ -908,7 +949,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
           <text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote)}</text>
         </box>
 
-        <box height={1}>
+        <box height={1} flexDirection="row" onMouseDown={() => { enterInteractive(); chooseInstrument().catch(() => {}); }}>
           <text fg={colors.text} attributes={TextAttributes.BOLD}>
             {ticketState.draft.contract.symbol ? formatContractLabel(ticketState.draft.contract) : "No contract selected"}
           </text>
@@ -937,35 +978,75 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
           <text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</text>
         </box>
 
-        <box flexDirection="row" height={detailHeight}>
-          <box width={rowWidth} flexDirection="column">
+        <box flexDirection="row">
+          <box width={rowWidth} flexDirection="column"
+            backgroundColor={hoveredField === "action" ? fieldHoverBg : undefined}
+            onMouseMove={() => setHoveredField("action")}
+            onMouseDown={() => {
+              enterInteractive();
+              if (symbol && ticker) setTradeTicketDraft(symbol, { action: ticketState.draft.action === "BUY" ? "SELL" : "BUY" }, ticker);
+            }}>
             <text fg={colors.textDim}>Action</text>
             <text fg={ticketState.draft.action === "BUY" ? colors.positive : colors.negative} attributes={TextAttributes.BOLD}>
               {ticketState.draft.action}
             </text>
           </box>
-          <box width={rowWidth} flexDirection="column">
+          <box width={rowWidth} flexDirection="column"
+            backgroundColor={hoveredField === "orderType" ? fieldHoverBg : undefined}
+            onMouseMove={() => setHoveredField("orderType")}
+            onMouseDown={() => { enterInteractive(); editOrderType().catch(() => {}); }}>
             <text fg={colors.textDim}>Order Type</text>
             <text fg={colors.text}>{ticketState.draft.orderType}</text>
           </box>
-          <box width={rowWidth} flexDirection="column">
+          <box width={rowWidth} flexDirection="column"
+            backgroundColor={hoveredField === "quantity" ? fieldHoverBg : undefined}
+            onMouseMove={() => setHoveredField("quantity")}
+            onMouseDown={() => {
+              enterInteractive();
+              editNumericField("Quantity", ticketState.draft.quantity, (value) => {
+                if (value != null && symbol && ticker) setTradeTicketDraft(symbol, { quantity: value }, ticker);
+              }).catch(() => {});
+            }}>
             <text fg={colors.textDim}>Quantity</text>
             <text fg={colors.text}>{formatNumber(ticketState.draft.quantity, 0)}</text>
           </box>
-          <box width={rowWidth} flexDirection="column">
+          <box width={rowWidth} flexDirection="column"
+            backgroundColor={hoveredField === "account" ? fieldHoverBg : undefined}
+            onMouseMove={() => setHoveredField("account")}
+            onMouseDown={() => { enterInteractive(); chooseAccount().catch(() => {}); }}>
             <text fg={colors.textDim}>Account</text>
             <text fg={colors.text}>{currentAccountId || "auto"}</text>
           </box>
         </box>
 
         <box flexDirection="row">
-          <box width={rowWidth} flexDirection="column">
-            <text fg={colors.textDim}>Limit Price</text>
-            <text fg={colors.text}>{ticketState.draft.limitPrice != null ? ticketState.draft.limitPrice.toFixed(2) : "—"}</text>
+          <box width={rowWidth} flexDirection="column"
+            backgroundColor={showLimit && hoveredField === "limitPrice" ? fieldHoverBg : undefined}
+            onMouseMove={() => { if (showLimit) setHoveredField("limitPrice"); }}
+            onMouseDown={showLimit ? () => {
+              enterInteractive();
+              editPriceField("Limit Price", ticketState.draft.limitPrice, (value) => {
+                if (symbol && ticker) setTradeTicketDraft(symbol, { limitPrice: value }, ticker);
+              }).catch(() => {});
+            } : undefined}>
+            <text fg={showLimit ? colors.textDim : colors.textMuted}>Limit Price</text>
+            <text fg={showLimit ? colors.text : colors.textMuted}>
+              {showLimit ? (ticketState.draft.limitPrice != null ? ticketState.draft.limitPrice.toFixed(2) : "—") : "n/a"}
+            </text>
           </box>
-          <box width={rowWidth} flexDirection="column">
-            <text fg={colors.textDim}>Stop Price</text>
-            <text fg={colors.text}>{ticketState.draft.stopPrice != null ? ticketState.draft.stopPrice.toFixed(2) : "—"}</text>
+          <box width={rowWidth} flexDirection="column"
+            backgroundColor={showStop && hoveredField === "stopPrice" ? fieldHoverBg : undefined}
+            onMouseMove={() => { if (showStop) setHoveredField("stopPrice"); }}
+            onMouseDown={showStop ? () => {
+              enterInteractive();
+              editPriceField("Stop Price", ticketState.draft.stopPrice, (value) => {
+                if (symbol && ticker) setTradeTicketDraft(symbol, { stopPrice: value }, ticker);
+              }).catch(() => {});
+            } : undefined}>
+            <text fg={showStop ? colors.textDim : colors.textMuted}>Stop Price</text>
+            <text fg={showStop ? colors.text : colors.textMuted}>
+              {showStop ? (ticketState.draft.stopPrice != null ? ticketState.draft.stopPrice.toFixed(2) : "—") : "n/a"}
+            </text>
           </box>
           <box width={rowWidth} flexDirection="column">
             <text fg={colors.textDim}>Time In Force</text>
@@ -978,11 +1059,22 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
         </box>
 
         <box height={1} />
-        <text fg={colors.textMuted}>
-          {interactive
-            ? "i profile · s contract · a account · b buy · v sell · q qty · t type · l limit · x stop · p preview · enter submit · esc release"
-            : "Enter activates the ticket. Esc returns to normal detail-tab navigation."}
-        </text>
+        {interactive ? (
+          <box flexDirection="row" flexWrap="wrap">
+            <text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => chooseInstrument().catch(() => {})}>{" [s] Contract "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => { if (symbol && ticker) setTradeTicketDraft(symbol, { action: "BUY" }, ticker); }}>{" [b] Buy "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => { if (symbol && ticker) setTradeTicketDraft(symbol, { action: "SELL" }, ticker); }}>{" [v] Sell "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => previewOrder().catch(() => {})}>{" [p] Preview "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => submitOrder().catch(() => {})}>{" [Enter] Submit "}</text>
+            <text fg={colors.textMuted} onMouseDown={() => exitInteractive()}>{" [Esc] Release "}</text>
+          </box>
+        ) : (
+          <text fg={colors.textMuted} onMouseDown={() => enterInteractive()}>
+            {"Click here or press Enter to activate the ticket."}
+          </text>
+        )}
       </box>
     </scrollbox>
   );
@@ -1279,17 +1371,34 @@ function TradingPane({ focused, width, height }: PaneProps) {
             ) : (
               gatewaySnapshot.openOrders.map((order, index) => {
                 const selected = index === tradeState.selectedOpenOrderIndex;
+                const orderSymbol = order.contract.symbol;
+                const orderQuote = state.financials.get(orderSymbol)?.quote;
+                const bidStr = orderQuote?.bid != null ? orderQuote.bid.toFixed(2) : "---";
+                const askStr = orderQuote?.ask != null ? orderQuote.ask.toFixed(2) : "---";
+                const orderPrice = order.limitPrice != null ? order.limitPrice.toFixed(2) : order.stopPrice != null ? order.stopPrice.toFixed(2) : "MKT";
                 return (
-                  <box key={order.orderId} backgroundColor={selected ? colors.selected : colors.bg}>
+                  <box
+                    key={order.orderId}
+                    backgroundColor={selected ? colors.selected : colors.bg}
+                    onMouseDown={() => {
+                      if (selected) {
+                        openSelectedOrder();
+                      } else {
+                        updateTradingPaneState({ selectedOpenOrderIndex: index });
+                      }
+                    }}
+                  >
                     <text fg={selected ? colors.text : colors.textDim}>
                       {selected ? "▸ " : "  "}
                       {padTo(String(order.orderId), 6)}
                       {padTo(order.action, 5)}
-                      {padTo(order.contract.localSymbol || order.contract.symbol, 18)}
-                      {padTo(order.status, 12)}
-                      {padTo(String(order.remaining), 6, "right")}
+                      {padTo(order.contract.localSymbol || order.contract.symbol, 14)}
+                      {padTo(order.status, 10)}
+                      {padTo(String(order.remaining), 5, "right")}
                       {" "}
-                      {order.limitPrice != null ? order.limitPrice.toFixed(2) : order.stopPrice != null ? order.stopPrice.toFixed(2) : "MKT"}
+                      {padTo(orderPrice, 9)}
+                      {padTo(`B:${bidStr}`, 10)}
+                      {`A:${askStr}`}
                     </text>
                   </box>
                 );
@@ -1309,7 +1418,15 @@ function TradingPane({ focused, width, height }: PaneProps) {
               <text fg={colors.textDim}>No recent executions.</text>
             ) : (
               gatewaySnapshot.executions.slice(0, 20).map((execution) => (
-                <box key={execution.execId}>
+                <box
+                  key={execution.execId}
+                  onMouseDown={() => {
+                    const sym = execution.contract.symbol;
+                    if (sym && state.tickers.has(sym)) {
+                      getSharedRegistry()?.selectTickerFn(sym, paneId);
+                    }
+                  }}
+                >
                   <text fg={priceColor(execution.side.toUpperCase() === "BOT" ? 1 : -1)}>
                     {padTo(execution.side, 5)}
                     {padTo(execution.contract.localSymbol || execution.contract.symbol, 18)}
@@ -1324,8 +1441,12 @@ function TradingPane({ focused, width, height }: PaneProps) {
         </box>
       </box>
 
-      <box height={1}>
-        <text fg={colors.textMuted}>i profile · a account · enter/m open selected order in trade tab · c cancel · r refresh</text>
+      <box flexDirection="row" height={1}>
+        <text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</text>
+        <text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</text>
+        <text fg={colors.textMuted} onMouseDown={() => openSelectedOrder()}>{" [Enter] Open "}</text>
+        <text fg={colors.textMuted} onMouseDown={() => cancelSelectedOrder().catch(() => {})}>{" [c] Cancel "}</text>
+        <text fg={colors.textMuted} onMouseDown={() => refresh().catch(() => {})}>{" [r] Refresh "}</text>
       </box>
     </box>
   );
