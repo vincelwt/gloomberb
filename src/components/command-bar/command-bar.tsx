@@ -4,7 +4,7 @@ import { TextAttributes } from "@opentui/core";
 import type { InputRenderable } from "@opentui/core";
 import { useDialog, useDialogKeyboard } from "@opentui-ui/dialog/react";
 import { colors } from "../../theme/colors";
-import { useAppState } from "../../state/app-context";
+import { getFocusedCollectionId, useAppState, useFocusedTicker } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, matchPrefix, getThemeOptions, type Command } from "./command-registry";
 import { getCurrentThemeId, applyTheme } from "../../theme/colors";
@@ -14,7 +14,7 @@ import type { MarkdownStore } from "../../data/markdown-store";
 import type { TickerFile, TickerFrontmatter } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, WizardStep } from "../../types/plugin";
-import type { ColumnConfig } from "../../types/config";
+import { findPaneInstance, type ColumnConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
@@ -54,6 +54,7 @@ interface ResultItem {
   category: string;
   themeId?: string; // for theme items — enables live preview
   pluginToggle?: () => void; // for plugin items — toggle with space
+  secondaryAction?: () => void | Promise<void>;
   action: () => void | Promise<void>;
 }
 
@@ -296,6 +297,9 @@ function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & {
 
 export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: CommandBarProps) {
   const { state, dispatch } = useAppState();
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const dialog = useDialog();
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
   const [query, setQuery] = useState("");
@@ -307,6 +311,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   const originalThemeRef = useRef<string>(getCurrentThemeId());
   const spaceConsumedRef = useRef(false);
   const scrollAnchorRef = useRef(0);
+  const suppressNextSubmitRef = useRef(false);
 
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
@@ -325,6 +330,84 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     dispatch({ type: "SET_THEME", theme: originalThemeRef.current });
     close();
   }, [dispatch, close]);
+
+  const activeCollectionId = getFocusedCollectionId(state);
+  const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
+
+  const setActiveCollection = useCallback((collectionId: string) => {
+    const currentState = stateRef.current;
+    const resolvePortfolioPane = (candidate?: string | null): string | null => {
+      if (!candidate) return null;
+      const instance = findPaneInstance(currentState.config.layout, candidate);
+      if (!instance) return null;
+      if (instance.paneId === "portfolio-list") return instance.instanceId;
+      if (instance.binding?.kind === "follow") return resolvePortfolioPane(instance.binding.sourceInstanceId);
+      return null;
+    };
+    const targetPaneId = resolvePortfolioPane(currentState.focusedPaneId)
+      ?? currentState.config.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId
+      ?? null;
+    if (!targetPaneId) return;
+    dispatch({ type: "UPDATE_PANE_STATE", paneId: targetPaneId, patch: { collectionId } });
+  }, [dispatch]);
+
+  const retargetDetailPane = useCallback((paneId: string, symbol: string) => {
+    const currentState = stateRef.current;
+    const targetPane = findPaneInstance(currentState.config.layout, paneId);
+    if (!targetPane || targetPane.paneId !== "ticker-detail") return;
+
+    const existingInstance = currentState.config.layout.instances.find((instance) =>
+      instance.instanceId !== targetPane.instanceId
+      && instance.paneId === "ticker-detail"
+      && instance.binding?.kind === "fixed"
+      && instance.binding.symbol === symbol,
+    );
+    if (existingInstance) {
+      pluginRegistry.focusPaneFn(existingInstance.instanceId);
+      return;
+    }
+
+    const nextLayout = {
+      ...currentState.config.layout,
+      instances: currentState.config.layout.instances.map((instance) => (
+        instance.instanceId === targetPane.instanceId
+          ? { ...instance, title: symbol, binding: { kind: "fixed" as const, symbol } }
+          : instance
+      )),
+    };
+    const nextConfig = {
+      ...currentState.config,
+      layout: nextLayout,
+      layouts: currentState.config.layouts.map((savedLayout, index) => (
+        index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
+      )),
+    };
+    dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
+    saveConfig(nextConfig).catch(() => {});
+    dispatch({ type: "FOCUS_PANE", paneId: targetPane.instanceId });
+  }, [dispatch, pluginRegistry]);
+
+  const openFixedTickerPane = useCallback((symbol: string) => {
+    pluginRegistry.pinTickerFn(symbol, { floating: true, paneType: "ticker-detail" });
+  }, [pluginRegistry]);
+
+  const focusTicker = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
+    const currentState = stateRef.current;
+    const focusedPane = currentState.focusedPaneId
+      ? findPaneInstance(currentState.config.layout, currentState.focusedPaneId)
+      : null;
+    if (options?.forceNewPane) {
+      openFixedTickerPane(symbol);
+      return;
+    }
+
+    if (focusedPane?.paneId === "ticker-detail") {
+      retargetDetailPane(focusedPane.instanceId, symbol);
+      return;
+    }
+
+    openFixedTickerPane(symbol);
+  }, [openFixedTickerPane, retargetDetailPane]);
 
   const connectBrokerProfile = useCallback(async (preselectedBrokerId?: string) => {
     let choiceId = preselectedBrokerId;
@@ -417,7 +500,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       const freshConfig = pluginRegistry.getConfigFn();
       dispatch({ type: "SET_CONFIG", config: freshConfig });
       const brokerTab = freshConfig.portfolios.find((portfolio) => portfolio.brokerInstanceId === instance.id);
-      if (brokerTab) dispatch({ type: "SET_LEFT_TAB", tab: brokerTab.id });
+      if (brokerTab) setActiveCollection(brokerTab.id);
       await dialog.alert({
         content: (ctx) => <ResultContent {...ctx} message="Connected! Positions will sync automatically." isError={false} />,
       });
@@ -452,7 +535,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
 
   // Handle prefix-based command execution
   const executeCommand = useCallback((cmd: Command, arg: string) => {
-    const ctx = { selectedTicker: state.selectedTicker, activeLeftTab: state.activeLeftTab };
+    const ctx = { activeTicker: activeTickerSymbol, activeCollectionId };
 
     switch (cmd.id) {
       case "export-config": {
@@ -565,10 +648,11 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       }
       case "add-watchlist":
       case "add-portfolio": {
-        const ticker = state.tickers.get(state.selectedTicker || "");
+        const ticker = activeTickerData;
         if (!ticker) return;
         const isWatchlist = cmd.id === "add-watchlist";
-        const listId = state.activeLeftTab;
+        const listId = activeCollectionId;
+        if (!listId) return;
         const list = isWatchlist ? ticker.frontmatter.watchlists : ticker.frontmatter.portfolios;
         if (!list.includes(listId)) {
           list.push(listId);
@@ -580,11 +664,12 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       }
       case "remove-watchlist":
       case "remove-portfolio": {
-        const ticker = state.tickers.get(state.selectedTicker || "");
+        const ticker = activeTickerData;
         if (!ticker) return;
         const isWatchlist = cmd.id === "remove-watchlist";
         const field = isWatchlist ? "watchlists" : "portfolios";
-        const listId = state.activeLeftTab;
+        const listId = activeCollectionId;
+        if (!listId) return;
         ticker.frontmatter[field] = ticker.frontmatter[field].filter((id) => id !== listId);
         markdownStore.saveTicker(ticker).catch(() => {});
         dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
@@ -603,13 +688,13 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
             }} />,
           });
           if (!name) return;
-          const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `watchlist-${Date.now()}`;
-          const newWatchlist = { id, name };
-          const newConfig = { ...state.config, watchlists: [...state.config.watchlists, newWatchlist] };
-          dispatch({ type: "SET_CONFIG", config: newConfig });
-          dispatch({ type: "SET_LEFT_TAB", tab: id });
-          saveConfig(newConfig).catch(() => {});
-        })();
+            const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `watchlist-${Date.now()}`;
+            const newWatchlist = { id, name };
+            const newConfig = { ...state.config, watchlists: [...state.config.watchlists, newWatchlist] };
+            dispatch({ type: "SET_CONFIG", config: newConfig });
+            setActiveCollection(id);
+            saveConfig(newConfig).catch(() => {});
+          })();
         return;
       }
       case "new-portfolio": {
@@ -648,7 +733,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
             const newPortfolio = { id, name, currency: state.config.baseCurrency || "USD" };
             const newConfig = { ...state.config, portfolios: [...state.config.portfolios, newPortfolio] };
             dispatch({ type: "SET_CONFIG", config: newConfig });
-            dispatch({ type: "SET_LEFT_TAB", tab: id });
+            setActiveCollection(id);
             saveConfig(newConfig).catch(() => {});
           } else {
             await connectBrokerProfile(choiceId);
@@ -674,9 +759,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           if (!confirmed) return;
           const newConfig = { ...state.config, watchlists: state.config.watchlists.filter((w) => w.id !== choiceId) };
           dispatch({ type: "SET_CONFIG", config: newConfig });
-          if (state.activeLeftTab === choiceId) {
+          if (activeCollectionId === choiceId) {
             const fallback = newConfig.portfolios[0]?.id || newConfig.watchlists[0]?.id || "";
-            dispatch({ type: "SET_LEFT_TAB", tab: fallback });
+            if (fallback) setActiveCollection(fallback);
           }
           saveConfig(newConfig).catch(() => {});
         })();
@@ -702,9 +787,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           if (!confirmed) return;
           const newConfig = { ...state.config, portfolios: state.config.portfolios.filter((p) => p.id !== choiceId) };
           dispatch({ type: "SET_CONFIG", config: newConfig });
-          if (state.activeLeftTab === choiceId) {
+          if (activeCollectionId === choiceId) {
             const fallback = newConfig.portfolios[0]?.id || newConfig.watchlists[0]?.id || "";
-            dispatch({ type: "SET_LEFT_TAB", tab: fallback });
+            if (fallback) setActiveCollection(fallback);
           }
           saveConfig(newConfig).catch(() => {});
         })();
@@ -726,7 +811,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
   }, [state, dispatch, markdownStore, close, dialog, pluginRegistry]);
 
-  const openTickerDetail = useCallback((result: InstrumentSearchResult) => {
+  const openTickerDetail = useCallback((result: InstrumentSearchResult, options?: { forceNewPane?: boolean }) => {
     (async () => {
       const symbol = result.brokerContract?.localSymbol || result.symbol.split(".")[0]!;
       let existing = await markdownStore.loadTicker(symbol);
@@ -765,10 +850,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         await markdownStore.saveTicker(existing);
       }
       dispatch({ type: "UPDATE_TICKER", ticker: existing });
-      dispatch({ type: "SELECT_TICKER", symbol });
+      focusTicker(symbol, options);
       close();
     })();
-  }, [markdownStore, dispatch, close]);
+  }, [markdownStore, dispatch, close, focusTicker]);
 
   // Run a wizard command through sequential dialogs
   const runWizard = useCallback(async (cmd: CommandDef) => {
@@ -862,9 +947,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   }, [pluginRegistry.commands, close, runWizard]);
 
   const tickerActionItems = useCallback((): ResultItem[] => {
-    if (!state.selectedTicker) return [];
-    const ticker = state.tickers.get(state.selectedTicker);
-    const financials = state.selectedTicker ? state.financials.get(state.selectedTicker) ?? null : null;
+    const ticker = activeTickerData;
+    const financials = activeFinancials;
     if (!ticker) return [];
 
     return [...pluginRegistry.tickerActions.values()]
@@ -879,7 +963,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           void action.execute(ticker, financials);
         },
       }));
-  }, [pluginRegistry.tickerActions, state.selectedTicker, state.tickers, state.financials, close]);
+  }, [pluginRegistry.tickerActions, activeTickerData, activeFinancials, close]);
 
   // Detect special modes
   const isThemeMode = matchPrefix(query)?.command.id === "theme";
@@ -908,36 +992,36 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   // Build results based on query and prefix matching
   useEffect(() => {
     // --- Smart command filtering (computed fresh each effect run) ---
-    const isWatchlistTab = state.config.watchlists.some((w) => w.id === state.activeLeftTab);
-    const isPortfolioTab = state.config.portfolios.some((p) => p.id === state.activeLeftTab);
-    const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+    const isWatchlistTab = state.config.watchlists.some((w) => w.id === activeCollectionId);
+    const isPortfolioTab = state.config.portfolios.some((p) => p.id === activeCollectionId);
+    const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
     const isBrokerManaged = !!activePortfolio?.brokerId;
     const activeTabName = isWatchlistTab
-      ? state.config.watchlists.find((w) => w.id === state.activeLeftTab)?.name
-      : state.config.portfolios.find((p) => p.id === state.activeLeftTab)?.name;
-    const tickerData = state.selectedTicker ? state.tickers.get(state.selectedTicker) : null;
+      ? state.config.watchlists.find((w) => w.id === activeCollectionId)?.name
+      : state.config.portfolios.find((p) => p.id === activeCollectionId)?.name;
+    const tickerData = activeTickerData;
 
     function shouldShow(cmd: Command): boolean {
       switch (cmd.id) {
         case "add-watchlist":
           if (!tickerData || !isWatchlistTab) return false;
-          return !tickerData.frontmatter.watchlists.includes(state.activeLeftTab);
+          return !!activeCollectionId && !tickerData.frontmatter.watchlists.includes(activeCollectionId);
         case "remove-watchlist":
           if (!tickerData || !isWatchlistTab) return false;
-          return tickerData.frontmatter.watchlists.includes(state.activeLeftTab);
+          return !!activeCollectionId && tickerData.frontmatter.watchlists.includes(activeCollectionId);
         case "add-portfolio":
           if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
-          return !tickerData.frontmatter.portfolios.includes(state.activeLeftTab);
+          return !!activeCollectionId && !tickerData.frontmatter.portfolios.includes(activeCollectionId);
         case "remove-portfolio":
           if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
-          return tickerData.frontmatter.portfolios.includes(state.activeLeftTab);
+          return !!activeCollectionId && tickerData.frontmatter.portfolios.includes(activeCollectionId);
         default:
           return true;
       }
     }
 
     function smartLabel(cmd: Command): string {
-      const sym = state.selectedTicker;
+      const sym = activeTickerSymbol;
       switch (cmd.id) {
         case "add-watchlist": return sym ? `Add ${sym} to Watchlist` : cmd.label;
         case "remove-watchlist": return sym ? `Remove ${sym} from Watchlist` : cmd.label;
@@ -1080,7 +1164,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           label: t.frontmatter.ticker,
           detail: t.frontmatter.name,
           category: "Tickers",
-          action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
+          secondaryAction: () => { focusTicker(t.frontmatter.ticker, { forceNewPane: true }); close(); },
+          action: () => { focusTicker(t.frontmatter.ticker); close(); },
         });
       }
       for (const cmd of commands) {
@@ -1093,7 +1178,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
         id: `goto:${t.frontmatter.ticker}`, label: t.frontmatter.ticker,
         detail: t.frontmatter.name, category: "Tickers",
-        action: () => { dispatch({ type: "SELECT_TICKER", symbol: t.frontmatter.ticker }); close(); },
+        secondaryAction: () => { focusTicker(t.frontmatter.ticker, { forceNewPane: true }); close(); },
+        action: () => { focusTicker(t.frontmatter.ticker); close(); },
       }));
       const cmdItems: ResultItem[] = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
       const allItems = [...tickerItems, ...cmdItems, ...tickerActionItems(), ...pluginCommandItems()];
@@ -1121,7 +1207,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       setSearching(true);
       searchTimerRef.current = setTimeout(async () => {
         try {
-          const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+          const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
           const searchResults = await dataProvider.search(searchQuery, {
             preferBroker: true,
             brokerId: activePortfolio?.brokerId,
@@ -1136,6 +1222,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                 id: `search:${r.symbol}`, label: sym, detail: r.name,
                 right: [r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" · "),
                 category: isExisting ? "Open" : "Search Results",
+                secondaryAction: () => openTickerDetail(r, { forceNewPane: true }),
                 action: () => openTickerDetail(r),
               };
             });
@@ -1153,7 +1240,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     }
 
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [query, state.tickers, state.selectedTicker, state.activeLeftTab, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems]);
+  }, [query, state.tickers, activeTickerSymbol, activeTickerData, activeCollectionId, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems, focusTicker]);
 
   // Live preview: apply theme as user arrows through the list
   useEffect(() => {
@@ -1195,9 +1282,17 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       spaceConsumedRef.current = true;
       const selected = results[selectedIdx];
       if (selected) selected.action();
+    } else if ((event.name === "return" || event.name === "enter") && event.shift) {
+      const selected = exactTickerResult?.secondaryAction ? exactTickerResult : results[selectedIdx];
+      if (selected?.secondaryAction) {
+        suppressNextSubmitRef.current = true;
+        selected.secondaryAction();
+      }
     } else if (event.name === "return" || event.name === "enter") {
-      // Enter is handled by the <input onSubmit> — avoid calling action twice
-      // which breaks toggle commands (e.g. Toggle Status Bar fires twice = no-op)
+      if (exactTickerResult) {
+        suppressNextSubmitRef.current = true;
+        exactTickerResult.action();
+      }
     }
   });
 
@@ -1231,6 +1326,18 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   const activeMatch = matchPrefix(query);
   const prefixHint = activeMatch
     ? `${activeMatch.command.prefix}: ${activeMatch.command.label}${activeMatch.command.hasArg ? ` \u2014 ${activeMatch.command.argPlaceholder}` : ""}`
+    : null;
+  const exactTickerResult = (() => {
+    const normalizedQuery = query.trim().toUpperCase();
+    if (!normalizedQuery) return null;
+    return results.find((item) =>
+      (item.id.startsWith("goto:") || item.id.startsWith("search:"))
+      && item.label.toUpperCase() === normalizedQuery,
+    ) ?? null;
+  })();
+  const selectedResult = results[selectedIdx];
+  const tickerActionHint = selectedResult?.secondaryAction
+    ? "enter retargets · shift+enter opens new pane"
     : null;
 
   return (
@@ -1266,7 +1373,11 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
             setQuery(val);
           }}
           onSubmit={() => {
-            const selected = results[selectedIdx];
+            if (suppressNextSubmitRef.current) {
+              suppressNextSubmitRef.current = false;
+              return;
+            }
+            const selected = exactTickerResult ?? results[selectedIdx];
             if (selected) selected.action();
           }}
         />
@@ -1376,6 +1487,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         <box flexGrow={1}>
           {isPluginMode && <text fg={colors.textMuted}>space toggle</text>}
           {isColumnsMode && <text fg={colors.textMuted}>space/enter toggle</text>}
+          {!isPluginMode && !isColumnsMode && tickerActionHint && <text fg={colors.textMuted}>{tickerActionHint}</text>}
         </box>
         <text fg={colors.textMuted}>esc to close</text>
       </box>

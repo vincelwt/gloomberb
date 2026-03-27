@@ -49,7 +49,7 @@ class GloomApiClient {
     for (const cookie of setCookie) {
       const match = cookie.match(/gloomberb\.session_token=([^;]+)/);
       if (match) {
-        this.sessionToken = match[1];
+        this.sessionToken = match[1] ?? null;
       }
     }
   }

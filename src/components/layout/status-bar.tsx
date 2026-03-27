@@ -1,5 +1,5 @@
 import { colors } from "../../theme/colors";
-import { useAppState } from "../../state/app-context";
+import { useAppState, useFocusedTicker } from "../../state/app-context";
 import { marketStateLabel, marketStateColor, exchangeShortName } from "../../utils/market-status";
 import { formatPercentRaw } from "../../utils/format";
 import { priceColor } from "../../theme/colors";
@@ -8,19 +8,19 @@ import { getSharedRegistry } from "../../plugins/registry";
 export function StatusBar() {
   const registry = getSharedRegistry();
   const { state } = useAppState();
+  const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const refreshCount = state.refreshing.size;
 
   if (!state.statusBarVisible) return null;
 
-  // Get market state and exchange from selected ticker or first available
-  const selectedFin = state.selectedTicker ? state.financials.get(state.selectedTicker) : null;
-  const anyFin = selectedFin ?? state.financials.values().next().value ?? null;
+  // Get market state and exchange from the focused ticker context or first available.
+  const anyFin = focusedFinancials ?? state.financials.values().next().value ?? null;
   const q = anyFin?.quote;
   const mktState = q?.marketState;
   const exchName = q ? exchangeShortName(q.exchangeName, q.fullExchangeName) : "";
 
   // Extended hours info for selected ticker
-  const selQ = selectedFin?.quote;
+  const selQ = focusedFinancials?.quote;
   let extText = "";
   let extColor = colors.textDim;
   if (selQ?.marketState === "PRE" && selQ.preMarketPrice != null) {
@@ -64,7 +64,7 @@ export function StatusBar() {
       <box flexGrow={1} />
       {extText && (
         <box paddingRight={1}>
-          <text fg={extColor}>{state.selectedTicker} {extText}</text>
+          <text fg={extColor}>{symbol} {extText}</text>
         </box>
       )}
       {mktState && (
