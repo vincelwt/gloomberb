@@ -210,7 +210,7 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
 
     // Reply
     if (event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
-      setReplyTo(messages[selectedIdx]);
+      setReplyTo(messages[selectedIdx] ?? null);
       setInputFocused(true);
       dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
       return;
@@ -497,6 +497,9 @@ export const chatPlugin: GloomPlugin = {
       ],
       execute: async (values) => {
         if (!values) return;
+        if (!values.email || !values.password) {
+          throw new Error("Email and password are required");
+        }
         await apiClient.signIn(values.email, values.password);
         const token = apiClient.getSessionToken();
         if (token) ctx.storage.set("session_token", token);
@@ -533,6 +536,9 @@ export const chatPlugin: GloomPlugin = {
       ],
       execute: async (values) => {
         if (!values) return;
+        if (!values.email || !values.username || !values.name || !values.password) {
+          throw new Error("All fields are required");
+        }
         if (values.password !== values.confirmPassword) {
           throw new Error("Passwords do not match");
         }

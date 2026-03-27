@@ -9,11 +9,17 @@ import type { Quote } from "../../types/financials";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { DetailTabProps, GloomPlugin, GloomPluginContext, PaneProps, WizardStep } from "../../types/plugin";
 import type { BrokerAccount, BrokerOrderRequest, BrokerOrderType } from "../../types/trading";
-import { useAppState, useSelectedTicker } from "../../state/app-context";
+import {
+  useAppState,
+  usePaneCollection,
+  usePaneInstanceId,
+  usePaneTicker,
+} from "../../state/app-context";
 import { PriceSelectorDialog } from "../../components";
 import { colors, hoverBg, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, padTo } from "../../utils/format";
 import { getBrokerInstance, getBrokerInstancesByType } from "../../utils/broker-instances";
+import { getSharedRegistry } from "../registry";
 import {
   buildIbkrConfigFromValues,
   getGatewayConfig,
@@ -83,12 +89,12 @@ function firstIbkrAccount(
 
 function inferDraftAccountId(
   appConfig: ReturnType<GloomPluginContext["getConfig"]>,
-  activeLeftTab: string,
+  collectionId: string | null,
   accounts: BrokerAccount[],
   brokerInstanceId?: string,
   preferredAccountId?: string,
 ): string | undefined {
-  const portfolio = appConfig.portfolios.find((entry) => entry.id === activeLeftTab);
+  const portfolio = appConfig.portfolios.find((entry) => entry.id === collectionId);
   if (
     portfolio?.brokerId === "ibkr"
     && portfolio.brokerAccountId
@@ -377,8 +383,10 @@ function ChoiceDialog({
 }
 
 function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
-  const { state, dispatch } = useAppState();
-  const { ticker, financials } = useSelectedTicker();
+  const { state } = useAppState();
+  const paneId = usePaneInstanceId();
+  const { collectionId } = usePaneCollection(paneId);
+  const { ticker, financials } = usePaneTicker(paneId);
   const dialog = useDialog();
   const tradeState = useTradingPaneState();
   const [interactive, setInteractive] = useState(false);
@@ -387,11 +395,11 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
 
   const symbol = ticker?.frontmatter.ticker ?? null;
   const ticketState = getTradeTicketState(symbol, ticker);
-  const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+  const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === collectionId);
   const gatewayInstances = getConfiguredIbkrGatewayInstances(state.config);
-  const lockedBrokerInstanceId = getLockedIbkrTradingInstanceId(state.config, state.activeLeftTab);
+  const lockedBrokerInstanceId = getLockedIbkrTradingInstanceId(state.config, collectionId);
   const preferredInstanceId = ticketState.brokerInstanceId ?? tradeState.brokerInstanceId;
-  const selectedBrokerInstanceId = resolveIbkrTradingInstanceId(state.config, state.activeLeftTab, preferredInstanceId);
+  const selectedBrokerInstanceId = resolveIbkrTradingInstanceId(state.config, collectionId, preferredInstanceId);
   const selectedInstance = getBrokerInstance(state.config.brokerInstances, selectedBrokerInstanceId);
   const gatewaySnapshot = useGatewaySnapshot(selectedBrokerInstanceId);
   const gatewayService = selectedBrokerInstanceId ? ibkrGatewayManager.getService(selectedBrokerInstanceId) : null;
@@ -403,7 +411,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
   const inferredAccountId = selectedInstance
     ? inferDraftAccountId(
       state.config,
-      state.activeLeftTab,
+      collectionId,
       gatewaySnapshot.accounts,
       selectedInstance.id,
       tradeState.accountId,
@@ -466,7 +474,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     if (!symbol || !ticker || !isGatewayMode || gatewaySnapshot.accounts.length === 0 || ticketState.draft.accountId || !selectedInstance) return;
     const inferred = inferDraftAccountId(
       state.config,
-      state.activeLeftTab,
+      collectionId,
       gatewaySnapshot.accounts,
       selectedInstance.id,
       tradeState.accountId,
@@ -482,7 +490,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     ticketState.draft.accountId,
     selectedInstance,
     state.config,
-    state.activeLeftTab,
+    collectionId,
     tradeState.accountId,
   ]);
 
@@ -498,7 +506,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
       await refreshGatewayData(selectedInstance);
       const inferred = inferDraftAccountId(
         state.config,
-        state.activeLeftTab,
+        collectionId,
         gatewayService?.getSnapshot().accounts ?? [],
         selectedInstance.id,
         tradeState.accountId,
@@ -520,7 +528,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     isGatewayMode,
     gatewayRequiredMessage,
     state.config,
-    state.activeLeftTab,
+    collectionId,
     gatewayService,
     tradeState.accountId,
   ]);
@@ -970,7 +978,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
           <text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</text>
         </box>
 
-        <box flexDirection="row" onMouseLeave={() => setHoveredField(null)}>
+        <box flexDirection="row">
           <box width={rowWidth} flexDirection="column"
             backgroundColor={hoveredField === "action" ? fieldHoverBg : undefined}
             onMouseMove={() => setHoveredField("action")}
@@ -1011,7 +1019,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
           </box>
         </box>
 
-        <box flexDirection="row" onMouseLeave={() => setHoveredField(null)}>
+        <box flexDirection="row">
           <box width={rowWidth} flexDirection="column"
             backgroundColor={showLimit && hoveredField === "limitPrice" ? fieldHoverBg : undefined}
             onMouseMove={() => { if (showLimit) setHoveredField("limitPrice"); }}
@@ -1074,14 +1082,16 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
 
 function TradingPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
+  const paneId = usePaneInstanceId();
+  const { collectionId } = usePaneCollection(paneId);
   const dialog = useDialog();
   const tradeState = useTradingPaneState();
-  const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+  const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === collectionId);
   const gatewayInstances = getConfiguredIbkrGatewayInstances(state.config);
-  const lockedBrokerInstanceId = getLockedIbkrTradingInstanceId(state.config, state.activeLeftTab);
+  const lockedBrokerInstanceId = getLockedIbkrTradingInstanceId(state.config, collectionId);
   const selectedBrokerInstanceId = resolveIbkrTradingInstanceId(
     state.config,
-    state.activeLeftTab,
+    collectionId,
     tradeState.brokerInstanceId,
   );
   const selectedInstance = getBrokerInstance(state.config.brokerInstances, selectedBrokerInstanceId);
@@ -1128,7 +1138,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
     if (!isGatewayMode || gatewaySnapshot.accounts.length === 0 || tradeState.accountId || !selectedInstance) return;
     const inferred = inferDraftAccountId(
       state.config,
-      state.activeLeftTab,
+      collectionId,
       gatewaySnapshot.accounts,
       selectedInstance.id,
       tradeState.accountId,
@@ -1136,7 +1146,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
     if (inferred) {
       updateTradingPaneState({ accountId: inferred });
     }
-  }, [isGatewayMode, gatewaySnapshot.accounts, tradeState.accountId, state.config, state.activeLeftTab, selectedInstance]);
+  }, [isGatewayMode, gatewaySnapshot.accounts, tradeState.accountId, state.config, collectionId, selectedInstance]);
 
   const refresh = useCallback(async () => {
     if (!selectedInstance || !normalizedConfig || !isGatewayMode || !isGatewayConfigured(selectedInstance.config)) {
@@ -1149,7 +1159,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
       await refreshGatewayData(selectedInstance);
       const inferred = inferDraftAccountId(
         state.config,
-        state.activeLeftTab,
+        collectionId,
         gatewayService?.getSnapshot().accounts ?? [],
         selectedInstance.id,
         tradeState.accountId,
@@ -1163,7 +1173,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
     } finally {
       setTradingBusy(false);
     }
-  }, [selectedInstance, normalizedConfig, isGatewayMode, state.config, state.activeLeftTab, gatewayService, tradeState.accountId, gatewayRequiredMessage]);
+  }, [selectedInstance, normalizedConfig, isGatewayMode, state.config, collectionId, gatewayService, tradeState.accountId, gatewayRequiredMessage]);
 
   useEffect(() => {
     if (!selectedInstance || !normalizedConfig || !isGatewayMode || !isGatewayConfigured(selectedInstance.config)) return;
@@ -1245,6 +1255,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
 
   const openSelectedOrder = useCallback(() => {
     if (!selectedOrder) return;
+    const registry = getSharedRegistry();
     const ticker = findTickerForOrder(selectedOrder, state.tickers);
     if (!ticker) {
       setTradingMessage(undefined, `No local ticker exists for ${selectedOrder.contract.localSymbol || selectedOrder.contract.symbol}.`);
@@ -1257,10 +1268,10 @@ function TradingPane({ focused, width, height }: PaneProps) {
       lastInfo: `Loaded order ${selectedOrder.orderId} into ${ticker.frontmatter.ticker}.`,
       lastError: undefined,
     });
-    dispatch({ type: "SELECT_TICKER", symbol: ticker.frontmatter.ticker });
-    dispatch({ type: "SET_RIGHT_TAB", tab: "ibkr-trade" });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: "right" });
-  }, [selectedOrder, state.tickers, dispatch]);
+    registry?.selectTickerFn(ticker.frontmatter.ticker, paneId);
+    registry?.switchTabFn("ibkr-trade", paneId);
+    registry?.switchPanelFn("right");
+  }, [selectedOrder, state.tickers, paneId]);
 
   useKeyboard((event) => {
     if (!focused) return;
@@ -1411,8 +1422,8 @@ function TradingPane({ focused, width, height }: PaneProps) {
                   key={execution.execId}
                   onMouseDown={() => {
                     const sym = execution.contract.symbol;
-                    if (sym && state.tickers.some((t) => t.frontmatter.ticker === sym)) {
-                      dispatch({ type: "SELECT_TICKER", symbol: sym });
+                    if (sym && state.tickers.has(sym)) {
+                      getSharedRegistry()?.selectTickerFn(sym, paneId);
                     }
                   }}
                 >

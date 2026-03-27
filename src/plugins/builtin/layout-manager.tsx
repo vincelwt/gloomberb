@@ -1,6 +1,7 @@
 import { saveConfig } from "../../data/config-store";
-import type { LayoutConfig } from "../../types/config";
+import { createPaneInstance, findPaneInstance, type LayoutConfig } from "../../types/config";
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
+import type { AppAction } from "../../state/app-context";
 import { getSharedRegistry } from "../registry";
 import {
   addPaneFloating,
@@ -12,11 +13,11 @@ import {
 
 const MAX_COLUMNS = 4;
 
-let dispatchRef: ((action: unknown) => void) | null = null;
+let dispatchRef: ((action: AppAction) => void) | null = null;
 let getStateRef: (() => { layout: LayoutConfig; termWidth: number; termHeight: number }) | null = null;
 
 export function setLayoutManagerDispatch(
-  dispatch: (action: unknown) => void,
+  dispatch: (action: AppAction) => void,
   getState: () => { layout: LayoutConfig; termWidth: number; termHeight: number },
 ) {
   dispatchRef = dispatch;
@@ -56,8 +57,9 @@ export const layoutManagerPlugin: GloomPlugin = {
         const { layout, termWidth, termHeight } = getStateRef();
         const dockedPanes = layout.docked
           .map((entry) => {
-            const def = registry.panes.get(entry.paneId);
-            return def ? { id: entry.paneId, name: def.name } : null;
+            const instance = findPaneInstance(layout, entry.instanceId);
+            const def = instance ? registry.panes.get(instance.paneId) : null;
+            return def && instance ? { id: entry.instanceId, name: def.name } : null;
           })
           .filter(Boolean) as Array<{ id: string; name: string }>;
 
@@ -67,7 +69,8 @@ export const layoutManagerPlugin: GloomPlugin = {
         }
 
         const paneId = dockedPanes[0]!.id;
-        const def = registry.panes.get(paneId);
+        const instance = findPaneInstance(layout, paneId);
+        const def = instance ? registry.panes.get(instance.paneId) : undefined;
         const nextLayout = floatPane(layout, paneId, termWidth, termHeight, def);
         persistLayout(nextLayout);
         dispatchRef?.({ type: "FOCUS_PANE", paneId });
@@ -88,8 +91,9 @@ export const layoutManagerPlugin: GloomPlugin = {
         const { layout } = getStateRef();
         const floatingPanes = layout.floating
           .map((entry) => {
-            const def = registry.panes.get(entry.paneId);
-            return def ? { id: entry.paneId, name: def.name } : null;
+            const instance = findPaneInstance(layout, entry.instanceId);
+            const def = instance ? registry.panes.get(instance.paneId) : null;
+            return def && instance ? { id: entry.instanceId, name: def.name } : null;
           })
           .filter(Boolean) as Array<{ id: string; name: string }>;
 
@@ -103,15 +107,16 @@ export const layoutManagerPlugin: GloomPlugin = {
         if (!lastDockedPane) {
           persistLayout({
             columns: [{}],
-            docked: [{ paneId, columnIndex: 0 }],
-            floating: layout.floating.filter((entry) => entry.paneId !== paneId),
+            instances: layout.instances,
+            docked: [{ instanceId: paneId, columnIndex: 0 }],
+            floating: layout.floating.filter((entry) => entry.instanceId !== paneId),
           });
           dispatchRef?.({ type: "FOCUS_PANE", paneId });
           return;
         }
 
         const nextLayout = dockPane(layout, paneId, {
-          relativeTo: lastDockedPane.paneId,
+          relativeTo: lastDockedPane.instanceId,
           position: layout.columns.length + 1 > MAX_COLUMNS ? "below" : "right",
         });
         persistLayout(nextLayout);
@@ -131,15 +136,11 @@ export const layoutManagerPlugin: GloomPlugin = {
         if (!registry) return;
 
         const { layout, termWidth, termHeight } = getStateRef();
-        const availablePanes = [...registry.panes.values()].filter((pane) => !isPaneInLayout(layout, pane.id));
-        if (availablePanes.length === 0) {
-          ctx.showToast("All panes are already in the layout", { type: "info" });
-          return;
-        }
-
-        const pane = availablePanes[0]!;
-        persistLayout(addPaneFloating(layout, pane.id, termWidth, termHeight, pane));
-        dispatchRef?.({ type: "FOCUS_PANE", paneId: pane.id });
+        const pane = [...registry.panes.values()][0];
+        if (!pane) return;
+        const instance = createPaneInstance(pane.id);
+        persistLayout(addPaneFloating(layout, instance, termWidth, termHeight, pane));
+        dispatchRef?.({ type: "FOCUS_PANE", paneId: instance.instanceId });
       },
     });
 
@@ -152,7 +153,7 @@ export const layoutManagerPlugin: GloomPlugin = {
       execute: async () => {
         if (!getStateRef) return;
         const { layout } = getStateRef();
-        const paneIds = [...layout.docked.map((entry) => entry.paneId), ...layout.floating.map((entry) => entry.paneId)];
+        const paneIds = [...layout.docked.map((entry) => entry.instanceId), ...layout.floating.map((entry) => entry.instanceId)];
         if (paneIds.length === 0) {
           ctx.showToast("No panes to remove", { type: "info" });
           return;
@@ -250,8 +251,8 @@ export const layoutManagerPlugin: GloomPlugin = {
 
         const [a, b] = layout.docked;
         const docked = layout.docked.map((entry) => {
-          if (entry.paneId === a!.paneId) return { ...entry, columnIndex: b!.columnIndex, order: b!.order };
-          if (entry.paneId === b!.paneId) return { ...entry, columnIndex: a!.columnIndex, order: a!.order };
+          if (entry.instanceId === a!.instanceId) return { ...entry, columnIndex: b!.columnIndex, order: b!.order };
+          if (entry.instanceId === b!.instanceId) return { ...entry, columnIndex: a!.columnIndex, order: a!.order };
           return entry;
         });
         persistLayout({ ...layout, docked });

@@ -3,7 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
-import { useSelectedTicker } from "../../state/app-context";
+import { usePaneTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
@@ -35,7 +35,7 @@ function parseOptionSymbol(symbol: string): { underlying: string; expTs: number;
 }
 
 function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
-  const { ticker } = useSelectedTicker();
+  const { ticker } = usePaneTicker();
   const [chain, setChain] = useState<OptionsChain | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +73,9 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Fetch initial chain (all expirations list + nearest expiration data)
   useEffect(() => {
-    if (!effectiveTicker || !getSharedDataProvider()?.getOptionsChain) return;
+    const provider = getSharedDataProvider();
+    if (!effectiveTicker || !provider?.getOptionsChain) return;
+    const getOptionsChain = provider.getOptionsChain.bind(provider);
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -81,7 +83,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     setExpIdx(0);
     setStrikeIdx(0);
 
-    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange, undefined, {
+    getOptionsChain(effectiveTicker, effectiveExchange, undefined, {
       brokerId: instrument?.brokerId,
       brokerInstanceId: instrument?.brokerInstanceId,
       instrument,
@@ -95,7 +97,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
           Math.abs(ts - parsed.expTs) < Math.abs(data.expirationDates[best]! - parsed.expTs) ? i : best, 0);
         if (bestExpIdx !== 0) {
           setExpIdx(bestExpIdx);
-          getSharedDataProvider()!.getOptionsChain!(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx], {
+          getOptionsChain(effectiveTicker, effectiveExchange, data.expirationDates[bestExpIdx], {
             brokerId: instrument?.brokerId,
             brokerInstanceId: instrument?.brokerInstanceId,
             instrument,
@@ -114,13 +116,15 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Fetch chain when expiration changes (after initial load)
   useEffect(() => {
-    if (!chain || !effectiveTicker || !getSharedDataProvider()?.getOptionsChain) return;
+    const provider = getSharedDataProvider();
+    if (!chain || !effectiveTicker || !provider?.getOptionsChain) return;
+    const getOptionsChain = provider.getOptionsChain.bind(provider);
     const expDate = chain.expirationDates[expIdx];
     if (expDate == null) return;
     let cancelled = false;
     setLoading(true);
 
-    getSharedDataProvider().getOptionsChain(effectiveTicker, effectiveExchange, expDate, {
+    getOptionsChain(effectiveTicker, effectiveExchange, expDate, {
       brokerId: instrument?.brokerId,
       brokerInstanceId: instrument?.brokerInstanceId,
       instrument,

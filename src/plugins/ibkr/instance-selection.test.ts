@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AppConfig, BrokerInstanceConfig } from "../../types/config";
+import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT, type AppConfig, type BrokerInstanceConfig } from "../../types/config";
 import { resolveIbkrTradingInstanceId, getLockedIbkrTradingInstanceId } from "./instance-selection";
 
 function createIbkrInstance(
@@ -21,12 +21,15 @@ function createIbkrInstance(
 function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     dataDir: "",
+    configVersion: CURRENT_CONFIG_VERSION,
     baseCurrency: "USD",
     refreshIntervalMinutes: 30,
     portfolios: [],
     watchlists: [],
     columns: [],
-    layout: [],
+    layout: cloneLayout(DEFAULT_LAYOUT),
+    layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+    activeLayoutIndex: 0,
     brokerInstances: [],
     plugins: [],
     disabledPlugins: [],
