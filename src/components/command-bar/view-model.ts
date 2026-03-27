@@ -1,0 +1,156 @@
+import { matchPrefix } from "./command-registry";
+
+export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "columns" | "direct-command";
+
+export interface CommandBarModeInfo {
+  kind: CommandBarMode;
+  badge: string;
+  hint: string;
+}
+
+export interface CommandBarModeStripEntry {
+  prefix: string;
+  label: string;
+  active: boolean;
+}
+
+export interface CommandBarFooterHints {
+  left: string;
+  right: string;
+}
+
+export interface CommandBarSection<T> {
+  category: string;
+  items: T[];
+}
+
+export interface CommandBarItemView {
+  id: string;
+  label: string;
+  detail: string;
+  category: string;
+  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "column" | "action" | "info";
+  right?: string;
+  checked?: boolean;
+  current?: boolean;
+}
+
+export interface CommandBarRowPresentation {
+  glyph: string;
+  label: string;
+  trailing: string;
+  selected: boolean;
+  primaryMuted: boolean;
+}
+
+const MODE_STRIP_ENTRIES = [
+  { prefix: "T", label: "Search ticker", kind: "search" },
+  { prefix: "TH", label: "Change theme", kind: "themes" },
+  { prefix: "PL", label: "Toggle plugins", kind: "plugins" },
+  { prefix: "COL", label: "Edit columns", kind: "columns" },
+] as const;
+
+export function resolveCommandBarMode(query: string): CommandBarModeInfo {
+  const match = matchPrefix(query);
+
+  if (!query.trim()) {
+    return { kind: "default", badge: "BROWSE", hint: "Type a command, ticker, or prefix" };
+  }
+
+  if (!match) {
+    return { kind: "default", badge: "FILTER", hint: `Filtering for "${query.trim()}"` };
+  }
+
+  switch (match.command.id) {
+    case "search-ticker":
+      return { kind: "search", badge: "SEARCH", hint: "Search Yahoo Finance and broker-backed symbols" };
+    case "theme":
+      return { kind: "themes", badge: "THEMES", hint: "Preview with arrows, Enter to save, Esc to revert" };
+    case "plugins":
+      return { kind: "plugins", badge: "PLUGINS", hint: "Toggle plugins without leaving the list" };
+    case "columns":
+      return { kind: "columns", badge: "COLUMNS", hint: "Choose visible table columns" };
+    default:
+      return { kind: "direct-command", badge: "COMMAND", hint: `Run ${match.command.label}` };
+  }
+}
+
+export function getModeStrip(mode: CommandBarMode): CommandBarModeStripEntry[] {
+  return MODE_STRIP_ENTRIES.map((entry) => ({
+    prefix: entry.prefix,
+    label: entry.label,
+    active: entry.kind === mode,
+  }));
+}
+
+export function buildSections<T extends { category: string }>(items: T[]): Array<CommandBarSection<T>> {
+  const sections: Array<CommandBarSection<T>> = [];
+  for (const item of items) {
+    let section = sections.find((candidate) => candidate.category === item.category);
+    if (!section) {
+      section = { category: item.category, items: [] };
+      sections.push(section);
+    }
+    section.items.push(item);
+  }
+  return sections;
+}
+
+export function getFooterHints(mode: CommandBarMode, isNarrow: boolean): CommandBarFooterHints {
+  const moveAndSelect = isNarrow ? "up/down move  enter select" : "up/down move  enter select";
+  if (mode === "plugins" || mode === "columns") {
+    return {
+      left: isNarrow ? "space toggle" : `${moveAndSelect}  space toggle`,
+      right: "esc close",
+    };
+  }
+  return { left: moveAndSelect, right: "esc close" };
+}
+
+export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?: string): { label: string; detail: string } {
+  switch (mode) {
+    case "search":
+      if (!searchQuery) {
+        return { label: "Type a ticker symbol", detail: "Search Yahoo Finance and connected brokers" };
+      }
+      return { label: `No matches for "${searchQuery}"`, detail: "Try a symbol, company name, or exchange variant" };
+    case "plugins":
+      return { label: "No plugins match", detail: query.trim() || "Toggleable plugins will appear here" };
+    case "columns":
+      return { label: "No columns available", detail: "Column toggles will appear here" };
+    case "themes":
+      return { label: "No themes match", detail: query.trim() || "Installed themes will appear here" };
+    default:
+      if (query.trim()) {
+        return { label: `No matches for "${query.trim()}"`, detail: "Try a ticker, command name, or prefix" };
+      }
+      return { label: "No results yet", detail: "Recent tickers and suggested commands will appear here" };
+  }
+}
+
+export function getRowPresentation(item: CommandBarItemView, selected: boolean, showTrailing: boolean): CommandBarRowPresentation {
+  const glyph = selected ? "\u203a" : " ";
+  const primaryMuted = (item.kind === "plugin" || item.kind === "column") && !item.checked;
+  let trailing = "";
+
+  if (showTrailing) {
+    if (item.current) trailing = "current";
+    else if (item.kind === "plugin" || item.kind === "column") trailing = item.checked ? "on" : "off";
+    else trailing = item.right || "";
+  }
+
+  return {
+    glyph,
+    label: item.label,
+    trailing,
+    selected,
+    primaryMuted,
+  };
+}
+
+export function truncateText(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 3) return ".".repeat(width);
+  return `${text.slice(0, width - 3)}...`;
+}

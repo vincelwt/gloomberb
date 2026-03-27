@@ -31,9 +31,87 @@ function blendHex(a: string, b: string, ratio: number): string {
   return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
 }
 
+function relativeLuminance(hex: string): number {
+  const h = hex.replace("#", "");
+  const toLinear = (value: string) => {
+    const normalized = parseInt(value, 16) / 255;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : Math.pow((normalized + 0.055) / 1.055, 2.4);
+  };
+  const r = toLinear(h.slice(0, 2));
+  const g = toLinear(h.slice(2, 4));
+  const b = toLinear(h.slice(4, 6));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(a: string, b: string): number {
+  const lighter = Math.max(relativeLuminance(a), relativeLuminance(b));
+  const darker = Math.min(relativeLuminance(a), relativeLuminance(b));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function blendForContrast(base: string, against: string, fallback: string, minContrast: number): string {
+  const steps = [0, 0.08, 0.14, 0.2, 0.28, 0.36, 0.48, 0.62, 0.78, 1] as const;
+  let candidate = base;
+
+  for (const ratio of steps) {
+    candidate = ratio === 0 ? base : blendHex(base, fallback, ratio);
+    if (contrastRatio(candidate, against) >= minContrast) {
+      return candidate;
+    }
+  }
+
+  return candidate;
+}
+
+function higherContrast(a: string, b: string, against: string): string {
+  return contrastRatio(a, against) >= contrastRatio(b, against) ? a : b;
+}
+
 /** Returns a hover background color derived from bg and selected */
 export function hoverBg(): string {
   return blendHex(colors.bg, colors.selected, 0.5);
+}
+
+export function commandBarBg(): string {
+  const base = higherContrast(colors.commandBg, colors.panel, colors.bg);
+  const accent = higherContrast(colors.textBright, colors.borderFocused, base);
+  return blendForContrast(base, colors.bg, accent, 1.45);
+}
+
+export function commandBarSelectedBg(): string {
+  const base = commandBarBg();
+  const accent = higherContrast(colors.selectedText, colors.textBright, colors.selected);
+  return blendForContrast(colors.selected, base, accent, 1.6);
+}
+
+export function commandBarHoverBg(): string {
+  return blendHex(commandBarBg(), commandBarSelectedBg(), 0.45);
+}
+
+export function commandBarText(): string {
+  const base = commandBarBg();
+  const fallback = higherContrast(colors.textBright, "#f2f2f2", base);
+  return blendForContrast(colors.text, base, fallback, 5.4);
+}
+
+export function commandBarHeadingText(): string {
+  const base = commandBarBg();
+  return blendForContrast("#8f959e", base, "#b7bec8", 3.6);
+}
+
+export function commandBarSubtleText(): string {
+  const base = commandBarBg();
+  const fallback = higherContrast(commandBarText(), "#d8d8d8", base);
+  return blendForContrast(colors.textDim, base, fallback, 4.1);
+}
+
+export function commandBarSelectedText(): string {
+  const base = commandBarSelectedBg();
+  const preferred = higherContrast(colors.selectedText, colors.text, base);
+  const fallback = higherContrast(colors.textBright, "#f2f2f2", base);
+  return blendForContrast(preferred, base, fallback, 4.5);
 }
 
 /** Returns green for positive, red for negative, neutral for zero */
