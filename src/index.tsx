@@ -20,7 +20,7 @@ async function main() {
 
   if (!dataDir) {
     // First run - use default location
-    dataDir = join(process.env.HOME || "~", "gloomberb-data");
+    dataDir = join(process.env.HOME || "~", ".gloomberb");
   }
 
   // Ensure data dir exists
