@@ -1,45 +1,31 @@
 import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from "react";
-import type { AppConfig, LayoutConfig, SavedLayout } from "../types/config";
-import { DEFAULT_LAYOUT } from "../types/config";
 import { saveConfig } from "../data/config-store";
-import type { TickerFile } from "../types/ticker";
-import type { TickerFinancials } from "../types/financials";
-import type { ReleaseInfo, UpdateProgress } from "../updater";
 import { applyTheme } from "../theme/colors";
-
-// --- State ---
+import { cloneLayout, DEFAULT_LAYOUT } from "../types/config";
+import type { AppConfig, LayoutConfig, SavedLayout } from "../types/config";
+import type { TickerFinancials } from "../types/financials";
+import type { TickerFile } from "../types/ticker";
+import type { ReleaseInfo, UpdateProgress } from "../updater";
 
 export interface AppState {
   config: AppConfig;
   tickers: Map<string, TickerFile>;
   financials: Map<string, TickerFinancials>;
-  /** Exchange rates: currency code -> USD rate */
   exchangeRates: Map<string, number>;
-
-  // UI state
-  /** @deprecated Use focusedPaneId instead */
   activePanel: "left" | "right";
   focusedPaneId: string | null;
   activeLeftTab: string;
   activeRightTab: string;
   selectedTicker: string | null;
-  /** Most-recently-visited ticker symbols (newest first) */
   recentTickers: string[];
   commandBarOpen: boolean;
-
-  // Loading
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
-  /** True when a plugin/tab is capturing keyboard input (e.g. text editing) */
   inputCaptured: boolean;
-
-  // Updates
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
 }
-
-// --- Actions ---
 
 export type AppAction =
   | { type: "SET_CONFIG"; config: AppConfig }
@@ -56,7 +42,6 @@ export type AppAction =
   | { type: "SET_COMMAND_BAR"; open: boolean }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
-  | { type: "UPDATE_BROKER_CONFIG"; brokerId: string; values: Record<string, unknown> }
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
@@ -65,14 +50,20 @@ export type AppAction =
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
   | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig }
-  | { type: "FOCUS_PANE"; paneId: string }
-  | { type: "FOCUS_NEXT"; paneOrder: string[] }
-  | { type: "FOCUS_PREV"; paneOrder: string[] }
   | { type: "SWITCH_LAYOUT"; index: number }
   | { type: "NEW_LAYOUT"; name: string }
   | { type: "DELETE_LAYOUT"; index: number }
   | { type: "RENAME_LAYOUT"; index: number; name: string }
-  | { type: "DUPLICATE_LAYOUT"; index: number };
+  | { type: "DUPLICATE_LAYOUT"; index: number }
+  | { type: "FOCUS_PANE"; paneId: string }
+  | { type: "FOCUS_NEXT"; paneOrder: string[] }
+  | { type: "FOCUS_PREV"; paneOrder: string[] };
+
+function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: LayoutConfig): SavedLayout[] {
+  return layouts.map((savedLayout, index) => (
+    index === activeLayoutIndex ? { ...savedLayout, layout: cloneLayout(layout) } : savedLayout
+  ));
+}
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -109,11 +100,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SELECT_TICKER": {
       const recentTickers = action.symbol
-        ? [action.symbol, ...state.recentTickers.filter((s) => s !== action.symbol)].slice(0, 50)
+        ? [action.symbol, ...state.recentTickers.filter((symbol) => symbol !== action.symbol)].slice(0, 50)
         : state.recentTickers;
-      // Focus the ticker-detail pane (or keep current focus if not found)
-      const tickerPaneId = state.config.layout.docked.find((d) => d.paneId === "ticker-detail")?.paneId
-        ?? state.config.layout.floating.find((f) => f.paneId === "ticker-detail")?.paneId;
+      const tickerPaneId = state.config.layout.docked.find((entry) => entry.paneId === "ticker-detail")?.paneId
+        ?? state.config.layout.floating.find((entry) => entry.paneId === "ticker-detail")?.paneId;
       return {
         ...state,
         selectedTicker: action.symbol,
@@ -127,13 +117,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, selectedTicker: action.symbol };
 
     case "SET_ACTIVE_PANEL": {
-      // Backward compat: map "left"/"right" to first pane in that column
-      const colIdx = action.panel === "left" ? 0 : (state.config.layout.columns.length - 1);
-      const firstInCol = state.config.layout.docked.find((d) => d.columnIndex === colIdx);
+      const columnIndex = action.panel === "left" ? 0 : Math.max(0, state.config.layout.columns.length - 1);
+      const firstPane = state.config.layout.docked.find((entry) => entry.columnIndex === columnIndex);
       return {
         ...state,
         activePanel: action.panel,
-        focusedPaneId: firstInCol?.paneId ?? state.focusedPaneId,
+        focusedPaneId: firstPane?.paneId ?? state.focusedPaneId,
       };
     }
 
@@ -159,19 +148,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
 
-    case "UPDATE_BROKER_CONFIG": {
-      const brokers = { ...state.config.brokers };
-      brokers[action.brokerId] = { ...brokers[action.brokerId], ...action.values };
-      return { ...state, config: { ...state.config, brokers } };
-    }
-
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };
 
-    case "SET_THEME": {
+    case "SET_THEME":
       applyTheme(action.theme);
       return { ...state, config: { ...state.config, theme: action.theme } };
-    }
 
     case "SET_UPDATE_AVAILABLE":
       return { ...state, updateAvailable: action.release };
@@ -180,11 +162,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, updateProgress: action.progress };
 
     case "TOGGLE_PLUGIN": {
-      const disabled = state.config.disabledPlugins || [];
-      const isDisabled = disabled.includes(action.pluginId);
-      const disabledPlugins = isDisabled
-        ? disabled.filter((id) => id !== action.pluginId)
-        : [...disabled, action.pluginId];
+      const disabledPlugins = state.config.disabledPlugins.includes(action.pluginId)
+        ? state.config.disabledPlugins.filter((pluginId) => pluginId !== action.pluginId)
+        : [...state.config.disabledPlugins, action.pluginId];
       return { ...state, config: { ...state.config, disabledPlugins } };
     }
 
@@ -198,47 +178,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "UPDATE_LAYOUT": {
-      // Also sync the layout into the active slot in layouts[]
-      const activeIdx = state.config.activeLayoutIndex ?? 0;
-      const synced = (state.config.layouts ?? []).map((l, i) =>
-        i === activeIdx ? { ...l, layout: action.layout } : l
-      );
-      return { ...state, config: { ...state.config, layout: action.layout, layouts: synced } };
-    }
-
-    case "FOCUS_PANE":
-      return { ...state, focusedPaneId: action.paneId };
-
-    case "FOCUS_NEXT": {
-      const order = action.paneOrder;
-      if (order.length === 0) return state;
-      const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : -1;
-      const next = order[(idx + 1) % order.length]!;
-      return { ...state, focusedPaneId: next };
-    }
-
-    case "FOCUS_PREV": {
-      const order = action.paneOrder;
-      if (order.length === 0) return state;
-      const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : 0;
-      const prev = order[(idx - 1 + order.length) % order.length]!;
-      return { ...state, focusedPaneId: prev };
+      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, action.layout);
+      return { ...state, config: { ...state.config, layout: action.layout, layouts } };
     }
 
     case "SWITCH_LAYOUT": {
-      const layouts = state.config.layouts ?? [];
-      if (action.index < 0 || action.index >= layouts.length) return state;
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout);
       const target = layouts[action.index]!;
-      // Save current layout into its slot before switching
-      const updatedLayouts = layouts.map((l, i) =>
-        i === state.config.activeLayoutIndex ? { ...l, layout: state.config.layout } : l
-      );
       return {
         ...state,
         config: {
           ...state.config,
-          layout: target.layout,
-          layouts: updatedLayouts,
+          layout: cloneLayout(target.layout),
+          layouts,
           activeLayoutIndex: action.index,
         },
         focusedPaneId: target.layout.docked[0]?.paneId ?? null,
@@ -246,78 +199,91 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "NEW_LAYOUT": {
-      const layouts = state.config.layouts ?? [];
-      const newLayout: SavedLayout = { name: action.name, layout: structuredClone(DEFAULT_LAYOUT) };
-      const newLayouts = [...layouts, newLayout];
+      const newLayout: SavedLayout = {
+        name: action.name,
+        layout: cloneLayout(DEFAULT_LAYOUT),
+      };
+      const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), newLayout];
       return {
         ...state,
         config: {
           ...state.config,
-          layout: newLayout.layout,
-          layouts: newLayouts,
-          activeLayoutIndex: newLayouts.length - 1,
+          layout: cloneLayout(newLayout.layout),
+          layouts,
+          activeLayoutIndex: layouts.length - 1,
         },
         focusedPaneId: newLayout.layout.docked[0]?.paneId ?? null,
       };
     }
 
     case "DELETE_LAYOUT": {
-      const layouts = state.config.layouts ?? [];
-      if (layouts.length <= 1) return state; // can't delete last layout
-      const newLayouts = layouts.filter((_, i) => i !== action.index);
-      const wasActive = state.config.activeLayoutIndex;
-      const newActive = action.index <= wasActive
-        ? Math.max(0, wasActive - 1)
-        : wasActive;
-      const switchTo = newLayouts[newActive]!;
+      if (state.config.layouts.length <= 1) return state;
+      const layouts = state.config.layouts.filter((_, index) => index !== action.index);
+      const nextActiveLayoutIndex = action.index <= state.config.activeLayoutIndex
+        ? Math.max(0, state.config.activeLayoutIndex - 1)
+        : state.config.activeLayoutIndex;
+      const nextLayout = layouts[nextActiveLayoutIndex]!;
       return {
         ...state,
         config: {
           ...state.config,
-          layout: switchTo.layout,
-          layouts: newLayouts,
-          activeLayoutIndex: newActive,
+          layout: cloneLayout(nextLayout.layout),
+          layouts,
+          activeLayoutIndex: nextActiveLayoutIndex,
         },
-        focusedPaneId: switchTo.layout.docked[0]?.paneId ?? null,
+        focusedPaneId: nextLayout.layout.docked[0]?.paneId ?? null,
       };
     }
 
     case "RENAME_LAYOUT": {
-      const layouts = state.config.layouts ?? [];
-      if (action.index < 0 || action.index >= layouts.length) return state;
-      const newLayouts = layouts.map((l, i) =>
-        i === action.index ? { ...l, name: action.name } : l
-      );
-      return { ...state, config: { ...state.config, layouts: newLayouts } };
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const layouts = state.config.layouts.map((savedLayout, index) => (
+        index === action.index ? { ...savedLayout, name: action.name } : savedLayout
+      ));
+      return { ...state, config: { ...state.config, layouts } };
     }
 
     case "DUPLICATE_LAYOUT": {
-      const layouts = state.config.layouts ?? [];
-      if (action.index < 0 || action.index >= layouts.length) return state;
-      const source = layouts[action.index]!;
-      const newLayout: SavedLayout = {
+      if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const source = state.config.layouts[action.index]!;
+      const duplicate: SavedLayout = {
         name: `${source.name} Copy`,
-        layout: structuredClone(source.layout),
+        layout: cloneLayout(source.layout),
       };
-      const newLayouts = [...layouts, newLayout];
+      const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), duplicate];
       return {
         ...state,
         config: {
           ...state.config,
-          layout: newLayout.layout,
-          layouts: newLayouts,
-          activeLayoutIndex: newLayouts.length - 1,
+          layout: cloneLayout(duplicate.layout),
+          layouts,
+          activeLayoutIndex: layouts.length - 1,
         },
-        focusedPaneId: newLayout.layout.docked[0]?.paneId ?? null,
+        focusedPaneId: duplicate.layout.docked[0]?.paneId ?? null,
       };
+    }
+
+    case "FOCUS_PANE":
+      return { ...state, focusedPaneId: action.paneId };
+
+    case "FOCUS_NEXT": {
+      if (action.paneOrder.length === 0) return state;
+      const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : -1;
+      const nextPaneId = action.paneOrder[(currentIndex + 1) % action.paneOrder.length]!;
+      return { ...state, focusedPaneId: nextPaneId };
+    }
+
+    case "FOCUS_PREV": {
+      if (action.paneOrder.length === 0) return state;
+      const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : 0;
+      const nextPaneId = action.paneOrder[(currentIndex - 1 + action.paneOrder.length) % action.paneOrder.length]!;
+      return { ...state, focusedPaneId: nextPaneId };
     }
 
     default:
       return state;
   }
 }
-
-// --- Context ---
 
 interface AppContextValue {
   state: AppState;
@@ -327,9 +293,9 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function useAppState(): AppContextValue {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useAppState must be used within AppProvider");
-  return ctx;
+  const context = useContext(AppContext);
+  if (!context) throw new Error("useAppState must be used within AppProvider");
+  return context;
 }
 
 export function useSelectedTicker() {
@@ -352,7 +318,7 @@ export function createInitialState(config: AppConfig): AppState {
     activeLeftTab: config.portfolios[0]?.id || "main",
     activeRightTab: "overview",
     selectedTicker: null,
-    recentTickers: config.recentTickers || [],
+    recentTickers: config.recentTickers,
     commandBarOpen: false,
     refreshing: new Set(),
     initialized: false,
@@ -363,24 +329,16 @@ export function createInitialState(config: AppConfig): AppState {
   };
 }
 
-export function AppProvider({
-  config,
-  children,
-}: {
-  config: AppConfig;
-  children: ReactNode;
-}) {
+export function AppProvider({ config, children }: { config: AppConfig; children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, config, createInitialState);
-  const prevRecent = useRef(state.recentTickers);
+  const previousRecentTickers = useRef(state.recentTickers);
+
   useEffect(() => {
-    if (prevRecent.current !== state.recentTickers) {
-      prevRecent.current = state.recentTickers;
+    if (previousRecentTickers.current !== state.recentTickers) {
+      previousRecentTickers.current = state.recentTickers;
       saveConfig({ ...state.config, recentTickers: state.recentTickers }).catch(() => {});
     }
-  }, [state.recentTickers, state.config]);
-  return (
-    <AppContext value={{ state, dispatch }}>
-      {children}
-    </AppContext>
-  );
+  }, [state.config, state.recentTickers]);
+
+  return <AppContext value={{ state, dispatch }}>{children}</AppContext>;
 }

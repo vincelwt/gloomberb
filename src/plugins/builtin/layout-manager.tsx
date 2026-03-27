@@ -1,35 +1,38 @@
+import { saveConfig } from "../../data/config-store";
+import type { LayoutConfig } from "../../types/config";
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { getSharedRegistry } from "../registry";
 import {
-  floatPane, dockPane, addPaneFloating,
-  removePane, isPaneInLayout,
+  addPaneFloating,
+  dockPane,
+  floatPane,
+  isPaneInLayout,
+  removePane,
 } from "../pane-manager";
-import type { LayoutConfig } from "../../types/config";
-import { saveConfig } from "../../data/config-store";
 
 const MAX_COLUMNS = 4;
 
-let _ctx: GloomPluginContext | null = null;
-let _dispatchFn: ((action: any) => void) | null = null;
-let _getStateFn: (() => { layout: LayoutConfig; termWidth: number; termHeight: number }) | null = null;
+let dispatchRef: ((action: unknown) => void) | null = null;
+let getStateRef: (() => { layout: LayoutConfig; termWidth: number; termHeight: number }) | null = null;
 
-/** Set the dispatch/state functions from the app (called after mount) */
 export function setLayoutManagerDispatch(
-  dispatch: (action: any) => void,
+  dispatch: (action: unknown) => void,
   getState: () => { layout: LayoutConfig; termWidth: number; termHeight: number },
 ) {
-  _dispatchFn = dispatch;
-  _getStateFn = getState;
+  dispatchRef = dispatch;
+  getStateRef = getState;
 }
 
 function persistLayout(layout: LayoutConfig) {
-  if (!_dispatchFn) return;
-  _dispatchFn({ type: "UPDATE_LAYOUT", layout });
+  if (!dispatchRef) return;
+  dispatchRef({ type: "UPDATE_LAYOUT", layout });
   const registry = getSharedRegistry();
-  if (registry) {
-    const config = registry.getConfigFn();
-    saveConfig({ ...config, layout }).catch(() => {});
-  }
+  if (!registry) return;
+  const config = registry.getConfigFn();
+  const layouts = config.layouts.map((savedLayout, index) => (
+    index === config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+  ));
+  saveConfig({ ...config, layout, layouts }).catch(() => {});
 }
 
 export const layoutManagerPlugin: GloomPlugin = {
@@ -39,9 +42,6 @@ export const layoutManagerPlugin: GloomPlugin = {
   description: "Pane layout management commands",
 
   setup(ctx) {
-    _ctx = ctx;
-
-    // Float Pane — detach a docked pane to a floating window
     ctx.registerCommand({
       id: "float-pane",
       label: "Float Pane",
@@ -49,32 +49,31 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["float", "detach", "undock", "window", "pane"],
       category: "config",
       execute: async () => {
-        if (!_getStateFn) return;
+        if (!getStateRef) return;
         const registry = getSharedRegistry();
         if (!registry) return;
 
-        const { layout, termWidth, termHeight } = _getStateFn();
-        const dockedPanes = layout.docked.map((d) => {
-          const def = registry.panes.get(d.paneId);
-          return def ? { id: d.paneId, name: def.name } : null;
-        }).filter(Boolean) as { id: string; name: string }[];
+        const { layout, termWidth, termHeight } = getStateRef();
+        const dockedPanes = layout.docked
+          .map((entry) => {
+            const def = registry.panes.get(entry.paneId);
+            return def ? { id: entry.paneId, name: def.name } : null;
+          })
+          .filter(Boolean) as Array<{ id: string; name: string }>;
 
         if (dockedPanes.length === 0) {
           ctx.showToast("No docked panes to float", { type: "info" });
           return;
         }
 
-        // Use command bar to pick — for now, float the first non-focused one
-        // TODO: integrate with wizard for selection
         const paneId = dockedPanes[0]!.id;
         const def = registry.panes.get(paneId);
-        const newLayout = floatPane(layout, paneId, termWidth, termHeight, def);
-        persistLayout(newLayout);
-        if (_dispatchFn) _dispatchFn({ type: "FOCUS_PANE", paneId });
+        const nextLayout = floatPane(layout, paneId, termWidth, termHeight, def);
+        persistLayout(nextLayout);
+        dispatchRef?.({ type: "FOCUS_PANE", paneId });
       },
     });
 
-    // Dock Pane — dock a floating pane back
     ctx.registerCommand({
       id: "dock-pane",
       label: "Dock Pane",
@@ -82,15 +81,17 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["dock", "attach", "pin", "pane"],
       category: "config",
       execute: async () => {
-        if (!_getStateFn) return;
+        if (!getStateRef) return;
         const registry = getSharedRegistry();
         if (!registry) return;
 
-        const { layout } = _getStateFn();
-        const floatingPanes = layout.floating.map((f) => {
-          const def = registry.panes.get(f.paneId);
-          return def ? { id: f.paneId, name: def.name } : null;
-        }).filter(Boolean) as { id: string; name: string }[];
+        const { layout } = getStateRef();
+        const floatingPanes = layout.floating
+          .map((entry) => {
+            const def = registry.panes.get(entry.paneId);
+            return def ? { id: entry.paneId, name: def.name } : null;
+          })
+          .filter(Boolean) as Array<{ id: string; name: string }>;
 
         if (floatingPanes.length === 0) {
           ctx.showToast("No floating panes to dock", { type: "info" });
@@ -98,40 +99,26 @@ export const layoutManagerPlugin: GloomPlugin = {
         }
 
         const paneId = floatingPanes[0]!.id;
-
-        // Dock to the right of the last column's first pane
         const lastDockedPane = layout.docked[layout.docked.length - 1];
-        if (lastDockedPane) {
-          const colCount = layout.columns.length + 1;
-          if (colCount > MAX_COLUMNS) {
-            // Stack below instead of creating a new column
-            const newLayout = dockPane(layout, paneId, {
-              relativeTo: lastDockedPane.paneId,
-              position: "below",
-            });
-            persistLayout(newLayout);
-          } else {
-            const newLayout = dockPane(layout, paneId, {
-              relativeTo: lastDockedPane.paneId,
-              position: "right",
-            });
-            persistLayout(newLayout);
-          }
-        } else {
-          // No docked panes — create first column
-          const newLayout: LayoutConfig = {
+        if (!lastDockedPane) {
+          persistLayout({
             columns: [{}],
             docked: [{ paneId, columnIndex: 0 }],
-            floating: layout.floating.filter((f) => f.paneId !== paneId),
-          };
-          persistLayout(newLayout);
+            floating: layout.floating.filter((entry) => entry.paneId !== paneId),
+          });
+          dispatchRef?.({ type: "FOCUS_PANE", paneId });
+          return;
         }
 
-        if (_dispatchFn) _dispatchFn({ type: "FOCUS_PANE", paneId });
+        const nextLayout = dockPane(layout, paneId, {
+          relativeTo: lastDockedPane.paneId,
+          position: layout.columns.length + 1 > MAX_COLUMNS ? "below" : "right",
+        });
+        persistLayout(nextLayout);
+        dispatchRef?.({ type: "FOCUS_PANE", paneId });
       },
     });
 
-    // Add Pane — add a registered pane that's not in the layout
     ctx.registerCommand({
       id: "add-pane",
       label: "Add Pane",
@@ -139,29 +126,23 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["add", "pane", "panel", "show"],
       category: "config",
       execute: async () => {
-        if (!_getStateFn) return;
+        if (!getStateRef) return;
         const registry = getSharedRegistry();
         if (!registry) return;
 
-        const { layout, termWidth, termHeight } = _getStateFn();
-        const availablePanes = [...registry.panes.values()].filter(
-          (def) => !isPaneInLayout(layout, def.id)
-        );
-
+        const { layout, termWidth, termHeight } = getStateRef();
+        const availablePanes = [...registry.panes.values()].filter((pane) => !isPaneInLayout(layout, pane.id));
         if (availablePanes.length === 0) {
           ctx.showToast("All panes are already in the layout", { type: "info" });
           return;
         }
 
-        // Add first available as floating
-        const def = availablePanes[0]!;
-        const newLayout = addPaneFloating(layout, def.id, termWidth, termHeight, def);
-        persistLayout(newLayout);
-        if (_dispatchFn) _dispatchFn({ type: "FOCUS_PANE", paneId: def.id });
+        const pane = availablePanes[0]!;
+        persistLayout(addPaneFloating(layout, pane.id, termWidth, termHeight, pane));
+        dispatchRef?.({ type: "FOCUS_PANE", paneId: pane.id });
       },
     });
 
-    // Remove Pane — remove a pane from the layout
     ctx.registerCommand({
       id: "remove-pane",
       label: "Remove Pane",
@@ -169,52 +150,35 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["remove", "pane", "close", "hide", "panel"],
       category: "config",
       execute: async () => {
-        if (!_getStateFn) return;
-        const registry = getSharedRegistry();
-        if (!registry) return;
-
-        const { layout } = _getStateFn();
-        // Get all visible panes
-        const allPanes = [
-          ...layout.docked.map((d) => d.paneId),
-          ...layout.floating.map((f) => f.paneId),
-        ];
-
-        if (allPanes.length === 0) {
+        if (!getStateRef) return;
+        const { layout } = getStateRef();
+        const paneIds = [...layout.docked.map((entry) => entry.paneId), ...layout.floating.map((entry) => entry.paneId)];
+        if (paneIds.length === 0) {
           ctx.showToast("No panes to remove", { type: "info" });
           return;
         }
-
-        // Remove the last one (TODO: wizard selection)
-        const paneId = allPanes[allPanes.length - 1]!;
-        const newLayout = removePane(layout, paneId);
-        persistLayout(newLayout);
+        persistLayout(removePane(layout, paneIds[paneIds.length - 1]!));
       },
     });
 
-    // New Layout — create a new layout starting from default
     ctx.registerCommand({
       id: "new-layout",
       label: "New Layout",
       description: "Create a new layout",
       keywords: ["new", "create", "add", "layout", "workspace"],
       category: "config",
-      wizard: [
-        { key: "name", label: "Layout name", placeholder: "e.g. Trading, Research, Overview" },
-      ],
+      wizard: [{ key: "name", label: "Layout name", placeholder: "e.g. Trading, Research, Overview" }],
       execute: async (values) => {
-        if (!_dispatchFn) return;
         const name = values?.name?.trim();
         if (!name) {
           ctx.showToast("Layout name is required", { type: "error" });
           return;
         }
-        _dispatchFn({ type: "NEW_LAYOUT", name });
+        dispatchRef?.({ type: "NEW_LAYOUT", name });
         ctx.showToast(`Layout "${name}" created`, { type: "success" });
       },
     });
 
-    // Delete Layout
     ctx.registerCommand({
       id: "delete-layout",
       label: "Delete Layout",
@@ -222,34 +186,28 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["delete", "remove", "layout", "preset"],
       category: "config",
       execute: async () => {
-        if (!_dispatchFn) return;
         const registry = getSharedRegistry();
         if (!registry) return;
         const config = registry.getConfigFn();
-        const layouts = config.layouts ?? [];
-        if (layouts.length <= 1) {
+        if (config.layouts.length <= 1) {
           ctx.showToast("Can't delete the only layout", { type: "error" });
           return;
         }
-        const idx = config.activeLayoutIndex ?? 0;
-        const name = layouts[idx]!.name;
-        _dispatchFn({ type: "DELETE_LAYOUT", index: idx });
+        const index = config.activeLayoutIndex;
+        const name = config.layouts[index]!.name;
+        dispatchRef?.({ type: "DELETE_LAYOUT", index });
         ctx.showToast(`Layout "${name}" deleted`, { type: "success" });
       },
     });
 
-    // Rename Layout
     ctx.registerCommand({
       id: "rename-layout",
       label: "Rename Layout",
       description: "Rename the current layout preset",
       keywords: ["rename", "layout", "preset"],
       category: "config",
-      wizard: [
-        { key: "name", label: "New name", placeholder: "Layout name" },
-      ],
+      wizard: [{ key: "name", label: "New name", placeholder: "Layout name" }],
       execute: async (values) => {
-        if (!_dispatchFn) return;
         const name = values?.name?.trim();
         if (!name) {
           ctx.showToast("Name is required", { type: "error" });
@@ -257,14 +215,11 @@ export const layoutManagerPlugin: GloomPlugin = {
         }
         const registry = getSharedRegistry();
         if (!registry) return;
-        const config = registry.getConfigFn();
-        const idx = config.activeLayoutIndex ?? 0;
-        _dispatchFn({ type: "RENAME_LAYOUT", index: idx, name });
+        dispatchRef?.({ type: "RENAME_LAYOUT", index: registry.getConfigFn().activeLayoutIndex, name });
         ctx.showToast(`Layout renamed to "${name}"`, { type: "success" });
       },
     });
 
-    // Duplicate Layout
     ctx.registerCommand({
       id: "duplicate-layout",
       label: "Duplicate Layout",
@@ -272,17 +227,13 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["duplicate", "copy", "clone", "layout"],
       category: "config",
       execute: async () => {
-        if (!_dispatchFn) return;
         const registry = getSharedRegistry();
         if (!registry) return;
-        const config = registry.getConfigFn();
-        const idx = config.activeLayoutIndex ?? 0;
-        _dispatchFn({ type: "DUPLICATE_LAYOUT", index: idx });
+        dispatchRef?.({ type: "DUPLICATE_LAYOUT", index: registry.getConfigFn().activeLayoutIndex });
         ctx.showToast("Layout duplicated", { type: "success" });
       },
     });
 
-    // Swap Panes
     ctx.registerCommand({
       id: "swap-panes",
       label: "Swap Panes",
@@ -290,23 +241,20 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["swap", "switch", "pane", "panel"],
       category: "config",
       execute: async () => {
-        if (!_getStateFn) return;
-        const { layout } = _getStateFn();
-
+        if (!getStateRef) return;
+        const { layout } = getStateRef();
         if (layout.docked.length < 2) {
           ctx.showToast("Need at least 2 docked panes to swap", { type: "info" });
           return;
         }
 
-        // Swap first two docked panes
         const [a, b] = layout.docked;
-        const newDocked = layout.docked.map((d) => {
-          if (d.paneId === a!.paneId) return { ...d, columnIndex: b!.columnIndex, order: b!.order };
-          if (d.paneId === b!.paneId) return { ...d, columnIndex: a!.columnIndex, order: a!.order };
-          return d;
+        const docked = layout.docked.map((entry) => {
+          if (entry.paneId === a!.paneId) return { ...entry, columnIndex: b!.columnIndex, order: b!.order };
+          if (entry.paneId === b!.paneId) return { ...entry, columnIndex: a!.columnIndex, order: a!.order };
+          return entry;
         });
-
-        persistLayout({ ...layout, docked: newDocked });
+        persistLayout({ ...layout, docked });
       },
     });
   },

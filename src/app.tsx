@@ -12,16 +12,18 @@ import { PluginRegistry } from "./plugins/registry";
 import { MarkdownStore } from "./data/markdown-store";
 import { SqliteCache } from "./data/sqlite-cache";
 import { YahooFinanceClient } from "./sources/yahoo-finance";
+import { ProviderRouter } from "./sources/provider-router";
 import { colors, applyTheme } from "./theme/colors";
-import type { AppConfig } from "./types/config";
+import type { AppConfig, BrokerInstanceConfig, LayoutConfig } from "./types/config";
 import type { TickerFile, TickerFrontmatter, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
+import type { BrokerContractRef } from "./types/instrument";
 
 // Built-in plugins
 import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
 import { tickerDetailPlugin } from "./plugins/builtin/ticker-detail";
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
-import { ibkrFlexPlugin } from "./plugins/ibkr-flex";
+import { ibkrPlugin } from "./plugins/ibkr";
 import { newsPlugin } from "./plugins/builtin/news";
 import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
@@ -33,6 +35,12 @@ import { Toaster, toast } from "@opentui-ui/toast/react";
 import { checkForUpdate, performUpdate } from "./updater";
 import { VERSION } from "./version";
 import { join } from "path";
+import { addPaneFloating, addPaneToLayout, bringToFront, isPaneInLayout, removePane } from "./plugins/pane-manager";
+import {
+  buildBrokerPortfolioId,
+  createBrokerInstanceId,
+  getBrokerInstance,
+} from "./utils/broker-instances";
 
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
@@ -47,7 +55,14 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
   const refreshTicker = useCallback(async (symbol: string, exchange = "") => {
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
     try {
-      const data = await dataProvider.getTickerFinancials(symbol, exchange);
+      const ticker = state.tickers.get(symbol) ?? null;
+      const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
+      const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+      const data = await dataProvider.getTickerFinancials(symbol, exchange, {
+        brokerId: instrument?.brokerId ?? activePortfolio?.brokerId,
+        brokerInstanceId: instrument?.brokerInstanceId ?? activePortfolio?.brokerInstanceId,
+        instrument,
+      });
       dispatch({ type: "SET_FINANCIALS", symbol, data });
       pluginRegistry.events.emit("ticker:refreshed", { symbol, financials: data });
 
@@ -70,14 +85,43 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     } finally {
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
-  }, [dataProvider, dispatch, state.exchangeRates, state.config.baseCurrency]);
+  }, [dataProvider, dispatch, state.exchangeRates, state.config.baseCurrency, state.config.portfolios, state.activeLeftTab, state.tickers]);
 
   // Ensure a portfolio exists in config, creating it if needed
-  const ensurePortfolio = useCallback(async (portfolioId: string, name: string, currency = "USD") => {
+  const ensurePortfolio = useCallback(async (
+    portfolioId: string,
+    name: string,
+    currency = "USD",
+    brokerId?: string,
+    brokerInstanceId?: string,
+    brokerAccountId?: string,
+  ) => {
     const existing = state.config.portfolios.find((p) => p.id === portfolioId);
-    if (existing) return;
+    if (existing) {
+      if (
+        existing.name === name
+        && existing.currency === currency
+        && existing.brokerId === brokerId
+        && existing.brokerInstanceId === brokerInstanceId
+        && existing.brokerAccountId === brokerAccountId
+      ) {
+        return;
+      }
 
-    const portfolio: Portfolio = { id: portfolioId, name, currency };
+      const updatedConfig = {
+        ...state.config,
+        portfolios: state.config.portfolios.map((portfolio) =>
+          portfolio.id === portfolioId
+            ? { ...portfolio, name, currency, brokerId, brokerInstanceId, brokerAccountId }
+            : portfolio,
+        ),
+      };
+      dispatch({ type: "SET_CONFIG", config: updatedConfig });
+      await saveConfig(updatedConfig);
+      return;
+    }
+
+    const portfolio: Portfolio = { id: portfolioId, name, currency, brokerId, brokerInstanceId, brokerAccountId };
     const updatedConfig = {
       ...state.config,
       portfolios: [...state.config.portfolios, portfolio],
@@ -86,48 +130,96 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     await saveConfig(updatedConfig);
   }, [state.config, dispatch]);
 
-  // Import positions from a single broker
-  const importBrokerPositions = useCallback(async (brokerId: string, tickerMap?: Map<string, TickerFile>) => {
-    const broker = pluginRegistry.brokers.get(brokerId);
+  const mergeBrokerContracts = useCallback((existing: BrokerContractRef[], next: BrokerContractRef[]): BrokerContractRef[] => {
+    const merged = new Map<string, BrokerContractRef>();
+    for (const contract of [...existing, ...next]) {
+      const key = `${contract.brokerId}:${contract.brokerInstanceId ?? ""}:${contract.conId ?? contract.localSymbol ?? contract.symbol}:${contract.secType ?? ""}`;
+      merged.set(key, contract);
+    }
+    return [...merged.values()];
+  }, []);
+
+  // Import positions from a single broker instance
+  const importBrokerPositions = useCallback(async (instanceId: string, tickerMap?: Map<string, TickerFile>) => {
+    const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
+    if (!instance || instance.enabled === false) return;
+
+    const broker = pluginRegistry.brokers.get(instance.brokerType);
     if (!broker) return;
 
-    const brokerConfig = state.config.brokers[brokerId];
-    if (!brokerConfig) return;
-
-    const valid = await broker.validate(brokerConfig).catch(() => false);
+    const valid = await broker.validate(instance).catch(() => false);
     if (!valid) return;
 
     const existingTickers = tickerMap ?? new Map(state.tickers);
-    const positions = await broker.importPositions(brokerConfig);
+    const brokerAccounts = broker.listAccounts
+      ? await broker.listAccounts(instance).catch(() => [])
+      : [];
+    const accountMetadata = new Map(
+      brokerAccounts.map((account) => [
+        account.accountId,
+        {
+          name: account.name || account.accountId,
+          currency: account.currency || "USD",
+        },
+      ]),
+    );
+    const positions = await broker.importPositions(instance);
 
-    // Group positions by account (or use broker name as fallback)
-    const accountIds = new Set(positions.map((p) => p.accountId).filter(Boolean));
-    const brokerName = broker.name;
+    const accountIds = new Set<string>();
+    for (const account of brokerAccounts) {
+      if (account.accountId) accountIds.add(account.accountId);
+    }
+    for (const position of positions) {
+      if (position.accountId) accountIds.add(position.accountId);
+    }
 
     // Create portfolios for each account
     if (accountIds.size > 0) {
       for (const accountId of accountIds) {
-        const portfolioId = `${brokerId}-${accountId}`;
-        await ensurePortfolio(portfolioId, `IBKR ${accountId}`);
+        const portfolioId = buildBrokerPortfolioId(instance.id, accountId);
+        const account = accountMetadata.get(accountId);
+        await ensurePortfolio(
+          portfolioId,
+          account?.name || accountId,
+          account?.currency || "USD",
+          instance.brokerType,
+          instance.id,
+          accountId,
+        );
       }
     } else {
-      await ensurePortfolio(brokerId, brokerName);
+      const defaultAccount = brokerAccounts[0];
+      const fallbackName = defaultAccount?.name || defaultAccount?.accountId || instance.label || broker.name;
+      await ensurePortfolio(
+        buildBrokerPortfolioId(instance.id, defaultAccount?.accountId),
+        fallbackName,
+        defaultAccount?.currency || "USD",
+        instance.brokerType,
+        instance.id,
+        defaultAccount?.accountId,
+      );
     }
 
     for (const pos of positions) {
-      const portfolioId = pos.accountId ? `${brokerId}-${pos.accountId}` : brokerId;
+      const portfolioId = buildBrokerPortfolioId(instance.id, pos.accountId);
+      const brokerContract = pos.brokerContract
+        ? { ...pos.brokerContract, brokerId: instance.brokerType, brokerInstanceId: instance.id }
+        : undefined;
 
       const positionEntry = {
         portfolio: portfolioId,
         shares: pos.shares,
         avg_cost: pos.avgCost,
         currency: pos.currency,
-        broker: brokerId,
+        broker: instance.brokerType,
         side: pos.side,
         market_value: pos.marketValue,
         unrealized_pnl: pos.unrealizedPnl,
         multiplier: pos.multiplier,
         mark_price: pos.markPrice,
+        broker_instance_id: instance.id,
+        broker_account_id: pos.accountId,
+        broker_contract_id: brokerContract?.conId,
       };
 
       let ticker = existingTickers.get(pos.ticker);
@@ -142,6 +234,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
           portfolios: [portfolioId],
           watchlists: [],
           positions: [positionEntry],
+          broker_contracts: brokerContract ? [brokerContract] : [],
           custom: {},
           tags: [],
         };
@@ -160,9 +253,13 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
         // Remove old positions from this broker for this account
         const otherPositions = ticker.frontmatter.positions.filter(
-          (p) => !(p.broker === brokerId && p.portfolio === portfolioId),
+          (p) => !(p.broker_instance_id === instance.id && p.portfolio === portfolioId),
         );
         ticker.frontmatter.positions = [...otherPositions, positionEntry];
+        ticker.frontmatter.broker_contracts = mergeBrokerContracts(
+          ticker.frontmatter.broker_contracts ?? [],
+          brokerContract ? [brokerContract] : [],
+        );
         if (!ticker.frontmatter.portfolios.includes(portfolioId)) {
           ticker.frontmatter.portfolios.push(portfolioId);
         }
@@ -176,18 +273,19 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
         refreshTicker(pos.ticker, pos.exchange);
       }
     }
-  }, [pluginRegistry.brokers, state.config, state.tickers, markdownStore, dispatch, refreshTicker, ensurePortfolio]);
+  }, [pluginRegistry.brokers, state.config.brokerInstances, state.tickers, markdownStore, dispatch, refreshTicker, ensurePortfolio, mergeBrokerContracts]);
 
-  // Auto-import positions from all configured brokers
+  // Auto-import positions from all configured broker instances
   const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerFile>) => {
-    for (const [brokerId] of pluginRegistry.brokers) {
+    for (const instance of state.config.brokerInstances) {
+      if (instance.enabled === false) continue;
       try {
-        await importBrokerPositions(brokerId, tickerMap);
+        await importBrokerPositions(instance.id, tickerMap);
       } catch {
         // Silently fail — broker import is best-effort on startup
       }
     }
-  }, [pluginRegistry.brokers, importBrokerPositions]);
+  }, [state.config.brokerInstances, importBrokerPositions]);
 
   // Check for updates on mount
   useEffect(() => {
@@ -228,18 +326,128 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     })();
   }, [state.initialized]);
 
+  useEffect(() => {
+    if (!state.selectedTicker) return;
+    const ticker = state.tickers.get(state.selectedTicker);
+    if (!ticker) return;
+    refreshTicker(ticker.frontmatter.ticker, ticker.frontmatter.exchange);
+  }, [state.selectedTicker, state.tickers, refreshTicker]);
+
   // Wire up plugin registry data accessors
   pluginRegistry.getTickerFn = (symbol) => state.tickers.get(symbol) ?? null;
   pluginRegistry.getDataFn = (symbol) => state.financials.get(symbol) ?? null;
   pluginRegistry.getConfigFn = () => state.config;
-  pluginRegistry.updateBrokerConfigFn = async (brokerId, values) => {
-    dispatch({ type: "UPDATE_BROKER_CONFIG", brokerId, values });
-    const updatedBrokers = { ...state.config.brokers };
-    updatedBrokers[brokerId] = { ...updatedBrokers[brokerId], ...values };
-    await saveConfig({ ...state.config, brokers: updatedBrokers });
+  if (dataProvider instanceof ProviderRouter) {
+    dataProvider.setConfigAccessor(() => state.config);
+  }
+  pluginRegistry.createBrokerInstanceFn = async (brokerType, label, values) => {
+    const instanceId = createBrokerInstanceId(
+      brokerType,
+      label,
+      state.config.brokerInstances.map((instance) => instance.id),
+    );
+    const instance: BrokerInstanceConfig = {
+      id: instanceId,
+      brokerType,
+      label,
+      connectionMode: typeof values.connectionMode === "string" ? values.connectionMode : undefined,
+      config: values,
+      enabled: true,
+    };
+    const nextConfig = {
+      ...state.config,
+      brokerInstances: [...state.config.brokerInstances, instance],
+    };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    await saveConfig(nextConfig);
+    pluginRegistry.events.emit("config:changed", { config: nextConfig });
+    return instance;
   };
-  pluginRegistry.syncBrokerFn = async (brokerId) => {
-    await importBrokerPositions(brokerId);
+  pluginRegistry.updateBrokerInstanceFn = async (instanceId, values) => {
+    const nextConfig = {
+      ...state.config,
+      brokerInstances: state.config.brokerInstances.map((instance) =>
+        instance.id === instanceId
+          ? {
+            ...instance,
+            connectionMode: typeof values.connectionMode === "string" ? values.connectionMode : instance.connectionMode,
+            config: { ...instance.config, ...values },
+          }
+          : instance,
+      ),
+    };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    await saveConfig(nextConfig);
+    pluginRegistry.events.emit("config:changed", { config: nextConfig });
+  };
+  pluginRegistry.syncBrokerInstanceFn = async (instanceId) => {
+    await importBrokerPositions(instanceId);
+  };
+  pluginRegistry.removeBrokerInstanceFn = async (instanceId) => {
+    const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
+    if (!instance) return;
+
+    const broker = pluginRegistry.brokers.get(instance.brokerType);
+    await broker?.disconnect?.(instance).catch(() => {});
+
+    const removedPortfolioIds = new Set(
+      state.config.portfolios
+        .filter((portfolio) => portfolio.brokerInstanceId === instanceId)
+        .map((portfolio) => portfolio.id),
+    );
+
+    const nextPortfolios = state.config.portfolios.filter((portfolio) => !removedPortfolioIds.has(portfolio.id));
+    const nextTickers = new Map(state.tickers);
+
+    for (const ticker of state.tickers.values()) {
+      const nextPositions = ticker.frontmatter.positions.filter((position) => position.broker_instance_id !== instanceId);
+      const nextPortfolioRefs = ticker.frontmatter.portfolios.filter((portfolioId) => !removedPortfolioIds.has(portfolioId));
+      const nextBrokerContracts = (ticker.frontmatter.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
+
+      const nextTicker: TickerFile = {
+        ...ticker,
+        frontmatter: {
+          ...ticker.frontmatter,
+          positions: nextPositions,
+          portfolios: nextPortfolioRefs,
+          broker_contracts: nextBrokerContracts,
+        },
+      };
+
+      const shouldDeleteTicker =
+        nextPositions.length === 0
+        && nextPortfolioRefs.length === 0
+        && nextTicker.frontmatter.watchlists.length === 0
+        && nextBrokerContracts.length === 0
+        && !nextTicker.notes.trim()
+        && nextTicker.frontmatter.tags.length === 0
+        && Object.keys(nextTicker.frontmatter.custom).length === 0;
+
+      if (shouldDeleteTicker) {
+        nextTickers.delete(ticker.frontmatter.ticker);
+        await markdownStore.deleteTicker(ticker.frontmatter.ticker);
+        dispatch({ type: "REMOVE_TICKER", symbol: ticker.frontmatter.ticker });
+      } else {
+        await markdownStore.saveTicker(nextTicker);
+        nextTickers.set(nextTicker.frontmatter.ticker, nextTicker);
+        dispatch({ type: "UPDATE_TICKER", ticker: nextTicker });
+      }
+    }
+
+    const fallbackLeftTab = nextPortfolios[0]?.id || state.config.watchlists[0]?.id || "";
+    const nextConfig = {
+      ...state.config,
+      brokerInstances: state.config.brokerInstances.filter((entry) => entry.id !== instanceId),
+      portfolios: nextPortfolios,
+    };
+
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    dispatch({ type: "SET_TICKERS", tickers: nextTickers });
+    if (removedPortfolioIds.has(state.activeLeftTab)) {
+      dispatch({ type: "SET_LEFT_TAB", tab: fallbackLeftTab });
+    }
+    await saveConfig(nextConfig);
+    pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
 
   // Wire up navigation functions
@@ -247,18 +455,94 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
   pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
   pluginRegistry.switchTabFn = (tabId) => dispatch({ type: "SET_RIGHT_TAB", tab: tabId });
   pluginRegistry.openCommandBarFn = () => dispatch({ type: "SET_COMMAND_BAR", open: true });
-  pluginRegistry.focusPaneFn = (paneId) => dispatch({ type: "FOCUS_PANE", paneId });
-  pluginRegistry.getLayoutFn = () => state.config.layout;
-  pluginRegistry.updateLayoutFn = (layout) => {
+  const persistLayout = (layout: LayoutConfig) => {
+    const layouts = state.config.layouts.map((savedLayout, index) => (
+      index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+    ));
     dispatch({ type: "UPDATE_LAYOUT", layout });
-    saveConfig({ ...state.config, layout }).catch(() => {});
+    saveConfig({ ...state.config, layout, layouts }).catch(() => {});
+  };
+  const resolvePanelForPane = (paneId: string): "left" | "right" => {
+    const floating = state.config.layout.floating.find((entry) => entry.paneId === paneId);
+    if (floating) {
+      return pluginRegistry.panes.get(paneId)?.defaultPosition ?? "right";
+    }
+
+    const docked = state.config.layout.docked.find((entry) => entry.paneId === paneId);
+    if (!docked) {
+      return pluginRegistry.panes.get(paneId)?.defaultPosition ?? "right";
+    }
+
+    return docked.columnIndex <= 0 ? "left" : "right";
+  };
+  const showPane = (paneId: string) => {
+    const paneDef = pluginRegistry.panes.get(paneId);
+    if (!paneDef) return;
+
+    if (isPaneInLayout(state.config.layout, paneId)) {
+      pluginRegistry.focusPaneFn(paneId);
+      return;
+    }
+
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    let nextLayout = state.config.layout;
+
+    if (paneDef.defaultMode === "floating") {
+      nextLayout = addPaneFloating(nextLayout, paneId, width, height, paneDef);
+    } else if (nextLayout.docked.length === 0) {
+      const columns = nextLayout.columns.length >= 2 ? nextLayout.columns : [{ width: "40%" }, { width: "60%" }];
+      const columnIndex = paneDef.defaultPosition === "left" ? 0 : Math.max(0, columns.length - 1);
+      nextLayout = {
+        ...nextLayout,
+        columns,
+        docked: [{ paneId, columnIndex, order: 0 }],
+      };
+    } else if (paneDef.defaultPosition === "left") {
+      const firstColumnPane = nextLayout.docked.find((entry) => entry.columnIndex === 0);
+      nextLayout = firstColumnPane
+        ? addPaneToLayout(nextLayout, paneId, { relativeTo: firstColumnPane.paneId, position: "below" })
+        : addPaneToLayout(nextLayout, paneId, { relativeTo: nextLayout.docked[0]!.paneId, position: "left" });
+    } else {
+      const lastColumnIndex = Math.max(...nextLayout.docked.map((entry) => entry.columnIndex));
+      const lastColumnPane = [...nextLayout.docked].reverse().find((entry) => entry.columnIndex === lastColumnIndex);
+      nextLayout = lastColumnPane
+        ? addPaneToLayout(nextLayout, paneId, { relativeTo: lastColumnPane.paneId, position: "below" })
+        : addPaneToLayout(nextLayout, paneId, { relativeTo: nextLayout.docked[nextLayout.docked.length - 1]!.paneId, position: "right" });
+    }
+
+    persistLayout(nextLayout);
+    dispatch({ type: "FOCUS_PANE", paneId });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(paneId) });
   };
 
-  // Wire up layout manager
+  pluginRegistry.getLayoutFn = () => state.config.layout;
+  pluginRegistry.updateLayoutFn = (layout) => persistLayout(layout);
+  pluginRegistry.showPaneFn = (paneId) => showPane(paneId);
+  pluginRegistry.hidePaneFn = (paneId) => {
+    if (!isPaneInLayout(state.config.layout, paneId)) return;
+    persistLayout(removePane(state.config.layout, paneId));
+  };
+  pluginRegistry.focusPaneFn = (paneId) => {
+    if (!isPaneInLayout(state.config.layout, paneId)) {
+      showPane(paneId);
+      return;
+    }
+
+    const layout = state.config.layout.floating.some((entry) => entry.paneId === paneId)
+      ? bringToFront(state.config.layout, paneId)
+      : state.config.layout;
+
+    if (layout !== state.config.layout) {
+      persistLayout(layout);
+    }
+    dispatch({ type: "FOCUS_PANE", paneId });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(paneId) });
+  };
+
   setLayoutManagerDispatch(dispatch, () => ({
     layout: state.config.layout,
-    termWidth: 120, // approximate — will be exact when Shell renders
-    termHeight: 40,
+    termWidth: pluginRegistry.getTermSizeFn().width,
+    termHeight: pluginRegistry.getTermSizeFn().height,
   }));
 
   // Wire up toast
@@ -412,15 +696,18 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
   const markdownStore = new MarkdownStore(config.dataDir, cache);
   // Migrate old YAML-frontmatter .md files to SQLite on first run
   markdownStore.migrate();
-  const dataProvider: DataProvider = new YahooFinanceClient(cache);
+  const fallbackProvider = new YahooFinanceClient(cache);
+  const providerRouter = new ProviderRouter(fallbackProvider);
+  const dataProvider: DataProvider = providerRouter;
   const pluginRegistry = new PluginRegistry(renderer, dataProvider, markdownStore, cache);
+  providerRouter.attachRegistry(pluginRegistry);
 
   // Register built-in plugins synchronously
   // (setup is async but panes are registered immediately via the panes property)
   pluginRegistry.register(portfolioListPlugin);
   pluginRegistry.register(tickerDetailPlugin);
   pluginRegistry.register(manualEntryPlugin);
-  pluginRegistry.register(ibkrFlexPlugin);
+  pluginRegistry.register(ibkrPlugin);
 
   // Core utility plugins
   pluginRegistry.register(layoutManagerPlugin);
