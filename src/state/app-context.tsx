@@ -19,6 +19,7 @@ export interface AppState {
   selectedTicker: string | null;
   recentTickers: string[];
   commandBarOpen: boolean;
+  commandBarQuery: string;
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
@@ -39,7 +40,8 @@ export type AppAction =
   | { type: "SET_LEFT_TAB"; tab: string }
   | { type: "SET_RIGHT_TAB"; tab: string }
   | { type: "TOGGLE_COMMAND_BAR" }
-  | { type: "SET_COMMAND_BAR"; open: boolean }
+  | { type: "SET_COMMAND_BAR"; open: boolean; query?: string }
+  | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
@@ -65,7 +67,7 @@ function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: 
   ));
 }
 
-function appReducer(state: AppState, action: AppAction): AppState {
+export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_CONFIG":
       return { ...state, config: action.config };
@@ -133,10 +135,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, activeRightTab: action.tab };
 
     case "TOGGLE_COMMAND_BAR":
-      return { ...state, commandBarOpen: !state.commandBarOpen };
+      return state.commandBarOpen
+        ? { ...state, commandBarOpen: false, commandBarQuery: "" }
+        : { ...state, commandBarOpen: true, commandBarQuery: "" };
 
     case "SET_COMMAND_BAR":
-      return { ...state, commandBarOpen: action.open };
+      return {
+        ...state,
+        commandBarOpen: action.open,
+        commandBarQuery: action.open ? (action.query ?? "") : "",
+      };
+
+    case "SET_COMMAND_BAR_QUERY":
+      return { ...state, commandBarQuery: action.query };
 
     case "SET_REFRESHING": {
       const refreshing = new Set(state.refreshing);
@@ -290,7 +301,7 @@ interface AppContextValue {
   dispatch: React.Dispatch<AppAction>;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+export const AppContext = createContext<AppContextValue | null>(null);
 
 export function useAppState(): AppContextValue {
   const context = useContext(AppContext);
@@ -320,6 +331,7 @@ export function createInitialState(config: AppConfig): AppState {
     selectedTicker: null,
     recentTickers: config.recentTickers,
     commandBarOpen: false,
+    commandBarQuery: "",
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: true,
