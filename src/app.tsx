@@ -270,6 +270,15 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     else toast.info(message, { duration });
   };
 
+  // Persist layout changes (switching, saving, deleting, renaming layouts)
+  const prevLayouts = useRef(state.config.layouts);
+  useEffect(() => {
+    if (state.config.layouts !== prevLayouts.current) {
+      prevLayouts.current = state.config.layouts;
+      saveConfig(state.config).catch(() => {});
+    }
+  }, [state.config.layouts, state.config]);
+
   // Emit ticker:selected events
   const prevSelectedRef = useRef(state.selectedTicker);
   useEffect(() => {
@@ -298,6 +307,15 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     // Backtick opens command bar (close is handled in command-bar.tsx)
     if (event.name === "`" && !state.commandBarOpen) {
       dispatch({ type: "SET_COMMAND_BAR", open: true });
+      return;
+    }
+    // Ctrl+1-9: switch layouts (works even when input is captured)
+    if (/^[1-9]$/.test(event.name ?? "") && event.ctrl && (state.config.layouts ?? []).length > 1) {
+      const idx = parseInt(event.name!, 10) - 1;
+      const layouts = state.config.layouts ?? [];
+      if (idx < layouts.length && idx !== state.config.activeLayoutIndex) {
+        dispatch({ type: "SWITCH_LAYOUT", index: idx });
+      }
       return;
     }
 

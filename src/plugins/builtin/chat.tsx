@@ -546,6 +546,21 @@ export const chatPlugin: GloomPlugin = {
       },
     });
 
+    // Preload: check session + fetch messages in background so chat opens instantly
+    if (savedToken) {
+      apiClient.getSession().then((session) => {
+        if (session) {
+          _cachedUser = { id: session.id, username: session.username ?? session.name };
+          _sessionChecked = true;
+          _ensureConnection();
+        } else {
+          _sessionChecked = true;
+        }
+      }).catch(() => {
+        _sessionChecked = true;
+      });
+    }
+
     // Logout command — only visible when logged in
     ctx.registerCommand({
       id: "auth-logout",

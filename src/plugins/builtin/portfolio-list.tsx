@@ -658,7 +658,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       >
         {sortedTickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
-            <text fg={colors.textDim}>No tickers. Press Cmd+K to add one.</text>
+            <text fg={colors.textDim}>No tickers. Press Ctrl+P to add one.</text>
           </box>
         ) : (
           sortedTickers.map((ticker, idx) => {

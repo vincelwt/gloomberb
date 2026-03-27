@@ -45,6 +45,12 @@ export interface LayoutConfig {
   floating: FloatingPaneEntry[];   // panes in floating windows
 }
 
+/** A named layout preset */
+export interface SavedLayout {
+  name: string;
+  layout: LayoutConfig;
+}
+
 export interface AppConfig {
   dataDir: string;
   baseCurrency: string;
@@ -53,6 +59,8 @@ export interface AppConfig {
   watchlists: Watchlist[];
   columns: ColumnConfig[];
   layout: LayoutConfig;
+  layouts: SavedLayout[];
+  activeLayoutIndex: number;
   brokers: Record<string, Record<string, unknown>>;
   plugins: string[];
   disabledPlugins: string[];
@@ -89,6 +97,8 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     watchlists: [{ id: "watchlist", name: "Watchlist" }],
     columns: DEFAULT_COLUMNS,
     layout: DEFAULT_LAYOUT,
+    layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
+    activeLayoutIndex: 0,
     brokers: {},
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr-flex"],
     disabledPlugins: [],
