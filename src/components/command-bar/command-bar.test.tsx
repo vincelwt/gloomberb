@@ -106,8 +106,15 @@ function CommandBarHarness({
     commandBarOpen: true,
     commandBarQuery: query,
     tickers: new Map(tickers.map((ticker) => [ticker.frontmatter.ticker, ticker])),
-    selectedTicker: selectedTicker ?? null,
     config: { ...config, disabledPlugins },
+    paneState: selectedTicker
+      ? {
+        "portfolio-list:main": {
+          collectionId: "main",
+          cursorSymbol: selectedTicker,
+        },
+      }
+      : createInitialState(config).paneState,
   };
   const markdownStore = {
     loadTicker: async () => null,

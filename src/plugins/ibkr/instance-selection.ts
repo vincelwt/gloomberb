@@ -12,8 +12,8 @@ export function getConfiguredIbkrGatewayInstances(config: AppConfig): BrokerInst
   return getBrokerInstancesByType(config.brokerInstances, "ibkr").filter(isIbkrGatewayInstance);
 }
 
-export function getLockedIbkrTradingInstanceId(config: AppConfig, activeLeftTab: string): string | undefined {
-  const activePortfolio = config.portfolios.find((portfolio) => portfolio.id === activeLeftTab);
+export function getLockedIbkrTradingInstanceId(config: AppConfig, collectionId: string | null): string | undefined {
+  const activePortfolio = config.portfolios.find((portfolio) => portfolio.id === collectionId);
   if (activePortfolio?.brokerId !== "ibkr" || !activePortfolio.brokerInstanceId) return undefined;
   const instance = getBrokerInstance(config.brokerInstances, activePortfolio.brokerInstanceId);
   return isIbkrGatewayInstance(instance) ? instance.id : undefined;
@@ -21,10 +21,10 @@ export function getLockedIbkrTradingInstanceId(config: AppConfig, activeLeftTab:
 
 export function resolveIbkrTradingInstanceId(
   config: AppConfig,
-  activeLeftTab: string,
+  collectionId: string | null,
   preferredInstanceId?: string,
 ): string | undefined {
-  const lockedInstanceId = getLockedIbkrTradingInstanceId(config, activeLeftTab);
+  const lockedInstanceId = getLockedIbkrTradingInstanceId(config, collectionId);
   if (lockedInstanceId) return lockedInstanceId;
 
   const preferredInstance = getBrokerInstance(config.brokerInstances, preferredInstanceId);
@@ -33,7 +33,11 @@ export function resolveIbkrTradingInstanceId(
   const gatewayInstance = getConfiguredIbkrGatewayInstances(config)[0];
   if (gatewayInstance) return gatewayInstance.id;
 
-  return preferredInstance?.brokerType === "ibkr"
-    ? preferredInstance.id
+  const preferredIbkrInstance = preferredInstanceId
+    ? config.brokerInstances.find((instance) => instance.id === preferredInstanceId && instance.brokerType === "ibkr")
+    : undefined;
+
+  return preferredIbkrInstance
+    ? preferredIbkrInstance.id
     : getBrokerInstancesByType(config.brokerInstances, "ibkr")[0]?.id;
 }

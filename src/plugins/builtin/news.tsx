@@ -2,7 +2,7 @@ import { useRef, useEffect, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
-import { useSelectedTicker } from "../../state/app-context";
+import { usePaneTicker } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo } from "../../utils/format";
 import type { NewsItem } from "../../types/data-provider";
@@ -22,7 +22,7 @@ function formatTimeAgo(date: Date): string {
 }
 
 function NewsTab({ width, height, focused }: DetailTabProps) {
-  const { ticker } = useSelectedTicker();
+  const { ticker } = usePaneTicker();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -32,12 +32,13 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   const summaryFetchRef = useRef(0);
 
   useEffect(() => {
-    if (!ticker || !getSharedDataProvider()) return;
+    const provider = getSharedDataProvider();
+    if (!ticker || !provider) return;
     let cancelled = false;
     setLoading(true);
     setSelectedIdx(0);
     setSummaryCache(new Map());
-    getSharedDataProvider().getNews(ticker.frontmatter.ticker, 15).then((items) => {
+    provider.getNews(ticker.frontmatter.ticker, 15).then((items) => {
       if (!cancelled) setNews(items);
     }).catch(() => {}).finally(() => {
       if (!cancelled) setLoading(false);
@@ -48,11 +49,12 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   // Lazy-load summary when selection changes
   const selected = news[selectedIdx];
   useEffect(() => {
-    if (!selected || !getSharedDataProvider()) return;
+    const provider = getSharedDataProvider();
+    if (!selected || !provider) return;
     if (summaryCache.has(selected.url)) return;
     const id = ++summaryFetchRef.current;
     setLoadingSummary(true);
-    getSharedDataProvider().getArticleSummary(selected.url).then((summary) => {
+    provider.getArticleSummary(selected.url).then((summary) => {
       if (id !== summaryFetchRef.current) return;
       if (summary) {
         setSummaryCache((prev) => new Map(prev).set(selected.url, summary));

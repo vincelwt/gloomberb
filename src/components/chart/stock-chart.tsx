@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useSelectedTicker } from "../../state/app-context";
+import { usePaneTicker } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
@@ -33,7 +33,7 @@ interface StockChartProps {
 }
 
 export function StockChart({ width, height, focused, interactive, compact }: StockChartProps) {
-  const { ticker, financials } = useSelectedTicker();
+  const { ticker, financials } = usePaneTicker();
   const [viewState, setViewState] = useState<ChartViewState>({
     timeRange: compact ? "1Y" : "5Y",
     panOffset: 0,
