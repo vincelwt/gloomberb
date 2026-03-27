@@ -622,8 +622,8 @@ export class IbkrGatewayService {
       symbol: ref.symbol,
       localSymbol: ref.localSymbol,
       secType: (ref.secType as SecType | undefined) ?? SecType.STK,
-      exchange: ref.exchange || "SMART",
-      primaryExch: ref.primaryExchange,
+      exchange: "SMART",
+      primaryExch: ref.primaryExchange || ref.exchange || undefined,
       currency: ref.currency || "USD",
       lastTradeDateOrContractMonth: ref.lastTradeDateOrContractMonth,
       right: ref.right === "C" ? OptionType.Call : ref.right === "P" ? OptionType.Put : undefined,
@@ -759,6 +759,14 @@ export class IbkrGatewayService {
       exchangeName: details.validExchanges?.split(",")[0],
       fullExchangeName: details.validExchanges?.split(",")[0],
       marketState: "REGULAR",
+      bid: marketData.get(IBApiTickType.BID)?.value ?? marketData.get(IBApiTickType.DELAYED_BID)?.value,
+      ask: marketData.get(IBApiTickType.ASK)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK)?.value,
+      bidSize: marketData.get(IBApiTickType.BID_SIZE)?.value ?? marketData.get(IBApiTickType.DELAYED_BID_SIZE)?.value,
+      askSize: marketData.get(IBApiTickType.ASK_SIZE)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK_SIZE)?.value,
+      open: marketData.get(IBApiTickType.OPEN)?.value ?? marketData.get(IBApiTickType.DELAYED_OPEN)?.value,
+      high: marketData.get(IBApiTickType.HIGH)?.value ?? marketData.get(IBApiTickType.DELAYED_HIGH)?.value,
+      low: marketData.get(IBApiTickType.LOW)?.value ?? marketData.get(IBApiTickType.DELAYED_LOW)?.value,
+      mark: marketData.get(IBApiTickType.MARK_PRICE)?.value,
     };
   }
 
