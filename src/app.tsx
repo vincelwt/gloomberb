@@ -412,7 +412,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       const positionEntry: TickerPosition = {
         portfolio: portfolioId,
         shares: pos.shares,
-        avgCost: pos.avgCost,
+        avgCost: pos.avgCost ?? 0,
         currency: pos.currency,
         broker: instance.brokerType,
         side: pos.side,

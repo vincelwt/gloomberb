@@ -30,6 +30,8 @@ Your data is stored in `~/gloomberb-data/`. Each ticker gets its own markdown fi
 
 Gloomberb has a plugin architecture where everything — from the portfolio list to broker integrations — is a plugin. Plugins can add tabs, columns, commands, status bar widgets, and more.
 
+Plugins and built-in panes share a common TUI component kit for tabs, lists, toggles, buttons, dialogs, loading states, and status feedback. See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface available through `gloomberb/components`.
+
 ### Core & UI plugins
 
 | Plugin | Description | Toggleable |
