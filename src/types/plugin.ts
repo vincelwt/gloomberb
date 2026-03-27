@@ -20,6 +20,8 @@ export interface GloomSlots {
 }
 
 export interface PaneProps {
+  paneId: string;
+  paneType: string;
   focused: boolean;
   width: number;
   height: number;
@@ -125,13 +127,14 @@ export interface GloomPluginContext {
   syncBrokerInstance(instanceId: string): Promise<void>;
   removeBrokerInstance(instanceId: string): Promise<void>;
 
-  selectTicker(symbol: string): void;
+  selectTicker(symbol: string, paneId?: string): void;
   switchPanel(panel: "left" | "right"): void;
-  switchTab(tabId: string): void;
+  switchTab(tabId: string, paneId?: string): void;
   openCommandBar(query?: string): void;
   showPane(paneId: string): void;
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
+  pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
   emit<K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]): void;

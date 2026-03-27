@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 3;
+export const CURRENT_CONFIG_VERSION = 5;
 
 export interface BrokerInstanceConfig {
   id: string;
@@ -19,8 +19,21 @@ export interface ColumnConfig {
   format?: "currency" | "percent" | "number" | "compact";
 }
 
-export interface DockedPaneEntry {
+export type PaneBinding =
+  | { kind: "none" }
+  | { kind: "fixed"; symbol: string }
+  | { kind: "follow"; sourceInstanceId: string };
+
+export interface PaneInstanceConfig {
+  instanceId: string;
   paneId: string;
+  title?: string;
+  binding?: PaneBinding;
+  params?: Record<string, string>;
+}
+
+export interface DockedPaneEntry {
+  instanceId: string;
   columnIndex: number;
   order?: number;
   height?: string;
@@ -31,7 +44,7 @@ export interface LayoutColumnConfig {
 }
 
 export interface FloatingPaneEntry {
-  paneId: string;
+  instanceId: string;
   x: number;
   y: number;
   width: number;
@@ -41,6 +54,7 @@ export interface FloatingPaneEntry {
 
 export interface LayoutConfig {
   columns: LayoutColumnConfig[];
+  instances: PaneInstanceConfig[];
   docked: DockedPaneEntry[];
   floating: FloatingPaneEntry[];
 }
@@ -69,6 +83,15 @@ export interface AppConfig {
   onboardingComplete?: boolean;
 }
 
+const TICKER_PANE_IDS = new Set([
+  "ticker-detail",
+  "news",
+  "notes",
+  "options",
+  "ask-ai",
+  "ibkr-trading",
+]);
+
 export const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "ticker", label: "TICKER", width: 8, align: "left" },
   { id: "price", label: "PRICE", width: 10, align: "right", format: "currency" },
@@ -81,19 +104,144 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
 
 export const DEFAULT_LAYOUT: LayoutConfig = {
   columns: [{ width: "40%" }, { width: "60%" }],
+  instances: [
+    {
+      instanceId: "portfolio-list:main",
+      paneId: "portfolio-list",
+      params: { collectionId: "main" },
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "ticker-detail:main",
+      paneId: "ticker-detail",
+      binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
+    },
+  ],
   docked: [
-    { paneId: "portfolio-list", columnIndex: 0 },
-    { paneId: "ticker-detail", columnIndex: 1 },
+    { instanceId: "portfolio-list:main", columnIndex: 0 },
+    { instanceId: "ticker-detail:main", columnIndex: 1 },
   ],
   floating: [],
 };
 
+let nextPaneInstanceSeq = 0;
+
+export function createPaneInstanceId(paneId: string): string {
+  nextPaneInstanceSeq += 1;
+  return `${paneId}:${Date.now().toString(36)}${nextPaneInstanceSeq.toString(36)}`;
+}
+
+export function clonePaneBinding(binding: PaneBinding | undefined): PaneBinding | undefined {
+  if (!binding) return undefined;
+  return { ...binding };
+}
+
+export function isTickerPaneId(paneId: string): boolean {
+  return TICKER_PANE_IDS.has(paneId);
+}
+
+export function isTickerPaneInstance(instance: PaneInstanceConfig): boolean {
+  return isTickerPaneId(instance.paneId);
+}
+
+export function isFollowTickerPane(instance: PaneInstanceConfig): boolean {
+  return isTickerPaneInstance(instance) && instance.binding?.kind === "follow";
+}
+
+export function isFixedTickerPane(instance: PaneInstanceConfig): boolean {
+  return isTickerPaneInstance(instance) && instance.binding?.kind === "fixed";
+}
+
+export function createPaneInstance(
+  paneId: string,
+  options: Partial<PaneInstanceConfig> = {},
+): PaneInstanceConfig {
+  return {
+    instanceId: options.instanceId ?? createPaneInstanceId(paneId),
+    paneId,
+    title: options.title,
+    binding: clonePaneBinding(options.binding) ?? { kind: "none" },
+    params: options.params ? { ...options.params } : undefined,
+  };
+}
+
+export function removePaneInstances(layout: LayoutConfig, instanceIds: Iterable<string>): LayoutConfig {
+  const removedIds = new Set(instanceIds);
+  if (removedIds.size === 0) return layout;
+
+  return {
+    ...layout,
+    instances: layout.instances.filter((instance) => !removedIds.has(instance.instanceId)),
+    docked: layout.docked.filter((entry) => !removedIds.has(entry.instanceId)),
+    floating: layout.floating.filter((entry) => !removedIds.has(entry.instanceId)),
+  };
+}
+
+export function normalizePaneLayout(
+  layout: LayoutConfig,
+  options?: { defaultFollowSourceInstanceId?: string | null },
+): LayoutConfig {
+  const fallbackSourceId = options?.defaultFollowSourceInstanceId ?? null;
+  const fallbackAvailable = !!fallbackSourceId && layout.instances.some((instance) => instance.instanceId === fallbackSourceId);
+
+  let nextLayout = layout;
+  if (fallbackAvailable) {
+    const nextInstances: PaneInstanceConfig[] = layout.instances.map((instance) => {
+      if (!isTickerPaneInstance(instance)) return instance;
+      if (instance.binding?.kind === "fixed" || instance.binding?.kind === "follow") return instance;
+      return {
+        ...instance,
+        binding: { kind: "follow", sourceInstanceId: fallbackSourceId! },
+      };
+    });
+    if (nextInstances.some((instance, index) => instance !== layout.instances[index])) {
+      nextLayout = {
+        ...layout,
+        instances: nextInstances,
+      };
+    }
+  }
+
+  for (;;) {
+    const validInstanceIds = new Set(nextLayout.instances.map((instance) => instance.instanceId));
+    const removedIds = new Set<string>();
+
+    for (const instance of nextLayout.instances) {
+      if (instance.binding?.kind === "follow" && !validInstanceIds.has(instance.binding.sourceInstanceId)) {
+        removedIds.add(instance.instanceId);
+        continue;
+      }
+
+      if (isTickerPaneInstance(instance) && instance.binding?.kind !== "follow" && instance.binding?.kind !== "fixed") {
+        removedIds.add(instance.instanceId);
+        continue;
+      }
+
+      if (instance.binding?.kind === "fixed" && instance.binding.symbol.trim().length === 0) {
+        removedIds.add(instance.instanceId);
+      }
+    }
+
+    if (removedIds.size === 0) return nextLayout;
+    nextLayout = removePaneInstances(nextLayout, removedIds);
+  }
+}
+
 export function cloneLayout(layout: LayoutConfig): LayoutConfig {
   return {
     columns: layout.columns.map((column) => ({ ...column })),
+    instances: layout.instances.map((instance) => ({
+      ...instance,
+      binding: clonePaneBinding(instance.binding),
+      params: instance.params ? { ...instance.params } : undefined,
+    })),
     docked: layout.docked.map((entry) => ({ ...entry })),
     floating: layout.floating.map((entry) => ({ ...entry })),
   };
+}
+
+export function findPaneInstance(layout: LayoutConfig, instanceId: string): PaneInstanceConfig | undefined {
+  return layout.instances.find((instance) => instance.instanceId === instanceId);
 }
 
 export function createDefaultConfig(dataDir: string): AppConfig {
