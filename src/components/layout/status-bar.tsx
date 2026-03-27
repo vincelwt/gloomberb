@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
 import { useAppState, useFocusedTicker } from "../../state/app-context";
-import { marketStateLabel, marketStateColor, exchangeShortName } from "../../utils/market-status";
-import { formatPercentRaw } from "../../utils/format";
-import { priceColor } from "../../theme/colors";
+import { marketStateLabel, marketStateColor, exchangeShortName, getExtendedHoursInfo } from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
 
 export function StatusBar() {
@@ -22,18 +20,9 @@ export function StatusBar() {
   const exchName = q ? exchangeShortName(q.exchangeName, q.fullExchangeName) : "";
 
   // Extended hours info for selected ticker
-  const selQ = focusedFinancials?.quote;
-  let extText = "";
-  let extColor = colors.textDim;
-  if (selQ?.marketState === "PRE" && selQ.preMarketPrice != null) {
-    const chg = selQ.preMarketChangePercent ?? 0;
-    extText = `Pre ${selQ.preMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`;
-    extColor = priceColor(chg);
-  } else if (selQ?.marketState === "POST" && selQ.postMarketPrice != null) {
-    const chg = selQ.postMarketChangePercent ?? 0;
-    extText = `AH ${selQ.postMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`;
-    extColor = priceColor(chg);
-  }
+  const extInfo = getExtendedHoursInfo(focusedFinancials?.quote);
+  const extText = extInfo?.text ?? "";
+  const extColor = extInfo?.color ?? colors.textDim;
 
   const layouts = state.config.layouts ?? [];
   const activeLayoutIdx = state.config.activeLayoutIndex ?? 0;

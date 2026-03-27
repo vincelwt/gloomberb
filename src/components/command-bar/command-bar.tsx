@@ -811,7 +811,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
           exchange: result.exchange,
           currency: result.currency || result.brokerContract?.currency || "USD",
           name: result.name,
-          asset_category: result.brokerContract?.secType || result.type || undefined,
+          assetCategory: result.brokerContract?.secType || result.type || undefined,
           broker_contracts: result.brokerContract ? [result.brokerContract] : [],
           portfolios: [],
           watchlists: [],
@@ -824,7 +824,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
         existing.frontmatter.name = existing.frontmatter.name || result.name;
         existing.frontmatter.exchange = existing.frontmatter.exchange || result.exchange;
         existing.frontmatter.currency = existing.frontmatter.currency || result.currency || "USD";
-        existing.frontmatter.asset_category = existing.frontmatter.asset_category || result.brokerContract?.secType || result.type || undefined;
+        existing.frontmatter.assetCategory = existing.frontmatter.assetCategory || result.brokerContract?.secType || result.type || undefined;
         const existingContracts = existing.frontmatter.broker_contracts ?? [];
         if (result.brokerContract) {
           const nextContracts = [...existingContracts];

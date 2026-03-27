@@ -6,6 +6,7 @@ import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plu
 import { useAppState } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
+import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
 
 const CHANNEL_ID = "everyone";
@@ -46,21 +47,6 @@ function _ensureConnection() {
   );
 }
 
-// --- Relative time formatting ---
-
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  // Server returns UTC timestamps — ensure they're parsed as UTC
-  const then = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z").getTime();
-  const diffS = Math.floor((now - then) / 1000);
-  if (diffS < 60) return "just now";
-  const diffM = Math.floor(diffS / 60);
-  if (diffM < 60) return `${diffM}m ago`;
-  const diffH = Math.floor(diffM / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  const diffD = Math.floor(diffH / 24);
-  return `${diffD}d ago`;
-}
 
 // --- Ticker badge rendering ---
 
@@ -315,7 +301,7 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
                 <text fg={colors.positive} attributes={TextAttributes.BOLD}>
                   {msg.user.username ?? "anon"}
                 </text>
-                <text fg={colors.textMuted}> ({relativeTime(msg.createdAt)})</text>
+                <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
               </box>
               {/* Content */}
               <box paddingLeft={3}>

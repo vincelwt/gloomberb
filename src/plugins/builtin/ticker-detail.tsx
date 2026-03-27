@@ -135,10 +135,10 @@ function OverviewTab({ width }: { width?: number }) {
         </box>
 
         {/* Sector / classification */}
-        {(ticker.frontmatter.sector || ticker.frontmatter.industry || ticker.frontmatter.asset_category || ticker.frontmatter.isin) && (
+        {(ticker.frontmatter.sector || ticker.frontmatter.industry || ticker.frontmatter.assetCategory || ticker.frontmatter.isin) && (
           <box flexDirection="column">
-            {ticker.frontmatter.asset_category && (
-              <MetricRow label="Type" value={ticker.frontmatter.asset_category} />
+            {ticker.frontmatter.assetCategory && (
+              <MetricRow label="Type" value={ticker.frontmatter.assetCategory} />
             )}
             {ticker.frontmatter.sector && (
               <MetricRow label="Sector" value={ticker.frontmatter.sector} />
@@ -159,9 +159,9 @@ function OverviewTab({ width }: { width?: number }) {
               <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Positions</text>
             </box>
             {ticker.frontmatter.positions.map((pos, i) => {
-              const costBasis = pos.shares * pos.avg_cost * (pos.multiplier || 1);
-              const pnlText = pos.unrealized_pnl != null
-                ? `  P&L: ${pos.unrealized_pnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealized_pnl, pos.currency)}`
+              const costBasis = pos.shares * pos.avgCost * (pos.multiplier || 1);
+              const pnlText = pos.unrealizedPnl != null
+                ? `  P&L: ${pos.unrealizedPnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealizedPnl, pos.currency)}`
                 : "";
               return (
                 <box key={i} flexDirection="column">
@@ -172,18 +172,18 @@ function OverviewTab({ width }: { width?: number }) {
                   </box>
                   <box flexDirection="row" height={1}>
                     <text fg={colors.text}>
-                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avg_cost, pos.currency)}
+                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, pos.currency)}
                       {" = "}{formatCurrency(costBasis, pos.currency)}
                     </text>
                     {pnlText && (
-                      <text fg={priceColor(pos.unrealized_pnl!)}>{pnlText}</text>
+                      <text fg={priceColor(pos.unrealizedPnl!)}>{pnlText}</text>
                     )}
                   </box>
-                  {pos.mark_price != null && (
+                  {pos.markPrice != null && (
                     <box flexDirection="row" height={1}>
-                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.mark_price, pos.currency)}</text>
-                      {pos.market_value != null && (
-                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(pos.market_value, pos.currency)}</text>
+                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, pos.currency)}</text>
+                      {pos.marketValue != null && (
+                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(pos.marketValue, pos.currency)}</text>
                       )}
                     </box>
                   )}
