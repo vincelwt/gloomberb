@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { colors } from "../../theme/colors";
+import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
 
 interface FloatingPaneWrapperProps {
   title: string;
@@ -16,8 +16,8 @@ interface FloatingPaneWrapperProps {
 export function FloatingPaneWrapper({
   title, x, y, width, height, zIndex, focused, children,
 }: FloatingPaneWrapperProps) {
-  const borderColor = focused ? colors.borderFocused : colors.border;
-  const innerWidth = width - 2; // subtract borders
+  const bg = floatingPaneBg(focused);
+  const titleBgColor = floatingPaneTitleBg(focused);
 
   return (
     <box
@@ -27,15 +27,13 @@ export function FloatingPaneWrapper({
       width={width}
       height={height}
       zIndex={zIndex}
-      backgroundColor={colors.bg}
-      borderStyle="single"
-      borderColor={borderColor}
+      backgroundColor={bg}
       flexDirection="column"
     >
-      {/* Title bar — non-selectable to prevent text highlighting during drag */}
-      <box height={1} width={innerWidth} flexDirection="row">
-        <text fg={focused ? colors.text : colors.textDim} selectable={false}>
-          {buildTitleBar(title, innerWidth)}
+      {/* Title bar */}
+      <box height={1} width={width} backgroundColor={titleBgColor} flexDirection="row">
+        <text fg={paneTitleText(focused)} selectable={false}>
+          {buildTitleBar(title, width)}
         </text>
       </box>
 
@@ -45,17 +43,18 @@ export function FloatingPaneWrapper({
       </box>
 
       {/* Resize handle at bottom-right corner */}
-      <box position="absolute" bottom={0} right={0} width={1} height={1}>
-        <text fg={colors.textDim} selectable={false}>+</text>
+      <box position="absolute" bottom={0} right={0} width={2} height={1}>
+        <text fg={colors.textDim} selectable={false}> ◢</text>
       </box>
     </box>
   );
 }
 
 function buildTitleBar(title: string, availableWidth: number): string {
-  const closeBtn = " [x]";
-  const space = availableWidth - closeBtn.length - 1; // -1 for leading space
+  const closeBtn = " × ";
+  const rightPad = " ";
+  const space = availableWidth - closeBtn.length - rightPad.length - 1; // -1 for leading space
   const truncatedTitle = title.length > space ? title.slice(0, space - 1) + ".." : title;
-  const padding = "-".repeat(Math.max(0, space - truncatedTitle.length));
-  return ` ${truncatedTitle}${padding}${closeBtn}`;
+  const padding = " ".repeat(Math.max(0, space - truncatedTitle.length));
+  return ` ${truncatedTitle}${padding}${closeBtn}${rightPad}`;
 }
