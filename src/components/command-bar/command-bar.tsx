@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
+import { Spinner } from "../spinner";
 import type { InputRenderable } from "@opentui/core";
 import { useDialog, useDialogKeyboard } from "@opentui-ui/dialog/react";
 import {
@@ -328,6 +329,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSearchedQueryRef = useRef<string | null>(null);
+  const searchRequestIdRef = useRef(0);
   const originalThemeRef = useRef<string>(getCurrentThemeId());
   const previousSelectionContextRef = useRef<{ query: string; mode: string } | null>(null);
   const query = state.commandBarQuery;
@@ -634,7 +636,13 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
         const ticker = activeTickerData;
         if (!ticker) return;
         const isWatchlist = cmd.id === "add-watchlist";
-        const listId = activeCollectionId;
+        const listId = isWatchlist
+          ? (state.config.watchlists.some((w) => w.id === activeCollectionId)
+            ? activeCollectionId
+            : state.config.watchlists[0]?.id ?? null)
+          : (state.config.portfolios.some((p) => p.id === activeCollectionId)
+            ? activeCollectionId
+            : state.config.portfolios.find((p) => !p.brokerId)?.id ?? null);
         if (!listId) return;
         const list = isWatchlist ? ticker.frontmatter.watchlists : ticker.frontmatter.portfolios;
         if (!list.includes(listId)) {
@@ -651,9 +659,17 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
         if (!ticker) return;
         const isWatchlist = cmd.id === "remove-watchlist";
         const field = isWatchlist ? "watchlists" : "portfolios";
-        const listId = activeCollectionId;
-        if (!listId) return;
-        ticker.frontmatter[field] = ticker.frontmatter[field].filter((id) => id !== listId);
+        const isMatchingTab = isWatchlist
+          ? state.config.watchlists.some((w) => w.id === activeCollectionId)
+          : state.config.portfolios.some((p) => p.id === activeCollectionId && !p.brokerId);
+        if (isMatchingTab && activeCollectionId) {
+          ticker.frontmatter[field] = ticker.frontmatter[field].filter((id) => id !== activeCollectionId);
+        } else {
+          const validIds = new Set(isWatchlist
+            ? state.config.watchlists.map((w) => w.id)
+            : state.config.portfolios.filter((p) => !p.brokerId).map((p) => p.id));
+          ticker.frontmatter[field] = ticker.frontmatter[field].filter((id) => !validIds.has(id));
+        }
         markdownStore.saveTicker(ticker).catch(() => {});
         dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
         close();
@@ -991,20 +1007,30 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
       : state.config.portfolios.find((p) => p.id === activeCollectionId)?.name;
     const tickerData = activeTickerData;
 
+    // Find a target watchlist/portfolio for add/remove commands, even when on a different tab type
+    const targetWatchlistId = isWatchlistTab
+      ? activeCollectionId
+      : state.config.watchlists[0]?.id ?? null;
+    const targetPortfolioId = isPortfolioTab
+      ? activeCollectionId
+      : state.config.portfolios.find((p) => !p.brokerId)?.id ?? null;
+
     function shouldShow(cmd: Command): boolean {
       switch (cmd.id) {
         case "add-watchlist":
-          if (!tickerData || !isWatchlistTab) return false;
-          return !!activeCollectionId && !tickerData.frontmatter.watchlists.includes(activeCollectionId);
+          if (!tickerData || !targetWatchlistId) return false;
+          return !tickerData.frontmatter.watchlists.includes(targetWatchlistId);
         case "remove-watchlist":
-          if (!tickerData || !isWatchlistTab) return false;
-          return !!activeCollectionId && tickerData.frontmatter.watchlists.includes(activeCollectionId);
+          if (!tickerData) return false;
+          return tickerData.frontmatter.watchlists.length > 0;
         case "add-portfolio":
-          if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
-          return !!activeCollectionId && !tickerData.frontmatter.portfolios.includes(activeCollectionId);
+          if (!tickerData || !targetPortfolioId) return false;
+          return !tickerData.frontmatter.portfolios.includes(targetPortfolioId);
         case "remove-portfolio":
-          if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
-          return !!activeCollectionId && tickerData.frontmatter.portfolios.includes(activeCollectionId);
+          if (!tickerData) return false;
+          return tickerData.frontmatter.portfolios.some((id) =>
+            state.config.portfolios.some((p) => p.id === id && !p.brokerId));
+
         case "disconnect-broker-account":
           return state.config.brokerInstances.length > 0;
         default:
@@ -1025,11 +1051,26 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
 
     function smartDetail(cmd: Command): string {
       switch (cmd.id) {
-        case "add-watchlist":
-        case "remove-watchlist":
-        case "add-portfolio":
-        case "remove-portfolio":
-          return activeTabName ? `in "${activeTabName}"` : cmd.description;
+        case "add-watchlist": {
+          const name = state.config.watchlists.find((w) => w.id === targetWatchlistId)?.name;
+          return name ? `in "${name}"` : cmd.description;
+        }
+        case "remove-watchlist": {
+          const names = tickerData?.frontmatter.watchlists
+            .map((id) => state.config.watchlists.find((w) => w.id === id)?.name)
+            .filter(Boolean);
+          return names?.length ? `from "${names.join(", ")}"` : cmd.description;
+        }
+        case "add-portfolio": {
+          const name = state.config.portfolios.find((p) => p.id === targetPortfolioId)?.name;
+          return name ? `in "${name}"` : cmd.description;
+        }
+        case "remove-portfolio": {
+          const names = tickerData?.frontmatter.portfolios
+            .map((id) => state.config.portfolios.find((p) => p.id === id && !p.brokerId)?.name)
+            .filter(Boolean);
+          return names?.length ? `from "${names.join(", ")}"` : cmd.description;
+        }
         default:
           return cmd.description;
       }
@@ -1205,16 +1246,15 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
     }
     previousSelectionContextRef.current = { query, mode: modeInfo.kind };
 
-    // Search providers when in ticker search mode (prefix "T") or when
-    // the query looks like a ticker (no prefix match, ≥1 char, uppercase-ish)
+    // Search providers only when in explicit ticker search mode (prefix "T")
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     const isTPrefix = match?.command.id === "search-ticker" && match.arg.length >= 1;
-    const isImplicitSearch = !match && query.length >= 1 && /^[A-Za-z0-9.]/.test(query);
     const searchQuery = isTPrefix ? match!.arg : query;
     const queryChanged = lastSearchedQueryRef.current !== searchQuery;
-    if ((isTPrefix || isImplicitSearch) && queryChanged) {
+    if (isTPrefix && queryChanged) {
       lastSearchedQueryRef.current = searchQuery;
       setSearching(true);
+      const requestId = ++searchRequestIdRef.current;
       searchTimerRef.current = setTimeout(async () => {
         try {
           const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
@@ -1223,6 +1263,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
             brokerId: activePortfolio?.brokerId,
             brokerInstanceId: activePortfolio?.brokerInstanceId,
           });
+          if (requestId !== searchRequestIdRef.current) return; // stale response
           const searchItems: ResultItem[] = searchResults
             .slice(0, 8)
             .map((r) => {
@@ -1238,15 +1279,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
                 action: () => openTickerDetail(r),
               };
             });
-          if (isImplicitSearch) {
-            // Append search results to existing fuzzy-filtered items
-            const existingIds = new Set(items.map((i) => i.id));
-            const newItems = searchItems.filter((i) => !existingIds.has(i.id));
-            if (newItems.length > 0) {
-              setResults((prev) => [...prev, ...newItems]);
-            }
-          } else {
-            setResults(searchItems.length > 0 ? searchItems : [{
+          setResults(searchItems.length > 0 ? searchItems : [{
               id: "no-results",
               label: `No matches for "${searchQuery}"`,
               detail: "Try a symbol, company name, or exchange variant",
@@ -1254,10 +1287,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
               kind: "info",
               action: () => {},
             }]);
-          }
         } catch {
-          if (!isImplicitSearch) {
-            setResults([{
+          if (requestId !== searchRequestIdRef.current) return; // stale error
+          setResults([{
               id: "error",
               label: "Search failed",
               detail: "Check your connection",
@@ -1265,12 +1297,11 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
               kind: "info",
               action: () => {},
             }]);
-          }
         } finally {
-          setSearching(false);
+          if (requestId === searchRequestIdRef.current) setSearching(false);
         }
       }, 200);
-    } else if (!isTPrefix && !isImplicitSearch) {
+    } else if (!isTPrefix) {
       setSearching(false);
       lastSearchedQueryRef.current = null;
     }
@@ -1413,6 +1444,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
     | { kind: "heading"; id: string; label: string }
     | { kind: "item"; item: ResultItem; globalIdx: number }
     | { kind: "message"; id: string; label: string; dim?: boolean }
+    | { kind: "spinner"; id: string; label: string }
     | { kind: "filler"; id: string }
   > = [];
   let previousCategory: string | null = null;
@@ -1442,7 +1474,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
 
   let visibleRows: typeof allRows;
   if (searching) {
-    visibleRows = [{ kind: "message", id: "searching", label: "Searching providers...", dim: true }];
+    visibleRows = [{ kind: "spinner", id: "searching", label: "Searching providers..." }];
   } else if (allRows.length === 0) {
     visibleRows = [{ kind: "message", id: "empty", label: emptyState.label }];
   } else {
@@ -1508,6 +1540,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
 
           if (row.kind === "spacer") {
             return <box key={row.id} height={1} />;
+          }
+
+          if (row.kind === "spinner") {
+            return (
+              <box key={row.id} height={1} paddingX={contentPadding}>
+                <Spinner label={row.label} />
+              </box>
+            );
           }
 
           if (row.kind === "message") {
