@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from "react";
-import type { AppConfig, LayoutConfig } from "../types/config";
+import type { AppConfig, LayoutConfig, SavedLayout } from "../types/config";
+import { DEFAULT_LAYOUT } from "../types/config";
 import { saveConfig } from "../data/config-store";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
@@ -66,7 +67,12 @@ export type AppAction =
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig }
   | { type: "FOCUS_PANE"; paneId: string }
   | { type: "FOCUS_NEXT"; paneOrder: string[] }
-  | { type: "FOCUS_PREV"; paneOrder: string[] };
+  | { type: "FOCUS_PREV"; paneOrder: string[] }
+  | { type: "SWITCH_LAYOUT"; index: number }
+  | { type: "NEW_LAYOUT"; name: string }
+  | { type: "DELETE_LAYOUT"; index: number }
+  | { type: "RENAME_LAYOUT"; index: number; name: string }
+  | { type: "DUPLICATE_LAYOUT"; index: number };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -191,8 +197,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, exchangeRates };
     }
 
-    case "UPDATE_LAYOUT":
-      return { ...state, config: { ...state.config, layout: action.layout } };
+    case "UPDATE_LAYOUT": {
+      // Also sync the layout into the active slot in layouts[]
+      const activeIdx = state.config.activeLayoutIndex ?? 0;
+      const synced = (state.config.layouts ?? []).map((l, i) =>
+        i === activeIdx ? { ...l, layout: action.layout } : l
+      );
+      return { ...state, config: { ...state.config, layout: action.layout, layouts: synced } };
+    }
 
     case "FOCUS_PANE":
       return { ...state, focusedPaneId: action.paneId };
@@ -211,6 +223,93 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : 0;
       const prev = order[(idx - 1 + order.length) % order.length]!;
       return { ...state, focusedPaneId: prev };
+    }
+
+    case "SWITCH_LAYOUT": {
+      const layouts = state.config.layouts ?? [];
+      if (action.index < 0 || action.index >= layouts.length) return state;
+      const target = layouts[action.index]!;
+      // Save current layout into its slot before switching
+      const updatedLayouts = layouts.map((l, i) =>
+        i === state.config.activeLayoutIndex ? { ...l, layout: state.config.layout } : l
+      );
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: target.layout,
+          layouts: updatedLayouts,
+          activeLayoutIndex: action.index,
+        },
+        focusedPaneId: target.layout.docked[0]?.paneId ?? null,
+      };
+    }
+
+    case "NEW_LAYOUT": {
+      const layouts = state.config.layouts ?? [];
+      const newLayout: SavedLayout = { name: action.name, layout: structuredClone(DEFAULT_LAYOUT) };
+      const newLayouts = [...layouts, newLayout];
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: newLayout.layout,
+          layouts: newLayouts,
+          activeLayoutIndex: newLayouts.length - 1,
+        },
+        focusedPaneId: newLayout.layout.docked[0]?.paneId ?? null,
+      };
+    }
+
+    case "DELETE_LAYOUT": {
+      const layouts = state.config.layouts ?? [];
+      if (layouts.length <= 1) return state; // can't delete last layout
+      const newLayouts = layouts.filter((_, i) => i !== action.index);
+      const wasActive = state.config.activeLayoutIndex;
+      const newActive = action.index <= wasActive
+        ? Math.max(0, wasActive - 1)
+        : wasActive;
+      const switchTo = newLayouts[newActive]!;
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: switchTo.layout,
+          layouts: newLayouts,
+          activeLayoutIndex: newActive,
+        },
+        focusedPaneId: switchTo.layout.docked[0]?.paneId ?? null,
+      };
+    }
+
+    case "RENAME_LAYOUT": {
+      const layouts = state.config.layouts ?? [];
+      if (action.index < 0 || action.index >= layouts.length) return state;
+      const newLayouts = layouts.map((l, i) =>
+        i === action.index ? { ...l, name: action.name } : l
+      );
+      return { ...state, config: { ...state.config, layouts: newLayouts } };
+    }
+
+    case "DUPLICATE_LAYOUT": {
+      const layouts = state.config.layouts ?? [];
+      if (action.index < 0 || action.index >= layouts.length) return state;
+      const source = layouts[action.index]!;
+      const newLayout: SavedLayout = {
+        name: `${source.name} Copy`,
+        layout: structuredClone(source.layout),
+      };
+      const newLayouts = [...layouts, newLayout];
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          layout: newLayout.layout,
+          layouts: newLayouts,
+          activeLayoutIndex: newLayouts.length - 1,
+        },
+        focusedPaneId: newLayout.layout.docked[0]?.paneId ?? null,
+      };
     }
 
     default:
