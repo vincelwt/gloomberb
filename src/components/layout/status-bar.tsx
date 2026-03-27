@@ -33,17 +33,35 @@ export function StatusBar() {
     extColor = priceColor(chg);
   }
 
+  const layouts = state.config.layouts ?? [];
+  const activeLayoutIdx = state.config.activeLayoutIndex ?? 0;
+  const hasMultipleLayouts = layouts.length > 1;
+
   return (
     <box
       flexDirection="row"
       height={1}
       backgroundColor={colors.panel}
     >
-      <box flexGrow={1} paddingLeft={1}>
-        <text fg={colors.textDim}>
-          <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>j/k</span> navigate  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
-        </text>
-      </box>
+      {hasMultipleLayouts ? (
+        <box paddingLeft={1} flexShrink={0} flexDirection="row">
+          {layouts.map((l, i) => {
+            const isActive = i === activeLayoutIdx;
+            const num = i + 1;
+            if (isActive) {
+              return <text key={i} fg={colors.headerText} bg={colors.header}>{` ^${num} ${l.name} `}</text>;
+            }
+            return <text key={i} fg={colors.textDim}>{` ^${num} `}<span fg={colors.text}>{l.name}</span>{" "}</text>;
+          })}
+        </box>
+      ) : (
+        <box paddingLeft={1}>
+          <text fg={colors.textDim}>
+            <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>j/k</span> navigate  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
+          </text>
+        </box>
+      )}
+      <box flexGrow={1} />
       {extText && (
         <box paddingRight={1}>
           <text fg={extColor}>{state.selectedTicker} {extText}</text>

@@ -251,6 +251,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalThemeRef = useRef<string>(getCurrentThemeId());
   const spaceConsumedRef = useRef(false);
+  const scrollAnchorRef = useRef(0);
 
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
@@ -261,6 +262,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     setQuery("");
     setResults([]);
     setSelectedIdx(0);
+    scrollAnchorRef.current = 0;
   }, [dispatch]);
 
   // Revert theme on close without selection
@@ -869,9 +871,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
     setResults(items);
     // In columns/plugin mode, preserve the selected index across re-renders (toggling)
     if (match?.command.id === "columns" || match?.command.id === "plugins") {
-      setSelectedIdx((prev) => Math.min(prev, items.length - 1));
+      setSelectedIdx((prev) => {
+        const next = Math.min(prev, items.length - 1);
+        scrollAnchorRef.current = next;
+        return next;
+      });
     } else {
       setSelectedIdx(initialIdx);
+      scrollAnchorRef.current = initialIdx;
     }
 
     // Yahoo search when in ticker search mode (prefix "T")
@@ -929,9 +936,17 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
         close();
       }
     } else if (event.name === "down" || (event.name === "n" && event.ctrl)) {
-      setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
+      setSelectedIdx((i) => {
+        const next = Math.min(i + 1, results.length - 1);
+        scrollAnchorRef.current = next;
+        return next;
+      });
     } else if (event.name === "up" || (event.name === "p" && event.ctrl)) {
-      setSelectedIdx((i) => Math.max(i - 1, 0));
+      setSelectedIdx((i) => {
+        const next = Math.max(i - 1, 0);
+        scrollAnchorRef.current = next;
+        return next;
+      });
     } else if (event.name === "space" && isPluginMode) {
       // Space toggles plugins without closing
       spaceConsumedRef.current = true;
@@ -943,13 +958,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       const selected = results[selectedIdx];
       if (selected) selected.action();
     } else if (event.name === "return" || event.name === "enter") {
-      if (isColumnsMode) {
-        const selected = results[selectedIdx];
-        if (selected) selected.action();
-      } else {
-        const selected = results[selectedIdx];
-        if (selected) selected.action();
-      }
+      // Enter is handled by the <input onSubmit> — avoid calling action twice
+      // which breaks toggle commands (e.g. Toggle Status Bar fires twice = no-op)
     }
   });
 
@@ -960,9 +970,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
   // Reserve rows for: top offset (3) + border (2) + input (2) + separator (1) + esc hint (1) + scroll indicators (2)
   const maxVisible = Math.min(16, Math.max(4, termHeight - 11));
 
-  // Compute a window of results centered on selectedIdx
+  // Compute a window of results centered on scroll anchor (keyboard-driven, not mouse)
+  const scrollAnchor = scrollAnchorRef.current;
   const halfWindow = Math.floor(maxVisible / 2);
-  let windowStart = Math.max(0, Math.min(selectedIdx - halfWindow, results.length - maxVisible));
+  let windowStart = Math.max(0, Math.min(scrollAnchor - halfWindow, results.length - maxVisible));
   if (windowStart < 0) windowStart = 0;
   const windowEnd = Math.min(results.length, windowStart + maxVisible);
   const windowedResults = results.slice(windowStart, windowEnd);

@@ -192,6 +192,96 @@ export const layoutManagerPlugin: GloomPlugin = {
       },
     });
 
+    // New Layout — create a new layout starting from default
+    ctx.registerCommand({
+      id: "new-layout",
+      label: "New Layout",
+      description: "Create a new layout",
+      keywords: ["new", "create", "add", "layout", "workspace"],
+      category: "config",
+      wizard: [
+        { key: "name", label: "Layout name", placeholder: "e.g. Trading, Research, Overview" },
+      ],
+      execute: async (values) => {
+        if (!_dispatchFn) return;
+        const name = values?.name?.trim();
+        if (!name) {
+          ctx.showToast("Layout name is required", { type: "error" });
+          return;
+        }
+        _dispatchFn({ type: "NEW_LAYOUT", name });
+        ctx.showToast(`Layout "${name}" created`, { type: "success" });
+      },
+    });
+
+    // Delete Layout
+    ctx.registerCommand({
+      id: "delete-layout",
+      label: "Delete Layout",
+      description: "Delete the current layout preset",
+      keywords: ["delete", "remove", "layout", "preset"],
+      category: "config",
+      execute: async () => {
+        if (!_dispatchFn) return;
+        const registry = getSharedRegistry();
+        if (!registry) return;
+        const config = registry.getConfigFn();
+        const layouts = config.layouts ?? [];
+        if (layouts.length <= 1) {
+          ctx.showToast("Can't delete the only layout", { type: "error" });
+          return;
+        }
+        const idx = config.activeLayoutIndex ?? 0;
+        const name = layouts[idx]!.name;
+        _dispatchFn({ type: "DELETE_LAYOUT", index: idx });
+        ctx.showToast(`Layout "${name}" deleted`, { type: "success" });
+      },
+    });
+
+    // Rename Layout
+    ctx.registerCommand({
+      id: "rename-layout",
+      label: "Rename Layout",
+      description: "Rename the current layout preset",
+      keywords: ["rename", "layout", "preset"],
+      category: "config",
+      wizard: [
+        { key: "name", label: "New name", placeholder: "Layout name" },
+      ],
+      execute: async (values) => {
+        if (!_dispatchFn) return;
+        const name = values?.name?.trim();
+        if (!name) {
+          ctx.showToast("Name is required", { type: "error" });
+          return;
+        }
+        const registry = getSharedRegistry();
+        if (!registry) return;
+        const config = registry.getConfigFn();
+        const idx = config.activeLayoutIndex ?? 0;
+        _dispatchFn({ type: "RENAME_LAYOUT", index: idx, name });
+        ctx.showToast(`Layout renamed to "${name}"`, { type: "success" });
+      },
+    });
+
+    // Duplicate Layout
+    ctx.registerCommand({
+      id: "duplicate-layout",
+      label: "Duplicate Layout",
+      description: "Create a copy of the current layout",
+      keywords: ["duplicate", "copy", "clone", "layout"],
+      category: "config",
+      execute: async () => {
+        if (!_dispatchFn) return;
+        const registry = getSharedRegistry();
+        if (!registry) return;
+        const config = registry.getConfigFn();
+        const idx = config.activeLayoutIndex ?? 0;
+        _dispatchFn({ type: "DUPLICATE_LAYOUT", index: idx });
+        ctx.showToast("Layout duplicated", { type: "success" });
+      },
+    });
+
     // Swap Panes
     ctx.registerCommand({
       id: "swap-panes",

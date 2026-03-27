@@ -41,6 +41,11 @@ export async function loadConfig(dataDir: string): Promise<AppConfig> {
     if (saved.layout) {
       config.layout = migrateLayout(saved.layout);
     }
+    // Migration: initialize layouts array if missing
+    if (!config.layouts || !Array.isArray(config.layouts) || config.layouts.length === 0) {
+      config.layouts = [{ name: "Default", layout: config.layout }];
+      config.activeLayoutIndex = 0;
+    }
     return config;
   } catch {
     return createDefaultConfig(dataDir);

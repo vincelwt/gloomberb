@@ -160,13 +160,11 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
               <text fg={colors.textDim}>{formatTimeAgo(selected.publishedAt)}</text>
             </box>
             <box paddingTop={1}>
-              <text fg={colors.text}>
-                {summary
-                  ? summary
-                  : loadingSummary
-                    ? <Spinner label="Loading..." />
-                    : "No preview available."}
-              </text>
+              {summary
+                ? <text fg={colors.text}>{summary}</text>
+                : loadingSummary
+                  ? <Spinner label="Loading..." />
+                  : <text fg={colors.text}>No preview available.</text>}
             </box>
           </box>
         </scrollbox>
