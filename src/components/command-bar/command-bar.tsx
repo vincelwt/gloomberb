@@ -327,6 +327,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSearchedQueryRef = useRef<string | null>(null);
   const originalThemeRef = useRef<string>(getCurrentThemeId());
   const previousSelectionContextRef = useRef<{ query: string; mode: string } | null>(null);
   const query = state.commandBarQuery;
@@ -591,26 +592,6 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
       case "add-broker-account": {
         close();
         void connectBrokerProfile();
-        return;
-      }
-      case "sync-broker-account": {
-        close();
-        (async () => {
-          const instance = await pickBrokerInstance("Sync Broker Account");
-          if (!instance) return;
-          try {
-            await pluginRegistry.syncBrokerInstanceFn(instance.id);
-            const freshConfig = pluginRegistry.getConfigFn();
-            dispatch({ type: "SET_CONFIG", config: freshConfig });
-            await dialog.alert({
-              content: (ctx) => <ResultContent {...ctx} message={`Synced ${instance.label}.`} isError={false} />,
-            });
-          } catch (err: any) {
-            await dialog.alert({
-              content: (ctx) => <ResultContent {...ctx} message={err.message || "Sync failed"} isError={true} />,
-            });
-          }
-        })();
         return;
       }
       case "disconnect-broker-account": {
@@ -1035,6 +1016,8 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
         case "remove-portfolio":
           if (!tickerData || !isPortfolioTab || isBrokerManaged) return false;
           return !!activeCollectionId && tickerData.frontmatter.portfolios.includes(activeCollectionId);
+        case "disconnect-broker-account":
+          return state.config.brokerInstances.length > 0;
         default:
           return true;
       }
@@ -1238,8 +1221,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     const isTPrefix = match?.command.id === "search-ticker" && match.arg.length >= 1;
     const isImplicitSearch = !match && query.length >= 1 && /^[A-Za-z0-9.]/.test(query);
-    if (isTPrefix || isImplicitSearch) {
-      const searchQuery = isTPrefix ? match!.arg : query;
+    const searchQuery = isTPrefix ? match!.arg : query;
+    const queryChanged = lastSearchedQueryRef.current !== searchQuery;
+    if ((isTPrefix || isImplicitSearch) && queryChanged) {
+      lastSearchedQueryRef.current = searchQuery;
       setSearching(true);
       searchTimerRef.current = setTimeout(async () => {
         try {
@@ -1296,8 +1281,9 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
           setSearching(false);
         }
       }, 200);
-    } else {
+    } else if (!isTPrefix && !isImplicitSearch) {
       setSearching(false);
+      lastSearchedQueryRef.current = null;
     }
 
     return () => {
