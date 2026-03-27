@@ -584,6 +584,7 @@ export class YahooFinanceClient implements DataProvider {
       exchangeName: meta.exchangeName,
       fullExchangeName: meta.fullExchangeName,
       marketState,
+      dataSource: "yahoo",
       ...extHours,
     };
 
@@ -723,6 +724,7 @@ export class YahooFinanceClient implements DataProvider {
           exchangeName: meta.exchangeName,
           fullExchangeName: meta.fullExchangeName,
           marketState,
+          dataSource: "yahoo",
           ...extHours,
         };
 

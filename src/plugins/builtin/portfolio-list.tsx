@@ -202,10 +202,14 @@ function getColumnValue(
     case "latency": {
       if (!q?.lastUpdated) return { text: "—" };
       const ago = (ctx.now - q.lastUpdated) / 1000;
-      if (ago < 60) return { text: `${Math.floor(ago)}s` };
-      if (ago < 3600) return { text: `${Math.floor(ago / 60)}m` };
-      if (ago < 86400) return { text: `${Math.floor(ago / 3600)}h` };
-      return { text: `${Math.floor(ago / 86400)}d` };
+      // ◷ = delayed broker data, ◌ = Yahoo fallback, no prefix = live
+      const prefix = q.dataSource === "delayed" ? "◷" : q.dataSource === "yahoo" ? "◌" : "";
+      let age: string;
+      if (ago < 60) age = `${Math.floor(ago)}s`;
+      else if (ago < 3600) age = `${Math.floor(ago / 60)}m`;
+      else if (ago < 86400) age = `${Math.floor(ago / 3600)}h`;
+      else age = `${Math.floor(ago / 86400)}d`;
+      return { text: prefix ? `${prefix}${age}` : age };
     }
     default:
       return { text: "—" };

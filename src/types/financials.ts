@@ -30,6 +30,8 @@ export interface Quote {
   high?: number;
   low?: number;
   mark?: number;
+  /** Where the quote data came from: live broker feed, delayed broker feed, or a fallback like Yahoo. */
+  dataSource?: "live" | "delayed" | "yahoo";
 }
 
 export interface Fundamentals {

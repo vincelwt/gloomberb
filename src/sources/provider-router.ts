@@ -7,6 +7,19 @@ import type { TimeRange } from "../components/chart/chart-types";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
 
+/** Cap total time spent attempting broker data before falling back to other providers. */
+const BROKER_ATTEMPT_TIMEOUT = 10_000;
+
+function withBrokerTimeout<T>(promise: Promise<T>): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    const timer = setTimeout(() => resolve(null), BROKER_ATTEMPT_TIMEOUT);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(null); },
+    );
+  });
+}
+
 interface BrokerCandidate {
   brokerId: string;
   brokerInstanceId: string;
@@ -53,7 +66,7 @@ export class ProviderRouter implements DataProvider {
   }
 
   async canProvide(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<boolean> {
-    const brokerQuote = await this.tryBrokerQuote(ticker, exchange, context);
+    const brokerQuote = await withBrokerTimeout(this.tryBrokerQuote(ticker, exchange, context));
     if (brokerQuote) return true;
     if (this.fallbackProvider.canProvide) {
       return this.fallbackProvider.canProvide(ticker, exchange, context);
@@ -62,7 +75,7 @@ export class ProviderRouter implements DataProvider {
   }
 
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    const brokerResult = await this.tryBrokerTickerFinancials(ticker, exchange, context);
+    const brokerResult = await withBrokerTimeout(this.tryBrokerTickerFinancials(ticker, exchange, context));
     if (brokerResult) return brokerResult;
 
     const base = await this.firstProvider((provider) => provider.getTickerFinancials(ticker, exchange, context));
@@ -70,16 +83,11 @@ export class ProviderRouter implements DataProvider {
       throw new Error(`No provider available for ${ticker}`);
     }
 
-    const brokerQuote = await this.tryBrokerQuote(ticker, exchange, context);
-    if (brokerQuote) {
-      return { ...base, quote: brokerQuote };
-    }
-
     return base;
   }
 
   async getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote> {
-    const brokerQuote = await this.tryBrokerQuote(ticker, exchange, context);
+    const brokerQuote = await withBrokerTimeout(this.tryBrokerQuote(ticker, exchange, context));
     if (brokerQuote) return brokerQuote;
 
     const providerQuote = await this.firstProvider((provider) => provider.getQuote(ticker, exchange, context));
@@ -107,31 +115,35 @@ export class ProviderRouter implements DataProvider {
       }
     };
 
+    // Run broker and provider searches in parallel so a slow broker doesn't block fallback results.
+    // Use a deadline: return whatever results are available after 5s even if some providers are still pending.
+    const searchPromises: Promise<void>[] = [];
+
     if (context?.preferBroker !== false) {
       for (const candidate of this.getBrokerCandidates(
         context?.brokerInstanceId,
         context?.brokerId,
       )) {
         if (!candidate.broker.searchInstruments) continue;
-        try {
-          push(this.annotateSearchResults(
-            await candidate.broker.searchInstruments(query, candidate.instance),
-            candidate,
-          ));
-        } catch {
-          // fall through to the next provider
-        }
+        searchPromises.push(
+          candidate.broker.searchInstruments(query, candidate.instance)
+            .then((items) => push(this.annotateSearchResults(items, candidate)))
+            .catch(() => {}),
+        );
       }
     }
 
     for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
-      try {
-        push(await provider.search(query, context));
-      } catch {
-        // ignore provider-specific search failures
-      }
+      searchPromises.push(
+        provider.search(query, context)
+          .then((items) => push(items))
+          .catch(() => {}),
+      );
     }
 
+    // Wait for all searches, but time out after 5 seconds so slow providers don't block results
+    const deadline = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
+    await Promise.race([Promise.all(searchPromises), deadline]);
     return results;
   }
 
@@ -146,7 +158,7 @@ export class ProviderRouter implements DataProvider {
   }
 
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    const brokerHistory = await this.tryBrokerPriceHistory(ticker, exchange, range, context);
+    const brokerHistory = await withBrokerTimeout(this.tryBrokerPriceHistory(ticker, exchange, range, context));
     if (brokerHistory && brokerHistory.length > 0) return brokerHistory;
 
     const providerHistory = await this.firstProvider((provider) => provider.getPriceHistory(ticker, exchange, range, context));
@@ -157,7 +169,7 @@ export class ProviderRouter implements DataProvider {
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
-    const brokerChain = await this.tryBrokerOptionsChain(ticker, exchange, expirationDate, context);
+    const brokerChain = await withBrokerTimeout(this.tryBrokerOptionsChain(ticker, exchange, expirationDate, context));
     if (brokerChain) return brokerChain;
 
     const providerChain = await this.firstProvider(async (provider) => {
