@@ -5,9 +5,18 @@ import type {
   BrokerInstanceConfig,
   ColumnConfig,
   LayoutConfig,
+  PaneBinding,
+  PaneInstanceConfig,
   SavedLayout,
 } from "../types/config";
-import { cloneLayout, createDefaultConfig, CURRENT_CONFIG_VERSION } from "../types/config";
+import {
+  cloneLayout,
+  createDefaultConfig,
+  createPaneInstance,
+  createPaneInstanceId,
+  CURRENT_CONFIG_VERSION,
+  normalizePaneLayout,
+} from "../types/config";
 import type { Portfolio, Watchlist } from "../types/ticker";
 
 const GLOBAL_CONFIG_DIR = join(process.env.HOME || "~", ".gloomberb");
@@ -73,6 +82,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
   const needsSave =
     saved.configVersion !== CURRENT_CONFIG_VERSION
     || !isLayoutConfig(saved.layout)
+    || !Array.isArray((saved.layout as { instances?: unknown })?.instances)
     || !Array.isArray(saved.layouts)
     || !Array.isArray(saved.brokerInstances)
     || typeof saved.activeLayoutIndex !== "number";
@@ -206,9 +216,159 @@ function isLayoutConfig(value: unknown): value is LayoutConfig {
     && Array.isArray((value as LayoutConfig).floating);
 }
 
-function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
+function sanitizePaneBinding(value: unknown, fallback: PaneBinding = { kind: "none" }): PaneBinding {
+  if (!value || typeof value !== "object") return fallback;
+  if ((value as PaneBinding).kind === "fixed" && typeof (value as Extract<PaneBinding, { kind: "fixed" }>).symbol === "string") {
+    return { kind: "fixed", symbol: (value as Extract<PaneBinding, { kind: "fixed" }>).symbol };
+  }
+  if ((value as PaneBinding).kind === "follow" && typeof (value as Extract<PaneBinding, { kind: "follow" }>).sourceInstanceId === "string") {
+    return { kind: "follow", sourceInstanceId: (value as Extract<PaneBinding, { kind: "follow" }>).sourceInstanceId };
+  }
+  if ((value as PaneBinding).kind === "none") return { kind: "none" };
+  return fallback;
+}
+
+function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInstanceConfig[] {
+  if (!Array.isArray(value)) return cloneLayout(fallback).instances;
+  const seen = new Set<string>();
+  const instances = value
+    .filter((entry): entry is PaneInstanceConfig =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as PaneInstanceConfig).instanceId === "string"
+      && typeof (entry as PaneInstanceConfig).paneId === "string",
+    )
+    .map((entry) => {
+      const instanceId = seen.has(entry.instanceId) ? createPaneInstanceId(entry.paneId) : entry.instanceId;
+      seen.add(instanceId);
+      return {
+        instanceId,
+        paneId: entry.paneId,
+        title: typeof entry.title === "string" ? entry.title : undefined,
+        binding: sanitizePaneBinding(entry.binding),
+        params: entry.params && typeof entry.params === "object"
+          ? Object.fromEntries(
+            Object.entries(entry.params).filter((param): param is [string, string] => typeof param[1] === "string"),
+          )
+          : undefined,
+      };
+    });
+  return instances.length > 0 ? instances : cloneLayout(fallback).instances;
+}
+
+function getDefaultFollowSourceInstanceId(instances: PaneInstanceConfig[]): string | null {
+  return instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId ?? null;
+}
+
+type LegacyDockedEntry = { paneId: string; columnIndex: number; order?: number; height?: string };
+type LegacyFloatingEntry = { paneId: string; x: number; y: number; width: number; height: number; zIndex?: number };
+type LegacyLayoutValue = {
+  columns: unknown[];
+  docked: unknown[];
+  floating: unknown[];
+};
+
+function migrateLegacyLayout(value: LegacyLayoutValue, fallback: LayoutConfig): LayoutConfig {
+  const columns = value.columns
+    .filter((entry): entry is LayoutConfig["columns"][number] =>
+      !!entry
+      && typeof entry === "object"
+      && (typeof (entry as LayoutConfig["columns"][number]).width === "string"
+        || typeof (entry as LayoutConfig["columns"][number]).width === "undefined"),
+    )
+    .map((entry) => ({ ...entry }));
+
+  const legacyDocked = value.docked
+    .filter((entry): entry is LegacyDockedEntry =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as LegacyDockedEntry).paneId === "string"
+      && typeof (entry as LegacyDockedEntry).columnIndex === "number",
+    );
+  const legacyFloating = value.floating
+    .filter((entry): entry is LegacyFloatingEntry =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as LegacyFloatingEntry).paneId === "string"
+      && typeof (entry as LegacyFloatingEntry).x === "number"
+      && typeof (entry as LegacyFloatingEntry).y === "number"
+      && typeof (entry as LegacyFloatingEntry).width === "number"
+      && typeof (entry as LegacyFloatingEntry).height === "number",
+    );
+
+  const instances: PaneInstanceConfig[] = [];
+  let firstPortfolioInstanceId: string | null = null;
+  let firstTickerDetailInstanceId: string | null = null;
+
+  const createLegacyInstance = (paneId: string): PaneInstanceConfig => {
+    let instanceId: string;
+    if (paneId === "portfolio-list" && !firstPortfolioInstanceId) {
+      instanceId = "portfolio-list:main";
+      firstPortfolioInstanceId = instanceId;
+    } else if (paneId === "ticker-detail" && !firstTickerDetailInstanceId) {
+      instanceId = "ticker-detail:main";
+      firstTickerDetailInstanceId = instanceId;
+    } else {
+      instanceId = createPaneInstanceId(paneId);
+    }
+
+    const binding: PaneBinding = paneId === "ticker-detail" && firstPortfolioInstanceId
+      ? { kind: "follow", sourceInstanceId: firstPortfolioInstanceId }
+      : paneId === "ibkr-trading" && (firstTickerDetailInstanceId || firstPortfolioInstanceId)
+        ? { kind: "follow", sourceInstanceId: firstTickerDetailInstanceId ?? firstPortfolioInstanceId! }
+        : { kind: "none" };
+
+    const params = paneId === "portfolio-list"
+      ? { collectionId: fallback.instances.find((instance) => instance.paneId === "portfolio-list")?.params?.collectionId ?? "main" }
+      : undefined;
+
+    const instance = createPaneInstance(paneId, { instanceId, binding, params });
+    instances.push(instance);
+    return instance;
+  };
+
+  const docked = legacyDocked.map((entry) => {
+    const instance = createLegacyInstance(entry.paneId);
+    return {
+      instanceId: instance.instanceId,
+      columnIndex: entry.columnIndex,
+      order: entry.order,
+      height: entry.height,
+    };
+  });
+
+  const floating = legacyFloating.map((entry) => {
+    const instance = createLegacyInstance(entry.paneId);
+    return {
+      instanceId: instance.instanceId,
+      x: entry.x,
+      y: entry.y,
+      width: entry.width,
+      height: entry.height,
+      zIndex: entry.zIndex,
+    };
+  });
+
+  if (instances.length === 0) return cloneLayout(fallback);
+
+  return {
+    columns: columns.length > 0 ? columns : cloneLayout(fallback).columns,
+    instances,
+    docked,
+    floating,
+  };
+}
+
+export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
   if (!isLayoutConfig(value)) {
     return cloneLayout(fallback);
+  }
+
+  if (!Array.isArray((value as LayoutConfig & { instances?: unknown }).instances)) {
+    const migrated = migrateLegacyLayout(value as unknown as LegacyLayoutValue, fallback);
+    return normalizePaneLayout(migrated, {
+      defaultFollowSourceInstanceId: getDefaultFollowSourceInstanceId(migrated.instances),
+    });
   }
 
   const columns = value.columns
@@ -217,32 +377,42 @@ function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
     )
     .map((entry) => ({ ...entry }));
 
+  const instances = sanitizePaneInstances((value as LayoutConfig & { instances?: unknown }).instances, fallback);
+  const validInstanceIds = new Set(instances.map((entry) => entry.instanceId));
+
   const docked = value.docked
     .filter((entry): entry is LayoutConfig["docked"][number] =>
       !!entry
       && typeof entry === "object"
-      && typeof entry.paneId === "string"
+      && typeof entry.instanceId === "string"
       && typeof entry.columnIndex === "number",
     )
+    .filter((entry) => validInstanceIds.has(entry.instanceId))
     .map((entry) => ({ ...entry }));
 
   const floating = value.floating
     .filter((entry): entry is LayoutConfig["floating"][number] =>
       !!entry
       && typeof entry === "object"
-      && typeof entry.paneId === "string"
+      && typeof entry.instanceId === "string"
       && typeof entry.x === "number"
       && typeof entry.y === "number"
       && typeof entry.width === "number"
       && typeof entry.height === "number",
     )
+    .filter((entry) => validInstanceIds.has(entry.instanceId))
     .map((entry) => ({ ...entry }));
 
-  return {
+  const layout = {
     columns: columns.length > 0 ? columns : cloneLayout(fallback).columns,
+    instances,
     docked,
     floating,
   };
+
+  return normalizePaneLayout(layout, {
+    defaultFollowSourceInstanceId: getDefaultFollowSourceInstanceId(layout.instances),
+  });
 }
 
 function sanitizeSavedLayouts(value: unknown, fallbackLayout: LayoutConfig): SavedLayout[] {

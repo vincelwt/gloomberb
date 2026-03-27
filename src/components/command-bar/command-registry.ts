@@ -4,8 +4,8 @@ import { themes, getThemeIds } from "../../theme/themes";
 export type CommandExecutor = (dispatch: React.Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
 
 export interface CommandContext {
-  selectedTicker: string | null;
-  activeLeftTab: string;
+  activeTicker: string | null;
+  activeCollectionId: string | null;
 }
 
 export interface Command {
