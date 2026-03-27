@@ -109,14 +109,6 @@ export const commands: Command[] = [
     execute: () => {},
   },
   {
-    id: "sync-broker-account",
-    prefix: "",
-    label: "Sync Broker Account",
-    description: "Sync positions for a connected broker profile",
-    category: "Data",
-    execute: () => {},
-  },
-  {
     id: "disconnect-broker-account",
     prefix: "",
     label: "Disconnect Broker Account",
