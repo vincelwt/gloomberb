@@ -46,6 +46,19 @@ const DEFAULT_SNAPSHOT: IbkrSnapshot = {
   executions: [],
 };
 
+/** Wrap a promise with a timeout so that IBKR calls don't hang indefinitely. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`IBKR ${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+const IBKR_DATA_TIMEOUT = 8_000;
+
 const HISTORY_PARAMS: Record<TimeRange, { duration: string; size: BarSizeSetting }> = {
   "1W": { duration: "7 D", size: BarSizeSetting.HOURS_ONE },
   "1M": { duration: "1 M", size: BarSizeSetting.HOURS_ONE },
@@ -65,7 +78,11 @@ function marketDataTypeFromConfig(config?: IbkrGatewayConfig): MarketDataType {
     case "delayed-frozen":
       return MarketDataType.DELAYED_FROZEN;
     case "live":
+      return MarketDataType.REALTIME;
+    case "auto":
     default:
+      // Start with realtime; withMarketDataFallback will downgrade to delayed
+      // if the account lacks live market data subscriptions.
       return MarketDataType.REALTIME;
   }
 }
@@ -123,8 +140,19 @@ export class IbkrGatewayService {
   private listeners = new Set<() => void>();
   private activeMarketDataType: MarketDataType = MarketDataType.REALTIME;
   private autoMarketData = true;
+  /** Dedup in-flight requests: reuse pending promises for the same key. */
+  private pendingRequests = new Map<string, Promise<any>>();
 
   constructor(private readonly instanceId?: string) {}
+
+  /** Dedup concurrent calls with the same key — returns cached promise if one is in flight. */
+  private dedup<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const existing = this.pendingRequests.get(key);
+    if (existing) return existing as Promise<T>;
+    const promise = fn().finally(() => this.pendingRequests.delete(key));
+    this.pendingRequests.set(key, promise);
+    return promise;
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -173,8 +201,10 @@ export class IbkrGatewayService {
 
   async searchInstruments(query: string, config: IbkrGatewayConfig): Promise<InstrumentSearchResult[]> {
     await this.connect(config);
-    const descriptions = await this.api!.getMatchingSymbols(query);
-    const directMatches = await this.getDirectContractMatches(query);
+    const [descriptions, directMatches] = await Promise.all([
+      withTimeout(this.api!.getMatchingSymbols(query), IBKR_DATA_TIMEOUT, "getMatchingSymbols").catch(() => [] as ContractDescription[]),
+      withTimeout(this.getDirectContractMatches(query), IBKR_DATA_TIMEOUT, "getDirectContractMatches").catch(() => [] as InstrumentSearchResult[]),
+    ]);
     const merged = new Map<string, InstrumentSearchResult>();
 
     for (const result of descriptions
@@ -233,14 +263,18 @@ export class IbkrGatewayService {
     exchange = "",
     instrument?: BrokerContractRef | null,
   ): Promise<Quote> {
-    await this.connect(config);
-    const contract = await this.resolveContract(ticker, exchange, instrument ?? null);
-    const details = await this.getPrimaryContractDetails(contract);
-    const marketData = await this.withMarketDataFallback(
-      config,
-      () => this.api!.getMarketDataSnapshot(contract, "", false),
-    );
-    return this.marketDataToQuote(contract, details, marketData);
+    return this.dedup(`quote:${ticker}:${exchange}`, async () => {
+      await this.connect(config);
+      const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+      const details = await withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails");
+      const marketData = await this.withMarketDataFallback(
+        config,
+        () => withTimeout(this.api!.getMarketDataSnapshot(contract, "", false), IBKR_DATA_TIMEOUT, "getMarketDataSnapshot"),
+      );
+      const quote = this.marketDataToQuote(contract, details, marketData);
+      quote.dataSource = this.activeMarketDataType === MarketDataType.REALTIME ? "live" : "delayed";
+      return quote;
+    });
   }
 
   async getTickerFinancials(
@@ -249,18 +283,20 @@ export class IbkrGatewayService {
     exchange = "",
     instrument?: BrokerContractRef | null,
   ): Promise<TickerFinancials> {
-    const [quote, priceHistory] = await Promise.all([
-      this.getQuote(ticker, config, exchange, instrument),
-      this.getPriceHistory(ticker, config, exchange, "1Y", instrument),
-    ]);
+    return this.dedup(`financials:${ticker}:${exchange}`, async () => {
+      const [quote, priceHistory] = await Promise.all([
+        this.getQuote(ticker, config, exchange, instrument),
+        this.getPriceHistory(ticker, config, exchange, "1Y", instrument),
+      ]);
 
-    return {
-      quote,
-      fundamentals: {},
-      annualStatements: [],
-      quarterlyStatements: [],
-      priceHistory,
-    };
+      return {
+        quote,
+        fundamentals: {},
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory,
+      };
+    });
   }
 
   async getPriceHistory(
@@ -270,12 +306,13 @@ export class IbkrGatewayService {
     range: TimeRange,
     instrument?: BrokerContractRef | null,
   ): Promise<PricePoint[]> {
+    return this.dedup(`history:${ticker}:${exchange}:${range}`, async () => {
     await this.connect(config);
-    const contract = await this.resolveContract(ticker, exchange, instrument ?? null);
+    const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
     const params = HISTORY_PARAMS[range];
     const bars = await this.withMarketDataFallback(
       config,
-      () => this.api!.getHistoricalData(
+      () => withTimeout(this.api!.getHistoricalData(
         contract,
         "",
         params.duration,
@@ -283,7 +320,7 @@ export class IbkrGatewayService {
         WhatToShow.TRADES,
         1,
         1,
-      ),
+      ), IBKR_DATA_TIMEOUT, "getHistoricalData"),
     );
 
     return bars.map((bar) => ({
@@ -294,6 +331,7 @@ export class IbkrGatewayService {
       close: bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0,
       volume: bar.volume,
     }));
+    });
   }
 
   async listOpenOrders(config: IbkrGatewayConfig): Promise<BrokerOrder[]> {
@@ -523,10 +561,13 @@ export class IbkrGatewayService {
       return await operation();
     } catch (error: any) {
       const message = error?.message || String(error || "");
+      const isPermission = isMarketDataPermissionError(undefined, message);
+      const isTimeout = message.includes("timed out");
+      const isNoData = message.includes("No valid market data");
       if (
         !this.autoMarketData
         || this.activeMarketDataType === MarketDataType.DELAYED
-        || !isMarketDataPermissionError(undefined, message)
+        || !(isPermission || isTimeout || isNoData)
       ) {
         throw error;
       }
@@ -635,11 +676,13 @@ export class IbkrGatewayService {
 
   private async resolveContract(ticker: string, exchange: string, instrument: BrokerContractRef | null): Promise<Contract> {
     if (instrument) {
-      if (instrument.conId) return this.refToContract(instrument);
+      if (instrument.conId) {
+        return this.refToContract(instrument);
+      }
       return this.getPrimaryContractDetails(this.refToContract(instrument)).then((detail) => detail.contract);
     }
 
-    const directMatches = await this.getDirectContractMatches(ticker);
+    const directMatches = await withTimeout(this.getDirectContractMatches(ticker), IBKR_DATA_TIMEOUT, "getDirectContractMatches");
     const direct = directMatches.find((result) => {
       const symbol = result.symbol.toUpperCase();
       const upperTicker = ticker.toUpperCase();
@@ -649,7 +692,7 @@ export class IbkrGatewayService {
       return this.refToContract(direct.brokerContract);
     }
 
-    const symbolResults = (await this.api!.getMatchingSymbols(ticker))
+    const symbolResults = (await withTimeout(this.api!.getMatchingSymbols(ticker), IBKR_DATA_TIMEOUT, "getMatchingSymbols"))
       .map((description) => this.contractDescriptionToSearchResult(description))
       .filter((value): value is InstrumentSearchResult => value != null);
     const matched = symbolResults.find((result) => {
@@ -672,7 +715,7 @@ export class IbkrGatewayService {
   }
 
   private async getPrimaryContractDetails(contract: Contract): Promise<ContractDetails> {
-    const details = await this.api!.getContractDetails(contract);
+    const details = await withTimeout(this.api!.getContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails");
     if (!details.length) {
       throw new Error(`Unable to resolve contract ${contract.symbol || contract.localSymbol || contract.conId}`);
     }
@@ -704,7 +747,7 @@ export class IbkrGatewayService {
 
     for (const candidate of candidates) {
       try {
-        const details = await this.api!.getContractDetails(candidate);
+        const details = await withTimeout(this.api!.getContractDetails(candidate), IBKR_DATA_TIMEOUT, "getDirectContractDetails");
         for (const detail of details) {
           const contract = detail.contract;
           const result: InstrumentSearchResult = {
@@ -734,8 +777,10 @@ export class IbkrGatewayService {
   private marketDataToQuote(contract: Contract, details: ContractDetails, marketData: ReadonlyMap<number, { value?: number; ingressTm: number }>): Quote {
     const last = marketData.get(IBApiTickType.LAST)?.value
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.value
-      ?? marketData.get(IBApiTickType.CLOSE)?.value
-      ?? 0;
+      ?? marketData.get(IBApiTickType.CLOSE)?.value;
+    if (last == null || last <= 0) {
+      throw new Error(`No valid market data for ${contract.symbol || contract.localSymbol || contract.conId}`);
+    }
     const close = marketData.get(IBApiTickType.CLOSE)?.value
       ?? marketData.get(IBApiTickType.DELAYED_CLOSE)?.value
       ?? last;
