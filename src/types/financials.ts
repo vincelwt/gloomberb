@@ -22,6 +22,14 @@ export interface Quote {
   postMarketPrice?: number;
   postMarketChange?: number;
   postMarketChangePercent?: number;
+  bid?: number;
+  ask?: number;
+  bidSize?: number;
+  askSize?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  mark?: number;
 }
 
 export interface Fundamentals {
