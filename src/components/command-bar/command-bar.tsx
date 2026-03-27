@@ -1114,10 +1114,13 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
       scrollAnchorRef.current = initialIdx;
     }
 
-    // Yahoo search when in ticker search mode (prefix "T")
+    // Search providers when in ticker search mode (prefix "T") or when
+    // the query looks like a ticker (no prefix match, ≥1 char, uppercase-ish)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (match?.command.id === "search-ticker" && match.arg.length >= 1) {
-      const searchQuery = match.arg;
+    const isTPrefix = match?.command.id === "search-ticker" && match.arg.length >= 1;
+    const isImplicitSearch = !match && query.length >= 1 && /^[A-Za-z0-9.]/.test(query);
+    if (isTPrefix || isImplicitSearch) {
+      const searchQuery = isTPrefix ? match!.arg : query;
       setSearching(true);
       searchTimerRef.current = setTimeout(async () => {
         try {
@@ -1139,11 +1142,22 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
                 action: () => openTickerDetail(r),
               };
             });
-          setResults(searchItems.length > 0 ? searchItems : [{
-            id: "no-results", label: "No results", detail: `for "${searchQuery}"`, category: "Search", action: () => {},
-          }]);
+          if (isImplicitSearch) {
+            // Append search results to existing fuzzy-filtered items
+            const existingIds = new Set(items.map((i) => i.id));
+            const newItems = searchItems.filter((i) => !existingIds.has(i.id));
+            if (newItems.length > 0) {
+              setResults((prev) => [...prev, ...newItems]);
+            }
+          } else {
+            setResults(searchItems.length > 0 ? searchItems : [{
+              id: "no-results", label: "No results", detail: `for "${searchQuery}"`, category: "Search", action: () => {},
+            }]);
+          }
         } catch {
-          setResults([{ id: "error", label: "Search failed", detail: "Check your connection", category: "Search", action: () => {} }]);
+          if (!isImplicitSearch) {
+            setResults([{ id: "error", label: "Search failed", detail: "Check your connection", category: "Search", action: () => {} }]);
+          }
         } finally {
           setSearching(false);
         }

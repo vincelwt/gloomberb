@@ -42,6 +42,9 @@ import {
   getBrokerInstance,
 } from "./utils/broker-instances";
 
+/** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
+const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
+
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
   markdownStore: MarkdownStore;
@@ -51,11 +54,12 @@ interface AppInnerProps {
 function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
-
-  const refreshTicker = useCallback(async (symbol: string, exchange = "") => {
+  const refreshTicker = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerFile | null) => {
+    if (refreshInFlight.has(symbol)) return;
+    refreshInFlight.add(symbol);
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
     try {
-      const ticker = state.tickers.get(symbol) ?? null;
+      const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
       const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
       const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
       const data = await dataProvider.getTickerFinancials(symbol, exchange, {
@@ -83,6 +87,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     } catch {
       // Silently fail - will show "—" for missing data
     } finally {
+      refreshInFlight.delete(symbol);
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
   }, [dataProvider, dispatch, state.exchangeRates, state.config.baseCurrency, state.config.portfolios, state.activeLeftTab, state.tickers]);
@@ -296,7 +301,8 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
   // Load tickers on mount
   useEffect(() => {
-    if (state.initialized) return;
+    if (state.initialized || (globalThis as any).__gloomInitStarted) return;
+    (globalThis as any).__gloomInitStarted = true;
     (async () => {
       try {
         const tickers = await markdownStore.loadAllTickers();
@@ -315,7 +321,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
         // Fetch quotes for all tickers in background
         for (const t of tickers) {
-          refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
+          refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange, t);
         }
 
         // Auto-import from configured brokers
