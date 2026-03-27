@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
-import { AppProvider, useAppState } from "./state/app-context";
+import {
+  AppProvider,
+  getFocusedCollectionId,
+  getFocusedTickerSymbol,
+  resolveCollectionForPane,
+  resolveTickerForPane,
+  useAppState,
+} from "./state/app-context";
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
@@ -14,7 +21,17 @@ import { SqliteCache } from "./data/sqlite-cache";
 import { YahooFinanceClient } from "./sources/yahoo-finance";
 import { ProviderRouter } from "./sources/provider-router";
 import { colors, applyTheme } from "./theme/colors";
-import type { AppConfig, BrokerInstanceConfig, LayoutConfig } from "./types/config";
+import {
+  createPaneInstance,
+  findPaneInstance,
+  isTickerPaneId,
+  normalizePaneLayout,
+  type AppConfig,
+  type BrokerInstanceConfig,
+  type LayoutConfig,
+  type PaneBinding,
+  type PaneInstanceConfig,
+} from "./types/config";
 import type { TickerFile, TickerFrontmatter, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { BrokerContractRef } from "./types/instrument";
@@ -42,6 +59,9 @@ import {
   getBrokerInstance,
 } from "./utils/broker-instances";
 
+/** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
+const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
+
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
   markdownStore: MarkdownStore;
@@ -52,12 +72,194 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
 
-  const refreshTicker = useCallback(async (symbol: string, exchange = "") => {
+  const resolvePrimaryPaneInstanceId = useCallback((paneId: string): string | null => {
+    const instances = state.config.layout.instances.filter((instance) => instance.paneId === paneId);
+    if (instances.length === 0) return null;
+    if (isTickerPaneId(paneId)) {
+      return instances.find((instance) =>
+        instance.instanceId === `${paneId}:main` && instance.binding?.kind !== "fixed",
+      )?.instanceId
+        ?? instances.find((instance) => instance.binding?.kind !== "fixed")?.instanceId
+        ?? null;
+    }
+    return instances[0]?.instanceId ?? null;
+  }, [state.config.layout.instances]);
+
+  const resolvePaneTarget = useCallback((paneId: string): string | null => {
+    const byInstance = state.config.layout.instances.find((instance) => instance.instanceId === paneId);
+    if (byInstance) return byInstance.instanceId;
+    return resolvePrimaryPaneInstanceId(paneId);
+  }, [resolvePrimaryPaneInstanceId, state.config.layout.instances]);
+
+  const getPreferredPortfolio = useCallback((ticker: TickerFile | null) => {
+    const focusedCollectionId = getFocusedCollectionId(state);
+    const focusedPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === focusedCollectionId);
+    if (focusedPortfolio) return focusedPortfolio;
+    if (ticker) {
+      for (const portfolioId of ticker.frontmatter.portfolios) {
+        const portfolio = state.config.portfolios.find((entry) => entry.id === portfolioId);
+        if (portfolio) return portfolio;
+      }
+    }
+    return state.config.portfolios[0] ?? null;
+  }, [state]);
+
+  const resolveCollectionSourcePaneId = useCallback((preferredPaneId?: string | null) => {
+    const tryResolve = (candidate: string | null | undefined): string | null => {
+      if (!candidate) return null;
+      const instance = findPaneInstance(state.config.layout, candidate);
+      if (!instance) return null;
+      if (instance.paneId === "portfolio-list") return instance.instanceId;
+      if (instance.binding?.kind === "follow") {
+        return tryResolve(instance.binding.sourceInstanceId);
+      }
+      return null;
+    };
+
+    return tryResolve(preferredPaneId)
+      ?? tryResolve(state.focusedPaneId)
+      ?? state.config.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId
+      ?? null;
+  }, [state.config.layout, state.focusedPaneId]);
+
+  const resolveTickerContextSourcePaneId = useCallback((preferredPaneId?: string | null) => {
+    const tryResolve = (candidate: string | null | undefined): string | null => {
+      if (!candidate) return null;
+      const instance = findPaneInstance(state.config.layout, candidate);
+      if (!instance) return null;
+      if (instance.paneId === "portfolio-list" || isTickerPaneId(instance.paneId)) return instance.instanceId;
+      if (instance.binding?.kind === "follow") {
+        return tryResolve(instance.binding.sourceInstanceId);
+      }
+      return null;
+    };
+
+    return tryResolve(preferredPaneId)
+      ?? tryResolve(state.focusedPaneId)
+      ?? state.config.layout.instances.find((instance) => instance.paneId === "ticker-detail" && instance.binding?.kind !== "fixed")?.instanceId
+      ?? state.config.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId
+      ?? null;
+  }, [state.config.layout, state.focusedPaneId]);
+
+  const selectTickerInPane = useCallback((symbol: string, preferredPaneId?: string | null) => {
+    const sourcePaneId = resolveCollectionSourcePaneId(preferredPaneId);
+    if (!sourcePaneId) return;
+    dispatch({ type: "UPDATE_PANE_STATE", paneId: sourcePaneId, patch: { cursorSymbol: symbol } });
+  }, [dispatch, resolveCollectionSourcePaneId]);
+
+  const resolveInspectorPane = useCallback((sourcePaneId: string): PaneInstanceConfig | null => {
+    return state.config.layout.instances.find((instance) =>
+      instance.paneId === "ticker-detail"
+      && instance.binding?.kind === "follow"
+      && instance.binding.sourceInstanceId === sourcePaneId
+      && isPaneInLayout(state.config.layout, instance.instanceId),
+    ) ?? null;
+  }, [state.config.layout]);
+
+  const ensureInspectorPane = useCallback((sourcePaneId: string) => {
+    const existing = resolveInspectorPane(sourcePaneId);
+    if (existing) return { layout: state.config.layout, instance: existing };
+
+    const paneDef = pluginRegistry.panes.get("ticker-detail");
+    if (!paneDef) return null;
+
+    const preferredInstanceId = sourcePaneId === "portfolio-list:main"
+      && !findPaneInstance(state.config.layout, "ticker-detail:main")
+      ? "ticker-detail:main"
+      : undefined;
+    const instance = createPaneInstance("ticker-detail", {
+      instanceId: preferredInstanceId,
+      binding: { kind: "follow", sourceInstanceId: sourcePaneId },
+    });
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    const sourceDocked = state.config.layout.docked.find((entry) => entry.instanceId === sourcePaneId);
+    const layout = sourceDocked
+      ? addPaneToLayout(state.config.layout, instance, { relativeTo: sourcePaneId, position: "right" })
+      : addPaneFloating(state.config.layout, instance, width, height, paneDef);
+    return { layout, instance };
+  }, [pluginRegistry.panes, pluginRegistry.getTermSizeFn, resolveInspectorPane, state.config.layout]);
+
+  const switchDetailTab = useCallback((tabId: string, preferredPaneId?: string | null) => {
+    const targetPaneId = (() => {
+      const target = preferredPaneId ? findPaneInstance(state.config.layout, preferredPaneId) : null;
+      if (target?.paneId === "ticker-detail") return target.instanceId;
+      const focused = state.focusedPaneId ? findPaneInstance(state.config.layout, state.focusedPaneId) : null;
+      if (focused?.paneId === "ticker-detail") return focused.instanceId;
+      const sourcePaneId = resolveCollectionSourcePaneId(preferredPaneId);
+      if (!sourcePaneId) return null;
+      const ensured = ensureInspectorPane(sourcePaneId);
+      if (!ensured) return null;
+      if (ensured.layout !== state.config.layout) {
+        const layouts = state.config.layouts.map((savedLayout, index) => (
+          index === state.config.activeLayoutIndex ? { ...savedLayout, layout: ensured.layout } : savedLayout
+        ));
+        dispatch({ type: "UPDATE_LAYOUT", layout: ensured.layout });
+        saveConfig({ ...state.config, layout: ensured.layout, layouts }).catch(() => {});
+      }
+      return ensured.instance.instanceId;
+    })();
+    if (!targetPaneId) return;
+    dispatch({ type: "UPDATE_PANE_STATE", paneId: targetPaneId, patch: { activeTabId: tabId } });
+    dispatch({ type: "FOCUS_PANE", paneId: targetPaneId });
+  }, [
+    dispatch,
+    ensureInspectorPane,
+    resolveCollectionSourcePaneId,
+    state.config,
+    state.config.activeLayoutIndex,
+    state.config.layout,
+    state.focusedPaneId,
+  ]);
+
+  const buildPaneBinding = useCallback((paneType: string, preferredPaneId?: string | null): PaneBinding | null => {
+    if (paneType === "ticker-detail") {
+      const sourceInstanceId = resolveCollectionSourcePaneId(preferredPaneId);
+      return sourceInstanceId ? { kind: "follow", sourceInstanceId } : null;
+    }
+    if (isTickerPaneId(paneType)) {
+      const sourceInstanceId = resolveTickerContextSourcePaneId(preferredPaneId);
+      return sourceInstanceId ? { kind: "follow", sourceInstanceId } : null;
+    }
+    return { kind: "none" };
+  }, [resolveCollectionSourcePaneId, resolveTickerContextSourcePaneId]);
+
+  const buildPaneInstance = useCallback((paneType: string, options?: {
+    title?: string;
+    binding?: PaneBinding;
+    params?: Record<string, string>;
+    instanceId?: string;
+  }): PaneInstanceConfig | null => {
+    if (paneType === "portfolio-list") {
+      const collectionId = options?.params?.collectionId
+        ?? getFocusedCollectionId(state)
+        ?? state.config.portfolios[0]?.id
+        ?? state.config.watchlists[0]?.id
+        ?? "";
+      return createPaneInstance(paneType, {
+        instanceId: options?.instanceId,
+        title: options?.title,
+        binding: options?.binding ?? { kind: "none" },
+        params: { collectionId },
+      });
+    }
+    const binding = options?.binding ?? buildPaneBinding(paneType);
+    if (isTickerPaneId(paneType) && !binding) return null;
+    return createPaneInstance(paneType, {
+      instanceId: options?.instanceId,
+      title: options?.title,
+      binding: binding ?? { kind: "none" },
+      params: options?.params,
+    });
+  }, [buildPaneBinding, state]);
+
+  const refreshTicker = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerFile | null) => {
+    if (refreshInFlight.has(symbol)) return;
+    refreshInFlight.add(symbol);
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
     try {
-      const ticker = state.tickers.get(symbol) ?? null;
+      const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
       const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
-      const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === state.activeLeftTab);
+      const activePortfolio = getPreferredPortfolio(ticker);
       const data = await dataProvider.getTickerFinancials(symbol, exchange, {
         brokerId: instrument?.brokerId ?? activePortfolio?.brokerId,
         brokerInstanceId: instrument?.brokerInstanceId ?? activePortfolio?.brokerInstanceId,
@@ -83,9 +285,10 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     } catch {
       // Silently fail - will show "—" for missing data
     } finally {
+      refreshInFlight.delete(symbol);
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
-  }, [dataProvider, dispatch, state.exchangeRates, state.config.baseCurrency, state.config.portfolios, state.activeLeftTab, state.tickers]);
+  }, [dataProvider, dispatch, getPreferredPortfolio, state.exchangeRates, state.config.baseCurrency, state.tickers]);
 
   // Ensure a portfolio exists in config, creating it if needed
   const ensurePortfolio = useCallback(async (
@@ -296,7 +499,8 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
   // Load tickers on mount
   useEffect(() => {
-    if (state.initialized) return;
+    if (state.initialized || (globalThis as any).__gloomInitStarted) return;
+    (globalThis as any).__gloomInitStarted = true;
     (async () => {
       try {
         const tickers = await markdownStore.loadAllTickers();
@@ -306,16 +510,26 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
         }
         dispatch({ type: "SET_TICKERS", tickers: tickerMap });
 
-        // Select first ticker if any
+        // Seed portfolio-style panes with an initial selection.
         if (tickers.length > 0) {
-          dispatch({ type: "PREVIEW_TICKER", symbol: tickers[0]!.frontmatter.ticker });
+          for (const instance of state.config.layout.instances) {
+            if (instance.paneId !== "portfolio-list") continue;
+            const collectionId = instance.params?.collectionId ?? state.config.portfolios[0]?.id ?? state.config.watchlists[0]?.id;
+            const initialTicker = tickers.find((ticker) =>
+              (collectionId && ticker.frontmatter.portfolios.includes(collectionId))
+              || (collectionId && ticker.frontmatter.watchlists.includes(collectionId))
+            ) ?? tickers[0];
+            if (initialTicker) {
+              dispatch({ type: "UPDATE_PANE_STATE", paneId: instance.instanceId, patch: { cursorSymbol: initialTicker.frontmatter.ticker } });
+            }
+          }
         }
 
         dispatch({ type: "SET_INITIALIZED" });
 
         // Fetch quotes for all tickers in background
         for (const t of tickers) {
-          refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
+          refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange, t);
         }
 
         // Auto-import from configured brokers
@@ -326,12 +540,14 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     })();
   }, [state.initialized]);
 
+  const focusedTickerSymbol = getFocusedTickerSymbol(state);
+
   useEffect(() => {
-    if (!state.selectedTicker) return;
-    const ticker = state.tickers.get(state.selectedTicker);
+    if (!focusedTickerSymbol) return;
+    const ticker = state.tickers.get(focusedTickerSymbol);
     if (!ticker) return;
     refreshTicker(ticker.frontmatter.ticker, ticker.frontmatter.exchange);
-  }, [state.selectedTicker, state.tickers, refreshTicker]);
+  }, [focusedTickerSymbol, state.tickers, refreshTicker]);
 
   // Wire up plugin registry data accessors
   pluginRegistry.getTickerFn = (symbol) => state.tickers.get(symbol) ?? null;
@@ -434,7 +650,6 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       }
     }
 
-    const fallbackLeftTab = nextPortfolios[0]?.id || state.config.watchlists[0]?.id || "";
     const nextConfig = {
       ...state.config,
       brokerInstances: state.config.brokerInstances.filter((entry) => entry.id !== instanceId),
@@ -443,34 +658,36 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     dispatch({ type: "SET_TICKERS", tickers: nextTickers });
-    if (removedPortfolioIds.has(state.activeLeftTab)) {
-      dispatch({ type: "SET_LEFT_TAB", tab: fallbackLeftTab });
-    }
     await saveConfig(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
 
   // Wire up navigation functions
-  pluginRegistry.selectTickerFn = (symbol) => dispatch({ type: "SELECT_TICKER", symbol });
+  pluginRegistry.selectTickerFn = (symbol, paneId) => selectTickerInPane(symbol, paneId);
   pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
-  pluginRegistry.switchTabFn = (tabId) => dispatch({ type: "SET_RIGHT_TAB", tab: tabId });
-  pluginRegistry.openCommandBarFn = () => dispatch({ type: "SET_COMMAND_BAR", open: true });
+  pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
+  pluginRegistry.openCommandBarFn = (query) => dispatch({ type: "SET_COMMAND_BAR", open: true, query });
   const persistLayout = (layout: LayoutConfig) => {
+    const normalizedLayout = normalizePaneLayout(layout);
     const layouts = state.config.layouts.map((savedLayout, index) => (
-      index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+      index === state.config.activeLayoutIndex ? { ...savedLayout, layout: normalizedLayout } : savedLayout
     ));
-    dispatch({ type: "UPDATE_LAYOUT", layout });
-    saveConfig({ ...state.config, layout, layouts }).catch(() => {});
+    dispatch({ type: "UPDATE_LAYOUT", layout: normalizedLayout });
+    saveConfig({ ...state.config, layout: normalizedLayout, layouts }).catch(() => {});
   };
   const resolvePanelForPane = (paneId: string): "left" | "right" => {
-    const floating = state.config.layout.floating.find((entry) => entry.paneId === paneId);
+    const instanceId = resolvePaneTarget(paneId);
+    if (!instanceId) return "right";
+    const instance = findPaneInstance(state.config.layout, instanceId);
+    const paneDef = instance ? pluginRegistry.panes.get(instance.paneId) : pluginRegistry.panes.get(paneId);
+    const floating = state.config.layout.floating.find((entry) => entry.instanceId === instanceId);
     if (floating) {
-      return pluginRegistry.panes.get(paneId)?.defaultPosition ?? "right";
+      return paneDef?.defaultPosition ?? "right";
     }
 
-    const docked = state.config.layout.docked.find((entry) => entry.paneId === paneId);
+    const docked = state.config.layout.docked.find((entry) => entry.instanceId === instanceId);
     if (!docked) {
-      return pluginRegistry.panes.get(paneId)?.defaultPosition ?? "right";
+      return paneDef?.defaultPosition ?? "right";
     }
 
     return docked.columnIndex <= 0 ? "left" : "right";
@@ -479,8 +696,35 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     const paneDef = pluginRegistry.panes.get(paneId);
     if (!paneDef) return;
 
-    if (isPaneInLayout(state.config.layout, paneId)) {
-      pluginRegistry.focusPaneFn(paneId);
+    if (paneId === "ticker-detail") {
+      const sourcePaneId = resolveCollectionSourcePaneId();
+      if (!sourcePaneId) {
+        pluginRegistry.showToastFn("Open a collection pane first to inspect a ticker.");
+        return;
+      }
+      const ensured = ensureInspectorPane(sourcePaneId);
+      if (!ensured) return;
+      if (ensured.layout !== state.config.layout) {
+        persistLayout(ensured.layout);
+      }
+      dispatch({ type: "FOCUS_PANE", paneId: ensured.instance.instanceId });
+      dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(ensured.instance.instanceId) });
+      return;
+    }
+
+    const existingInstanceId = resolvePaneTarget(paneId);
+    if (existingInstanceId && isPaneInLayout(state.config.layout, existingInstanceId)) {
+      pluginRegistry.focusPaneFn(existingInstanceId);
+      return;
+    }
+
+    const instance = existingInstanceId
+      ? findPaneInstance(state.config.layout, existingInstanceId)
+      : buildPaneInstance(paneId);
+    if (!instance) {
+      if (isTickerPaneId(paneId)) {
+        pluginRegistry.showToastFn("Open a ticker or collection context first.");
+      }
       return;
     }
 
@@ -488,55 +732,90 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     let nextLayout = state.config.layout;
 
     if (paneDef.defaultMode === "floating") {
-      nextLayout = addPaneFloating(nextLayout, paneId, width, height, paneDef);
+      nextLayout = addPaneFloating(nextLayout, instance, width, height, paneDef);
     } else if (nextLayout.docked.length === 0) {
       const columns = nextLayout.columns.length >= 2 ? nextLayout.columns : [{ width: "40%" }, { width: "60%" }];
       const columnIndex = paneDef.defaultPosition === "left" ? 0 : Math.max(0, columns.length - 1);
       nextLayout = {
         ...nextLayout,
         columns,
-        docked: [{ paneId, columnIndex, order: 0 }],
+        instances: [...nextLayout.instances, instance],
+        docked: [{ instanceId: instance.instanceId, columnIndex, order: 0 }],
       };
     } else if (paneDef.defaultPosition === "left") {
       const firstColumnPane = nextLayout.docked.find((entry) => entry.columnIndex === 0);
       nextLayout = firstColumnPane
-        ? addPaneToLayout(nextLayout, paneId, { relativeTo: firstColumnPane.paneId, position: "below" })
-        : addPaneToLayout(nextLayout, paneId, { relativeTo: nextLayout.docked[0]!.paneId, position: "left" });
+        ? addPaneToLayout(nextLayout, instance, { relativeTo: firstColumnPane.instanceId, position: "below" })
+        : addPaneToLayout(nextLayout, instance, { relativeTo: nextLayout.docked[0]!.instanceId, position: "left" });
     } else {
       const lastColumnIndex = Math.max(...nextLayout.docked.map((entry) => entry.columnIndex));
       const lastColumnPane = [...nextLayout.docked].reverse().find((entry) => entry.columnIndex === lastColumnIndex);
       nextLayout = lastColumnPane
-        ? addPaneToLayout(nextLayout, paneId, { relativeTo: lastColumnPane.paneId, position: "below" })
-        : addPaneToLayout(nextLayout, paneId, { relativeTo: nextLayout.docked[nextLayout.docked.length - 1]!.paneId, position: "right" });
+        ? addPaneToLayout(nextLayout, instance, { relativeTo: lastColumnPane.instanceId, position: "below" })
+        : addPaneToLayout(nextLayout, instance, { relativeTo: nextLayout.docked[nextLayout.docked.length - 1]!.instanceId, position: "right" });
     }
 
     persistLayout(nextLayout);
-    dispatch({ type: "FOCUS_PANE", paneId });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(paneId) });
+    dispatch({ type: "FOCUS_PANE", paneId: instance.instanceId });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instance.instanceId) });
   };
 
   pluginRegistry.getLayoutFn = () => state.config.layout;
   pluginRegistry.updateLayoutFn = (layout) => persistLayout(layout);
   pluginRegistry.showPaneFn = (paneId) => showPane(paneId);
   pluginRegistry.hidePaneFn = (paneId) => {
-    if (!isPaneInLayout(state.config.layout, paneId)) return;
-    persistLayout(removePane(state.config.layout, paneId));
+    const instanceId = resolvePaneTarget(paneId);
+    if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) return;
+    persistLayout(removePane(state.config.layout, instanceId));
   };
   pluginRegistry.focusPaneFn = (paneId) => {
-    if (!isPaneInLayout(state.config.layout, paneId)) {
+    const instanceId = resolvePaneTarget(paneId);
+    if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) {
       showPane(paneId);
       return;
     }
 
-    const layout = state.config.layout.floating.some((entry) => entry.paneId === paneId)
-      ? bringToFront(state.config.layout, paneId)
+    const layout = state.config.layout.floating.some((entry) => entry.instanceId === instanceId)
+      ? bringToFront(state.config.layout, instanceId)
       : state.config.layout;
 
     if (layout !== state.config.layout) {
       persistLayout(layout);
     }
-    dispatch({ type: "FOCUS_PANE", paneId });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(paneId) });
+    dispatch({ type: "FOCUS_PANE", paneId: instanceId });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instanceId) });
+  };
+  pluginRegistry.pinTickerFn = (symbol, options) => {
+    const paneType = options?.paneType ?? "ticker-detail";
+    const paneDef = pluginRegistry.panes.get(paneType);
+    if (!paneDef) return;
+    const existingInstance = state.config.layout.instances.find((instance) =>
+      instance.paneId === paneType
+      && instance.binding?.kind === "fixed"
+      && instance.binding.symbol === symbol,
+    );
+    const instance = existingInstance ?? buildPaneInstance(paneType, {
+      title: symbol,
+      binding: { kind: "fixed", symbol },
+    });
+    if (!instance) return;
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    const shouldFloat = options?.floating ?? true;
+    const nextLayout = shouldFloat
+      ? addPaneFloating(state.config.layout, instance, width, height, paneDef)
+      : addPaneToLayout(
+        state.config.layout,
+        instance,
+        {
+          relativeTo: state.focusedPaneId && isPaneInLayout(state.config.layout, state.focusedPaneId)
+            ? state.focusedPaneId
+            : (state.config.layout.docked[state.config.layout.docked.length - 1]?.instanceId ?? instance.instanceId),
+          position: "right",
+        },
+      );
+    persistLayout(nextLayout);
+    dispatch({ type: "FOCUS_PANE", paneId: instance.instanceId });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instance.instanceId) });
   };
 
   setLayoutManagerDispatch(dispatch, () => ({
@@ -563,20 +842,22 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     }
   }, [state.config.layouts, state.config]);
 
-  // Emit ticker:selected events
-  const prevSelectedRef = useRef(state.selectedTicker);
+  // Emit ticker:selected events based on focused pane context.
+  const prevSelectedRef = useRef(focusedTickerSymbol);
   useEffect(() => {
-    if (state.selectedTicker !== prevSelectedRef.current) {
+    if (focusedTickerSymbol !== prevSelectedRef.current) {
       pluginRegistry.events.emit("ticker:selected", {
-        symbol: state.selectedTicker,
+        symbol: focusedTickerSymbol,
         previous: prevSelectedRef.current,
       });
-      prevSelectedRef.current = state.selectedTicker;
+      prevSelectedRef.current = focusedTickerSymbol;
     }
-  }, [state.selectedTicker]);
+  }, [focusedTickerSymbol]);
 
   // Check if a dialog is currently open (wizard, confirm, etc.)
   const dialogOpen = useDialogState((s) => s.isOpen);
+  const focusedPane = state.focusedPaneId ? findPaneInstance(state.config.layout, state.focusedPaneId) : null;
+  const focusedDetailTab = state.focusedPaneId ? state.paneState[state.focusedPaneId]?.activeTabId : undefined;
 
   // Global keyboard shortcuts
   useKeyboard((event) => {
@@ -590,7 +871,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     }
     // Backtick opens command bar (close is handled in command-bar.tsx)
     if (event.name === "`" && !state.commandBarOpen) {
-      dispatch({ type: "SET_COMMAND_BAR", open: true });
+      dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       return;
     }
     // Ctrl+1-9: switch layouts (works even when input is captured)
@@ -615,25 +896,25 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       const byCol = new Map<number, string[]>();
       for (const d of layout.docked) {
         const list = byCol.get(d.columnIndex) ?? [];
-        list.push(d.paneId);
+        list.push(d.instanceId);
         byCol.set(d.columnIndex, list);
       }
       for (const colIdx of [...byCol.keys()].sort((a, b) => a - b)) {
         paneOrder.push(...byCol.get(colIdx)!);
       }
-      for (const f of layout.floating) paneOrder.push(f.paneId);
+      for (const f of layout.floating) paneOrder.push(f.instanceId);
 
       if (event.shift) {
         dispatch({ type: "FOCUS_PREV", paneOrder });
       } else {
         dispatch({ type: "FOCUS_NEXT", paneOrder });
       }
-    } else if (event.name === "q" && !(state.activePanel === "right" && state.activeRightTab === "financials")) {
+    } else if (event.name === "q" && !(focusedPane?.paneId === "ticker-detail" && focusedDetailTab === "financials")) {
       renderer.destroy();
     } else if (event.name === "r") {
-      // Refresh selected ticker
-      if (state.selectedTicker) {
-        const ticker = state.tickers.get(state.selectedTicker);
+      // Refresh focused ticker context.
+      if (focusedTickerSymbol) {
+        const ticker = state.tickers.get(focusedTickerSymbol);
         if (ticker) refreshTicker(ticker.frontmatter.ticker, ticker.frontmatter.exchange);
       }
     } else if (event.name === "R" || (event.name === "r" && event.shift)) {
@@ -641,12 +922,12 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       for (const t of state.tickers.values()) {
         refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
       }
-    } else if (event.name === "a" && state.selectedTicker) {
+    } else if (event.name === "a" && focusedTickerSymbol) {
       // Open ticker actions
       const actions = [...pluginRegistry.tickerActions.values()];
-      const ticker = state.tickers.get(state.selectedTicker);
+      const ticker = state.tickers.get(focusedTickerSymbol);
       if (actions.length > 0 && ticker) {
-        dispatch({ type: "SET_COMMAND_BAR", open: true });
+        dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       }
     } else if (event.name === "u" && state.updateAvailable && !state.updateProgress) {
       performUpdate(state.updateAvailable, (progress) => {
@@ -654,7 +935,10 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       });
     } else {
       // Plugin keyboard shortcuts (built-ins take priority)
+      const disabledPlugins = new Set(state.config.disabledPlugins || []);
       for (const shortcut of pluginRegistry.shortcuts.values()) {
+        const ownerId = pluginRegistry.getShortcutPluginId(shortcut.id);
+        if (ownerId && disabledPlugins.has(ownerId)) continue;
         if (shortcut.key === event.name
             && (shortcut.ctrl ?? false) === (event.ctrl ?? false)
             && (shortcut.shift ?? false) === (event.shift ?? false)) {
@@ -671,7 +955,12 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
       {state.commandBarOpen && (
-        <CommandBar dataProvider={dataProvider} markdownStore={markdownStore} pluginRegistry={pluginRegistry} />
+        <CommandBar
+          dataProvider={dataProvider}
+          markdownStore={markdownStore}
+          pluginRegistry={pluginRegistry}
+          quitApp={() => renderer.destroy()}
+        />
       )}
       <Toaster position="bottom-right" />
     </box>

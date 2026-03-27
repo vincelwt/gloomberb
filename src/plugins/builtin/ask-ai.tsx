@@ -5,7 +5,7 @@ import type { InputRenderable } from "@opentui/core";
 import { spawn, type Subprocess } from "bun";
 import { execSync } from "child_process";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
-import { useSelectedTicker } from "../../state/app-context";
+import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { formatCurrency, formatCompact, formatPercent } from "../../utils/format";
 import type { TickerFile } from "../../types/ticker";
@@ -131,7 +131,7 @@ const chatHistories = new Map<string, ChatMessage[]>();
 // --- Component ---
 
 function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
-  const { ticker, financials } = useSelectedTicker();
+  const { ticker, financials } = usePaneTicker();
   const [providers] = useState(() => detectProviders());
   const [providerIdx, setProviderIdx] = useState(() => {
     const idx = providers.findIndex((p) => p.available);

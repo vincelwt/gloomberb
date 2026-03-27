@@ -1,11 +1,12 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
-import { useAppState } from "../../state/app-context";
-import { getActiveTabTickers, getLeftTabs } from "../../state/selectors";
+import { getSharedRegistry } from "../../plugins/registry";
+import { useAppState, usePaneCollection, usePaneInstanceId, usePaneStateValue } from "../../state/app-context";
+import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo } from "../../utils/format";
 import type { ColumnConfig } from "../../types/config";
@@ -201,10 +202,14 @@ function getColumnValue(
     case "latency": {
       if (!q?.lastUpdated) return { text: "—" };
       const ago = (ctx.now - q.lastUpdated) / 1000;
-      if (ago < 60) return { text: `${Math.floor(ago)}s` };
-      if (ago < 3600) return { text: `${Math.floor(ago / 60)}m` };
-      if (ago < 86400) return { text: `${Math.floor(ago / 3600)}h` };
-      return { text: `${Math.floor(ago / 86400)}d` };
+      // ◷ = delayed broker data, ◌ = Yahoo fallback, no prefix = live
+      const prefix = q.dataSource === "delayed" ? "◷" : q.dataSource === "yahoo" ? "◌" : "";
+      let age: string;
+      if (ago < 60) age = `${Math.floor(ago)}s`;
+      else if (ago < 3600) age = `${Math.floor(ago / 60)}m`;
+      else if (ago < 86400) age = `${Math.floor(ago / 3600)}h`;
+      else age = `${Math.floor(ago / 86400)}d`;
+      return { text: prefix ? `${prefix}${age}` : age };
     }
     default:
       return { text: "—" };
@@ -314,10 +319,12 @@ function PortfolioSummaryBar({
   tickers,
   state,
   isPortfolio,
+  collectionId,
 }: {
   tickers: TickerFile[];
   state: ReturnType<typeof useAppState>["state"];
   isPortfolio: boolean;
+  collectionId: string | null;
 }) {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
@@ -365,8 +372,8 @@ function PortfolioSummaryBar({
         continue;
       }
 
-      const tabPositions = state.activeLeftTab
-        ? ticker.frontmatter.positions.filter((p) => p.portfolio === state.activeLeftTab)
+      const tabPositions = collectionId
+        ? ticker.frontmatter.positions.filter((p) => p.portfolio === collectionId)
         : ticker.frontmatter.positions;
       const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
       const totalCost = tabPositions.reduce(
@@ -403,7 +410,7 @@ function PortfolioSummaryBar({
       unrealizedPnl, unrealizedPnlPct,
       avgWatchlistChange, watchlistCount,
     };
-  }, [tickers, state.financials, state.activeLeftTab, baseCurrency, exchangeRates, isPortfolio]);
+  }, [tickers, state.financials, collectionId, baseCurrency, exchangeRates, isPortfolio]);
 
   const refreshText = lastRefresh
     ? lastRefresh.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
@@ -451,11 +458,15 @@ function PortfolioSummaryBar({
   );
 }
 
-function PortfolioListPane({ focused, width, height }: PaneProps) {
-  const { state, dispatch } = useAppState();
-  const tabs = getLeftTabs(state);
-  const tickers = getActiveTabTickers(state);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+function PortfolioListPane({ focused }: PaneProps) {
+  const registry = getSharedRegistry();
+  const paneId = usePaneInstanceId();
+  const { state } = useAppState();
+  const paneCollection = usePaneCollection();
+  const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
+  const [cursorSymbol, setCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
+  const tabs = getAllCollections(state);
+  const tickers = getCollectionTickers(state, currentCollectionId);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -465,8 +476,8 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
 
-  const currentTabIdx = tabs.findIndex((t) => t.id === state.activeLeftTab);
-  const isPortfolioTab = state.config.portfolios.some((p) => p.id === state.activeLeftTab);
+  const currentTabIdx = tabs.findIndex((t) => t.id === currentCollectionId);
+  const isPortfolioTab = getCollectionType(state, currentCollectionId) === "portfolio";
 
   // Build columns: base config columns + position columns for portfolios
   const cols = useMemo(() => {
@@ -479,7 +490,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [state.config.columns, isPortfolioTab]);
 
   const columnCtx: ColumnContext = {
-    activeTab: state.activeLeftTab,
+    activeTab: isPortfolioTab ? currentCollectionId : undefined,
     baseCurrency: state.config.baseCurrency,
     exchangeRates: state.exchangeRates,
     now,
@@ -512,6 +523,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     });
   }, [tickers, sortCol, sortDir, state.financials, cols, columnCtx]);
 
+  const selectedIdx = sortedTickers.findIndex((ticker) => ticker.frontmatter.ticker === cursorSymbol);
+  const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
+
   const handleHeaderClick = (colId: string) => {
     if (sortCol === colId) {
       // Toggle direction, or clear if already desc
@@ -527,28 +541,46 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   };
 
-  useKeyboard((event) => {
+  const handleKeyboard = useCallback((event: { name?: string; shift?: boolean }) => {
     if (!focused) return;
     const key = event.name;
+    const isEnter = key === "enter" || key === "return";
+
+    if (isEnter && event.shift) {
+      const ticker = sortedTickers[safeSelectedIdx];
+      if (ticker) {
+        registry?.pinTickerFn(ticker.frontmatter.ticker, { floating: true, paneType: "ticker-detail" });
+      }
+      return;
+    }
 
     if (key === "j" || key === "down") {
-      const next = Math.min(selectedIdx + 1, sortedTickers.length - 1);
-      setSelectedIdx(next);
-      if (sortedTickers[next]) dispatch({ type: "PREVIEW_TICKER", symbol: sortedTickers[next]!.frontmatter.ticker });
+      const next = Math.min(safeSelectedIdx + 1, sortedTickers.length - 1);
+      if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.frontmatter.ticker);
     } else if (key === "k" || key === "up") {
-      const next = Math.max(selectedIdx - 1, 0);
-      setSelectedIdx(next);
-      if (sortedTickers[next]) dispatch({ type: "PREVIEW_TICKER", symbol: sortedTickers[next]!.frontmatter.ticker });
+      const next = Math.max(safeSelectedIdx - 1, 0);
+      if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.frontmatter.ticker);
     } else if (key === "h" || key === "left") {
       const newIdx = Math.max(currentTabIdx - 1, 0);
-      if (tabs[newIdx]) dispatch({ type: "SET_LEFT_TAB", tab: tabs[newIdx]!.id });
+      if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
     } else if (key === "l" || key === "right") {
       const newIdx = Math.min(currentTabIdx + 1, tabs.length - 1);
-      if (tabs[newIdx]) dispatch({ type: "SET_LEFT_TAB", tab: tabs[newIdx]!.id });
-    } else if (key === "enter") {
-      if (sortedTickers[selectedIdx]) dispatch({ type: "SELECT_TICKER", symbol: sortedTickers[selectedIdx]!.frontmatter.ticker });
+      if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
+    } else if (isEnter) {
+      const follower = state.config.layout.instances.find((instance) =>
+        instance.paneId === "ticker-detail"
+        && instance.binding?.kind === "follow"
+        && instance.binding.sourceInstanceId === paneId,
+      );
+      if (follower) {
+        registry?.focusPaneFn(follower.instanceId);
+      } else {
+        registry?.showPaneFn("ticker-detail");
+      }
     }
-  });
+  }, [focused, registry, safeSelectedIdx, sortedTickers, state.config.layout.instances, paneId, tabs, currentTabIdx, setCurrentCollectionId, setCursorSymbol]);
+
+  useKeyboard(handleKeyboard);
 
   // Hide header scrollbar and sync horizontal scroll with body
   useEffect(() => {
@@ -570,12 +602,12 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     const sb = scrollRef.current;
     if (!sb) return;
     const viewportH = sb.viewport.height;
-    if (selectedIdx < sb.scrollTop) {
-      sb.scrollTo(selectedIdx);
-    } else if (selectedIdx >= sb.scrollTop + viewportH) {
-      sb.scrollTo(selectedIdx - viewportH + 1);
+    if (safeSelectedIdx < sb.scrollTop) {
+      sb.scrollTo(safeSelectedIdx);
+    } else if (safeSelectedIdx >= sb.scrollTop + viewportH) {
+      sb.scrollTo(safeSelectedIdx - viewportH + 1);
     }
-  }, [selectedIdx]);
+  }, [safeSelectedIdx]);
 
   // Hide vertical scrollbar when content fits in viewport
   useEffect(() => {
@@ -609,20 +641,26 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [state.financials]);
 
-  // Auto-select first ticker when list changes
-  if (sortedTickers.length > 0 && selectedIdx >= sortedTickers.length) {
-    setSelectedIdx(0);
-  }
+  useEffect(() => {
+    if (sortedTickers.length === 0) {
+      if (cursorSymbol !== null) setCursorSymbol(null);
+      return;
+    }
+    const exists = cursorSymbol && sortedTickers.some((ticker) => ticker.frontmatter.ticker === cursorSymbol);
+    if (!exists) {
+      setCursorSymbol(sortedTickers[0]!.frontmatter.ticker);
+    }
+  }, [sortedTickers, cursorSymbol, setCursorSymbol]);
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" height={2} justifyContent="space-between">
         <TabBar
           tabs={tabs.map((t) => ({ label: t.name, value: t.id }))}
-          activeValue={state.activeLeftTab}
-          onSelect={(val) => dispatch({ type: "SET_LEFT_TAB", tab: val })}
+          activeValue={currentCollectionId}
+          onSelect={setCurrentCollectionId}
         />
-        <PortfolioSummaryBar tickers={sortedTickers} state={state} isPortfolio={isPortfolioTab} />
+        <PortfolioSummaryBar tickers={sortedTickers} state={state} isPortfolio={isPortfolioTab} collectionId={currentCollectionId} />
       </box>
 
       {/* Fixed column headers — synced horizontally with rows */}
@@ -669,7 +707,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
           </box>
         ) : (
           sortedTickers.map((ticker, idx) => {
-            const isSelected = idx === selectedIdx;
+            const isSelected = ticker.frontmatter.ticker === cursorSymbol;
             const isHovered = idx === hoveredIdx && !isSelected;
             const fin = state.financials.get(ticker.frontmatter.ticker);
             const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
@@ -684,8 +722,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
                 backgroundColor={rowBg}
                 onMouseMove={() => setHoveredIdx(idx)}
                 onMouseDown={() => {
-                  setSelectedIdx(idx);
-                  dispatch({ type: "SELECT_TICKER", symbol: ticker.frontmatter.ticker });
+                  setCursorSymbol(ticker.frontmatter.ticker);
                 }}
               >
                 {cols.map((col) => {

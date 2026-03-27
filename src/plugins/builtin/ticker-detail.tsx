@@ -3,7 +3,8 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, PaneProps, DetailTabDef } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
-import { useAppState, useSelectedTicker } from "../../state/app-context";
+import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
+import { getCollectionName, getCollectionTickers } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
 import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
@@ -28,9 +29,9 @@ function MetricRow({ label, value, color }: { label: string; value: string; colo
 }
 
 function OverviewTab({ width }: { width?: number }) {
-  const { ticker, financials } = useSelectedTicker();
+  const { ticker, financials } = usePaneTicker();
   const { width: termWidth } = useTerminalDimensions();
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker from the list.</text>;
+  if (!ticker) return <text fg={colors.textDim}>No ticker selected.</text>;
 
   const q = financials?.quote;
   const f = financials?.fundamentals;
@@ -302,7 +303,7 @@ function computeGrowth(current: number | undefined, previous: number | undefined
 }
 
 function FinancialsTab({ focused }: { focused: boolean }) {
-  const { financials } = useSelectedTicker();
+  const { financials } = usePaneTicker();
   const [period, setPeriod] = useState<"annual" | "quarterly">("annual");
   const [subTabIdx, setSubTabIdx] = useState(0);
 
@@ -444,13 +445,20 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
 
 function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
+  const paneInstance = usePaneInstance();
+  const { ticker } = usePaneTicker();
+  const { collectionId } = usePaneCollection();
+  const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
+  const collectionTickers = getCollectionTickers(state, collectionId);
+  const collectionName = getCollectionName(state, collectionId);
 
   // Build dynamic tab list: core tabs + enabled plugin tabs
   const disabledPlugins = state.config.disabledPlugins || [];
-  const pluginTabs: DetailTabDef[] = getSharedRegistry()
-    ? [...getSharedRegistry().detailTabs.values()].filter((t) => !disabledPlugins.includes(t.id))
+  const registry = getSharedRegistry();
+  const pluginTabs: DetailTabDef[] = registry
+    ? [...registry.detailTabs.values()].filter((t) => !disabledPlugins.includes(t.id))
     : [];
 
   const allTabs = [
@@ -458,15 +466,15 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     ...pluginTabs.map((t) => ({ id: t.id, name: t.name, order: t.order })),
   ].sort((a, b) => a.order - b.order);
 
-  const tabIdx = allTabs.findIndex((t) => t.id === state.activeRightTab);
-  const isPluginTab = pluginTabs.some((t) => t.id === state.activeRightTab);
-  const activePluginTab = isPluginTab ? pluginTabs.find((t) => t.id === state.activeRightTab) : null;
+  const tabIdx = allTabs.findIndex((t) => t.id === activeTabId);
+  const isPluginTab = pluginTabs.some((t) => t.id === activeTabId);
+  const activePluginTab = isPluginTab ? pluginTabs.find((t) => t.id === activeTabId) : null;
 
   // Refs to avoid stale closures in useKeyboard
   const allTabsRef = useRef(allTabs);
   allTabsRef.current = allTabs;
-  const stateRef = useRef({ focused, chartInteractive, pluginCaptured, activeRightTab: state.activeRightTab, tabIdx, allTabCount: allTabs.length });
-  stateRef.current = { focused, chartInteractive, pluginCaptured, activeRightTab: state.activeRightTab, tabIdx, allTabCount: allTabs.length };
+  const stateRef = useRef({ focused, chartInteractive, pluginCaptured, activeTabId, tabIdx, allTabCount: allTabs.length });
+  stateRef.current = { focused, chartInteractive, pluginCaptured, activeTabId, tabIdx, allTabCount: allTabs.length };
 
   const setChartInteractiveEager = useCallback((val: boolean) => {
     stateRef.current = { ...stateRef.current, chartInteractive: val };
@@ -481,15 +489,15 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   // Exit chart interactive mode when switching away from chart tab
   useEffect(() => {
-    if (state.activeRightTab !== "chart") {
+    if (activeTabId !== "chart") {
       setChartInteractive(false);
     }
     // Reset plugin capture when switching tabs
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
-  }, [state.activeRightTab, dispatch]);
+  }, [activeTabId, dispatch]);
 
-  useKeyboard((event) => {
+  const handleKeyboard = useCallback((event: { name?: string }) => {
     const s = stateRef.current;
     if (!s.focused) return;
 
@@ -497,7 +505,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     if (s.pluginCaptured) return;
 
     // Handle chart interactive mode
-    if (s.activeRightTab === "chart") {
+    if (s.activeTabId === "chart") {
       const isEnter = event.name === "enter" || event.name === "return";
       if (event.name === "escape" && s.chartInteractive) {
         setChartInteractiveEager(false);
@@ -514,24 +522,39 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     const tabs = allTabsRef.current;
     if (event.name === "h" || event.name === "left") {
       const newIdx = Math.max(s.tabIdx - 1, 0);
-      dispatch({ type: "SET_RIGHT_TAB", tab: tabs[newIdx]!.id });
+      setActiveTabId(tabs[newIdx]!.id);
     } else if (event.name === "l" || event.name === "right") {
       const newIdx = Math.min(s.tabIdx + 1, s.allTabCount - 1);
-      dispatch({ type: "SET_RIGHT_TAB", tab: tabs[newIdx]!.id });
+      setActiveTabId(tabs[newIdx]!.id);
     }
-  });
+  }, [setActiveTabId, setChartInteractiveEager]);
+
+  useKeyboard(handleKeyboard);
+
+  if (!ticker) {
+    const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickers.length === 0;
+    const message = isEmptyFollowCollection
+      ? `No tickers in ${collectionName || "this collection"}.`
+      : "No ticker selected.";
+
+    return (
+      <box flexDirection="column" flexGrow={1} paddingX={1} paddingTop={1}>
+        <text fg={colors.textDim}>{message}</text>
+      </box>
+    );
+  }
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <TabBar
         tabs={allTabs.map((t) => ({ label: t.name, value: t.id }))}
-        activeValue={state.activeRightTab}
-        onSelect={(val) => dispatch({ type: "SET_RIGHT_TAB", tab: val })}
+        activeValue={activeTabId}
+        onSelect={setActiveTabId}
       />
 
-      {state.activeRightTab === "overview" && <OverviewTab width={width} />}
-      {state.activeRightTab === "financials" && <FinancialsTab focused={focused} />}
-      {state.activeRightTab === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {activeTabId === "overview" && <OverviewTab width={width} />}
+      {activeTabId === "financials" && <FinancialsTab focused={focused} />}
+      {activeTabId === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
 
       {/* Dynamic plugin tabs */}
       {activePluginTab && (
