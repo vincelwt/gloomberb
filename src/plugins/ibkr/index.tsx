@@ -251,6 +251,14 @@ const ibkrBroker: BrokerAdapter = {
     return ibkrGatewayManager.getService(instance.id).getPriceHistory(ticker, normalized.gateway, exchange, range, instrument);
   },
 
+  async getDetailedPriceHistory(ticker, instance, exchange, startDate, endDate, barSize, instrument) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    if (normalized.connectionMode !== "gateway") {
+      throw new Error("Gateway mode is required for broker history");
+    }
+    return ibkrGatewayManager.getService(instance.id).getDetailedPriceHistory(ticker, normalized.gateway, exchange, startDate, endDate, barSize, instrument);
+  },
+
   async listOpenOrders(instance) {
     const normalized = normalizeIbkrConfig(instance.config);
     if (normalized.connectionMode !== "gateway") return [];
@@ -785,7 +793,8 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
       setTradeTicketPreview(symbol, preview, ticker);
       setTradeTicketMessage(symbol, "Review the what-if preview, then press Enter again to submit.", undefined, ticker);
     } catch (error: any) {
-      setTradeTicketMessage(symbol, undefined, error?.message || "Failed to preview order.", ticker);
+      const msg = error?.message || "Failed to preview order.";
+      setTradeTicketMessage(symbol, undefined, msg.replace("Timeout has occurred", "Preview timed out — try again."), ticker);
     } finally {
       setTradeTicketBusy(symbol, false, ticker);
     }
@@ -802,17 +811,20 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     try {
       setTradeTicketBusy(symbol, true, ticker);
       await gatewayService.connect(normalizedConfig.gateway);
+      let successMessage: string;
       if (ticketState.editingOrderId) {
         await gatewayService.modifyOrder(normalizedConfig.gateway, ticketState.editingOrderId, request);
-        setTradeTicketMessage(symbol, `Modified order ${ticketState.editingOrderId}.`, undefined, ticker);
+        successMessage = `Modified order ${ticketState.editingOrderId}.`;
       } else {
         const order = await gatewayService.placeOrder(normalizedConfig.gateway, request);
-        setTradeTicketMessage(symbol, `Submitted order ${order.orderId}.`, undefined, ticker);
+        successMessage = `Submitted order ${order.orderId}.`;
       }
       setTradeTicketPreview(symbol, null, ticker);
       await refresh();
+      setTradeTicketMessage(symbol, successMessage, undefined, ticker, true);
     } catch (error: any) {
-      setTradeTicketMessage(symbol, undefined, error?.message || "Failed to submit order.", ticker);
+      const msg = error?.message || "Failed to submit order.";
+      setTradeTicketMessage(symbol, undefined, msg.replace("Timeout has occurred", "Order timed out — check open orders to verify status."), ticker);
     } finally {
       setTradeTicketBusy(symbol, false, ticker);
     }
@@ -834,6 +846,9 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     }
     if (!interactive) return;
     event.stopPropagation?.();
+
+    // Block actions while an async operation (preview, submit, refresh) is in progress.
+    if (ticketState.busy) return;
 
     switch (event.name) {
       case "r":
@@ -950,8 +965,10 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
         </box>
 
         <box height={1}>
-          <text fg={ticketState.lastError ? colors.negative : colors.textDim}>
-            {ticketState.lastError
+          <text fg={ticketState.lastError ? colors.negative : ticketState.isSuccess ? colors.positive : colors.textDim}>
+            {ticketState.busy
+              ? "Working…"
+              : ticketState.lastError
               || ticketState.lastInfo
               || gatewaySnapshot.status.message
               || gatewaySnapshot.lastError

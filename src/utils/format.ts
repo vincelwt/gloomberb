@@ -1,6 +1,6 @@
 /** Format a number as currency (e.g., $1,234.56) */
 export function formatCurrency(value: number | undefined, currency = "USD"): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
