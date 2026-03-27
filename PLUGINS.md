@@ -72,7 +72,6 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerDataProvider(provider)` | Add a data source |
 | `ctx.registerShortcut(shortcut)` | Add a global keyboard shortcut |
 | `ctx.registerTickerAction(action)` | Add a per-ticker action (shown via `a` key) |
-| `ctx.registerFloatingWidget(widget)` | Add a floating overlay widget |
 
 ### Data access
 
@@ -128,25 +127,27 @@ ctx.showToast("Something went wrong", { type: "error", duration: 5000 });
 ctx.showToast("FYI...");  // defaults to "info"
 ```
 
-### Floating widgets
+### Floating panes
+
+Panes with `defaultMode: "floating"` open as draggable/resizable floating windows:
 
 ```typescript
-ctx.registerFloatingWidget({
-  id: "my-widget",
-  name: "My Widget",
-  position: "top-right",  // top-left, top-right, bottom-left, bottom-right, center
-  width: 40,
-  height: 10,
+ctx.registerPane({
+  id: "my-pane",
+  name: "My Pane",
   component: ({ width, height, focused, close }) => (
     <Box flexDirection="column" width={width} height={height}>
-      <Text>Hello from widget!</Text>
+      <Text>Hello from pane!</Text>
     </Box>
   ),
+  defaultPosition: "right",
+  defaultMode: "floating",
+  defaultFloatingSize: { width: 40, height: 10 },
 });
 
-// Show/hide programmatically
-ctx.showWidget("my-widget");
-ctx.hideWidget("my-widget");
+// Show/hide as floating window programmatically
+ctx.showWidget("my-pane");
+ctx.hideWidget("my-pane");
 ```
 
 ## Reusable components

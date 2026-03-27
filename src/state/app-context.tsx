@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from "react";
-import type { AppConfig } from "../types/config";
+import type { AppConfig, LayoutConfig } from "../types/config";
 import { saveConfig } from "../data/config-store";
 import type { TickerFile } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
@@ -16,7 +16,9 @@ export interface AppState {
   exchangeRates: Map<string, number>;
 
   // UI state
+  /** @deprecated Use focusedPaneId instead */
   activePanel: "left" | "right";
+  focusedPaneId: string | null;
   activeLeftTab: string;
   activeRightTab: string;
   selectedTicker: string | null;
@@ -61,7 +63,10 @@ export type AppAction =
   | { type: "TOGGLE_PLUGIN"; pluginId: string }
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
   | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
-  | { type: "UPDATE_LAYOUT"; layout: import("../types/config").PaneLayoutEntry[] };
+  | { type: "UPDATE_LAYOUT"; layout: LayoutConfig }
+  | { type: "FOCUS_PANE"; paneId: string }
+  | { type: "FOCUS_NEXT"; paneOrder: string[] }
+  | { type: "FOCUS_PREV"; paneOrder: string[] };
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -100,14 +105,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const recentTickers = action.symbol
         ? [action.symbol, ...state.recentTickers.filter((s) => s !== action.symbol)].slice(0, 50)
         : state.recentTickers;
-      return { ...state, selectedTicker: action.symbol, recentTickers, activePanel: "right" };
+      // Focus the ticker-detail pane (or keep current focus if not found)
+      const tickerPaneId = state.config.layout.docked.find((d) => d.paneId === "ticker-detail")?.paneId
+        ?? state.config.layout.floating.find((f) => f.paneId === "ticker-detail")?.paneId;
+      return {
+        ...state,
+        selectedTicker: action.symbol,
+        recentTickers,
+        activePanel: "right",
+        focusedPaneId: tickerPaneId ?? state.focusedPaneId,
+      };
     }
 
     case "PREVIEW_TICKER":
       return { ...state, selectedTicker: action.symbol };
 
-    case "SET_ACTIVE_PANEL":
-      return { ...state, activePanel: action.panel };
+    case "SET_ACTIVE_PANEL": {
+      // Backward compat: map "left"/"right" to first pane in that column
+      const colIdx = action.panel === "left" ? 0 : (state.config.layout.columns.length - 1);
+      const firstInCol = state.config.layout.docked.find((d) => d.columnIndex === colIdx);
+      return {
+        ...state,
+        activePanel: action.panel,
+        focusedPaneId: firstInCol?.paneId ?? state.focusedPaneId,
+      };
+    }
 
     case "SET_LEFT_TAB":
       return { ...state, activeLeftTab: action.tab };
@@ -172,6 +194,25 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case "UPDATE_LAYOUT":
       return { ...state, config: { ...state.config, layout: action.layout } };
 
+    case "FOCUS_PANE":
+      return { ...state, focusedPaneId: action.paneId };
+
+    case "FOCUS_NEXT": {
+      const order = action.paneOrder;
+      if (order.length === 0) return state;
+      const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : -1;
+      const next = order[(idx + 1) % order.length]!;
+      return { ...state, focusedPaneId: next };
+    }
+
+    case "FOCUS_PREV": {
+      const order = action.paneOrder;
+      if (order.length === 0) return state;
+      const idx = state.focusedPaneId ? order.indexOf(state.focusedPaneId) : 0;
+      const prev = order[(idx - 1 + order.length) % order.length]!;
+      return { ...state, focusedPaneId: prev };
+    }
+
     default:
       return state;
   }
@@ -208,6 +249,7 @@ export function createInitialState(config: AppConfig): AppState {
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
     activePanel: "left",
+    focusedPaneId: config.layout.docked[0]?.paneId ?? null,
     activeLeftTab: config.portfolios[0]?.id || "main",
     activeRightTab: "overview",
     selectedTicker: null,

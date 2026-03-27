@@ -366,11 +366,15 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
 
 // --- Pane wrapper (for when used as a right-side pane) ---
 
-function ChatPane({ focused, width, height }: PaneProps) {
+function ChatPane({ focused, width, height, close }: PaneProps) {
   const registry = getSharedRegistry();
   const selectTicker = useCallback((symbol: string) => {
     registry?.selectTickerFn(symbol);
-  }, [registry]);
+    if (close) {
+      registry?.switchTabFn("overview");
+      close();
+    }
+  }, [registry, close]);
 
   return (
     <ChatContent
@@ -378,6 +382,7 @@ function ChatPane({ focused, width, height }: PaneProps) {
       height={height}
       focused={focused}
       selectTicker={selectTicker}
+      close={close}
     />
   );
 }
@@ -448,40 +453,15 @@ export const chatPlugin: GloomPlugin = {
     const savedToken = ctx.storage.get<string>("session_token");
     if (savedToken) apiClient.setSessionToken(savedToken);
 
-    // Register as a right-side pane
+    // Register as a pane (opens floating by default, can be docked)
     ctx.registerPane({
       id: "chat",
       name: "Chat",
       icon: "C",
       component: ChatPane,
       defaultPosition: "right",
-    });
-
-    // Register as a floating widget
-    ctx.registerFloatingWidget({
-      id: "chat-widget",
-      name: "Chat",
-      position: "center",
-      width: "90%",
-      height: "90%",
-      captureInput: true,
-      component: ({ width, height, focused, close }) => {
-        const registry = getSharedRegistry();
-        const selectTicker = (symbol: string) => {
-          registry?.selectTickerFn(symbol);
-          registry?.switchTabFn("overview");
-          close?.();
-        };
-        return (
-          <ChatContent
-            width={width}
-            height={height}
-            focused={focused}
-            selectTicker={selectTicker}
-            close={close}
-          />
-        );
-      },
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 80, height: 30 },
     });
 
     // Toggle chat widget shortcut
@@ -492,10 +472,10 @@ export const chatPlugin: GloomPlugin = {
       description: "Toggle chat",
       execute: () => {
         const registry = getSharedRegistry();
-        if (registry?.visibleWidgets.has("chat-widget")) {
-          ctx.hideWidget("chat-widget");
+        if (registry?.isPaneFloating("chat")) {
+          ctx.hideWidget("chat");
         } else {
-          ctx.showWidget("chat-widget");
+          ctx.showWidget("chat");
         }
       },
     });
@@ -523,7 +503,7 @@ export const chatPlugin: GloomPlugin = {
         _wsConn = null;
         _wsConnected = false;
         _cachedMessages = [];
-        ctx.showWidget("chat-widget");
+        ctx.showWidget("chat");
       },
     });
 
@@ -562,7 +542,7 @@ export const chatPlugin: GloomPlugin = {
         _wsConn = null;
         _wsConnected = false;
         _cachedMessages = [];
-        ctx.showWidget("chat-widget");
+        ctx.showWidget("chat");
       },
     });
 

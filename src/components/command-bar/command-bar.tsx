@@ -752,10 +752,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry }: Comm
           const newDisabled = isEnabled
             ? [...disabledPlugins, p.id]
             : disabledPlugins.filter((id) => id !== p.id);
-          // When disabling, hide any floating widgets owned by this plugin
+          // When disabling, hide any floating panes owned by this plugin
           if (isEnabled) {
-            for (const widgetId of pluginRegistry.getPluginWidgetIds(p.id)) {
-              pluginRegistry.hideWidget(widgetId);
+            for (const paneId of pluginRegistry.getPluginPaneIds(p.id)) {
+              pluginRegistry.hideWidget(paneId);
             }
           }
           saveConfig({ ...state.config, disabledPlugins: newDisabled }).catch(() => {});
