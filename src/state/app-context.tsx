@@ -498,6 +498,10 @@ export function usePaneTicker(paneId?: string) {
   }, [state, scopedPaneId]);
 }
 
+export function useSelectedTicker(paneId?: string) {
+  return usePaneTicker(paneId);
+}
+
 export function useFocusedTicker() {
   const { state } = useAppState();
   return useMemo(() => {

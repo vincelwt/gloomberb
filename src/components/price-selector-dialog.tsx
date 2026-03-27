@@ -4,6 +4,7 @@ import type { InputRenderable } from "@opentui/core";
 import { useDialogKeyboard, type PromptContext } from "@opentui-ui/dialog/react";
 import type { Quote } from "../types/financials";
 import { colors } from "../theme/colors";
+import { DialogFrame, ListView, NumberField } from "./ui";
 import { padTo } from "../utils/format";
 
 interface PricePreset {
@@ -125,63 +126,70 @@ export function PriceSelectorDialog({
   const presetWidth = 12;
 
   return (
-    <box flexDirection="column">
-      <text attributes={TextAttributes.BOLD} fg={colors.text}>{label}</text>
-      <box height={1} />
-      <text fg={colors.textDim}>{formatMarketContext(quote)}</text>
-      <box height={1} />
-
-      {presets.map((preset, presetIndex) => {
-        const selected = mode === "list" && presetIndex === index;
-        return (
-          <box
-            key={preset.label}
-            flexDirection="row"
-            height={1}
-            backgroundColor={selected ? colors.selected : colors.bg}
-            onMouseMove={() => { setMode("list"); setIndex(presetIndex); }}
-            onMouseDown={() => resolve(String(preset.value))}
-          >
-            <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "▸ " : "  "}</text>
-            <text fg={selected ? colors.text : colors.textDim} attributes={selected ? TextAttributes.BOLD : 0}>
-              {padTo(preset.label, presetWidth)}
-            </text>
-            <text fg={selected ? colors.text : colors.textMuted}>
-              {preset.value.toFixed(2)}
-            </text>
-            {preset.detail && (
-              <text fg={colors.textDim}>{`  ${preset.detail}`}</text>
-            )}
-          </box>
-        );
-      })}
-
-      {presets.length > 0 && <box height={1} />}
-
-      <box flexDirection="row" onMouseDown={() => { setMode("input"); setIndex(CUSTOM_INDEX); }}>
-        <text fg={mode === "input" ? colors.text : colors.textDim}>
-          {mode === "input" ? "▸ " : "  "}Custom:{" "}
-        </text>
-        <input
-          ref={inputRef}
-          focused={mode === "input"}
-          value={customValue}
-          placeholder={currentValue != null ? String(currentValue) : "type a price"}
-          textColor={colors.text}
-          placeholderColor={colors.textDim}
-          backgroundColor={colors.bg}
-          onInput={(nextValue) => setCustomValue(nextValue)}
-          onChange={(nextValue) => setCustomValue(nextValue)}
-          onSubmit={() => resolve(customValue.trim())}
-        />
-      </box>
-
-      <box height={1} />
-      <text fg={colors.textMuted}>
-        {mode === "list"
+    <DialogFrame
+      title={label}
+      footer={
+        mode === "list"
           ? "↑↓ or hover to choose · Enter/click select · Tab or ↓ for custom · Esc cancel"
-          : "Type a price · Enter confirm · ↑ or Tab back to presets · Esc cancel"}
-      </text>
-    </box>
+          : "Type a price · Enter confirm · ↑ or Tab back to presets · Esc cancel"
+      }
+    >
+      <box flexDirection="column">
+        <text fg={colors.textDim}>{formatMarketContext(quote)}</text>
+        <box height={1} />
+
+        {presets.length > 0 && (
+          <>
+            <ListView
+              items={presets.map((preset) => ({
+                id: preset.label,
+                label: preset.label,
+              }))}
+              selectedIndex={mode === "list" ? index : -1}
+              bgColor={colors.bg}
+              onSelect={(nextIndex) => {
+                setMode("list");
+                setIndex(nextIndex);
+              }}
+              onActivate={(_, nextIndex) => resolve(String(presets[nextIndex]?.value ?? ""))}
+              renderRow={(item, state) => {
+                const preset = presets.find((entry) => entry.label === item.id);
+                return (
+                  <box flexDirection="row">
+                    <text fg={state.selected ? colors.selectedText : colors.textDim}>
+                      {state.selected ? "▸ " : "  "}
+                    </text>
+                    <text fg={state.selected ? colors.text : colors.textDim} attributes={state.selected ? TextAttributes.BOLD : 0}>
+                      {padTo(item.label, presetWidth)}
+                    </text>
+                    <text fg={state.selected ? colors.text : colors.textMuted}>
+                      {preset?.value.toFixed(2) ?? ""}
+                    </text>
+                    {preset?.detail && (
+                      <text fg={colors.textDim}>{`  ${preset.detail}`}</text>
+                    )}
+                  </box>
+                );
+              }}
+            />
+            <box height={1} />
+          </>
+        )}
+
+        <box flexDirection="row" onMouseDown={() => { setMode("input"); setIndex(CUSTOM_INDEX); }}>
+          <text fg={mode === "input" ? colors.text : colors.textDim}>
+            {mode === "input" ? "▸ " : "  "}Custom:{" "}
+          </text>
+          <NumberField
+            inputRef={inputRef}
+            focused={mode === "input"}
+            value={customValue}
+            placeholder={currentValue != null ? String(currentValue) : "type a price"}
+            onChange={setCustomValue}
+            onSubmit={(submittedValue) => resolve(submittedValue.trim())}
+          />
+        </box>
+      </box>
+    </DialogFrame>
   );
 }

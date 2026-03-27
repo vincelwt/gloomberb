@@ -1,5 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { colors } from "../theme/colors";
+import { ListView, type ListViewItem } from "./ui/list-view";
 
 export interface ToggleListItem {
   id: string;
@@ -18,43 +19,39 @@ export interface ToggleListProps {
 }
 
 export function ToggleList({ items, selectedIdx, onToggle, onSelect, bgColor }: ToggleListProps) {
-  const bg = bgColor ?? colors.bg;
-  const selectedItem = items[selectedIdx];
+  const listItems: ListViewItem[] = items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    description: item.description,
+  }));
 
   return (
-    <box flexDirection="column">
-      {items.map((item, i) => {
-        const isSel = i === selectedIdx;
-        const arrow = isSel ? "\u25b8" : " ";
-        const check = item.enabled ? "\u2713" : " ";
-        const line = `${arrow} [${check}] ${item.label}`;
+    <ListView
+      items={listItems}
+      selectedIndex={selectedIdx}
+      bgColor={bgColor ?? colors.bg}
+      showSelectedDescription
+      onSelect={onSelect}
+      onActivate={(item) => {
+        onToggle?.(item.id);
+      }}
+      renderRow={(item, state) => {
+        const toggleItem = items.find((entry) => entry.id === item.id);
+        const checked = toggleItem?.enabled ? "\u2713" : " ";
         return (
-          <box
-            key={item.id}
-            height={1}
-            backgroundColor={isSel ? colors.selected : bg}
-            onMouseDown={() => {
-              onSelect?.(i);
-              onToggle?.(item.id);
-            }}
-          >
+          <box flexDirection="row">
+            <text fg={state.selected ? colors.selectedText : colors.textDim}>
+              {state.selected ? "\u25b8 " : "  "}
+            </text>
             <text
-              fg={isSel ? colors.text : colors.textDim}
-              attributes={isSel ? TextAttributes.BOLD : 0}
+              fg={state.selected ? colors.text : colors.textDim}
+              attributes={state.selected ? TextAttributes.BOLD : 0}
             >
-              {line}
+              {`[${checked}] ${item.label}`}
             </text>
           </box>
         );
-      })}
-      {selectedItem?.description && (
-        <>
-          <box height={1} />
-          <box height={1}>
-            <text fg={colors.textDim}>{"    "}{selectedItem.description}</text>
-          </box>
-        </>
-      )}
-    </box>
+      }}
+    />
   );
 }

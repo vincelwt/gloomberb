@@ -152,21 +152,51 @@ ctx.hideWidget("my-pane");
 
 ## Reusable components
 
-Plugins can import built-in UI components:
+Plugins can import the shared UI kit from `gloomberb/components`. Prefer these over ad hoc rows and controls so plugin screens feel native.
 
 ```typescript
-import { StockChart, TabBar, ToggleList, colors } from "gloomberb/components";
-import { useAppState, useSelectedTicker } from "gloomberb/components";
+import {
+  StockChart,
+  Tabs,
+  TabBar,
+  ListView,
+  ToggleList,
+  Button,
+  Checkbox,
+  Switch,
+  SegmentedControl,
+  TextField,
+  SearchField,
+  NumberField,
+  StatusBadge,
+  Notice,
+  EmptyState,
+  Section,
+  FieldRow,
+  DialogFrame,
+  Spinner,
+  ProgressBar,
+  colors,
+} from "gloomberb/components";
+import { useAppState, usePaneTicker, useSelectedTicker } from "gloomberb/components";
 import { formatCurrency, formatCompact, padTo } from "gloomberb/components";
 ```
 
 Available components:
+- `Tabs` / `TabBar` — horizontal tab navigation
+- `ListView` — shared selectable list primitive with mouse support
 - `StockChart` — interactive area, line, candlestick, and OHLC chart
-- `TabBar` — tab navigation bar
 - `ToggleList` — checkbox list with selection
+- `Button` / `IconButton` — clickable actions for dialogs and toolbars
+- `Checkbox`, `Switch`, `RadioGroup`, `SegmentedControl` — boolean and option controls
+- `TextField`, `SearchField`, `NumberField` — input controls
+- `StatusBadge`, `Notice`, `EmptyState` — status and empty/loading feedback
+- `Section`, `FieldRow`, `DialogFrame` — shared framing/layout helpers
+- `Spinner`, `ProgressBar`, `SkeletonRow`, `LoadingBlock` — loading states
 - `colors` — theme color palette
 - `useAppState()` — access full app state
-- `useSelectedTicker()` — get currently selected ticker + financials
+- `usePaneTicker()` — get the ticker bound to the current pane
+- `useSelectedTicker()` — alias for `usePaneTicker()`
 
 ## Example: adding a detail tab
 
@@ -175,16 +205,25 @@ The simplest plugin type. This adds a new tab to the right-side detail pane:
 ```typescript
 import React from "react";
 import type { GloomPlugin, DetailTabProps } from "gloomberb/types/plugin";
-import { useSelectedTicker, colors } from "gloomberb/components";
+import { EmptyState, FieldRow, Section, usePaneTicker, colors } from "gloomberb/components";
 
 function SentimentTab({ width, height, focused }: DetailTabProps) {
-  const { ticker } = useSelectedTicker();
-  if (!ticker) return <text fg={colors.textDim}>No ticker selected</text>;
+  const { ticker } = usePaneTicker();
+  if (!ticker) {
+    return (
+      <EmptyState
+        title="No ticker selected."
+        hint="Move the cursor in a list pane to populate this tab."
+      />
+    );
+  }
 
   return (
     <box flexDirection="column" width={width} height={height}>
-      <text bold>Sentiment for {ticker.frontmatter.ticker}</text>
-      <text>Your content here</text>
+      <Section title={`Sentiment for ${ticker.frontmatter.ticker}`}>
+        <FieldRow label="Signal" value="Bullish" valueColor={colors.positive} />
+        <FieldRow label="Trend" value="Improving" />
+      </Section>
     </box>
   );
 }
@@ -205,6 +244,13 @@ export default {
   },
 } satisfies GloomPlugin;
 ```
+
+## UI guidelines for plugins
+
+- Prefer `ListView`, `Tabs`, `Button`, `Checkbox`, and `Notice` before custom rows.
+- Support both mouse and keyboard for anything interactive.
+- Use `colors` and the shared components instead of hard-coded palette values when possible.
+- Use `usePaneTicker()` inside pane/tab components so multi-pane layouts keep working correctly.
 
 ## Example: adding a command
 

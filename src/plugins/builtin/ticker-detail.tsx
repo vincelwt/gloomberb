@@ -6,6 +6,7 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
 import { getCollectionName, getCollectionTickers } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
+import { EmptyState, FieldRow } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
@@ -17,21 +18,10 @@ const CORE_TABS = [
   { id: "chart", name: "Chart", order: 30 },
 ];
 
-function MetricRow({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <box flexDirection="row" height={1}>
-      <box width={16}>
-        <text fg={colors.textDim}>{label}</text>
-      </box>
-      <text fg={color || colors.text}>{value}</text>
-    </box>
-  );
-}
-
 function OverviewTab({ width }: { width?: number }) {
   const { ticker, financials } = usePaneTicker();
   const { width: termWidth } = useTerminalDimensions();
-  if (!ticker) return <text fg={colors.textDim}>No ticker selected.</text>;
+  if (!ticker) return <EmptyState title="No ticker selected." />;
 
   const q = financials?.quote;
   const f = financials?.fundamentals;
@@ -107,30 +97,30 @@ function OverviewTab({ width }: { width?: number }) {
 
         {/* Key metrics */}
         <box flexDirection="column">
-          <MetricRow label="Market Cap" value={q?.marketCap ? formatCompact(q.marketCap) : "—"} />
-          <MetricRow label="P/E (TTM)" value={f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—"} />
-          <MetricRow label="Forward P/E" value={f?.forwardPE ? formatNumber(f.forwardPE, 1) : "—"} />
-          <MetricRow label="PEG Ratio" value={f?.pegRatio ? formatNumber(f.pegRatio, 2) : "—"} />
-          <MetricRow label="EPS" value={f?.eps ? formatCurrency(f.eps) : "—"} />
-          <MetricRow label="Div Yield" value={f?.dividendYield != null ? formatPercent(f.dividendYield) : "—"} />
-          <MetricRow label="Revenue" value={f?.revenue ? formatCompact(f.revenue) : "—"} />
-          <MetricRow label="Net Income" value={f?.netIncome ? formatCompact(f.netIncome) : "—"} />
-          <MetricRow label="FCF" value={f?.freeCashFlow ? formatCompact(f.freeCashFlow) : "—"} />
-          <MetricRow label="Op. Margin" value={f?.operatingMargin != null ? formatPercent(f.operatingMargin) : "—"} />
-          <MetricRow label="Profit Margin" value={f?.profitMargin != null ? formatPercent(f.profitMargin) : "—"} />
-          <MetricRow
+          <FieldRow label="Market Cap" value={q?.marketCap ? formatCompact(q.marketCap) : "—"} />
+          <FieldRow label="P/E (TTM)" value={f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—"} />
+          <FieldRow label="Forward P/E" value={f?.forwardPE ? formatNumber(f.forwardPE, 1) : "—"} />
+          <FieldRow label="PEG Ratio" value={f?.pegRatio ? formatNumber(f.pegRatio, 2) : "—"} />
+          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps) : "—"} />
+          <FieldRow label="Div Yield" value={f?.dividendYield != null ? formatPercent(f.dividendYield) : "—"} />
+          <FieldRow label="Revenue" value={f?.revenue ? formatCompact(f.revenue) : "—"} />
+          <FieldRow label="Net Income" value={f?.netIncome ? formatCompact(f.netIncome) : "—"} />
+          <FieldRow label="FCF" value={f?.freeCashFlow ? formatCompact(f.freeCashFlow) : "—"} />
+          <FieldRow label="Op. Margin" value={f?.operatingMargin != null ? formatPercent(f.operatingMargin) : "—"} />
+          <FieldRow label="Profit Margin" value={f?.profitMargin != null ? formatPercent(f.profitMargin) : "—"} />
+          <FieldRow
             label="52W Range"
             value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w)} - ${formatCurrency(q.high52w)}` : "—"}
           />
-          <MetricRow
+          <FieldRow
             label="1Y Return"
             value={f?.return1Y != null ? formatPercent(f.return1Y) : "—"}
-            color={f?.return1Y != null ? priceColor(f.return1Y) : undefined}
+            valueColor={f?.return1Y != null ? priceColor(f.return1Y) : undefined}
           />
-          <MetricRow
+          <FieldRow
             label="3Y Return"
             value={f?.return3Y != null ? formatPercent(f.return3Y) : "—"}
-            color={f?.return3Y != null ? priceColor(f.return3Y) : undefined}
+            valueColor={f?.return3Y != null ? priceColor(f.return3Y) : undefined}
           />
         </box>
 
@@ -138,16 +128,16 @@ function OverviewTab({ width }: { width?: number }) {
         {(ticker.frontmatter.sector || ticker.frontmatter.industry || ticker.frontmatter.assetCategory || ticker.frontmatter.isin) && (
           <box flexDirection="column">
             {ticker.frontmatter.assetCategory && (
-              <MetricRow label="Type" value={ticker.frontmatter.assetCategory} />
+              <FieldRow label="Type" value={ticker.frontmatter.assetCategory} />
             )}
             {ticker.frontmatter.sector && (
-              <MetricRow label="Sector" value={ticker.frontmatter.sector} />
+              <FieldRow label="Sector" value={ticker.frontmatter.sector} />
             )}
             {ticker.frontmatter.industry && (
-              <MetricRow label="Industry" value={ticker.frontmatter.industry} />
+              <FieldRow label="Industry" value={ticker.frontmatter.industry} />
             )}
             {ticker.frontmatter.isin && (
-              <MetricRow label="ISIN" value={ticker.frontmatter.isin} />
+              <FieldRow label="ISIN" value={ticker.frontmatter.isin} />
             )}
           </box>
         )}
@@ -540,7 +530,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
     return (
       <box flexDirection="column" flexGrow={1} paddingX={1}>
-        <text fg={colors.textDim}>{message}</text>
+        <EmptyState title={message} />
       </box>
     );
   }
