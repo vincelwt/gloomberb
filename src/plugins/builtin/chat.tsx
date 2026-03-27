@@ -4,7 +4,7 @@ import { TextAttributes } from "@opentui/core";
 import type { InputRenderable } from "@opentui/core";
 import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
-import { colors } from "../../theme/colors";
+import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { getSharedRegistry } from "../../plugins/registry";
 
@@ -111,6 +111,7 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
@@ -285,7 +286,8 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
         {visibleMessages.map((msg, i) => {
           const globalIdx = visibleStart + i;
           const isSelected = globalIdx === selectedIdx;
-          const bgColor = isSelected ? colors.selected : undefined;
+          const isHovered = globalIdx === hoveredIdx && !isSelected;
+          const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
 
           return (
             <box
@@ -293,6 +295,7 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
               flexDirection="column"
               width={contentWidth}
               backgroundColor={bgColor}
+              onMouseMove={() => setHoveredIdx(globalIdx)}
               onMouseDown={() => setSelectedIdx(globalIdx)}
             >
               {/* Reply context */}

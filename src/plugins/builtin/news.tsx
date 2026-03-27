@@ -3,7 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { useSelectedTicker } from "../../state/app-context";
-import { colors } from "../../theme/colors";
+import { colors, hoverBg } from "../../theme/colors";
 import { padTo } from "../../utils/format";
 import type { NewsItem } from "../../types/data-provider";
 import { getSharedDataProvider } from "../../plugins/registry";
@@ -26,6 +26,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
   const [loadingSummary, setLoadingSummary] = useState(false);
   const summaryFetchRef = useRef(0);
@@ -108,6 +109,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
       <scrollbox height={listHeight} scrollY>
         {news.map((item, i) => {
           const isSelected = i === selectedIdx;
+          const isHovered = i === hoveredIdx && !isSelected;
           const title = item.title.length > titleColW
             ? item.title.slice(0, titleColW - 1) + "\u2026"
             : item.title;
@@ -119,7 +121,9 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
               key={i}
               flexDirection="row"
               height={1}
-              backgroundColor={isSelected ? colors.selected : colors.bg}
+              backgroundColor={isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg}
+              onMouseMove={() => setHoveredIdx(i)}
+              onMouseDown={() => setSelectedIdx(i)}
             >
               <box width={titleColW + 1}>
                 <text fg={isSelected ? colors.selectedText : colors.text}>
