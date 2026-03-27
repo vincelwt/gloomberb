@@ -35,7 +35,7 @@ export function StatusBar() {
       backgroundColor={colors.panel}
     >
       {hasMultipleLayouts ? (
-        <box paddingLeft={1} flexShrink={0} flexDirection="row" onMouseLeave={() => setHoveredTab(null)}>
+        <box paddingLeft={1} flexShrink={0} flexDirection="row">
           {layouts.map((l, i) => {
             const isActive = i === activeLayoutIdx;
             const isHovered = hoveredTab === i && !isActive;

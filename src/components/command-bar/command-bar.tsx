@@ -28,6 +28,7 @@ import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import { DialogFrame, ListView, TextField } from "../ui";
 import {
   getEmptyState,
   getRowPresentation,
@@ -86,23 +87,19 @@ function InfoStepContent({ dismiss, dialogId, step }: AlertContext & { step: Wiz
   }, dialogId);
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
+    <DialogFrame title={step.label} footer="Press Enter to continue">
+      <box flexDirection="column">
+        {step.body?.map((line, i) => (
+          <box key={i} height={1}>
+            <text fg={
+              line.startsWith("  ") && (line.includes("interactivebrokers") || line.includes("http"))
+                ? colors.textBright
+                : line.startsWith("  - ") ? colors.text : colors.textDim
+            }>{line || " "}</text>
+          </box>
+        ))}
       </box>
-      <box height={1} />
-      {step.body?.map((line, i) => (
-        <box key={i} height={1}>
-          <text fg={
-            line.startsWith("  ") && (line.includes("interactivebrokers") || line.includes("http"))
-              ? colors.textBright
-              : line.startsWith("  - ") ? colors.text : colors.textDim
-          }>{line || " "}</text>
-        </box>
-      ))}
-      <box height={1} />
-      <text fg={colors.textMuted}>Press Enter to continue</text>
-    </box>
+    </DialogFrame>
   );
 }
 
@@ -115,40 +112,30 @@ function InputStepContent({ resolve, step }: PromptContext<string> & { step: Wiz
   }, []);
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
-      </box>
-      <box height={1} />
-      {step.body?.map((line, i) => (
-        <box key={i} height={1}>
-          <text fg={colors.textDim}>{line || " "}</text>
-        </box>
-      ))}
-      <box height={1} />
-      <box height={1}>
-        <input
-          ref={inputRef}
+    <DialogFrame
+      title={step.label}
+      footer={step.defaultValue ? `Press Enter to use ${step.defaultValue}` : undefined}
+    >
+      <box flexDirection="column">
+        {step.body?.map((line, i) => (
+          <box key={i} height={1}>
+            <text fg={colors.textDim}>{line || " "}</text>
+          </box>
+        ))}
+        <box height={1} />
+        <TextField
+          inputRef={inputRef}
+          value={value}
           placeholder={step.placeholder || ""}
           focused
-          textColor={colors.text}
-          placeholderColor={colors.textDim}
-          backgroundColor={colors.bg}
-          onInput={(val) => setValue(val)}
-          onChange={(val) => setValue(val)}
-          onSubmit={() => {
-            const submitted = value.trim() || step.defaultValue || "";
+          onChange={setValue}
+          onSubmit={(submittedValue) => {
+            const submitted = submittedValue.trim() || step.defaultValue || "";
             if (submitted) resolve(submitted);
           }}
         />
       </box>
-      {step.defaultValue && (
-        <>
-          <box height={1} />
-          <text fg={colors.textMuted}>{`Press Enter to use ${step.defaultValue}`}</text>
-        </>
-      )}
-    </box>
+    </DialogFrame>
   );
 }
 
@@ -165,46 +152,38 @@ function SelectStepContent({ resolve, step, dialogId }: PromptContext<string> & 
   }, dialogId);
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
-      </box>
-      <box height={1} />
-      {step.body?.map((line, i) => (
-        <box key={i} height={1}>
-          <text fg={colors.textDim}>{line || " "}</text>
-        </box>
-      ))}
-      <box height={1} />
-      {options.map((option, optionIdx) => {
-        const selected = optionIdx === idx;
-        return (
-          <box key={option.value} height={1} backgroundColor={selected ? colors.selected : colors.commandBg}>
-            <text fg={selected ? colors.selectedText : colors.textDim}>
-              {selected ? "\u25b8 " : "  "}
-            </text>
-            <text fg={selected ? colors.text : colors.textDim} attributes={selected ? TextAttributes.BOLD : 0}>
-              {option.label}
-            </text>
+    <DialogFrame
+      title={step.label}
+      footer="Use ↑↓ to choose · enter to select · esc to cancel"
+    >
+      <box flexDirection="column">
+        {step.body?.map((line, i) => (
+          <box key={i} height={1}>
+            <text fg={colors.textDim}>{line || " "}</text>
           </box>
-        );
-      })}
-      <box height={1} />
-      <text fg={colors.textMuted}>Use ↑↓ to choose · enter to select · esc to cancel</text>
-    </box>
+        ))}
+        <box height={1} />
+        <ListView
+          items={options.map((option) => ({
+            id: option.value,
+            label: option.label,
+          }))}
+          selectedIndex={idx}
+          bgColor={colors.commandBg}
+          onSelect={setIdx}
+          onActivate={(item) => resolve(item.id)}
+        />
+      </box>
+    </DialogFrame>
   );
 }
 
 function ValidatingContent({ dismiss, dialogId, step }: AlertContext & { step: WizardStep }) {
   // No keyboard — auto-dismissed by the caller after execute
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
-      </box>
-      <box height={1} />
+    <DialogFrame title={step.label}>
       <text fg={colors.textDim}>{step.body?.[0] || "Processing..."}</text>
-    </box>
+    </DialogFrame>
   );
 }
 
@@ -216,21 +195,17 @@ function ConfirmDestroyContent({ resolve, dialogId }: PromptContext<boolean>) {
   }, dialogId);
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.negative}>{"Reset All Data"}</text>
+    <DialogFrame title="Reset All Data" footer="Press Y or Enter to confirm, Esc or N to cancel">
+      <box flexDirection="column">
+        <text fg={colors.text}>This will permanently delete all portfolios, tickers,</text>
+        <text fg={colors.text}>notes, broker credentials, and settings.</text>
+        <box height={1} />
+        <text fg={colors.text}>Gloomberb will quit and show the setup wizard on</text>
+        <text fg={colors.text}>next launch.</text>
+        <box height={1} />
+        <text fg={colors.negative} attributes={TextAttributes.BOLD}>This cannot be undone.</text>
       </box>
-      <box height={1} />
-      <text fg={colors.text}>This will permanently delete all portfolios, tickers,</text>
-      <text fg={colors.text}>notes, broker credentials, and settings.</text>
-      <box height={1} />
-      <text fg={colors.text}>Gloomberb will quit and show the setup wizard on</text>
-      <text fg={colors.text}>next launch.</text>
-      <box height={1} />
-      <text fg={colors.negative} attributes={TextAttributes.BOLD}>This cannot be undone.</text>
-      <box height={1} />
-      <text fg={colors.textMuted}>Press Y or Enter to confirm, Esc or N to cancel</text>
-    </box>
+    </DialogFrame>
   );
 }
 
@@ -245,31 +220,20 @@ function ChoiceContent({ resolve, dialogId, title, choices }: PromptContext<stri
   }, dialogId);
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>{title}</text>
-      </box>
-      <box height={1} />
-      {choices.map((c, i) => {
-        const isSel = i === idx;
-        return (
-          <box key={c.id} height={1} backgroundColor={isSel ? colors.selected : colors.commandBg}>
-            <text fg={isSel ? colors.selectedText : colors.textDim}>
-              {isSel ? "\u25b8 " : "  "}
-            </text>
-            <text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
-              {c.label}
-            </text>
-          </box>
-        );
-      })}
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{choices[idx]?.desc}</text>
-      </box>
-      <box height={1} />
-      <text fg={colors.textMuted}>Use ↑↓ to choose · enter to select · esc to cancel</text>
-    </box>
+    <DialogFrame title={title} footer="Use ↑↓ to choose · enter to select · esc to cancel">
+      <ListView
+        items={choices.map((choice) => ({
+          id: choice.id,
+          label: choice.label,
+          description: choice.desc,
+        }))}
+        selectedIndex={idx}
+        bgColor={colors.commandBg}
+        showSelectedDescription
+        onSelect={setIdx}
+        onActivate={(item) => resolve(item.id)}
+      />
+    </DialogFrame>
   );
 }
 

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
+import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -673,7 +674,7 @@ function PortfolioListPane({ focused }: PaneProps) {
       >
         {sortedTickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
-            <text fg={colors.textDim}>No tickers. Press Ctrl+P to add one.</text>
+            <EmptyState title="No tickers." hint="Press Ctrl+P to add one." />
           </box>
         ) : (
           sortedTickers.map((ticker, idx) => {

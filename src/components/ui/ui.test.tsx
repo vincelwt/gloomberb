@@ -1,0 +1,70 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { testRender } from "@opentui/react/test-utils";
+import { Button } from "./button";
+import { ProgressBar } from "./loading";
+import { Notice } from "./status";
+import { Tabs } from "./tabs";
+import { ToggleList } from "../toggle-list";
+
+let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+
+afterEach(() => {
+  if (testSetup) {
+    testSetup.renderer.destroy();
+    testSetup = undefined;
+  }
+});
+
+describe("shared UI kit", () => {
+  test("renders navigation and feedback primitives", async () => {
+    testSetup = await testRender(
+      <box flexDirection="column">
+        <Tabs
+          tabs={[
+            { label: "Overview", value: "overview" },
+            { label: "News", value: "news" },
+          ]}
+          activeValue="overview"
+          onSelect={() => {}}
+        />
+        <box height={1} />
+        <Button label="Save" variant="primary" shortcut="⌘S" onPress={() => {}} />
+        <box height={1} />
+        <ProgressBar value={0.5} width={8} label="Syncing" />
+        <box height={1} />
+        <Notice title="Connected" message="Broker session is live" tone="success" />
+      </box>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Overview");
+    expect(frame).toContain("Save");
+    expect(frame).toContain("Syncing");
+    expect(frame).toContain("Connected");
+  });
+
+  test("renders toggle lists with selection and descriptions", async () => {
+    testSetup = await testRender(
+      <ToggleList
+        items={[
+          { id: "news", label: "News", enabled: true, description: "Headlines and previews" },
+          { id: "notes", label: "Notes", enabled: false, description: "Ticker notes" },
+        ]}
+        selectedIdx={0}
+        onSelect={() => {}}
+        onToggle={() => {}}
+      />,
+      { width: 40, height: 6 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[✓] News");
+    expect(frame).toContain("Notes");
+    expect(frame).toContain("Headlines and previews");
+  });
+});

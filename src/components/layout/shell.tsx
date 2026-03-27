@@ -117,7 +117,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
     // Distribute any leftover pixels (from rounding) to the last column
     const totalUsed = widths.reduce((sum, w) => sum + w, 0);
     if (widths.length > 0 && totalUsed < availableWidth) {
-      widths[widths.length - 1] += availableWidth - totalUsed;
+      const lastIndex = widths.length - 1;
+      widths[lastIndex] = (widths[lastIndex] ?? MIN_PANE_WIDTH) + (availableWidth - totalUsed);
     }
 
     return widths;
