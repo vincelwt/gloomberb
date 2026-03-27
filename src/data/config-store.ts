@@ -3,6 +3,7 @@ import { join, dirname } from "path";
 import { existsSync } from "fs";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
+import { migrateLayout } from "../plugins/pane-manager";
 
 const GLOBAL_CONFIG_DIR = join(process.env.HOME || "~", ".gloomberb");
 const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, "config.json");
@@ -35,6 +36,10 @@ export async function loadConfig(dataDir: string): Promise<AppConfig> {
     // Migration: ext_hours is now merged into change_pct
     if (config.columns) {
       config.columns = config.columns.filter((c: { id: string }) => c.id !== "ext_hours");
+    }
+    // Migration: old PaneLayoutEntry[] to new LayoutConfig
+    if (saved.layout) {
+      config.layout = migrateLayout(saved.layout);
     }
     return config;
   } catch {

@@ -3,7 +3,7 @@ import type { CliRenderer } from "@opentui/core";
 import type {
   GloomSlots, GloomPlugin, GloomPluginContext, PaneDef, CommandDef,
   CustomColumnDef, DetailTabDef, KeyboardShortcut, TickerAction,
-  FloatingWidgetDef, PluginStorage,
+  PluginStorage,
 } from "../types/plugin";
 import type { BrokerAdapter } from "../types/broker";
 import type { TickerFile } from "../types/ticker";
@@ -11,6 +11,8 @@ import type { TickerFinancials } from "../types/financials";
 import type { DataProvider } from "../types/data-provider";
 import type { MarkdownStore } from "../data/markdown-store";
 import type { SqliteCache } from "../data/sqlite-cache";
+import type { LayoutConfig } from "../types/config";
+import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
 
 // Shared references for React components (which can't access setup context)
@@ -32,7 +34,6 @@ interface PluginItems {
   detailTabs: string[];
   shortcuts: string[];
   tickerActions: string[];
-  floatingWidgets: string[];
   eventDisposers: Array<() => void>;
 }
 
@@ -50,8 +51,6 @@ export class PluginRegistry {
   private _detailTabs = new Map<string, DetailTabDef>();
   private _shortcuts = new Map<string, KeyboardShortcut>();
   private _tickerActions = new Map<string, TickerAction>();
-  private _floatingWidgets = new Map<string, FloatingWidgetDef>();
-  private _visibleWidgets = new Set<string>();
 
   readonly events: EventBus;
   readonly dataProvider: DataProvider;
@@ -70,6 +69,12 @@ export class PluginRegistry {
   switchPanelFn: ((panel: "left" | "right") => void) = () => {};
   switchTabFn: ((tabId: string) => void) = () => {};
   openCommandBarFn: ((query?: string) => void) = () => {};
+  focusPaneFn: ((paneId: string) => void) = () => {};
+
+  // Layout functions (set by app after render)
+  getLayoutFn: (() => LayoutConfig) = () => ({ columns: [], docked: [], floating: [] });
+  updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
+  getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
   // Toast function (set by app after ToastProvider mounts)
   showToastFn: ((message: string, options?: { duration?: number; type?: "info" | "success" | "error" }) => void) = () => {};
@@ -101,8 +106,6 @@ export class PluginRegistry {
   get detailTabs(): ReadonlyMap<string, DetailTabDef> { return this._detailTabs; }
   get shortcuts(): ReadonlyMap<string, KeyboardShortcut> { return this._shortcuts; }
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this._tickerActions; }
-  get floatingWidgets(): ReadonlyMap<string, FloatingWidgetDef> { return this._floatingWidgets; }
-  get visibleWidgets(): ReadonlySet<string> { return this._visibleWidgets; }
   get allPlugins(): ReadonlyMap<string, GloomPlugin> { return this.plugins; }
 
   /** Returns the last registered provider (paid providers override the default Yahoo) */
@@ -112,53 +115,60 @@ export class PluginRegistry {
     return last;
   }
 
-  private _widgetChangeListeners = new Set<() => void>();
-
-  onWidgetVisibilityChange(listener: () => void): () => void {
-    this._widgetChangeListeners.add(listener);
-    return () => { this._widgetChangeListeners.delete(listener); };
-  }
-
-  private _notifyWidgetChange(): void {
-    for (const listener of this._widgetChangeListeners) {
-      try { listener(); } catch { /* ignore */ }
-    }
-  }
-
-  /** Get floating widget IDs registered by a specific plugin */
-  getPluginWidgetIds(pluginId: string): string[] {
-    return this._pluginItems.get(pluginId)?.floatingWidgets ?? [];
-  }
-
   /** Get pane IDs registered by a specific plugin */
   getPluginPaneIds(pluginId: string): string[] {
     return this._pluginItems.get(pluginId)?.panes ?? [];
   }
 
-  showWidget(widgetId: string): void {
-    // Don't show widgets from disabled plugins
+  /** Check if a pane is currently visible as a floating pane in the layout */
+  isPaneFloating(paneId: string): boolean {
+    try {
+      return this.getLayoutFn().floating.some((f) => f.paneId === paneId);
+    } catch { return false; }
+  }
+
+  /** Show a pane as a floating window (adds to layout.floating if not already present) */
+  showWidget(paneId: string): void {
+    // Don't show panes from disabled plugins
     try {
       const disabledPlugins = new Set(this.getConfigFn().disabledPlugins || []);
       for (const [pluginId, items] of this._pluginItems) {
-        if (items.floatingWidgets.includes(widgetId) && disabledPlugins.has(pluginId)) {
+        if (items.panes.includes(paneId) && disabledPlugins.has(pluginId)) {
           return;
         }
       }
     } catch { /* getConfigFn not set yet during init — allow */ }
-    this._visibleWidgets.add(widgetId);
-    this._notifyWidgetChange();
+
+    const layout = this.getLayoutFn();
+    // Already floating — just focus
+    if (layout.floating.some((f) => f.paneId === paneId)) {
+      this.focusPaneFn(paneId);
+      return;
+    }
+
+    // Remove from docked if present, then add as floating
+    const def = this._panes.get(paneId);
+    const { width, height } = this.getTermSizeFn();
+    const newLayout = addPaneFloating(
+      { ...layout, docked: layout.docked.filter((d) => d.paneId !== paneId) },
+      paneId, width, height, def,
+    );
+    this.updateLayoutFn(newLayout);
+    this.focusPaneFn(paneId);
   }
 
-  hideWidget(widgetId: string): void {
-    this._visibleWidgets.delete(widgetId);
-    this._notifyWidgetChange();
+  /** Hide a floating pane (removes from layout) */
+  hideWidget(paneId: string): void {
+    const layout = this.getLayoutFn();
+    const newLayout = removePane(layout, paneId);
+    this.updateLayoutFn(newLayout);
   }
 
   private createContext(pluginId: string): GloomPluginContext {
     const items: PluginItems = {
       panes: [], commands: [], columns: [], brokers: [],
       dataProviders: [], detailTabs: [], shortcuts: [],
-      tickerActions: [], floatingWidgets: [], eventDisposers: [],
+      tickerActions: [], eventDisposers: [],
     };
     this._pluginItems.set(pluginId, items);
 
@@ -186,7 +196,6 @@ export class PluginRegistry {
       registerDetailTab: (tab) => { this._detailTabs.set(tab.id, tab); items.detailTabs.push(tab.id); },
       registerShortcut: (shortcut) => { this._shortcuts.set(shortcut.id, shortcut); items.shortcuts.push(shortcut.id); },
       registerTickerAction: (action) => { this._tickerActions.set(action.id, action); items.tickerActions.push(action.id); },
-      registerFloatingWidget: (widget) => { this._floatingWidgets.set(widget.id, widget); items.floatingWidgets.push(widget.id); },
 
       // Data access
       getData: (ticker) => this.getDataFn(ticker),
@@ -217,8 +226,8 @@ export class PluginRegistry {
       emit: (event, payload) => this.events.emit(event, payload),
 
       // UI
-      showWidget: (widgetId) => this.showWidget(widgetId),
-      hideWidget: (widgetId) => this.hideWidget(widgetId),
+      showWidget: (paneId) => this.showWidget(paneId),
+      hideWidget: (paneId) => this.hideWidget(paneId),
       showToast: (message, options) => this.showToastFn(message, options),
     };
   }
@@ -287,10 +296,6 @@ export class PluginRegistry {
       for (const id of items.detailTabs) this._detailTabs.delete(id);
       for (const id of items.shortcuts) this._shortcuts.delete(id);
       for (const id of items.tickerActions) this._tickerActions.delete(id);
-      for (const id of items.floatingWidgets) {
-        this._floatingWidgets.delete(id);
-        this._visibleWidgets.delete(id);
-      }
       for (const dispose of items.eventDisposers) dispose();
       this._pluginItems.delete(pluginId);
     }
