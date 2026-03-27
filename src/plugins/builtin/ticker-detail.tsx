@@ -531,6 +531,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   useKeyboard(handleKeyboard);
 
+
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickers.length === 0;
     const message = isEmptyFollowCollection
@@ -538,7 +539,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
       : "No ticker selected.";
 
     return (
-      <box flexDirection="column" flexGrow={1} paddingX={1} paddingTop={1}>
+      <box flexDirection="column" flexGrow={1} paddingX={1}>
         <text fg={colors.textDim}>{message}</text>
       </box>
     );

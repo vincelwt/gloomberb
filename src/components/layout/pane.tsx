@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { colors } from "../../theme/colors";
+import { colors, paneBg, paneTitleBg, paneTitleText } from "../../theme/colors";
 
 interface PaneWrapperProps {
   title?: string;
@@ -12,21 +12,27 @@ interface PaneWrapperProps {
 }
 
 export function PaneWrapper({ title, focused, width, height, flexGrow, onMouseDown, children }: PaneWrapperProps) {
+  const bg = paneBg(focused);
+  const titleBgColor = paneTitleBg(focused);
+
   return (
     <box
       flexDirection="column"
       width={width}
       height={height}
       flexGrow={flexGrow}
-      borderStyle="single"
-      borderColor={focused ? colors.borderFocused : colors.border}
-      title={title}
-      titleAlignment="left"
-      backgroundColor={colors.bg}
+      backgroundColor={bg}
       overflow="hidden"
       onMouseDown={onMouseDown}
     >
-      {children}
+      {title && (
+        <box height={1} backgroundColor={titleBgColor}>
+          <text fg={paneTitleText(focused)}>{title}</text>
+        </box>
+      )}
+      <box flexGrow={1} overflow="hidden">
+        {children}
+      </box>
     </box>
   );
 }
