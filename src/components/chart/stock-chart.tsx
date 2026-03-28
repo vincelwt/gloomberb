@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { usePaneTicker } from "../../state/app-context";
+import { useAppState, usePaneTicker } from "../../state/app-context";
+import { saveConfig } from "../../data/config-store";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
@@ -33,13 +34,15 @@ interface StockChartProps {
 }
 
 export function StockChart({ width, height, focused, interactive, compact }: StockChartProps) {
+  const { state, dispatch } = useAppState();
   const { ticker, financials } = usePaneTicker();
+  const defaultRenderMode = state.config.chartPreferences.defaultRenderMode;
   const [viewState, setViewState] = useState<ChartViewState>({
     timeRange: compact ? "1Y" : "5Y",
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,
-    renderMode: "area",
+    renderMode: defaultRenderMode,
   });
   const [showVolume, setShowVolume] = useState(!compact);
   const [rangeHistory, setRangeHistory] = useState<PricePoint[] | null>(null);
@@ -70,12 +73,16 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   }, [ticker?.frontmatter.ticker, viewState.timeRange, compact]);
 
   const baseHistory = rangeHistory ?? financials?.priceHistory ?? [];
+  const baseHistoryStartMs = baseHistory[0] ? new Date(baseHistory[0].date).getTime() : null;
+  const baseHistoryEndMs = baseHistory.length > 0
+    ? new Date(baseHistory[baseHistory.length - 1]!.date).getTime()
+    : null;
   const axisWidth = compact ? 0 : 10;
   const chartWidth = Math.max(width - axisWidth - 2, 20);
 
   // Fetch higher-resolution data when zoomed in
   useEffect(() => {
-    if (compact || baseHistory.length < 2 || viewState.zoomLevel <= 1) {
+    if (compact || !ticker || baseHistory.length < 2 || viewState.zoomLevel <= 1) {
       setDetailHistory(null);
       return;
     }
@@ -83,7 +90,10 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     if (detailDebounceRef.current) clearTimeout(detailDebounceRef.current);
     detailDebounceRef.current = setTimeout(() => {
       const window = getVisibleWindow(baseHistory, viewState, chartWidth);
-      if (window.points.length < 2) return;
+      if (window.points.length < 2) {
+        setDetailHistory(null);
+        return;
+      }
 
       const startDate = window.points[0]!.date;
       const endDate = window.points[window.points.length - 1]!.date;
@@ -95,14 +105,17 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
       }
 
       const provider = getSharedDataProvider();
-      if (!provider?.getDetailedPriceHistory) return;
+      if (!provider?.getDetailedPriceHistory) {
+        setDetailHistory(null);
+        return;
+      }
 
       const id = ++detailFetchIdRef.current;
-      const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
+      const instrument = ticker.frontmatter.broker_contracts?.[0] ?? null;
       provider
         .getDetailedPriceHistory(
-          ticker!.frontmatter.ticker,
-          ticker!.frontmatter.exchange || "",
+          ticker.frontmatter.ticker,
+          ticker.frontmatter.exchange || "",
           startDate,
           endDate,
           barSize,
@@ -125,7 +138,16 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     return () => {
       if (detailDebounceRef.current) clearTimeout(detailDebounceRef.current);
     };
-  }, [viewState.zoomLevel, viewState.panOffset, baseHistory.length, chartWidth, compact]);
+  }, [
+    baseHistory.length,
+    baseHistoryEndMs,
+    baseHistoryStartMs,
+    chartWidth,
+    compact,
+    ticker,
+    viewState.panOffset,
+    viewState.zoomLevel,
+  ]);
 
   // Use detail data when available and zoomed in, otherwise fall back to base
   const history = (viewState.zoomLevel > 1 && detailHistory) ? detailHistory : baseHistory;
@@ -164,11 +186,22 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
         setViewState((state) => ({ ...state, panOffset: Math.max(state.panOffset - panStep, 0) }));
         return;
       case "m":
-        setViewState((state) => {
-          const current = state.renderMode ?? "area";
+        setViewState((view) => {
+          const current = view.renderMode ?? "area";
           const idx = CHART_RENDER_MODES.indexOf(current);
           const next = CHART_RENDER_MODES[(idx + 1) % CHART_RENDER_MODES.length]!;
-          return { ...state, renderMode: next };
+          if (next !== defaultRenderMode) {
+            const nextConfig = {
+              ...state.config,
+              chartPreferences: {
+                ...state.config.chartPreferences,
+                defaultRenderMode: next,
+              },
+            };
+            dispatch({ type: "SET_CONFIG", config: nextConfig });
+            saveConfig(nextConfig).catch(() => {});
+          }
+          return { ...view, renderMode: next };
         });
         return;
     }
@@ -279,14 +312,23 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     : null;
   const activePoint = showOhlcSummary ? result.activePoint : null;
 
+  // Shared chart lines rendering for both compact and full modes
+  const chartLines = result.lines.map((line, i) => {
+    const axisLabel = !compact ? result.axisLabels.find((entry) => entry.row === i) : null;
+    return (
+      <box key={i} flexDirection="row" height={1}>
+        <text content={line as any} />
+        {axisLabel && (
+          <text fg={colors.textDim}> {axisLabel.label.padStart(axisWidth - 1)}</text>
+        )}
+      </box>
+    );
+  });
+
   if (compact) {
     return (
       <box flexDirection="column">
-        {result.lines.map((line, i) => (
-          <box key={i} height={1}>
-            <text content={line as any} />
-          </box>
-        ))}
+        {chartLines}
         <box height={1}>
           <text fg={colors.textDim}>{result.timeLabels}</text>
         </box>
@@ -361,17 +403,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
 
       <box height={1} />
 
-      {result.lines.map((line, i) => {
-        const axisLabel = result.axisLabels.find((entry) => entry.row === i);
-        return (
-          <box key={i} flexDirection="row" height={1}>
-            <text content={line as any} />
-            {axisLabel && (
-              <text fg={colors.textDim}> {axisLabel.label.padStart(axisWidth - 1)}</text>
-            )}
-          </box>
-        );
-      })}
+      {chartLines}
 
       <box height={1}>
         <text fg={colors.textDim}>{result.timeLabels}</text>

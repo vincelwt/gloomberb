@@ -5,7 +5,7 @@ import type { AppConfig } from "../types/config";
 import type { TickerFinancials, Quote, PricePoint, OptionsChain } from "../types/financials";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { InstrumentSearchResult } from "../types/instrument";
-import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
+import { createDefaultConfig } from "../types/config";
 
 /** Cap total time spent attempting broker data before falling back to other providers. */
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
@@ -34,23 +34,7 @@ export class ProviderRouter implements DataProvider {
   readonly priority = Number.MAX_SAFE_INTEGER;
 
   private registry: PluginRegistry | null = null;
-  private getConfigFn: () => AppConfig = () => ({
-    dataDir: "",
-    configVersion: CURRENT_CONFIG_VERSION,
-    baseCurrency: "USD",
-    refreshIntervalMinutes: 30,
-    portfolios: [],
-    watchlists: [],
-    columns: [],
-    layout: cloneLayout(DEFAULT_LAYOUT),
-    layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-    activeLayoutIndex: 0,
-    brokerInstances: [],
-    plugins: [],
-    disabledPlugins: [],
-    theme: "amber",
-    recentTickers: [],
-  });
+  private getConfigFn: () => AppConfig = () => createDefaultConfig("");
 
   constructor(
     private readonly fallbackProvider: DataProvider,

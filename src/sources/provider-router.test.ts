@@ -88,6 +88,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
@@ -159,6 +162,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
