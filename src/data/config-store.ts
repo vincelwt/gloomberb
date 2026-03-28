@@ -3,6 +3,7 @@ import { dirname, join } from "path";
 import type {
   AppConfig,
   BrokerInstanceConfig,
+  ChartPreferences,
   ColumnConfig,
   LayoutConfig,
   PaneBinding,
@@ -74,6 +75,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
     disabledPlugins: sanitizeStringArray(saved.disabledPlugins, defaults.disabledPlugins),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
+    chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
     recentTickers: sanitizeStringArray(saved.recentTickers, defaults.recentTickers),
     onboardingComplete: typeof saved.onboardingComplete === "boolean" ? saved.onboardingComplete : defaults.onboardingComplete,
   };
@@ -84,6 +86,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     || !Array.isArray((saved.layout as { instances?: unknown })?.instances)
     || !Array.isArray(saved.layouts)
     || !Array.isArray(saved.brokerInstances)
+    || !isChartPreferences(saved.chartPreferences)
     || typeof saved.activeLayoutIndex !== "number";
 
   return { config, needsSave };
@@ -111,6 +114,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
     disabledPlugins: sanitizeStringArray(config.disabledPlugins, []),
+    chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
 
@@ -147,6 +151,21 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : fallback;
+}
+
+function isChartPreferences(value: unknown): value is ChartPreferences {
+  if (!value || typeof value !== "object") return false;
+  const defaultRenderMode = (value as ChartPreferences).defaultRenderMode;
+  return defaultRenderMode === "area"
+    || defaultRenderMode === "line"
+    || defaultRenderMode === "candles"
+    || defaultRenderMode === "ohlc";
+}
+
+function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): ChartPreferences {
+  return isChartPreferences(value)
+    ? { defaultRenderMode: value.defaultRenderMode }
+    : { ...fallback };
 }
 
 function sanitizeColumns(value: unknown, fallback: ColumnConfig[]): ColumnConfig[] {

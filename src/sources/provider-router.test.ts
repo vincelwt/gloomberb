@@ -8,6 +8,7 @@ import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider } from "../types/data-provider";
 import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
 
+const originalConsoleError = console.error;
 const tempPaths: string[] = [];
 
 function createTempDbPath(name: string): string {
@@ -17,6 +18,7 @@ function createTempDbPath(name: string): string {
 }
 
 afterEach(() => {
+  console.error = originalConsoleError;
   for (const path of tempPaths.splice(0)) {
     if (existsSync(path)) rmSync(path, { force: true });
   }
@@ -106,6 +108,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
@@ -177,6 +182,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
@@ -257,6 +265,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
@@ -278,5 +289,26 @@ describe("ProviderRouter", () => {
     expect(cached.get("AAPL")?.quote?.price).toBe(125);
     expect(cached.get("AAPL")?.fundamentals?.revenue).toBe(1000);
     persistence.close();
+  });
+
+  test("does not log expected provider misses for missing chart data", async () => {
+    const noisyProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async getPriceHistory() {
+        throw new Error('[404] {"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}');
+      },
+    };
+    const router = new ProviderRouter(fallbackProvider, [noisyProvider]);
+    const logged: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logged.push(args);
+    };
+
+    const history = await router.getPriceHistory("BAD", "NASDAQ", "1Y");
+
+    expect(history).toEqual([]);
+    expect(logged).toHaveLength(0);
   });
 });

@@ -2,7 +2,7 @@ import type { CachedResourceRecord, ResourceStore } from "../data/resource-store
 import type { PluginRegistry } from "../plugins/registry";
 import type { BrokerAdapter } from "../types/broker";
 import type { AppConfig } from "../types/config";
-import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
+import { createDefaultConfig } from "../types/config";
 import type { DataProvider, MarketDataRequestContext, NewsItem, SearchRequestContext } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
@@ -11,6 +11,7 @@ import type { TimeRange } from "../components/chart/chart-types";
 import type { HydrationTarget } from "../state/session-persistence";
 
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
+const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
 const MARKET_NAMESPACE = "market";
 
 const DEFAULT_CACHE_POLICIES: Record<string, CachePolicy> = {
@@ -33,6 +34,11 @@ function withBrokerTimeout<T>(promise: Promise<T>): Promise<T | null> {
       () => { clearTimeout(timer); resolve(null); },
     );
   });
+}
+
+function shouldLogProviderError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return !EXPECTED_PROVIDER_MISS.test(message);
 }
 
 function normalizeTicker(ticker: string): string {
@@ -90,12 +96,6 @@ interface BrokerCandidate {
   instance: AppConfig["brokerInstances"][number];
 }
 
-interface SourceCandidate {
-  sourceKey: string;
-  cachePolicy: CachePolicy;
-  fetch: () => Promise<unknown | null>;
-}
-
 interface SourceResult<T> {
   sourceKey: string;
   value: T;
@@ -108,23 +108,7 @@ export class ProviderRouter implements DataProvider {
 
   private registry: PluginRegistry | null = null;
   private readonly revalidationInFlight = new Map<string, Promise<unknown>>();
-  private getConfigFn: () => AppConfig = () => ({
-    dataDir: "",
-    configVersion: CURRENT_CONFIG_VERSION,
-    baseCurrency: "USD",
-    refreshIntervalMinutes: 30,
-    portfolios: [],
-    watchlists: [],
-    columns: [],
-    layout: cloneLayout(DEFAULT_LAYOUT),
-    layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
-    activeLayoutIndex: 0,
-    brokerInstances: [],
-    plugins: [],
-    disabledPlugins: [],
-    theme: "amber",
-    recentTickers: [],
-  });
+  private getConfigFn: () => AppConfig = () => createDefaultConfig("");
 
   constructor(
     private readonly fallbackProvider: DataProvider,
@@ -613,7 +597,9 @@ export class ProviderRouter implements DataProvider {
         const result = await fn(provider);
         if (result != null) return { sourceKey: this.providerSourceKey(provider), value: result };
       } catch (err) {
-        console.error(`[ProviderRouter] ${provider.id} failed:`, err);
+        if (shouldLogProviderError(err)) {
+          console.error(`[ProviderRouter] ${provider.id} failed:`, err);
+        }
       }
     }
     return null;
