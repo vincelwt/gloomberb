@@ -313,6 +313,7 @@ function ChatPane({ focused, width, height, close }: PaneProps) {
 }
 
 function ChatStatusWidget() {
+  const { state } = useAppState();
   const [username, setUsername] = useState<string | null>(chatController.getSnapshot().user?.username ?? null);
 
   useEffect(() => {
@@ -322,6 +323,8 @@ function ChatStatusWidget() {
     void chatController.refreshSession().catch(() => {});
     return unsubscribe;
   }, []);
+
+  if (state.config.disabledPlugins.includes("chat")) return null;
 
   return (
     <box flexDirection="row" paddingRight={1}>
