@@ -175,16 +175,34 @@ function sanitizePluginConfig(value: unknown): Record<string, Record<string, unk
 function isChartPreferences(value: unknown): value is ChartPreferences {
   if (!value || typeof value !== "object") return false;
   const defaultRenderMode = (value as ChartPreferences).defaultRenderMode;
-  return defaultRenderMode === "area"
+  const renderer = (value as ChartPreferences).renderer;
+  return (defaultRenderMode === "area"
     || defaultRenderMode === "line"
     || defaultRenderMode === "candles"
-    || defaultRenderMode === "ohlc";
+    || defaultRenderMode === "ohlc")
+    && (renderer === "auto" || renderer === "kitty" || renderer === "braille");
 }
 
 function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): ChartPreferences {
-  return isChartPreferences(value)
-    ? { defaultRenderMode: value.defaultRenderMode }
-    : { ...fallback };
+  if (!value || typeof value !== "object") return { ...fallback };
+
+  const candidate = value as Partial<ChartPreferences>;
+  const defaultRenderMode = candidate.defaultRenderMode === "area"
+    || candidate.defaultRenderMode === "line"
+    || candidate.defaultRenderMode === "candles"
+    || candidate.defaultRenderMode === "ohlc"
+    ? candidate.defaultRenderMode
+    : fallback.defaultRenderMode;
+  const renderer = candidate.renderer === "auto"
+    || candidate.renderer === "kitty"
+    || candidate.renderer === "braille"
+    ? candidate.renderer
+    : fallback.renderer;
+
+  return {
+    defaultRenderMode,
+    renderer,
+  };
 }
 
 function sanitizeColumns(value: unknown, fallback: ColumnConfig[]): ColumnConfig[] {

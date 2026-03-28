@@ -110,6 +110,7 @@ describe("ProviderRouter", () => {
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
+        renderer: "auto",
       },
       recentTickers: [],
     }));
@@ -184,6 +185,7 @@ describe("ProviderRouter", () => {
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
+        renderer: "auto",
       },
       recentTickers: [],
     }));
@@ -267,6 +269,7 @@ describe("ProviderRouter", () => {
       theme: "amber",
       chartPreferences: {
         defaultRenderMode: "area",
+        renderer: "auto",
       },
       recentTickers: [],
     }));

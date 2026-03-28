@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useTerminalDimensions } from "@opentui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useDialogState } from "@opentui-ui/dialog/react";
 import { saveConfig } from "../../data/config-store";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../../state/app-context";
 import type { LayoutConfig } from "../../types/config";
 import { colors } from "../../theme/colors";
+import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneWrapper } from "./pane";
 
@@ -41,7 +42,9 @@ type DragMode =
 
 export function Shell({ pluginRegistry }: ShellProps) {
   const { state, dispatch } = useAppState();
+  const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
+  const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
   const layout = state.config.layout;
   const contentHeight = height - (state.statusBarVisible ? 2 : 1);
@@ -154,6 +157,59 @@ export function Shell({ pluginRegistry }: ShellProps) {
     rects.sort((a, b) => b.z - a.z);
     return rects;
   }, [filteredFloating]);
+
+  const nativePaneLayers = useMemo<NativePaneLayer[]>(() => {
+    const layers: NativePaneLayer[] = [];
+    for (const panes of filteredColumns.values()) {
+      for (const pane of panes) {
+        layers.push({ paneId: pane.instance.instanceId, zIndex: 0 });
+      }
+    }
+    for (const pane of filteredFloating) {
+      layers.push({
+        paneId: pane.instance.instanceId,
+        zIndex: pane.floating?.zIndex ?? 50,
+      });
+    }
+    return layers;
+  }, [filteredColumns, filteredFloating]);
+
+  const nativeOccluders = useMemo<NativeOccluder[]>(() => {
+    const occluders: NativeOccluder[] = filteredFloating.map((pane) => ({
+      id: pane.instance.instanceId,
+      paneId: pane.instance.instanceId,
+      rect: {
+        x: pane.floating!.x,
+        y: pane.floating!.y + HEADER_HEIGHT,
+        width: pane.floating!.width,
+        height: pane.floating!.height,
+      },
+      zIndex: pane.floating?.zIndex ?? 50,
+    }));
+
+    if (overlayOpen) {
+      occluders.push({
+        id: "overlay:global",
+        paneId: null,
+        rect: {
+          x: 0,
+          y: HEADER_HEIGHT,
+          width,
+          height: contentHeight,
+        },
+        zIndex: Number.MAX_SAFE_INTEGER,
+      });
+    }
+
+    return occluders;
+  }, [contentHeight, filteredFloating, overlayOpen, width]);
+
+  useEffect(() => {
+    nativeSurfaceManager.setWindowState({
+      paneLayers: nativePaneLayers,
+      occluders: nativeOccluders,
+    });
+  }, [nativeOccluders, nativePaneLayers, nativeSurfaceManager]);
 
   const handleMouse = useCallback((event: { type: string; x: number; y: number; stopPropagation: () => void; preventDefault: () => void }) => {
     const shellY = event.y - HEADER_HEIGHT;

@@ -86,6 +86,40 @@ describe("loadConfig", () => {
 
     expect(config.chartPreferences).toEqual({
       defaultRenderMode: "area",
+      renderer: "auto",
+    });
+  });
+
+  test("sanitizes invalid chart renderer values back to auto", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
+    tempDirs.push(dataDir);
+
+    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+      configVersion: 7,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
+      watchlists: [{ id: "watchlist", name: "Watchlist" }],
+      columns: [],
+      layout: DEFAULT_LAYOUT,
+      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
+      activeLayoutIndex: 0,
+      brokerInstances: [],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "line",
+        renderer: "nope",
+      },
+      recentTickers: [],
+    }), "utf-8");
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.chartPreferences).toEqual({
+      defaultRenderMode: "line",
+      renderer: "auto",
     });
     expect(config.pluginConfig).toEqual({});
   });

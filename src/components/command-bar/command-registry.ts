@@ -148,6 +148,14 @@ export const commands: Command[] = [
     category: "Config",
     execute: () => {}, // handled by command bar
   },
+  {
+    id: "cycle-chart-renderer",
+    prefix: "CR",
+    label: "Cycle Chart Renderer",
+    description: "Cycle chart rendering between Auto, Kitty, and Braille",
+    category: "Config",
+    execute: () => {}, // handled specially by command bar
+  },
 
   // Plugins
   {

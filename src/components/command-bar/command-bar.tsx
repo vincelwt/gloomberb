@@ -29,6 +29,7 @@ import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import { DialogFrame, ListView, TextField } from "../ui";
 import {
   getEmptyState,
@@ -584,6 +585,22 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       case "columns": {
         // Enter columns mode by setting the prefix
         dispatch({ type: "SET_COMMAND_BAR_QUERY", query: "COL " });
+        return;
+      }
+      case "cycle-chart-renderer": {
+        const current = state.config.chartPreferences.renderer;
+        const index = CHART_RENDERER_PREFERENCES.indexOf(current);
+        const next = CHART_RENDERER_PREFERENCES[(index + 1) % CHART_RENDERER_PREFERENCES.length] ?? "auto";
+        const nextConfig = {
+          ...state.config,
+          chartPreferences: {
+            ...state.config.chartPreferences,
+            renderer: next,
+          },
+        };
+        dispatch({ type: "SET_CONFIG", config: nextConfig });
+        saveConfig(nextConfig).catch(() => {});
+        close();
         return;
       }
       case "add-watchlist":
