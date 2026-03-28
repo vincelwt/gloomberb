@@ -1,8 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { ProviderRouter } from "./provider-router";
 import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider } from "../types/data-provider";
 import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
+
+const originalConsoleError = console.error;
+
+afterEach(() => {
+  console.error = originalConsoleError;
+});
 
 const fallbackProvider: DataProvider = {
   id: "fallback",
@@ -88,6 +94,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
@@ -159,6 +168,9 @@ describe("ProviderRouter", () => {
       plugins: [],
       disabledPlugins: [],
       theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
       recentTickers: [],
     }));
 
@@ -166,5 +178,26 @@ describe("ProviderRouter", () => {
     expect(results[0]?.brokerInstanceId).toBe("ibkr-work");
     expect(results[0]?.brokerLabel).toBe("Work");
     expect(results[0]?.brokerContract?.brokerInstanceId).toBe("ibkr-work");
+  });
+
+  test("does not log expected provider misses for missing chart data", async () => {
+    const noisyProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async getPriceHistory() {
+        throw new Error('[404] {"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}');
+      },
+    };
+    const router = new ProviderRouter(fallbackProvider, [noisyProvider]);
+    const logged: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logged.push(args);
+    };
+
+    const history = await router.getPriceHistory("BAD", "NASDAQ", "1Y");
+
+    expect(history).toEqual([]);
+    expect(logged).toHaveLength(0);
   });
 });

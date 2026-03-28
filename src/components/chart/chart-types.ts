@@ -25,10 +25,15 @@ export interface ChartViewState {
   renderMode?: ChartRenderMode;
 }
 
+export interface Pixel {
+  color: string;
+  layer: number;
+}
+
 export interface PixelBuffer {
   width: number;
-  height: number; // virtual pixel rows (2x terminal rows)
-  pixels: (string | null)[][]; // [y][x] = hex color or null for transparent
+  height: number; // virtual pixel rows (4x terminal rows for braille rendering)
+  pixels: (Pixel | null)[][]; // [y][x] = pixel with color and layer, or null
 }
 
 export interface ChartColors {
