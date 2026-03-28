@@ -43,6 +43,18 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 }
 
 describe("IBKR trading instance selection", () => {
+  test("returns no trading instance when only flex profiles exist", () => {
+    const config = createConfig({
+      brokerInstances: [
+        createIbkrInstance("ibkr-default", "IBKR", "flex", {
+          flex: { token: "token", queryId: "query" },
+        }),
+      ],
+    });
+
+    expect(resolveIbkrTradingInstanceId(config, "", "ibkr-default")).toBeUndefined();
+  });
+
   test("prefers a gateway profile over a flex profile when both exist", () => {
     const config = createConfig({
       brokerInstances: [

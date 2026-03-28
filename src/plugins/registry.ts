@@ -29,6 +29,12 @@ let sharedRegistry: PluginRegistry | undefined;
 
 export function getSharedDataProvider(): DataProvider | undefined { return sharedDataProvider; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
+export function setSharedDataProviderForTests(provider: DataProvider | undefined): void {
+  sharedDataProvider = provider;
+}
+export function setSharedRegistryForTests(registry: PluginRegistry | undefined): void {
+  sharedRegistry = registry;
+}
 
 interface PluginItems {
   panes: string[];

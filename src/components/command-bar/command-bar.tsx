@@ -400,16 +400,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
     const adapter = [...pluginRegistry.brokers.values()].find((broker) => broker.id === choiceId);
     if (!adapter) return null;
-    const profileLabel = await dialog.prompt<string>({
-      content: (ctx) => <InputStepContent {...ctx} step={{
-        key: "profileLabel",
-        type: "text",
-        label: "Broker Profile Label",
-        body: ["Label this broker connection, for example Work, Personal, or Paper."],
-        placeholder: "Work",
-      }} />,
-    });
-    if (!profileLabel?.trim()) return null;
+    const profileLabel = adapter.name;
 
     const values: Record<string, string> = {};
     const prompted = new Set<string>();

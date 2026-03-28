@@ -18,7 +18,7 @@ import {
 import { PriceSelectorDialog } from "../../components";
 import { colors, hoverBg, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, padTo } from "../../utils/format";
-import { getBrokerInstance, getBrokerInstancesByType } from "../../utils/broker-instances";
+import { getBrokerInstance } from "../../utils/broker-instances";
 import { getSharedRegistry } from "../registry";
 import {
   buildIbkrConfigFromValues,
@@ -72,10 +72,15 @@ function isStopOrder(orderType: BrokerOrderType): boolean {
   return orderType === "STP" || orderType === "STP LMT";
 }
 
-function getIbkrInstances(appConfig: ReturnType<GloomPluginContext["getConfig"]>): BrokerInstanceConfig[] {
-  return getBrokerInstancesByType(appConfig.brokerInstances, "ibkr");
+export function hasIbkrTradingProfiles(appConfig: ReturnType<GloomPluginContext["getConfig"]>): boolean {
+  return getConfiguredIbkrGatewayInstances(appConfig).length > 0;
 }
 
+function ensureIbkrTradingProfile(ctx: GloomPluginContext): boolean {
+  if (hasIbkrTradingProfiles(ctx.getConfig())) return true;
+  ctx.showToast("Connect a Gateway / TWS IBKR profile first.", { type: "info" });
+  return false;
+}
 
 function inferDraftAccountId(
   appConfig: ReturnType<GloomPluginContext["getConfig"]>,
@@ -1488,7 +1493,9 @@ export const ibkrPlugin: GloomPlugin = {
       id: "ibkr-trade",
       label: "Trade",
       keywords: ["trade", "buy", "sell", "ibkr"],
+      filter: () => hasIbkrTradingProfiles(ctx.getConfig()),
       execute: async (ticker) => {
+        if (!ensureIbkrTradingProfile(ctx)) return;
         const current = getTradeTicketState(ticker.metadata.ticker, ticker);
         prefillTradeFromTicker(ticker, current.draft.action || "BUY");
         ctx.switchPanel("right");
@@ -1514,8 +1521,9 @@ export const ibkrPlugin: GloomPlugin = {
       description: "Open the IBKR trade tab for the selected ticker",
       keywords: ["ibkr", "trading", "orders", "trade", "ticker"],
       category: "navigation",
-      hidden: () => getIbkrInstances(ctx.getConfig()).length === 0,
+      hidden: () => !hasIbkrTradingProfiles(ctx.getConfig()),
       execute: async () => {
+        if (!ensureIbkrTradingProfile(ctx)) return;
         if (lastSelectedTickerSymbol) {
           const ticker = ctx.getTicker(lastSelectedTickerSymbol);
           if (ticker) {
@@ -1534,8 +1542,9 @@ export const ibkrPlugin: GloomPlugin = {
       description: "Prefill the trading pane with a BUY ticket for the selected ticker",
       keywords: ["buy", "trade", "order", "selected", "ibkr"],
       category: "portfolio",
-      hidden: () => getIbkrInstances(ctx.getConfig()).length === 0 || !lastSelectedTickerSymbol,
+      hidden: () => !hasIbkrTradingProfiles(ctx.getConfig()) || !lastSelectedTickerSymbol,
       execute: async () => {
+        if (!ensureIbkrTradingProfile(ctx)) return;
         if (!lastSelectedTickerSymbol) return;
         const ticker = ctx.getTicker(lastSelectedTickerSymbol);
         if (!ticker) return;
@@ -1551,8 +1560,9 @@ export const ibkrPlugin: GloomPlugin = {
       description: "Prefill the trading pane with a SELL ticket for the selected ticker",
       keywords: ["sell", "trade", "order", "selected", "ibkr"],
       category: "portfolio",
-      hidden: () => getIbkrInstances(ctx.getConfig()).length === 0 || !lastSelectedTickerSymbol,
+      hidden: () => !hasIbkrTradingProfiles(ctx.getConfig()) || !lastSelectedTickerSymbol,
       execute: async () => {
+        if (!ensureIbkrTradingProfile(ctx)) return;
         if (!lastSelectedTickerSymbol) return;
         const ticker = ctx.getTicker(lastSelectedTickerSymbol);
         if (!ticker) return;

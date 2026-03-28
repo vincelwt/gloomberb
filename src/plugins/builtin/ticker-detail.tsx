@@ -11,12 +11,40 @@ import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { StockChart } from "../../components/chart/stock-chart";
+import type { TickerFinancials } from "../../types/financials";
+import { getConfiguredIbkrGatewayInstances } from "../ibkr/instance-selection";
+import { useOptionsAvailability } from "./options-availability";
 
-const CORE_TABS = [
-  { id: "overview", name: "Overview", order: 10 },
-  { id: "financials", name: "Financials", order: 20 },
-  { id: "chart", name: "Chart", order: 30 },
-];
+const CORE_OVERVIEW_TAB = { id: "overview", name: "Overview", order: 10 };
+const CORE_FINANCIALS_TAB = { id: "financials", name: "Financials", order: 20 };
+const CORE_CHART_TAB = { id: "chart", name: "Chart", order: 30 };
+
+function hasStatementFinancials(financials: TickerFinancials | null | undefined): boolean {
+  return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
+}
+
+export function buildVisibleDetailTabs(
+  pluginTabs: DetailTabDef[],
+  financials: TickerFinancials | null | undefined,
+  options: {
+    hasIbkrGatewayTrading: boolean;
+    hasOptionsChain: boolean;
+  },
+): Array<{ id: string; name: string; order: number }> {
+  const tabs = [CORE_OVERVIEW_TAB];
+  if (hasStatementFinancials(financials)) {
+    tabs.push(CORE_FINANCIALS_TAB);
+  }
+  tabs.push(CORE_CHART_TAB);
+
+  for (const tab of pluginTabs) {
+    if (tab.id === "ibkr-trade" && !options.hasIbkrGatewayTrading) continue;
+    if (tab.id === "options" && !options.hasOptionsChain) continue;
+    tabs.push({ id: tab.id, name: tab.name, order: tab.order });
+  }
+
+  return tabs.sort((a, b) => a.order - b.order);
+}
 
 function OverviewTab({ width }: { width?: number }) {
   const { ticker, financials } = usePaneTicker();
@@ -294,22 +322,39 @@ function computeGrowth(current: number | undefined, previous: number | undefined
 
 function FinancialsTab({ focused }: { focused: boolean }) {
   const { financials } = usePaneTicker();
-  const [period, setPeriod] = useState<"annual" | "quarterly">("annual");
+  const hasAnnualStatements = (financials?.annualStatements.length ?? 0) > 0;
+  const hasQuarterlyStatements = (financials?.quarterlyStatements.length ?? 0) > 0;
+  const [period, setPeriod] = useState<"annual" | "quarterly">(
+    hasAnnualStatements ? "annual" : "quarterly",
+  );
   const [subTabIdx, setSubTabIdx] = useState(0);
 
   useKeyboard((event) => {
     if (!focused) return;
-    if (event.name === "a") setPeriod("annual");
-    else if (event.name === "q") setPeriod("quarterly");
+    if (event.name === "a" && hasAnnualStatements) setPeriod("annual");
+    else if (event.name === "q" && hasQuarterlyStatements) setPeriod("quarterly");
     else if (event.name === "1") setSubTabIdx(0);
     else if (event.name === "2") setSubTabIdx(1);
     else if (event.name === "3") setSubTabIdx(2);
   });
 
-  if (!financials) return <text fg={colors.textDim}>No financial data available.</text>;
+  useEffect(() => {
+    if (period === "annual" && !hasAnnualStatements && hasQuarterlyStatements) {
+      setPeriod("quarterly");
+    } else if (period === "quarterly" && !hasQuarterlyStatements && hasAnnualStatements) {
+      setPeriod("annual");
+    }
+  }, [hasAnnualStatements, hasQuarterlyStatements, period]);
+
+  if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
+    return <text fg={colors.textDim}>No financial data available.</text>;
+  }
 
   const subTab = FINANCIAL_SUB_TABS[subTabIdx]!;
-  const isAnnual = period === "annual";
+  const resolvedPeriod = period === "annual"
+    ? (hasAnnualStatements || !hasQuarterlyStatements ? "annual" : "quarterly")
+    : (hasQuarterlyStatements || !hasAnnualStatements ? "quarterly" : "annual");
+  const isAnnual = resolvedPeriod === "annual";
   const rawStmts = isAnnual
     ? financials.annualStatements.slice(-5).reverse()
     : financials.quarterlyStatements.slice(-6).reverse();
@@ -436,11 +481,12 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
 function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
   const paneInstance = usePaneInstance();
-  const { ticker } = usePaneTicker();
+  const { ticker, financials } = usePaneTicker();
   const { collectionId } = usePaneCollection();
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
+  const hasOptionsChain = useOptionsAvailability(ticker);
   const collectionTickers = getCollectionTickers(state, collectionId);
   const collectionName = getCollectionName(state, collectionId);
 
@@ -450,15 +496,17 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const pluginTabs: DetailTabDef[] = registry
     ? [...registry.detailTabs.values()].filter((t) => !disabledPlugins.includes(t.id))
     : [];
+  const hasIbkrGatewayTrading = getConfiguredIbkrGatewayInstances(state.config).length > 0;
 
-  const allTabs = [
-    ...CORE_TABS,
-    ...pluginTabs.map((t) => ({ id: t.id, name: t.name, order: t.order })),
-  ].sort((a, b) => a.order - b.order);
+  const allTabs = buildVisibleDetailTabs(pluginTabs, financials, {
+    hasIbkrGatewayTrading,
+    hasOptionsChain,
+  });
+  const visiblePluginTabs = pluginTabs.filter((tab) => allTabs.some((visibleTab) => visibleTab.id === tab.id));
 
-  const tabIdx = allTabs.findIndex((t) => t.id === activeTabId);
-  const isPluginTab = pluginTabs.some((t) => t.id === activeTabId);
-  const activePluginTab = isPluginTab ? pluginTabs.find((t) => t.id === activeTabId) : null;
+  const tabIdx = Math.max(0, allTabs.findIndex((t) => t.id === activeTabId));
+  const isPluginTab = visiblePluginTabs.some((t) => t.id === activeTabId);
+  const activePluginTab = isPluginTab ? visiblePluginTabs.find((t) => t.id === activeTabId) : null;
 
   // Refs to avoid stale closures in useKeyboard
   const allTabsRef = useRef(allTabs);
@@ -486,6 +534,12 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [activeTabId, dispatch]);
+
+  useEffect(() => {
+    if (!allTabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId("overview");
+    }
+  }, [activeTabId, allTabs, setActiveTabId]);
 
   const handleKeyboard = useCallback((event: { name?: string }) => {
     const s = stateRef.current;
