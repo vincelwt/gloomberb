@@ -7,6 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import type { SessionStore } from "../data/session-store";
 import { saveConfig } from "../data/config-store";
 import { applyTheme } from "../theme/colors";
 import {
@@ -20,8 +21,14 @@ import {
 } from "../types/config";
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
-import type { TickerFile } from "../types/ticker";
+import type { TickerRecord } from "../types/ticker";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
+import {
+  APP_SESSION_ID,
+  APP_SESSION_SCHEMA_VERSION,
+  type AppSessionSnapshot,
+} from "./session-persistence";
+import { usePersistSessionSnapshot } from "./use-session-snapshot";
 
 export interface PaneRuntimeState {
   cursorSymbol?: string | null;
@@ -32,7 +39,7 @@ export interface PaneRuntimeState {
 
 export interface AppState {
   config: AppConfig;
-  tickers: Map<string, TickerFile>;
+  tickers: Map<string, TickerRecord>;
   financials: Map<string, TickerFinancials>;
   exchangeRates: Map<string, number>;
   activePanel: "left" | "right";
@@ -51,10 +58,11 @@ export interface AppState {
 
 export type AppAction =
   | { type: "SET_CONFIG"; config: AppConfig }
-  | { type: "SET_TICKERS"; tickers: Map<string, TickerFile> }
-  | { type: "UPDATE_TICKER"; ticker: TickerFile }
+  | { type: "SET_TICKERS"; tickers: Map<string, TickerRecord> }
+  | { type: "UPDATE_TICKER"; ticker: TickerRecord }
   | { type: "REMOVE_TICKER"; symbol: string }
   | { type: "SET_FINANCIALS"; symbol: string; data: TickerFinancials }
+  | { type: "HYDRATE_FINANCIALS"; financials: Map<string, TickerFinancials> }
   | { type: "TRACK_TICKER"; symbol: string | null }
   | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right" }
   | { type: "TOGGLE_COMMAND_BAR" }
@@ -69,6 +77,7 @@ export type AppAction =
   | { type: "TOGGLE_PLUGIN"; pluginId: string }
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
   | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
+  | { type: "HYDRATE_EXCHANGE_RATES"; exchangeRates: Map<string, number> }
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig }
   | { type: "SWITCH_LAYOUT"; index: number }
   | { type: "NEW_LAYOUT"; name: string }
@@ -161,7 +170,7 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
   return null;
 }
 
-export function resolveTickerFileForPane(state: AppState, paneId: string): TickerFile | null {
+export function resolveTickerFileForPane(state: AppState, paneId: string): TickerRecord | null {
   const symbol = resolveTickerForPane(state, paneId);
   return symbol ? state.tickers.get(symbol) ?? null : null;
 }
@@ -229,7 +238,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "UPDATE_TICKER": {
       const tickers = new Map(state.tickers);
-      tickers.set(action.ticker.frontmatter.ticker, action.ticker);
+      tickers.set(action.ticker.metadata.ticker, action.ticker);
       return { ...state, tickers };
     }
 
@@ -259,6 +268,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_FINANCIALS": {
       const financials = new Map(state.financials);
       financials.set(action.symbol, action.data);
+      return { ...state, financials };
+    }
+
+    case "HYDRATE_FINANCIALS": {
+      if (action.financials.size === 0) return state;
+      const financials = new Map(state.financials);
+      for (const [symbol, data] of action.financials) {
+        financials.set(symbol, data);
+      }
       return { ...state, financials };
     }
 
@@ -326,6 +344,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_EXCHANGE_RATE": {
       const exchangeRates = new Map(state.exchangeRates);
       exchangeRates.set(action.currency, action.rate);
+      return { ...state, exchangeRates };
+    }
+
+    case "HYDRATE_EXCHANGE_RATES": {
+      if (action.exchangeRates.size === 0) return state;
+      const exchangeRates = new Map(state.exchangeRates);
+      for (const [currency, rate] of action.exchangeRates) {
+        exchangeRates.set(currency, rate);
+      }
       return { ...state, exchangeRates };
     }
 
@@ -538,30 +565,47 @@ export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string):
   return [value, setValue];
 }
 
-export function createInitialState(config: AppConfig): AppState {
-  const paneState = reconcilePaneState(config, {});
+export function createInitialState(config: AppConfig, sessionSnapshot: AppSessionSnapshot | null = null): AppState {
+  const paneState = reconcilePaneState(config, sessionSnapshot?.paneState ?? {});
+  const defaultFocusedPaneId = config.layout.docked[0]?.instanceId ?? config.layout.floating[0]?.instanceId ?? null;
+  const focusedPaneId = sessionSnapshot?.focusedPaneId
+    && config.layout.instances.some((instance) => instance.instanceId === sessionSnapshot.focusedPaneId)
+    ? sessionSnapshot.focusedPaneId
+    : defaultFocusedPaneId;
   return {
     config,
     tickers: new Map(),
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
-    activePanel: "left",
-    focusedPaneId: config.layout.docked[0]?.instanceId ?? config.layout.floating[0]?.instanceId ?? null,
+    activePanel: sessionSnapshot?.activePanel === "right" ? "right" : "left",
+    focusedPaneId,
     paneState,
     recentTickers: config.recentTickers,
     commandBarOpen: false,
     commandBarQuery: "",
     refreshing: new Set(),
     initialized: false,
-    statusBarVisible: true,
+    statusBarVisible: sessionSnapshot?.statusBarVisible !== false,
     inputCaptured: false,
     updateAvailable: null,
     updateProgress: null,
   };
 }
 
-export function AppProvider({ config, children }: { config: AppConfig; children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, config, createInitialState);
+export function AppProvider({
+  config,
+  children,
+  sessionStore,
+  sessionSnapshot = null,
+}: {
+  config: AppConfig;
+  children: ReactNode;
+  sessionStore?: SessionStore;
+  sessionSnapshot?: AppSessionSnapshot | null;
+}) {
+  const [state, dispatch] = useReducer(appReducer, { config, sessionSnapshot }, ({ config, sessionSnapshot: initialSessionSnapshot }) => (
+    createInitialState(config, initialSessionSnapshot)
+  ));
   const previousRecentTickers = useRef(state.recentTickers);
 
   useEffect(() => {
@@ -570,6 +614,8 @@ export function AppProvider({ config, children }: { config: AppConfig; children:
       saveConfig({ ...state.config, recentTickers: state.recentTickers }).catch(() => {});
     }
   }, [state.config, state.recentTickers]);
+
+  usePersistSessionSnapshot(sessionStore, state, APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION);
 
   return <AppContext value={{ state, dispatch }}>{children}</AppContext>;
 }

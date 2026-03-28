@@ -78,20 +78,41 @@ The `setup()` function receives a context object with these capabilities:
 | Method | Returns |
 |--------|---------|
 | `ctx.getData(ticker)` | Cached financials for a ticker |
-| `ctx.getTicker(ticker)` | Ticker file metadata and notes |
+| `ctx.getTicker(ticker)` | Ticker metadata record |
 | `ctx.getConfig()` | Current app config |
 | `ctx.dataProvider` | The active data provider instance |
-| `ctx.markdownStore` | The ticker persistence store |
+| `ctx.tickerRepository` | The ticker metadata persistence store |
 
 ### Plugin storage
 
-Persistent key-value storage scoped to your plugin (backed by SQLite):
+Persistent key-value storage scoped to your plugin (backed by SQLite). Use this for settings or small versioned blobs:
 
 ```typescript
 ctx.storage.set("my-key", { count: 42 });
 const data = ctx.storage.get<{ count: number }>("my-key"); // { count: 42 }
 ctx.storage.delete("my-key");
 ctx.storage.keys(); // ["my-key"]
+```
+
+### Plugin persistence
+
+For richer cached data, use the explicit persistence API. State stores versioned plugin-local data; resources add cache metadata and TTLs:
+
+```typescript
+ctx.persistence.setState("draft", { text: "hello" }, { schemaVersion: 1 });
+const draft = ctx.persistence.getState<{ text: string }>("draft", { schemaVersion: 1 });
+
+ctx.persistence.setResource("summary", "AAPL", "cached summary", {
+  sourceKey: "provider",
+  schemaVersion: 1,
+  cachePolicy: { staleMs: 3600_000, expireMs: 7 * 24 * 3600_000 },
+});
+
+const summary = ctx.persistence.getResource<string>("summary", "AAPL", {
+  sourceKey: "provider",
+  schemaVersion: 1,
+  allowExpired: true,
+});
 ```
 
 ### Navigation
@@ -220,7 +241,7 @@ function SentimentTab({ width, height, focused }: DetailTabProps) {
 
   return (
     <box flexDirection="column" width={width} height={height}>
-      <Section title={`Sentiment for ${ticker.frontmatter.ticker}`}>
+      <Section title={`Sentiment for ${ticker.metadata.ticker}`}>
         <FieldRow label="Signal" value="Bullish" valueColor={colors.positive} />
         <FieldRow label="Trend" value="Improving" />
       </Section>
@@ -298,7 +319,7 @@ setup(ctx) {
     width: 6,
     align: "right",
     render(ticker, financials) {
-      const score = ticker.frontmatter?.conviction ?? "-";
+      const score = ticker.metadata?.custom?.conviction ?? "-";
       return String(score);
     },
   });
@@ -351,7 +372,7 @@ export const myPlugin: GloomPlugin = {
   slots: {
     "status:widget": () => <text> LIVE</text>,
     "detail:section": ({ ticker, financials }) => (
-      <box><text>Extra info for {ticker.frontmatter.ticker}</text></box>
+      <box><text>Extra info for {ticker.metadata.ticker}</text></box>
     ),
   },
 };

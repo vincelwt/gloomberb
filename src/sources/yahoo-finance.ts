@@ -1,5 +1,4 @@
 import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain } from "../types/financials";
-import type { SqliteCache } from "../data/sqlite-cache";
 import type { DataProvider, MarketDataRequestContext, NewsItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { InstrumentSearchResult } from "../types/instrument";
@@ -247,7 +246,7 @@ export class YahooFinanceClient implements DataProvider {
   private cookie: string | null = null;
   private crumbPromise: Promise<void> | null = null;
 
-  constructor(private cache?: SqliteCache) {}
+  constructor() {}
 
   private defaultHeaders() {
     return {
@@ -493,21 +492,12 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch full financials for a ticker */
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    // Check cache first
-    if (this.cache) {
-      const cached = this.cache.getCached<TickerFinancials>(ticker, "full");
-      if (cached) return cached;
-    }
-
     const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
     let lastError: any;
 
     for (const symbol of symbolsToTry) {
       try {
         const result = await this.fetchFullFinancials(symbol);
-        if (this.cache) {
-          this.cache.setCache(ticker, "full", result, FUNDAMENTALS_TTL);
-        }
         return result;
       } catch (err) {
         lastError = err;
@@ -667,11 +657,6 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch just a quote (lighter weight) */
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
-    if (this.cache) {
-      const cached = this.cache.getCached<Quote>(ticker, "quote");
-      if (cached) return cached;
-    }
-
     const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
     let lastError: any;
 
@@ -728,7 +713,6 @@ export class YahooFinanceClient implements DataProvider {
           ...extHours,
         };
 
-        if (this.cache) this.cache.setCache(ticker, "quote", quote, QUOTE_TTL);
         return quote;
       } catch (err) {
         lastError = err;
@@ -744,15 +728,9 @@ export class YahooFinanceClient implements DataProvider {
     fromCurrency = normalized;
     if (fromCurrency === "USD") return 1;
 
-    if (this.cache) {
-      const cached = this.cache.getExchangeRate(`${fromCurrency}/USD`);
-      if (cached != null) return cached;
-    }
-
     try {
       const { meta, history } = await this.fetchChart(`${fromCurrency}USD=X`, "1mo");
       const rate = meta.regularMarketPrice || history[history.length - 1]?.close || 1;
-      if (this.cache) this.cache.setExchangeRate(`${fromCurrency}/USD`, rate);
       return rate;
     } catch {
       return 1;
@@ -783,11 +761,6 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch news for a ticker */
   async getNews(ticker: string, count = 10, exchange = "", _context?: MarketDataRequestContext): Promise<NewsItem[]> {
-    if (this.cache) {
-      const cached = this.cache.getCached<NewsItem[]>(ticker, "news");
-      if (cached) return cached.map((n) => ({ ...n, publishedAt: new Date(n.publishedAt) }));
-    }
-
     // Use the Yahoo symbol for better search results on international tickers
     const symbol = this.getSymbol(ticker, exchange);
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=${count}`;
@@ -806,7 +779,6 @@ export class YahooFinanceClient implements DataProvider {
         summary: n.summary || undefined,
       }));
 
-      if (this.cache) this.cache.setCache(ticker, "news", items, NEWS_TTL);
       return items;
     } catch {
       return [];
@@ -844,12 +816,6 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch price history with appropriate granularity for the given time range */
   async getPriceHistory(ticker: string, exchange = "", range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    const cacheKey = `history:${range}`;
-    if (this.cache) {
-      const cached = this.cache.getCached<PricePoint[]>(ticker, cacheKey);
-      if (cached) return cached.map((p) => ({ ...p, date: new Date(p.date) }));
-    }
-
     const params = RANGE_PARAMS[range];
     const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
     let lastError: any;
@@ -869,7 +835,6 @@ export class YahooFinanceClient implements DataProvider {
           }
         }
 
-        if (this.cache) this.cache.setCache(ticker, cacheKey, history, params.ttl);
         return history;
       } catch (err) {
         lastError = err;
@@ -900,12 +865,6 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   async getOptionsChain(ticker: string, exchange = "", expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
-    const cacheKey = `options:${expirationDate ?? "all"}`;
-    if (this.cache) {
-      const cached = this.cache.getCached<OptionsChain>(ticker, cacheKey);
-      if (cached) return cached;
-    }
-
     const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
     let lastError: any;
 
@@ -938,7 +897,6 @@ export class YahooFinanceClient implements DataProvider {
           puts: (opts?.puts ?? []).map((p) => this.mapContract(p)),
         };
 
-        if (this.cache) this.cache.setCache(ticker, cacheKey, chain, OPTIONS_TTL);
         return chain;
       } catch (err) {
         lastError = err;

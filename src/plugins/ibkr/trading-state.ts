@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { TickerFile } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";
 import type { BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "../../types/trading";
 
@@ -62,19 +62,19 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-function normalizeContract(ticker: TickerFile): BrokerContractRef {
-  const brokerContract = ticker.frontmatter.broker_contracts?.find((contract) => contract.brokerId === "ibkr")
-    ?? ticker.frontmatter.broker_contracts?.[0];
+function normalizeContract(ticker: TickerRecord): BrokerContractRef {
+  const brokerContract = ticker.metadata.broker_contracts?.find((contract) => contract.brokerId === "ibkr")
+    ?? ticker.metadata.broker_contracts?.[0];
   if (brokerContract) return brokerContract;
 
   return {
     brokerId: "ibkr",
-    symbol: ticker.frontmatter.ticker,
-    localSymbol: ticker.frontmatter.ticker,
-    secType: ticker.frontmatter.assetCategory || "STK",
-    exchange: ticker.frontmatter.exchange || "SMART",
-    primaryExchange: ticker.frontmatter.exchange || undefined,
-    currency: ticker.frontmatter.currency || "USD",
+    symbol: ticker.metadata.ticker,
+    localSymbol: ticker.metadata.ticker,
+    secType: ticker.metadata.assetCategory || "STK",
+    exchange: ticker.metadata.exchange || "SMART",
+    primaryExchange: ticker.metadata.exchange || undefined,
+    currency: ticker.metadata.currency || "USD",
   };
 }
 
@@ -86,7 +86,7 @@ function replaceDraft(nextDraft: BrokerOrderRequest): BrokerOrderRequest {
   };
 }
 
-function createDefaultTradeTicket(ticker?: TickerFile | null): TradeTicketState {
+function createDefaultTradeTicket(ticker?: TickerRecord | null): TradeTicketState {
   if (!ticker) return DEFAULT_TRADE_TICKET;
   const contract = normalizeContract(ticker);
   return {
@@ -96,8 +96,8 @@ function createDefaultTradeTicket(ticker?: TickerFile | null): TradeTicketState 
       contract,
     }),
     brokerInstanceId: contract.brokerInstanceId,
-    contractName: ticker.frontmatter.name,
-    contractExchange: ticker.frontmatter.exchange,
+    contractName: ticker.metadata.name,
+    contractExchange: ticker.metadata.exchange,
     preview: null,
     busy: false,
   };
@@ -105,7 +105,7 @@ function createDefaultTradeTicket(ticker?: TickerFile | null): TradeTicketState 
 
 function updateTicketState(
   symbol: string,
-  ticker: TickerFile | null | undefined,
+  ticker: TickerRecord | null | undefined,
   updater: (current: TradeTicketState) => TradeTicketState,
 ): void {
   const current = getTradeTicketState(symbol, ticker);
@@ -121,7 +121,7 @@ function updateTicketState(
 
 export function updateTradeTicketState(
   symbol: string,
-  ticker: TickerFile | null | undefined,
+  ticker: TickerRecord | null | undefined,
   updater: (current: TradeTicketState) => TradeTicketState,
 ): void {
   updateTicketState(symbol, ticker, updater);
@@ -155,12 +155,12 @@ export function setTradingMessage(lastInfo?: string, lastError?: string): void {
   updateTradingPaneState({ lastInfo, lastError });
 }
 
-export function getTradeTicketState(symbol?: string | null, ticker?: TickerFile | null): TradeTicketState {
+export function getTradeTicketState(symbol?: string | null, ticker?: TickerRecord | null): TradeTicketState {
   if (!symbol) return createDefaultTradeTicket(ticker);
   return state.tickets[symbol] ?? createDefaultTradeTicket(ticker);
 }
 
-export function setTradeTicketBusy(symbol: string, busy: boolean, ticker?: TickerFile | null): void {
+export function setTradeTicketBusy(symbol: string, busy: boolean, ticker?: TickerRecord | null): void {
   updateTicketState(symbol, ticker, (current) => ({ ...current, busy }));
 }
 
@@ -168,7 +168,7 @@ export function setTradeTicketMessage(
   symbol: string,
   lastInfo: string | undefined,
   lastError: string | undefined,
-  ticker?: TickerFile | null,
+  ticker?: TickerRecord | null,
   isSuccess?: boolean,
 ): void {
   updateTicketState(symbol, ticker, (current) => ({ ...current, lastInfo, lastError, isSuccess: isSuccess ?? false }));
@@ -177,7 +177,7 @@ export function setTradeTicketMessage(
 export function setTradeTicketDraft(
   symbol: string,
   patch: Partial<BrokerOrderRequest>,
-  ticker?: TickerFile | null,
+  ticker?: TickerRecord | null,
 ): void {
   updateTicketState(symbol, ticker, (current) => ({
     ...current,
@@ -196,7 +196,7 @@ export function setTradeTicketDraft(
 export function setTradeTicketInstrument(
   symbol: string,
   result: InstrumentSearchResult,
-  ticker?: TickerFile | null,
+  ticker?: TickerRecord | null,
 ): void {
   const contract = result.brokerContract ?? {
     brokerId: "ibkr",
@@ -227,9 +227,9 @@ export function setTradeTicketInstrument(
   }));
 }
 
-export function prefillTradeFromTicker(ticker: TickerFile, action: BrokerOrderRequest["action"]): void {
+export function prefillTradeFromTicker(ticker: TickerRecord, action: BrokerOrderRequest["action"]): void {
   const contract = normalizeContract(ticker);
-  updateTicketState(ticker.frontmatter.ticker, ticker, (current) => ({
+  updateTicketState(ticker.metadata.ticker, ticker, (current) => ({
     ...current,
     draft: replaceDraft({
       ...current.draft,
@@ -238,8 +238,8 @@ export function prefillTradeFromTicker(ticker: TickerFile, action: BrokerOrderRe
       contract,
     }),
     brokerInstanceId: contract.brokerInstanceId ?? current.brokerInstanceId,
-    contractName: ticker.frontmatter.name,
-    contractExchange: ticker.frontmatter.exchange,
+    contractName: ticker.metadata.name,
+    contractExchange: ticker.metadata.exchange,
     preview: null,
     editingOrderId: undefined,
     lastError: undefined,
@@ -247,7 +247,7 @@ export function prefillTradeFromTicker(ticker: TickerFile, action: BrokerOrderRe
   }));
 }
 
-export function loadOrderIntoDraft(symbol: string, order: BrokerOrder, ticker?: TickerFile | null): void {
+export function loadOrderIntoDraft(symbol: string, order: BrokerOrder, ticker?: TickerRecord | null): void {
   updateTicketState(symbol, ticker, (current) => ({
     ...current,
     draft: replaceDraft({
@@ -273,12 +273,12 @@ export function loadOrderIntoDraft(symbol: string, order: BrokerOrder, ticker?: 
 export function setTradeTicketPreview(
   symbol: string,
   preview: BrokerOrderPreview | null,
-  ticker?: TickerFile | null,
+  ticker?: TickerRecord | null,
 ): void {
   updateTicketState(symbol, ticker, (current) => ({ ...current, preview, lastError: undefined }));
 }
 
-export function clearTradeTicketPreview(symbol: string, ticker?: TickerFile | null): void {
+export function clearTradeTicketPreview(symbol: string, ticker?: TickerRecord | null): void {
   updateTicketState(symbol, ticker, (current) => ({ ...current, preview: null }));
 }
 

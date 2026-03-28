@@ -124,8 +124,8 @@ function formatPreviewSummary(preview: import("../../types/trading").BrokerOrder
 
 function findTickerForOrder(
   order: { contract: BrokerContractRef },
-  tickers: Map<string, import("../../types/ticker").TickerFile>,
-): import("../../types/ticker").TickerFile | null {
+  tickers: Map<string, import("../../types/ticker").TickerRecord>,
+): import("../../types/ticker").TickerRecord | null {
   const primaryKey = order.contract.localSymbol || order.contract.symbol;
   const direct = tickers.get(primaryKey);
   if (direct) return direct;
@@ -134,7 +134,7 @@ function findTickerForOrder(
   if (fallback) return fallback;
 
   for (const ticker of tickers.values()) {
-    const hasContract = (ticker.frontmatter.broker_contracts ?? []).some((contract) =>
+    const hasContract = (ticker.metadata.broker_contracts ?? []).some((contract) =>
       contract.brokerId === "ibkr"
       && contract.brokerInstanceId === order.contract.brokerInstanceId
       && (
@@ -392,7 +392,7 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
   const [hoveredField, setHoveredField] = useState<string | null>(null);
   const fieldHoverBg = hoverBg();
 
-  const symbol = ticker?.frontmatter.ticker ?? null;
+  const symbol = ticker?.metadata.ticker ?? null;
   const ticketState = getTradeTicketState(symbol, ticker);
   const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === collectionId);
   const gatewayInstances = getConfiguredIbkrGatewayInstances(state.config);
@@ -918,9 +918,9 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     <scrollbox flexGrow={1} scrollY>
       <box flexDirection="column" paddingX={1} paddingBottom={1} onMouseDown={enterInteractive}>
         <box height={1} flexDirection="row">
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.frontmatter.ticker}`}</text>
-          {ticker.frontmatter.name && ticker.frontmatter.name !== ticker.frontmatter.ticker && (
-            <text fg={colors.textDim}>{` · ${ticker.frontmatter.name}`}</text>
+          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.metadata.ticker}`}</text>
+          {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
+            <text fg={colors.textDim}>{` · ${ticker.metadata.name}`}</text>
           )}
         </box>
 
@@ -1269,14 +1269,14 @@ function TradingPane({ focused, width, height }: PaneProps) {
       setTradingMessage(undefined, `No local ticker exists for ${selectedOrder.contract.localSymbol || selectedOrder.contract.symbol}.`);
       return;
     }
-    loadOrderIntoDraft(ticker.frontmatter.ticker, selectedOrder, ticker);
+    loadOrderIntoDraft(ticker.metadata.ticker, selectedOrder, ticker);
     updateTradingPaneState({
       brokerInstanceId: selectedOrder.brokerInstanceId ?? selectedOrder.contract.brokerInstanceId,
       accountId: selectedOrder.accountId,
-      lastInfo: `Loaded order ${selectedOrder.orderId} into ${ticker.frontmatter.ticker}.`,
+      lastInfo: `Loaded order ${selectedOrder.orderId} into ${ticker.metadata.ticker}.`,
       lastError: undefined,
     });
-    registry?.selectTickerFn(ticker.frontmatter.ticker, paneId);
+    registry?.selectTickerFn(ticker.metadata.ticker, paneId);
     registry?.switchTabFn("ibkr-trade", paneId);
     registry?.switchPanelFn("right");
   }, [selectedOrder, state.tickers, paneId]);
@@ -1489,7 +1489,7 @@ export const ibkrPlugin: GloomPlugin = {
       label: "Trade",
       keywords: ["trade", "buy", "sell", "ibkr"],
       execute: async (ticker) => {
-        const current = getTradeTicketState(ticker.frontmatter.ticker, ticker);
+        const current = getTradeTicketState(ticker.metadata.ticker, ticker);
         prefillTradeFromTicker(ticker, current.draft.action || "BUY");
         ctx.switchPanel("right");
         ctx.switchTab("ibkr-trade");
@@ -1519,7 +1519,7 @@ export const ibkrPlugin: GloomPlugin = {
         if (lastSelectedTickerSymbol) {
           const ticker = ctx.getTicker(lastSelectedTickerSymbol);
           if (ticker) {
-            const current = getTradeTicketState(ticker.frontmatter.ticker, ticker);
+            const current = getTradeTicketState(ticker.metadata.ticker, ticker);
             prefillTradeFromTicker(ticker, current.draft.action || "BUY");
           }
         }

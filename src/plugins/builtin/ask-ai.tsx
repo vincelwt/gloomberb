@@ -8,7 +8,7 @@ import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { formatCurrency, formatCompact, formatPercent } from "../../utils/format";
-import type { TickerFile } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
 import { Spinner } from "../../components/spinner";
 
@@ -62,8 +62,8 @@ function detectProviders(): AiProvider[] {
 
 // --- Context Builder ---
 
-function buildContext(ticker: TickerFile, financials: TickerFinancials | null): string {
-  const f = ticker.frontmatter;
+function buildContext(ticker: TickerRecord, financials: TickerFinancials | null): string {
+  const f = ticker.metadata;
   const q = financials?.quote;
   const fund = financials?.fundamentals;
 
@@ -109,11 +109,6 @@ function buildContext(ticker: TickerFile, financials: TickerFinancials | null): 
     if (latest.totalEquity) lines.push(`  Equity: ${formatCompact(latest.totalEquity)}`);
   }
 
-  if (ticker.notes) {
-    lines.push("");
-    lines.push(`User's Notes: ${ticker.notes}`);
-  }
-
   return lines.join("\n");
 }
 
@@ -127,6 +122,14 @@ interface ChatMessage {
 
 // Per-ticker chat history (in memory only)
 const chatHistories = new Map<string, ChatMessage[]>();
+const ASK_AI_HISTORY_LIMIT = 40;
+const ASK_AI_RETENTION_MS = 90 * 24 * 60 * 60_000;
+let _persistence: import("../../types/plugin").PluginPersistence | null = null;
+
+interface PersistedConversation {
+  updatedAt: number;
+  messages: ChatMessage[];
+}
 
 // --- Component ---
 
@@ -142,27 +145,41 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<InputRenderable>(null);
   const procRef = useRef<Subprocess | null>(null);
+  const availableProviders = providers.filter((p) => p.available);
+  const currentProvider = providers[providerIdx];
 
-  const tickerSymbol = ticker?.frontmatter.ticker ?? null;
+  const tickerSymbol = ticker?.metadata.ticker ?? null;
 
   // Load chat history for current ticker
   useEffect(() => {
     if (tickerSymbol) {
+      const persisted = currentProvider
+        ? _persistence?.getState<PersistedConversation>(`conversation:${currentProvider.id}:${tickerSymbol}`, { schemaVersion: 1 })
+        : null;
+      if (persisted && Date.now() - persisted.updatedAt <= ASK_AI_RETENTION_MS) {
+        chatHistories.set(tickerSymbol, persisted.messages);
+      }
       setMessages(chatHistories.get(tickerSymbol) || []);
     } else {
       setMessages([]);
     }
-  }, [tickerSymbol]);
+  }, [currentProvider?.id, tickerSymbol]);
 
   // Save chat history when messages change
   useEffect(() => {
     if (tickerSymbol && messages.length > 0) {
-      chatHistories.set(tickerSymbol, messages);
+      const trimmed = messages.filter((message) => !message.loading).slice(-ASK_AI_HISTORY_LIMIT);
+      chatHistories.set(tickerSymbol, trimmed);
+      if (currentProvider) {
+        _persistence?.setState(`conversation:${currentProvider.id}:${tickerSymbol}`, {
+          updatedAt: Date.now(),
+          messages: trimmed,
+        } satisfies PersistedConversation, {
+          schemaVersion: 1,
+        });
+      }
     }
-  }, [tickerSymbol, messages]);
-
-  const availableProviders = providers.filter((p) => p.available);
-  const currentProvider = providers[providerIdx];
+  }, [currentProvider, tickerSymbol, messages]);
 
   const cycleProvider = useCallback(() => {
     if (availableProviders.length <= 1) return;
@@ -316,7 +333,7 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
           {messages.length === 0 ? (
             <box paddingTop={1}>
               <text fg={colors.textDim}>
-                Ask questions about {ticker.frontmatter.ticker}. Financial data will be included as context.
+                Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
               </text>
             </box>
           ) : (
@@ -388,6 +405,7 @@ export const askAiPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
+    _persistence = ctx.persistence;
     ctx.registerDetailTab({
       id: "ask-ai",
       name: "Ask AI",

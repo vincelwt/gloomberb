@@ -1,4 +1,4 @@
-import type { TickerFile } from "../types/ticker";
+import type { TickerRecord } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
 import type { AppConfig } from "../types/config";
 
@@ -6,7 +6,7 @@ import type { AppConfig } from "../types/config";
 export interface PluginEvents {
   "ticker:selected": { symbol: string | null; previous: string | null };
   "ticker:refreshed": { symbol: string; financials: TickerFinancials };
-  "ticker:added": { symbol: string; ticker: TickerFile };
+  "ticker:added": { symbol: string; ticker: TickerRecord };
   "ticker:removed": { symbol: string };
   "config:changed": { config: AppConfig };
   "plugin:registered": { pluginId: string };

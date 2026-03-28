@@ -35,11 +35,11 @@ function OverviewTab({ width }: { width?: number }) {
         {/* Title with exchange and market state */}
         <box flexDirection="row">
           <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-            {ticker.frontmatter.ticker}
+            {ticker.metadata.ticker}
           </text>
-          {ticker.frontmatter.name && ticker.frontmatter.name !== ticker.frontmatter.ticker && (
+          {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
           <text fg={colors.textDim}>
-            {" "}- {ticker.frontmatter.name || q?.name || ""}
+            {" "}- {ticker.metadata.name || q?.name || ""}
           </text>
           )}
           {q?.exchangeName && (
@@ -125,30 +125,30 @@ function OverviewTab({ width }: { width?: number }) {
         </box>
 
         {/* Sector / classification */}
-        {(ticker.frontmatter.sector || ticker.frontmatter.industry || ticker.frontmatter.assetCategory || ticker.frontmatter.isin) && (
+        {(ticker.metadata.sector || ticker.metadata.industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
           <box flexDirection="column">
-            {ticker.frontmatter.assetCategory && (
-              <FieldRow label="Type" value={ticker.frontmatter.assetCategory} />
+            {ticker.metadata.assetCategory && (
+              <FieldRow label="Type" value={ticker.metadata.assetCategory} />
             )}
-            {ticker.frontmatter.sector && (
-              <FieldRow label="Sector" value={ticker.frontmatter.sector} />
+            {ticker.metadata.sector && (
+              <FieldRow label="Sector" value={ticker.metadata.sector} />
             )}
-            {ticker.frontmatter.industry && (
-              <FieldRow label="Industry" value={ticker.frontmatter.industry} />
+            {ticker.metadata.industry && (
+              <FieldRow label="Industry" value={ticker.metadata.industry} />
             )}
-            {ticker.frontmatter.isin && (
-              <FieldRow label="ISIN" value={ticker.frontmatter.isin} />
+            {ticker.metadata.isin && (
+              <FieldRow label="ISIN" value={ticker.metadata.isin} />
             )}
           </box>
         )}
 
         {/* Positions */}
-        {ticker.frontmatter.positions.length > 0 && (
+        {ticker.metadata.positions.length > 0 && (
           <box flexDirection="column">
             <box height={1}>
               <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Positions</text>
             </box>
-            {ticker.frontmatter.positions.map((pos, i) => {
+            {ticker.metadata.positions.map((pos, i) => {
               const costBasis = pos.shares * pos.avgCost * (pos.multiplier || 1);
               const pnlText = pos.unrealizedPnl != null
                 ? `  P&L: ${pos.unrealizedPnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealizedPnl, pos.currency)}`

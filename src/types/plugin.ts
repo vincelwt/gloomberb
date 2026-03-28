@@ -1,22 +1,23 @@
 import type { ReactNode } from "react";
-import type { MarkdownStore } from "../data/markdown-store";
+import type { TickerRepository } from "../data/ticker-repository";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { BrokerAdapter } from "./broker";
 import type { BrokerInstanceConfig, ColumnConfig } from "./config";
 import type { DataProvider } from "./data-provider";
 import type { TickerFinancials } from "./financials";
-import type { TickerFile } from "./ticker";
+import type { CachePolicy, PersistedResourceValue } from "./persistence";
+import type { TickerRecord } from "./ticker";
 
 export interface GloomSlots {
-  "detail:tab": { ticker: TickerFile; financials: TickerFinancials | null };
-  "detail:section": { ticker: TickerFile; financials: TickerFinancials | null };
-  "list:column": { ticker: TickerFile; financials: TickerFinancials | null };
+  "detail:tab": { ticker: TickerRecord; financials: TickerFinancials | null };
+  "detail:section": { ticker: TickerRecord; financials: TickerFinancials | null };
+  "list:column": { ticker: TickerRecord; financials: TickerFinancials | null };
   "command:extra": { query: string };
   "command:preset": Record<string, never>;
   "status:widget": Record<string, never>;
   "config:section": Record<string, never>;
   "data:post-refresh": { ticker: string; financials: TickerFinancials };
-  "data:enricher": { ticker: TickerFile };
+  "data:enricher": { ticker: TickerRecord };
 }
 
 export interface PaneProps {
@@ -63,7 +64,7 @@ export interface CommandDef {
 }
 
 export interface CustomColumnDef extends ColumnConfig {
-  render: (ticker: TickerFile, financials: TickerFinancials | null) => string;
+  render: (ticker: TickerRecord, financials: TickerFinancials | null) => string;
 }
 
 export interface DetailTabProps {
@@ -93,8 +94,8 @@ export interface TickerAction {
   id: string;
   label: string;
   keywords: string[];
-  filter?: (ticker: TickerFile) => boolean;
-  execute: (ticker: TickerFile, financials: TickerFinancials | null) => void | Promise<void>;
+  filter?: (ticker: TickerRecord) => boolean;
+  execute: (ticker: TickerRecord, financials: TickerFinancials | null) => void | Promise<void>;
 }
 
 export interface PluginStorage {
@@ -102,6 +103,29 @@ export interface PluginStorage {
   set(key: string, value: unknown): void;
   delete(key: string): void;
   keys(): string[];
+}
+
+export interface PluginPersistence {
+  getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null;
+  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void;
+  deleteState(key: string): void;
+  getResource<T = unknown>(
+    kind: string,
+    key: string,
+    options?: { sourceKey?: string; schemaVersion?: number; allowExpired?: boolean },
+  ): PersistedResourceValue<T> | null;
+  setResource<T = unknown>(
+    kind: string,
+    key: string,
+    value: T,
+    options: {
+      cachePolicy: CachePolicy;
+      sourceKey?: string;
+      schemaVersion?: number;
+      provenance?: unknown;
+    },
+  ): PersistedResourceValue<T>;
+  deleteResource(kind: string, key: string, options?: { sourceKey?: string }): void;
 }
 
 export interface GloomPluginContext {
@@ -115,12 +139,13 @@ export interface GloomPluginContext {
   registerTickerAction(action: TickerAction): void;
 
   getData(ticker: string): TickerFinancials | null;
-  getTicker(ticker: string): TickerFile | null;
+  getTicker(ticker: string): TickerRecord | null;
   getConfig(): import("./config").AppConfig;
 
   readonly dataProvider: DataProvider;
-  readonly markdownStore: MarkdownStore;
+  readonly tickerRepository: TickerRepository;
   readonly storage: PluginStorage;
+  readonly persistence: PluginPersistence;
 
   createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>): Promise<void>;

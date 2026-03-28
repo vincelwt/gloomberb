@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { TickerFile } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { BrokerOrder } from "../../types/trading";
 import {
   clearTradingDraft,
@@ -9,9 +9,9 @@ import {
   removeBrokerInstanceFromTradingState,
 } from "./trading-state";
 
-function createTicker(symbol: string, brokerInstanceId?: string): TickerFile {
+function createTicker(symbol: string, brokerInstanceId?: string): TickerRecord {
   return {
-    frontmatter: {
+    metadata: {
       ticker: symbol,
       exchange: "NASDAQ",
       currency: "USD",
@@ -32,8 +32,6 @@ function createTicker(symbol: string, brokerInstanceId?: string): TickerFile {
       custom: {},
       tags: [],
     },
-    notes: "",
-    filePath: `/tmp/${symbol}.md`,
   };
 }
 

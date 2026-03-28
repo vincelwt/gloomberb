@@ -1,30 +1,30 @@
 import type { AppState } from "./app-context";
 import { resolveCollectionForPane } from "./app-context";
-import type { TickerFile } from "../types/ticker";
+import type { TickerRecord } from "../types/ticker";
 
 /** Get tickers belonging to a specific portfolio */
-export function getPortfolioTickers(state: AppState, portfolioId: string): TickerFile[] {
-  const result: TickerFile[] = [];
+export function getPortfolioTickers(state: AppState, portfolioId: string): TickerRecord[] {
+  const result: TickerRecord[] = [];
   for (const ticker of state.tickers.values()) {
-    if (ticker.frontmatter.portfolios.includes(portfolioId)) {
+    if (ticker.metadata.portfolios.includes(portfolioId)) {
       result.push(ticker);
     }
   }
-  return result.sort((a, b) => a.frontmatter.ticker.localeCompare(b.frontmatter.ticker));
+  return result.sort((a, b) => a.metadata.ticker.localeCompare(b.metadata.ticker));
 }
 
 /** Get tickers belonging to a specific watchlist */
-export function getWatchlistTickers(state: AppState, watchlistId: string): TickerFile[] {
-  const result: TickerFile[] = [];
+export function getWatchlistTickers(state: AppState, watchlistId: string): TickerRecord[] {
+  const result: TickerRecord[] = [];
   for (const ticker of state.tickers.values()) {
-    if (ticker.frontmatter.watchlists.includes(watchlistId)) {
+    if (ticker.metadata.watchlists.includes(watchlistId)) {
       result.push(ticker);
     }
   }
-  return result.sort((a, b) => a.frontmatter.ticker.localeCompare(b.frontmatter.ticker));
+  return result.sort((a, b) => a.metadata.ticker.localeCompare(b.metadata.ticker));
 }
 
-export function getCollectionTickers(state: AppState, collectionId: string | null): TickerFile[] {
+export function getCollectionTickers(state: AppState, collectionId: string | null): TickerRecord[] {
   if (!collectionId) return [];
   if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) {
     return getPortfolioTickers(state, collectionId);
@@ -51,7 +51,7 @@ export function getCollectionType(state: AppState, collectionId: string | null):
   return null;
 }
 
-export function getPaneCollectionTickers(state: AppState, paneId: string): TickerFile[] {
+export function getPaneCollectionTickers(state: AppState, paneId: string): TickerRecord[] {
   return getCollectionTickers(state, resolveCollectionForPane(state, paneId));
 }
 

@@ -9,6 +9,13 @@ import type { NewsItem } from "../../types/data-provider";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { Spinner } from "../../components/spinner";
 
+const ARTICLE_SUMMARY_CACHE_POLICY = {
+  staleMs: 30 * 24 * 60 * 60_000,
+  expireMs: 90 * 24 * 60 * 60_000,
+};
+
+let _persistence: import("../../types/plugin").PluginPersistence | null = null;
+
 function NewsTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -28,7 +35,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     setError(null);
     setSelectedIdx(0);
     setSummaryCache(new Map());
-    provider.getNews(ticker.frontmatter.ticker, 15).then((items) => {
+    provider.getNews(ticker.metadata.ticker, 15).then((items) => {
       if (!cancelled) setNews(items);
     }).catch((err) => {
       if (!cancelled) setError(err?.message ?? "Failed to load news");
@@ -36,7 +43,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [ticker?.frontmatter.ticker]);
+  }, [ticker?.metadata.ticker]);
 
   // Lazy-load summary when selection changes
   const selected = news[selectedIdx];
@@ -44,12 +51,26 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     const provider = getSharedDataProvider();
     if (!selected || !provider) return;
     if (summaryCache.has(selected.url)) return;
+    const cached = _persistence?.getResource<string>("article-summary", selected.url, {
+      sourceKey: "provider",
+      schemaVersion: 1,
+      allowExpired: true,
+    });
+    if (cached?.value) {
+      setSummaryCache((prev) => new Map(prev).set(selected.url, cached.value));
+      return;
+    }
     const id = ++summaryFetchRef.current;
     setLoadingSummary(true);
     provider.getArticleSummary(selected.url).then((summary) => {
       if (id !== summaryFetchRef.current) return;
       if (summary) {
         setSummaryCache((prev) => new Map(prev).set(selected.url, summary));
+        _persistence?.setResource("article-summary", selected.url, summary, {
+          sourceKey: "provider",
+          schemaVersion: 1,
+          cachePolicy: ARTICLE_SUMMARY_CACHE_POLICY,
+        });
       }
     }).catch(() => {}).finally(() => {
       if (id === summaryFetchRef.current) setLoadingSummary(false);
@@ -68,7 +89,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;
   if (error) return <text fg={colors.textDim}>Error: {error}</text>;
-  if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.frontmatter.ticker}.</text>;
+  if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.metadata.ticker}.</text>;
 
   const innerWidth = Math.max(width - 4, 40);
   const timeColW = 8;
@@ -187,6 +208,7 @@ export const newsPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
+    _persistence = ctx.persistence;
     ctx.registerDetailTab({
       id: "news",
       name: "News",
