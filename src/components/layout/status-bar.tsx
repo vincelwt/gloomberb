@@ -9,8 +9,6 @@ export function StatusBar() {
   const { state, dispatch } = useAppState();
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const [hoveredTab, setHoveredTab] = useState<number | null>(null);
-  const refreshCount = state.refreshing.size;
-
   if (!state.statusBarVisible) return null;
 
   // Get market state and exchange from the focused ticker context or first available.
@@ -77,13 +75,6 @@ export function StatusBar() {
       )}
       {/* Plugin status widgets */}
       {registry && <registry.Slot name="status:widget" />}
-      {refreshCount > 0 && (
-        <box paddingRight={1}>
-          <text fg={colors.textDim}>
-            refreshing {refreshCount}...
-          </text>
-        </box>
-      )}
     </box>
   );
 }
