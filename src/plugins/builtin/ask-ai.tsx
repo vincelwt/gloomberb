@@ -6,6 +6,7 @@ import { spawn, type Subprocess } from "bun";
 import { execSync } from "child_process";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
+import { usePluginState } from "../../plugins/plugin-runtime";
 import { colors } from "../../theme/colors";
 import { formatCurrency, formatCompact, formatPercent } from "../../utils/format";
 import type { TickerRecord } from "../../types/ticker";
@@ -136,17 +137,18 @@ interface PersistedConversation {
 function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
   const { ticker, financials } = usePaneTicker();
   const [providers] = useState(() => detectProviders());
-  const [providerIdx, setProviderIdx] = useState(() => {
+  const defaultProviderIdx = (() => {
     const idx = providers.findIndex((p) => p.available);
     return idx >= 0 ? idx : 0;
-  });
+  })();
+  const [providerIdx, setProviderIdx] = usePluginState<number>("providerIdx", defaultProviderIdx);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<InputRenderable>(null);
   const procRef = useRef<Subprocess | null>(null);
   const availableProviders = providers.filter((p) => p.available);
-  const currentProvider = providers[providerIdx];
+  const currentProvider = providers[providerIdx] ?? providers[defaultProviderIdx] ?? providers[0];
 
   const tickerSymbol = ticker?.metadata.ticker ?? null;
 

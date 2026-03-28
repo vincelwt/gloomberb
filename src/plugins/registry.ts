@@ -1,5 +1,6 @@
 import type { CliRenderer } from "@opentui/core";
 import { createReactSlotRegistry, createSlot } from "@opentui/react";
+import { createElement } from "react";
 import type { AppPersistence } from "../data/app-persistence";
 import type { TickerRepository } from "../data/ticker-repository";
 import type { BrokerAdapter } from "../types/broker";
@@ -16,6 +17,7 @@ import type {
   KeyboardShortcut,
   PaneDef,
   PluginStorage,
+  PluginResumeState,
   TickerAction,
 } from "../types/plugin";
 import type { TickerRecord } from "../types/ticker";
@@ -23,6 +25,8 @@ import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
 import { createPaneInstance } from "../types/config";
 import { createPluginPersistence, createPluginStorage } from "./plugin-persistence";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "./plugin-runtime";
+import type { PaneRuntimeState } from "../state/app-context";
 
 let sharedDataProvider: DataProvider | undefined;
 let sharedRegistry: PluginRegistry | undefined;
@@ -55,6 +59,7 @@ export class PluginRegistry {
   private pluginItems = new Map<string, PluginItems>();
   private commandOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
+  private pluginResumeListeners = new Map<string, Set<() => void>>();
 
   private panesMap = new Map<string, PaneDef>();
   private commandsMap = new Map<string, CommandDef>();
@@ -94,6 +99,11 @@ export class PluginRegistry {
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
   showToastFn: ((message: string, options?: { duration?: number; type?: "info" | "success" | "error" }) => void) = () => {};
+  getPaneRuntimeStateFn: ((paneId: string) => PaneRuntimeState | null) = () => null;
+  updatePaneRuntimeStateFn: ((paneId: string, patch: Partial<PaneRuntimeState>) => void) = () => {};
+  getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = () => null;
+  setPluginConfigValueFn: ((pluginId: string, key: string, value: unknown) => Promise<void>) = async () => {};
+  deletePluginConfigValueFn: ((pluginId: string, key: string) => Promise<void>) = async () => {};
 
   readonly Slot;
 
@@ -128,6 +138,100 @@ export class PluginRegistry {
 
   getPluginPaneIds(pluginId: string): string[] {
     return this.pluginItems.get(pluginId)?.panes ?? [];
+  }
+
+  private getOrCreatePluginItems(pluginId: string): PluginItems {
+    const existing = this.pluginItems.get(pluginId);
+    if (existing) return existing;
+
+    const items: PluginItems = {
+      panes: [],
+      commands: [],
+      columns: [],
+      brokers: [],
+      dataProviders: [],
+      detailTabs: [],
+      shortcuts: [],
+      tickerActions: [],
+      eventDisposers: [],
+    };
+    this.pluginItems.set(pluginId, items);
+    return items;
+  }
+
+  private wrapPaneDef(pluginId: string, pane: PaneDef): PaneDef {
+    return {
+      ...pane,
+      component: (props) => createElement(
+        PluginRenderProvider,
+        { pluginId, runtime: this },
+        createElement(pane.component as any, props),
+      ),
+    };
+  }
+
+  private wrapDetailTabDef(pluginId: string, tab: DetailTabDef): DetailTabDef {
+    return {
+      ...tab,
+      component: (props) => createElement(
+        PluginRenderProvider,
+        { pluginId, runtime: this },
+        createElement(tab.component as any, props),
+      ),
+    };
+  }
+
+  private emitResumeState(pluginId: string, key: string): void {
+    const listenerKey = `${pluginId}:${key}`;
+    for (const listener of this.pluginResumeListeners.get(listenerKey) ?? []) {
+      listener();
+    }
+  }
+
+  subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void {
+    const listenerKey = `${pluginId}:${key}`;
+    if (!this.pluginResumeListeners.has(listenerKey)) {
+      this.pluginResumeListeners.set(listenerKey, new Set());
+    }
+    this.pluginResumeListeners.get(listenerKey)!.add(listener);
+    return () => {
+      const listeners = this.pluginResumeListeners.get(listenerKey);
+      if (!listeners) return;
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.pluginResumeListeners.delete(listenerKey);
+      }
+    };
+  }
+
+  getResumeState<T = unknown>(pluginId: string, key: string, schemaVersion?: number): T | null {
+    return this.persistence.pluginState.get<T>(pluginId, `resume:${key}`, schemaVersion)?.value ?? null;
+  }
+
+  setResumeState(pluginId: string, key: string, value: unknown, schemaVersion?: number): void {
+    this.persistence.pluginState.set(pluginId, `resume:${key}`, value, schemaVersion);
+    this.emitResumeState(pluginId, key);
+  }
+
+  deleteResumeState(pluginId: string, key: string): void {
+    this.persistence.pluginState.delete(pluginId, `resume:${key}`);
+    this.emitResumeState(pluginId, key);
+  }
+
+  getConfigState<T = unknown>(pluginId: string, key: string): T | null {
+    return this.getPluginConfigValueFn<T>(pluginId, key);
+  }
+
+  setConfigState(pluginId: string, key: string, value: unknown): Promise<void> {
+    return this.setPluginConfigValueFn(pluginId, key, value);
+  }
+
+  deleteConfigState(pluginId: string, key: string): Promise<void> {
+    return this.deletePluginConfigValueFn(pluginId, key);
+  }
+
+  getConfigStateKeys(pluginId: string): string[] {
+    return Object.keys(this.getConfigFn().pluginConfig[pluginId] ?? {}).sort();
   }
 
   private resolvePrimaryPaneInstanceId(paneId: string): string | undefined {
@@ -201,26 +305,50 @@ export class PluginRegistry {
   }
 
   private createContext(pluginId: string): GloomPluginContext {
-    const items: PluginItems = {
-      panes: [],
-      commands: [],
-      columns: [],
-      brokers: [],
-      dataProviders: [],
-      detailTabs: [],
-      shortcuts: [],
-      tickerActions: [],
-      eventDisposers: [],
-    };
-    this.pluginItems.set(pluginId, items);
+    const items = this.getOrCreatePluginItems(pluginId);
 
     const pluginNamespace = `plugin:${pluginId}`;
 
     const storage: PluginStorage = createPluginStorage(this.persistence.pluginState, pluginId);
     const persistence = createPluginPersistence(this.persistence.pluginState, this.persistence.resources, pluginNamespace, pluginId);
+    const resume: PluginResumeState = {
+      getState: (key, options) => this.getResumeState(pluginId, key, options?.schemaVersion),
+      setState: (key, value, options) => this.setResumeState(pluginId, key, value, options?.schemaVersion),
+      deleteState: (key) => this.deleteResumeState(pluginId, key),
+      getPaneState: (paneId, key) => (
+        this.getPaneRuntimeStateFn(paneId)?.pluginState?.[pluginId]?.[key] ?? null
+      ),
+      setPaneState: (paneId, key, value) => {
+        const currentPaneState = this.getPaneRuntimeStateFn(paneId) ?? {};
+        const pluginState = {
+          ...(currentPaneState.pluginState ?? {}),
+          [pluginId]: {
+            ...(currentPaneState.pluginState?.[pluginId] ?? {}),
+            [key]: value,
+          },
+        };
+        this.updatePaneRuntimeStateFn(paneId, { pluginState });
+      },
+      deletePaneState: (paneId, key) => {
+        const currentPaneState = this.getPaneRuntimeStateFn(paneId) ?? {};
+        const currentPluginState = currentPaneState.pluginState?.[pluginId];
+        if (!currentPluginState || !(key in currentPluginState)) return;
+        const nextPluginState = { ...currentPluginState };
+        delete nextPluginState[key];
+        const nextAllPluginState = { ...(currentPaneState.pluginState ?? {}) };
+        if (Object.keys(nextPluginState).length === 0) {
+          delete nextAllPluginState[pluginId];
+        } else {
+          nextAllPluginState[pluginId] = nextPluginState;
+        }
+        this.updatePaneRuntimeStateFn(paneId, {
+          pluginState: Object.keys(nextAllPluginState).length > 0 ? nextAllPluginState : undefined,
+        });
+      },
+    };
 
     return {
-      registerPane: (pane) => { this.panesMap.set(pane.id, pane); items.panes.push(pane.id); },
+      registerPane: (pane) => { this.panesMap.set(pane.id, this.wrapPaneDef(pluginId, pane)); items.panes.push(pane.id); },
       registerCommand: (command) => {
         this.commandsMap.set(command.id, command);
         this.commandOwners.set(command.id, pluginId);
@@ -229,7 +357,7 @@ export class PluginRegistry {
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
       registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
       registerDataProvider: (provider) => { this.dataProvidersMap.set(provider.id, provider); items.dataProviders.push(provider.id); },
-      registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, tab); items.detailTabs.push(tab.id); },
+      registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, this.wrapDetailTabDef(pluginId, tab)); items.detailTabs.push(tab.id); },
       registerShortcut: (shortcut) => {
         this.shortcutsMap.set(shortcut.id, shortcut);
         this.shortcutOwners.set(shortcut.id, pluginId);
@@ -245,6 +373,13 @@ export class PluginRegistry {
       tickerRepository: this.tickerRepository,
       storage,
       persistence,
+      resume,
+      configState: {
+        get: (key) => this.getConfigState(pluginId, key),
+        set: (key, value) => this.setConfigState(pluginId, key, value),
+        delete: (key) => this.deleteConfigState(pluginId, key),
+        keys: () => this.getConfigStateKeys(pluginId),
+      },
 
       createBrokerInstance: (brokerType, label, values) => this.createBrokerInstanceFn(brokerType, label, values),
       updateBrokerInstance: (instanceId, values) => this.updateBrokerInstanceFn(instanceId, values),
@@ -274,18 +409,23 @@ export class PluginRegistry {
   }
 
   async register(plugin: GloomPlugin): Promise<void> {
+    const items = this.getOrCreatePluginItems(plugin.id);
+
     if (plugin.panes) {
       for (const pane of plugin.panes) {
-        this.panesMap.set(pane.id, pane);
+        this.panesMap.set(pane.id, this.wrapPaneDef(plugin.id, pane));
+        items.panes.push(pane.id);
       }
     }
 
     if (plugin.broker) {
       this.brokersMap.set(plugin.broker.id, plugin.broker);
+      items.brokers.push(plugin.broker.id);
     }
 
     if (plugin.dataProvider) {
       this.dataProvidersMap.set(plugin.dataProvider.id, plugin.dataProvider);
+      items.dataProviders.push(plugin.dataProvider.id);
     }
 
     if (plugin.slots) {
@@ -297,7 +437,11 @@ export class PluginRegistry {
 
       for (const [slotName, renderer] of Object.entries(plugin.slots)) {
         if (renderer) {
-          corePlugin.slots[slotName] = (_ctx: unknown, props: unknown) => (renderer as any)(props);
+          corePlugin.slots[slotName] = (_ctx: unknown, props: unknown) => createElement(
+            PluginRenderProvider,
+            { pluginId: plugin.id, runtime: this },
+            (renderer as any)(props),
+          );
         }
       }
 

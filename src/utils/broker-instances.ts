@@ -27,6 +27,10 @@ export function buildBrokerPortfolioId(brokerInstanceId: string, accountId?: str
   return `broker:${brokerInstanceId}:${accountId?.trim() || "default"}`;
 }
 
+export function isBrokerPortfolioId(collectionId: string | undefined | null): collectionId is string {
+  return typeof collectionId === "string" && collectionId.startsWith("broker:");
+}
+
 export function getBrokerInstance(
   brokerInstances: BrokerInstanceConfig[],
   instanceId: string | undefined,

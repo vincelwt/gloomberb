@@ -554,6 +554,50 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
   pluginRegistry.getTickerFn = (symbol) => state.tickers.get(symbol) ?? null;
   pluginRegistry.getDataFn = (symbol) => state.financials.get(symbol) ?? null;
   pluginRegistry.getConfigFn = () => state.config;
+  pluginRegistry.getPaneRuntimeStateFn = (paneId) => state.paneState[paneId] ?? null;
+  pluginRegistry.updatePaneRuntimeStateFn = (paneId, patch) => {
+    dispatch({ type: "UPDATE_PANE_STATE", paneId, patch });
+  };
+  pluginRegistry.getPluginConfigValueFn = (pluginId, key) => (
+    state.config.pluginConfig[pluginId]?.[key] ?? null
+  );
+  pluginRegistry.setPluginConfigValueFn = async (pluginId, key, value) => {
+    const nextConfig = {
+      ...state.config,
+      pluginConfig: {
+        ...state.config.pluginConfig,
+        [pluginId]: {
+          ...(state.config.pluginConfig[pluginId] ?? {}),
+          [key]: value,
+        },
+      },
+    };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    await saveConfig(nextConfig);
+    pluginRegistry.events.emit("config:changed", { config: nextConfig });
+  };
+  pluginRegistry.deletePluginConfigValueFn = async (pluginId, key) => {
+    const currentPluginConfig = state.config.pluginConfig[pluginId];
+    if (!currentPluginConfig || !(key in currentPluginConfig)) return;
+
+    const nextPluginConfig = { ...currentPluginConfig };
+    delete nextPluginConfig[key];
+
+    const nextAllPluginConfig = { ...state.config.pluginConfig };
+    if (Object.keys(nextPluginConfig).length === 0) {
+      delete nextAllPluginConfig[pluginId];
+    } else {
+      nextAllPluginConfig[pluginId] = nextPluginConfig;
+    }
+
+    const nextConfig = {
+      ...state.config,
+      pluginConfig: nextAllPluginConfig,
+    };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    await saveConfig(nextConfig);
+    pluginRegistry.events.emit("config:changed", { config: nextConfig });
+  };
   if (dataProvider instanceof ProviderRouter) {
     dataProvider.setConfigAccessor(() => state.config);
   }
