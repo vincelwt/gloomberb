@@ -13,7 +13,6 @@ import type {
 import {
   cloneLayout,
   createDefaultConfig,
-  createPaneInstance,
   createPaneInstanceId,
   CURRENT_CONFIG_VERSION,
   normalizePaneLayout,
@@ -279,114 +278,15 @@ function getDefaultFollowSourceInstanceId(instances: PaneInstanceConfig[]): stri
   return instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId ?? null;
 }
 
-type LegacyDockedEntry = { paneId: string; columnIndex: number; order?: number; height?: string };
-type LegacyFloatingEntry = { paneId: string; x: number; y: number; width: number; height: number; zIndex?: number };
-type LegacyLayoutValue = {
-  columns: unknown[];
-  docked: unknown[];
-  floating: unknown[];
-};
-
-function migrateLegacyLayout(value: LegacyLayoutValue, fallback: LayoutConfig): LayoutConfig {
-  const columns = value.columns
-    .filter((entry): entry is LayoutConfig["columns"][number] =>
-      !!entry
-      && typeof entry === "object"
-      && (typeof (entry as LayoutConfig["columns"][number]).width === "string"
-        || typeof (entry as LayoutConfig["columns"][number]).width === "undefined"),
-    )
-    .map((entry) => ({ ...entry }));
-
-  const legacyDocked = value.docked
-    .filter((entry): entry is LegacyDockedEntry =>
-      !!entry
-      && typeof entry === "object"
-      && typeof (entry as LegacyDockedEntry).paneId === "string"
-      && typeof (entry as LegacyDockedEntry).columnIndex === "number",
-    );
-  const legacyFloating = value.floating
-    .filter((entry): entry is LegacyFloatingEntry =>
-      !!entry
-      && typeof entry === "object"
-      && typeof (entry as LegacyFloatingEntry).paneId === "string"
-      && typeof (entry as LegacyFloatingEntry).x === "number"
-      && typeof (entry as LegacyFloatingEntry).y === "number"
-      && typeof (entry as LegacyFloatingEntry).width === "number"
-      && typeof (entry as LegacyFloatingEntry).height === "number",
-    );
-
-  const instances: PaneInstanceConfig[] = [];
-  let firstPortfolioInstanceId: string | null = null;
-  let firstTickerDetailInstanceId: string | null = null;
-
-  const createLegacyInstance = (paneId: string): PaneInstanceConfig => {
-    let instanceId: string;
-    if (paneId === "portfolio-list" && !firstPortfolioInstanceId) {
-      instanceId = "portfolio-list:main";
-      firstPortfolioInstanceId = instanceId;
-    } else if (paneId === "ticker-detail" && !firstTickerDetailInstanceId) {
-      instanceId = "ticker-detail:main";
-      firstTickerDetailInstanceId = instanceId;
-    } else {
-      instanceId = createPaneInstanceId(paneId);
-    }
-
-    const binding: PaneBinding = paneId === "ticker-detail" && firstPortfolioInstanceId
-      ? { kind: "follow", sourceInstanceId: firstPortfolioInstanceId }
-      : paneId === "ibkr-trading" && (firstTickerDetailInstanceId || firstPortfolioInstanceId)
-        ? { kind: "follow", sourceInstanceId: firstTickerDetailInstanceId ?? firstPortfolioInstanceId! }
-        : { kind: "none" };
-
-    const params = paneId === "portfolio-list"
-      ? { collectionId: fallback.instances.find((instance) => instance.paneId === "portfolio-list")?.params?.collectionId ?? "main" }
-      : undefined;
-
-    const instance = createPaneInstance(paneId, { instanceId, binding, params });
-    instances.push(instance);
-    return instance;
-  };
-
-  const docked = legacyDocked.map((entry) => {
-    const instance = createLegacyInstance(entry.paneId);
-    return {
-      instanceId: instance.instanceId,
-      columnIndex: entry.columnIndex,
-      order: entry.order,
-      height: entry.height,
-    };
-  });
-
-  const floating = legacyFloating.map((entry) => {
-    const instance = createLegacyInstance(entry.paneId);
-    return {
-      instanceId: instance.instanceId,
-      x: entry.x,
-      y: entry.y,
-      width: entry.width,
-      height: entry.height,
-      zIndex: entry.zIndex,
-    };
-  });
-
-  if (instances.length === 0) return cloneLayout(fallback);
-
-  return {
-    columns: columns.length > 0 ? columns : cloneLayout(fallback).columns,
-    instances,
-    docked,
-    floating,
-  };
-}
-
 export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
   if (!isLayoutConfig(value)) {
     return cloneLayout(fallback);
   }
 
   if (!Array.isArray((value as LayoutConfig & { instances?: unknown }).instances)) {
-    const migrated = migrateLegacyLayout(value as unknown as LegacyLayoutValue, fallback);
-    return normalizePaneLayout(migrated, {
-      defaultFollowSourceInstanceId: getDefaultFollowSourceInstanceId(migrated.instances),
+    const layout = cloneLayout(fallback);
+    return normalizePaneLayout(layout, {
+      defaultFollowSourceInstanceId: getDefaultFollowSourceInstanceId(layout.instances),
     });
   }
 

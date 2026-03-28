@@ -1,6 +1,7 @@
 import type { Quote, Fundamentals, TickerFinancials, PricePoint, OptionsChain } from "./financials";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
+import type { CachePolicyMap } from "./persistence";
 
 export interface NewsItem {
   title: string;
@@ -26,6 +27,7 @@ export interface DataProvider {
   readonly id: string;
   readonly name: string;
   readonly priority?: number;
+  readonly cachePolicy?: CachePolicyMap;
 
   canProvide?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<boolean> | boolean;
   getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials>;

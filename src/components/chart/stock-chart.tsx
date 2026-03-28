@@ -57,9 +57,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     const id = ++fetchIdRef.current;
     setRangeHistory(null);
     setDetailHistory(null);
-    const instrument = ticker.frontmatter.broker_contracts?.[0] ?? null;
+    const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
     provider
-      .getPriceHistory(ticker.frontmatter.ticker, ticker.frontmatter.exchange || "", viewState.timeRange, {
+      .getPriceHistory(ticker.metadata.ticker, ticker.metadata.exchange || "", viewState.timeRange, {
         brokerId: instrument?.brokerId,
         brokerInstanceId: instrument?.brokerInstanceId,
         instrument,
@@ -70,7 +70,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
       .catch(() => {
         if (id === fetchIdRef.current) setRangeHistory(null);
       });
-  }, [ticker?.frontmatter.ticker, viewState.timeRange, compact]);
+  }, [ticker?.metadata.ticker, viewState.timeRange, compact]);
 
   const baseHistory = rangeHistory ?? financials?.priceHistory ?? [];
   const baseHistoryStartMs = baseHistory[0] ? new Date(baseHistory[0].date).getTime() : null;
@@ -111,11 +111,11 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
       }
 
       const id = ++detailFetchIdRef.current;
-      const instrument = ticker.frontmatter.broker_contracts?.[0] ?? null;
+      const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
       provider
         .getDetailedPriceHistory(
-          ticker.frontmatter.ticker,
-          ticker.frontmatter.exchange || "",
+          ticker.metadata.ticker,
+          ticker.metadata.exchange || "",
           startDate,
           endDate,
           barSize,
@@ -340,7 +340,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {ticker?.frontmatter.ticker ?? ""} - {viewState.timeRange}
+          {ticker?.metadata.ticker ?? ""} - {viewState.timeRange}
         </text>
         <text fg={priceColor(displayChange)}>
           {formatCurrency(displayPrice)}

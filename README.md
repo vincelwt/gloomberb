@@ -12,7 +12,7 @@ An open-source, extensible portfolio tracker and stock terminal for your command
 - **Multi-currency** — automatic exchange rate conversion
 - **Keyboard-driven** — fast command bar (`Ctrl+P`) and vim-style navigation
 - **Extensible via plugins** — everything is a plugin, including core features
-- **100% local** — all your data stays on your machine. Ticker data is stored as markdown files, market data is cached in SQLite. Nothing is sent anywhere.
+- **100% local** — all your data stays on your machine. Ticker metadata, market data, chat state, and plugin state are stored in SQLite; notes stay as local markdown files. Nothing is sent anywhere.
 
 ## Install
 
@@ -24,7 +24,7 @@ npm install -g gloomberb
 
 Then run `gloomberb` to start.
 
-Your data is stored in `~/gloomberb-data/`. Each ticker gets its own markdown file with YAML frontmatter — easy to read, edit, and version control.
+Your data is stored in `~/gloomberb-data/`. Ticker metadata and cached app state live in SQLite, and per-ticker notes are saved as markdown files next to the database.
 
 ## Plugins
 

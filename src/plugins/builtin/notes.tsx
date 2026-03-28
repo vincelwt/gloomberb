@@ -3,100 +3,100 @@ import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { TextareaRenderable } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
-import { useAppState, usePaneTicker } from "../../state/app-context";
+import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
-import { getSharedMarkdownStore } from "../../plugins/registry";
+import { NotesFiles } from "./notes-files";
 
-function NotesTab({ focused, onCapture }: DetailTabProps) {
-  const { ticker } = usePaneTicker();
-  const { dispatch } = useAppState();
-  const textareaRef = useRef<TextareaRenderable>(null);
-  const [notesFocused, setNotesFocused] = useState(false);
+function createNotesTab(notesFiles: NotesFiles) {
+  return function NotesTab({ focused, onCapture }: DetailTabProps) {
+    const { ticker } = usePaneTicker();
+    const textareaRef = useRef<TextareaRenderable>(null);
+    const [notesFocused, setNotesFocused] = useState(false);
+    const [loadedNotes, setLoadedNotes] = useState("");
 
-  const setNotesFocusedAndCapture = useCallback((val: boolean) => {
-    setNotesFocused(val);
-    onCapture(val);
-  }, [onCapture]);
+    const setNotesFocusedAndCapture = useCallback((value: boolean) => {
+      setNotesFocused(value);
+      onCapture(value);
+    }, [onCapture]);
 
-  // Save helper that persists textarea text for a given ticker
-  const saveNotesFor = useCallback((t: typeof ticker, text: string) => {
-    if (t && text !== t.notes) {
-      const updated = { ...t, notes: text };
-      dispatch({ type: "UPDATE_TICKER", ticker: updated });
-      const markdownStore = getSharedMarkdownStore();
-      if (markdownStore) {
-        markdownStore.saveTicker(updated).catch(() => {});
+    const saveNotesFor = useCallback((symbol: string | null, text: string) => {
+      if (!symbol) return;
+      notesFiles.save(symbol, text).catch(() => {});
+    }, [notesFiles]);
+
+    useEffect(() => {
+      const textarea = textareaRef.current;
+      if (!notesFocused && textarea && ticker?.metadata.ticker) {
+        saveNotesFor(ticker.metadata.ticker, textarea.editBuffer.getText());
       }
-    }
-  }, [dispatch]);
+    }, [notesFocused, ticker, saveNotesFor]);
 
-  // Save notes when unfocusing
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!notesFocused && textarea && ticker) {
-      saveNotesFor(ticker, textarea.editBuffer.getText());
-    }
-  }, [notesFocused, ticker, saveNotesFor]);
+    const tickerSymbol = ticker?.metadata.ticker ?? null;
+    const prevSymbolRef = useRef<string | null>(null);
+    useEffect(() => {
+      if (tickerSymbol !== prevSymbolRef.current) {
+        if (textareaRef.current && prevSymbolRef.current) {
+          saveNotesFor(prevSymbolRef.current, textareaRef.current.editBuffer.getText());
+        }
+        prevSymbolRef.current = tickerSymbol;
 
-  // When the selected ticker changes, save pending edits and load new notes
-  const tickerSymbol = ticker?.frontmatter.ticker ?? null;
-  const prevTickerRef = useRef(ticker);
-  const prevSymbolRef = useRef(tickerSymbol);
-  useEffect(() => {
-    if (tickerSymbol !== prevSymbolRef.current) {
-      // Save edits for the previous ticker
-      if (textareaRef.current && prevTickerRef.current) {
-        saveNotesFor(prevTickerRef.current, textareaRef.current.editBuffer.getText());
+        if (!tickerSymbol) {
+          setLoadedNotes("");
+          textareaRef.current?.setText("");
+          return;
+        }
+
+        notesFiles.load(tickerSymbol).then((nextNotes) => {
+          setLoadedNotes(nextNotes);
+          textareaRef.current?.setText(nextNotes);
+        }).catch(() => {
+          setLoadedNotes("");
+          textareaRef.current?.setText("");
+        });
       }
-      prevSymbolRef.current = tickerSymbol;
-      prevTickerRef.current = ticker;
-      // Update textarea content to new ticker's notes
-      if (textareaRef.current) {
-        textareaRef.current.setText(ticker?.notes || "");
+    }, [tickerSymbol, saveNotesFor, notesFiles]);
+
+    useKeyboard((event) => {
+      if (!focused) return;
+      const isEnter = event.name === "enter" || event.name === "return";
+      if (isEnter && !notesFocused) {
+        setNotesFocusedAndCapture(true);
+        return;
       }
-    }
-  }, [tickerSymbol, ticker, saveNotesFor]);
+      if (event.name === "escape" && notesFocused) {
+        setNotesFocusedAndCapture(false);
+        return;
+      }
+    });
 
-  // Handle keyboard for enter/escape focus toggle
-  useKeyboard((event) => {
-    if (!focused) return;
-    const isEnter = event.name === "enter" || event.name === "return";
-    if (isEnter && !notesFocused) {
-      setNotesFocusedAndCapture(true);
-      return;
-    }
-    if (event.name === "escape" && notesFocused) {
-      setNotesFocusedAndCapture(false);
-      return;
-    }
-  });
+    if (!ticker) return <text fg={colors.textDim}>Select a ticker to view notes.</text>;
 
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view notes.</text>;
-
-  return (
-    <box flexDirection="column" padding={1} flexGrow={1}>
-      <box flexDirection="row" height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</text>
-        <box flexGrow={1} />
-        <text fg={colors.textMuted}>
-          {notesFocused ? "editing (Esc to stop)" : "Enter to edit"}
-        </text>
+    return (
+      <box flexDirection="column" padding={1} flexGrow={1}>
+        <box flexDirection="row" height={1}>
+          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</text>
+          <box flexGrow={1} />
+          <text fg={colors.textMuted}>
+            {notesFocused ? "editing (Esc to stop)" : "Enter to edit"}
+          </text>
+        </box>
+        <box height={1} />
+        <box flexGrow={1} onMouseDown={() => { if (!notesFocused) setNotesFocusedAndCapture(true); }}>
+          <textarea
+            key={tickerSymbol ?? "none"}
+            ref={textareaRef}
+            initialValue={loadedNotes}
+            placeholder="Write notes about this ticker..."
+            focused={notesFocused}
+            textColor={colors.text}
+            placeholderColor={colors.textDim}
+            backgroundColor={notesFocused ? colors.panel : colors.bg}
+            flexGrow={1}
+          />
+        </box>
       </box>
-      <box height={1} />
-      <box flexGrow={1} onMouseDown={() => { if (!notesFocused) setNotesFocusedAndCapture(true); }}>
-        <textarea
-          ref={textareaRef}
-          initialValue={ticker.notes || ""}
-          placeholder="Write notes about this ticker..."
-          focused={notesFocused}
-          textColor={colors.text}
-          placeholderColor={colors.textDim}
-          backgroundColor={notesFocused ? colors.panel : colors.bg}
-          flexGrow={1}
-        />
-      </box>
-    </box>
-  );
+    );
+  };
 }
 
 export const notesPlugin: GloomPlugin = {
@@ -107,6 +107,13 @@ export const notesPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
+    const notesFiles = new NotesFiles(ctx.getConfig().dataDir);
+    const NotesTab = createNotesTab(notesFiles);
+
+    ctx.on("ticker:removed", ({ symbol }) => {
+      notesFiles.delete(symbol).catch(() => {});
+    });
+
     ctx.registerDetailTab({
       id: "notes",
       name: "Notes",

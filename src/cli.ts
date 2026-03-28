@@ -3,13 +3,13 @@ import { existsSync, mkdirSync, rmSync, readdirSync } from "fs";
 import { execSync } from "child_process";
 import { getPluginsDir } from "./plugins/loader";
 import { getDataDir, loadConfig } from "./data/config-store";
-import { SqliteCache } from "./data/sqlite-cache";
-import { MarkdownStore } from "./data/markdown-store";
+import { AppPersistence } from "./data/app-persistence";
+import { TickerRepository } from "./data/ticker-repository";
 import { YahooFinanceClient } from "./sources/yahoo-finance";
 import { VERSION } from "./version";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber } from "./utils/format";
 import type { AppConfig } from "./types/config";
-import type { TickerFile } from "./types/ticker";
+import type { TickerRecord } from "./types/ticker";
 
 const PLUGINS_DIR = getPluginsDir();
 
@@ -176,10 +176,10 @@ async function initData() {
     process.exit(1);
   }
   const config = await loadConfig(dataDir);
-  const cache = new SqliteCache(join(dataDir, ".gloomberb-cache.db"));
-  const store = new MarkdownStore(dataDir, cache);
-  const yahoo = new YahooFinanceClient(cache);
-  return { config, cache, store, yahoo, dataDir };
+  const persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
+  const store = new TickerRepository(persistence.tickers);
+  const yahoo = new YahooFinanceClient();
+  return { config, persistence, store, yahoo, dataDir };
 }
 
 // --- Help command ---
@@ -203,24 +203,24 @@ Commands:
 // --- Portfolio command ---
 
 async function portfolio(name?: string) {
-  const { config, store, yahoo, cache } = await initData();
+  const { config, store, yahoo, persistence } = await initData();
   const tickers = await store.loadAllTickers();
 
   if (!name) {
     // List all portfolios and watchlists with ticker counts
     console.log("Portfolios:");
     for (const p of config.portfolios) {
-      const count = tickers.filter((t) => t.frontmatter.portfolios.includes(p.id)).length;
+      const count = tickers.filter((t) => t.metadata.portfolios.includes(p.id)).length;
       console.log(`  ${p.name} (${p.currency})    ${count} ticker${count !== 1 ? "s" : ""}`);
     }
     if (config.watchlists.length > 0) {
       console.log("\nWatchlists:");
       for (const w of config.watchlists) {
-        const count = tickers.filter((t) => t.frontmatter.watchlists.includes(w.id)).length;
+        const count = tickers.filter((t) => t.metadata.watchlists.includes(w.id)).length;
         console.log(`  ${w.name}    ${count} ticker${count !== 1 ? "s" : ""}`);
       }
     }
-    cache.close();
+    persistence.close();
     return;
   }
 
@@ -232,7 +232,7 @@ async function portfolio(name?: string) {
   if (!matchedPortfolio && !matchedWatchlist) {
     console.error(`Portfolio or watchlist "${name}" not found.`);
     console.error(`Available: ${[...config.portfolios.map((p) => p.name), ...config.watchlists.map((w) => w.name)].join(", ")}`);
-    cache.close();
+    persistence.close();
     process.exit(1);
   }
 
@@ -242,12 +242,12 @@ async function portfolio(name?: string) {
   const currency = matchedPortfolio?.currency ?? config.baseCurrency;
 
   const filtered = tickers.filter((t) =>
-    isPortfolio ? t.frontmatter.portfolios.includes(id) : t.frontmatter.watchlists.includes(id),
+    isPortfolio ? t.metadata.portfolios.includes(id) : t.metadata.watchlists.includes(id),
   );
 
   if (filtered.length === 0) {
     console.log(`${displayName} — no tickers`);
-    cache.close();
+    persistence.close();
     return;
   }
 
@@ -258,8 +258,8 @@ async function portfolio(name?: string) {
   await Promise.all(
     filtered.map(async (t) => {
       try {
-        const q = await yahoo.getQuote(t.frontmatter.ticker, t.frontmatter.exchange);
-        quotes.set(t.frontmatter.ticker, q);
+        const q = await yahoo.getQuote(t.metadata.ticker, t.metadata.exchange);
+        quotes.set(t.metadata.ticker, q);
       } catch { /* skip failed quotes */ }
     }),
   );
@@ -272,13 +272,13 @@ async function portfolio(name?: string) {
     let totalPnl = 0;
 
     for (const t of filtered) {
-      const q = quotes.get(t.frontmatter.ticker);
+      const q = quotes.get(t.metadata.ticker);
       const price = q ? formatCurrency(q.price, q.currency) : "—";
       const chg = q ? formatPercentRaw(q.changePercent) : "—";
-      const positions = t.frontmatter.positions.filter((p) => p.portfolio === id);
+      const positions = t.metadata.positions.filter((p) => p.portfolio === id);
 
       if (positions.length === 0) {
-        console.log(`${t.frontmatter.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}`);
+        console.log(`${t.metadata.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}`);
       } else {
         for (const pos of positions) {
           const shares = pos.shares;
@@ -288,7 +288,7 @@ async function portfolio(name?: string) {
           totalPnl += pnl;
           const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, currency)}` : formatCurrency(pnl, currency);
           console.log(
-            `${t.frontmatter.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${String(shares).padStart(6)}  ${formatCurrency(avgCost, currency).padStart(10)}  ${pnlStr.padStart(12)}`,
+            `${t.metadata.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${String(shares).padStart(6)}  ${formatCurrency(avgCost, currency).padStart(10)}  ${pnlStr.padStart(12)}`,
           );
         }
       }
@@ -303,32 +303,32 @@ async function portfolio(name?: string) {
     console.log(header);
     console.log("-".repeat(header.length));
     for (const t of filtered) {
-      const q = quotes.get(t.frontmatter.ticker);
+      const q = quotes.get(t.metadata.ticker);
       const price = q ? formatCurrency(q.price, q.currency) : "—";
       const chg = q ? formatPercentRaw(q.changePercent) : "—";
       const mcap = q?.marketCap ? formatCompact(q.marketCap) : "—";
-      console.log(`${t.frontmatter.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${mcap.padStart(6)}`);
+      console.log(`${t.metadata.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${mcap.padStart(6)}`);
     }
   }
 
-  cache.close();
+  persistence.close();
 }
 
 // --- Ticker command ---
 
 async function ticker(symbol: string) {
-  const { config, store, yahoo, cache } = await initData();
+  const { config, store, yahoo, persistence } = await initData();
 
   // Fetch quote and fundamentals
   const tickerFile = await store.loadTicker(symbol.toUpperCase());
-  const exchange = tickerFile?.frontmatter.exchange ?? "";
+  const exchange = tickerFile?.metadata.exchange ?? "";
 
   let financials;
   try {
     financials = await yahoo.getTickerFinancials(symbol, exchange);
   } catch (err: any) {
     console.error(`Failed to fetch data for ${symbol}: ${err.message}`);
-    cache.close();
+    persistence.close();
     process.exit(1);
   }
 
@@ -337,12 +337,12 @@ async function ticker(symbol: string) {
 
   if (!q) {
     console.error(`No quote data for ${symbol}`);
-    cache.close();
+    persistence.close();
     process.exit(1);
   }
 
   // Header
-  const name = q.name || tickerFile?.frontmatter.name || symbol;
+  const name = q.name || tickerFile?.metadata.name || symbol;
   console.log(`${q.symbol} — ${name}`);
   const parts = [];
   if (q.fullExchangeName || q.exchangeName) parts.push(`Exchange: ${q.fullExchangeName || q.exchangeName}`);
@@ -390,9 +390,9 @@ async function ticker(symbol: string) {
   }
 
   // Position info if in a portfolio
-  if (tickerFile && tickerFile.frontmatter.positions.length > 0) {
+  if (tickerFile && tickerFile.metadata.positions.length > 0) {
     console.log("");
-    for (const pos of tickerFile.frontmatter.positions) {
+    for (const pos of tickerFile.metadata.positions) {
       const portfolioName = config.portfolios.find((p) => p.id === pos.portfolio)?.name ?? pos.portfolio;
       const value = q.price * pos.shares * (pos.multiplier ?? 1);
       const pnl = (q.price - pos.avgCost) * pos.shares * (pos.multiplier ?? 1);
@@ -402,7 +402,7 @@ async function ticker(symbol: string) {
     }
   }
 
-  cache.close();
+  persistence.close();
 }
 
 export async function runCli(args: string[]): Promise<boolean> {

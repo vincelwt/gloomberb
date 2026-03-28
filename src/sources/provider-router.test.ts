@@ -1,13 +1,27 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { AppPersistence } from "../data/app-persistence";
 import { ProviderRouter } from "./provider-router";
 import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider } from "../types/data-provider";
 import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
 
 const originalConsoleError = console.error;
+const tempPaths: string[] = [];
+
+function createTempDbPath(name: string): string {
+  const path = join(tmpdir(), `gloomberb-provider-router-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  tempPaths.push(path);
+  return path;
+}
 
 afterEach(() => {
   console.error = originalConsoleError;
+  for (const path of tempPaths.splice(0)) {
+    if (existsSync(path)) rmSync(path, { force: true });
+  }
 });
 
 const fallbackProvider: DataProvider = {
@@ -178,6 +192,103 @@ describe("ProviderRouter", () => {
     expect(results[0]?.brokerInstanceId).toBe("ibkr-work");
     expect(results[0]?.brokerLabel).toBe("Work");
     expect(results[0]?.brokerContract?.brokerInstanceId).toBe("ibkr-work");
+  });
+
+  test("merges cached broker financials with cached fallback fundamentals", async () => {
+    const dbPath = createTempDbPath("cache-merge");
+    const persistence = new AppPersistence(dbPath);
+    const providerCalls = { broker: 0, fallback: 0 };
+    const router = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        providerCalls.fallback += 1;
+        return {
+          annualStatements: [{ date: "2025-12-31", totalRevenue: 1000 }],
+          quarterlyStatements: [{ date: "2025-12-31", totalRevenue: 250 }],
+          priceHistory: [],
+          fundamentals: { revenue: 1000, netIncome: 200 },
+        };
+      },
+    }, [], persistence.resources);
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      async getTickerFinancials() {
+        providerCalls.broker += 1;
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: {
+            symbol: "AAPL",
+            price: 125,
+            currency: "USD",
+            change: 2,
+            changePercent: 1.6,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: {},
+        };
+      },
+    };
+
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: {},
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+      },
+      recentTickers: [],
+    }));
+
+    const merged = await router.getTickerFinancials("AAPL", "NASDAQ", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-work",
+    });
+    expect(merged.quote?.price).toBe(125);
+    expect(merged.fundamentals?.revenue).toBe(1000);
+    expect(providerCalls.broker).toBe(1);
+    expect(providerCalls.fallback).toBe(1);
+
+    const cached = router.getCachedFinancialsForTargets([{
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-work",
+    }], { allowExpired: true });
+    expect(cached.get("AAPL")?.quote?.price).toBe(125);
+    expect(cached.get("AAPL")?.fundamentals?.revenue).toBe(1000);
+    persistence.close();
   });
 
   test("does not log expected provider misses for missing chart data", async () => {

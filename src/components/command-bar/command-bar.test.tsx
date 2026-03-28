@@ -6,7 +6,7 @@ import { CommandBar } from "./command-bar";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
-import type { TickerFile } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -18,9 +18,9 @@ afterEach(() => {
   }
 });
 
-function makeTicker(symbol: string, name: string): TickerFile {
+function makeTicker(symbol: string, name: string): TickerRecord {
   return {
-    frontmatter: {
+    metadata: {
       ticker: symbol,
       exchange: "NASDAQ",
       currency: "USD",
@@ -31,8 +31,6 @@ function makeTicker(symbol: string, name: string): TickerFile {
       custom: {},
       tags: [],
     },
-    notes: "",
-    filePath: `/tmp/${symbol}.md`,
   };
 }
 
@@ -105,7 +103,7 @@ function CommandBarHarness({
     ...createInitialState(config),
     commandBarOpen: true,
     commandBarQuery: query,
-    tickers: new Map(tickers.map((ticker) => [ticker.frontmatter.ticker, ticker])),
+    tickers: new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker])),
     config: { ...config, disabledPlugins },
     paneState: selectedTicker
       ? {
@@ -116,12 +114,10 @@ function CommandBarHarness({
       }
       : createInitialState(config).paneState,
   };
-  const markdownStore = {
+  const tickerRepository = {
     loadTicker: async () => null,
-    createTicker: async (frontmatter: TickerFile["frontmatter"]) => ({
-      frontmatter,
-      notes: "",
-      filePath: "/tmp/created.md",
+    createTicker: async (metadata: TickerRecord["metadata"]) => ({
+      metadata,
     }),
     saveTicker: async () => {},
   };
@@ -134,7 +130,7 @@ function CommandBarHarness({
         {live && <text>{`theme:${liveState.config.theme}`}</text>}
         <CommandBar
           dataProvider={dataProvider}
-          markdownStore={markdownStore as any}
+          tickerRepository={tickerRepository as any}
           pluginRegistry={pluginRegistry}
           quitApp={() => {}}
         />

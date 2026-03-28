@@ -2,53 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { InputRenderable } from "@opentui/core";
-import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plugin";
+import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
-
-const CHANNEL_ID = "everyone";
-
-// Module-level caches so re-opening the widget is instant
-let _cachedUser: { id: string; username: string } | null = null;
-let _sessionChecked = false;
-let _cachedMessages: ChatMessage[] = [];
-let _wsConn: { send: (content: string, replyToId?: string) => void; close: () => void } | null = null;
-let _wsConnected = false;
-let _messageListeners = new Set<(msgs: ChatMessage[]) => void>();
-
-function _notifyMessageListeners() {
-  for (const listener of _messageListeners) {
-    try { listener(_cachedMessages); } catch { /* ignore */ }
-  }
-}
-
-/** Start the persistent WebSocket connection + fetch history (called once after auth) */
-function _ensureConnection() {
-  if (_wsConnected || !_cachedUser) return;
-  _wsConnected = true;
-
-  // Fetch message history via REST
-  apiClient.getMessages(CHANNEL_ID, { limit: 50 }).then((msgs) => {
-    _cachedMessages = msgs;
-    _notifyMessageListeners();
-  }).catch(() => {});
-
-  // Connect WebSocket for live updates
-  _wsConn = apiClient.connectChannel(
-    CHANNEL_ID,
-    (msg) => {
-      if (_cachedMessages.some((m) => m.id === msg.id)) return;
-      _cachedMessages = [..._cachedMessages, msg];
-      _notifyMessageListeners();
-    },
-  );
-}
-
-
-// --- Ticker badge rendering ---
+import { chatController } from "./chat-controller";
 
 function renderMessageContent(
   text: string,
@@ -79,8 +39,6 @@ function renderMessageContent(
   );
 }
 
-// --- Chat content component (shared between pane and widget) ---
-
 interface ChatContentProps {
   width: number;
   height: number;
@@ -91,46 +49,41 @@ interface ChatContentProps {
 
 function ChatContent({ width, height, focused, selectTicker, close }: ChatContentProps) {
   const { dispatch } = useAppState();
-  const [messages, setMessages] = useState<ChatMessage[]>(_cachedMessages);
-  const [user, setUser] = useState<{ id: string; username: string } | null>(_cachedUser);
-  const [loading, setLoading] = useState(!_sessionChecked);
+  const initialSnapshot = chatController.getSnapshot();
+  const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
+  const [user, setUser] = useState<{ id: string; username: string } | null>(initialSnapshot.user);
+  const [loading, setLoading] = useState(initialSnapshot.loading);
   const [inputFocused, setInputFocused] = useState(false);
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = useState(initialSnapshot.draft);
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => (
+    initialSnapshot.replyToId ? initialSnapshot.messages.find((message) => message.id === initialSnapshot.replyToId) ?? null : null
+  ));
   const [scrollOffset, setScrollOffset] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
 
-  // Check auth state (uses module-level cache for instant re-opens)
   useEffect(() => {
-    if (_sessionChecked) return;
-    let cancelled = false;
-    const check = async () => {
-      const session = await apiClient.getSession();
-      if (!cancelled) {
-        const u = session ? { id: session.id, username: session.username ?? session.name } : null;
-        _cachedUser = u;
-        _sessionChecked = true;
-        setUser(u);
-        setLoading(false);
-        _ensureConnection();
-      }
-    };
-    check();
-    return () => { cancelled = true; };
+    const unsubscribe = chatController.subscribe((snapshot) => {
+      setMessages(snapshot.messages);
+      setUser(snapshot.user);
+      setLoading(snapshot.loading);
+      setInputValue(snapshot.draft);
+      setReplyTo(snapshot.replyToId
+        ? snapshot.messages.find((message) => message.id === snapshot.replyToId) ?? null
+        : null);
+    });
+
+    void chatController.refreshSession().catch(() => {});
+    return unsubscribe;
   }, []);
 
-  // Subscribe to module-level message updates
   useEffect(() => {
-    if (!user) return;
-    _ensureConnection();
-    const listener = (msgs: ChatMessage[]) => setMessages(msgs);
-    _messageListeners.add(listener);
-    return () => { _messageListeners.delete(listener); };
-  }, [user]);
+    if (inputRef.current && initialSnapshot.draft) {
+      (inputRef.current as any).editBuffer?.setText?.(initialSnapshot.draft) || (inputRef.current as any).setText?.(initialSnapshot.draft);
+    }
+  }, [initialSnapshot.draft]);
 
-  // Send message via WebSocket
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
   const replyToRef = useRef(replyTo);
@@ -139,18 +92,16 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
-    _wsConn?.send(content, replyToRef.current?.id);
+    chatController.send(content, replyToRef.current?.id);
     setInputValue("");
     setReplyTo(null);
     setScrollOffset(0);
     setSelectedIdx(-1);
   }, []);
 
-  // Keyboard handling
   useKeyboard((event) => {
     if (!focused) return;
 
-    // Shift+C always closes the widget (even when input is captured)
     if (event.name === "c" && event.shift) {
       if (inputFocused) {
         setInputFocused(false);
@@ -164,6 +115,7 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
       if (event.name === "escape") {
         if (replyTo) {
           setReplyTo(null);
+          chatController.setReplyToId(null);
         } else {
           setInputFocused(false);
           dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
@@ -178,13 +130,11 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
       return;
     }
 
-    // Escape closes the widget
     if (event.name === "escape") {
       close?.();
       return;
     }
 
-    // Navigation
     if (event.name === "j" || event.name === "down") {
       setSelectedIdx((prev) => Math.min(prev + 1, messages.length - 1));
       return;
@@ -194,15 +144,15 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
       return;
     }
 
-    // Reply
     if (event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
-      setReplyTo(messages[selectedIdx] ?? null);
+      const nextReplyTo = messages[selectedIdx] ?? null;
+      setReplyTo(nextReplyTo);
+      chatController.setReplyToId(nextReplyTo?.id ?? null);
       setInputFocused(true);
       dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
       return;
     }
 
-    // Scroll
     if (event.name === "g" && !event.shift) {
       setScrollOffset(0);
       setSelectedIdx(0);
@@ -211,11 +161,9 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
     if (event.name === "g" && event.shift) {
       setScrollOffset(Math.max(0, messages.length - (height - 4)));
       setSelectedIdx(messages.length - 1);
-      return;
     }
   });
 
-  // Not authenticated
   if (loading) {
     return (
       <box flexGrow={1} alignItems="center" justifyContent="center">
@@ -235,34 +183,27 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
     );
   }
 
-  // Calculate visible area
   const replyBarHeight = replyTo ? 1 : 0;
   const inputAreaHeight = 1 + replyBarHeight;
   const headerHeight = 1;
   const separatorHeight = 1;
   const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
-
-  // Auto-scroll to bottom when new messages arrive
   const visibleStart = Math.max(0, messages.length - messageAreaHeight - scrollOffset);
   const visibleMessages = messages.slice(visibleStart, visibleStart + messageAreaHeight);
-
   const contentWidth = width - 2;
 
   return (
     <box flexDirection="column" width={width} height={height}>
-      {/* Channel header */}
       <box height={1} width={contentWidth} flexDirection="row">
         <text fg={colors.positive} attributes={TextAttributes.BOLD}> #everyone</text>
         <box flexGrow={1} />
         <text fg={colors.textDim}>{messages.length} messages</text>
       </box>
 
-      {/* Separator */}
       <box height={1} width={contentWidth}>
-        <text fg={colors.border}>{"─".repeat(contentWidth)}</text>
+        <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
       </box>
 
-      {/* Messages */}
       <scrollbox height={messageAreaHeight} scrollY>
         {visibleMessages.length === 0 && (
           <box alignItems="center" justifyContent="center" flexGrow={1}>
@@ -284,10 +225,9 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
               onMouseMove={() => setHoveredIdx(globalIdx)}
               onMouseDown={() => setSelectedIdx(globalIdx)}
             >
-              {/* Reply context */}
               {msg.replyTo && (
                 <box flexDirection="row" height={1} paddingLeft={2}>
-                  <text fg={colors.textMuted}>↳ re: </text>
+                  <text fg={colors.textMuted}>reply </text>
                   <text fg={colors.textDim}>{msg.replyTo.user.username}: </text>
                   <text fg={colors.textMuted}>
                     {msg.replyTo.content.length > contentWidth - 20
@@ -296,14 +236,12 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
                   </text>
                 </box>
               )}
-              {/* Author + timestamp */}
               <box flexDirection="row" height={1} paddingLeft={1}>
                 <text fg={colors.positive} attributes={TextAttributes.BOLD}>
                   {msg.user.username ?? "anon"}
                 </text>
                 <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
               </box>
-              {/* Content */}
               <box paddingLeft={3}>
                 {renderMessageContent(msg.content, selectTicker, contentWidth - 4)}
               </box>
@@ -312,22 +250,19 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
         })}
       </scrollbox>
 
-      {/* Separator */}
       <box height={1} width={contentWidth}>
-        <text fg={colors.border}>{"─".repeat(contentWidth)}</text>
+        <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
       </box>
 
-      {/* Reply bar */}
       {replyTo && (
         <box height={1} width={contentWidth} flexDirection="row">
-          <text fg={colors.textMuted}> ↳ replying to </text>
+          <text fg={colors.textMuted}> replying to </text>
           <text fg={colors.positive}>{replyTo.user.username}</text>
           <box flexGrow={1} />
           <text fg={colors.textDim}>[Esc cancel]</text>
         </box>
       )}
 
-      {/* Input */}
       <box height={1} width={contentWidth} flexDirection="row">
         <text fg={colors.textDim}> {">"} </text>
         <input
@@ -338,7 +273,10 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
           textColor={colors.text}
           backgroundColor={colors.bg}
           flexGrow={1}
-          onInput={(val) => setInputValue(val)}
+          onInput={(val) => {
+            setInputValue(val);
+            chatController.setDraft(val);
+          }}
           onSubmit={() => {
             if (inputValue.trim()) {
               sendMessage();
@@ -352,8 +290,6 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
     </box>
   );
 }
-
-// --- Pane wrapper (for when used as a right-side pane) ---
 
 function ChatPane({ focused, width, height, close }: PaneProps) {
   const registry = getSharedRegistry();
@@ -376,31 +312,15 @@ function ChatPane({ focused, width, height, close }: PaneProps) {
   );
 }
 
-// --- Status bar widget ---
-
 function ChatStatusWidget() {
-  const [username, setUsername] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(chatController.getSnapshot().user?.username ?? null);
 
   useEffect(() => {
-    const token = apiClient.getSessionToken();
-    if (!token) {
-      setUsername(null);
-      return;
-    }
-    apiClient.getSession().then((u) => setUsername(u?.username ?? u?.name ?? null)).catch(() => setUsername(null));
-  }, []);
-
-  // Re-check when token changes (poll every 10s)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const token = apiClient.getSessionToken();
-      if (!token) {
-        setUsername(null);
-        return;
-      }
-      apiClient.getSession().then((u) => setUsername(u?.username ?? u?.name ?? null)).catch(() => setUsername(null));
-    }, 10000);
-    return () => clearInterval(interval);
+    const unsubscribe = chatController.subscribe((snapshot) => {
+      setUsername(snapshot.user?.username ?? null);
+    });
+    void chatController.refreshSession().catch(() => {});
+    return unsubscribe;
   }, []);
 
   return (
@@ -420,10 +340,6 @@ function ChatStatusWidget() {
   );
 }
 
-// --- Plugin definition ---
-
-let _ctx: GloomPluginContext | null = null;
-
 export const chatPlugin: GloomPlugin = {
   id: "chat",
   name: "Chat",
@@ -436,13 +352,8 @@ export const chatPlugin: GloomPlugin = {
   },
 
   setup(ctx) {
-    _ctx = ctx;
+    chatController.attachPersistence(ctx.persistence);
 
-    // Restore session token from storage
-    const savedToken = ctx.storage.get<string>("session_token");
-    if (savedToken) apiClient.setSessionToken(savedToken);
-
-    // Register as a pane (opens floating by default, can be docked)
     ctx.registerPane({
       id: "chat",
       name: "Chat",
@@ -453,7 +364,6 @@ export const chatPlugin: GloomPlugin = {
       defaultFloatingSize: { width: 80, height: 30 },
     });
 
-    // Toggle chat widget shortcut
     ctx.registerShortcut({
       id: "toggle-chat",
       key: "c",
@@ -469,7 +379,6 @@ export const chatPlugin: GloomPlugin = {
       },
     });
 
-    // Login command
     ctx.registerCommand({
       id: "auth-login",
       label: "Login",
@@ -483,24 +392,16 @@ export const chatPlugin: GloomPlugin = {
         { key: "_validate", label: "Signing in...", type: "info", body: ["Connecting to Gloomberb...", "Logged in successfully!"] },
       ],
       execute: async (values) => {
-        if (!values) return;
-        if (!values.email || !values.password) {
+        if (!values?.email || !values?.password) {
           throw new Error("Email and password are required");
         }
         await apiClient.signIn(values.email, values.password);
-        const token = apiClient.getSessionToken();
-        if (token) ctx.storage.set("session_token", token);
-        _sessionChecked = false;
-        _cachedUser = null;
-        _wsConn?.close();
-        _wsConn = null;
-        _wsConnected = false;
-        _cachedMessages = [];
+        chatController.clearSession();
+        await chatController.refreshSession();
         ctx.showWidget("chat");
       },
     });
 
-    // Sign up command
     ctx.registerCommand({
       id: "auth-signup",
       label: "Sign Up",
@@ -523,42 +424,23 @@ export const chatPlugin: GloomPlugin = {
         { key: "_validate", label: "Creating account...", type: "info", body: ["Registering with Gloomberb...", "Account created! Welcome to Gloomberb."] },
       ],
       execute: async (values) => {
-        if (!values) return;
-        if (!values.email || !values.username || !values.name || !values.password) {
+        if (!values?.email || !values?.username || !values?.name || !values?.password) {
           throw new Error("All fields are required");
         }
         if (values.password !== values.confirmPassword) {
           throw new Error("Passwords do not match");
         }
         await apiClient.signUp(values.email, values.username, values.name, values.password);
-        const token = apiClient.getSessionToken();
-        if (token) ctx.storage.set("session_token", token);
-        _sessionChecked = false;
-        _cachedUser = null;
-        _wsConn?.close();
-        _wsConn = null;
-        _wsConnected = false;
-        _cachedMessages = [];
+        chatController.clearSession();
+        await chatController.refreshSession();
         ctx.showWidget("chat");
       },
     });
 
-    // Preload: check session + fetch messages in background so chat opens instantly
-    if (savedToken) {
-      apiClient.getSession().then((session) => {
-        if (session) {
-          _cachedUser = { id: session.id, username: session.username ?? session.name };
-          _sessionChecked = true;
-          _ensureConnection();
-        } else {
-          _sessionChecked = true;
-        }
-      }).catch(() => {
-        _sessionChecked = true;
-      });
+    if (apiClient.getSessionToken()) {
+      void chatController.refreshSession().catch(() => {});
     }
 
-    // Logout command — only visible when logged in
     ctx.registerCommand({
       id: "auth-logout",
       label: "Logout",
@@ -571,16 +453,9 @@ export const chatPlugin: GloomPlugin = {
           return;
         }
         await apiClient.signOut();
-        ctx.storage.delete("session_token");
-        _sessionChecked = false;
-        _cachedUser = null;
-        _wsConn?.close();
-        _wsConn = null;
-        _wsConnected = false;
-        _cachedMessages = [];
+        chatController.reset(true);
         ctx.showToast("Logged out.", { type: "info" });
       },
-      // Hide when not authenticated
       hidden: () => !apiClient.getSessionToken(),
     });
   },

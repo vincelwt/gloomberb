@@ -1,7 +1,7 @@
 import type { CliRenderer } from "@opentui/core";
 import { createReactSlotRegistry, createSlot } from "@opentui/react";
-import type { MarkdownStore } from "../data/markdown-store";
-import type { SqliteCache } from "../data/sqlite-cache";
+import type { AppPersistence } from "../data/app-persistence";
+import type { TickerRepository } from "../data/ticker-repository";
 import type { BrokerAdapter } from "../types/broker";
 import type { BrokerInstanceConfig, LayoutConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
@@ -18,17 +18,16 @@ import type {
   PluginStorage,
   TickerAction,
 } from "../types/plugin";
-import type { TickerFile } from "../types/ticker";
+import type { TickerRecord } from "../types/ticker";
 import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
 import { createPaneInstance } from "../types/config";
+import { createPluginPersistence, createPluginStorage } from "./plugin-persistence";
 
 let sharedDataProvider: DataProvider | undefined;
-let sharedMarkdownStore: MarkdownStore | undefined;
 let sharedRegistry: PluginRegistry | undefined;
 
 export function getSharedDataProvider(): DataProvider | undefined { return sharedDataProvider; }
-export function getSharedMarkdownStore(): MarkdownStore | undefined { return sharedMarkdownStore; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
 
 interface PluginItems {
@@ -62,10 +61,10 @@ export class PluginRegistry {
 
   readonly events: EventBus;
   readonly dataProvider: DataProvider;
-  readonly markdownStore: MarkdownStore;
-  readonly sqliteCache: SqliteCache;
+  readonly tickerRepository: TickerRepository;
+  readonly persistence: AppPersistence;
 
-  getTickerFn: ((symbol: string) => TickerFile | null) = () => null;
+  getTickerFn: ((symbol: string) => TickerRecord | null) = () => null;
   getDataFn: ((symbol: string) => TickerFinancials | null) = () => null;
   getConfigFn: (() => import("../types/config").AppConfig) = () => { throw new Error("getConfigFn not set"); };
   createBrokerInstanceFn: ((brokerType: string, label: string, values: Record<string, unknown>) => Promise<BrokerInstanceConfig>) = async () => {
@@ -92,14 +91,13 @@ export class PluginRegistry {
 
   readonly Slot;
 
-  constructor(renderer: CliRenderer, dataProvider: DataProvider, markdownStore: MarkdownStore, sqliteCache: SqliteCache) {
+  constructor(renderer: CliRenderer, dataProvider: DataProvider, tickerRepository: TickerRepository, persistence: AppPersistence) {
     this.dataProvider = dataProvider;
-    this.markdownStore = markdownStore;
-    this.sqliteCache = sqliteCache;
+    this.tickerRepository = tickerRepository;
+    this.persistence = persistence;
     this.events = new EventBus();
 
     sharedDataProvider = dataProvider;
-    sharedMarkdownStore = markdownStore;
     sharedRegistry = this;
 
     this.slotRegistry = createReactSlotRegistry<GloomSlots & Record<string, object>>(renderer, {});
@@ -210,19 +208,10 @@ export class PluginRegistry {
     };
     this.pluginItems.set(pluginId, items);
 
-    const storage: PluginStorage = {
-      get: <T,>(key: string): T | null => {
-        const raw = this.sqliteCache.getPluginData(pluginId, key);
-        return raw ? JSON.parse(raw) : null;
-      },
-      set: (key: string, value: unknown) => {
-        this.sqliteCache.setPluginData(pluginId, key, JSON.stringify(value));
-      },
-      delete: (key: string) => {
-        this.sqliteCache.deletePluginData(pluginId, key);
-      },
-      keys: () => this.sqliteCache.getPluginKeys(pluginId),
-    };
+    const pluginNamespace = `plugin:${pluginId}`;
+
+    const storage: PluginStorage = createPluginStorage(this.persistence.pluginState, pluginId);
+    const persistence = createPluginPersistence(this.persistence.pluginState, this.persistence.resources, pluginNamespace, pluginId);
 
     return {
       registerPane: (pane) => { this.panesMap.set(pane.id, pane); items.panes.push(pane.id); },
@@ -247,8 +236,9 @@ export class PluginRegistry {
       getConfig: () => this.getConfigFn(),
 
       dataProvider: this.dataProvider,
-      markdownStore: this.markdownStore,
+      tickerRepository: this.tickerRepository,
       storage,
+      persistence,
 
       createBrokerInstance: (brokerType, label, values) => this.createBrokerInstanceFn(brokerType, label, values),
       updateBrokerInstance: (instanceId, values) => this.updateBrokerInstanceFn(instanceId, values),

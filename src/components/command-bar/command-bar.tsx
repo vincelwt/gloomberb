@@ -20,8 +20,8 @@ import { commands, matchPrefix, getThemeOptions, type Command } from "./command-
 import { getCurrentThemeId, applyTheme } from "../../theme/colors";
 import { saveConfig, resetAllData, exportConfig, importConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
-import type { MarkdownStore } from "../../data/markdown-store";
-import type { TickerFile, TickerFrontmatter } from "../../types/ticker";
+import type { TickerRepository } from "../../data/ticker-repository";
+import type { TickerRecord, TickerMetadata } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, WizardStep } from "../../types/plugin";
 import { findPaneInstance, type ColumnConfig } from "../../types/config";
@@ -59,7 +59,7 @@ const ALL_COLUMNS: ColumnConfig[] = [
 
 interface CommandBarProps {
   dataProvider: DataProvider;
-  markdownStore: MarkdownStore;
+  tickerRepository: TickerRepository;
   pluginRegistry: PluginRegistry;
   quitApp: () => void;
 }
@@ -279,7 +279,7 @@ function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & {
   );
 }
 
-export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitApp }: CommandBarProps) {
+export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, quitApp }: CommandBarProps) {
   const { state, dispatch } = useAppState();
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -608,10 +608,10 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
             ? activeCollectionId
             : state.config.portfolios.find((p) => !p.brokerId)?.id ?? null);
         if (!listId) return;
-        const list = isWatchlist ? ticker.frontmatter.watchlists : ticker.frontmatter.portfolios;
+        const list = isWatchlist ? ticker.metadata.watchlists : ticker.metadata.portfolios;
         if (!list.includes(listId)) {
           list.push(listId);
-          markdownStore.saveTicker(ticker).catch(() => {});
+          tickerRepository.saveTicker(ticker).catch(() => {});
           dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
         }
         close();
@@ -627,14 +627,14 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
           ? state.config.watchlists.some((w) => w.id === activeCollectionId)
           : state.config.portfolios.some((p) => p.id === activeCollectionId && !p.brokerId);
         if (isMatchingTab && activeCollectionId) {
-          ticker.frontmatter[field] = ticker.frontmatter[field].filter((id) => id !== activeCollectionId);
+          ticker.metadata[field] = ticker.metadata[field].filter((id) => id !== activeCollectionId);
         } else {
           const validIds = new Set(isWatchlist
             ? state.config.watchlists.map((w) => w.id)
             : state.config.portfolios.filter((p) => !p.brokerId).map((p) => p.id));
-          ticker.frontmatter[field] = ticker.frontmatter[field].filter((id) => !validIds.has(id));
+          ticker.metadata[field] = ticker.metadata[field].filter((id) => !validIds.has(id));
         }
-        markdownStore.saveTicker(ticker).catch(() => {});
+        tickerRepository.saveTicker(ticker).catch(() => {});
         dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
         close();
         break;
@@ -768,14 +768,15 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
         cmd.execute(dispatch, ctx);
         close();
     }
-  }, [state, dispatch, markdownStore, close, dialog, pluginRegistry]);
+  }, [state, dispatch, tickerRepository, close, dialog, pluginRegistry]);
 
   const openTickerDetail = useCallback((result: InstrumentSearchResult, options?: { forceNewPane?: boolean }) => {
     (async () => {
       const symbol = result.brokerContract?.localSymbol || result.symbol.split(".")[0]!;
-      let existing = await markdownStore.loadTicker(symbol);
+      let existing = await tickerRepository.loadTicker(symbol);
+      const created = !existing;
       if (!existing) {
-        const frontmatter: TickerFrontmatter = {
+        const metadata: TickerMetadata = {
           ticker: symbol,
           exchange: result.exchange,
           currency: result.currency || result.brokerContract?.currency || "USD",
@@ -788,13 +789,13 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
           custom: {},
           tags: [],
         };
-        existing = await markdownStore.createTicker(frontmatter);
+        existing = await tickerRepository.createTicker(metadata);
       } else {
-        existing.frontmatter.name = existing.frontmatter.name || result.name;
-        existing.frontmatter.exchange = existing.frontmatter.exchange || result.exchange;
-        existing.frontmatter.currency = existing.frontmatter.currency || result.currency || "USD";
-        existing.frontmatter.assetCategory = existing.frontmatter.assetCategory || result.brokerContract?.secType || result.type || undefined;
-        const existingContracts = existing.frontmatter.broker_contracts ?? [];
+        existing.metadata.name = existing.metadata.name || result.name;
+        existing.metadata.exchange = existing.metadata.exchange || result.exchange;
+        existing.metadata.currency = existing.metadata.currency || result.currency || "USD";
+        existing.metadata.assetCategory = existing.metadata.assetCategory || result.brokerContract?.secType || result.type || undefined;
+        const existingContracts = existing.metadata.broker_contracts ?? [];
         if (result.brokerContract) {
           const nextContracts = [...existingContracts];
           const hasContract = nextContracts.some((contract) =>
@@ -804,15 +805,18 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
             && contract.localSymbol === result.brokerContract!.localSymbol,
           );
           if (!hasContract) nextContracts.push(result.brokerContract);
-          existing.frontmatter.broker_contracts = nextContracts;
+          existing.metadata.broker_contracts = nextContracts;
         }
-        await markdownStore.saveTicker(existing);
+        await tickerRepository.saveTicker(existing);
       }
       dispatch({ type: "UPDATE_TICKER", ticker: existing });
+      if (created) {
+        pluginRegistry.events.emit("ticker:added", { symbol, ticker: existing });
+      }
       focusTicker(symbol, options);
       close();
     })();
-  }, [markdownStore, dispatch, close, focusTicker]);
+  }, [tickerRepository, dispatch, close, focusTicker, pluginRegistry.events]);
 
   // Run a wizard command through sequential dialogs
   const runWizard = useCallback(async (cmd: CommandDef) => {
@@ -926,7 +930,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
       .map((action) => ({
         id: `ticker-action:${action.id}`,
         label: action.label,
-        detail: ticker.frontmatter.ticker,
+        detail: ticker.metadata.ticker,
         category: "Actions",
         kind: "action" as const,
         action: () => {
@@ -983,16 +987,16 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
       switch (cmd.id) {
         case "add-watchlist":
           if (!tickerData || !targetWatchlistId) return false;
-          return !tickerData.frontmatter.watchlists.includes(targetWatchlistId);
+          return !tickerData.metadata.watchlists.includes(targetWatchlistId);
         case "remove-watchlist":
           if (!tickerData) return false;
-          return tickerData.frontmatter.watchlists.length > 0;
+          return tickerData.metadata.watchlists.length > 0;
         case "add-portfolio":
           if (!tickerData || !targetPortfolioId) return false;
-          return !tickerData.frontmatter.portfolios.includes(targetPortfolioId);
+          return !tickerData.metadata.portfolios.includes(targetPortfolioId);
         case "remove-portfolio":
           if (!tickerData) return false;
-          return tickerData.frontmatter.portfolios.some((id) =>
+          return tickerData.metadata.portfolios.some((id) =>
             state.config.portfolios.some((p) => p.id === id && !p.brokerId));
 
         case "disconnect-broker-account":
@@ -1020,7 +1024,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
           return name ? `in "${name}"` : cmd.description;
         }
         case "remove-watchlist": {
-          const names = tickerData?.frontmatter.watchlists
+          const names = tickerData?.metadata.watchlists
             .map((id) => state.config.watchlists.find((w) => w.id === id)?.name)
             .filter(Boolean);
           return names?.length ? `from "${names.join(", ")}"` : cmd.description;
@@ -1030,7 +1034,7 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
           return name ? `in "${name}"` : cmd.description;
         }
         case "remove-portfolio": {
-          const names = tickerData?.frontmatter.portfolios
+          const names = tickerData?.metadata.portfolios
             .map((id) => state.config.portfolios.find((p) => p.id === id && !p.brokerId)?.name)
             .filter(Boolean);
           return names?.length ? `from "${names.join(", ")}"` : cmd.description;
@@ -1157,23 +1161,23 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
       const recentSymbols = state.recentTickers.slice(0, maxDefaultTickers);
       const recentTickers = recentSymbols
         .map((s) => state.tickers.get(s))
-        .filter((t): t is TickerFile => t != null);
+        .filter((t): t is TickerRecord => t != null);
       if (recentTickers.length < maxDefaultTickers) {
         const recentSet = new Set(recentSymbols);
         for (const t of state.tickers.values()) {
           if (recentTickers.length >= maxDefaultTickers) break;
-          if (!recentSet.has(t.frontmatter.ticker)) recentTickers.push(t);
+          if (!recentSet.has(t.metadata.ticker)) recentTickers.push(t);
         }
       }
       for (const t of recentTickers) {
         items.push({
-          id: `goto:${t.frontmatter.ticker}`,
-          label: t.frontmatter.ticker,
-          detail: t.frontmatter.name,
+          id: `goto:${t.metadata.ticker}`,
+          label: t.metadata.ticker,
+          detail: t.metadata.name,
           category: "Tickers",
           kind: "ticker",
-          secondaryAction: () => { focusTicker(t.frontmatter.ticker, { forceNewPane: true }); close(); },
-          action: () => { focusTicker(t.frontmatter.ticker); close(); },
+          secondaryAction: () => { focusTicker(t.metadata.ticker, { forceNewPane: true }); close(); },
+          action: () => { focusTicker(t.metadata.ticker); close(); },
         });
       }
       for (const cmd of commands) {
@@ -1184,13 +1188,13 @@ export function CommandBar({ dataProvider, markdownStore, pluginRegistry, quitAp
       items.push(...pluginCommandItems());
     } else {
       const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
-        id: `goto:${t.frontmatter.ticker}`,
-        label: t.frontmatter.ticker,
-        detail: t.frontmatter.name,
+        id: `goto:${t.metadata.ticker}`,
+        label: t.metadata.ticker,
+        detail: t.metadata.name,
         category: "Tickers",
         kind: "ticker",
-        secondaryAction: () => { focusTicker(t.frontmatter.ticker, { forceNewPane: true }); close(); },
-        action: () => { focusTicker(t.frontmatter.ticker); close(); },
+        secondaryAction: () => { focusTicker(t.metadata.ticker, { forceNewPane: true }); close(); },
+        action: () => { focusTicker(t.metadata.ticker); close(); },
       }));
       const cmdItems = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
       const allItems = [...tickerItems, ...cmdItems, ...tickerActionItems(), ...pluginCommandItems()];

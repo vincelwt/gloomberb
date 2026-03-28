@@ -11,7 +11,7 @@ import { getAllCollections, getCollectionTickers, getCollectionType } from "../.
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
 import type { ColumnConfig } from "../../types/config";
-import type { TickerFile } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
 import { formatOptionTicker } from "../../utils/options";
 
@@ -24,21 +24,21 @@ interface ColumnContext {
 
 function getColumnValue(
   col: ColumnConfig,
-  ticker: TickerFile,
+  ticker: TickerRecord,
   financials: TickerFinancials | undefined,
   ctx: ColumnContext,
 ): { text: string; color?: string } {
   const q = financials?.quote;
   const f = financials?.fundamentals;
-  const quoteCurrency = q?.currency || ticker.frontmatter.currency || "USD";
+  const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
 
   const toBase = (v: number) =>
     convertCurrency(v, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
 
   // Helper to get positions relevant to the active portfolio tab
   const tabPositions = ctx.activeTab
-    ? ticker.frontmatter.positions.filter((p) => p.portfolio === ctx.activeTab)
-    : ticker.frontmatter.positions;
+    ? ticker.metadata.positions.filter((p) => p.portfolio === ctx.activeTab)
+    : ticker.metadata.positions;
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
     (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
@@ -46,7 +46,7 @@ function getColumnValue(
   );
 
   // For options without Yahoo quotes, use broker-provided position data
-  const isOption = ticker.frontmatter.assetCategory === "OPT";
+  const isOption = ticker.metadata.assetCategory === "OPT";
   const brokerMktValue = tabPositions.reduce(
     (sum, p) => sum + (p.marketValue || 0),
     0,
@@ -62,8 +62,8 @@ function getColumnValue(
       const mkt = q?.marketState;
       const statusDot = mkt === "REGULAR" ? "\u25CF" : "\u25CB";
       const displayName = isOption
-        ? formatOptionTicker(ticker.frontmatter.ticker)
-        : ticker.frontmatter.ticker;
+        ? formatOptionTicker(ticker.metadata.ticker)
+        : ticker.metadata.ticker;
       return { text: `${statusDot} ${displayName}` };
     }
     case "price": {
@@ -190,33 +190,33 @@ function getColumnValue(
 /** Extract a numeric sort value for a column (returns null for "—" values) */
 function getSortValue(
   col: ColumnConfig,
-  ticker: TickerFile,
+  ticker: TickerRecord,
   financials: TickerFinancials | undefined,
   ctx: ColumnContext,
 ): number | string | null {
   const q = financials?.quote;
   const f = financials?.fundamentals;
-  const quoteCurrency = q?.currency || ticker.frontmatter.currency || "USD";
+  const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
   const toBase = (v: number) =>
     convertCurrency(v, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
 
   const tabPositions = ctx.activeTab
-    ? ticker.frontmatter.positions.filter((p) => p.portfolio === ctx.activeTab)
-    : ticker.frontmatter.positions;
+    ? ticker.metadata.positions.filter((p) => p.portfolio === ctx.activeTab)
+    : ticker.metadata.positions;
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
     (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
     0,
   );
 
-  const isOption = ticker.frontmatter.assetCategory === "OPT";
+  const isOption = ticker.metadata.assetCategory === "OPT";
   const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
   const brokerPnl = tabPositions.reduce((sum, p) => sum + (p.unrealizedPnl || 0), 0);
   const brokerMarkPrice = tabPositions.length === 1 ? tabPositions[0]?.markPrice : undefined;
 
   switch (col.id) {
     case "ticker":
-      return ticker.frontmatter.ticker;
+      return ticker.metadata.ticker;
     case "price":
       if (q) return toBase(q.price);
       if (isOption && brokerMarkPrice != null) return toBase(brokerMarkPrice);
@@ -292,7 +292,7 @@ function PortfolioSummaryBar({
   isPortfolio,
   collectionId,
 }: {
-  tickers: TickerFile[];
+  tickers: TickerRecord[];
   state: ReturnType<typeof useAppState>["state"];
   isPortfolio: boolean;
   collectionId: string | null;
@@ -330,9 +330,9 @@ function PortfolioSummaryBar({
     let watchlistCount = 0;
 
     for (const ticker of tickers) {
-      const fin = state.financials.get(ticker.frontmatter.ticker);
+      const fin = state.financials.get(ticker.metadata.ticker);
       const q = fin?.quote;
-      const quoteCurrency = q?.currency || ticker.frontmatter.currency || "USD";
+      const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
       const toBase = (v: number) => convertCurrency(v, quoteCurrency, baseCurrency, exchangeRates);
 
       if (!isPortfolio) {
@@ -344,15 +344,15 @@ function PortfolioSummaryBar({
       }
 
       const tabPositions = collectionId
-        ? ticker.frontmatter.positions.filter((p) => p.portfolio === collectionId)
-        : ticker.frontmatter.positions;
+        ? ticker.metadata.positions.filter((p) => p.portfolio === collectionId)
+        : ticker.metadata.positions;
       const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
       const totalCost = tabPositions.reduce(
         (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
         0,
       );
 
-      const isOption = ticker.frontmatter.assetCategory === "OPT";
+      const isOption = ticker.metadata.assetCategory === "OPT";
       const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
 
       if (q && totalShares !== 0) {
@@ -474,8 +474,8 @@ function PortfolioListPane({ focused }: PaneProps) {
     if (!colConfig) return tickers;
 
     return [...tickers].sort((a, b) => {
-      const finA = state.financials.get(a.frontmatter.ticker);
-      const finB = state.financials.get(b.frontmatter.ticker);
+      const finA = state.financials.get(a.metadata.ticker);
+      const finB = state.financials.get(b.metadata.ticker);
       const valA = getSortValue(colConfig, a, finA, columnCtx);
       const valB = getSortValue(colConfig, b, finB, columnCtx);
 
@@ -494,7 +494,7 @@ function PortfolioListPane({ focused }: PaneProps) {
     });
   }, [tickers, sortCol, sortDir, state.financials, cols, columnCtx]);
 
-  const selectedIdx = sortedTickers.findIndex((ticker) => ticker.frontmatter.ticker === cursorSymbol);
+  const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
 
   const handleHeaderClick = (colId: string) => {
@@ -520,17 +520,17 @@ function PortfolioListPane({ focused }: PaneProps) {
     if (isEnter && event.shift) {
       const ticker = sortedTickers[safeSelectedIdx];
       if (ticker) {
-        registry?.pinTickerFn(ticker.frontmatter.ticker, { floating: true, paneType: "ticker-detail" });
+        registry?.pinTickerFn(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
       }
       return;
     }
 
     if (key === "j" || key === "down") {
       const next = Math.min(safeSelectedIdx + 1, sortedTickers.length - 1);
-      if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.frontmatter.ticker);
+      if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.metadata.ticker);
     } else if (key === "k" || key === "up") {
       const next = Math.max(safeSelectedIdx - 1, 0);
-      if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.frontmatter.ticker);
+      if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.metadata.ticker);
     } else if (key === "h" || key === "left") {
       const newIdx = Math.max(currentTabIdx - 1, 0);
       if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
@@ -617,9 +617,9 @@ function PortfolioListPane({ focused }: PaneProps) {
       if (cursorSymbol !== null) setCursorSymbol(null);
       return;
     }
-    const exists = cursorSymbol && sortedTickers.some((ticker) => ticker.frontmatter.ticker === cursorSymbol);
+    const exists = cursorSymbol && sortedTickers.some((ticker) => ticker.metadata.ticker === cursorSymbol);
     if (!exists) {
-      setCursorSymbol(sortedTickers[0]!.frontmatter.ticker);
+      setCursorSymbol(sortedTickers[0]!.metadata.ticker);
     }
   }, [sortedTickers, cursorSymbol, setCursorSymbol]);
 
@@ -678,22 +678,22 @@ function PortfolioListPane({ focused }: PaneProps) {
           </box>
         ) : (
           sortedTickers.map((ticker, idx) => {
-            const isSelected = ticker.frontmatter.ticker === cursorSymbol;
+            const isSelected = ticker.metadata.ticker === cursorSymbol;
             const isHovered = idx === hoveredIdx && !isSelected;
-            const fin = state.financials.get(ticker.frontmatter.ticker);
+            const fin = state.financials.get(ticker.metadata.ticker);
             const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
-            const isFlashing = flashSymbols.has(ticker.frontmatter.ticker);
+            const isFlashing = flashSymbols.has(ticker.metadata.ticker);
 
             return (
               <box
-                key={ticker.frontmatter.ticker}
+                key={ticker.metadata.ticker}
                 flexDirection="row"
                 height={1}
                 paddingX={1}
                 backgroundColor={rowBg}
                 onMouseMove={() => setHoveredIdx(idx)}
                 onMouseDown={() => {
-                  setCursorSymbol(ticker.frontmatter.ticker);
+                  setCursorSymbol(ticker.metadata.ticker);
                 }}
               >
                 {cols.map((col) => {

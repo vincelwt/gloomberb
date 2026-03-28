@@ -3,6 +3,7 @@ import type { TimeRange } from "../components/chart/chart-types";
 import type { BrokerInstanceConfig } from "./config";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
 import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "./trading";
+import type { CachePolicyMap } from "./persistence";
 
 export interface BrokerPosition {
   ticker: string;
@@ -63,6 +64,7 @@ export interface BrokerConnectionStatus {
 export interface BrokerAdapter {
   readonly id: string;
   readonly name: string;
+  readonly cachePolicy?: CachePolicyMap;
   validate(instance: BrokerInstanceConfig): Promise<boolean>;
   importPositions(instance: BrokerInstanceConfig): Promise<BrokerPosition[]>;
   configSchema: BrokerConfigField[];

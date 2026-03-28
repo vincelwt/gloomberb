@@ -22,11 +22,11 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const [hoveredExpIdx, setHoveredExpIdx] = useState<number | null>(null);
 
   // Determine if we're viewing an option position — if so, resolve the underlying
-  const isOpt = ticker?.frontmatter.assetCategory === "OPT";
-  const parsed = isOpt ? parseOptionSymbol(ticker!.frontmatter.ticker) : null;
-  const effectiveTicker = parsed?.underlying ?? ticker?.frontmatter.ticker ?? "";
-  const effectiveExchange = isOpt ? "" : (ticker?.frontmatter.exchange ?? "");
-  const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
+  const isOpt = ticker?.metadata.assetCategory === "OPT";
+  const parsed = isOpt ? parseOptionSymbol(ticker!.metadata.ticker) : null;
+  const effectiveTicker = parsed?.underlying ?? ticker?.metadata.ticker ?? "";
+  const effectiveExchange = isOpt ? "" : (ticker?.metadata.exchange ?? "");
+  const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
 
   const enterInteractive = () => {
     if (!interactive) {
@@ -174,7 +174,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Position info
   const posShares = isOpt && parsed
-    ? ticker!.frontmatter.positions.reduce((sum, p) => sum + p.shares, 0)
+    ? ticker!.metadata.positions.reduce((sum, p) => sum + p.shares, 0)
     : 0;
 
   // Expiration selector — show a window of dates around the current selection

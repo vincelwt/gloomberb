@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import {
@@ -16,8 +16,8 @@ import { CommandBar } from "./components/command-bar/command-bar";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { DialogProvider, useDialogState } from "@opentui-ui/dialog/react";
 import { PluginRegistry } from "./plugins/registry";
-import { MarkdownStore } from "./data/markdown-store";
-import { SqliteCache } from "./data/sqlite-cache";
+import { AppPersistence } from "./data/app-persistence";
+import { TickerRepository } from "./data/ticker-repository";
 import { YahooFinanceClient } from "./sources/yahoo-finance";
 import { ProviderRouter } from "./sources/provider-router";
 import { colors, applyTheme } from "./theme/colors";
@@ -32,7 +32,7 @@ import {
   type PaneBinding,
   type PaneInstanceConfig,
 } from "./types/config";
-import type { TickerFile, TickerFrontmatter, TickerPosition, Portfolio } from "./types/ticker";
+import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { BrokerContractRef } from "./types/instrument";
 
@@ -58,17 +58,26 @@ import {
   createBrokerInstanceId,
   getBrokerInstance,
 } from "./utils/broker-instances";
+import {
+  APP_SESSION_ID,
+  APP_SESSION_SCHEMA_VERSION,
+  reconcileAppSessionSnapshot,
+  type AppSessionSnapshot,
+} from "./state/session-persistence";
+import { initializeAppState } from "./state/app-bootstrap";
+import { TickerRefreshQueue } from "./state/ticker-refresh-queue";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
 
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
-  markdownStore: MarkdownStore;
+  tickerRepository: TickerRepository;
   dataProvider: DataProvider;
+  sessionSnapshot?: AppSessionSnapshot | null;
 }
 
-function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps) {
+function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
 
@@ -91,12 +100,12 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     return resolvePrimaryPaneInstanceId(paneId);
   }, [resolvePrimaryPaneInstanceId, state.config.layout.instances]);
 
-  const getPreferredPortfolio = useCallback((ticker: TickerFile | null) => {
+  const getPreferredPortfolio = useCallback((ticker: TickerRecord | null) => {
     const focusedCollectionId = getFocusedCollectionId(state);
     const focusedPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === focusedCollectionId);
     if (focusedPortfolio) return focusedPortfolio;
     if (ticker) {
-      for (const portfolioId of ticker.frontmatter.portfolios) {
+      for (const portfolioId of ticker.metadata.portfolios) {
         const portfolio = state.config.portfolios.find((entry) => entry.id === portfolioId);
         if (portfolio) return portfolio;
       }
@@ -252,13 +261,13 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     });
   }, [buildPaneBinding, state]);
 
-  const refreshTicker = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerFile | null) => {
+  const performRefreshTicker = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerRecord | null) => {
     if (refreshInFlight.has(symbol)) return;
     refreshInFlight.add(symbol);
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
     try {
       const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
-      const instrument = ticker?.frontmatter.broker_contracts?.[0] ?? null;
+      const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
       const activePortfolio = getPreferredPortfolio(ticker);
       const data = await dataProvider.getTickerFinancials(symbol, exchange, {
         brokerId: instrument?.brokerId ?? activePortfolio?.brokerId,
@@ -268,14 +277,12 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       dispatch({ type: "SET_FINANCIALS", symbol, data });
       pluginRegistry.events.emit("ticker:refreshed", { symbol, financials: data });
 
-      // Cache exchange rate for this ticker's currency
       const currency = data.quote?.currency;
       if (currency && !state.exchangeRates.has(currency)) {
         dataProvider.getExchangeRate(currency).then((rate) => {
           dispatch({ type: "SET_EXCHANGE_RATE", currency, rate });
         }).catch(() => {});
       }
-      // Also ensure base currency rate is cached
       const base = state.config.baseCurrency;
       if (!state.exchangeRates.has(base)) {
         dataProvider.getExchangeRate(base).then((rate) => {
@@ -288,7 +295,22 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       refreshInFlight.delete(symbol);
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
-  }, [dataProvider, dispatch, getPreferredPortfolio, state.exchangeRates, state.config.baseCurrency, state.tickers]);
+  }, [dataProvider, dispatch, getPreferredPortfolio, pluginRegistry.events, state.config.baseCurrency, state.exchangeRates, state.tickers]);
+
+  const refreshQueueRef = useRef<{
+    queue: TickerRefreshQueue;
+  }>({
+    queue: new TickerRefreshQueue(3),
+  });
+
+  const refreshTicker = useCallback((symbol: string, exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
+    if (refreshInFlight.has(symbol)) return;
+    refreshQueueRef.current.queue.enqueue({
+      key: symbol,
+      priority,
+      run: () => performRefreshTicker(symbol, exchange, tickerOverride ?? null),
+    });
+  }, [performRefreshTicker]);
 
   // Ensure a portfolio exists in config, creating it if needed
   const ensurePortfolio = useCallback(async (
@@ -343,7 +365,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
   }, []);
 
   // Import positions from a single broker instance
-  const importBrokerPositions = useCallback(async (instanceId: string, tickerMap?: Map<string, TickerFile>) => {
+  const importBrokerPositions = useCallback(async (instanceId: string, tickerMap?: Map<string, TickerRecord>) => {
     const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
     if (!instance || instance.enabled === false) return;
 
@@ -427,7 +449,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
 
       let ticker = existingTickers.get(pos.ticker);
       if (!ticker) {
-        const frontmatter: TickerFrontmatter = {
+        const metadata: TickerMetadata = {
           ticker: pos.ticker,
           exchange: pos.exchange,
           currency: pos.currency,
@@ -441,45 +463,46 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
           custom: {},
           tags: [],
         };
-        ticker = await markdownStore.createTicker(frontmatter);
+        ticker = await tickerRepository.createTicker(metadata);
+        pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
       } else {
         // Update ticker-level fields from broker if richer
-        if (pos.name && ticker.frontmatter.name === ticker.frontmatter.ticker) {
-          ticker.frontmatter.name = pos.name;
+        if (pos.name && ticker.metadata.name === ticker.metadata.ticker) {
+          ticker.metadata.name = pos.name;
         }
-        if (pos.assetCategory && !ticker.frontmatter.assetCategory) {
-          ticker.frontmatter.assetCategory = pos.assetCategory;
+        if (pos.assetCategory && !ticker.metadata.assetCategory) {
+          ticker.metadata.assetCategory = pos.assetCategory;
         }
-        if (pos.isin && !ticker.frontmatter.isin) {
-          ticker.frontmatter.isin = pos.isin;
+        if (pos.isin && !ticker.metadata.isin) {
+          ticker.metadata.isin = pos.isin;
         }
 
         // Remove old positions from this broker for this account
-        const otherPositions = ticker.frontmatter.positions.filter(
+        const otherPositions = ticker.metadata.positions.filter(
           (p) => !(p.brokerInstanceId === instance.id && p.portfolio === portfolioId),
         );
-        ticker.frontmatter.positions = [...otherPositions, positionEntry];
-        ticker.frontmatter.broker_contracts = mergeBrokerContracts(
-          ticker.frontmatter.broker_contracts ?? [],
+        ticker.metadata.positions = [...otherPositions, positionEntry];
+        ticker.metadata.broker_contracts = mergeBrokerContracts(
+          ticker.metadata.broker_contracts ?? [],
           brokerContract ? [brokerContract] : [],
         );
-        if (!ticker.frontmatter.portfolios.includes(portfolioId)) {
-          ticker.frontmatter.portfolios.push(portfolioId);
+        if (!ticker.metadata.portfolios.includes(portfolioId)) {
+          ticker.metadata.portfolios.push(portfolioId);
         }
-        await markdownStore.saveTicker(ticker);
+        await tickerRepository.saveTicker(ticker);
       }
       existingTickers.set(pos.ticker, ticker);
       dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
       // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
       // Position data (markPrice, marketValue, unrealizedPnl) is used directly.
       if (pos.assetCategory !== "OPT") {
-        refreshTicker(pos.ticker, pos.exchange);
+        refreshTicker(pos.ticker, pos.exchange, undefined, 1);
       }
     }
-  }, [pluginRegistry.brokers, state.config.brokerInstances, state.tickers, markdownStore, dispatch, refreshTicker, ensurePortfolio, mergeBrokerContracts]);
+  }, [pluginRegistry.brokers, state.config.brokerInstances, state.tickers, tickerRepository, dispatch, refreshTicker, ensurePortfolio, mergeBrokerContracts]);
 
   // Auto-import positions from all configured broker instances
-  const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerFile>) => {
+  const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerRecord>) => {
     for (const instance of state.config.brokerInstances) {
       if (instance.enabled === false) continue;
       try {
@@ -503,42 +526,20 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     (globalThis as any).__gloomInitStarted = true;
     (async () => {
       try {
-        const tickers = await markdownStore.loadAllTickers();
-        const tickerMap = new Map<string, TickerFile>();
-        for (const t of tickers) {
-          tickerMap.set(t.frontmatter.ticker, t);
-        }
-        dispatch({ type: "SET_TICKERS", tickers: tickerMap });
-
-        // Seed portfolio-style panes with an initial selection.
-        if (tickers.length > 0) {
-          for (const instance of state.config.layout.instances) {
-            if (instance.paneId !== "portfolio-list") continue;
-            const collectionId = instance.params?.collectionId ?? state.config.portfolios[0]?.id ?? state.config.watchlists[0]?.id;
-            const initialTicker = tickers.find((ticker) =>
-              (collectionId && ticker.frontmatter.portfolios.includes(collectionId))
-              || (collectionId && ticker.frontmatter.watchlists.includes(collectionId))
-            ) ?? tickers[0];
-            if (initialTicker) {
-              dispatch({ type: "UPDATE_PANE_STATE", paneId: instance.instanceId, patch: { cursorSymbol: initialTicker.frontmatter.ticker } });
-            }
-          }
-        }
-
-        dispatch({ type: "SET_INITIALIZED" });
-
-        // Fetch quotes for all tickers in background
-        for (const t of tickers) {
-          refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange, t);
-        }
-
-        // Auto-import from configured brokers
-        autoImportBrokerPositions(tickerMap);
+        await initializeAppState({
+          config: state.config,
+          tickerRepository,
+          dataProvider,
+          sessionSnapshot,
+          dispatch,
+          refreshTicker,
+          autoImportBrokerPositions,
+        });
       } catch (err) {
         // Will show empty state
       }
     })();
-  }, [state.initialized]);
+  }, [autoImportBrokerPositions, dataProvider, dispatch, tickerRepository, refreshTicker, sessionSnapshot, state.config, state.initialized]);
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
 
@@ -546,7 +547,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     if (!focusedTickerSymbol) return;
     const ticker = state.tickers.get(focusedTickerSymbol);
     if (!ticker) return;
-    refreshTicker(ticker.frontmatter.ticker, ticker.frontmatter.exchange);
+    refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 0);
   }, [focusedTickerSymbol, state.tickers, refreshTicker]);
 
   // Wire up plugin registry data accessors
@@ -616,14 +617,14 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
     const nextTickers = new Map(state.tickers);
 
     for (const ticker of state.tickers.values()) {
-      const nextPositions = ticker.frontmatter.positions.filter((position) => position.brokerInstanceId !== instanceId);
-      const nextPortfolioRefs = ticker.frontmatter.portfolios.filter((portfolioId) => !removedPortfolioIds.has(portfolioId));
-      const nextBrokerContracts = (ticker.frontmatter.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
+      const nextPositions = ticker.metadata.positions.filter((position) => position.brokerInstanceId !== instanceId);
+      const nextPortfolioRefs = ticker.metadata.portfolios.filter((portfolioId) => !removedPortfolioIds.has(portfolioId));
+      const nextBrokerContracts = (ticker.metadata.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
 
-      const nextTicker: TickerFile = {
+      const nextTicker: TickerRecord = {
         ...ticker,
-        frontmatter: {
-          ...ticker.frontmatter,
+        metadata: {
+          ...ticker.metadata,
           positions: nextPositions,
           portfolios: nextPortfolioRefs,
           broker_contracts: nextBrokerContracts,
@@ -633,19 +634,19 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       const shouldDeleteTicker =
         nextPositions.length === 0
         && nextPortfolioRefs.length === 0
-        && nextTicker.frontmatter.watchlists.length === 0
+        && nextTicker.metadata.watchlists.length === 0
         && nextBrokerContracts.length === 0
-        && !nextTicker.notes.trim()
-        && nextTicker.frontmatter.tags.length === 0
-        && Object.keys(nextTicker.frontmatter.custom).length === 0;
+        && nextTicker.metadata.tags.length === 0
+        && Object.keys(nextTicker.metadata.custom).length === 0;
 
       if (shouldDeleteTicker) {
-        nextTickers.delete(ticker.frontmatter.ticker);
-        await markdownStore.deleteTicker(ticker.frontmatter.ticker);
-        dispatch({ type: "REMOVE_TICKER", symbol: ticker.frontmatter.ticker });
+        nextTickers.delete(ticker.metadata.ticker);
+        await tickerRepository.deleteTicker(ticker.metadata.ticker);
+        dispatch({ type: "REMOVE_TICKER", symbol: ticker.metadata.ticker });
+        pluginRegistry.events.emit("ticker:removed", { symbol: ticker.metadata.ticker });
       } else {
-        await markdownStore.saveTicker(nextTicker);
-        nextTickers.set(nextTicker.frontmatter.ticker, nextTicker);
+        await tickerRepository.saveTicker(nextTicker);
+        nextTickers.set(nextTicker.metadata.ticker, nextTicker);
         dispatch({ type: "UPDATE_TICKER", ticker: nextTicker });
       }
     }
@@ -910,12 +911,12 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       // Refresh focused ticker context.
       if (focusedTickerSymbol) {
         const ticker = state.tickers.get(focusedTickerSymbol);
-        if (ticker) refreshTicker(ticker.frontmatter.ticker, ticker.frontmatter.exchange);
+        if (ticker) refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 0);
       }
     } else if (event.name === "R" || (event.name === "r" && event.shift)) {
       // Refresh all
       for (const t of state.tickers.values()) {
-        refreshTicker(t.frontmatter.ticker, t.frontmatter.exchange);
+        refreshTicker(t.metadata.ticker, t.metadata.exchange, t, 1);
       }
     } else if (event.name === "a" && focusedTickerSymbol) {
       // Open ticker actions
@@ -952,7 +953,7 @@ function AppInner({ pluginRegistry, markdownStore, dataProvider }: AppInnerProps
       {state.commandBarOpen && (
         <CommandBar
           dataProvider={dataProvider}
-          markdownStore={markdownStore}
+          tickerRepository={tickerRepository}
           pluginRegistry={pluginRegistry}
           quitApp={() => renderer.destroy()}
         />
@@ -975,44 +976,58 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
   // Apply saved theme before first render
   if (config.theme) applyTheme(config.theme);
 
-  const dbPath = join(config.dataDir, ".gloomberb-cache.db");
-  const cache = new SqliteCache(dbPath);
-  const markdownStore = new MarkdownStore(config.dataDir, cache);
-  // Migrate old YAML-frontmatter .md files to SQLite on first run
-  markdownStore.migrate();
-  const fallbackProvider = new YahooFinanceClient(cache);
-  const providerRouter = new ProviderRouter(fallbackProvider);
-  const dataProvider: DataProvider = providerRouter;
-  const pluginRegistry = new PluginRegistry(renderer, dataProvider, markdownStore, cache);
-  providerRouter.attachRegistry(pluginRegistry);
+  const services = useMemo(() => {
+    const dbPath = join(config.dataDir, ".gloomberb-cache.db");
+    const persistence = new AppPersistence(dbPath);
+    const tickerRepository = new TickerRepository(persistence.tickers);
+    const fallbackProvider = new YahooFinanceClient();
+    const providerRouter = new ProviderRouter(fallbackProvider, [], persistence.resources);
+    const dataProvider: DataProvider = providerRouter;
+    const pluginRegistry = new PluginRegistry(renderer, dataProvider, tickerRepository, persistence);
+    providerRouter.attachRegistry(pluginRegistry);
+    pluginRegistry.getConfigFn = () => config;
+    pluginRegistry.getLayoutFn = () => config.layout;
 
-  // Register built-in plugins synchronously
-  // (setup is async but panes are registered immediately via the panes property)
-  pluginRegistry.register(portfolioListPlugin);
-  pluginRegistry.register(tickerDetailPlugin);
-  pluginRegistry.register(manualEntryPlugin);
-  pluginRegistry.register(ibkrPlugin);
+    pluginRegistry.register(portfolioListPlugin);
+    pluginRegistry.register(tickerDetailPlugin);
+    pluginRegistry.register(manualEntryPlugin);
+    pluginRegistry.register(ibkrPlugin);
+    pluginRegistry.register(layoutManagerPlugin);
+    pluginRegistry.register(newsPlugin);
+    pluginRegistry.register(optionsPlugin);
+    pluginRegistry.register(notesPlugin);
+    pluginRegistry.register(askAiPlugin);
+    pluginRegistry.register(chatPlugin);
 
-  // Core utility plugins
-  pluginRegistry.register(layoutManagerPlugin);
+    for (const { plugin, error } of externalPlugins) {
+      if (!error) pluginRegistry.register(plugin);
+    }
 
-  // Feature plugins (toggleable by user)
-  pluginRegistry.register(newsPlugin);
-  pluginRegistry.register(optionsPlugin);
-  pluginRegistry.register(notesPlugin);
-  pluginRegistry.register(askAiPlugin);
-  pluginRegistry.register(chatPlugin);
+    return {
+      persistence,
+      tickerRepository,
+      providerRouter,
+      dataProvider,
+      pluginRegistry,
+    };
+  }, [config.dataDir, externalPlugins, renderer]);
 
-  // External plugins (loaded from ~/.gloomberb/plugins/)
-  for (const { plugin, error } of externalPlugins) {
-    if (!error) pluginRegistry.register(plugin);
-  }
+  useEffect(() => {
+    return () => {
+      services.persistence.close();
+    };
+  }, [services]);
+
+  const sessionSnapshot = useMemo(() => {
+    const persisted = services.persistence.sessions.get<AppSessionSnapshot>(APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION)?.value ?? null;
+    return reconcileAppSessionSnapshot(config, persisted);
+  }, [config, services.persistence.sessions]);
 
   if (showOnboarding) {
     return (
       <OnboardingWizard
         config={config}
-        pluginRegistry={pluginRegistry}
+        pluginRegistry={services.pluginRegistry}
         onComplete={(updatedConfig) => {
           setConfig(updatedConfig);
           setShowOnboarding(false);
@@ -1022,7 +1037,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
   }
 
   return (
-    <AppProvider config={config}>
+    <AppProvider config={config} sessionStore={services.persistence.sessions} sessionSnapshot={sessionSnapshot}>
       <DialogProvider
         size="medium"
         dialogOptions={{ style: { backgroundColor: colors.bg, borderColor: colors.borderFocused, borderStyle: "single", paddingX: 2, paddingY: 1 } }}
@@ -1030,9 +1045,10 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
         backdropOpacity={0.8}
       >
         <AppInner
-          pluginRegistry={pluginRegistry}
-          markdownStore={markdownStore}
-          dataProvider={dataProvider}
+          pluginRegistry={services.pluginRegistry}
+          tickerRepository={services.tickerRepository}
+          dataProvider={services.dataProvider}
+          sessionSnapshot={sessionSnapshot}
         />
       </DialogProvider>
     </AppProvider>

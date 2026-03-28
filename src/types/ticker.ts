@@ -19,7 +19,7 @@ export interface TickerPosition {
   brokerContractId?: number;
 }
 
-export interface TickerFrontmatter {
+export interface TickerMetadata {
   ticker: string;
   exchange: string;
   currency: string;
@@ -37,10 +37,8 @@ export interface TickerFrontmatter {
   tags: string[];
 }
 
-export interface TickerFile {
-  frontmatter: TickerFrontmatter;
-  notes: string; // markdown body
-  filePath: string;
+export interface TickerRecord {
+  metadata: TickerMetadata;
 }
 
 export interface Portfolio {
