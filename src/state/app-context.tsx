@@ -10,6 +10,7 @@ import {
 import type { SessionStore } from "../data/session-store";
 import { saveConfig } from "../data/config-store";
 import { applyTheme } from "../theme/colors";
+import { isBrokerPortfolioId } from "../utils/broker-instances";
 import {
   cloneLayout,
   DEFAULT_LAYOUT,
@@ -34,7 +35,16 @@ export interface PaneRuntimeState {
   cursorSymbol?: string | null;
   collectionId?: string;
   activeTabId?: string;
+  collectionSorts?: Record<string, CollectionSortPreference>;
+  pluginState?: Record<string, Record<string, unknown>>;
   [key: string]: unknown;
+}
+
+export type SortDirection = "asc" | "desc";
+
+export interface CollectionSortPreference {
+  columnId: string | null;
+  direction: SortDirection;
 }
 
 export interface AppState {
@@ -99,6 +109,10 @@ function isKnownCollection(config: AppConfig, collectionId: string | undefined):
     || config.watchlists.some((watchlist) => watchlist.id === collectionId);
 }
 
+function shouldPreserveUnknownCollectionId(collectionId: string | undefined): boolean {
+  return isBrokerPortfolioId(collectionId);
+}
+
 function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceConfig): PaneRuntimeState {
   if (instance.paneId === "portfolio-list") {
     const candidate = instance.params?.collectionId;
@@ -118,7 +132,11 @@ function reconcilePaneState(config: AppConfig, previous: Record<string, PaneRunt
   for (const instance of config.layout.instances) {
     const defaults = defaultPaneStateForInstance(config, instance);
     const paneState = { ...defaults, ...(previous[instance.instanceId] ?? {}) };
-    if (instance.paneId === "portfolio-list" && !isKnownCollection(config, paneState.collectionId as string | undefined)) {
+    if (
+      instance.paneId === "portfolio-list"
+      && !isKnownCollection(config, paneState.collectionId as string | undefined)
+      && !shouldPreserveUnknownCollectionId(paneState.collectionId as string | undefined)
+    ) {
       paneState.collectionId = defaults.collectionId;
     }
     next[instance.instanceId] = paneState;
@@ -162,7 +180,10 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
     const collectionId = typeof paneState.collectionId === "string"
       ? paneState.collectionId
       : instance.params?.collectionId;
-    return isKnownCollection(state.config, collectionId) ? collectionId : getDefaultCollectionId(state.config);
+    if (isKnownCollection(state.config, collectionId) || shouldPreserveUnknownCollectionId(collectionId)) {
+      return collectionId;
+    }
+    return getDefaultCollectionId(state.config);
   }
   if (instance.binding?.kind === "follow") {
     return resolveCollectionForPane(state, instance.binding.sourceInstanceId, seen);

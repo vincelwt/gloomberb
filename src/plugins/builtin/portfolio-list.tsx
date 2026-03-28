@@ -6,7 +6,13 @@ import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
-import { useAppState, usePaneCollection, usePaneInstanceId, usePaneStateValue } from "../../state/app-context";
+import {
+  useAppState,
+  usePaneCollection,
+  usePaneInstanceId,
+  usePaneStateValue,
+  type CollectionSortPreference,
+} from "../../state/app-context";
 import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
@@ -275,8 +281,6 @@ function getSortValue(
   }
 }
 
-type SortDir = "asc" | "desc";
-
 /** Position-specific columns appended when viewing a portfolio */
 const POSITION_COLUMNS: ColumnConfig[] = [
   { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
@@ -285,6 +289,25 @@ const POSITION_COLUMNS: ColumnConfig[] = [
   { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
   { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
 ];
+
+const EMPTY_SORT_PREFERENCE: CollectionSortPreference = {
+  columnId: null,
+  direction: "asc",
+};
+
+const DEFAULT_PORTFOLIO_SORT_PREFERENCE: CollectionSortPreference = {
+  columnId: "mkt_value",
+  direction: "desc",
+};
+
+export function resolveCollectionSortPreference(
+  collectionId: string | null,
+  isPortfolio: boolean,
+  collectionSorts: Record<string, CollectionSortPreference>,
+): CollectionSortPreference {
+  if (!collectionId) return EMPTY_SORT_PREFERENCE;
+  return collectionSorts[collectionId] ?? (isPortfolio ? DEFAULT_PORTFOLIO_SORT_PREFERENCE : EMPTY_SORT_PREFERENCE);
+}
 
 function PortfolioSummaryBar({
   tickers,
@@ -436,11 +459,10 @@ function PortfolioListPane({ focused }: PaneProps) {
   const paneCollection = usePaneCollection();
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
   const [cursorSymbol, setCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
+  const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
   const tabs = getAllCollections(state);
   const tickers = getCollectionTickers(state, currentCollectionId);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Set<string>>(new Set());
   const prevPrices = useRef<Map<string, number>>(new Map());
@@ -466,6 +488,17 @@ function PortfolioListPane({ focused }: PaneProps) {
     exchangeRates: state.exchangeRates,
     now,
   };
+  const activeSort = resolveCollectionSortPreference(currentCollectionId, isPortfolioTab, collectionSorts);
+  const sortCol = activeSort.columnId;
+  const sortDir = activeSort.direction;
+
+  const setSortPreference = useCallback((preference: CollectionSortPreference) => {
+    if (!currentCollectionId) return;
+    setCollectionSorts({
+      ...collectionSorts,
+      [currentCollectionId]: preference,
+    });
+  }, [collectionSorts, currentCollectionId, setCollectionSorts]);
 
   // Sort tickers
   const sortedTickers = useMemo(() => {
@@ -501,14 +534,12 @@ function PortfolioListPane({ focused }: PaneProps) {
     if (sortCol === colId) {
       // Toggle direction, or clear if already desc
       if (sortDir === "asc") {
-        setSortDir("desc");
+        setSortPreference({ columnId: colId, direction: "desc" });
       } else {
-        setSortCol(null);
-        setSortDir("asc");
+        setSortPreference({ columnId: null, direction: "asc" });
       }
     } else {
-      setSortCol(colId);
-      setSortDir("asc");
+      setSortPreference({ columnId: colId, direction: "asc" });
     }
   };
 

@@ -7,6 +7,7 @@ import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatTimeAgo } from "../../utils/format";
 import type { NewsItem } from "../../types/data-provider";
 import { getSharedDataProvider } from "../../plugins/registry";
+import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
@@ -21,7 +22,8 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
+  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
   const [loadingSummary, setLoadingSummary] = useState(false);
@@ -33,7 +35,6 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setSelectedIdx(0);
     setSummaryCache(new Map());
     provider.getNews(ticker.metadata.ticker, 15).then((items) => {
       if (!cancelled) setNews(items);
@@ -85,6 +86,12 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
       setSelectedIdx((i) => Math.max(i - 1, 0));
     }
   });
+
+  useEffect(() => {
+    if (news.length > 0 && selectedIdx >= news.length) {
+      setSelectedIdx(Math.max(0, news.length - 1));
+    }
+  }, [news.length, selectedIdx, setSelectedIdx]);
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;

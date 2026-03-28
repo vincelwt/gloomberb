@@ -74,6 +74,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
     disabledPlugins: sanitizeStringArray(saved.disabledPlugins, defaults.disabledPlugins),
+    pluginConfig: sanitizePluginConfig(saved.pluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
     recentTickers: sanitizeStringArray(saved.recentTickers, defaults.recentTickers),
@@ -86,6 +87,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     || !Array.isArray((saved.layout as { instances?: unknown })?.instances)
     || !Array.isArray(saved.layouts)
     || !Array.isArray(saved.brokerInstances)
+    || !isPluginConfigMap(saved.pluginConfig)
     || !isChartPreferences(saved.chartPreferences)
     || typeof saved.activeLayoutIndex !== "number";
 
@@ -114,6 +116,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
     disabledPlugins: sanitizeStringArray(config.disabledPlugins, []),
+    pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
@@ -151,6 +154,22 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : fallback;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPluginConfigMap(value: unknown): value is Record<string, Record<string, unknown>> {
+  if (!isPlainRecord(value)) return false;
+  return Object.values(value).every((entry) => isPlainRecord(entry));
+}
+
+function sanitizePluginConfig(value: unknown): Record<string, Record<string, unknown>> {
+  if (!isPluginConfigMap(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([pluginId, state]) => [pluginId, { ...state }]),
+  );
 }
 
 function isChartPreferences(value: unknown): value is ChartPreferences {

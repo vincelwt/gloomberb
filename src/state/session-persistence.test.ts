@@ -42,7 +42,14 @@ describe("session persistence", () => {
     const snapshot = buildAppSessionSnapshot({
       config,
       paneState: {
-        "portfolio-list:main": { cursorSymbol: "AAPL", collectionId: "main" },
+        "portfolio-list:main": {
+          cursorSymbol: "AAPL",
+          collectionId: "main",
+          collectionSorts: {
+            main: { columnId: "mkt_value", direction: "desc" },
+          },
+        },
+        "ticker-detail:main": { activeTabId: "financials" },
       },
       focusedPaneId: "ticker-detail:main",
       activePanel: "right",
@@ -57,6 +64,14 @@ describe("session persistence", () => {
     expect(snapshot.hydrationTargets).toHaveLength(1);
     expect(snapshot.hydrationTargets[0]?.symbol).toBe("AAPL");
     expect(snapshot.exchangeCurrencies).toContain("JPY");
+    expect(snapshot.paneState["portfolio-list:main"]).toEqual({
+      cursorSymbol: "AAPL",
+      collectionId: "main",
+      collectionSorts: {
+        main: { columnId: "mkt_value", direction: "desc" },
+      },
+    });
+    expect(snapshot.paneState["ticker-detail:main"]).toEqual({ activeTabId: "financials" });
   });
 
   test("reconciles pane state and broker references against the current config", () => {
@@ -76,7 +91,14 @@ describe("session persistence", () => {
 
     const reconciled = reconcileAppSessionSnapshot(config, {
       paneState: {
-        "portfolio-list:main": { cursorSymbol: "AAPL" },
+        "portfolio-list:main": {
+          cursorSymbol: "AAPL",
+          collectionId: "main",
+          collectionSorts: {
+            main: { columnId: "mkt_value", direction: "desc" },
+          },
+        },
+        "ticker-detail:main": { activeTabId: "chart" },
         "missing:pane": { cursorSymbol: "MSFT" },
       },
       focusedPaneId: "missing:pane",
@@ -91,7 +113,14 @@ describe("session persistence", () => {
       savedAt: Date.now(),
     });
 
-    expect(reconciled?.paneState["portfolio-list:main"]).toEqual({ cursorSymbol: "AAPL" });
+    expect(reconciled?.paneState["portfolio-list:main"]).toEqual({
+      cursorSymbol: "AAPL",
+      collectionId: "main",
+      collectionSorts: {
+        main: { columnId: "mkt_value", direction: "desc" },
+      },
+    });
+    expect(reconciled?.paneState["ticker-detail:main"]).toEqual({ activeTabId: "chart" });
     expect(reconciled?.paneState["missing:pane"]).toBeUndefined();
     expect(reconciled?.focusedPaneId).toBe("portfolio-list:main");
     expect(reconciled?.hydrationTargets).toEqual([{ symbol: "AAPL", brokerInstanceId: "ibkr-live", brokerId: "ibkr", exchange: undefined, instrument: null }]);
