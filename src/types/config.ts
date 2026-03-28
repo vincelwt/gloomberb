@@ -1,11 +1,13 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 6;
+export const CURRENT_CONFIG_VERSION = 7;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
+export type ChartRendererPreference = "auto" | "kitty" | "braille";
 
 export interface ChartPreferences {
   defaultRenderMode: DefaultChartRenderMode;
+  renderer: ChartRendererPreference;
 }
 
 export interface BrokerInstanceConfig {
@@ -270,6 +272,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     theme: "amber",
     chartPreferences: {
       defaultRenderMode: "area",
+      renderer: "auto",
     },
     recentTickers: [],
   };
