@@ -9,6 +9,7 @@ import { createDefaultConfig } from "../types/config";
 
 /** Cap total time spent attempting broker data before falling back to other providers. */
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
+const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
 
 function withBrokerTimeout<T>(promise: Promise<T>): Promise<T | null> {
   return new Promise<T | null>((resolve) => {
@@ -18,6 +19,11 @@ function withBrokerTimeout<T>(promise: Promise<T>): Promise<T | null> {
       () => { clearTimeout(timer); resolve(null); },
     );
   });
+}
+
+function shouldLogProviderError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return !EXPECTED_PROVIDER_MISS.test(message);
 }
 
 interface BrokerCandidate {
@@ -264,7 +270,9 @@ export class ProviderRouter implements DataProvider {
         const result = await fn(provider);
         if (result != null) return result;
       } catch (err) {
-        console.error(`[ProviderRouter] ${provider.id} failed:`, err);
+        if (shouldLogProviderError(err)) {
+          console.error(`[ProviderRouter] ${provider.id} failed:`, err);
+        }
       }
     }
     return null;
