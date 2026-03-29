@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain } from "../types/financials";
+import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile } from "../types/financials";
 import type { DataProvider, MarketDataRequestContext, NewsItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { InstrumentSearchResult } from "../types/instrument";
@@ -136,6 +136,18 @@ type ChartResult = {
 
 type ChartResponse = { chart?: { result?: ChartResult[]; error?: { description?: string } | null } };
 type TimeseriesResponse = { timeseries?: { result?: Array<Record<string, any>>; error?: { description?: string } | null } };
+type QuoteSummaryResponse = {
+  quoteSummary?: {
+    result?: Array<{
+      assetProfile?: {
+        longBusinessSummary?: string;
+        sector?: string;
+        industry?: string;
+      };
+    }>;
+    error?: { description?: string } | null;
+  };
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -463,6 +475,22 @@ export class YahooFinanceClient implements DataProvider {
     return data.timeseries?.result || [];
   }
 
+  private async fetchAssetProfile(symbol: string): Promise<CompanyProfile | undefined> {
+    const params = new URLSearchParams({ modules: "assetProfile" });
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
+    const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`asset profile ${symbol}`, url);
+    const profile = data.quoteSummary?.result?.[0]?.assetProfile;
+    if (!profile) return undefined;
+
+    const normalized: CompanyProfile = {
+      description: profile.longBusinessSummary?.trim() || undefined,
+      sector: profile.sector?.trim() || undefined,
+      industry: profile.industry?.trim() || undefined,
+    };
+
+    return normalized.description || normalized.sector || normalized.industry ? normalized : undefined;
+  }
+
   private parseTimeseries(results: Array<Record<string, any>>) {
     const parsed: Record<string, Array<{ asOfDate: string; periodType?: string; value: number }>> = {};
     for (const result of results) {
@@ -507,13 +535,14 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   private async fetchFullFinancials(symbol: string): Promise<TickerFinancials> {
-    const [chart, tsRaw] = await Promise.all([
+    const [chart, tsRaw, profile] = await Promise.all([
       this.fetchChart(symbol, "5y"),
       this.fetchTimeseries(symbol, [
         ...TIMESERIES_TYPES.annual,
         ...TIMESERIES_TYPES.quarterly,
         ...TIMESERIES_TYPES.trailing,
       ]),
+      this.fetchAssetProfile(symbol).catch(() => undefined),
     ]);
 
     const { meta, history } = chart;
@@ -649,6 +678,7 @@ export class YahooFinanceClient implements DataProvider {
     return {
       quote,
       fundamentals,
+      profile,
       annualStatements: buildStatements("annual"),
       quarterlyStatements: buildStatements("quarterly"),
       priceHistory: history,

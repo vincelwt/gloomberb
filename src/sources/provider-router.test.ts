@@ -378,6 +378,190 @@ describe("ProviderRouter", () => {
     persistence.close();
   });
 
+  test("preserves fallback profile data when broker already has fundamentals", async () => {
+    const router = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          profile: {
+            description: "Builds hardware and software.",
+            sector: "Technology",
+            industry: "Consumer Electronics",
+          },
+        };
+      },
+    });
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          fundamentals: { revenue: 1000, netIncome: 200 },
+        };
+      },
+    };
+
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: {},
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    }));
+
+    const merged = await router.getTickerFinancials("AAPL", "NASDAQ", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-work",
+    });
+    expect(merged.fundamentals?.revenue).toBe(1000);
+    expect(merged.profile?.description).toBe("Builds hardware and software.");
+    expect(merged.profile?.sector).toBe("Technology");
+  });
+
+  test("refreshes missing profile data even when cached financials exist", async () => {
+    const dbPath = createTempDbPath("cache-profile-refresh");
+    const persistence = new AppPersistence(dbPath);
+
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          fundamentals: { revenue: 1000, netIncome: 200 },
+        };
+      },
+    };
+
+    const config = {
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: {},
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    };
+
+    const seedRouter = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+        };
+      },
+    }, [], persistence.resources);
+    seedRouter.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    seedRouter.setConfigAccessor(() => config);
+
+    const seeded = await seedRouter.getTickerFinancials("PSTG", "NYSE", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-work",
+    });
+    expect(seeded.profile).toBeUndefined();
+
+    const refreshedRouter = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          profile: {
+            description: "Provides enterprise data storage platforms.",
+            sector: "Technology",
+            industry: "Computer Hardware",
+          },
+        };
+      },
+    }, [], persistence.resources);
+    refreshedRouter.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    refreshedRouter.setConfigAccessor(() => config);
+
+    const refreshed = await refreshedRouter.getTickerFinancials("PSTG", "NYSE", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-work",
+    });
+    expect(refreshed.fundamentals?.revenue).toBe(1000);
+    expect(refreshed.profile?.description).toBe("Provides enterprise data storage platforms.");
+
+    persistence.close();
+  });
+
   test("does not log expected provider misses for missing chart data", async () => {
     const noisyProvider: DataProvider = {
       ...fallbackProvider,

@@ -333,6 +333,29 @@ describe("TickerDetailPane", () => {
     expect(frame).toContain("Options");
   });
 
+  test("renders the company description in Overview when profile data is available", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setSharedDataProviderForTests(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={makeFinancials({
+          profile: {
+            description: "Builds widgets for industrial customers.",
+          },
+        })}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Description");
+    expect(frame).toContain("Builds widgets for industrial customers.");
+  });
+
   test("falls back to Overview when a hidden active tab becomes unavailable", async () => {
     const gatewayConfig = createDetailConfig("AAPL", [createGatewayInstance()]);
     const noGatewayConfig = createDetailConfig("AAPL");

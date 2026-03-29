@@ -334,6 +334,7 @@ async function ticker(symbol: string) {
 
   const q = financials.quote;
   const f = financials.fundamentals;
+  const profile = financials.profile;
 
   if (!q) {
     console.error(`No quote data for ${symbol}`);
@@ -350,6 +351,15 @@ async function ticker(symbol: string) {
   if (q.marketState) parts.push(`Market: ${q.marketState}`);
   console.log(parts.join("    "));
 
+  const sector = tickerFile?.metadata.sector ?? profile?.sector;
+  const industry = tickerFile?.metadata.industry ?? profile?.industry;
+  if (sector || industry) {
+    const classification = [];
+    if (sector) classification.push(`Sector: ${sector}`);
+    if (industry) classification.push(`Industry: ${industry}`);
+    console.log(classification.join("    "));
+  }
+
   // Price
   console.log(`\nPrice:     ${formatCurrency(q.price, q.currency)}  (${formatPercentRaw(q.changePercent)})`);
   if (q.high52w != null || q.low52w != null) {
@@ -362,6 +372,10 @@ async function ticker(symbol: string) {
   }
   if (q.postMarketPrice != null) {
     console.log(`Post-Mkt:  ${formatCurrency(q.postMarketPrice, q.currency)}  (${formatPercentRaw(q.postMarketChangePercent)})`);
+  }
+
+  if (profile?.description) {
+    console.log(`\nDescription:\n${profile.description}`);
   }
 
   // Fundamentals
