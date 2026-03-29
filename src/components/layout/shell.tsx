@@ -63,6 +63,13 @@ type SnapGuidePosition =
   | "bottom-left"
   | "bottom-right";
 
+function isCornerSnapPosition(position: SnapGuidePosition): boolean {
+  return position === "top-left"
+    || position === "top-right"
+    || position === "bottom-left"
+    || position === "bottom-right";
+}
+
 interface SnapGuide {
   position: SnapGuidePosition;
   triggerRect: LayoutBounds;
@@ -291,6 +298,27 @@ function resolveSnapGuide(x: number, y: number, guides: SnapGuide[]): SnapGuide 
   return guides.find((guide) => pointInRect(guide.triggerRect, x, y)) ?? null;
 }
 
+function resolveHeaderHitAreas(
+  width: number,
+  options: { floating: boolean },
+): {
+  actionStart: number | null;
+  closeStart: number | null;
+} {
+  let rightEdge = width;
+  let closeStart: number | null = null;
+  let actionStart: number | null = null;
+
+  if (options.floating) {
+    closeStart = Math.max(0, rightEdge - PANE_HEADER_CLOSE.length);
+    rightEdge = closeStart;
+  }
+
+  actionStart = Math.max(0, rightEdge - PANE_HEADER_ACTION.length);
+
+  return { actionStart, closeStart };
+}
+
 function menuForPane(
   pane: ResolvedPane,
   layout: LayoutConfig,
@@ -299,9 +327,17 @@ function menuForPane(
   pluginRegistry: PluginRegistry,
   persistLayout: (nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => void,
   focusPane: (paneId: string) => void,
+  openPaneSettings: (paneId: string) => void,
   openLayoutMenu: () => void,
 ) {
   const baseActions: Array<{ id: string; label: string; action: () => void }> = [];
+  if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
+    baseActions.push({
+      id: "settings",
+      label: "Settings",
+      action: () => openPaneSettings(pane.instance.instanceId),
+    });
+  }
 
   if (pane.floating) {
     baseActions.push({
@@ -340,6 +376,7 @@ function menuForPane(
         title: pane.instance.title,
         binding: pane.instance.binding,
         params: pane.instance.params,
+        settings: pane.instance.settings,
       });
       const nextLayout = pane.floating
         ? floatAtRect(addPaneFloating(layout, duplicate, width, contentHeight, pane.def), duplicate.instanceId, {
@@ -439,6 +476,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
   const openLayoutMenu = useCallback(() => {
     pluginRegistry.openCommandBarFn("LAY ");
+  }, [pluginRegistry]);
+
+  const openPaneSettings = useCallback((paneId: string) => {
+    pluginRegistry.openPaneSettingsFn(paneId);
+    setMenuState(null);
   }, [pluginRegistry]);
 
   const bounds = useMemo<LayoutBounds>(() => ({ x: 0, y: 0, width, height: contentHeight }), [contentHeight, width]);
@@ -544,10 +586,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
         pluginRegistry,
         persistLayout,
         focusPane,
+        openPaneSettings,
         openLayoutMenu,
       ),
     });
-  }, [contentHeight, focusPane, openLayoutMenu, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
+  }, [contentHeight, focusPane, openLayoutMenu, openPaneSettings, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
     persistLayout(removePane(visibleLayout, paneId));
@@ -567,19 +610,24 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
         const relativeX = event.x - rect.x;
         const relativeY = shellY - rect.y;
+        const headerAreas = resolveHeaderHitAreas(rect.width, {
+          floating: true,
+        });
         focusPane(pane.instance.instanceId);
         if ((pane.floating?.zIndex ?? 50) < 999) {
           persistLayout(bringToFront(visibleLayout, pane.instance.instanceId), { pushHistory: false });
         }
-        if (relativeY === 0 && relativeX >= rect.width - PANE_HEADER_CLOSE.length && relativeX < rect.width) {
+        if (relativeY === 0 && headerAreas.closeStart != null && relativeX >= headerAreas.closeStart && relativeX < rect.width) {
           handleFloatingClose(pane.instance.instanceId);
           event.stopPropagation();
           event.preventDefault();
           return;
         }
         if (relativeY === 0
-          && relativeX >= rect.width - (PANE_HEADER_CLOSE.length + PANE_HEADER_ACTION.length)
-          && relativeX < rect.width - PANE_HEADER_CLOSE.length) {
+          && headerAreas.actionStart != null
+          && headerAreas.closeStart != null
+          && relativeX >= headerAreas.actionStart
+          && relativeX < headerAreas.closeStart) {
           openPaneMenu(pane.instance.instanceId, rect);
           event.stopPropagation();
           event.preventDefault();
@@ -644,8 +692,13 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pane) continue;
         const relativeX = event.x - leaf.rect.x;
         const relativeY = shellY - leaf.rect.y;
+        const headerAreas = resolveHeaderHitAreas(leaf.rect.width, {
+          floating: false,
+        });
         focusPane(leaf.instanceId);
-        if (relativeY === 0 && relativeX >= leaf.rect.width - PANE_HEADER_ACTION.length) {
+        if (relativeY === 0
+          && headerAreas.actionStart != null
+          && relativeX >= headerAreas.actionStart) {
           openPaneMenu(leaf.instanceId, leaf.rect);
           event.stopPropagation();
           event.preventDefault();
@@ -771,6 +824,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
         } else if (dockPreview?.kind === "snap") {
           persistLayout(floatAtRect(visibleLayout, drag.paneId, dockPreview.rect));
           focusPane(drag.paneId);
+          if (isCornerSnapPosition(dockPreview.position)) {
+            dispatch({ type: "SHOW_GRIDLOCK_TIP" });
+          }
           setDockPreview(null);
           setDragCursor(null);
           setDragFloatingRect(null);

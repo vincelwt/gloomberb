@@ -14,9 +14,9 @@ describe("command bar view model helpers", () => {
     expect(resolveCommandBarMode("T NVDA")).toMatchObject({ kind: "search", badge: "SEARCH" });
     expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
     expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
-    expect(resolveCommandBarMode("COL price")).toMatchObject({ kind: "columns", badge: "COLUMNS" });
     expect(resolveCommandBarMode("LAY ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
     expect(resolveCommandBarMode("NP ")).toMatchObject({ kind: "new-pane", badge: "NEW PANE" });
+    expect(resolveCommandBarMode("PS")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
     expect(resolveCommandBarMode("AW")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
   });
 

@@ -15,7 +15,13 @@ export type { SpinnerProps } from "./spinner";
 export { colors, priceColor, hoverBg } from "../theme/colors";
 
 // Hooks
-export { useAppState, useFocusedTicker, usePaneTicker, useSelectedTicker } from "../state/app-context";
+export {
+  useAppState,
+  useFocusedTicker,
+  usePaneSettingValue,
+  usePaneTicker,
+  useSelectedTicker,
+} from "../state/app-context";
 
 // Format utilities
 export {

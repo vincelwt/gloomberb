@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
 import { useAppState, useFocusedTicker } from "../../state/app-context";
 import { marketStateLabel, marketStateColor, exchangeShortName, getExtendedHoursInfo } from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
+import { gridlockAllPanes } from "../../plugins/pane-manager";
+
+const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
 function truncate(text: string, width: number): string {
   if (width <= 0) return "";
@@ -16,6 +19,7 @@ export function StatusBar() {
   const { state, dispatch } = useAppState();
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const [hoveredTab, setHoveredTab] = useState<number | null>(null);
+  const [hoveredControl, setHoveredControl] = useState<string | null>(null);
   if (!state.statusBarVisible) return null;
 
   // Get market state and exchange from the focused ticker context or first available.
@@ -32,6 +36,27 @@ export function StatusBar() {
   const layouts = state.config.layouts ?? [];
   const activeLayoutIdx = state.config.activeLayoutIndex ?? 0;
   const hasMultipleLayouts = layouts.length > 1;
+  const showGridlockTip = state.gridlockTipVisible && !!registry;
+
+  useEffect(() => {
+    if (!state.gridlockTipVisible) return;
+    const timer = setTimeout(() => {
+      dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
+    }, GRIDLOCK_TIP_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [dispatch, state.gridlockTipSequence, state.gridlockTipVisible]);
+
+  const handleGridlockTip = () => {
+    if (!registry) return;
+    const { width, height } = registry.getTermSizeFn();
+    registry.updateLayoutFn(gridlockAllPanes(registry.getLayoutFn(), { x: 0, y: 0, width, height }));
+    registry.showToastFn("Retiled all panes", { type: "success" });
+    dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
+  };
+
+  const dismissGridlockTip = () => {
+    dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
+  };
 
   return (
     <box
@@ -66,6 +91,26 @@ export function StatusBar() {
           </text>
         )}
       </box>
+      {showGridlockTip && (
+        <box paddingLeft={1} flexShrink={0} flexDirection="row">
+          <text fg={colors.textDim}>Snapped a window?</text>
+          <box width={1} />
+          <box
+            backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
+            onMouseMove={() => setHoveredControl("gridlock-tip")}
+            onMouseDown={handleGridlockTip}
+          >
+            <text fg={colors.headerText}> Gridlock All </text>
+          </box>
+          <text
+            fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
+            onMouseMove={() => setHoveredControl("gridlock-tip-dismiss")}
+            onMouseDown={dismissGridlockTip}
+          >
+            {" x"}
+          </text>
+        </box>
+      )}
       <box flexGrow={1} />
       {extText && (
         <box paddingRight={1}>

@@ -5,6 +5,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  type SetStateAction,
   type ReactNode,
 } from "react";
 import type { SessionStore } from "../data/session-store";
@@ -20,6 +21,7 @@ import {
   removePaneInstances,
   type LayoutConfig,
 } from "../types/config";
+import { setPaneSetting } from "../pane-settings";
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
@@ -69,6 +71,8 @@ export interface AppState {
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
+  gridlockTipVisible: boolean;
+  gridlockTipSequence: number;
   inputCaptured: boolean;
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
@@ -91,6 +95,8 @@ export type AppAction =
   | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
+  | { type: "SHOW_GRIDLOCK_TIP" }
+  | { type: "DISMISS_GRIDLOCK_TIP" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
@@ -126,11 +132,28 @@ function shouldPreserveUnknownCollectionId(collectionId: string | undefined): bo
   return isBrokerPortfolioId(collectionId);
 }
 
+function getConfiguredCollectionId(config: AppConfig, instance: PaneInstanceConfig): string {
+  const candidates = [
+    instance.params?.collectionId,
+    typeof instance.settings?.lockedCollectionId === "string" ? instance.settings.lockedCollectionId : undefined,
+    ...(Array.isArray(instance.settings?.visibleCollectionIds)
+      ? instance.settings.visibleCollectionIds.filter((value): value is string => typeof value === "string")
+      : []),
+  ];
+
+  for (const candidate of candidates) {
+    if (isKnownCollection(config, candidate) || shouldPreserveUnknownCollectionId(candidate)) {
+      return candidate!;
+    }
+  }
+
+  return getDefaultCollectionId(config);
+}
+
 function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceConfig): PaneRuntimeState {
   if (instance.paneId === "portfolio-list") {
-    const candidate = instance.params?.collectionId;
     return {
-      collectionId: isKnownCollection(config, candidate) ? candidate : getDefaultCollectionId(config),
+      collectionId: getConfiguredCollectionId(config, instance),
       cursorSymbol: null,
     };
   }
@@ -202,11 +225,11 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
     const paneState = getPaneState(state, paneId);
     const collectionId = typeof paneState.collectionId === "string"
       ? paneState.collectionId
-      : instance.params?.collectionId;
+      : getConfiguredCollectionId(state.config, instance);
     if (isKnownCollection(state.config, collectionId) || shouldPreserveUnknownCollectionId(collectionId)) {
       return collectionId ?? null;
     }
-    return getDefaultCollectionId(state.config);
+    return getConfiguredCollectionId(state.config, instance);
   }
   if (instance.binding?.kind === "follow") {
     return resolveCollectionForPane(state, instance.binding.sourceInstanceId, seen);
@@ -432,6 +455,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };
+
+    case "SHOW_GRIDLOCK_TIP":
+      return {
+        ...state,
+        gridlockTipVisible: true,
+        gridlockTipSequence: state.gridlockTipSequence + 1,
+      };
+
+    case "DISMISS_GRIDLOCK_TIP":
+      if (!state.gridlockTipVisible) return state;
+      return { ...state, gridlockTipVisible: false };
 
     case "SET_THEME":
       applyTheme(action.theme);
@@ -738,6 +772,33 @@ export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string):
   return [value, setValue];
 }
 
+export function usePaneSettingValue<T>(
+  key: string,
+  fallback: T,
+  paneId?: string,
+): [T, (value: SetStateAction<T>) => void] {
+  const { state, dispatch } = useAppState();
+  const scopedPaneId = paneId ?? usePaneInstanceId();
+  const instance = findPaneInstance(state.config.layout, scopedPaneId);
+  const value = (instance?.settings?.[key] as T | undefined) ?? fallback;
+
+  const setValue = (nextValue: SetStateAction<T>) => {
+    const currentValue = (findPaneInstance(state.config.layout, scopedPaneId)?.settings?.[key] as T | undefined) ?? fallback;
+    const resolved = typeof nextValue === "function"
+      ? (nextValue as (previousValue: T) => T)(currentValue)
+      : nextValue;
+    const layout = setPaneSetting(state.config.layout, scopedPaneId, key, resolved);
+    const layouts = state.config.layouts.map((savedLayout, index) => (
+      index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+    ));
+    const nextConfig = { ...state.config, layout, layouts };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    saveConfig(nextConfig).catch(() => {});
+  };
+
+  return [value, setValue];
+}
+
 export function createInitialState(config: AppConfig, sessionSnapshot: AppSessionSnapshot | null = null): AppState {
   const paneState = reconcilePaneState(config, sessionSnapshot?.paneState ?? {});
   const defaultFocusedPaneId = getPaneOrder(config.layout)[0] ?? null;
@@ -760,6 +821,8 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,
+    gridlockTipVisible: false,
+    gridlockTipSequence: 0,
     inputCaptured: false,
     updateAvailable: null,
     updateProgress: null,

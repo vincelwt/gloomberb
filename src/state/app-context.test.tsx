@@ -44,6 +44,22 @@ describe("appReducer command bar state", () => {
     expect(next.commandBarQuery).toBe("PL notes");
   });
 
+  test("re-shows the gridlock tip and refreshes its sequence on every trigger", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+
+    const shown = appReducer(initial, { type: "SHOW_GRIDLOCK_TIP" });
+    expect(shown.gridlockTipVisible).toBe(true);
+    expect(shown.gridlockTipSequence).toBe(1);
+
+    const dismissed = appReducer(shown, { type: "DISMISS_GRIDLOCK_TIP" });
+    expect(dismissed.gridlockTipVisible).toBe(false);
+    expect(dismissed.gridlockTipSequence).toBe(1);
+
+    const repeated = appReducer(dismissed, { type: "SHOW_GRIDLOCK_TIP" });
+    expect(repeated.gridlockTipVisible).toBe(true);
+    expect(repeated.gridlockTipSequence).toBe(2);
+  });
+
   test("tracks layout undo and redo history", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
     const changedLayout = cloneLayout(initial.config.layout);

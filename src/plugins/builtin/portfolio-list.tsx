@@ -4,11 +4,12 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
-import type { GloomPlugin, PaneProps, PaneTemplateContext } from "../../types/plugin";
+import type { GloomPlugin, PaneProps, PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
 import {
   useAppState,
   usePaneCollection,
+  usePaneInstance,
   usePaneInstanceId,
   usePaneStateValue,
   type CollectionSortPreference,
@@ -17,7 +18,7 @@ import { getAllCollections, getCollectionTickers, getCollectionType } from "../.
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
 import { clampQuoteTimestamp, formatQuoteAgeWithSource, getMostRecentQuoteUpdate } from "../../utils/quote-time";
-import type { ColumnConfig } from "../../types/config";
+import { DEFAULT_COLUMNS, type AppConfig, type ColumnConfig } from "../../types/config";
 import type { TickerRecord, Portfolio } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
 import type { BrokerAccount, BrokerCashBalance } from "../../types/trading";
@@ -35,7 +36,76 @@ interface ColumnContext {
 function getPositionCurrency(positions: TickerRecord["metadata"]["positions"], fallbackCurrency: string): string {
   return positions.find((position) => position.currency)?.currency || fallbackCurrency;
 }
+type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 
+interface PortfolioPaneSettings {
+  columnIds: string[];
+  collectionScope: CollectionScope;
+  visibleCollectionIds: string[];
+  hideTabs: boolean;
+  lockedCollectionId: string;
+}
+
+interface CollectionEntry {
+  id: string;
+  name: string;
+  kind: "portfolio" | "watchlist";
+}
+
+const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
+  ...DEFAULT_COLUMNS,
+  { id: "change", label: "CHG", width: 9, align: "right", format: "currency" },
+  { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
+  { id: "dividend_yield", label: "DIV%", width: 7, align: "right", format: "percent" },
+  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
+  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
+  { id: "cost_basis", label: "COST", width: 10, align: "right", format: "compact" },
+  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
+  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
+  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
+];
+
+const PORTFOLIO_COLUMNS_BY_ID = new Map(PORTFOLIO_COLUMN_DEFS.map((column) => [column.id, column]));
+const DEFAULT_PORTFOLIO_COLUMN_IDS = [
+  ...DEFAULT_COLUMNS.map((column) => column.id),
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+];
+const PORTFOLIO_ONLY_COLUMN_IDS = new Set([
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+]);
+
+const COLLECTION_SCOPE_OPTIONS: PaneSettingOption[] = [
+  {
+    value: "all",
+    label: "All Collections",
+    description: "Show portfolios and watchlists in this pane.",
+  },
+  {
+    value: "portfolios",
+    label: "Portfolios Only",
+    description: "Limit the pane to portfolios.",
+  },
+  {
+    value: "watchlists",
+    label: "Watchlists Only",
+    description: "Limit the pane to watchlists.",
+  },
+  {
+    value: "custom",
+    label: "Custom Selection",
+    description: "Choose exactly which collections this pane should show.",
+  },
+];
 function getColumnValue(
   col: ColumnConfig,
   ticker: TickerRecord,
@@ -291,14 +361,179 @@ function getSortValue(
   }
 }
 
-/** Position-specific columns appended when viewing a portfolio */
-const POSITION_COLUMNS: ColumnConfig[] = [
-  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
-  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
-  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
-  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
-  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
-];
+function isCollectionScope(value: unknown): value is CollectionScope {
+  return value === "all" || value === "portfolios" || value === "watchlists" || value === "custom";
+}
+
+function getPortfolioPaneSettings(settings: Record<string, unknown> | undefined): PortfolioPaneSettings {
+  const columnIds = Array.isArray(settings?.columnIds)
+    ? settings.columnIds.filter((value): value is string => typeof value === "string")
+    : DEFAULT_PORTFOLIO_COLUMN_IDS;
+  const visibleCollectionIds = Array.isArray(settings?.visibleCollectionIds)
+    ? settings.visibleCollectionIds.filter((value): value is string => typeof value === "string")
+    : [];
+
+  return {
+    columnIds: columnIds.length > 0 ? columnIds : DEFAULT_PORTFOLIO_COLUMN_IDS,
+    collectionScope: isCollectionScope(settings?.collectionScope) ? settings.collectionScope : "all",
+    visibleCollectionIds,
+    hideTabs: settings?.hideTabs === true,
+    lockedCollectionId: typeof settings?.lockedCollectionId === "string" ? settings.lockedCollectionId : "",
+  };
+}
+
+function createPortfolioPaneSettings(overrides: Partial<PortfolioPaneSettings> = {}): PortfolioPaneSettings {
+  return {
+    columnIds: [...(overrides.columnIds ?? DEFAULT_PORTFOLIO_COLUMN_IDS)],
+    collectionScope: overrides.collectionScope ?? "all",
+    visibleCollectionIds: [...(overrides.visibleCollectionIds ?? [])],
+    hideTabs: overrides.hideTabs ?? false,
+    lockedCollectionId: overrides.lockedCollectionId ?? "",
+  };
+}
+
+function getCollectionEntries(config: AppConfig): CollectionEntry[] {
+  return [
+    ...config.portfolios.map((portfolio) => ({
+      id: portfolio.id,
+      name: portfolio.name,
+      kind: "portfolio" as const,
+    })),
+    ...config.watchlists.map((watchlist) => ({
+      id: watchlist.id,
+      name: watchlist.name,
+      kind: "watchlist" as const,
+    })),
+  ];
+}
+
+function filterCollectionEntries(entries: CollectionEntry[], settings: PortfolioPaneSettings): CollectionEntry[] {
+  switch (settings.collectionScope) {
+    case "portfolios":
+      return entries.filter((entry) => entry.kind === "portfolio");
+    case "watchlists":
+      return entries.filter((entry) => entry.kind === "watchlist");
+    case "custom": {
+      const selectedIds = new Set(settings.visibleCollectionIds);
+      return entries.filter((entry) => selectedIds.has(entry.id));
+    }
+    default:
+      return entries;
+  }
+}
+
+function resolveScopedCollectionEntries(entries: CollectionEntry[], settings: PortfolioPaneSettings): CollectionEntry[] {
+  const filtered = filterCollectionEntries(entries, settings);
+  if (settings.collectionScope === "custom" && filtered.length === 0 && entries[0]) {
+    return [entries[0]];
+  }
+  return filtered;
+}
+
+function resolveCollectionOptions(entries: CollectionEntry[]): PaneSettingOption[] {
+  return entries.map((entry) => ({
+    value: entry.id,
+    label: entry.name,
+    description: entry.kind === "portfolio" ? "Portfolio" : "Watchlist",
+  }));
+}
+
+function resolveLockedCollectionId(settings: PortfolioPaneSettings, visibleCollections: CollectionEntry[]): string {
+  if (visibleCollections.some((entry) => entry.id === settings.lockedCollectionId)) {
+    return settings.lockedCollectionId;
+  }
+  return visibleCollections[0]?.id ?? "";
+}
+
+function resolveActiveCollectionId(
+  currentCollectionId: string,
+  visibleCollections: CollectionEntry[],
+  settings: PortfolioPaneSettings,
+): string {
+  if (visibleCollections.length === 0) return "";
+  if (settings.hideTabs) {
+    return resolveLockedCollectionId(settings, visibleCollections);
+  }
+  if (visibleCollections.some((entry) => entry.id === currentCollectionId)) {
+    return currentCollectionId;
+  }
+  return resolveLockedCollectionId(settings, visibleCollections);
+}
+
+function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boolean): ColumnConfig[] {
+  const resolved = columnIds
+    .map((columnId) => PORTFOLIO_COLUMNS_BY_ID.get(columnId))
+    .filter((column): column is ColumnConfig => column != null)
+    .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
+
+  if (resolved.length > 0) {
+    return resolved;
+  }
+
+  return DEFAULT_COLUMNS.filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
+}
+
+function buildPortfolioPaneSettingsDef(config: AppConfig, settings: PortfolioPaneSettings): PaneSettingsDef {
+  const collectionEntries = getCollectionEntries(config);
+  const scopedEntries = resolveScopedCollectionEntries(collectionEntries, settings);
+  const allCollectionOptions = resolveCollectionOptions(collectionEntries);
+  const lockedCollectionOptions = resolveCollectionOptions(scopedEntries.length > 0 ? scopedEntries : collectionEntries);
+
+  const fields: PaneSettingsDef["fields"] = [
+    {
+      key: "columnIds",
+      label: "Columns",
+      description: "Choose which columns this pane shows and in what order.",
+      type: "ordered-multi-select",
+      options: PORTFOLIO_COLUMN_DEFS.map((column) => ({
+        value: column.id,
+        label: column.label,
+        description: PORTFOLIO_ONLY_COLUMN_IDS.has(column.id)
+          ? "Visible only when this pane is showing a portfolio."
+          : "Visible for watchlists and portfolios.",
+      })),
+    },
+    {
+      key: "collectionScope",
+      label: "Collections",
+      description: "Control which portfolios or watchlists appear in this pane.",
+      type: "select",
+      options: COLLECTION_SCOPE_OPTIONS,
+    },
+  ];
+
+  if (settings.collectionScope === "custom") {
+    fields.push({
+      key: "visibleCollectionIds",
+      label: "Visible Collections",
+      description: "Pick the exact collections that should appear in this pane.",
+      type: "multi-select",
+      options: allCollectionOptions,
+    });
+  }
+
+  fields.push({
+    key: "hideTabs",
+    label: "Hide Tabs",
+    description: "Hide the collection tab bar and lock this pane to one collection.",
+    type: "toggle",
+  });
+
+  if (settings.hideTabs && lockedCollectionOptions.length > 0) {
+    fields.push({
+      key: "lockedCollectionId",
+      label: "Locked Collection",
+      description: "Choose which collection this pane should stay pinned to.",
+      type: "select",
+      options: lockedCollectionOptions,
+    });
+  }
+
+  return {
+    title: "Portfolio Pane Settings",
+    fields,
+  };
+}
 
 const EMPTY_SORT_PREFERENCE: CollectionSortPreference = {
   columnId: null,
@@ -857,14 +1092,27 @@ function PortfolioSummaryBar({
 function PortfolioListPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const paneId = usePaneInstanceId();
+  const paneInstance = usePaneInstance();
   const { state } = useAppState();
   const paneCollection = usePaneCollection();
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
   const [cursorSymbol, setCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
   const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
   const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
-  const tabs = getAllCollections(state);
-  const tickers = getCollectionTickers(state, currentCollectionId);
+  const paneSettings = useMemo(
+    () => getPortfolioPaneSettings(paneInstance?.settings),
+    [paneInstance?.settings],
+  );
+  const collectionEntries = useMemo(
+    () => getCollectionEntries(state.config),
+    [state.config],
+  );
+  const tabs = useMemo(
+    () => resolveScopedCollectionEntries(collectionEntries, paneSettings),
+    [collectionEntries, paneSettings],
+  );
+  const activeCollectionId = resolveActiveCollectionId(currentCollectionId, tabs, paneSettings);
+  const tickers = getCollectionTickers(state, activeCollectionId);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Set<string>>(new Set());
@@ -879,10 +1127,10 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
-  const currentTabIdx = tabs.findIndex((t) => t.id === currentCollectionId);
-  const isPortfolioTab = getCollectionType(state, currentCollectionId) === "portfolio";
+  const currentTabIdx = tabs.findIndex((tab) => tab.id === activeCollectionId);
+  const isPortfolioTab = getCollectionType(state, activeCollectionId) === "portfolio";
   const currentPortfolio = isPortfolioTab
-    ? state.config.portfolios.find((portfolio) => portfolio.id === currentCollectionId) ?? null
+    ? state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
     : null;
   const accountState = usePortfolioAccountState(currentPortfolio, state);
   const showCashDrawer = !!(isPortfolioTab && currentPortfolio?.brokerInstanceId && accountState);
@@ -891,40 +1139,42 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length))
       : 1)
     : 0;
-  const summaryWidth = calculatePortfolioSummaryWidth(width, tabs.map((tab) => tab.name));
-  const showStackedSummary = summaryWidth === 0;
-  const headerHeight = showStackedSummary ? 2 : 1;
+  const summaryWidth = paneSettings.hideTabs
+    ? 0
+    : calculatePortfolioSummaryWidth(width, tabs.map((tab) => tab.name));
+  const showStackedSummary = paneSettings.hideTabs || summaryWidth === 0;
+  const headerHeight = paneSettings.hideTabs ? 1 : (showStackedSummary ? 2 : 1);
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
 
-  // Build columns: base config columns + position columns for portfolios
   const cols = useMemo(() => {
-    const baseCols = state.config.columns;
-    if (!isPortfolioTab) return baseCols;
-    // Append position columns that aren't already in base columns
-    const baseIds = new Set(baseCols.map((c) => c.id));
-    const extra = POSITION_COLUMNS.filter((c) => !baseIds.has(c.id));
-    return [...baseCols, ...extra];
-  }, [state.config.columns, isPortfolioTab]);
+    return resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab);
+  }, [isPortfolioTab, paneSettings.columnIds]);
 
   const columnCtx: ColumnContext = {
-    activeTab: isPortfolioTab ? currentCollectionId : undefined,
+    activeTab: isPortfolioTab ? activeCollectionId : undefined,
     baseCurrency: state.config.baseCurrency,
     exchangeRates: state.exchangeRates,
     now,
   };
-  const activeSort = resolveCollectionSortPreference(currentCollectionId, isPortfolioTab, collectionSorts);
+  const activeSort = resolveCollectionSortPreference(activeCollectionId, isPortfolioTab, collectionSorts);
   const sortCol = activeSort.columnId;
   const sortDir = activeSort.direction;
 
   const setSortPreference = useCallback((preference: CollectionSortPreference) => {
-    if (!currentCollectionId) return;
+    if (!activeCollectionId) return;
     setCollectionSorts({
       ...collectionSorts,
-      [currentCollectionId]: preference,
+      [activeCollectionId]: preference,
     });
-  }, [collectionSorts, currentCollectionId, setCollectionSorts]);
+  }, [activeCollectionId, collectionSorts, setCollectionSorts]);
+
+  useEffect(() => {
+    if (activeCollectionId !== currentCollectionId) {
+      setCurrentCollectionId(activeCollectionId);
+    }
+  }, [activeCollectionId, currentCollectionId, setCurrentCollectionId]);
 
   // Sort tickers
   const sortedTickers = useMemo(() => {
@@ -990,10 +1240,10 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     } else if (key === "k" || key === "up") {
       const next = Math.max(safeSelectedIdx - 1, 0);
       if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.metadata.ticker);
-    } else if (key === "h" || key === "left") {
+    } else if (!paneSettings.hideTabs && (key === "h" || key === "left")) {
       const newIdx = Math.max(currentTabIdx - 1, 0);
       if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
-    } else if (key === "l" || key === "right") {
+    } else if (!paneSettings.hideTabs && (key === "l" || key === "right")) {
       const newIdx = Math.min(currentTabIdx + 1, tabs.length - 1);
       if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
     } else if (isEnter) {
@@ -1022,6 +1272,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     showCashDrawer,
     cashDrawerExpanded,
     setCashDrawerExpanded,
+    paneSettings.hideTabs,
   ]);
 
   useKeyboard(handleKeyboard);
@@ -1092,35 +1343,37 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   return (
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="column" height={headerHeight}>
-        <box flexDirection="row" height={1}>
-          <box flexShrink={1} overflow="hidden">
-            <TabBar
-              tabs={tabs.map((t) => ({ label: t.name, value: t.id }))}
-              activeValue={currentCollectionId}
-              onSelect={setCurrentCollectionId}
-              compact
-            />
-          </box>
-          {summaryWidth > 0 && (
-            <box width={summaryWidth} flexShrink={0} alignItems="flex-start" justifyContent="center">
-              <PortfolioSummaryBar
-                tickers={sortedTickers}
-                state={state}
-                isPortfolio={isPortfolioTab}
-                collectionId={currentCollectionId}
-                width={summaryWidth}
-                accountState={accountState}
+        {!paneSettings.hideTabs && (
+          <box flexDirection="row" height={1}>
+            <box flexShrink={1} overflow="hidden">
+              <TabBar
+                tabs={tabs.map((tab) => ({ label: tab.name, value: tab.id }))}
+                activeValue={activeCollectionId}
+                onSelect={setCurrentCollectionId}
+                compact
               />
             </box>
-          )}
-        </box>
+            {summaryWidth > 0 && (
+              <box width={summaryWidth} flexShrink={0} alignItems="flex-start" justifyContent="center">
+                <PortfolioSummaryBar
+                  tickers={sortedTickers}
+                  state={state}
+                  isPortfolio={isPortfolioTab}
+                  collectionId={activeCollectionId}
+                  width={summaryWidth}
+                  accountState={accountState}
+                />
+              </box>
+            )}
+          </box>
+        )}
         {showStackedSummary && (
           <box height={1}>
             <PortfolioSummaryBar
               tickers={sortedTickers}
               state={state}
               isPortfolio={isPortfolioTab}
-              collectionId={currentCollectionId}
+              collectionId={activeCollectionId}
               width={Math.max(0, width)}
               accountState={accountState}
             />
@@ -1246,6 +1499,10 @@ export const portfolioListPlugin: GloomPlugin = {
       component: PortfolioListPane,
       defaultPosition: "left",
       defaultWidth: "40%",
+      settings: (context) => buildPortfolioPaneSettingsDef(
+        context.config,
+        getPortfolioPaneSettings(context.settings),
+      ),
     },
   ],
   paneTemplates: [
@@ -1259,7 +1516,17 @@ export const portfolioListPlugin: GloomPlugin = {
       canCreate: (context) => resolveCollectionPaneId(context) !== null,
       createInstance: (context) => {
         const collectionId = resolveCollectionPaneId(context);
-        return collectionId ? { params: { collectionId } } : null;
+        return collectionId
+          ? {
+            params: { collectionId },
+            settings: createPortfolioPaneSettings({
+              collectionScope: "custom",
+              visibleCollectionIds: [collectionId],
+              hideTabs: true,
+              lockedCollectionId: collectionId,
+            }),
+          }
+          : null;
       },
     },
     {
@@ -1274,7 +1541,13 @@ export const portfolioListPlugin: GloomPlugin = {
           ? context.activeCollectionId
           : (context.config.portfolios[0]?.id ?? null);
         if (!collectionId) return null;
-        return { params: { collectionId } };
+        return {
+          params: { collectionId },
+          settings: createPortfolioPaneSettings({
+            collectionScope: "portfolios",
+            lockedCollectionId: collectionId,
+          }),
+        };
       },
     },
     {
@@ -1289,7 +1562,13 @@ export const portfolioListPlugin: GloomPlugin = {
           ? context.activeCollectionId
           : (context.config.watchlists[0]?.id ?? null);
         if (!collectionId) return null;
-        return { params: { collectionId } };
+        return {
+          params: { collectionId },
+          settings: createPortfolioPaneSettings({
+            collectionScope: "watchlists",
+            lockedCollectionId: collectionId,
+          }),
+        };
       },
     },
   ],

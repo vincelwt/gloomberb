@@ -107,6 +107,7 @@ describe("QuoteMonitorPane", () => {
     })).toEqual({
       title: "MSFT",
       binding: { kind: "fixed", symbol: "MSFT" },
+      settings: { symbol: "MSFT" },
       placement: "floating",
     });
   });
