@@ -8,7 +8,7 @@ import { formatCompact, formatCurrency } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { filterByTimeRange, getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
 import { buildChartScene, formatDateShort, renderChart, resolveChartPalette } from "./chart-renderer";
-import { CHART_RENDER_MODES, TIME_RANGES, type ChartRenderMode, type ChartViewState, type ResolvedChartRenderer } from "./chart-types";
+import { CHART_RENDER_MODES, TIME_RANGES, type ChartAxisMode, type ChartRenderMode, type ChartViewState, type ResolvedChartRenderer } from "./chart-types";
 import { computeBitmapSize, intersectCellRects, renderNativeChart, type CellRect } from "./native/chart-rasterizer";
 import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-support";
 import { resolveChartRendererState } from "./native/renderer-selection";
@@ -35,6 +35,7 @@ interface StockChartProps {
   focused: boolean;
   interactive?: boolean;
   compact?: boolean;
+  axisMode?: ChartAxisMode;
 }
 
 interface DragState {
@@ -177,7 +178,7 @@ function buildNativeBitmapKey(
   return [pointCount, pixelWidth, pixelHeight, mode, showVolume ? "1" : "0", paletteId, fingerprint].join("::");
 }
 
-export function StockChart({ width, height, focused, interactive, compact }: StockChartProps) {
+export function StockChart({ width, height, focused, interactive, compact, axisMode = "price" }: StockChartProps) {
   const renderer = useRenderer();
   const { state, dispatch } = useAppState();
   const paneId = usePaneInstanceId();
@@ -235,7 +236,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const baseHistoryEndMs = baseHistory.length > 0
     ? new Date(baseHistory[baseHistory.length - 1]!.date).getTime()
     : null;
-  const axisWidth = compact ? 0 : 10;
+  const axisWidth = compact ? 0 : axisMode === "percent" ? 11 : 10;
   const chartWidth = Math.max(width - axisWidth - 2, 20);
   const maxCursorX = chartWidth - 1;
   const panStep = Math.max(Math.floor(chartWidth / 10), 1);
@@ -482,8 +483,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     volumeHeight,
     cursorX,
     mode: projection.effectiveMode,
+    axisMode,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, compact, cursorX, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, cursorX, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const nativeScene = useMemo(() => buildChartScene(projection.points, {
     width: chartWidth,
@@ -492,8 +494,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     volumeHeight,
     cursorX: null,
     mode: projection.effectiveMode,
+    axisMode,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;

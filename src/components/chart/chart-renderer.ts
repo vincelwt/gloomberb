@@ -1,5 +1,5 @@
 import { RGBA } from "@opentui/core";
-import type { ChartColors, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
+import type { ChartAxisMode, ChartColors, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
 import type { ProjectedChartPoint } from "./chart-data";
 
 // ---------------------------------------------------------------------------
@@ -604,6 +604,20 @@ export function formatPrice(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+function formatPercentAxisValue(value: number): string {
+  const abs = Math.abs(value);
+  const decimals = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(decimals)}%`;
+}
+
+function formatAxisValue(value: number, axisMode: ChartAxisMode, basePrice: number): string {
+  if (axisMode === "percent" && basePrice !== 0) {
+    return formatPercentAxisValue(((value - basePrice) / basePrice) * 100);
+  }
+  return formatPrice(value);
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function formatDate(date: Date | string | number): string {
@@ -707,6 +721,7 @@ export interface RenderChartOptions {
   volumeHeight: number;
   cursorX: number | null;
   mode: ChartRenderMode;
+  axisMode?: ChartAxisMode;
   colors: ResolvedChartPalette;
 }
 
@@ -824,6 +839,7 @@ export function renderChart(
   }
 
   const { width, colors: palette, mode } = opts;
+  const axisMode = opts.axisMode ?? "price";
 
   // Braille resolution: 2 dot-columns per terminal column, 4 dot-rows per terminal row
   const dotWidth = width * 2;
@@ -880,7 +896,7 @@ export function renderChart(
     lines: bufferToBrailleLines(buf, palette.bgColor),
     axisLabels: gridLines.map((line) => ({
       row: Math.floor(line.y / 4), // 4 dot-rows per terminal row
-      label: formatPrice(line.price),
+      label: formatAxisValue(line.price, axisMode, points[0]!.close),
     })),
     timeLabels: buildTimeAxis(points.map((point) => point.date), width),
     activePoint,

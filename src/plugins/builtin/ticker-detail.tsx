@@ -13,6 +13,7 @@ import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, 
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { normalizeTickerInput } from "../../utils/ticker-search";
 import { StockChart } from "../../components/chart/stock-chart";
+import type { ChartAxisMode } from "../../components/chart/chart-types";
 import type { TickerFinancials } from "../../types/financials";
 import { getConfiguredIbkrGatewayInstances } from "../ibkr/instance-selection";
 import { useOptionsAvailability } from "./options-availability";
@@ -24,12 +25,14 @@ const CORE_CHART_TAB = { id: "chart", name: "Chart", order: 30 };
 interface TickerDetailPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
+  chartAxisMode: ChartAxisMode;
 }
 
 function getTickerDetailPaneSettings(settings: Record<string, unknown> | undefined): TickerDetailPaneSettings {
   return {
     hideTabs: settings?.hideTabs === true,
     lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
+    chartAxisMode: settings?.chartAxisMode === "percent" ? "percent" : "price",
   };
 }
 
@@ -75,6 +78,16 @@ function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneS
           label: tab.name,
         })),
       }] : []),
+      {
+        key: "chartAxisMode",
+        label: "Chart Y-Axis",
+        description: "Show chart values as raw prices or percent change from the first visible point.",
+        type: "select",
+        options: [
+          { value: "price", label: "Price" },
+          { value: "percent", label: "Percent" },
+        ],
+      },
     ],
   };
 }
@@ -685,7 +698,21 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
   );
 }
 
-function ChartTab({ width, height, focused, interactive, onActivate }: { width?: number; height?: number; focused: boolean; interactive: boolean; onActivate?: () => void }) {
+function ChartTab({
+  width,
+  height,
+  focused,
+  interactive,
+  axisMode,
+  onActivate,
+}: {
+  width?: number;
+  height?: number;
+  focused: boolean;
+  interactive: boolean;
+  axisMode: ChartAxisMode;
+  onActivate?: () => void;
+}) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
@@ -693,7 +720,7 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
 
   return (
     <box flexDirection="column" paddingX={1} flexGrow={1} onMouseDown={() => { if (!interactive && onActivate) onActivate(); }}>
-      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} />
+      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} axisMode={axisMode} />
     </box>
   );
 }
@@ -844,7 +871,16 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
       {resolvedTabId === "overview" && <OverviewTab width={width} />}
       {resolvedTabId === "financials" && <FinancialsTab focused={focused} />}
-      {resolvedTabId === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {resolvedTabId === "chart" && (
+        <ChartTab
+          width={width}
+          height={height}
+          focused={focused}
+          interactive={chartInteractive}
+          axisMode={paneSettings.chartAxisMode}
+          onActivate={() => setChartInteractiveEager(true)}
+        />
+      )}
 
       {/* Dynamic plugin tabs */}
       {activePluginTab && (
