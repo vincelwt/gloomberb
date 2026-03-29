@@ -1,6 +1,9 @@
 import type { TickerRecord } from "../types/ticker";
 import type { TickerFinancials } from "../types/financials";
 import type { AppConfig } from "../types/config";
+import { debugLog } from "../utils/debug-log";
+
+const busLog = debugLog.createLogger("event-bus");
 
 /** All events plugins can subscribe to or emit */
 export interface PluginEvents {
@@ -26,7 +29,9 @@ export class EventBus {
 
   emit<K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]): void {
     for (const handler of this.listeners.get(event) ?? []) {
-      try { handler(payload); } catch { /* don't let plugin errors crash the app */ }
+      try { handler(payload); } catch (err) {
+        busLog.error(`Handler error on ${String(event)}: ${err}`);
+      }
     }
   }
 }

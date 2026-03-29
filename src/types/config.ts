@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 7;
+export const CURRENT_CONFIG_VERSION = 8;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -32,24 +32,47 @@ export type PaneBinding =
   | { kind: "fixed"; symbol: string }
   | { kind: "follow"; sourceInstanceId: string };
 
+export interface DockedPlacementMemory {
+  path?: Array<0 | 1>;
+  anchorInstanceId?: string;
+  position?: "left" | "right" | "above" | "below";
+}
+
+export interface FloatingPlacementMemory {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PanePlacementMemory {
+  docked?: DockedPlacementMemory;
+  floating?: FloatingPlacementMemory;
+}
+
 export interface PaneInstanceConfig {
   instanceId: string;
   paneId: string;
   title?: string;
   binding?: PaneBinding;
   params?: Record<string, string>;
+  placementMemory?: PanePlacementMemory;
 }
 
-export interface DockedPaneEntry {
+export interface DockPaneNode {
+  kind: "pane";
   instanceId: string;
-  columnIndex: number;
-  order?: number;
-  height?: string;
 }
 
-export interface LayoutColumnConfig {
-  width?: string;
+export interface DockSplitNode {
+  kind: "split";
+  axis: "horizontal" | "vertical";
+  ratio: number;
+  first: DockLayoutNode;
+  second: DockLayoutNode;
 }
+
+export type DockLayoutNode = DockPaneNode | DockSplitNode;
 
 export interface FloatingPaneEntry {
   instanceId: string;
@@ -61,9 +84,8 @@ export interface FloatingPaneEntry {
 }
 
 export interface LayoutConfig {
-  columns: LayoutColumnConfig[];
+  dockRoot: DockLayoutNode | null;
   instances: PaneInstanceConfig[];
-  docked: DockedPaneEntry[];
   floating: FloatingPaneEntry[];
 }
 
@@ -95,6 +117,7 @@ export interface AppConfig {
 
 const TICKER_PANE_IDS = new Set([
   "ticker-detail",
+  "quote-monitor",
   "news",
   "notes",
   "options",
@@ -113,7 +136,13 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
 ];
 
 export const DEFAULT_LAYOUT: LayoutConfig = {
-  columns: [{ width: "40%" }, { width: "60%" }],
+  dockRoot: {
+    kind: "split",
+    axis: "horizontal",
+    ratio: 0.4,
+    first: { kind: "pane", instanceId: "portfolio-list:main" },
+    second: { kind: "pane", instanceId: "ticker-detail:main" },
+  },
   instances: [
     {
       instanceId: "portfolio-list:main",
@@ -127,14 +156,75 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
     },
   ],
-  docked: [
-    { instanceId: "portfolio-list:main", columnIndex: 0 },
-    { instanceId: "ticker-detail:main", columnIndex: 1 },
-  ],
   floating: [],
 };
 
 let nextPaneInstanceSeq = 0;
+
+function clampDockRatio(ratio: number | undefined): number {
+  if (typeof ratio !== "number" || !Number.isFinite(ratio)) return 0.5;
+  return Math.max(0.1, Math.min(0.9, ratio));
+}
+
+function isDockAxis(value: unknown): value is DockSplitNode["axis"] {
+  return value === "horizontal" || value === "vertical";
+}
+
+function cloneDockNode(node: DockLayoutNode): DockLayoutNode {
+  if (node.kind === "pane") {
+    return { kind: "pane", instanceId: node.instanceId };
+  }
+  return {
+    kind: "split",
+    axis: node.axis,
+    ratio: node.ratio,
+    first: cloneDockNode(node.first),
+    second: cloneDockNode(node.second),
+  };
+}
+
+function normalizeDockNode(
+  node: DockLayoutNode | null | undefined,
+  validInstanceIds: Set<string>,
+  seenPaneIds: Set<string>,
+): DockLayoutNode | null {
+  if (!node || typeof node !== "object") return null;
+
+  if ((node as DockPaneNode).kind === "pane") {
+    const instanceId = (node as DockPaneNode).instanceId;
+    if (typeof instanceId !== "string" || !validInstanceIds.has(instanceId) || seenPaneIds.has(instanceId)) {
+      return null;
+    }
+    seenPaneIds.add(instanceId);
+    return { kind: "pane", instanceId };
+  }
+
+  if ((node as DockSplitNode).kind !== "split") return null;
+  const split = node as DockSplitNode;
+  const first = normalizeDockNode(split.first, validInstanceIds, seenPaneIds);
+  const second = normalizeDockNode(split.second, validInstanceIds, seenPaneIds);
+  if (!first && !second) return null;
+  if (!first) return second;
+  if (!second) return first;
+  return {
+    kind: "split",
+    axis: isDockAxis(split.axis) ? split.axis : "horizontal",
+    ratio: clampDockRatio(split.ratio),
+    first,
+    second,
+  };
+}
+
+function getDockedPaneIdsFromNode(node: DockLayoutNode | null, result: string[] = []): string[] {
+  if (!node) return result;
+  if (node.kind === "pane") {
+    result.push(node.instanceId);
+    return result;
+  }
+  getDockedPaneIdsFromNode(node.first, result);
+  getDockedPaneIdsFromNode(node.second, result);
+  return result;
+}
 
 export function createPaneInstanceId(paneId: string): string {
   nextPaneInstanceSeq += 1;
@@ -144,6 +234,18 @@ export function createPaneInstanceId(paneId: string): string {
 export function clonePaneBinding(binding: PaneBinding | undefined): PaneBinding | undefined {
   if (!binding) return undefined;
   return { ...binding };
+}
+
+export function clonePlacementMemory(memory: PanePlacementMemory | undefined): PanePlacementMemory | undefined {
+  if (!memory) return undefined;
+  return {
+    docked: memory.docked ? {
+      path: memory.docked.path ? [...memory.docked.path] : undefined,
+      anchorInstanceId: memory.docked.anchorInstanceId,
+      position: memory.docked.position,
+    } : undefined,
+    floating: memory.floating ? { ...memory.floating } : undefined,
+  };
 }
 
 export function isTickerPaneId(paneId: string): boolean {
@@ -172,6 +274,7 @@ export function createPaneInstance(
     title: options.title,
     binding: clonePaneBinding(options.binding) ?? { kind: "none" },
     params: options.params ? { ...options.params } : undefined,
+    placementMemory: clonePlacementMemory(options.placementMemory),
   };
 }
 
@@ -179,11 +282,15 @@ export function removePaneInstances(layout: LayoutConfig, instanceIds: Iterable<
   const removedIds = new Set(instanceIds);
   if (removedIds.size === 0) return layout;
 
+  const instances = layout.instances.filter((instance) => !removedIds.has(instance.instanceId));
+  const validInstanceIds = new Set(instances.map((instance) => instance.instanceId));
+  const dockRoot = normalizeDockNode(layout.dockRoot, validInstanceIds, new Set<string>());
+  const dockedPaneIds = new Set(getDockedPaneIdsFromNode(dockRoot));
   return {
     ...layout,
-    instances: layout.instances.filter((instance) => !removedIds.has(instance.instanceId)),
-    docked: layout.docked.filter((entry) => !removedIds.has(entry.instanceId)),
-    floating: layout.floating.filter((entry) => !removedIds.has(entry.instanceId)),
+    instances,
+    dockRoot,
+    floating: layout.floating.filter((entry) => !removedIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId)),
   };
 }
 
@@ -232,20 +339,37 @@ export function normalizePaneLayout(
       }
     }
 
-    if (removedIds.size === 0) return nextLayout;
+    if (removedIds.size === 0) break;
     nextLayout = removePaneInstances(nextLayout, removedIds);
   }
+
+  const validInstanceIds = new Set(nextLayout.instances.map((instance) => instance.instanceId));
+  const dockRoot = normalizeDockNode(nextLayout.dockRoot, validInstanceIds, new Set<string>());
+  const dockedPaneIds = new Set(getDockedPaneIdsFromNode(dockRoot));
+
+  return {
+    dockRoot,
+    instances: nextLayout.instances.map((instance) => ({
+      ...instance,
+      binding: clonePaneBinding(instance.binding),
+      params: instance.params ? { ...instance.params } : undefined,
+      placementMemory: clonePlacementMemory(instance.placementMemory),
+    })),
+    floating: nextLayout.floating
+      .filter((entry) => validInstanceIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId))
+      .map((entry) => ({ ...entry })),
+  };
 }
 
 export function cloneLayout(layout: LayoutConfig): LayoutConfig {
   return {
-    columns: layout.columns.map((column) => ({ ...column })),
+    dockRoot: layout.dockRoot ? cloneDockNode(layout.dockRoot) : null,
     instances: layout.instances.map((instance) => ({
       ...instance,
       binding: clonePaneBinding(instance.binding),
       params: instance.params ? { ...instance.params } : undefined,
+      placementMemory: clonePlacementMemory(instance.placementMemory),
     })),
-    docked: layout.docked.map((entry) => ({ ...entry })),
     floating: layout.floating.map((entry) => ({ ...entry })),
   };
 }

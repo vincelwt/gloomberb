@@ -1,8 +1,15 @@
 import type { ReactNode } from "react";
 import type { TickerRepository } from "../data/ticker-repository";
 import type { PluginEvents } from "../plugins/event-bus";
+import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
-import type { BrokerInstanceConfig, ColumnConfig } from "./config";
+import type {
+  AppConfig,
+  BrokerInstanceConfig,
+  ColumnConfig,
+  LayoutConfig,
+  PaneBinding,
+} from "./config";
 import type { DataProvider } from "./data-provider";
 import type { TickerFinancials } from "./financials";
 import type { CachePolicy, PersistedResourceValue } from "./persistence";
@@ -38,6 +45,35 @@ export interface PaneDef {
   defaultWidth?: string;
   defaultFloatingSize?: { width: number; height: number };
   defaultMode?: "docked" | "floating";
+}
+
+export interface PaneTemplateContext {
+  config: AppConfig;
+  layout: LayoutConfig;
+  focusedPaneId: string | null;
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface PaneTemplateInstanceConfig {
+  title?: string;
+  binding?: PaneBinding;
+  params?: Record<string, string>;
+  placement?: "default" | "docked" | "floating";
+  relativeToPaneId?: string;
+  relativePosition?: "left" | "right" | "above" | "below";
+}
+
+export interface PaneTemplateDef {
+  id: string;
+  paneId: string;
+  label: string;
+  description: string;
+  keywords?: string[];
+  canCreate?: (context: PaneTemplateContext) => boolean;
+  createInstance?: (
+    context: PaneTemplateContext,
+  ) => PaneTemplateInstanceConfig | null | Promise<PaneTemplateInstanceConfig | null>;
 }
 
 export interface WizardStep {
@@ -146,6 +182,7 @@ export interface PluginConfigState {
 
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
+  registerPaneTemplate(template: PaneTemplateDef): void;
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
@@ -162,6 +199,7 @@ export interface GloomPluginContext {
   readonly tickerRepository: TickerRepository;
   readonly storage: PluginStorage;
   readonly persistence: PluginPersistence;
+  readonly log: PluginLogger;
   readonly resume: PluginResumeState;
   readonly configState: PluginConfigState;
 
@@ -175,6 +213,7 @@ export interface GloomPluginContext {
   switchTab(tabId: string, paneId?: string): void;
   openCommandBar(query?: string): void;
   showPane(paneId: string): void;
+  createPaneFromTemplate(templateId: string): void;
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
@@ -199,6 +238,7 @@ export interface GloomPlugin {
   dispose?(): void;
 
   panes?: PaneDef[];
+  paneTemplates?: PaneTemplateDef[];
   broker?: BrokerAdapter;
   dataProvider?: DataProvider;
   slots?: Partial<{

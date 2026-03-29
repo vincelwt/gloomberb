@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, PaneProps, DetailTabDef } from "../../types/plugin";
+import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
 import { getCollectionName, getCollectionTickers } from "../../state/selectors";
@@ -44,6 +45,99 @@ export function buildVisibleDetailTabs(
   }
 
   return tabs.sort((a, b) => a.order - b.order);
+}
+
+function getQuoteMonitorDisplay(quote: Quote | null | undefined) {
+  if (!quote) return null;
+
+  if (quote.marketState === "PRE" && quote.preMarketPrice != null) {
+    return {
+      price: quote.preMarketPrice,
+      change: quote.preMarketChange ?? 0,
+      changePercent: quote.preMarketChangePercent ?? 0,
+    };
+  }
+
+  if (quote.marketState === "POST" && quote.postMarketPrice != null) {
+    return {
+      price: quote.postMarketPrice,
+      change: quote.postMarketChange ?? 0,
+      changePercent: quote.postMarketChangePercent ?? 0,
+    };
+  }
+
+  return {
+    price: quote.price,
+    change: quote.change,
+    changePercent: quote.changePercent,
+  };
+}
+
+export function QuoteMonitorPane({ focused, width }: PaneProps) {
+  const { ticker, financials } = usePaneTicker();
+
+  if (!ticker) {
+    return (
+      <box flexDirection="column" flexGrow={1} paddingX={1}>
+        <EmptyState title="No ticker selected." />
+      </box>
+    );
+  }
+
+  const display = getQuoteMonitorDisplay(financials?.quote);
+  const changeColor = priceColor(display?.change ?? 0);
+  const compact = width < 56;
+  const currency = financials?.quote?.currency ?? ticker.metadata.currency ?? "USD";
+
+  return (
+    <box flexDirection="column" flexGrow={1} backgroundColor={colors.panel} padding={1}>
+      <box
+        flexGrow={1}
+        border
+        borderColor={focused ? colors.borderFocused : colors.border}
+        backgroundColor={colors.bg}
+        paddingX={compact ? 2 : 4}
+        paddingY={1}
+        justifyContent="center"
+      >
+        {!display ? (
+          <box flexDirection="column" alignItems="center" justifyContent="center" gap={1} flexGrow={1}>
+            <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+              {ticker.metadata.ticker}
+            </text>
+            <text fg={colors.textDim}>Waiting for quote...</text>
+          </box>
+        ) : (
+          <box
+            flexDirection={compact ? "column" : "row"}
+            alignItems={compact ? "flex-start" : "center"}
+            justifyContent="space-between"
+            gap={compact ? 1 : 2}
+            flexGrow={1}
+          >
+            <box flexGrow={1} justifyContent="center">
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+                {ticker.metadata.ticker}
+              </text>
+            </box>
+
+            <box flexDirection="column" alignItems={compact ? "flex-start" : "flex-end"}>
+              <text attributes={TextAttributes.BOLD} fg={changeColor}>
+                {formatCurrency(display.price, currency)}
+              </text>
+              <box flexDirection="row" gap={1}>
+                <text fg={changeColor}>{formatPercentRaw(display.changePercent)}</text>
+                <text fg={changeColor}>
+                  {display.change > 0 ? "+" : ""}
+                  {display.change.toFixed(2)}
+                </text>
+              </box>
+            </box>
+          </box>
+        )}
+      </box>
+    </box>
+  );
 }
 
 function OverviewTab({ width }: { width?: number }) {
@@ -296,6 +390,11 @@ const BALANCE_KEYS = new Set<string>([
   "totalEquity", "retainedEarnings", "dilutedShares",
 ]);
 
+const FINANCIAL_COL_W = 18;
+const FINANCIAL_LABEL_W = 20;
+const FINANCIAL_GROWTH_W = 7;
+const FINANCIAL_VALUE_W = FINANCIAL_COL_W - FINANCIAL_GROWTH_W;
+
 function computeTTM(quarterlyStmts: import("../../types/financials").FinancialStatement[]): import("../../types/financials").FinancialStatement | null {
   const last4 = quarterlyStmts.slice(-4);
   if (last4.length < 4) return null;
@@ -320,7 +419,15 @@ function computeGrowth(current: number | undefined, previous: number | undefined
   return (current - previous) / Math.abs(previous);
 }
 
-function FinancialsTab({ focused }: { focused: boolean }) {
+function formatFinancialCell(value: string, growth: number | undefined): { valueText: string; growthText: string } {
+  const growthText = growth != null ? formatGrowthShort(growth) : "";
+  return {
+    valueText: padTo(value, FINANCIAL_VALUE_W, "right"),
+    growthText: padTo(growthText ? ` ${growthText}` : "", FINANCIAL_GROWTH_W, "right"),
+  };
+}
+
+export function FinancialsTab({ focused }: { focused: boolean }) {
   const { financials } = usePaneTicker();
   const hasAnnualStatements = (financials?.annualStatements.length ?? 0) > 0;
   const hasQuarterlyStatements = (financials?.quarterlyStatements.length ?? 0) > 0;
@@ -383,9 +490,6 @@ function FinancialsTab({ focused }: { focused: boolean }) {
     prevMap.set("TTM", prevTtm);
   }
 
-  const COL_W = 18;
-  const LABEL_W = 20;
-
   return (
     <scrollbox flexGrow={1} scrollY>
       <box flexDirection="column" paddingX={2} paddingBottom={1}>
@@ -415,9 +519,9 @@ function FinancialsTab({ focused }: { focused: boolean }) {
 
         {/* Column headers */}
         <box flexDirection="row" height={1}>
-          <box width={LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
+          <box width={FINANCIAL_LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
           {displayStmts.map((s) => (
-            <box key={s.date} width={COL_W}>
+            <box key={s.date} width={FINANCIAL_COL_W}>
               <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.textBright : colors.textDim}>
                 {s.date === "TTM" ? "TTM" : s.date.slice(0, 7)}
               </text>
@@ -437,24 +541,23 @@ function FinancialsTab({ focused }: { focused: boolean }) {
             <box key={key} flexDirection="column">
               {idx > 0 && idx % 4 === 0 && <box height={1} />}
               <box flexDirection="row" height={1}>
-              <box width={LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
-              {displayStmts.map((s) => {
-                const val = s[key] as number | undefined;
-                const prev = prevMap.get(s.date);
-                const prevVal = prev ? (prev[key] as number | undefined) : undefined;
-                const growth = computeGrowth(val, prevVal);
-                const formatted = val != null
-                  ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
-                  : "—";
-                const growthStr = growth != null ? " " + formatGrowthShort(growth) : "";
-                const isNeg = val != null && val < 0;
-                return (
-                  <box key={s.date} width={COL_W} flexDirection="row" marginLeft={isNeg ? -1 : 0}>
-                    <text fg={colors.text}>{formatted}</text>
-                    {growthStr ? <text fg={priceColor(growth!)}>{growthStr}</text> : null}
-                  </box>
-                );
-              })}
+                <box width={FINANCIAL_LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
+                {displayStmts.map((s) => {
+                  const val = s[key] as number | undefined;
+                  const prev = prevMap.get(s.date);
+                  const prevVal = prev ? (prev[key] as number | undefined) : undefined;
+                  const growth = computeGrowth(val, prevVal);
+                  const formatted = val != null
+                    ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
+                    : "—";
+                  const cell = formatFinancialCell(formatted, growth);
+                  return (
+                    <box key={s.date} width={FINANCIAL_COL_W} flexDirection="row">
+                      <text fg={colors.text}>{cell.valueText}</text>
+                      <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
+                    </box>
+                  );
+                })}
               </box>
             </box>
           );
@@ -626,6 +729,50 @@ export const tickerDetailPlugin: GloomPlugin = {
       icon: "D",
       component: TickerDetailPane,
       defaultPosition: "right",
+    },
+    {
+      id: "quote-monitor",
+      name: "Quote Monitor",
+      icon: "Q",
+      component: QuoteMonitorPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 64, height: 8 },
+    },
+  ],
+  paneTemplates: [
+    {
+      id: "new-ticker-detail-pane",
+      paneId: "ticker-detail",
+      label: "New Ticker Detail Pane",
+      description: "Open another detail pane for the selected ticker or current collection",
+      keywords: ["new", "ticker", "detail", "pane", "inspector"],
+      canCreate: (context) => context.activeTicker !== null || context.activeCollectionId !== null,
+      createInstance: (context) => (
+        context.activeTicker
+          ? {
+            title: context.activeTicker,
+            binding: { kind: "fixed", symbol: context.activeTicker },
+          }
+          : {}
+      ),
+    },
+    {
+      id: "quote-monitor-pane",
+      paneId: "quote-monitor",
+      label: "Quote Monitor",
+      description: "Open a compact quote monitor for the selected ticker",
+      keywords: ["quote", "monitor", "price", "ticker", "pane"],
+      canCreate: (context) => context.activeTicker !== null,
+      createInstance: (context) => (
+        context.activeTicker
+          ? {
+            title: context.activeTicker,
+            binding: { kind: "fixed", symbol: context.activeTicker },
+            placement: "floating",
+          }
+          : null
+      ),
     },
   ],
 };

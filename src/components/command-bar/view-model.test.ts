@@ -15,6 +15,8 @@ describe("command bar view model helpers", () => {
     expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
     expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
     expect(resolveCommandBarMode("COL price")).toMatchObject({ kind: "columns", badge: "COLUMNS" });
+    expect(resolveCommandBarMode("LAY ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
+    expect(resolveCommandBarMode("NP ")).toMatchObject({ kind: "new-pane", badge: "NEW PANE" });
     expect(resolveCommandBarMode("AW")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
   });
 
@@ -34,6 +36,14 @@ describe("command bar view model helpers", () => {
       left: "up/down move  enter select  space toggle",
       right: "esc close",
     });
+    expect(getFooterHints("layout", false)).toEqual({
+      left: "up/down move  enter select",
+      right: "esc close",
+    });
+    expect(getFooterHints("new-pane", false)).toEqual({
+      left: "up/down move  enter select",
+      right: "esc close",
+    });
   });
 
   test("returns specific empty states", () => {
@@ -48,6 +58,14 @@ describe("command bar view model helpers", () => {
     expect(getEmptyState("default", "abc")).toEqual({
       label: 'No matches for "abc"',
       detail: "Try a ticker, command name, or prefix",
+    });
+    expect(getEmptyState("layout", "LAY ")).toEqual({
+      label: "No layout actions match",
+      detail: "LAY",
+    });
+    expect(getEmptyState("new-pane", "NP ")).toEqual({
+      label: "No pane templates match",
+      detail: "NP",
     });
   });
 

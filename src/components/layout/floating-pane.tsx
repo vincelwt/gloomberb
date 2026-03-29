@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
+import { colors, floatingPaneBg } from "../../theme/colors";
+import { PaneHeader } from "./pane-header";
 
 interface FloatingPaneWrapperProps {
   title: string;
@@ -9,15 +10,16 @@ interface FloatingPaneWrapperProps {
   height: number;
   zIndex: number;
   focused: boolean;
+  showActions?: boolean;
+  onMouseMove?: (event: any) => void;
   children: ReactNode;
 }
 
 /** Pure visual wrapper — all mouse handling done by Shell at root level */
 export function FloatingPaneWrapper({
-  title, x, y, width, height, zIndex, focused, children,
+  title, x, y, width, height, zIndex, focused, showActions = false, onMouseMove, children,
 }: FloatingPaneWrapperProps) {
   const bg = floatingPaneBg(focused);
-  const titleBgColor = floatingPaneTitleBg(focused);
 
   return (
     <box
@@ -29,13 +31,9 @@ export function FloatingPaneWrapper({
       zIndex={zIndex}
       backgroundColor={bg}
       flexDirection="column"
+      onMouseMove={onMouseMove}
     >
-      {/* Title bar */}
-      <box height={1} width={width} backgroundColor={titleBgColor} flexDirection="row">
-        <text fg={paneTitleText(focused)} selectable={false}>
-          {buildTitleBar(title, width)}
-        </text>
-      </box>
+      <PaneHeader title={title} width={width} focused={focused} floating showActions={showActions} />
 
       {/* Content */}
       <box flexGrow={1} overflow="hidden">
@@ -48,13 +46,4 @@ export function FloatingPaneWrapper({
       </box>
     </box>
   );
-}
-
-function buildTitleBar(title: string, availableWidth: number): string {
-  const closeBtn = " × ";
-  const rightPad = " ";
-  const space = availableWidth - closeBtn.length - rightPad.length - 1; // -1 for leading space
-  const truncatedTitle = title.length > space ? title.slice(0, space - 1) + ".." : title;
-  const padding = " ".repeat(Math.max(0, space - truncatedTitle.length));
-  return ` ${truncatedTitle}${padding}${closeBtn}${rightPad}`;
 }

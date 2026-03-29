@@ -24,11 +24,24 @@ import type { TickerRepository } from "../../data/ticker-repository";
 import type { TickerRecord, TickerMetadata } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, WizardStep } from "../../types/plugin";
-import { findPaneInstance, type ColumnConfig } from "../../types/config";
+import { DEFAULT_LAYOUT, cloneLayout, createPaneInstance, findPaneInstance, type ColumnConfig, type LayoutConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import {
+  addPaneFloating,
+  addPaneToLayout,
+  dockPane,
+  floatPane,
+  getDockedPaneIds,
+  gridlockAllPanes,
+  getLayoutPreview,
+  isPaneDocked,
+  movePaneRelative,
+  removePane,
+  swapPanes,
+} from "../../plugins/pane-manager";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import { DialogFrame, ListView, TextField } from "../ui";
 import {
@@ -74,6 +87,7 @@ interface ResultItem {
   category: string;
   kind: "command" | "ticker" | "search" | "theme" | "plugin" | "column" | "action" | "info";
   right?: string;
+  searchText?: string;
   themeId?: string; // for theme items — enables live preview
   pluginToggle?: () => void; // for plugin items — toggle with space
   secondaryAction?: () => void | Promise<void>;
@@ -828,6 +842,31 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     })();
   }, [tickerRepository, dispatch, close, focusTicker, pluginRegistry.events]);
 
+  const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
+    pluginRegistry.updateLayoutFn(nextLayout);
+  }, [pluginRegistry]);
+
+  const duplicatePane = useCallback((paneId: string) => {
+    const currentState = stateRef.current;
+    const pane = findPaneInstance(currentState.config.layout, paneId);
+    if (!pane) return;
+    const paneDef = pluginRegistry.panes.get(pane.paneId);
+    if (!paneDef) return;
+
+    const duplicate = createPaneInstance(pane.paneId, {
+      title: pane.title,
+      binding: pane.binding,
+      params: pane.params,
+    });
+
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    const nextLayout = currentState.config.layout.floating.some((entry) => entry.instanceId === paneId)
+      ? addPaneFloating(currentState.config.layout, duplicate, width, height, paneDef)
+      : addPaneToLayout(currentState.config.layout, duplicate, { relativeTo: paneId, position: "right" });
+    persistLayoutChange(nextLayout);
+    dispatch({ type: "FOCUS_PANE", paneId: duplicate.instanceId });
+  }, [dispatch, persistLayoutChange, pluginRegistry]);
+
   // Run a wizard command through sequential dialogs
   const runWizard = useCallback(async (cmd: CommandDef) => {
     const steps = cmd.wizard!;
@@ -949,12 +988,58 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         },
       }));
   }, [pluginRegistry.tickerActions, activeTickerData, activeFinancials, close]);
+  const paneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
+    const disabledPlugins = new Set(state.config.disabledPlugins || []);
+    const context = {
+      config: state.config,
+      layout: state.config.layout,
+      focusedPaneId: state.focusedPaneId,
+      activeTicker: activeTickerSymbol,
+      activeCollectionId,
+    };
+    const items = [...pluginRegistry.paneTemplates.values()]
+      .filter((template) => {
+        const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
+        if (pluginId && disabledPlugins.has(pluginId)) return false;
+        return !template.canCreate || template.canCreate(context);
+      })
+      .map((template) => {
+        const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
+        const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
+        const paneDef = pluginRegistry.panes.get(template.paneId);
+        return {
+          id: `pane-template:${template.id}`,
+          label: template.label,
+          detail: template.description,
+          category: pluginName ? `${pluginName} Panes` : "New Panes",
+          kind: "action" as const,
+          right: paneDef?.defaultMode === "floating" ? "float" : "dock",
+          searchText: `${template.paneId} ${template.keywords?.join(" ") || ""}`,
+          action: () => {
+            close();
+            pluginRegistry.createPaneFromTemplateFn(template.id);
+          },
+        };
+      });
+
+    return filterQuery
+      ? fuzzyFilter(items, filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
+      : items;
+  }, [
+    activeCollectionId,
+    activeTickerSymbol,
+    close,
+    pluginRegistry,
+    state.config,
+    state.focusedPaneId,
+  ]);
 
   const activeMatch = matchPrefix(query);
   const modeInfo = resolveCommandBarMode(query);
   const isThemeMode = modeInfo.kind === "themes";
   const isPluginMode = modeInfo.kind === "plugins";
   const isColumnsMode = modeInfo.kind === "columns";
+  const isLayoutMode = modeInfo.kind === "layout";
   const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
 
   // Toggle a column on/off
@@ -1118,6 +1203,286 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           action: () => toggleColumn(col.id),
         });
       }
+    } else if (match && match.command.id === "new-pane") {
+      items.push(...paneTemplateItems(match.arg));
+    } else if (match && match.command.id === "layout") {
+      const layoutItems: ResultItem[] = [];
+      const currentLayout = state.config.layout;
+      const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
+      const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
+      const dockedPaneIds = getDockedPaneIds(currentLayout);
+      const focusedDocked = focusedPane ? isPaneDocked(currentLayout, focusedPane.instanceId) : false;
+      const focusedFloating = focusedPane ? currentLayout.floating.find((entry) => entry.instanceId === focusedPane.instanceId) : null;
+      const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
+      const layoutSnapshot = JSON.stringify(currentLayout);
+      const canMove = (direction: "left" | "right" | "above" | "below") => (
+        !!focusedPane && JSON.stringify(movePaneRelative(currentLayout, focusedPane.instanceId, direction)) !== layoutSnapshot
+      );
+
+      if (focusedPane && focusedPaneDef) {
+        layoutItems.push({
+          id: "layout-toggle-mode",
+          label: focusedFloating ? "Dock Pane" : "Float Pane",
+          detail: focusedFloating ? "Return the focused window to the layout" : "Detach the focused pane into a floating window",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            const { width, height } = pluginRegistry.getTermSizeFn();
+            const nextLayout = focusedFloating
+              ? dockPane(currentLayout, focusedPane.instanceId)
+              : floatPane(currentLayout, focusedPane.instanceId, width, height, focusedPaneDef);
+            persistLayoutChange(nextLayout);
+            close();
+          },
+        });
+
+        const moveActions: Array<{
+          id: string;
+          label: string;
+          direction: "left" | "right" | "above" | "below";
+          available: boolean;
+          unavailableDetail: string;
+        }> = [
+          {
+            id: "layout-move-left",
+            label: "Move Left",
+            direction: "left",
+            available: canMove("left"),
+            unavailableDetail: "No column to the left",
+          },
+          {
+            id: "layout-move-right",
+            label: "Move Right",
+            direction: "right",
+            available: canMove("right"),
+            unavailableDetail: "No column to the right",
+          },
+          {
+            id: "layout-move-up",
+            label: "Move Up",
+            direction: "above",
+            available: canMove("above"),
+            unavailableDetail: "No pane above",
+          },
+          {
+            id: "layout-move-down",
+            label: "Move Down",
+            direction: "below",
+            available: canMove("below"),
+            unavailableDetail: "No pane below",
+          },
+        ];
+
+        moveActions.forEach((actionItem) => {
+          layoutItems.push({
+            id: actionItem.id,
+            label: actionItem.label,
+            detail: actionItem.available ? "Reposition the focused pane" : actionItem.unavailableDetail,
+            category: "Focused Pane",
+            kind: "action",
+            action: actionItem.available
+              ? () => {
+                persistLayoutChange(movePaneRelative(currentLayout, focusedPane.instanceId, actionItem.direction));
+                close();
+              }
+              : () => {},
+          });
+        });
+
+        layoutItems.push({
+          id: "layout-swap",
+          label: "Swap With...",
+          detail: dockedPaneIds.length + currentLayout.floating.length > 1
+            ? "Choose another pane to swap positions"
+            : "Need at least two panes",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            close();
+            (async () => {
+              const choices = [
+                ...dockedPaneIds,
+                ...currentLayout.floating.map((entry) => entry.instanceId),
+              ]
+                .filter((paneId) => paneId !== focusedPane.instanceId)
+                .map((paneId) => {
+                  const instance = findPaneInstance(currentLayout, paneId)!;
+                  return {
+                    id: paneId,
+                    label: instance.title || pluginRegistry.panes.get(instance.paneId)?.name || instance.paneId,
+                    desc: currentLayout.floating.some((entry) => entry.instanceId === paneId) ? "Floating window" : "Docked pane",
+                  };
+                });
+              if (choices.length === 0) return;
+              const target = await dialog.prompt<string>({
+                content: (ctx) => <ChoiceContent {...ctx} title="Swap With..." choices={choices} />,
+              });
+              if (!target) return;
+              persistLayoutChange(swapPanes(currentLayout, focusedPane.instanceId, target));
+            })();
+          },
+        });
+
+        layoutItems.push({
+          id: "layout-duplicate-pane",
+          label: "Duplicate Pane",
+          detail: "Create another instance next to the focused pane",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            duplicatePane(focusedPane.instanceId);
+            close();
+          },
+        });
+
+        layoutItems.push({
+          id: "layout-close-pane",
+          label: "Close Pane",
+          detail: "Remove the focused pane from the layout",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
+            close();
+          },
+        });
+      } else {
+        layoutItems.push({
+          id: "layout-no-focused-pane",
+          label: "No focused pane",
+          detail: "Focus a pane to show pane-specific layout actions",
+          category: "Focused Pane",
+          kind: "info",
+          action: () => {},
+        });
+      }
+
+      layoutItems.push({
+        id: "layout-undo",
+        label: "Undo Layout Change",
+        detail: (layoutHistory?.past.length ?? 0) > 0 ? "Restore the previous layout state" : "No previous layout state",
+        category: "Current Layout",
+        kind: "action",
+        action: (layoutHistory?.past.length ?? 0) > 0
+          ? () => {
+            dispatch({ type: "UNDO_LAYOUT" });
+            close();
+          }
+          : () => {},
+      });
+      layoutItems.push({
+        id: "layout-redo",
+        label: "Redo Layout Change",
+        detail: (layoutHistory?.future.length ?? 0) > 0 ? "Reapply the next layout state" : "No later layout state",
+        category: "Current Layout",
+        kind: "action",
+        action: (layoutHistory?.future.length ?? 0) > 0
+          ? () => {
+            dispatch({ type: "REDO_LAYOUT" });
+            close();
+          }
+          : () => {},
+      });
+      layoutItems.push({
+        id: "layout-reset",
+        label: "Reset Current Layout",
+        detail: "Restore the default two-pane layout",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
+          close();
+        },
+      });
+      layoutItems.push({
+        id: "layout-gridlock",
+        label: "Gridlock All Windows",
+        detail: currentLayout.floating.length > 0
+          ? "Infer a tiled layout from the current window positions"
+          : "Retile all panes from their current arrangement",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          const { width, height } = pluginRegistry.getTermSizeFn();
+          persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
+          close();
+        },
+      });
+      layoutItems.push({
+        id: "layout-rename",
+        label: "Rename Layout",
+        detail: "Change the current saved layout name",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          close();
+          (async () => {
+            const name = await dialog.prompt<string>({
+              content: (ctx) => <InputStepContent {...ctx} step={{
+                key: "name",
+                type: "text",
+                label: "Rename Layout",
+                placeholder: state.config.layouts[state.config.activeLayoutIndex]?.name || "Layout name",
+              }} />,
+            });
+            if (!name?.trim()) return;
+            dispatch({ type: "RENAME_LAYOUT", index: state.config.activeLayoutIndex, name: name.trim() });
+          })();
+        },
+      });
+      layoutItems.push({
+        id: "layout-duplicate",
+        label: "Duplicate Layout",
+        detail: "Create a copy of the current layout",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          dispatch({ type: "DUPLICATE_LAYOUT", index: state.config.activeLayoutIndex });
+          close();
+        },
+      });
+      layoutItems.push({
+        id: "layout-new",
+        label: "New Layout",
+        detail: "Create a fresh saved layout",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          close();
+          (async () => {
+            const name = await dialog.prompt<string>({
+              content: (ctx) => <InputStepContent {...ctx} step={{
+                key: "name",
+                type: "text",
+                label: "New Layout",
+                placeholder: "Trading, Research, Overview",
+              }} />,
+            });
+            if (!name?.trim()) return;
+            dispatch({ type: "NEW_LAYOUT", name: name.trim() });
+          })();
+        },
+      });
+
+      state.config.layouts.forEach((savedLayout, index) => {
+        layoutItems.push({
+          id: `layout-switch:${index}`,
+          label: savedLayout.name,
+          detail: index === state.config.activeLayoutIndex ? "Current layout" : "Switch to this saved layout",
+          right: getLayoutPreview(savedLayout.layout),
+          category: "Saved Layouts",
+          kind: "action",
+          current: index === state.config.activeLayoutIndex,
+          action: () => {
+            dispatch({ type: "SWITCH_LAYOUT", index });
+            close();
+          },
+        });
+      });
+
+      items.push(...(match.arg
+        ? fuzzyFilter(layoutItems, match.arg, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
+        : layoutItems));
     } else if (match && match.command.id === "theme") {
       const themeOptions = getThemeOptions();
       const savedThemeId = originalThemeRef.current;
@@ -1223,8 +1588,8 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         action: () => { focusTicker(t.metadata.ticker); close(); },
       }));
       const cmdItems = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
-      const allItems = [...tickerItems, ...cmdItems, ...tickerActionItems(), ...pluginCommandItems()];
-      items.push(...fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`));
+      const allItems = [...tickerItems, ...cmdItems, ...paneTemplateItems(), ...tickerActionItems(), ...pluginCommandItems()];
+      items.push(...fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.searchText || ""} ${i.right || ""}`));
     }
 
     setResults(items);
@@ -1317,7 +1682,24 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [query, state.tickers, activeTickerSymbol, activeTickerData, activeCollectionId, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems, focusTicker]);
+  }, [
+    activeCollectionId,
+    activeTickerData,
+    activeTickerSymbol,
+    close,
+    dialog,
+    dispatch,
+    duplicatePane,
+    focusTicker,
+    paneTemplateItems,
+    persistLayoutChange,
+    pluginCommandItems,
+    pluginRegistry,
+    query,
+    state,
+    tickerActionItems,
+    toggleColumn,
+  ]);
 
   const exactTickerResult = (() => {
     const normalizedQuery = (searchModeQuery || query).trim().toUpperCase();

@@ -1,24 +1,25 @@
 import { saveConfig } from "../../data/config-store";
-import { createPaneInstance, findPaneInstance, type LayoutConfig } from "../../types/config";
+import { findPaneInstance, type LayoutConfig } from "../../types/config";
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import type { AppAction } from "../../state/app-context";
 import { getSharedRegistry } from "../registry";
 import {
-  addPaneFloating,
   dockPane,
   floatPane,
+  getDockedPaneIds,
+  gridlockAllPanes,
   isPaneInLayout,
+  isPaneDocked,
   removePane,
+  swapPanes,
 } from "../pane-manager";
 
-const MAX_COLUMNS = 4;
-
 let dispatchRef: ((action: AppAction) => void) | null = null;
-let getStateRef: (() => { layout: LayoutConfig; termWidth: number; termHeight: number }) | null = null;
+let getStateRef: (() => { layout: LayoutConfig; termWidth: number; termHeight: number; focusedPaneId: string | null }) | null = null;
 
 export function setLayoutManagerDispatch(
   dispatch: (action: AppAction) => void,
-  getState: () => { layout: LayoutConfig; termWidth: number; termHeight: number },
+  getState: () => { layout: LayoutConfig; termWidth: number; termHeight: number; focusedPaneId: string | null },
 ) {
   dispatchRef = dispatch;
   getStateRef = getState;
@@ -26,6 +27,7 @@ export function setLayoutManagerDispatch(
 
 function persistLayout(layout: LayoutConfig) {
   if (!dispatchRef) return;
+  dispatchRef({ type: "PUSH_LAYOUT_HISTORY" });
   dispatchRef({ type: "UPDATE_LAYOUT", layout });
   const registry = getSharedRegistry();
   if (!registry) return;
@@ -34,6 +36,10 @@ function persistLayout(layout: LayoutConfig) {
     index === config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
   ));
   saveConfig({ ...config, layout, layouts }).catch(() => {});
+}
+
+function getFocusedPane(layout: LayoutConfig, focusedPaneId: string | null) {
+  return focusedPaneId ? findPaneInstance(layout, focusedPaneId) ?? null : null;
 }
 
 export const layoutManagerPlugin: GloomPlugin = {
@@ -54,26 +60,17 @@ export const layoutManagerPlugin: GloomPlugin = {
         const registry = getSharedRegistry();
         if (!registry) return;
 
-        const { layout, termWidth, termHeight } = getStateRef();
-        const dockedPanes = layout.docked
-          .map((entry) => {
-            const instance = findPaneInstance(layout, entry.instanceId);
-            const def = instance ? registry.panes.get(instance.paneId) : null;
-            return def && instance ? { id: entry.instanceId, name: def.name } : null;
-          })
-          .filter(Boolean) as Array<{ id: string; name: string }>;
-
-        if (dockedPanes.length === 0) {
-          ctx.showToast("No docked panes to float", { type: "info" });
+        const { layout, termWidth, termHeight, focusedPaneId } = getStateRef();
+        const focusedPane = getFocusedPane(layout, focusedPaneId);
+        if (!focusedPane || !isPaneDocked(layout, focusedPane.instanceId)) {
+          ctx.showToast("Focus a docked pane to float it", { type: "info" });
           return;
         }
 
-        const paneId = dockedPanes[0]!.id;
-        const instance = findPaneInstance(layout, paneId);
-        const def = instance ? registry.panes.get(instance.paneId) : undefined;
-        const nextLayout = floatPane(layout, paneId, termWidth, termHeight, def);
+        const def = registry.panes.get(focusedPane.paneId);
+        const nextLayout = floatPane(layout, focusedPane.instanceId, termWidth, termHeight, def);
         persistLayout(nextLayout);
-        dispatchRef?.({ type: "FOCUS_PANE", paneId });
+        dispatchRef?.({ type: "FOCUS_PANE", paneId: focusedPane.instanceId });
       },
     });
 
@@ -88,59 +85,43 @@ export const layoutManagerPlugin: GloomPlugin = {
         const registry = getSharedRegistry();
         if (!registry) return;
 
-        const { layout } = getStateRef();
-        const floatingPanes = layout.floating
-          .map((entry) => {
-            const instance = findPaneInstance(layout, entry.instanceId);
-            const def = instance ? registry.panes.get(instance.paneId) : null;
-            return def && instance ? { id: entry.instanceId, name: def.name } : null;
-          })
-          .filter(Boolean) as Array<{ id: string; name: string }>;
-
-        if (floatingPanes.length === 0) {
-          ctx.showToast("No floating panes to dock", { type: "info" });
+        const { layout, focusedPaneId } = getStateRef();
+        const focusedPane = getFocusedPane(layout, focusedPaneId);
+        if (!focusedPane || !layout.floating.some((entry) => entry.instanceId === focusedPane.instanceId)) {
+          ctx.showToast("Focus a floating pane to dock it", { type: "info" });
           return;
         }
 
-        const paneId = floatingPanes[0]!.id;
-        const lastDockedPane = layout.docked[layout.docked.length - 1];
-        if (!lastDockedPane) {
-          persistLayout({
-            columns: [{}],
-            instances: layout.instances,
-            docked: [{ instanceId: paneId, columnIndex: 0 }],
-            floating: layout.floating.filter((entry) => entry.instanceId !== paneId),
-          });
-          dispatchRef?.({ type: "FOCUS_PANE", paneId });
-          return;
-        }
-
-        const nextLayout = dockPane(layout, paneId, {
-          relativeTo: lastDockedPane.instanceId,
-          position: layout.columns.length + 1 > MAX_COLUMNS ? "below" : "right",
-        });
+        const nextLayout = dockPane(layout, focusedPane.instanceId);
         persistLayout(nextLayout);
-        dispatchRef?.({ type: "FOCUS_PANE", paneId });
+        dispatchRef?.({ type: "FOCUS_PANE", paneId: focusedPane.instanceId });
       },
     });
 
     ctx.registerCommand({
       id: "add-pane",
-      label: "Add Pane",
-      description: "Add a pane to the layout",
-      keywords: ["add", "pane", "panel", "show"],
+      label: "New Pane",
+      description: "Create a new pane from plugin templates",
+      keywords: ["new", "add", "pane", "panel", "show"],
+      category: "config",
+      hidden: () => true,
+      execute: async () => {
+        ctx.openCommandBar("NP ");
+        ctx.showToast("Choose a pane template to create", { type: "info" });
+      },
+    });
+
+    ctx.registerCommand({
+      id: "gridlock-all",
+      label: "Gridlock All Windows",
+      description: "Arrange all visible panes into a tiled grid",
+      keywords: ["grid", "gridlock", "tile", "arrange", "windows", "layout"],
       category: "config",
       execute: async () => {
         if (!getStateRef) return;
-        const registry = getSharedRegistry();
-        if (!registry) return;
-
         const { layout, termWidth, termHeight } = getStateRef();
-        const pane = [...registry.panes.values()][0];
-        if (!pane) return;
-        const instance = createPaneInstance(pane.id);
-        persistLayout(addPaneFloating(layout, instance, termWidth, termHeight, pane));
-        dispatchRef?.({ type: "FOCUS_PANE", paneId: instance.instanceId });
+        persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width: termWidth, height: termHeight }));
+        ctx.showToast("Retiled all panes", { type: "success" });
       },
     });
 
@@ -152,13 +133,13 @@ export const layoutManagerPlugin: GloomPlugin = {
       category: "config",
       execute: async () => {
         if (!getStateRef) return;
-        const { layout } = getStateRef();
-        const paneIds = [...layout.docked.map((entry) => entry.instanceId), ...layout.floating.map((entry) => entry.instanceId)];
-        if (paneIds.length === 0) {
-          ctx.showToast("No panes to remove", { type: "info" });
+        const { layout, focusedPaneId } = getStateRef();
+        const focusedPane = getFocusedPane(layout, focusedPaneId);
+        if (!focusedPane || !isPaneInLayout(layout, focusedPane.instanceId)) {
+          ctx.showToast("Focus a pane to remove it", { type: "info" });
           return;
         }
-        persistLayout(removePane(layout, paneIds[paneIds.length - 1]!));
+        persistLayout(removePane(layout, focusedPane.instanceId));
       },
     });
 
@@ -243,19 +224,26 @@ export const layoutManagerPlugin: GloomPlugin = {
       category: "config",
       execute: async () => {
         if (!getStateRef) return;
-        const { layout } = getStateRef();
-        if (layout.docked.length < 2) {
+        const { layout, focusedPaneId } = getStateRef();
+        const focusedPane = getFocusedPane(layout, focusedPaneId);
+        const dockedPaneIds = getDockedPaneIds(layout);
+        if (dockedPaneIds.length < 2) {
           ctx.showToast("Need at least 2 docked panes to swap", { type: "info" });
           return;
         }
+        if (!focusedPane || !isPaneDocked(layout, focusedPane.instanceId)) {
+          ctx.showToast("Focus a docked pane to swap it", { type: "info" });
+          return;
+        }
 
-        const [a, b] = layout.docked;
-        const docked = layout.docked.map((entry) => {
-          if (entry.instanceId === a!.instanceId) return { ...entry, columnIndex: b!.columnIndex, order: b!.order };
-          if (entry.instanceId === b!.instanceId) return { ...entry, columnIndex: a!.columnIndex, order: a!.order };
-          return entry;
-        });
-        persistLayout({ ...layout, docked });
+        const others = dockedPaneIds.filter((instanceId) => instanceId !== focusedPane.instanceId);
+        if (others.length === 1) {
+          persistLayout(swapPanes(layout, focusedPane.instanceId, others[0]!));
+          return;
+        }
+
+        ctx.openCommandBar("LAY ");
+        ctx.showToast("Choose a swap target from layout mode", { type: "info" });
       },
     });
   },

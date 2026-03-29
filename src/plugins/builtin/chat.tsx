@@ -349,6 +349,16 @@ export const chatPlugin: GloomPlugin = {
   version: "1.0.0",
   description: "Chat with other Gloomberb users",
   toggleable: true,
+  paneTemplates: [
+    {
+      id: "new-chat-pane",
+      paneId: "chat",
+      label: "New Chat Pane",
+      description: "Open another floating chat window",
+      keywords: ["new", "chat", "pane", "message"],
+      createInstance: () => ({ placement: "floating" }),
+    },
+  ],
 
   slots: {
     "status:widget": () => <ChatStatusWidget />,

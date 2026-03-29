@@ -1,6 +1,6 @@
 import { matchPrefix } from "./command-registry";
 
-export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "columns" | "direct-command";
+export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "columns" | "layout" | "new-pane" | "direct-command";
 
 export interface CommandBarModeInfo {
   kind: CommandBarMode;
@@ -48,6 +48,8 @@ const MODE_STRIP_ENTRIES = [
   { prefix: "TH", label: "Change theme", kind: "themes" },
   { prefix: "PL", label: "Toggle plugins", kind: "plugins" },
   { prefix: "COL", label: "Edit columns", kind: "columns" },
+  { prefix: "LAY", label: "Layout actions", kind: "layout" },
+  { prefix: "NP", label: "New pane", kind: "new-pane" },
 ] as const;
 
 export function resolveCommandBarMode(query: string): CommandBarModeInfo {
@@ -70,6 +72,10 @@ export function resolveCommandBarMode(query: string): CommandBarModeInfo {
       return { kind: "plugins", badge: "PLUGINS", hint: "Toggle plugins without leaving the list" };
     case "columns":
       return { kind: "columns", badge: "COLUMNS", hint: "Choose visible table columns" };
+    case "layout":
+      return { kind: "layout", badge: "LAYOUT", hint: "Organize panes, history, and saved layouts" };
+    case "new-pane":
+      return { kind: "new-pane", badge: "NEW PANE", hint: "Create plugin-defined panes for the current workspace" };
     default:
       return { kind: "direct-command", badge: "COMMAND", hint: `Run ${match.command.label}` };
   }
@@ -104,6 +110,12 @@ export function getFooterHints(mode: CommandBarMode, isNarrow: boolean): Command
       right: "esc close",
     };
   }
+  if (mode === "layout") {
+    return { left: moveAndSelect, right: "esc close" };
+  }
+  if (mode === "new-pane") {
+    return { left: moveAndSelect, right: "esc close" };
+  }
   return { left: moveAndSelect, right: "esc close" };
 }
 
@@ -120,6 +132,10 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
       return { label: "No columns available", detail: "Column toggles will appear here" };
     case "themes":
       return { label: "No themes match", detail: query.trim() || "Installed themes will appear here" };
+    case "layout":
+      return { label: "No layout actions match", detail: query.trim() || "Focused-pane and layout actions will appear here" };
+    case "new-pane":
+      return { label: "No pane templates match", detail: query.trim() || "Plugin-defined pane templates will appear here" };
     default:
       if (query.trim()) {
         return { label: `No matches for "${query.trim()}"`, detail: "Try a ticker, command name, or prefix" };

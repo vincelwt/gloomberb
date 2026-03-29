@@ -1818,8 +1818,21 @@ export const ibkrPlugin: GloomPlugin = {
   name: "Interactive Brokers",
   version: "1.0.0",
   broker: ibkrBroker,
+  paneTemplates: [
+    {
+      id: "new-ibkr-trading-pane",
+      paneId: "ibkr-trading",
+      label: "New IBKR Trading Pane",
+      description: "Open another floating IBKR trading console",
+      keywords: ["new", "ibkr", "trading", "status", "orders", "pane"],
+      canCreate: (context) => getIbkrInstances(context.config).length > 0,
+      createInstance: () => ({ placement: "floating" }),
+    },
+  ],
 
   setup(ctx) {
+    ctx.log.info("IBKR plugin initializing");
+
     ctx.registerPane({
       id: "ibkr-trading",
       name: "IBKR Console",

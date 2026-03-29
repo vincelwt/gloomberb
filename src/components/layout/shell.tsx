@@ -1,26 +1,44 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRenderer, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useDialogState } from "@opentui-ui/dialog/react";
 import { saveConfig } from "../../data/config-store";
 import {
+  MIN_FLOAT_HEIGHT,
+  MIN_FLOAT_WIDTH,
+  addPaneFloating,
+  addPaneToLayout,
+  applyDrop,
   bringToFront,
-  parseWidth,
+  findDockLeaf,
+  floatAtRect,
+  floatPane,
+  getDockDividerLayouts,
+  getDockLeafLayouts,
+  getRememberedFloatingRect,
+  isPaneInLayout,
+  movePaneRelative,
   removePane,
-  resolveDockedByColumn,
+  resizeSplitAtPath,
+  resolveDocked,
   resolveFloating,
+  simulateDrop,
+  swapPanes,
+  type DockLeafLayout,
+  type DropTarget,
+  type FloatingRect,
+  type LayoutBounds,
   type ResolvedPane,
-  updateColumnWidth,
-  updateFloatingPane,
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
+import { removePaneInstances, createPaneInstance, type LayoutConfig } from "../../types/config";
 import {
   PaneInstanceProvider,
   resolveCollectionForPane,
   resolveTickerForPane,
   useAppState,
 } from "../../state/app-context";
-import type { LayoutConfig } from "../../types/config";
 import { colors } from "../../theme/colors";
+import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneWrapper } from "./pane";
@@ -29,16 +47,323 @@ interface ShellProps {
   pluginRegistry: PluginRegistry;
 }
 
-const GRAB_ZONE = 3;
-const MIN_PANE_WIDTH = 20;
-const MIN_FLOAT_WIDTH = 15;
-const MIN_FLOAT_HEIGHT = 6;
-const HEADER_HEIGHT = 1;
+interface HoverOverlay {
+  targetId: string;
+  rect: LayoutBounds;
+  cells: Array<{ position: "top" | "left" | "center" | "right" | "bottom"; rect: LayoutBounds }>;
+}
+
+type SnapGuidePosition =
+  | "left"
+  | "right"
+  | "top"
+  | "bottom"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+interface SnapGuide {
+  position: SnapGuidePosition;
+  triggerRect: LayoutBounds;
+  previewRect: FloatingRect;
+}
+
+type DragPreview =
+  | {
+    kind: "dock";
+    target: DropTarget;
+    rect: LayoutBounds;
+  }
+  | {
+    kind: "snap";
+    position: SnapGuidePosition;
+    rect: FloatingRect;
+  };
+
+interface ActionMenuState {
+  paneId: string;
+  x: number;
+  y: number;
+  items: Array<{ id: string; label: string; action: () => void }>;
+}
 
 type DragMode =
-  | { type: "column-divider"; colIdx: number; startX: number; origWidth: number }
-  | { type: "float-move"; paneId: string; startX: number; startY: number; origX: number; origY: number; paneW: number; paneH: number }
-  | { type: "float-resize"; paneId: string; startX: number; startY: number; origW: number; origH: number; paneX: number; paneY: number };
+  | {
+    type: "divider";
+    path: Array<0 | 1>;
+    axis: "horizontal" | "vertical";
+    startX: number;
+    startY: number;
+    startRatio: number;
+    bounds: LayoutBounds;
+  }
+  | {
+    type: "pane-drag";
+    paneId: string;
+    mode: "docked" | "floating";
+    startX: number;
+    startY: number;
+    origRect: FloatingRect;
+  }
+  | {
+    type: "float-resize";
+    paneId: string;
+    startX: number;
+    startY: number;
+    origRect: FloatingRect;
+  };
+
+const HEADER_HEIGHT = 1;
+const MENU_WIDTH = 18;
+const PANE_DRAG_THRESHOLD = 2;
+
+function pointInRect(rect: LayoutBounds, x: number, y: number): boolean {
+  return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
+}
+
+function isMeaningfulPaneDrag(startX: number, startY: number, currentX: number, currentY: number): boolean {
+  return Math.max(Math.abs(currentX - startX), Math.abs(currentY - startY)) >= PANE_DRAG_THRESHOLD;
+}
+
+function positionFloatingRectUnderPointer(
+  rect: FloatingRect,
+  drag: Extract<DragMode, { type: "pane-drag" }>,
+  pointerX: number,
+  pointerY: number,
+  totalWidth: number,
+  totalHeight: number,
+): FloatingRect {
+  const pointerOffsetX = Math.max(0, Math.min(rect.width - 1, drag.startX - drag.origRect.x));
+  const pointerOffsetY = Math.max(0, Math.min(rect.height - 1, drag.startY - drag.origRect.y));
+  return {
+    ...rect,
+    x: Math.max(0, Math.min(totalWidth - rect.width, pointerX - pointerOffsetX)),
+    y: Math.max(0, Math.min(totalHeight - rect.height, pointerY - pointerOffsetY)),
+  };
+}
+
+function centerRectWithin(parent: LayoutBounds, width: number, height: number): LayoutBounds {
+  const nextWidth = Math.max(1, Math.min(parent.width, width));
+  const nextHeight = Math.max(1, Math.min(parent.height, height));
+  return {
+    x: parent.x + Math.floor((parent.width - nextWidth) / 2),
+    y: parent.y + Math.floor((parent.height - nextHeight) / 2),
+    width: nextWidth,
+    height: nextHeight,
+  };
+}
+
+function compactOverlayRect(rect: LayoutBounds): LayoutBounds {
+  if (rect.width < 12 || rect.height < 7) return rect;
+  return centerRectWithin(
+    rect,
+    Math.max(9, Math.min(19, Math.floor(rect.width * 0.45))),
+    Math.max(5, Math.min(9, Math.floor(rect.height * 0.45))),
+  );
+}
+
+function makeOverlayCellRects(rect: LayoutBounds): HoverOverlay["cells"] {
+  const col1 = Math.max(1, Math.floor(rect.width / 3));
+  const col2 = Math.max(1, Math.floor((rect.width - col1) / 2));
+  const col3 = Math.max(1, rect.width - col1 - col2);
+  const row1 = Math.max(1, Math.floor(rect.height / 3));
+  const row2 = Math.max(1, Math.floor((rect.height - row1) / 2));
+  const row3 = Math.max(1, rect.height - row1 - row2);
+  const cols = [col1, col2, col3];
+  const rows = [row1, row2, row3];
+  const cells: HoverOverlay["cells"] = [];
+  let y = rect.y;
+  for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+    let x = rect.x;
+    for (let colIndex = 0; colIndex < 3; colIndex += 1) {
+      const position = (
+        rowIndex === 0 && colIndex === 1 ? "top"
+          : rowIndex === 1 && colIndex === 0 ? "left"
+            : rowIndex === 1 && colIndex === 1 ? "center"
+              : rowIndex === 1 && colIndex === 2 ? "right"
+                : rowIndex === 2 && colIndex === 1 ? "bottom"
+                  : null
+      );
+      if (position) {
+        cells.push({
+          position,
+          rect: { x, y, width: cols[colIndex]!, height: rows[rowIndex]! },
+        });
+      }
+      x += cols[colIndex]!;
+    }
+    y += rows[rowIndex]!;
+  }
+  return cells;
+}
+
+function resolveHoverOverlay(
+  x: number,
+  y: number,
+  leaves: DockLeafLayout[],
+  draggedPaneId: string,
+): HoverOverlay | null {
+  const targetLeaf = leaves.find((leaf) => leaf.instanceId !== draggedPaneId && pointInRect(leaf.rect, x, y));
+  if (!targetLeaf) return null;
+  const overlayRect = compactOverlayRect(targetLeaf.rect);
+  if (!pointInRect(overlayRect, x, y)) return null;
+  return {
+    targetId: targetLeaf.instanceId,
+    rect: overlayRect,
+    cells: makeOverlayCellRects(overlayRect),
+  };
+}
+
+function makeSnapGuides(width: number, height: number): SnapGuide[] {
+  const halfWidth = Math.max(1, Math.floor(width / 2));
+  const halfHeight = Math.max(1, Math.floor(height / 2));
+  const cornerWidth = Math.max(8, Math.min(16, Math.floor(width * 0.2)));
+  const cornerHeight = Math.max(4, Math.min(8, Math.floor(height * 0.22)));
+  const edgeWidth = Math.max(6, Math.min(10, Math.floor(width * 0.1)));
+  const edgeHeight = Math.max(3, Math.min(6, Math.floor(height * 0.14)));
+
+  return [
+    {
+      position: "top-left",
+      triggerRect: { x: 0, y: 0, width: cornerWidth, height: cornerHeight },
+      previewRect: { x: 0, y: 0, width: halfWidth, height: halfHeight },
+    },
+    {
+      position: "top-right",
+      triggerRect: { x: Math.max(0, width - cornerWidth), y: 0, width: cornerWidth, height: cornerHeight },
+      previewRect: { x: Math.max(0, width - halfWidth), y: 0, width: halfWidth, height: halfHeight },
+    },
+    {
+      position: "bottom-left",
+      triggerRect: { x: 0, y: Math.max(0, height - cornerHeight), width: cornerWidth, height: cornerHeight },
+      previewRect: { x: 0, y: Math.max(0, height - halfHeight), width: halfWidth, height: halfHeight },
+    },
+    {
+      position: "bottom-right",
+      triggerRect: {
+        x: Math.max(0, width - cornerWidth),
+        y: Math.max(0, height - cornerHeight),
+        width: cornerWidth,
+        height: cornerHeight,
+      },
+      previewRect: {
+        x: Math.max(0, width - halfWidth),
+        y: Math.max(0, height - halfHeight),
+        width: halfWidth,
+        height: halfHeight,
+      },
+    },
+    {
+      position: "left",
+      triggerRect: { x: 0, y: cornerHeight, width: edgeWidth, height: Math.max(1, height - (cornerHeight * 2)) },
+      previewRect: { x: 0, y: 0, width: halfWidth, height },
+    },
+    {
+      position: "right",
+      triggerRect: {
+        x: Math.max(0, width - edgeWidth),
+        y: cornerHeight,
+        width: edgeWidth,
+        height: Math.max(1, height - (cornerHeight * 2)),
+      },
+      previewRect: { x: Math.max(0, width - halfWidth), y: 0, width: halfWidth, height },
+    },
+    {
+      position: "top",
+      triggerRect: { x: cornerWidth, y: 0, width: Math.max(1, width - (cornerWidth * 2)), height: edgeHeight },
+      previewRect: { x: 0, y: 0, width, height: halfHeight },
+    },
+    {
+      position: "bottom",
+      triggerRect: {
+        x: cornerWidth,
+        y: Math.max(0, height - edgeHeight),
+        width: Math.max(1, width - (cornerWidth * 2)),
+        height: edgeHeight,
+      },
+      previewRect: { x: 0, y: Math.max(0, height - halfHeight), width, height: halfHeight },
+    },
+  ];
+}
+
+function resolveSnapGuide(x: number, y: number, guides: SnapGuide[]): SnapGuide | null {
+  return guides.find((guide) => pointInRect(guide.triggerRect, x, y)) ?? null;
+}
+
+function menuForPane(
+  pane: ResolvedPane,
+  layout: LayoutConfig,
+  width: number,
+  contentHeight: number,
+  pluginRegistry: PluginRegistry,
+  persistLayout: (nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => void,
+  focusPane: (paneId: string) => void,
+  openLayoutMenu: () => void,
+) {
+  const baseActions: Array<{ id: string; label: string; action: () => void }> = [];
+
+  if (pane.floating) {
+    baseActions.push({
+      id: "dock",
+      label: "Dock",
+      action: () => {
+        persistLayout(applyDrop(layout, pane.instance.instanceId, { kind: "frame", edge: "right" }));
+        focusPane(pane.instance.instanceId);
+      },
+    });
+    baseActions.push({
+      id: "front",
+      label: "Bring To Front",
+      action: () => persistLayout(bringToFront(layout, pane.instance.instanceId), { pushHistory: false }),
+    });
+  } else {
+    baseActions.push({
+      id: "float",
+      label: "Float",
+      action: () => {
+        persistLayout(floatPane(layout, pane.instance.instanceId, width, contentHeight, pane.def));
+        focusPane(pane.instance.instanceId);
+      },
+    });
+    baseActions.push({ id: "move-left", label: "Move Left", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "left")) });
+    baseActions.push({ id: "move-right", label: "Move Right", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "right")) });
+    baseActions.push({ id: "move-up", label: "Move Up", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "above")) });
+    baseActions.push({ id: "move-down", label: "Move Down", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "below")) });
+  }
+
+  baseActions.push({
+    id: "duplicate",
+    label: "Duplicate",
+    action: () => {
+      const duplicate = createPaneInstance(pane.instance.paneId, {
+        title: pane.instance.title,
+        binding: pane.instance.binding,
+        params: pane.instance.params,
+      });
+      const nextLayout = pane.floating
+        ? floatAtRect(addPaneFloating(layout, duplicate, width, contentHeight, pane.def), duplicate.instanceId, {
+          x: Math.max(0, pane.floating.x + 2),
+          y: Math.max(0, pane.floating.y + 1),
+          width: pane.floating.width,
+          height: pane.floating.height,
+        })
+        : addPaneToLayout(layout, duplicate, { relativeTo: pane.instance.instanceId, position: "right" });
+      persistLayout(nextLayout);
+      focusPane(duplicate.instanceId);
+    },
+  });
+  baseActions.push({ id: "swap", label: "Swap With...", action: openLayoutMenu });
+  baseActions.push({
+    id: "close",
+    label: "Close",
+    action: () => {
+      persistLayout(removePane(layout, pane.instance.instanceId));
+    },
+  });
+
+  return baseActions;
+}
 
 export function Shell({ pluginRegistry }: ShellProps) {
   const { state, dispatch } = useAppState();
@@ -46,136 +371,105 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const { width, height } = useTerminalDimensions();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
-  const layout = state.config.layout;
   const contentHeight = height - (state.statusBarVisible ? 2 : 1);
   pluginRegistry.getTermSizeFn = () => ({ width, height: contentHeight });
 
-  const disabledPlugins = new Set(state.config.disabledPlugins);
-  const disabledPaneIds = new Set<string>();
-  for (const pluginId of disabledPlugins) {
-    for (const paneId of pluginRegistry.getPluginPaneIds(pluginId)) {
-      disabledPaneIds.add(paneId);
-    }
-  }
-
-  const dockedByColumn = resolveDockedByColumn(layout, pluginRegistry.panes);
-  const floatingPanes = resolveFloating(layout, pluginRegistry.panes);
-
-  const filteredColumns = new Map<number, ResolvedPane[]>();
-  for (const [columnIndex, panes] of dockedByColumn) {
-    const filtered = panes.filter((pane) => !disabledPaneIds.has(pane.def.id));
-    if (filtered.length > 0) filteredColumns.set(columnIndex, filtered);
-  }
-  const filteredFloating = floatingPanes.filter((pane) => !disabledPaneIds.has(pane.def.id));
-
-  const columnIndices = [...filteredColumns.keys()].sort((a, b) => a - b);
-  const numColumns = columnIndices.length;
-
-  const paneOrder = useMemo(() => {
-    const order: string[] = [];
-    for (const columnIndex of columnIndices) {
-      for (const pane of filteredColumns.get(columnIndex) ?? []) {
-        order.push(pane.instance.instanceId);
-      }
-    }
-    for (const pane of filteredFloating) {
-      order.push(pane.instance.instanceId);
-    }
-    return order;
-  }, [columnIndices.join(","), filteredColumns, filteredFloating]);
-
+  const layout = state.config.layout;
   const dialogOpen = useDialogState((dialog) => dialog.isOpen);
-  const overlayOpen = state.commandBarOpen || dialogOpen;
+  const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null);
+  const [menuState, setMenuState] = useState<ActionMenuState | null>(null);
+  const overlayOpen = state.commandBarOpen || dialogOpen || !!menuState;
 
   const dragRef = useRef<DragMode | null>(null);
-  const [dragColumnIndex, setDragColumnIndex] = useState<number | null>(null);
-  const [dragColumnWidth, setDragColumnWidth] = useState<number | null>(null);
+  const [dragFloatingRect, setDragFloatingRect] = useState<{ paneId: string; rect: FloatingRect } | null>(null);
+  const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(null);
+  const [dividerPreview, setDividerPreview] = useState<{ pathKey: string; rect: LayoutBounds; ratio: number } | null>(null);
+  const [dockPreview, setDockPreview] = useState<DragPreview | null>(null);
 
-  const dividerCount = Math.max(0, numColumns - 1);
-  const availableWidth = width - dividerCount;
+  const cancelActiveDrag = useCallback(() => {
+    dragRef.current = null;
+    setDragFloatingRect(null);
+    setDragCursor(null);
+    setDividerPreview(null);
+    setDockPreview(null);
+  }, []);
 
-  const columnWidths = useMemo(() => {
-    const widths: number[] = [];
-    let specified = 0;
-    let unspecified = 0;
+  useKeyboard((event) => {
+    if (event.name !== "escape") return;
+    if (!dragRef.current) return;
+    cancelActiveDrag();
+  });
 
-    for (const columnIndex of columnIndices) {
-      const parsed = parseWidth(layout.columns[columnIndex]?.width, availableWidth);
-      if (parsed !== undefined) {
-        widths.push(parsed);
-        specified += parsed;
-      } else {
-        widths.push(0);
-        unspecified += 1;
+  const disabledPaneIds = useMemo(() => {
+    const disabledPlugins = new Set(state.config.disabledPlugins);
+    const ids = new Set<string>();
+    for (const pluginId of disabledPlugins) {
+      for (const paneId of pluginRegistry.getPluginPaneIds(pluginId)) {
+        ids.add(paneId);
       }
     }
+    return ids;
+  }, [pluginRegistry, state.config.disabledPlugins]);
 
-    const remaining = Math.max(0, availableWidth - specified);
-    const perUnspecified = unspecified > 0 ? Math.floor(remaining / unspecified) : 0;
-    for (let index = 0; index < widths.length; index += 1) {
-      if (widths[index] === 0) widths[index] = perUnspecified;
-      widths[index] = Math.max(MIN_PANE_WIDTH, widths[index] ?? MIN_PANE_WIDTH);
-    }
+  const hiddenInstanceIds = useMemo(() => (
+    layout.instances
+      .filter((instance) => disabledPaneIds.has(instance.paneId))
+      .map((instance) => instance.instanceId)
+  ), [disabledPaneIds, layout.instances]);
 
-    // Distribute any leftover pixels (from rounding) to the last column
-    const totalUsed = widths.reduce((sum, w) => sum + w, 0);
-    if (widths.length > 0 && totalUsed < availableWidth) {
-      const lastIndex = widths.length - 1;
-      widths[lastIndex] = (widths[lastIndex] ?? MIN_PANE_WIDTH) + (availableWidth - totalUsed);
-    }
+  const visibleLayout = useMemo(
+    () => (hiddenInstanceIds.length > 0 ? removePaneInstances(layout, hiddenInstanceIds) : layout),
+    [hiddenInstanceIds, layout],
+  );
 
-    return widths;
-  }, [availableWidth, columnIndices.join(","), layout.columns]);
-
-  const effectiveColumnWidths = [...columnWidths];
-  if (dragColumnIndex !== null && dragColumnWidth !== null) {
-    const localIndex = columnIndices.indexOf(dragColumnIndex);
-    if (localIndex >= 0 && localIndex < effectiveColumnWidths.length - 1) {
-      const delta = dragColumnWidth - (columnWidths[localIndex] ?? 0);
-      effectiveColumnWidths[localIndex] = Math.max(MIN_PANE_WIDTH, dragColumnWidth);
-      effectiveColumnWidths[localIndex + 1] = Math.max(MIN_PANE_WIDTH, (columnWidths[localIndex + 1] ?? MIN_PANE_WIDTH) - delta);
-    }
-  }
-
-  const persistLayout = useCallback((nextLayout: LayoutConfig) => {
-    dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
+  const persistLayout = useCallback((nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => {
     const layouts = state.config.layouts.map((savedLayout, index) => (
       index === state.config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
     ));
+    if (options?.pushHistory !== false) {
+      dispatch({ type: "PUSH_LAYOUT_HISTORY" });
+    }
+    dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
     saveConfig({ ...state.config, layout: nextLayout, layouts }).catch(() => {});
   }, [dispatch, state.config]);
 
-  const allFloatingRects = useMemo(() => {
-    const rects = filteredFloating.map((pane) => ({
-      id: pane.instance.instanceId,
-      x: pane.floating!.x,
-      y: pane.floating!.y,
-      w: pane.floating!.width,
-      h: pane.floating!.height,
-      z: pane.floating!.zIndex ?? 50,
-    }));
-    rects.sort((a, b) => b.z - a.z);
-    return rects;
-  }, [filteredFloating]);
+  const focusPane = useCallback((paneId: string) => {
+    dispatch({ type: "FOCUS_PANE", paneId });
+  }, [dispatch]);
 
+  const openLayoutMenu = useCallback(() => {
+    pluginRegistry.openCommandBarFn("LAY ");
+  }, [pluginRegistry]);
+
+  const bounds = useMemo<LayoutBounds>(() => ({ x: 0, y: 0, width, height: contentHeight }), [contentHeight, width]);
+  const dockedPanes = useMemo(
+    () => resolveDocked(visibleLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
+    [disabledPaneIds, pluginRegistry.panes, visibleLayout],
+  );
+  const floatingPanes = useMemo(
+    () => resolveFloating(visibleLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
+    [disabledPaneIds, pluginRegistry.panes, visibleLayout],
+  );
+  const paneMap = useMemo(() => new Map([...dockedPanes, ...floatingPanes].map((pane) => [pane.instance.instanceId, pane])), [dockedPanes, floatingPanes]);
+  const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
+  const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
+  const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
   const nativePaneLayers = useMemo<NativePaneLayer[]>(() => {
-    const layers: NativePaneLayer[] = [];
-    for (const panes of filteredColumns.values()) {
-      for (const pane of panes) {
-        layers.push({ paneId: pane.instance.instanceId, zIndex: 0 });
-      }
-    }
-    for (const pane of filteredFloating) {
+    const layers: NativePaneLayer[] = dockedPanes.map((pane) => ({
+      paneId: pane.instance.instanceId,
+      zIndex: 0,
+    }));
+    for (const pane of floatingPanes) {
       layers.push({
         paneId: pane.instance.instanceId,
         zIndex: pane.floating?.zIndex ?? 50,
       });
     }
     return layers;
-  }, [filteredColumns, filteredFloating]);
+  }, [dockedPanes, floatingPanes]);
 
   const nativeOccluders = useMemo<NativeOccluder[]>(() => {
-    const occluders: NativeOccluder[] = filteredFloating.map((pane) => ({
+    const occluders: NativeOccluder[] = floatingPanes.map((pane) => ({
       id: pane.instance.instanceId,
       paneId: pane.instance.instanceId,
       rect: {
@@ -202,7 +496,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
     }
 
     return occluders;
-  }, [contentHeight, filteredFloating, overlayOpen, width]);
+  }, [contentHeight, floatingPanes, overlayOpen, width]);
 
   useEffect(() => {
     nativeSurfaceManager.setWindowState({
@@ -210,153 +504,6 @@ export function Shell({ pluginRegistry }: ShellProps) {
       occluders: nativeOccluders,
     });
   }, [nativeOccluders, nativePaneLayers, nativeSurfaceManager]);
-
-  const handleMouse = useCallback((event: { type: string; x: number; y: number; stopPropagation: () => void; preventDefault: () => void }) => {
-    const shellY = event.y - HEADER_HEIGHT;
-
-    if (event.type === "down") {
-      for (const rect of allFloatingRects) {
-        if (event.x >= rect.x && event.x < rect.x + rect.w && shellY >= rect.y && shellY < rect.y + rect.h) {
-          const relativeX = event.x - rect.x;
-          const relativeY = shellY - rect.y;
-
-          dispatch({ type: "FOCUS_PANE", paneId: rect.id });
-          dispatch({ type: "UPDATE_LAYOUT", layout: bringToFront(layout, rect.id) });
-
-          if (relativeX >= rect.w - 3 && relativeY >= rect.h - 2) {
-            dragRef.current = {
-              type: "float-resize",
-              paneId: rect.id,
-              startX: event.x,
-              startY: event.y,
-              origW: rect.w,
-              origH: rect.h,
-              paneX: rect.x,
-              paneY: rect.y,
-            };
-            event.stopPropagation();
-            event.preventDefault();
-            return;
-          }
-
-          if (relativeY === 0) {
-            if (relativeX >= rect.w - 5 && relativeX < rect.w - 1) {
-              persistLayout(removePane(layout, rect.id));
-              event.stopPropagation();
-              event.preventDefault();
-              return;
-            }
-
-            dragRef.current = {
-              type: "float-move",
-              paneId: rect.id,
-              startX: event.x,
-              startY: event.y,
-              origX: rect.x,
-              origY: rect.y,
-              paneW: rect.w,
-              paneH: rect.h,
-            };
-            event.stopPropagation();
-            event.preventDefault();
-            return;
-          }
-
-          event.stopPropagation();
-          event.preventDefault();
-          return;
-        }
-      }
-
-      if (numColumns >= 2) {
-        let dividerX = 0;
-        for (let index = 0; index < numColumns - 1; index += 1) {
-          dividerX += effectiveColumnWidths[index] ?? 0;
-          if (Math.abs(event.x - dividerX) <= GRAB_ZONE) {
-            dragRef.current = {
-              type: "column-divider",
-              colIdx: columnIndices[index]!,
-              startX: event.x,
-              origWidth: effectiveColumnWidths[index]!,
-            };
-            setDragColumnIndex(columnIndices[index]!);
-            setDragColumnWidth(effectiveColumnWidths[index]!);
-            event.stopPropagation();
-            event.preventDefault();
-            return;
-          }
-          dividerX += 1;
-        }
-      }
-
-      return;
-    }
-
-    const drag = dragRef.current;
-    if (!drag) return;
-
-    if (event.type === "drag") {
-      if (drag.type === "column-divider") {
-        setDragColumnWidth(Math.max(MIN_PANE_WIDTH, drag.origWidth + (event.x - drag.startX)));
-      } else if (drag.type === "float-move") {
-        const nextX = Math.max(0, Math.min(width - drag.paneW, drag.origX + (event.x - drag.startX)));
-        const nextY = Math.max(0, Math.min(contentHeight - drag.paneH, drag.origY + (event.y - drag.startY)));
-        dispatch({ type: "UPDATE_LAYOUT", layout: updateFloatingPane(layout, drag.paneId, { x: nextX, y: nextY }) });
-      } else {
-        const nextWidth = Math.max(MIN_FLOAT_WIDTH, Math.min(width - drag.paneX, drag.origW + (event.x - drag.startX)));
-        const nextHeight = Math.max(MIN_FLOAT_HEIGHT, Math.min(contentHeight - drag.paneY, drag.origH + (event.y - drag.startY)));
-        dispatch({ type: "UPDATE_LAYOUT", layout: updateFloatingPane(layout, drag.paneId, { width: nextWidth, height: nextHeight }) });
-      }
-      event.stopPropagation();
-      event.preventDefault();
-      return;
-    }
-
-    if (event.type === "up" || event.type === "drag-end") {
-      if (drag.type === "column-divider") {
-        if (dragColumnWidth !== null) {
-          const localIndex = columnIndices.indexOf(drag.colIdx);
-          let nextLayout = updateColumnWidth(layout, drag.colIdx, `${Math.round((dragColumnWidth / availableWidth) * 100)}%`);
-          if (localIndex >= 0 && localIndex < numColumns - 1) {
-            const nextColumnIndex = columnIndices[localIndex + 1]!;
-            nextLayout = updateColumnWidth(
-              nextLayout,
-              nextColumnIndex,
-              `${Math.round(((effectiveColumnWidths[localIndex + 1] ?? MIN_PANE_WIDTH) / availableWidth) * 100)}%`,
-            );
-          }
-          persistLayout(nextLayout);
-        }
-        setDragColumnIndex(null);
-        setDragColumnWidth(null);
-      } else if (drag.type === "float-move" || drag.type === "float-resize") {
-        const layouts = state.config.layouts.map((savedLayout, index) => (
-          index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
-        ));
-        saveConfig({ ...state.config, layout, layouts }).catch(() => {});
-      }
-      dragRef.current = null;
-      event.stopPropagation();
-      event.preventDefault();
-    }
-  }, [
-    allFloatingRects,
-    availableWidth,
-    columnIndices,
-    contentHeight,
-    dispatch,
-    dragColumnWidth,
-    effectiveColumnWidths,
-    layout,
-    numColumns,
-    persistLayout,
-    state.config,
-    width,
-  ]);
-
-  const handleFloatingClose = useCallback((paneId: string) => {
-    persistLayout(removePane(layout, paneId));
-  }, [layout, persistLayout]);
 
   const getPaneTitle = useCallback((pane: ResolvedPane): string => {
     if (pane.instance.paneId === "ticker-detail") {
@@ -379,88 +526,475 @@ export function Shell({ pluginRegistry }: ShellProps) {
     return ticker ? `${pane.def.name}: ${ticker}` : pane.def.name;
   }, [state]);
 
+  const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds) => {
+    const pane = paneMap.get(paneId);
+    if (!pane) return;
+    focusPane(paneId);
+    const menuX = Math.max(0, Math.min(width - MENU_WIDTH, rect.x + Math.max(0, rect.width - MENU_WIDTH)));
+    const menuY = Math.max(0, Math.min(contentHeight - 1, rect.y + 1));
+    setMenuState({
+      paneId,
+      x: menuX,
+      y: menuY,
+      items: menuForPane(
+        pane,
+        visibleLayout,
+        width,
+        contentHeight,
+        pluginRegistry,
+        persistLayout,
+        focusPane,
+        openLayoutMenu,
+      ),
+    });
+  }, [contentHeight, focusPane, openLayoutMenu, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
+
+  const handleFloatingClose = useCallback((paneId: string) => {
+    persistLayout(removePane(visibleLayout, paneId));
+  }, [persistLayout, visibleLayout]);
+
+  const handleMouse = useCallback((event: { type: string; x: number; y: number; stopPropagation: () => void; preventDefault: () => void }) => {
+    const shellY = event.y - HEADER_HEIGHT;
+    if (shellY < 0) return;
+
+    if (event.type === "down") {
+      if (menuState) {
+        setMenuState(null);
+      }
+
+      for (const pane of [...floatingPanes].sort((a, b) => (b.floating?.zIndex ?? 50) - (a.floating?.zIndex ?? 50))) {
+        const rect = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
+        if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
+        const relativeX = event.x - rect.x;
+        const relativeY = shellY - rect.y;
+        focusPane(pane.instance.instanceId);
+        if ((pane.floating?.zIndex ?? 50) < 999) {
+          persistLayout(bringToFront(visibleLayout, pane.instance.instanceId), { pushHistory: false });
+        }
+        if (relativeY === 0 && relativeX >= rect.width - PANE_HEADER_CLOSE.length && relativeX < rect.width) {
+          handleFloatingClose(pane.instance.instanceId);
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        if (relativeY === 0
+          && relativeX >= rect.width - (PANE_HEADER_CLOSE.length + PANE_HEADER_ACTION.length)
+          && relativeX < rect.width - PANE_HEADER_CLOSE.length) {
+          openPaneMenu(pane.instance.instanceId, rect);
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        if (relativeX >= rect.width - 2 && relativeY >= rect.height - 1) {
+          dragRef.current = {
+            type: "float-resize",
+            paneId: pane.instance.instanceId,
+            startX: event.x,
+            startY: shellY,
+            origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          };
+          setDragFloatingRect({ paneId: pane.instance.instanceId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        if (relativeY === 0) {
+          dragRef.current = {
+            type: "pane-drag",
+            paneId: pane.instance.instanceId,
+            mode: "floating",
+            startX: event.x,
+            startY: shellY,
+            origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          };
+          setDragFloatingRect({ paneId: pane.instance.instanceId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
+      for (const divider of dockDividerLayouts) {
+        if (!pointInRect(divider.rect, event.x, shellY)) continue;
+        dragRef.current = {
+          type: "divider",
+          path: divider.path,
+          axis: divider.axis,
+          startX: event.x,
+          startY: shellY,
+          startRatio: divider.ratio,
+          bounds: divider.bounds,
+        };
+        setDividerPreview({
+          pathKey: divider.path.join("."),
+          rect: divider.rect,
+          ratio: divider.ratio,
+        });
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
+      for (const leaf of dockLeafLayouts) {
+        if (!pointInRect(leaf.rect, event.x, shellY)) continue;
+        const pane = paneMap.get(leaf.instanceId);
+        if (!pane) continue;
+        const relativeX = event.x - leaf.rect.x;
+        const relativeY = shellY - leaf.rect.y;
+        focusPane(leaf.instanceId);
+        if (relativeY === 0 && relativeX >= leaf.rect.width - PANE_HEADER_ACTION.length) {
+          openPaneMenu(leaf.instanceId, leaf.rect);
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        if (relativeY === 0) {
+          dragRef.current = {
+            type: "pane-drag",
+            paneId: leaf.instanceId,
+            mode: "docked",
+            startX: event.x,
+            startY: shellY,
+            origRect: { x: leaf.rect.x, y: leaf.rect.y, width: leaf.rect.width, height: leaf.rect.height },
+          };
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
+      return;
+    }
+
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    if (event.type === "drag") {
+      if (drag.type === "divider") {
+        const total = drag.axis === "horizontal" ? drag.bounds.width : drag.bounds.height;
+        const delta = drag.axis === "horizontal" ? event.x - drag.startX : shellY - drag.startY;
+        const nextRatio = Math.max(0.1, Math.min(0.9, drag.startRatio + (delta / Math.max(1, total))));
+        const nextRect = drag.axis === "horizontal"
+          ? { x: drag.bounds.x + Math.round(drag.bounds.width * nextRatio) - 1, y: drag.bounds.y, width: 1, height: drag.bounds.height }
+          : { x: drag.bounds.x, y: drag.bounds.y + Math.round(drag.bounds.height * nextRatio) - 1, width: drag.bounds.width, height: 1 };
+        setDividerPreview({ pathKey: drag.path.join("."), rect: nextRect, ratio: nextRatio });
+      } else if (drag.type === "pane-drag") {
+        if (!isMeaningfulPaneDrag(drag.startX, drag.startY, event.x, shellY)) {
+          setDockPreview(null);
+          setDragCursor(null);
+          if (drag.mode === "floating") {
+            setDragFloatingRect({ paneId: drag.paneId, rect: drag.origRect });
+          }
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+
+        const pane = paneMap.get(drag.paneId);
+        const nextRect = drag.mode === "docked"
+          ? positionFloatingRectUnderPointer(
+              getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def),
+              drag,
+              event.x,
+              shellY,
+              width,
+              contentHeight,
+            )
+          : {
+              x: Math.max(0, Math.min(width - drag.origRect.width, drag.origRect.x + (event.x - drag.startX))),
+              y: Math.max(0, Math.min(contentHeight - drag.origRect.height, drag.origRect.y + (shellY - drag.startY))),
+              width: drag.origRect.width,
+              height: drag.origRect.height,
+            };
+        setDragFloatingRect({ paneId: drag.paneId, rect: nextRect });
+        setDragCursor({ x: event.x, y: shellY });
+
+        const hoveredOverlay = resolveHoverOverlay(event.x, shellY, dockLeafLayouts, drag.paneId);
+        if (hoveredOverlay) {
+          const hoveredCell = hoveredOverlay.cells.find((cell) => pointInRect(cell.rect, event.x, shellY));
+          if (hoveredCell) {
+            const target: DropTarget = { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position };
+            const simulation = simulateDrop(visibleLayout, drag.paneId, target, bounds);
+            if (simulation.previewRect) {
+              setDockPreview({ kind: "dock", target, rect: simulation.previewRect });
+            } else {
+              setDockPreview(null);
+            }
+          } else {
+            setDockPreview(null);
+          }
+        } else {
+          const snapGuide = resolveSnapGuide(event.x, shellY, snapGuides);
+          setDockPreview(snapGuide ? { kind: "snap", position: snapGuide.position, rect: snapGuide.previewRect } : null);
+        }
+      } else if (drag.type === "float-resize") {
+        setDragFloatingRect({
+          paneId: drag.paneId,
+          rect: {
+            x: drag.origRect.x,
+            y: drag.origRect.y,
+            width: Math.max(MIN_FLOAT_WIDTH, Math.min(width - drag.origRect.x, drag.origRect.width + (event.x - drag.startX))),
+            height: Math.max(MIN_FLOAT_HEIGHT, Math.min(contentHeight - drag.origRect.y, drag.origRect.height + (shellY - drag.startY))),
+          },
+        });
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
+
+    if (event.type === "up" || event.type === "drag-end") {
+      if (drag.type === "divider") {
+        if (dividerPreview) {
+          persistLayout(resizeSplitAtPath(visibleLayout, drag.path, dividerPreview.ratio));
+        }
+        setDividerPreview(null);
+      } else if (drag.type === "pane-drag") {
+        const movedEnough = isMeaningfulPaneDrag(drag.startX, drag.startY, event.x, shellY);
+        const previewRect = dragFloatingRect?.paneId === drag.paneId ? dragFloatingRect.rect : drag.origRect;
+        if (!movedEnough) {
+          setDockPreview(null);
+          setDragCursor(null);
+          setDragFloatingRect(null);
+        } else if (dockPreview?.kind === "dock") {
+          persistLayout(applyDrop(visibleLayout, drag.paneId, dockPreview.target));
+          focusPane(drag.paneId);
+          setDockPreview(null);
+          setDragCursor(null);
+          setDragFloatingRect(null);
+        } else if (dockPreview?.kind === "snap") {
+          persistLayout(floatAtRect(visibleLayout, drag.paneId, dockPreview.rect));
+          focusPane(drag.paneId);
+          setDockPreview(null);
+          setDragCursor(null);
+          setDragFloatingRect(null);
+        } else {
+          persistLayout(floatAtRect(visibleLayout, drag.paneId, previewRect));
+          focusPane(drag.paneId);
+          setDockPreview(null);
+          setDragCursor(null);
+          setDragFloatingRect(null);
+        }
+      } else if (drag.type === "float-resize") {
+        if (dragFloatingRect?.paneId === drag.paneId) {
+          persistLayout(floatAtRect(visibleLayout, drag.paneId, dragFloatingRect.rect));
+        }
+        setDragFloatingRect(null);
+        setDragCursor(null);
+      }
+      dragRef.current = null;
+      event.stopPropagation();
+      event.preventDefault();
+    }
+  }, [
+    bounds,
+    contentHeight,
+    dividerPreview,
+    dockDividerLayouts,
+    dockLeafLayouts,
+    dockPreview,
+    dragFloatingRect,
+    floatingPanes,
+    focusPane,
+    handleFloatingClose,
+    menuState,
+    openPaneMenu,
+    paneMap,
+    persistLayout,
+    snapGuides,
+    visibleLayout,
+    width,
+  ]);
+
+  const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
+  const activeHoverOverlay = activePaneDrag && dragCursor
+    ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
+    : null;
+
   return (
     <box flexDirection="row" flexGrow={1} height={contentHeight} onMouse={handleMouse}>
-      {columnIndices.map((columnIndex, localIndex) => {
-        const panes = filteredColumns.get(columnIndex)!;
-        const columnWidth = effectiveColumnWidths[localIndex]!;
-
+      {dockLeafLayouts.map((leaf) => {
+        const pane = paneMap.get(leaf.instanceId);
+        if (!pane) return null;
+        const focused = state.focusedPaneId === leaf.instanceId && !overlayOpen;
+        const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
         return (
-          <box key={`column-${columnIndex}`} flexDirection="row" height={contentHeight}>
-            <box flexDirection="column" width={columnWidth}>
-              {panes.map((pane) => {
-                const focused = state.focusedPaneId === pane.instance.instanceId && !overlayOpen;
-                const paneHeight = Math.floor(contentHeight / panes.length);
-
-                return (
-                  <PaneWrapper
-                    key={pane.instance.instanceId}
-                    title={` ${getPaneTitle(pane)} `}
-                    focused={focused}
-                    flexGrow={1}
-                    onMouseDown={() => dispatch({ type: "FOCUS_PANE", paneId: pane.instance.instanceId })}
-                  >
-                    <PaneInstanceProvider paneId={pane.instance.instanceId}>
-                      <pane.def.component
-                        paneId={pane.instance.instanceId}
-                        paneType={pane.instance.paneId}
-                        focused={focused}
-                        width={columnWidth}
-                        height={paneHeight - 1}
-                      />
-                    </PaneInstanceProvider>
-                  </PaneWrapper>
-                );
-              })}
-            </box>
-
-            {localIndex < numColumns - 1 && (
-              <box
-                width={1}
-                height={contentHeight}
-                backgroundColor={dragColumnIndex === columnIndex ? colors.borderFocused : colors.border}
-              >
-                <text fg={dragColumnIndex === columnIndex ? colors.bg : colors.border}> </text>
-              </box>
-            )}
+          <box
+            key={`dock:${leaf.instanceId}`}
+            position="absolute"
+            left={leaf.rect.x}
+            top={leaf.rect.y}
+            width={leaf.rect.width}
+            height={leaf.rect.height}
+          >
+            <PaneWrapper
+              title={getPaneTitle(pane)}
+              focused={focused}
+              width={leaf.rect.width}
+              height={leaf.rect.height}
+              showActions={showActions}
+              onMouseMove={() => setHoveredPaneId(leaf.instanceId)}
+            >
+              <PaneInstanceProvider paneId={leaf.instanceId}>
+                <pane.def.component
+                  paneId={pane.instance.instanceId}
+                  paneType={pane.instance.paneId}
+                  focused={focused}
+                  width={leaf.rect.width}
+                  height={leaf.rect.height - 1}
+                />
+              </PaneInstanceProvider>
+            </PaneWrapper>
           </box>
         );
       })}
 
-      {numColumns === 0 && filteredFloating.length === 0 && (
-        <box flexGrow={1} alignItems="center" justifyContent="center">
-          <text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</text>
-        </box>
-      )}
-
-      {filteredFloating.map((pane) => {
-        const entry = pane.floating!;
+      {floatingPanes.map((pane) => {
+        const preview = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
         const focused = state.focusedPaneId === pane.instance.instanceId && !overlayOpen;
-
+        const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
         return (
           <FloatingPaneWrapper
-            key={pane.instance.instanceId}
+            key={`float:${pane.instance.instanceId}`}
             title={getPaneTitle(pane)}
-            x={entry.x}
-            y={entry.y}
-            width={entry.width}
-            height={entry.height}
-            zIndex={entry.zIndex ?? 50}
+            x={preview.x}
+            y={preview.y}
+            width={preview.width}
+            height={preview.height}
+            zIndex={pane.floating?.zIndex ?? 50}
             focused={focused}
+            showActions={showActions}
+            onMouseMove={() => setHoveredPaneId(pane.instance.instanceId)}
           >
             <PaneInstanceProvider paneId={pane.instance.instanceId}>
               <pane.def.component
                 paneId={pane.instance.instanceId}
                 paneType={pane.instance.paneId}
                 focused={focused}
-                width={entry.width}
-                height={entry.height - 1}
+                width={preview.width}
+                height={preview.height - 1}
                 close={() => handleFloatingClose(pane.instance.instanceId)}
               />
             </PaneInstanceProvider>
           </FloatingPaneWrapper>
         );
       })}
+
+      {dockLeafLayouts.length === 0 && floatingPanes.length === 0 && (
+        <box flexGrow={1} alignItems="center" justifyContent="center">
+          <text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</text>
+        </box>
+      )}
+
+      {dockDividerLayouts.map((divider) => {
+        const active = dividerPreview?.pathKey === divider.path.join(".");
+        const rect = active ? dividerPreview.rect : divider.rect;
+        return (
+          <box
+            key={`divider:${divider.path.join(".")}`}
+            position="absolute"
+            left={rect.x}
+            top={rect.y}
+            width={rect.width}
+            height={rect.height}
+            backgroundColor={active ? colors.borderFocused : colors.border}
+          />
+        );
+      })}
+
+      {activeHoverOverlay && activeHoverOverlay.cells.map((cell) => {
+        const active = dockPreview?.kind === "dock"
+          && dockPreview.target.kind === "leaf"
+          && dockPreview.target.targetId === activeHoverOverlay.targetId
+          && dockPreview.target.position === cell.position;
+        return (
+          <box
+            key={`cell:${activeHoverOverlay.targetId}:${cell.position}`}
+            position="absolute"
+            left={cell.rect.x}
+            top={cell.rect.y}
+            width={cell.rect.width}
+            height={cell.rect.height}
+            border
+            borderStyle="single"
+            borderColor={active ? colors.borderFocused : colors.border}
+            backgroundColor={active ? colors.header : colors.panel}
+            zIndex={cell.position === "center" ? 98 : 97}
+          />
+        );
+      })}
+
+      {activePaneDrag
+        && activePaneDrag.mode === "docked"
+        && dragFloatingRect?.paneId === activePaneDrag.paneId
+        && !dockPreview
+        && (
+          <box
+            position="absolute"
+            left={dragFloatingRect.rect.x}
+            top={dragFloatingRect.rect.y}
+            width={dragFloatingRect.rect.width}
+            height={dragFloatingRect.rect.height}
+            border
+            borderStyle="single"
+            borderColor={colors.borderFocused}
+            backgroundColor={colors.panel}
+            zIndex={95}
+          />
+        )}
+
+      {dockPreview && (
+        <box
+          position="absolute"
+          left={dockPreview.rect.x}
+          top={dockPreview.rect.y}
+          width={dockPreview.rect.width}
+          height={dockPreview.rect.height}
+          border
+          borderStyle="single"
+          borderColor={colors.borderFocused}
+          backgroundColor={colors.panel}
+          zIndex={96}
+        />
+      )}
+
+      {menuState && (
+        <box
+          position="absolute"
+          left={menuState.x}
+          top={menuState.y}
+          width={MENU_WIDTH}
+          height={menuState.items.length + 2}
+          backgroundColor={colors.panel}
+          border
+          borderStyle="single"
+          borderColor={colors.borderFocused}
+          zIndex={99}
+          flexDirection="column"
+        >
+          {menuState.items.map((item) => (
+            <box
+              key={item.id}
+              height={1}
+              paddingLeft={1}
+              onMouseDown={(mouseEvent: any) => {
+                mouseEvent.stopPropagation();
+                mouseEvent.preventDefault();
+                setMenuState(null);
+                item.action();
+              }}
+            >
+              <text fg={colors.text}>{item.label}</text>
+            </box>
+          ))}
+        </box>
+      )}
     </box>
   );
 }

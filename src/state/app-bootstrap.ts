@@ -7,6 +7,7 @@ import type { TickerMetadata, TickerRecord } from "../types/ticker";
 import { ProviderRouter } from "../sources/provider-router";
 import type { AppAction, PaneRuntimeState } from "./app-context";
 import type { AppSessionSnapshot } from "./session-persistence";
+import { getDockedPaneIds } from "../plugins/pane-manager";
 
 const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [
   { ticker: "AAPL", exchange: "NASDAQ", currency: "USD", name: "Apple Inc." },
@@ -31,6 +32,8 @@ interface RefreshPlanEntry {
   ticker: TickerRecord;
   priority: number;
 }
+
+const MAX_BACKGROUND_WARMUP_TICKERS = 0;
 
 export interface InitializeAppStateArgs {
   config: AppConfig;
@@ -124,8 +127,8 @@ function buildRefreshPlan(
     plan.push({ ticker, priority });
   };
 
-  for (const entry of config.layout.docked) {
-    enqueueSymbol(resolveSymbolForPane(config, entry.instanceId, paneStateSeed, sessionSnapshot, tickerMap), 0);
+  for (const instanceId of getDockedPaneIds(config.layout)) {
+    enqueueSymbol(resolveSymbolForPane(config, instanceId, paneStateSeed, sessionSnapshot, tickerMap), 0);
   }
 
   for (const entry of config.layout.floating) {
@@ -140,8 +143,14 @@ function buildRefreshPlan(
     workingSetSymbols.add(symbol);
   }
 
+  let backgroundWarmups = 0;
   for (const symbol of workingSetSymbols) {
+    if (backgroundWarmups >= MAX_BACKGROUND_WARMUP_TICKERS) break;
+    if (queued.has(symbol)) continue;
     enqueueSymbol(symbol, 2);
+    if (queued.has(symbol)) {
+      backgroundWarmups += 1;
+    }
   }
 
   return plan;
