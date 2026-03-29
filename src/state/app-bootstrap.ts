@@ -2,6 +2,7 @@ import type { Dispatch } from "react";
 import type { TickerRepository } from "../data/ticker-repository";
 import { findPaneInstance, type AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
+import type { BrokerAccount } from "../types/trading";
 import type { TickerMetadata, TickerRecord } from "../types/ticker";
 import { ProviderRouter } from "../sources/provider-router";
 import type { AppAction, PaneRuntimeState } from "./app-context";
@@ -39,6 +40,7 @@ export interface InitializeAppStateArgs {
   dispatch: Dispatch<AppAction>;
   refreshTicker: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
   autoImportBrokerPositions: (tickerMap: Map<string, TickerRecord>) => Promise<void>;
+  persistedBrokerAccounts?: Record<string, BrokerAccount[]>;
 }
 
 function buildPaneStateSeed(
@@ -153,6 +155,7 @@ export async function initializeAppState({
   dispatch,
   refreshTicker,
   autoImportBrokerPositions,
+  persistedBrokerAccounts = {},
 }: InitializeAppStateArgs): Promise<void> {
   let tickers = await tickerRepository.loadAllTickers();
 
@@ -178,6 +181,10 @@ export async function initializeAppState({
     tickerMap.set(ticker.metadata.ticker, ticker);
   }
   dispatch({ type: "SET_TICKERS", tickers: tickerMap });
+
+  for (const [instanceId, accounts] of Object.entries(persistedBrokerAccounts)) {
+    dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
+  }
 
   if (dataProvider instanceof ProviderRouter) {
     const cachedFinancials = dataProvider.getCachedFinancialsForTargets(sessionSnapshot?.hydrationTargets ?? [], {

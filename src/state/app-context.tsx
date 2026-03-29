@@ -23,6 +23,7 @@ import {
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
+import type { BrokerAccount } from "../types/trading";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
 import {
   APP_SESSION_ID,
@@ -52,6 +53,7 @@ export interface AppState {
   tickers: Map<string, TickerRecord>;
   financials: Map<string, TickerFinancials>;
   exchangeRates: Map<string, number>;
+  brokerAccounts: Record<string, BrokerAccount[]>;
   activePanel: "left" | "right";
   focusedPaneId: string | null;
   paneState: Record<string, PaneRuntimeState>;
@@ -79,6 +81,7 @@ export type AppAction =
   | { type: "SET_COMMAND_BAR"; open: boolean; query?: string }
   | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
+  | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string }
@@ -144,6 +147,16 @@ function reconcilePaneState(config: AppConfig, previous: Record<string, PaneRunt
   return next;
 }
 
+function reconcileBrokerAccounts(
+  config: AppConfig,
+  brokerAccounts: Record<string, BrokerAccount[]>,
+): Record<string, BrokerAccount[]> {
+  const validInstanceIds = new Set(config.brokerInstances.map((instance) => instance.id));
+  return Object.fromEntries(
+    Object.entries(brokerAccounts).filter(([instanceId]) => validInstanceIds.has(instanceId)),
+  );
+}
+
 function resolveTickerFromBinding(
   state: Pick<AppState, "config" | "paneState">,
   binding: PaneBinding | undefined,
@@ -181,7 +194,7 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
       ? paneState.collectionId
       : instance.params?.collectionId;
     if (isKnownCollection(state.config, collectionId) || shouldPreserveUnknownCollectionId(collectionId)) {
-      return collectionId;
+      return collectionId ?? null;
     }
     return getDefaultCollectionId(state.config);
   }
@@ -246,7 +259,13 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
   const focusedPaneId = state.focusedPaneId && paneIds.includes(state.focusedPaneId)
     ? state.focusedPaneId
     : paneIds[0] ?? null;
-  return { ...state, config: nextConfig, paneState: nextPaneState, focusedPaneId };
+  return {
+    ...state,
+    config: nextConfig,
+    paneState: nextPaneState,
+    brokerAccounts: reconcileBrokerAccounts(nextConfig, state.brokerAccounts),
+    focusedPaneId,
+  };
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -335,6 +354,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       else refreshing.delete(action.symbol);
       return { ...state, refreshing };
     }
+
+    case "SET_BROKER_ACCOUNTS":
+      return {
+        ...state,
+        brokerAccounts: {
+          ...state.brokerAccounts,
+          [action.instanceId]: action.accounts,
+        },
+      };
 
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
@@ -598,6 +626,7 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     tickers: new Map(),
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
+    brokerAccounts: {},
     activePanel: sessionSnapshot?.activePanel === "right" ? "right" : "left",
     focusedPaneId,
     paneState,
