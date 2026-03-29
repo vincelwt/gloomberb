@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { GloomPlugin, PaneProps, DetailTabDef } from "../../types/plugin";
+import type { GloomPlugin, PaneProps, DetailTabDef, PaneSettingsDef } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
@@ -20,6 +20,79 @@ import { useOptionsAvailability } from "./options-availability";
 const CORE_OVERVIEW_TAB = { id: "overview", name: "Overview", order: 10 };
 const CORE_FINANCIALS_TAB = { id: "financials", name: "Financials", order: 20 };
 const CORE_CHART_TAB = { id: "chart", name: "Chart", order: 30 };
+
+interface TickerDetailPaneSettings {
+  hideTabs: boolean;
+  lockedTabId: string;
+}
+
+function getTickerDetailPaneSettings(settings: Record<string, unknown> | undefined): TickerDetailPaneSettings {
+  return {
+    hideTabs: settings?.hideTabs === true,
+    lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
+  };
+}
+
+function resolveLockedTabId(
+  settings: TickerDetailPaneSettings,
+  tabs: Array<{ id: string; name: string; order: number }>,
+): string {
+  if (tabs.some((tab) => tab.id === settings.lockedTabId)) {
+    return settings.lockedTabId;
+  }
+  return tabs[0]?.id ?? "overview";
+}
+
+function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneSettingsDef {
+  const registry = getSharedRegistry();
+  const pluginTabs = registry
+    ? [...registry.detailTabs.values()].map((tab) => ({
+      id: tab.id,
+      name: tab.name,
+      order: tab.order,
+    }))
+    : [];
+  const tabs = [CORE_OVERVIEW_TAB, CORE_FINANCIALS_TAB, CORE_CHART_TAB, ...pluginTabs]
+    .sort((left, right) => left.order - right.order)
+    .filter((tab, index, allTabs) => allTabs.findIndex((candidate) => candidate.id === tab.id) === index);
+
+  return {
+    title: "Detail Pane Settings",
+    fields: [
+      {
+        key: "hideTabs",
+        label: "Hide Tabs",
+        description: "Hide the detail tabs and lock this pane to one view.",
+        type: "toggle",
+      },
+      ...(settings.hideTabs ? [{
+        key: "lockedTabId",
+        label: "Locked Tab",
+        description: "Choose which tab this pane should stay pinned to when tabs are hidden.",
+        type: "select",
+        options: tabs.map((tab) => ({
+          value: tab.id,
+          label: tab.name,
+        })),
+      }] : []),
+    ],
+  };
+}
+
+function buildQuoteMonitorSettingsDef(): PaneSettingsDef {
+  return {
+    title: "Quote Monitor Settings",
+    fields: [
+      {
+        key: "symbol",
+        label: "Ticker",
+        description: "Set the fixed ticker symbol for this quote monitor.",
+        type: "text",
+        placeholder: "AAPL",
+      },
+    ],
+  };
+}
 
 function hasStatementFinancials(financials: TickerFinancials | null | undefined): boolean {
   return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
@@ -590,6 +663,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
+  const paneSettings = getTickerDetailPaneSettings(paneInstance?.settings);
   const hasOptionsChain = useOptionsAvailability(ticker);
   const collectionTickers = getCollectionTickers(state, collectionId);
   const collectionName = getCollectionName(state, collectionId);
@@ -606,17 +680,36 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     hasIbkrGatewayTrading,
     hasOptionsChain,
   });
+  const resolvedTabId = paneSettings.hideTabs
+    ? resolveLockedTabId(paneSettings, allTabs)
+    : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
   const visiblePluginTabs = pluginTabs.filter((tab) => allTabs.some((visibleTab) => visibleTab.id === tab.id));
 
-  const tabIdx = Math.max(0, allTabs.findIndex((t) => t.id === activeTabId));
-  const isPluginTab = visiblePluginTabs.some((t) => t.id === activeTabId);
-  const activePluginTab = isPluginTab ? visiblePluginTabs.find((t) => t.id === activeTabId) : null;
+  const tabIdx = Math.max(0, allTabs.findIndex((tab) => tab.id === resolvedTabId));
+  const isPluginTab = visiblePluginTabs.some((tab) => tab.id === resolvedTabId);
+  const activePluginTab = isPluginTab ? visiblePluginTabs.find((tab) => tab.id === resolvedTabId) : null;
 
   // Refs to avoid stale closures in useKeyboard
   const allTabsRef = useRef(allTabs);
   allTabsRef.current = allTabs;
-  const stateRef = useRef({ focused, chartInteractive, pluginCaptured, activeTabId, tabIdx, allTabCount: allTabs.length });
-  stateRef.current = { focused, chartInteractive, pluginCaptured, activeTabId, tabIdx, allTabCount: allTabs.length };
+  const stateRef = useRef({
+    focused,
+    chartInteractive,
+    pluginCaptured,
+    activeTabId: resolvedTabId,
+    tabIdx,
+    allTabCount: allTabs.length,
+    hideTabs: paneSettings.hideTabs,
+  });
+  stateRef.current = {
+    focused,
+    chartInteractive,
+    pluginCaptured,
+    activeTabId: resolvedTabId,
+    tabIdx,
+    allTabCount: allTabs.length,
+    hideTabs: paneSettings.hideTabs,
+  };
 
   const setChartInteractiveEager = useCallback((val: boolean) => {
     stateRef.current = { ...stateRef.current, chartInteractive: val };
@@ -631,19 +724,19 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   // Exit chart interactive mode when switching away from chart tab
   useEffect(() => {
-    if (activeTabId !== "chart") {
+    if (resolvedTabId !== "chart") {
       setChartInteractive(false);
     }
     // Reset plugin capture when switching tabs
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
-  }, [activeTabId, dispatch]);
+  }, [resolvedTabId, dispatch]);
 
   useEffect(() => {
-    if (!allTabs.some((tab) => tab.id === activeTabId)) {
-      setActiveTabId("overview");
+    if (resolvedTabId !== activeTabId) {
+      setActiveTabId(resolvedTabId);
     }
-  }, [activeTabId, allTabs, setActiveTabId]);
+  }, [activeTabId, resolvedTabId, setActiveTabId]);
 
   const handleKeyboard = useCallback((event: { name?: string }) => {
     const s = stateRef.current;
@@ -668,6 +761,8 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
     // Tab switching
     const tabs = allTabsRef.current;
+    if (s.hideTabs) return;
+
     if (event.name === "h" || event.name === "left") {
       const newIdx = Math.max(s.tabIdx - 1, 0);
       setActiveTabId(tabs[newIdx]!.id);
@@ -695,15 +790,17 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <TabBar
-        tabs={allTabs.map((t) => ({ label: t.name, value: t.id }))}
-        activeValue={activeTabId}
-        onSelect={setActiveTabId}
-      />
+      {!paneSettings.hideTabs && (
+        <TabBar
+          tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
+          activeValue={resolvedTabId}
+          onSelect={setActiveTabId}
+        />
+      )}
 
-      {activeTabId === "overview" && <OverviewTab width={width} />}
-      {activeTabId === "financials" && <FinancialsTab focused={focused} />}
-      {activeTabId === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {resolvedTabId === "overview" && <OverviewTab width={width} />}
+      {resolvedTabId === "financials" && <FinancialsTab focused={focused} />}
+      {resolvedTabId === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
 
       {/* Dynamic plugin tabs */}
       {activePluginTab && (
@@ -730,6 +827,7 @@ export const tickerDetailPlugin: GloomPlugin = {
       icon: "D",
       component: TickerDetailPane,
       defaultPosition: "right",
+      settings: (context) => buildTickerDetailSettingsDef(getTickerDetailPaneSettings(context.settings)),
     },
     {
       id: "quote-monitor",
@@ -739,6 +837,7 @@ export const tickerDetailPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 64, height: 8 },
+      settings: buildQuoteMonitorSettingsDef(),
     },
   ],
   paneTemplates: [
@@ -772,6 +871,7 @@ export const tickerDetailPlugin: GloomPlugin = {
           ? {
             title: ticker,
             binding: { kind: "fixed", symbol: ticker },
+            settings: { symbol: ticker },
             placement: "floating",
           }
           : null;

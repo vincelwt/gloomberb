@@ -48,7 +48,7 @@ function makeDataProvider(searchImpl: DataProvider["search"] = async () => []): 
   };
 }
 
-function makePluginRegistry(): PluginRegistry {
+function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () => false): PluginRegistry {
   return {
     panes: new Map([
       ["portfolio-list", {
@@ -140,10 +140,12 @@ function makePluginRegistry(): PluginRegistry {
     ),
     getPluginPaneIds: () => [],
     getPluginPaneTemplateIds: () => [],
+    hasPaneSettings,
     hideWidget: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
     createPaneFromTemplateFn: () => {},
+    openPaneSettingsFn: () => {},
     createBrokerInstanceFn: async () => { throw new Error("unused"); },
     syncBrokerInstanceFn: async () => {},
     removeBrokerInstanceFn: async () => {},
@@ -159,6 +161,7 @@ function CommandBarHarness({
   configureConfig,
   configureState,
   dataProvider = makeDataProvider(),
+  hasPaneSettings,
 }: {
   query: string;
   disabledPlugins?: string[];
@@ -167,6 +170,7 @@ function CommandBarHarness({
   configureConfig?: (config: AppConfig) => AppConfig;
   configureState?: (state: AppState) => AppState;
   dataProvider?: DataProvider;
+  hasPaneSettings?: (paneId: string) => boolean;
 }) {
   let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
@@ -202,7 +206,7 @@ function CommandBarHarness({
     }),
     saveTicker: async () => {},
   };
-  const pluginRegistry = makePluginRegistry();
+  const pluginRegistry = makePluginRegistry(hasPaneSettings);
   const [liveState, dispatch] = useReducer(appReducer, state);
 
   return (
@@ -254,6 +258,25 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     expect(testSetup.captureCharFrame()).toMatchSnapshot();
+  });
+
+  test("only surfaces PS when the focused pane exposes settings", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness query="PS" hasPaneSettings={(paneId) => paneId === "portfolio-list:main"} />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Pane Settings");
+
+    testSetup.renderer.destroy();
+    testSetup = await testRender(<CommandBarHarness query="PS" hasPaneSettings={() => false} />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).not.toContain("Pane Settings");
   });
 
   test("collapses the trailing column on narrow terminals", async () => {

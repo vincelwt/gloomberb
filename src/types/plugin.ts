@@ -9,6 +9,7 @@ import type {
   ColumnConfig,
   LayoutConfig,
   PaneBinding,
+  PaneInstanceConfig,
 } from "./config";
 import type { DataProvider } from "./data-provider";
 import type { TickerFinancials } from "./financials";
@@ -46,6 +47,67 @@ export interface PaneDef {
   defaultWidth?: string;
   defaultFloatingSize?: { width: number; height: number };
   defaultMode?: "docked" | "floating";
+  settings?: PaneSettingsDef | ((context: PaneSettingsContext) => PaneSettingsDef | null);
+}
+
+export interface PaneSettingsContext {
+  config: AppConfig;
+  layout: LayoutConfig;
+  paneId: string;
+  paneType: string;
+  pane: PaneInstanceConfig;
+  settings: Record<string, unknown>;
+  paneState: Record<string, unknown>;
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface PaneSettingOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+interface PaneSettingFieldBase {
+  key: string;
+  label: string;
+  description?: string;
+}
+
+export interface PaneSettingToggleField extends PaneSettingFieldBase {
+  type: "toggle";
+}
+
+export interface PaneSettingTextField extends PaneSettingFieldBase {
+  type: "text";
+  placeholder?: string;
+}
+
+export interface PaneSettingSelectField extends PaneSettingFieldBase {
+  type: "select";
+  options: PaneSettingOption[];
+}
+
+export interface PaneSettingMultiSelectField extends PaneSettingFieldBase {
+  type: "multi-select";
+  options: PaneSettingOption[];
+}
+
+export interface PaneSettingOrderedMultiSelectField extends PaneSettingFieldBase {
+  type: "ordered-multi-select";
+  options: PaneSettingOption[];
+}
+
+export type PaneSettingField =
+  | PaneSettingToggleField
+  | PaneSettingTextField
+  | PaneSettingSelectField
+  | PaneSettingMultiSelectField
+  | PaneSettingOrderedMultiSelectField;
+
+export interface PaneSettingsDef {
+  title?: string;
+  fields: PaneSettingField[];
 }
 
 export interface PaneTemplateContext {
@@ -72,6 +134,7 @@ export interface PaneTemplateInstanceConfig {
   title?: string;
   binding?: PaneBinding;
   params?: Record<string, string>;
+  settings?: Record<string, unknown>;
   placement?: "default" | "docked" | "floating";
   relativeToPaneId?: string;
   relativePosition?: "left" | "right" | "above" | "below";
@@ -195,6 +258,12 @@ export interface PluginConfigState {
   keys(): string[];
 }
 
+export interface PluginPaneSettingsState {
+  get<T = unknown>(paneId: string, key: string): T | null;
+  set(paneId: string, key: string, value: unknown): Promise<void>;
+  delete(paneId: string, key: string): Promise<void>;
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
@@ -217,6 +286,7 @@ export interface GloomPluginContext {
   readonly log: PluginLogger;
   readonly resume: PluginResumeState;
   readonly configState: PluginConfigState;
+  readonly paneSettings: PluginPaneSettingsState;
 
   createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>): Promise<void>;
@@ -232,6 +302,7 @@ export interface GloomPluginContext {
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  openPaneSettings(paneId?: string): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
   emit<K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]): void;

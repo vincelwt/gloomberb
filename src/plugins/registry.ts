@@ -4,7 +4,7 @@ import { createElement } from "react";
 import type { AppPersistence } from "../data/app-persistence";
 import type { TickerRepository } from "../data/ticker-repository";
 import type { BrokerAdapter } from "../types/broker";
-import type { BrokerInstanceConfig, LayoutConfig } from "../types/config";
+import type { BrokerInstanceConfig, LayoutConfig, PaneInstanceConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
 import type { TickerFinancials } from "../types/financials";
 import type {
@@ -16,8 +16,11 @@ import type {
   GloomSlots,
   KeyboardShortcut,
   PaneDef,
+  PaneSettingsContext,
+  PaneSettingsDef,
   PaneTemplateCreateOptions,
   PaneTemplateDef,
+  PluginPaneSettingsState,
   PluginStorage,
   PluginResumeState,
   TickerAction,
@@ -29,7 +32,12 @@ import { createPaneInstance } from "../types/config";
 import { createPluginPersistence, createPluginStorage } from "./plugin-persistence";
 import { debugLog } from "../utils/debug-log";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "./plugin-runtime";
-import type { PaneRuntimeState } from "../state/app-context";
+import {
+  resolveCollectionForPane,
+  resolveTickerForPane,
+  type PaneRuntimeState,
+} from "../state/app-context";
+import { deletePaneSetting, getPaneSettings, setPaneSetting } from "../pane-settings";
 
 let sharedDataProvider: DataProvider | undefined;
 let sharedRegistry: PluginRegistry | undefined;
@@ -96,6 +104,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   switchPanelFn: ((panel: "left" | "right") => void) = () => {};
   switchTabFn: ((tabId: string, paneId?: string) => void) = () => {};
   openCommandBarFn: ((query?: string) => void) = () => {};
+  openPaneSettingsFn: ((paneId?: string) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
   createPaneFromTemplateFn: ((templateId: string, options?: PaneTemplateCreateOptions) => void) = () => {};
   hidePaneFn: ((paneId: string) => void) = () => {};
@@ -261,6 +270,61 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return this.resolvePrimaryPaneInstanceId(paneId);
   }
 
+  resolvePaneSettings(paneId: string): {
+    paneId: string;
+    pane: PaneInstanceConfig;
+    paneDef: PaneDef;
+    settingsDef: PaneSettingsDef;
+    context: PaneSettingsContext;
+  } | null {
+    const targetPaneId = this.resolvePaneTarget(paneId);
+    if (!targetPaneId) return null;
+
+    const layout = this.getLayoutFn();
+    const pane = layout.instances.find((instance) => instance.instanceId === targetPaneId);
+    if (!pane) return null;
+
+    const paneDef = this.panesMap.get(pane.paneId);
+    if (!paneDef?.settings) return null;
+
+    const config = this.getConfigFn();
+    const paneStateMap = Object.fromEntries(
+      layout.instances.map((instance) => [instance.instanceId, this.getPaneRuntimeStateFn(instance.instanceId) ?? {}]),
+    );
+    const paneState = paneStateMap[targetPaneId] ?? {};
+    const stateView = {
+      config,
+      paneState: paneStateMap,
+    } as any;
+    const context: PaneSettingsContext = {
+      config,
+      layout,
+      paneId: targetPaneId,
+      paneType: pane.paneId,
+      pane,
+      settings: getPaneSettings(pane),
+      paneState,
+      activeTicker: resolveTickerForPane(stateView, targetPaneId),
+      activeCollectionId: resolveCollectionForPane(stateView, targetPaneId),
+    };
+    const settingsDef = typeof paneDef.settings === "function"
+      ? paneDef.settings(context)
+      : paneDef.settings;
+    if (!settingsDef) return null;
+
+    return {
+      paneId: targetPaneId,
+      pane,
+      paneDef,
+      settingsDef,
+      context,
+    };
+  }
+
+  hasPaneSettings(paneId: string): boolean {
+    return this.resolvePaneSettings(paneId) !== null;
+  }
+
   getCommandPluginId(commandId: string): string | undefined {
     return this.commandOwners.get(commandId);
   }
@@ -360,6 +424,25 @@ export class PluginRegistry implements PluginRuntimeAccess {
         });
       },
     };
+    const paneSettings: PluginPaneSettingsState = {
+      get: (paneId, key) => {
+        const target = this.resolvePaneTarget(paneId);
+        if (!target) return null;
+        return (this.getLayoutFn().instances.find((instance) => instance.instanceId === target)?.settings?.[key] as any) ?? null;
+      },
+      set: async (paneId, key, value) => {
+        const target = this.resolvePaneTarget(paneId);
+        if (!target) return;
+        const nextLayout = setPaneSetting(this.getLayoutFn(), target, key, value);
+        this.updateLayoutFn(nextLayout);
+      },
+      delete: async (paneId, key) => {
+        const target = this.resolvePaneTarget(paneId);
+        if (!target) return;
+        const nextLayout = deletePaneSetting(this.getLayoutFn(), target, key);
+        this.updateLayoutFn(nextLayout);
+      },
+    };
 
     return {
       registerPane: (pane) => { this.panesMap.set(pane.id, this.wrapPaneDef(pluginId, pane)); items.panes.push(pane.id); },
@@ -394,6 +477,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       persistence,
       log,
       resume,
+      paneSettings,
       configState: {
         get: (key) => this.getConfigState(pluginId, key),
         set: (key, value) => this.setConfigState(pluginId, key, value),
@@ -415,6 +499,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       hidePane: (paneId) => this.hidePaneFn(paneId),
       focusPane: (paneId) => this.focusPaneFn(paneId),
       pinTicker: (symbol, options) => this.pinTickerFn(symbol, options),
+      openPaneSettings: (paneId) => this.openPaneSettingsFn(paneId),
 
       on: <K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void) => {
         const dispose = this.events.on(event, handler);

@@ -14,7 +14,7 @@ import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { CommandBar } from "./components/command-bar/command-bar";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
-import { DialogProvider, useDialogState } from "@opentui-ui/dialog/react";
+import { DialogProvider, useDialog, useDialogState } from "@opentui-ui/dialog/react";
 import { PluginRegistry } from "./plugins/registry";
 import { AppPersistence } from "./data/app-persistence";
 import { TickerRepository } from "./data/ticker-repository";
@@ -33,6 +33,7 @@ import {
   type PaneInstanceConfig,
 } from "./types/config";
 import type { PaneTemplateContext, PaneTemplateCreateOptions, PaneTemplateInstanceConfig } from "./types/plugin";
+import type { PaneSettingField } from "./types/plugin";
 import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { BrokerContractRef } from "./types/instrument";
@@ -85,6 +86,8 @@ import {
 } from "./state/session-persistence";
 import { initializeAppState } from "./state/app-bootstrap";
 import { TickerRefreshQueue } from "./state/ticker-refresh-queue";
+import { PaneSettingsDialogContent } from "./components/pane-settings-dialog";
+import { setPaneSettings, updatePaneInstance } from "./pane-settings";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -100,6 +103,9 @@ interface AppInnerProps {
 function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
+  const dialog = useDialog();
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const focusedCollectionId = getFocusedCollectionId(state);
 
   const resolvePrimaryPaneInstanceId = useCallback((paneId: string): string | null => {
@@ -257,6 +263,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     title?: string;
     binding?: PaneBinding;
     params?: Record<string, string>;
+    settings?: Record<string, unknown>;
     instanceId?: string;
   }): PaneInstanceConfig | null => {
     if (paneType === "portfolio-list") {
@@ -270,6 +277,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
         title: options?.title,
         binding: options?.binding ?? { kind: "none" },
         params: { collectionId },
+        settings: options?.settings,
       });
     }
     const binding = options?.binding ?? buildPaneBinding(paneType);
@@ -279,6 +287,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       title: options?.title,
       binding: binding ?? { kind: "none" },
       params: options?.params,
+      settings: options?.settings,
     });
   }, [buildPaneBinding, state]);
 
@@ -760,15 +769,16 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
   pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
   pluginRegistry.openCommandBarFn = (query) => dispatch({ type: "SET_COMMAND_BAR", open: true, query });
   const persistLayout = (layout: LayoutConfig, options?: { pushHistory?: boolean }) => {
+    const currentState = stateRef.current;
     const normalizedLayout = normalizePaneLayout(layout);
-    const layouts = state.config.layouts.map((savedLayout, index) => (
-      index === state.config.activeLayoutIndex ? { ...savedLayout, layout: normalizedLayout } : savedLayout
+    const layouts = currentState.config.layouts.map((savedLayout, index) => (
+      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout: normalizedLayout } : savedLayout
     ));
     if (options?.pushHistory !== false) {
       dispatch({ type: "PUSH_LAYOUT_HISTORY" });
     }
     dispatch({ type: "UPDATE_LAYOUT", layout: normalizedLayout });
-    saveConfig({ ...state.config, layout: normalizedLayout, layouts }).catch(() => {});
+    saveConfig({ ...currentState.config, layout: normalizedLayout, layouts }).catch(() => {});
   };
   const resolvePanelForPane = (paneId: string): "left" | "right" => {
     const instanceId = resolvePaneTarget(paneId);
@@ -959,6 +969,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       title: spec.title,
       binding: spec.binding,
       params: spec.params,
+      settings: spec.settings,
     });
     if (!instance) {
       pluginRegistry.showToastFn("Open a matching ticker or collection context first.", { type: "info" });
@@ -968,8 +979,98 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     placePaneInstance(instance, paneDef, spec);
   }, [buildPaneInstance, dataProvider, dispatch, placePaneInstance, pluginRegistry, state, tickerRepository]);
 
+  const openPaneSettings = useCallback(async (paneId?: string) => {
+    const targetPaneId = paneId
+      ? resolvePaneTarget(paneId)
+      : stateRef.current.focusedPaneId;
+    if (!targetPaneId || !pluginRegistry.hasPaneSettings(targetPaneId)) return;
+
+    let shouldPushHistory = true;
+    const applyFieldValue = async (targetId: string, field: PaneSettingField, value: unknown) => {
+      const descriptor = pluginRegistry.resolvePaneSettings(targetId);
+      if (!descriptor) return;
+
+      const currentState = stateRef.current;
+
+      if (descriptor.pane.paneId === "quote-monitor" && field.key === "symbol") {
+        const rawQuery = typeof value === "string" ? value.trim() : "";
+        const resolvedTicker = await resolveTickerSearch({
+          query: rawQuery,
+          activeTicker: null,
+          tickers: currentState.tickers,
+          dataProvider,
+        });
+        if (!resolvedTicker) {
+          throw new Error(`No ticker match found for "${rawQuery}".`);
+        }
+
+        const symbol = resolvedTicker.kind === "local"
+          ? resolvedTicker.ticker.metadata.ticker
+          : resolvedTicker.symbol;
+
+        if (resolvedTicker.kind === "provider") {
+          const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolvedTicker.result);
+          dispatch({ type: "UPDATE_TICKER", ticker });
+          if (created) {
+            pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
+          }
+        }
+
+        const nextLayout = updatePaneInstance(currentState.config.layout, targetId, (instance) => ({
+          ...instance,
+          title: symbol,
+          binding: { kind: "fixed", symbol },
+          settings: {
+            ...(instance.settings ?? {}),
+            symbol,
+          },
+        }));
+        persistLayout(nextLayout, { pushHistory: shouldPushHistory });
+        shouldPushHistory = false;
+        return;
+      }
+
+      const nextSettings = {
+        ...descriptor.context.settings,
+        [field.key]: value,
+      };
+
+      if (descriptor.pane.paneId === "portfolio-list" && field.key === "hideTabs" && value === true) {
+        const lockedCollectionId = typeof descriptor.context.paneState.collectionId === "string"
+          ? descriptor.context.paneState.collectionId
+          : descriptor.context.activeCollectionId;
+        if (lockedCollectionId) {
+          nextSettings.lockedCollectionId = lockedCollectionId;
+        }
+      }
+
+      if (descriptor.pane.paneId === "ticker-detail" && field.key === "hideTabs" && value === true) {
+        const lockedTabId = typeof descriptor.context.paneState.activeTabId === "string"
+          ? descriptor.context.paneState.activeTabId
+          : "overview";
+        nextSettings.lockedTabId = lockedTabId;
+      }
+
+      const nextLayout = setPaneSettings(currentState.config.layout, targetId, nextSettings);
+      persistLayout(nextLayout, { pushHistory: shouldPushHistory });
+      shouldPushHistory = false;
+    };
+
+    await dialog.alert({
+      content: (ctx) => (
+        <PaneSettingsDialogContent
+          {...ctx}
+          paneId={targetPaneId}
+          pluginRegistry={pluginRegistry}
+          applyFieldValue={applyFieldValue}
+        />
+      ),
+    });
+  }, [dataProvider, dialog, dispatch, persistLayout, pluginRegistry, resolvePaneTarget, tickerRepository]);
+
   pluginRegistry.getLayoutFn = () => state.config.layout;
   pluginRegistry.updateLayoutFn = (layout) => persistLayout(layout);
+  pluginRegistry.openPaneSettingsFn = (paneId) => { void openPaneSettings(paneId); };
   pluginRegistry.showPaneFn = (paneId) => showPane(paneId);
   pluginRegistry.createPaneFromTemplateFn = (templateId, options) => { void createPaneFromTemplate(templateId, options); };
   pluginRegistry.hidePaneFn = (paneId) => {
