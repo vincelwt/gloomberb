@@ -102,9 +102,15 @@ export function formatWithDivisor(value: number | undefined, divisor: number): s
 }
 
 /** Pad/truncate a string to a fixed width */
-export function padTo(str: string, width: number, align: "left" | "right" = "left"): string {
+export function padTo(str: string, width: number, align: "left" | "right" | "center" = "left"): string {
   if (str.length > width) return str.slice(0, width);
   if (align === "right") return str.padStart(width);
+  if (align === "center") {
+    const totalPadding = width - str.length;
+    const leftPadding = Math.floor(totalPadding / 2);
+    const rightPadding = totalPadding - leftPadding;
+    return " ".repeat(leftPadding) + str + " ".repeat(rightPadding);
+  }
   return str.padEnd(width);
 }
 
