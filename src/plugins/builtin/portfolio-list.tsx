@@ -43,6 +43,8 @@ interface PortfolioPaneSettings {
   collectionScope: CollectionScope;
   visibleCollectionIds: string[];
   hideTabs: boolean;
+  hideHeader: boolean;
+  hideCash: boolean;
   lockedCollectionId: string;
 }
 
@@ -378,6 +380,8 @@ function getPortfolioPaneSettings(settings: Record<string, unknown> | undefined)
     collectionScope: isCollectionScope(settings?.collectionScope) ? settings.collectionScope : "all",
     visibleCollectionIds,
     hideTabs: settings?.hideTabs === true,
+    hideHeader: settings?.hideHeader === true,
+    hideCash: settings?.hideCash === true,
     lockedCollectionId: typeof settings?.lockedCollectionId === "string" ? settings.lockedCollectionId : "",
   };
 }
@@ -388,6 +392,8 @@ function createPortfolioPaneSettings(overrides: Partial<PortfolioPaneSettings> =
     collectionScope: overrides.collectionScope ?? "all",
     visibleCollectionIds: [...(overrides.visibleCollectionIds ?? [])],
     hideTabs: overrides.hideTabs ?? false,
+    hideHeader: overrides.hideHeader ?? false,
+    hideCash: overrides.hideCash ?? false,
     lockedCollectionId: overrides.lockedCollectionId ?? "",
   };
 }
@@ -516,6 +522,20 @@ function buildPortfolioPaneSettingsDef(config: AppConfig, settings: PortfolioPan
     key: "hideTabs",
     label: "Hide Tabs",
     description: "Hide the collection tab bar and lock this pane to one collection.",
+    type: "toggle",
+  });
+
+  fields.push({
+    key: "hideHeader",
+    label: "Hide Header Bar",
+    description: "Hide the summary bar showing portfolio value, P&L, and account metrics.",
+    type: "toggle",
+  });
+
+  fields.push({
+    key: "hideCash",
+    label: "Hide Cash Positions",
+    description: "Hide the cash & margin drawer at the bottom of the pane.",
     type: "toggle",
   });
 
@@ -1133,17 +1153,19 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     ? state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
     : null;
   const accountState = usePortfolioAccountState(currentPortfolio, state);
-  const showCashDrawer = !!(isPortfolioTab && currentPortfolio?.brokerInstanceId && accountState);
+  const showCashDrawer = !paneSettings.hideCash && !!(isPortfolioTab && currentPortfolio?.brokerInstanceId && accountState);
   const requestedDrawerHeight = showCashDrawer
     ? (cashDrawerExpanded
       ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length))
       : 1)
     : 0;
-  const summaryWidth = paneSettings.hideTabs
+  const summaryWidth = paneSettings.hideTabs || paneSettings.hideHeader
     ? 0
     : calculatePortfolioSummaryWidth(width, tabs.map((tab) => tab.name));
-  const showStackedSummary = paneSettings.hideTabs || summaryWidth === 0;
-  const headerHeight = paneSettings.hideTabs ? 1 : (showStackedSummary ? 2 : 1);
+  const showStackedSummary = !paneSettings.hideHeader && (paneSettings.hideTabs || summaryWidth === 0);
+  const headerHeight = paneSettings.hideHeader
+    ? (paneSettings.hideTabs ? 0 : 1)
+    : paneSettings.hideTabs ? 1 : (showStackedSummary ? 2 : 1);
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
