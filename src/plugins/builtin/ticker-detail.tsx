@@ -27,6 +27,7 @@ function hasStatementFinancials(financials: TickerFinancials | null | undefined)
 
 export function buildVisibleDetailTabs(
   pluginTabs: DetailTabDef[],
+  ticker: import("../../types/ticker").TickerRecord | null,
   financials: TickerFinancials | null | undefined,
   options: {
     hasIbkrGatewayTrading: boolean;
@@ -40,6 +41,12 @@ export function buildVisibleDetailTabs(
   tabs.push(CORE_CHART_TAB);
 
   for (const tab of pluginTabs) {
+    if (tab.isVisible && !tab.isVisible({
+      ticker,
+      financials,
+      hasIbkrGatewayTrading: options.hasIbkrGatewayTrading,
+      hasOptionsChain: options.hasOptionsChain,
+    })) continue;
     if (tab.id === "ibkr-trade" && !options.hasIbkrGatewayTrading) continue;
     if (tab.id === "options" && !options.hasOptionsChain) continue;
     tabs.push({ id: tab.id, name: tab.name, order: tab.order });
@@ -616,7 +623,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     : [];
   const hasIbkrGatewayTrading = getConfiguredIbkrGatewayInstances(state.config).length > 0;
 
-  const allTabs = buildVisibleDetailTabs(pluginTabs, financials, {
+  const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {
     hasIbkrGatewayTrading,
     hasOptionsChain,
   });

@@ -11,6 +11,20 @@ export interface NewsItem {
   summary?: string;
 }
 
+export interface SecFilingItem {
+  accessionNumber: string;
+  form: string;
+  filingDate: Date;
+  acceptedAt?: Date;
+  primaryDocument?: string;
+  primaryDocDescription?: string;
+  items?: string;
+  cik: string;
+  companyName?: string;
+  filingUrl: string;
+  primaryDocumentUrl?: string;
+}
+
 export interface MarketDataRequestContext {
   brokerId?: string;
   brokerInstanceId?: string;
@@ -35,6 +49,8 @@ export interface DataProvider {
   getExchangeRate(fromCurrency: string): Promise<number>;
   search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]>;
   getNews(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<NewsItem[]>;
+  getSecFilings?(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]>;
+  getSecFilingContent?(filing: SecFilingItem): Promise<string | null>;
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;
   getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]>;

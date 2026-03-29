@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useReducer } from "react";
+import { act, useReducer, type ReactElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import {
   AppContext,
@@ -22,6 +22,7 @@ import type { PluginRegistry } from "../registry";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
 import { resetOptionsAvailabilityCache } from "./options-availability";
 import { FinancialsTab, tickerDetailPlugin } from "./ticker-detail";
+import { isUsEquityTicker } from "../../utils/sec";
 
 const TEST_PANE_ID = "ticker-detail:test";
 
@@ -34,9 +35,13 @@ const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
   focused: boolean;
   width: number;
   height: number;
-}) => JSX.Element;
+}) => ReactElement;
 
-function makeTicker(symbol: string, name = symbol): TickerRecord {
+function makeTicker(
+  symbol: string,
+  name = symbol,
+  overrides: Partial<TickerRecord["metadata"]> = {},
+): TickerRecord {
   return {
     metadata: {
       ticker: symbol,
@@ -48,6 +53,7 @@ function makeTicker(symbol: string, name = symbol): TickerRecord {
       positions: [],
       custom: {},
       tags: [],
+      ...overrides,
     },
   };
 }
@@ -127,6 +133,7 @@ function makeRegistry(): PluginRegistry {
   const detailTabs = new Map<string, DetailTabDef>([
     ["ibkr-trade", { id: "ibkr-trade", name: "Trade", order: 25, component: stubTab }],
     ["options", { id: "options", name: "Options", order: 35, component: stubTab }],
+    ["sec", { id: "sec", name: "SEC", order: 45, component: stubTab, isVisible: ({ ticker }) => isUsEquityTicker(ticker) }],
     ["ask-ai", { id: "ask-ai", name: "Ask AI", order: 60, component: stubTab }],
   ]);
   return { detailTabs } as unknown as PluginRegistry;
@@ -331,6 +338,46 @@ describe("TickerDetailPane", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Options");
+  });
+
+  test("shows SEC for US equities", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setSharedDataProviderForTests(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("SEC");
+  });
+
+  test("hides SEC for non-US equities", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setSharedDataProviderForTests(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("0700")}
+        ticker={makeTicker("0700", "Tencent", {
+          exchange: "HKEX",
+          currency: "HKD",
+          assetCategory: "STK",
+        })}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("SEC");
   });
 
   test("renders the company description in Overview when profile data is available", async () => {
