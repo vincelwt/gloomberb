@@ -103,15 +103,18 @@ function TradeHarness({
   config,
   ticker,
   financials,
+  brokerAccounts = {},
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials;
+  brokerAccounts?: Record<string, import("../../types/trading").BrokerAccount[]>;
 }) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
   state.tickers = new Map([[ticker.metadata.ticker, ticker]]);
   state.financials = new Map([[ticker.metadata.ticker, financials]]);
+  state.brokerAccounts = brokerAccounts;
 
   return (
     <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
@@ -178,4 +181,45 @@ test("renders the compact trade tab layout", async () => {
   expect(frame).not.toContain("1 Profile");
   expect(frame).not.toContain("Activate Ticket");
   expect(frame).toMatchSnapshot();
+});
+
+test("prefills the only cached IBKR account when the live gateway snapshot is empty", async () => {
+  const config = createTradeConfig("AMD");
+  const ticker = makeTicker("AMD", "Advanced Micro Devices, Inc.");
+  const financials = makeFinancials();
+
+  clearTradingDraft();
+  stubGatewayRefresh();
+  prefillTradeFromTicker(ticker, "BUY");
+
+  await act(async () => {
+    testSetup = await testRender(
+      <TradeHarness
+        config={config}
+        ticker={ticker}
+        financials={financials}
+        brokerAccounts={{
+          [TEST_INSTANCE_ID]: [{
+            accountId: "DU123456",
+            name: "Main",
+            currency: "USD",
+            source: "gateway",
+            updatedAt: Date.now(),
+          }],
+        }}
+      />,
+      { width: 88, height: 30 },
+    );
+  });
+
+  await act(async () => {
+    await testSetup!.renderOnce();
+  });
+  await act(async () => {
+    await testSetup!.renderOnce();
+  });
+
+  const frame = testSetup.captureCharFrame();
+  expect(frame).toContain("Account DU123456");
+  expect(frame).toContain("Paper Gateway");
 });

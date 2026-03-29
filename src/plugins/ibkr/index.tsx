@@ -105,6 +105,28 @@ function inferDraftAccountId(
   return undefined;
 }
 
+function getKnownIbkrAccounts(
+  brokerAccountsByInstance: Record<string, BrokerAccount[]>,
+  brokerInstanceId: string | undefined,
+  liveAccounts: BrokerAccount[],
+): BrokerAccount[] {
+  if (!brokerInstanceId) return liveAccounts;
+  const cachedAccounts = brokerAccountsByInstance[brokerInstanceId] ?? [];
+  if (liveAccounts.length === 0) return cachedAccounts;
+  if (cachedAccounts.length === 0) return liveAccounts;
+
+  const merged = new Map<string, BrokerAccount>();
+  for (const account of cachedAccounts) {
+    if (!account.accountId) continue;
+    merged.set(account.accountId, account);
+  }
+  for (const account of liveAccounts) {
+    if (!account.accountId) continue;
+    merged.set(account.accountId, { ...(merged.get(account.accountId) ?? {}), ...account });
+  }
+  return [...merged.values()];
+}
+
 function formatContractLabel(contract: BrokerContractRef): string {
   const base = contract.localSymbol || contract.symbol;
   const suffix = contract.secType ? ` ${contract.secType}` : "";
@@ -464,6 +486,8 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
   const gatewayService = selectedBrokerInstanceId ? ibkrGatewayManager.getService(selectedBrokerInstanceId) : null;
   const normalizedConfig = selectedInstance ? normalizeIbkrConfig(selectedInstance.config) : null;
   const isGatewayMode = selectedInstance != null && normalizedConfig?.connectionMode === "gateway";
+  const cachedAccounts = selectedBrokerInstanceId ? state.brokerAccounts[selectedBrokerInstanceId] ?? [] : [];
+  const availableAccounts = getKnownIbkrAccounts(state.brokerAccounts, selectedBrokerInstanceId, gatewaySnapshot.accounts);
   const gatewayRequiredMessage = gatewayInstances.length > 0
     ? "Choose a Gateway / TWS IBKR profile first."
     : "Connect a Gateway / TWS IBKR profile first.";
@@ -471,13 +495,13 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
     ? inferDraftAccountId(
       state.config,
       collectionId,
-      gatewaySnapshot.accounts,
+      availableAccounts,
       selectedInstance.id,
       tradeState.accountId,
     )
     : undefined;
   const currentAccountId = ticketState.draft.accountId || inferredAccountId;
-  const activeAccount = gatewaySnapshot.accounts.find((account) => account.accountId === currentAccountId);
+  const activeAccount = availableAccounts.find((account) => account.accountId === currentAccountId);
 
   const enterInteractive = useCallback(() => {
     setInteractive(true);
@@ -530,11 +554,11 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
   ]);
 
   useEffect(() => {
-    if (!symbol || !ticker || !isGatewayMode || gatewaySnapshot.accounts.length === 0 || ticketState.draft.accountId || !selectedInstance) return;
+    if (!symbol || !ticker || !isGatewayMode || availableAccounts.length === 0 || ticketState.draft.accountId || !selectedInstance) return;
     const inferred = inferDraftAccountId(
       state.config,
       collectionId,
-      gatewaySnapshot.accounts,
+      availableAccounts,
       selectedInstance.id,
       tradeState.accountId,
     );
@@ -546,6 +570,7 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
     ticker,
     isGatewayMode,
     gatewaySnapshot.accounts,
+    cachedAccounts,
     ticketState.draft.accountId,
     selectedInstance,
     state.config,
@@ -566,7 +591,11 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
       const inferred = inferDraftAccountId(
         state.config,
         collectionId,
-        gatewayService?.getSnapshot().accounts ?? [],
+        getKnownIbkrAccounts(
+          state.brokerAccounts,
+          selectedInstance.id,
+          gatewayService?.getSnapshot().accounts ?? [],
+        ),
         selectedInstance.id,
         tradeState.accountId,
       );
@@ -587,6 +616,7 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
     isGatewayMode,
     gatewayRequiredMessage,
     state.config,
+    state.brokerAccounts,
     collectionId,
     gatewayService,
     tradeState.accountId,
@@ -700,11 +730,15 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
 
   const chooseAccount = useCallback(async () => {
     if (!symbol || !ticker || !selectedInstance || !normalizedConfig || !gatewayService || !isGatewayMode) return;
-    const accounts = gatewaySnapshot.accounts;
+    const accounts = availableAccounts;
     if (accounts.length === 0) {
       await refresh();
     }
-    const nextAccounts = gatewayService.getSnapshot().accounts;
+    const nextAccounts = getKnownIbkrAccounts(
+      state.brokerAccounts,
+      selectedInstance.id,
+      gatewayService.getSnapshot().accounts,
+    );
     if (nextAccounts.length === 0) {
       setTradeTicketMessage(symbol, undefined, "No IBKR accounts available.", ticker);
       return;
@@ -723,7 +757,19 @@ export function TradeTab({ focused, width, height, onCapture }: DetailTabProps) 
     if (!selected) return;
     updateTradingPaneState({ accountId: selected });
     setTradeTicketDraft(symbol, { brokerInstanceId: selectedInstance.id, accountId: selected }, ticker);
-  }, [symbol, ticker, selectedInstance, normalizedConfig, gatewayService, isGatewayMode, gatewaySnapshot.accounts, refresh, dialog]);
+  }, [
+    symbol,
+    ticker,
+    selectedInstance,
+    normalizedConfig,
+    gatewayService,
+    isGatewayMode,
+    gatewaySnapshot.accounts,
+    cachedAccounts,
+    refresh,
+    dialog,
+    state.brokerAccounts,
+  ]);
 
   const editNumericField = useCallback(async (
     label: string,
@@ -1430,6 +1476,8 @@ function TradingPane({ focused, width, height }: PaneProps) {
   const gatewayService = selectedBrokerInstanceId ? ibkrGatewayManager.getService(selectedBrokerInstanceId) : null;
   const normalizedConfig = selectedInstance ? normalizeIbkrConfig(selectedInstance.config) : null;
   const isGatewayMode = selectedInstance != null && normalizedConfig?.connectionMode === "gateway";
+  const cachedAccounts = selectedBrokerInstanceId ? state.brokerAccounts[selectedBrokerInstanceId] ?? [] : [];
+  const availableAccounts = getKnownIbkrAccounts(state.brokerAccounts, selectedBrokerInstanceId, gatewaySnapshot.accounts);
   const statusMessage = gatewaySnapshot.status.message || gatewaySnapshot.lastError;
   const displayStatusState = gatewaySnapshot.status.state === "error" && isMarketDataWarning(statusMessage)
     ? "connected"
@@ -1466,18 +1514,18 @@ function TradingPane({ focused, width, height }: PaneProps) {
   }, [selectedInstance, tradeState.brokerInstanceId, tradeState.brokerLabel, tradeState.accountId, lockedBrokerInstanceId, activePortfolio?.brokerAccountId]);
 
   useEffect(() => {
-    if (!isGatewayMode || gatewaySnapshot.accounts.length === 0 || tradeState.accountId || !selectedInstance) return;
+    if (!isGatewayMode || availableAccounts.length === 0 || tradeState.accountId || !selectedInstance) return;
     const inferred = inferDraftAccountId(
       state.config,
       collectionId,
-      gatewaySnapshot.accounts,
+      availableAccounts,
       selectedInstance.id,
       tradeState.accountId,
     );
     if (inferred) {
       updateTradingPaneState({ accountId: inferred });
     }
-  }, [isGatewayMode, gatewaySnapshot.accounts, tradeState.accountId, state.config, collectionId, selectedInstance]);
+  }, [isGatewayMode, gatewaySnapshot.accounts, cachedAccounts, tradeState.accountId, state.config, collectionId, selectedInstance]);
 
   const refresh = useCallback(async () => {
     if (!selectedInstance || !normalizedConfig || !isGatewayMode || !isGatewayConfigured(selectedInstance.config)) {
@@ -1491,7 +1539,11 @@ function TradingPane({ focused, width, height }: PaneProps) {
       const inferred = inferDraftAccountId(
         state.config,
         collectionId,
-        gatewayService?.getSnapshot().accounts ?? [],
+        getKnownIbkrAccounts(
+          state.brokerAccounts,
+          selectedInstance.id,
+          gatewayService?.getSnapshot().accounts ?? [],
+        ),
         selectedInstance.id,
         tradeState.accountId,
       );
@@ -1504,7 +1556,17 @@ function TradingPane({ focused, width, height }: PaneProps) {
     } finally {
       setTradingBusy(false);
     }
-  }, [selectedInstance, normalizedConfig, isGatewayMode, state.config, collectionId, gatewayService, tradeState.accountId, gatewayRequiredMessage]);
+  }, [
+    selectedInstance,
+    normalizedConfig,
+    isGatewayMode,
+    state.config,
+    state.brokerAccounts,
+    collectionId,
+    gatewayService,
+    tradeState.accountId,
+    gatewayRequiredMessage,
+  ]);
 
   useEffect(() => {
     if (!selectedInstance || !normalizedConfig || !isGatewayMode || !isGatewayConfigured(selectedInstance.config)) return;
@@ -1546,11 +1608,15 @@ function TradingPane({ focused, width, height }: PaneProps) {
 
   const chooseAccount = useCallback(async () => {
     if (!selectedInstance || !normalizedConfig || !gatewayService || !isGatewayMode) return;
-    const accounts = gatewaySnapshot.accounts;
+    const accounts = availableAccounts;
     if (accounts.length === 0) {
       await refresh();
     }
-    const nextAccounts = gatewayService.getSnapshot().accounts;
+    const nextAccounts = getKnownIbkrAccounts(
+      state.brokerAccounts,
+      selectedInstance.id,
+      gatewayService.getSnapshot().accounts,
+    );
     if (nextAccounts.length === 0) {
       setTradingMessage(undefined, "No IBKR accounts available.");
       return;
@@ -1568,7 +1634,17 @@ function TradingPane({ focused, width, height }: PaneProps) {
     });
     if (!selected) return;
     updateTradingPaneState({ accountId: selected });
-  }, [dialog, gatewaySnapshot.accounts, selectedInstance, normalizedConfig, gatewayService, isGatewayMode, refresh]);
+  }, [
+    dialog,
+    gatewaySnapshot.accounts,
+    cachedAccounts,
+    selectedInstance,
+    normalizedConfig,
+    gatewayService,
+    isGatewayMode,
+    refresh,
+    state.brokerAccounts,
+  ]);
 
   const cancelSelectedOrder = useCallback(async () => {
     if (!selectedOrder || !selectedInstance || !normalizedConfig || !gatewayService || !isGatewayMode) return;
@@ -1641,7 +1717,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
     }
   });
 
-  const activeAccount = gatewaySnapshot.accounts.find((account) => account.accountId === (tradeState.accountId || ""));
+  const activeAccount = availableAccounts.find((account) => account.accountId === (tradeState.accountId || ""));
   const orderPanelWidth = Math.max(36, Math.floor(width * 0.6));
   const listPanelWidth = Math.max(24, width - orderPanelWidth - 1);
   const listHeight = Math.max(4, height - 6);
