@@ -1,18 +1,39 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { act, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { Button } from "./button";
+import { ListView } from "./list-view";
 import { ProgressBar } from "./loading";
 import { Notice } from "./status";
 import { Tabs } from "./tabs";
 import { ToggleList } from "../toggle-list";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+let setListSelection: ((index: number) => void) | null = null;
+
+function ScrollableListHarness() {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  setListSelection = setSelectedIndex;
+
+  return (
+    <ListView
+      items={Array.from({ length: 12 }, (_, index) => ({
+        id: `row-${index}`,
+        label: `Row ${index + 1}`,
+      }))}
+      selectedIndex={selectedIndex}
+      height={4}
+      scrollable
+    />
+  );
+}
 
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
   }
+  setListSelection = null;
 });
 
 describe("shared UI kit", () => {
@@ -66,5 +87,27 @@ describe("shared UI kit", () => {
     expect(frame).toContain("[✓] News");
     expect(frame).toContain("Notes");
     expect(frame).toContain("Headlines and previews");
+  });
+
+  test("auto-scrolls a scrollable list to keep the selected row visible", async () => {
+    testSetup = await testRender(
+      <ScrollableListHarness />,
+      { width: 20, height: 6 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      setListSelection!(8);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Row 9");
+    expect(frame).not.toContain("Row 1");
   });
 });
