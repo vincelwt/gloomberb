@@ -264,7 +264,7 @@ describe("loadConfig", () => {
 
     const config = await loadConfig(dataDir);
 
-    expect(config.configVersion).toBe(8);
+    expect(config.configVersion).toBe(9);
     expect(config.activeLayoutIndex).toBe(1);
     expect(config.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
     expect(getDockedPaneIds(config.layout)).toEqual(["portfolio-list:main"]);
@@ -277,7 +277,7 @@ describe("loadConfig", () => {
       activeLayoutIndex: number;
     };
 
-    expect(persisted.configVersion).toBe(8);
+    expect(persisted.configVersion).toBe(9);
     expect(persisted.activeLayoutIndex).toBe(1);
     expect(persisted.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
     expect(persisted.layouts[1]?.layout.dockRoot).toBeDefined();

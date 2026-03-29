@@ -24,7 +24,7 @@ import type { TickerRepository } from "../../data/ticker-repository";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { CommandDef, PaneTemplateCreateOptions, PaneTemplateDef, WizardStep } from "../../types/plugin";
-import { DEFAULT_LAYOUT, cloneLayout, createPaneInstance, findPaneInstance, type ColumnConfig, type LayoutConfig } from "../../types/config";
+import { DEFAULT_LAYOUT, cloneLayout, createPaneInstance, findPaneInstance, type LayoutConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
@@ -61,26 +61,6 @@ import {
 } from "../../utils/ticker-search";
 import { debugLog } from "../../utils/debug-log";
 
-/** All available columns that can be toggled */
-const ALL_COLUMNS: ColumnConfig[] = [
-  { id: "ticker", label: "TICKER", width: 8, align: "left" },
-  { id: "price", label: "PRICE", width: 10, align: "right", format: "currency" },
-  { id: "change", label: "CHG", width: 9, align: "right", format: "currency" },
-  { id: "change_pct", label: "CHG%", width: 8, align: "right", format: "percent" },
-  { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
-  { id: "market_cap", label: "MCAP", width: 10, align: "right", format: "compact" },
-  { id: "pe", label: "P/E", width: 7, align: "right", format: "number" },
-  { id: "forward_pe", label: "FWD P/E", width: 8, align: "right", format: "number" },
-  { id: "dividend_yield", label: "DIV%", width: 7, align: "right", format: "percent" },
-  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
-  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
-  { id: "cost_basis", label: "COST", width: 10, align: "right", format: "compact" },
-  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
-  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
-  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
-  { id: "latency", label: "AGE", width: 6, align: "right" },
-];
-
 interface CommandBarProps {
   dataProvider: DataProvider;
   tickerRepository: TickerRepository;
@@ -93,7 +73,7 @@ interface ResultItem {
   label: string;
   detail: string;
   category: string;
-  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "column" | "action" | "info";
+  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "action" | "info";
   right?: string;
   searchText?: string;
   themeId?: string; // for theme items — enables live preview
@@ -624,9 +604,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         })();
         return;
       }
-      case "columns": {
-        // Enter columns mode by setting the prefix
-        dispatch({ type: "SET_COMMAND_BAR_QUERY", query: "COL " });
+      case "pane-settings": {
+        if (state.focusedPaneId) {
+          pluginRegistry.openPaneSettingsFn(state.focusedPaneId);
+        }
+        close();
         return;
       }
       case "cycle-chart-renderer": {
@@ -889,6 +871,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       title: pane.title,
       binding: pane.binding,
       params: pane.params,
+      settings: pane.settings,
     });
 
     const { width, height } = pluginRegistry.getTermSizeFn();
@@ -1147,28 +1130,9 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const modeInfo = resolveCommandBarMode(query);
   const isThemeMode = modeInfo.kind === "themes";
   const isPluginMode = modeInfo.kind === "plugins";
-  const isColumnsMode = modeInfo.kind === "columns";
   const isLayoutMode = modeInfo.kind === "layout";
   const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
-
-  // Toggle a column on/off
-  const toggleColumn = useCallback((colId: string) => {
-    const current = state.config.columns;
-    const isActive = current.some((c) => c.id === colId);
-    let newCols: ColumnConfig[];
-    if (isActive) {
-      // Don't allow removing all columns
-      if (current.length <= 1) return;
-      newCols = current.filter((c) => c.id !== colId);
-    } else {
-      const colDef = ALL_COLUMNS.find((c) => c.id === colId);
-      if (!colDef) return;
-      newCols = [...current, colDef];
-    }
-    const newConfig = { ...state.config, columns: newCols };
-    dispatch({ type: "SET_CONFIG", config: newConfig });
-    saveConfig(newConfig).catch(() => {});
-  }, [state.config, dispatch]);
+  const focusedPaneHasSettings = !!state.focusedPaneId && pluginRegistry.hasPaneSettings(state.focusedPaneId);
 
   useEffect(() => {
     const isWatchlistTab = state.config.watchlists.some((w) => w.id === activeCollectionId);
@@ -1206,6 +1170,8 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
         case "disconnect-broker-account":
           return state.config.brokerInstances.length > 0;
+        case "pane-settings":
+          return focusedPaneHasSettings;
         default:
           return true;
       }
@@ -1301,21 +1267,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           checked: isEnabled,
           pluginToggle: toggleAction,
           action: toggleAction,
-        });
-      }
-    } else if (match && match.command.id === "columns") {
-      const activeIds = new Set(state.config.columns.map((c) => c.id));
-      for (const col of ALL_COLUMNS) {
-        const isOn = activeIds.has(col.id);
-        items.push({
-          id: `col:${col.id}`,
-          label: col.label,
-          detail: `${col.id} | w:${col.width} | ${col.align}`,
-          right: col.format || "",
-          category: "Columns",
-          kind: "column",
-          checked: isOn,
-          action: () => toggleColumn(col.id),
         });
       }
     } else if (match && match.command.id === "new-pane") {
@@ -1693,7 +1644,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       previousSelectionContextRef.current?.query !== query
       || previousSelectionContextRef.current?.mode !== modeInfo.kind;
 
-    if (match?.command.id === "columns" || match?.command.id === "plugins" || !selectionContextChanged) {
+    if (match?.command.id === "plugins" || !selectionContextChanged) {
       setSelectedIdx((prev) => Math.max(0, Math.min(prev, items.length - 1)));
     } else {
       setSelectedIdx(initialIdx);
@@ -1765,6 +1716,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     dispatch,
     duplicatePane,
     focusTicker,
+    focusedPaneHasSettings,
     localTickerSearchResultItems,
     mapTickerSearchCandidateToResultItem,
     nonShortcutPaneTemplateItems,
@@ -1777,7 +1729,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     query,
     state,
     tickerActionItems,
-    toggleColumn,
   ]);
 
   const exactTickerResult = (() => {
@@ -1861,14 +1812,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         return;
       }
 
-      if (event.name === "space" && isColumnsMode) {
-        event.stopPropagation();
-        event.preventDefault();
-        const selected = results[selectedIdx];
-        if (selected) selected.action();
-        return;
-      }
-
       if (event.name === "return" || event.name === "enter") {
         event.stopPropagation();
         event.preventDefault();
@@ -1888,7 +1831,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     return () => {
       renderer.keyInput.off("keypress", handleKeyPress);
     };
-  }, [close, closeAndRevert, exactTickerResult, isColumnsMode, isPluginMode, isThemeMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
+  }, [close, closeAndRevert, exactTickerResult, isPluginMode, isThemeMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
 
   const barWidth = Math.max(42, Math.min(64, termWidth - 8, Math.floor(termWidth * 0.62)));
   const isNarrow = barWidth < 52;

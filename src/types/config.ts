@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 8;
+export const CURRENT_CONFIG_VERSION = 9;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -56,6 +56,7 @@ export interface PaneInstanceConfig {
   title?: string;
   binding?: PaneBinding;
   params?: Record<string, string>;
+  settings?: Record<string, unknown>;
   placementMemory?: PanePlacementMemory;
 }
 
@@ -101,7 +102,6 @@ export interface AppConfig {
   refreshIntervalMinutes: number;
   portfolios: Portfolio[];
   watchlists: Watchlist[];
-  columns: ColumnConfig[];
   layout: LayoutConfig;
   layouts: SavedLayout[];
   activeLayoutIndex: number;
@@ -148,11 +148,22 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       instanceId: "portfolio-list:main",
       paneId: "portfolio-list",
       params: { collectionId: "main" },
+      settings: {
+        columnIds: DEFAULT_COLUMNS.map((column) => column.id),
+        collectionScope: "all",
+        visibleCollectionIds: [],
+        hideTabs: false,
+        lockedCollectionId: "main",
+      },
       binding: { kind: "none" },
     },
     {
       instanceId: "ticker-detail:main",
       paneId: "ticker-detail",
+      settings: {
+        hideTabs: false,
+        lockedTabId: "overview",
+      },
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
     },
   ],
@@ -248,6 +259,23 @@ export function clonePlacementMemory(memory: PanePlacementMemory | undefined): P
   };
 }
 
+function cloneUnknownValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneUnknownValue(entry)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, cloneUnknownValue(entry)]),
+    ) as T;
+  }
+  return value;
+}
+
+export function clonePaneSettings(settings: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!settings) return undefined;
+  return cloneUnknownValue(settings);
+}
+
 export function isTickerPaneId(paneId: string): boolean {
   return TICKER_PANE_IDS.has(paneId);
 }
@@ -274,6 +302,7 @@ export function createPaneInstance(
     title: options.title,
     binding: clonePaneBinding(options.binding) ?? { kind: "none" },
     params: options.params ? { ...options.params } : undefined,
+    settings: clonePaneSettings(options.settings),
     placementMemory: clonePlacementMemory(options.placementMemory),
   };
 }
@@ -353,6 +382,7 @@ export function normalizePaneLayout(
       ...instance,
       binding: clonePaneBinding(instance.binding),
       params: instance.params ? { ...instance.params } : undefined,
+      settings: clonePaneSettings(instance.settings),
       placementMemory: clonePlacementMemory(instance.placementMemory),
     })),
     floating: nextLayout.floating
@@ -368,6 +398,7 @@ export function cloneLayout(layout: LayoutConfig): LayoutConfig {
       ...instance,
       binding: clonePaneBinding(instance.binding),
       params: instance.params ? { ...instance.params } : undefined,
+      settings: clonePaneSettings(instance.settings),
       placementMemory: clonePlacementMemory(instance.placementMemory),
     })),
     floating: layout.floating.map((entry) => ({ ...entry })),
@@ -387,7 +418,6 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     refreshIntervalMinutes: 30,
     portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
     watchlists: [{ id: "watchlist", name: "Watchlist" }],
-    columns: DEFAULT_COLUMNS.map((column) => ({ ...column })),
     layout,
     layouts: [{ name: "Default", layout: cloneLayout(layout) }],
     activeLayoutIndex: 0,

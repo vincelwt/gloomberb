@@ -117,12 +117,11 @@ export const commands: Command[] = [
     execute: () => {},
   },
 
-  // Columns
   {
-    id: "columns",
-    prefix: "COL",
-    label: "Edit Columns",
-    description: "Toggle visible table columns",
+    id: "pane-settings",
+    prefix: "PS",
+    label: "Pane Settings",
+    description: "Edit settings for the focused pane",
     category: "Config",
     execute: () => {}, // handled by command bar
   },

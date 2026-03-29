@@ -4,7 +4,6 @@ import type {
   AppConfig,
   BrokerInstanceConfig,
   ChartPreferences,
-  ColumnConfig,
   FloatingPlacementMemory,
   LayoutConfig,
   PanePlacementMemory,
@@ -17,6 +16,7 @@ import {
   createDefaultConfig,
   createPaneInstanceId,
   CURRENT_CONFIG_VERSION,
+  clonePaneSettings,
   normalizePaneLayout,
 } from "../types/config";
 import type { Portfolio, Watchlist } from "../types/ticker";
@@ -83,7 +83,6 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     refreshIntervalMinutes: typeof saved.refreshIntervalMinutes === "number" ? saved.refreshIntervalMinutes : defaults.refreshIntervalMinutes,
     portfolios: sanitizePortfolios(saved.portfolios, defaults.portfolios),
     watchlists: sanitizeWatchlists(saved.watchlists, defaults.watchlists),
-    columns: sanitizeColumns(saved.columns, defaults.columns),
     layout,
     layouts: syncedLayouts,
     activeLayoutIndex,
@@ -123,7 +122,6 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   const persisted: AppConfig = {
     ...config,
     configVersion: CURRENT_CONFIG_VERSION,
-    columns: sanitizeColumns(config.columns, createDefaultConfig(config.dataDir).columns),
     portfolios: sanitizePortfolios(config.portfolios, []),
     watchlists: sanitizeWatchlists(config.watchlists, []),
     layout,
@@ -220,20 +218,6 @@ function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): C
     defaultRenderMode,
     renderer,
   };
-}
-
-function sanitizeColumns(value: unknown, fallback: ColumnConfig[]): ColumnConfig[] {
-  if (!Array.isArray(value)) return fallback.map((column) => ({ ...column }));
-  return value
-    .filter((entry): entry is ColumnConfig =>
-      !!entry
-      && typeof entry === "object"
-      && typeof (entry as ColumnConfig).id === "string"
-      && typeof (entry as ColumnConfig).label === "string"
-      && typeof (entry as ColumnConfig).width === "number"
-      && ((entry as ColumnConfig).align === "left" || (entry as ColumnConfig).align === "right"),
-    )
-    .map((entry) => ({ ...entry }));
 }
 
 function sanitizePortfolios(value: unknown, fallback: Portfolio[]): Portfolio[] {
@@ -376,10 +360,43 @@ function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInst
             Object.entries(entry.params).filter((param): param is [string, string] => typeof param[1] === "string"),
           )
           : undefined,
+        settings: sanitizePaneSettings(entry.settings),
         placementMemory: sanitizePlacementMemory(entry.placementMemory),
       };
     });
   return instances.length > 0 ? instances : cloneLayout(fallback).instances;
+}
+
+function sanitizePaneSettings(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const sanitizeValue = (entry: unknown): unknown => {
+    if (entry == null) return entry;
+    if (typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean") {
+      return entry;
+    }
+    if (Array.isArray(entry)) {
+      return entry
+        .map((child) => sanitizeValue(child))
+        .filter((child) => child !== undefined);
+    }
+    if (typeof entry === "object") {
+      return Object.fromEntries(
+        Object.entries(entry as Record<string, unknown>)
+          .map(([key, child]) => [key, sanitizeValue(child)])
+          .filter(([, child]) => child !== undefined),
+      );
+    }
+    return undefined;
+  };
+
+  const settings = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([key, entry]) => [key, sanitizeValue(entry)])
+      .filter(([, entry]) => entry !== undefined),
+  );
+
+  return Object.keys(settings).length > 0 ? clonePaneSettings(settings) : undefined;
 }
 
 function getDefaultFollowSourceInstanceId(instances: PaneInstanceConfig[]): string | null {

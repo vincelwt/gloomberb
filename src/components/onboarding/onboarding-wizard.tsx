@@ -865,7 +865,7 @@ function ShortcutsStep() {
     { key: "T AAPL      ", desc: "Search and add any ticker" },
     { key: "TH          ", desc: "Switch theme" },
     { key: "PL          ", desc: "Toggle plugins" },
-    { key: "COL         ", desc: "Configure visible columns" },
+    { key: "PS          ", desc: "Edit the focused pane settings" },
     { key: "r / R       ", desc: "Refresh selected / all tickers" },
     { key: "q           ", desc: "Quit" },
   ];
