@@ -188,11 +188,19 @@ export interface DetailTabProps {
   onCapture: (capturing: boolean) => void;
 }
 
+export interface DetailTabVisibilityContext {
+  ticker: TickerRecord | null;
+  financials: TickerFinancials | null | undefined;
+  hasIbkrGatewayTrading: boolean;
+  hasOptionsChain: boolean;
+}
+
 export interface DetailTabDef {
   id: string;
   name: string;
   order: number;
   component: (props: DetailTabProps) => ReactNode;
+  isVisible?: (context: DetailTabVisibilityContext) => boolean;
 }
 
 export interface KeyboardShortcut {

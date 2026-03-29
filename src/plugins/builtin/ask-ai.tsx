@@ -67,14 +67,18 @@ function buildContext(ticker: TickerRecord, financials: TickerFinancials | null)
   const f = ticker.metadata;
   const q = financials?.quote;
   const fund = financials?.fundamentals;
+  const profile = financials?.profile;
+  const sector = f.sector ?? profile?.sector;
+  const industry = f.industry ?? profile?.industry;
 
   const lines: string[] = [
     `Company: ${f.name} (${f.ticker})`,
     `Exchange: ${f.exchange}`,
   ];
 
-  if (f.sector) lines.push(`Sector: ${f.sector}`);
-  if (f.industry) lines.push(`Industry: ${f.industry}`);
+  if (sector) lines.push(`Sector: ${sector}`);
+  if (industry) lines.push(`Industry: ${industry}`);
+  if (profile?.description) lines.push(`Description: ${profile.description}`);
 
   if (q) {
     lines.push(`Current Price: ${formatCurrency(q.price, q.currency)} (${q.change >= 0 ? "+" : ""}${q.changePercent.toFixed(2)}%)`);

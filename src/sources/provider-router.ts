@@ -3,7 +3,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { BrokerAdapter } from "../types/broker";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
-import type { DataProvider, MarketDataRequestContext, NewsItem, SearchRequestContext } from "../types/data-provider";
+import type { DataProvider, MarketDataRequestContext, NewsItem, SearchRequestContext, SecFilingItem } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
@@ -24,6 +24,8 @@ const DEFAULT_CACHE_POLICIES: Record<string, CachePolicy> = {
   priceHistoryIntraday: { staleMs: 5 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
   priceHistoryDaily: { staleMs: 24 * 60 * 60_000, expireMs: 30 * 24 * 60 * 60_000 },
   news: { staleMs: 15 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
+  secFilings: { staleMs: 15 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
+  secFilingContent: { staleMs: 30 * 24 * 60 * 60_000, expireMs: 365 * 24 * 60 * 60_000 },
   articleSummary: { staleMs: 30 * 24 * 60 * 60_000, expireMs: 90 * 24 * 60 * 60_000 },
   optionsChain: { staleMs: 5 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
   exchangeRate: { staleMs: 60 * 60_000, expireMs: 7 * 24 * 60 * 60_000 },
@@ -100,8 +102,21 @@ function hasMeaningfulFundamentals(data: TickerFinancials | null | undefined): b
   return !!data && Object.keys(data.fundamentals ?? {}).length > 0;
 }
 
+function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolean {
+  return !!data && !!(
+    data.profile?.description
+    || data.profile?.sector
+    || data.profile?.industry
+  );
+}
+
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
-  if (primary && hasMeaningfulFundamentals(primary)) return primary;
+  if (primary && hasMeaningfulFundamentals(primary)) {
+    if (!primary.profile && fallback?.profile) {
+      return { ...primary, profile: fallback.profile };
+    }
+    return primary;
+  }
   if (primary && fallback) {
     return {
       ...fallback,
@@ -186,6 +201,10 @@ export class ProviderRouter implements DataProvider {
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
     const cached = this.readCachedMergedFinancials(ticker, exchange, context, false);
     if (cached) {
+      if (!hasMeaningfulProfile(cached)) {
+        const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
+        return mergeFinancials(cached, providerResult?.value ?? null) ?? cached;
+      }
       this.scheduleRevalidation(this.makeRevalidationKey("financials", ticker, exchange, context), async () => {
         await this.revalidateFinancials(ticker, exchange, context);
       });
@@ -310,6 +329,45 @@ export class ProviderRouter implements DataProvider {
     const items = await provider.getNews(ticker, count, exchange, context);
     this.cacheResource("news", entityKey, variantKeys[0] ?? "", this.providerSourceKey(provider), items, this.resolveProviderPolicy("news", provider));
     return items;
+  }
+
+  async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKeys = [
+      buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]),
+      buildVariantKey([["count", count]]),
+      "",
+    ];
+    const cached = this.selectCachedResource<SecFilingItem[]>("sec-filings", entityKey, variantKeys, this.getProviderSourceKeys(), false);
+    if (cached) {
+      this.scheduleRevalidation(this.makeRevalidationKey("sec-filings", ticker, exchange, context, count), async () => {
+        await this.revalidateSecFilings(ticker, count, exchange, context);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderSecFilings(ticker, count, exchange, context);
+    if (!result) {
+      throw new Error(`No SEC filings provider available for ${ticker}`);
+    }
+    return result.value;
+  }
+
+  async getSecFilingContent(filing: SecFilingItem): Promise<string | null> {
+    const entityKey = compactUrl(filing.primaryDocumentUrl ?? filing.filingUrl);
+    const cached = this.selectCachedResource<string | null>("sec-filing-content", entityKey, [""], this.getProviderSourceKeys(), false);
+    if (cached) {
+      this.scheduleRevalidation(`sec-filing-content:${entityKey}`, async () => {
+        await this.revalidateSecFilingContent(filing);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderSecFilingContent(filing);
+    if (!result) {
+      throw new Error("No SEC filing content provider available");
+    }
+    return result.value;
   }
 
   async getArticleSummary(url: string): Promise<string | null> {
@@ -923,6 +981,58 @@ export class ProviderRouter implements DataProvider {
     return result;
   }
 
+  private async fetchProviderSecFilings(
+    ticker: string,
+    count = 15,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<SecFilingItem[]> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]);
+    let lastError: unknown = null;
+
+    for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
+      if (!provider.getSecFilings) continue;
+      try {
+        const value = await provider.getSecFilings(ticker, count, exchange, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("sec-filings", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("secFilings", provider));
+        return { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
+  private async fetchProviderSecFilingContent(filing: SecFilingItem): Promise<SourceResult<string | null> | null> {
+    const entityKey = compactUrl(filing.primaryDocumentUrl ?? filing.filingUrl);
+    let lastError: unknown = null;
+
+    for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
+      if (!provider.getSecFilingContent) continue;
+      try {
+        const value = await provider.getSecFilingContent(filing);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("sec-filing-content", entityKey, "", sourceKey, value, this.resolveProviderPolicy("secFilingContent", provider));
+        return { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
   private resolveProviderBySourceKey(sourceKey: string): DataProvider | null {
     for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
       if (this.providerSourceKey(provider) === sourceKey) return provider;
@@ -932,7 +1042,7 @@ export class ProviderRouter implements DataProvider {
 
   private async revalidateFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
     const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
-    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value);
+    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value) || !hasMeaningfulProfile(brokerResult.value);
     if (needsProvider) {
       await this.fetchProviderFinancials(ticker, exchange, context);
     }
@@ -962,6 +1072,14 @@ export class ProviderRouter implements DataProvider {
       items,
       this.resolveProviderPolicy("news", provider),
     );
+  }
+
+  private async revalidateSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
+    await this.fetchProviderSecFilings(ticker, count, exchange, context);
+  }
+
+  private async revalidateSecFilingContent(filing: SecFilingItem): Promise<void> {
+    await this.fetchProviderSecFilingContent(filing);
   }
 
   private async revalidateArticleSummary(url: string): Promise<void> {

@@ -59,6 +59,7 @@ import {
   searchTickerCandidates,
   type TickerSearchCandidate,
 } from "../../utils/ticker-search";
+import { debugLog } from "../../utils/debug-log";
 
 interface CommandBarProps {
   dataProvider: DataProvider;
@@ -86,6 +87,19 @@ interface ResultItem {
 interface PaneShortcutMatch {
   template: PaneTemplateDef;
   arg: string;
+}
+
+const commandBarLog = debugLog.createLogger("command-bar");
+
+function summarizeError(error: unknown): Record<string, string> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack || "",
+    };
+  }
+  return { message: String(error) };
 }
 
 // --- Wizard dialog content components ---
@@ -1005,7 +1019,18 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       .filter((template) => {
         const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
         if (pluginId && disabledPlugins.has(pluginId)) return false;
-        return !template.canCreate || template.canCreate(context, options);
+        if (!template.canCreate) return true;
+        try {
+          return template.canCreate(context, options);
+        } catch (error) {
+          commandBarLog.error("Pane template canCreate failed", {
+            templateId: template.id,
+            pluginId,
+            options,
+            error: summarizeError(error),
+          });
+          return false;
+        }
       });
   }, [getPaneTemplateContext, pluginRegistry, state.config.disabledPlugins]);
 

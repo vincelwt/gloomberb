@@ -54,6 +54,12 @@ export interface Fundamentals {
   sharesOutstanding?: number;
 }
 
+export interface CompanyProfile {
+  description?: string;
+  sector?: string;
+  industry?: string;
+}
+
 export interface FinancialStatement {
   date: string;
   // Income Statement
@@ -104,6 +110,7 @@ export interface PricePoint {
 export interface TickerFinancials {
   quote?: Quote;
   fundamentals?: Fundamentals;
+  profile?: CompanyProfile;
   annualStatements: FinancialStatement[];
   quarterlyStatements: FinancialStatement[];
   priceHistory: PricePoint[];
