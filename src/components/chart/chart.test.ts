@@ -211,6 +211,27 @@ describe("renderChart", () => {
     ]);
   });
 
+  test("formats y-axis labels as percent change when requested", () => {
+    const projection = projectChartData(chartFixture, 12, "line", false);
+    const result = renderChart(projection.points, {
+      width: 12,
+      height: 5,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      mode: projection.effectiveMode,
+      axisMode: "percent",
+      colors: palette,
+    });
+
+    expect(result.axisLabels).toEqual([
+      { row: 0, label: "+9.09%" },
+      { row: 1, label: "0.00%" },
+      { row: 3, label: "-9.09%" },
+      { row: 4, label: "-18.2%" },
+    ]);
+  });
+
   test("accepts serialized string dates from cached chart data", () => {
     const serialized = chartFixture.map((point) => ({
       ...point,
