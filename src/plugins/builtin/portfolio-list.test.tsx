@@ -35,7 +35,7 @@ function createBrokerInstance(connectionMode: "gateway" | "flex", id = `ibkr-${c
   };
 }
 
-function makeTicker(): TickerRecord {
+function makeTicker(overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
   return {
     metadata: {
       ticker: "AAPL",
@@ -66,11 +66,12 @@ function makeTicker(): TickerRecord {
       ],
       custom: {},
       tags: [],
+      ...overrides,
     },
   };
 }
 
-function makeQuote(): Quote {
+function makeQuote(overrides: Partial<Quote> = {}): Quote {
   return {
     symbol: "AAPL",
     price: 125,
@@ -81,6 +82,7 @@ function makeQuote(): Quote {
     name: "Apple",
     lastUpdated: Date.now(),
     marketState: "REGULAR",
+    ...overrides,
   };
 }
 
@@ -117,7 +119,20 @@ function createPortfolioConfig(portfolioId: string, brokerInstances: BrokerInsta
   };
 }
 
-function createPortfolioState(config: AppConfig, collectionId: string, expanded = false) {
+function createPortfolioState(
+  config: AppConfig,
+  collectionId: string,
+  expanded = false,
+  {
+    ticker = makeTicker(),
+    quote = makeQuote(),
+    exchangeRates,
+  }: {
+    ticker?: TickerRecord;
+    quote?: Quote;
+    exchangeRates?: Map<string, number>;
+  } = {},
+) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
   state.paneState[TEST_PANE_ID] = {
@@ -125,8 +140,11 @@ function createPortfolioState(config: AppConfig, collectionId: string, expanded 
     cursorSymbol: "AAPL",
     cashDrawerExpanded: expanded,
   };
-  state.tickers = new Map([["AAPL", makeTicker()]]);
-  state.financials = new Map([["AAPL", { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote: makeQuote() }]]);
+  state.tickers = new Map([["AAPL", ticker]]);
+  state.financials = new Map([["AAPL", { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote }]]);
+  if (exchangeRates) {
+    state.exchangeRates = exchangeRates;
+  }
   return state;
 }
 
@@ -135,13 +153,23 @@ function PortfolioHarness({
   collectionId,
   expanded = false,
   brokerAccounts = {},
+  ticker,
+  quote,
+  exchangeRates,
 }: {
   config: AppConfig;
   collectionId: string;
   expanded?: boolean;
   brokerAccounts?: ReturnType<typeof createInitialState>["brokerAccounts"];
+  ticker?: TickerRecord;
+  quote?: Quote;
+  exchangeRates?: Map<string, number>;
 }) {
-  const initialState = createPortfolioState(config, collectionId, expanded);
+  const initialState = createPortfolioState(config, collectionId, expanded, {
+    ticker,
+    quote,
+    exchangeRates,
+  });
   initialState.brokerAccounts = brokerAccounts;
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
@@ -202,6 +230,49 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).not.toContain("Cash & Margin");
+  });
+
+  test("keeps native price and avg cost while converting market value and pnl to base currency", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId={portfolioId}
+        ticker={makeTicker({
+          currency: "EUR",
+          positions: [
+            {
+              portfolio: "broker:ibkr-flex:DU12345",
+              shares: 10,
+              avgCost: 100,
+              currency: "EUR",
+              broker: "ibkr",
+              brokerInstanceId: "ibkr-flex",
+              brokerAccountId: "DU12345",
+            },
+          ],
+        })}
+        quote={makeQuote({
+          price: 125,
+          currency: "EUR",
+          change: 5,
+          changePercent: 4.17,
+        })}
+        exchangeRates={new Map([["USD", 1], ["EUR", 1.1]])}
+      />,
+      { width: 100, height: 24 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("€125.00");
+    expect(frame).toContain("€100.00");
+    expect(frame).toContain("1.4k");
+    expect(frame).toContain("+275");
+    expect(frame).not.toContain("$137.50");
   });
 
   test("shows flex cash summary and hides unavailable margin metrics", async () => {
