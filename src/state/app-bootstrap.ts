@@ -2,11 +2,27 @@ import type { Dispatch } from "react";
 import type { TickerRepository } from "../data/ticker-repository";
 import { findPaneInstance, type AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
-import type { TickerRecord } from "../types/ticker";
+import type { BrokerAccount } from "../types/trading";
+import type { TickerMetadata, TickerRecord } from "../types/ticker";
 import { ProviderRouter } from "../sources/provider-router";
 import type { AppAction, PaneRuntimeState } from "./app-context";
 import type { AppSessionSnapshot } from "./session-persistence";
 import { getDockedPaneIds } from "../plugins/pane-manager";
+
+const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [
+  { ticker: "AAPL", exchange: "NASDAQ", currency: "USD", name: "Apple Inc." },
+  { ticker: "MSFT", exchange: "NASDAQ", currency: "USD", name: "Microsoft Corporation" },
+  { ticker: "GOOGL", exchange: "NASDAQ", currency: "USD", name: "Alphabet Inc." },
+  { ticker: "AMZN", exchange: "NASDAQ", currency: "USD", name: "Amazon.com Inc." },
+  { ticker: "NVDA", exchange: "NASDAQ", currency: "USD", name: "NVIDIA Corporation" },
+  { ticker: "TSLA", exchange: "NASDAQ", currency: "USD", name: "Tesla Inc." },
+  { ticker: "META", exchange: "NASDAQ", currency: "USD", name: "Meta Platforms Inc." },
+  { ticker: "BRK.B", exchange: "NYSE", currency: "USD", name: "Berkshire Hathaway Inc." },
+  { ticker: "JPM", exchange: "NYSE", currency: "USD", name: "JPMorgan Chase & Co." },
+  { ticker: "V", exchange: "NYSE", currency: "USD", name: "Visa Inc." },
+  { ticker: "BTC-USD", exchange: "CCC", currency: "USD", name: "Bitcoin USD" },
+  { ticker: "ETH-USD", exchange: "CCC", currency: "USD", name: "Ethereum USD" },
+];
 
 interface StartupPaneStateSeed {
   cursorSymbol?: string | null;
@@ -27,6 +43,7 @@ export interface InitializeAppStateArgs {
   dispatch: Dispatch<AppAction>;
   refreshTicker: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
   autoImportBrokerPositions: (tickerMap: Map<string, TickerRecord>) => Promise<void>;
+  persistedBrokerAccounts?: Record<string, BrokerAccount[]>;
 }
 
 function buildPaneStateSeed(
@@ -147,13 +164,36 @@ export async function initializeAppState({
   dispatch,
   refreshTicker,
   autoImportBrokerPositions,
+  persistedBrokerAccounts = {},
 }: InitializeAppStateArgs): Promise<void> {
-  const tickers = await tickerRepository.loadAllTickers();
+  let tickers = await tickerRepository.loadAllTickers();
+
+  // Seed default watchlist tickers on first run
+  if (tickers.length === 0) {
+    const defaultWatchlistId = config.watchlists[0]?.id ?? "watchlist";
+    for (const entry of DEFAULT_WATCHLIST_TICKERS) {
+      await tickerRepository.createTicker({
+        ...entry,
+        portfolios: [],
+        watchlists: [defaultWatchlistId],
+        positions: [],
+        broker_contracts: [],
+        custom: {},
+        tags: [],
+      });
+    }
+    tickers = await tickerRepository.loadAllTickers();
+  }
+
   const tickerMap = new Map<string, TickerRecord>();
   for (const ticker of tickers) {
     tickerMap.set(ticker.metadata.ticker, ticker);
   }
   dispatch({ type: "SET_TICKERS", tickers: tickerMap });
+
+  for (const [instanceId, accounts] of Object.entries(persistedBrokerAccounts)) {
+    dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
+  }
 
   if (dataProvider instanceof ProviderRouter) {
     const cachedFinancials = dataProvider.getCachedFinancialsForTargets(sessionSnapshot?.hydrationTargets ?? [], {

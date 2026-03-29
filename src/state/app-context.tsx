@@ -10,6 +10,7 @@ import {
 import type { SessionStore } from "../data/session-store";
 import { saveConfig } from "../data/config-store";
 import { applyTheme } from "../theme/colors";
+import { isBrokerPortfolioId } from "../utils/broker-instances";
 import {
   cloneLayout,
   DEFAULT_LAYOUT,
@@ -22,6 +23,7 @@ import {
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
+import type { BrokerAccount } from "../types/trading";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
 import { getDockLeafLayouts, getDockedPaneIds } from "../plugins/pane-manager";
 import {
@@ -35,6 +37,8 @@ export interface PaneRuntimeState {
   cursorSymbol?: string | null;
   collectionId?: string;
   activeTabId?: string;
+  collectionSorts?: Record<string, CollectionSortPreference>;
+  pluginState?: Record<string, Record<string, unknown>>;
   [key: string]: unknown;
 }
 
@@ -43,11 +47,19 @@ export interface LayoutHistoryEntry {
   future: LayoutConfig[];
 }
 
+export type SortDirection = "asc" | "desc";
+
+export interface CollectionSortPreference {
+  columnId: string | null;
+  direction: SortDirection;
+}
+
 export interface AppState {
   config: AppConfig;
   tickers: Map<string, TickerRecord>;
   financials: Map<string, TickerFinancials>;
   exchangeRates: Map<string, number>;
+  brokerAccounts: Record<string, BrokerAccount[]>;
   activePanel: "left" | "right";
   focusedPaneId: string | null;
   paneState: Record<string, PaneRuntimeState>;
@@ -76,6 +88,7 @@ export type AppAction =
   | { type: "SET_COMMAND_BAR"; open: boolean; query?: string }
   | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
+  | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
   | { type: "SET_THEME"; theme: string }
@@ -109,6 +122,10 @@ function isKnownCollection(config: AppConfig, collectionId: string | undefined):
     || config.watchlists.some((watchlist) => watchlist.id === collectionId);
 }
 
+function shouldPreserveUnknownCollectionId(collectionId: string | undefined): boolean {
+  return isBrokerPortfolioId(collectionId);
+}
+
 function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceConfig): PaneRuntimeState {
   if (instance.paneId === "portfolio-list") {
     const candidate = instance.params?.collectionId;
@@ -128,12 +145,26 @@ function reconcilePaneState(config: AppConfig, previous: Record<string, PaneRunt
   for (const instance of config.layout.instances) {
     const defaults = defaultPaneStateForInstance(config, instance);
     const paneState = { ...defaults, ...(previous[instance.instanceId] ?? {}) };
-    if (instance.paneId === "portfolio-list" && !isKnownCollection(config, paneState.collectionId as string | undefined)) {
+    if (
+      instance.paneId === "portfolio-list"
+      && !isKnownCollection(config, paneState.collectionId as string | undefined)
+      && !shouldPreserveUnknownCollectionId(paneState.collectionId as string | undefined)
+    ) {
       paneState.collectionId = defaults.collectionId;
     }
     next[instance.instanceId] = paneState;
   }
   return next;
+}
+
+function reconcileBrokerAccounts(
+  config: AppConfig,
+  brokerAccounts: Record<string, BrokerAccount[]>,
+): Record<string, BrokerAccount[]> {
+  const validInstanceIds = new Set(config.brokerInstances.map((instance) => instance.id));
+  return Object.fromEntries(
+    Object.entries(brokerAccounts).filter(([instanceId]) => validInstanceIds.has(instanceId)),
+  );
 }
 
 function resolveTickerFromBinding(
@@ -172,7 +203,10 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
     const collectionId = typeof paneState.collectionId === "string"
       ? paneState.collectionId
       : instance.params?.collectionId;
-    return isKnownCollection(state.config, collectionId) ? collectionId : getDefaultCollectionId(state.config);
+    if (isKnownCollection(state.config, collectionId) || shouldPreserveUnknownCollectionId(collectionId)) {
+      return collectionId ?? null;
+    }
+    return getDefaultCollectionId(state.config);
   }
   if (instance.binding?.kind === "follow") {
     return resolveCollectionForPane(state, instance.binding.sourceInstanceId, seen);
@@ -289,7 +323,13 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
   const focusedPaneId = state.focusedPaneId && paneIds.includes(state.focusedPaneId)
     ? state.focusedPaneId
     : paneIds[0] ?? null;
-  return { ...state, config: nextConfig, paneState: nextPaneState, focusedPaneId };
+  return {
+    ...state,
+    config: nextConfig,
+    paneState: nextPaneState,
+    brokerAccounts: reconcileBrokerAccounts(nextConfig, state.brokerAccounts),
+    focusedPaneId,
+  };
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -377,6 +417,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       else refreshing.delete(action.symbol);
       return { ...state, refreshing };
     }
+
+    case "SET_BROKER_ACCOUNTS":
+      return {
+        ...state,
+        brokerAccounts: {
+          ...state.brokerAccounts,
+          [action.instanceId]: action.accounts,
+        },
+      };
 
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
@@ -701,6 +750,7 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     tickers: new Map(),
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
+    brokerAccounts: {},
     activePanel: sessionSnapshot?.activePanel === "right" ? "right" : "left",
     focusedPaneId,
     paneState,

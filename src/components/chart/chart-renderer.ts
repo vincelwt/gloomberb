@@ -710,6 +710,28 @@ export interface RenderChartOptions {
   colors: ResolvedChartPalette;
 }
 
+export interface ChartScene {
+  points: ProjectedChartPoint[];
+  width: number;
+  height: number;
+  showVolume: boolean;
+  volumeHeight: number;
+  chartRows: number;
+  mode: ChartRenderMode;
+  colors: ResolvedChartPalette;
+  min: number;
+  max: number;
+  activeIdx: number;
+  activePoint: ProjectedChartPoint;
+  priceAtCursor: number;
+  dateAtCursor: Date;
+  changeAtCursor: number;
+  changePctAtCursor: number;
+  timeLabels: string;
+  cursorX: number | null;
+  cursorRow: number | null;
+}
+
 export interface RenderChartResult {
   lines: StyledContent[];
   axisLabels: { row: number; label: string }[];
@@ -719,15 +741,74 @@ export interface RenderChartResult {
   dateAtCursor: Date | null;
   changeAtCursor: number | null;
   changePctAtCursor: number | null;
+  cursorRow: number | null;
   /** Raw pixel buffer for GPU/Kitty rendering path */
   pixelBuffer: PixelBuffer | null;
+}
+
+export function getActivePointIndex(pointCount: number, width: number, cursorX: number | null): number {
+  if (pointCount <= 0) return 0;
+  if (cursorX === null || cursorX < 0 || cursorX >= width) {
+    return pointCount - 1;
+  }
+  return Math.min(
+    Math.max(Math.round((cursorX / Math.max(width - 1, 1)) * (pointCount - 1)), 0),
+    pointCount - 1,
+  );
+}
+
+export function buildChartScene(
+  points: ProjectedChartPoint[],
+  opts: RenderChartOptions,
+): ChartScene | null {
+  if (points.length === 0) return null;
+
+  const min = opts.mode === "candles" || opts.mode === "ohlc"
+    ? Math.min(...points.map((point) => point.low))
+    : Math.min(...points.map((point) => point.close));
+  const max = opts.mode === "candles" || opts.mode === "ohlc"
+    ? Math.max(...points.map((point) => point.high))
+    : Math.max(...points.map((point) => point.close));
+  const activeIdx = getActivePointIndex(points.length, opts.width, opts.cursorX);
+  const activePoint = points[activeIdx]!;
+  const range = max - min || 1;
+  const chartRows = opts.height - (opts.showVolume ? opts.volumeHeight : 0);
+  const cursorRow = opts.cursorX === null
+    ? null
+    : Math.min(
+      Math.max(Math.round((1 - (activePoint.close - min) / range) * Math.max(chartRows - 1, 0)), 0),
+      Math.max(chartRows - 1, 0),
+    );
+
+  return {
+    points,
+    width: opts.width,
+    height: opts.height,
+    showVolume: opts.showVolume,
+    volumeHeight: opts.volumeHeight,
+    chartRows,
+    mode: opts.mode,
+    colors: opts.colors,
+    min,
+    max,
+    activeIdx,
+    activePoint,
+    priceAtCursor: activePoint.close,
+    dateAtCursor: activePoint.date,
+    changeAtCursor: activePoint.close - points[0]!.close,
+    changePctAtCursor: points[0]!.close ? ((activePoint.close - points[0]!.close) / points[0]!.close) * 100 : 0,
+    timeLabels: buildTimeAxis(points.map((point) => point.date), opts.width),
+    cursorX: opts.cursorX,
+    cursorRow,
+  };
 }
 
 export function renderChart(
   points: ProjectedChartPoint[],
   opts: RenderChartOptions,
 ): RenderChartResult {
-  if (points.length === 0) {
+  const scene = buildChartScene(points, opts);
+  if (!scene) {
     return {
       lines: [],
       axisLabels: [],
@@ -737,6 +818,7 @@ export function renderChart(
       dateAtCursor: null,
       changeAtCursor: null,
       changePctAtCursor: null,
+      cursorRow: null,
       pixelBuffer: null,
     };
   }
@@ -753,12 +835,7 @@ export function renderChart(
   const volDotBottom = totalDotH - 1;
 
   const buf = createPixelBuffer(dotWidth, totalDotH);
-  const min = mode === "candles" || mode === "ohlc"
-    ? Math.min(...points.map((point) => point.low))
-    : Math.min(...points.map((point) => point.close));
-  const max = mode === "candles" || mode === "ohlc"
-    ? Math.max(...points.map((point) => point.high))
-    : Math.max(...points.map((point) => point.close));
+  const { min, max } = scene;
 
   const gridLines = computeGridLines(min, max, 0, chartDotBottom, 3);
   drawGridLines(buf, gridLines.map((line) => line.y), palette.gridColor);
@@ -791,17 +868,7 @@ export function renderChart(
   }
 
   // Cursor mapping stays in terminal-column space
-  const activeIdx = opts.cursorX !== null && opts.cursorX >= 0 && opts.cursorX < width
-    ? Math.min(
-      Math.max(Math.round((opts.cursorX / Math.max(width - 1, 1)) * (points.length - 1)), 0),
-      points.length - 1,
-    )
-    : points.length - 1;
-  const activePoint = points[activeIdx]!;
-  const priceAtCursor = activePoint.close;
-  const dateAtCursor = activePoint.date;
-  const changeAtCursor = activePoint.close - points[0]!.close;
-  const changePctAtCursor = points[0]!.close ? ((activePoint.close - points[0]!.close) / points[0]!.close) * 100 : 0;
+  const { activePoint, priceAtCursor, dateAtCursor, changeAtCursor, changePctAtCursor } = scene;
 
   if (opts.cursorX !== null) {
     // Map terminal column to dot column (center of the cell)
@@ -821,6 +888,7 @@ export function renderChart(
     dateAtCursor,
     changeAtCursor,
     changePctAtCursor,
+    cursorRow: scene.cursorRow,
     pixelBuffer: buf,
   };
 }

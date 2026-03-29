@@ -22,7 +22,14 @@ import type { TimeRange } from "../../components/chart/chart-types";
 import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
 import type { Fundamentals, FinancialStatement, Quote, PricePoint, TickerFinancials } from "../../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";
-import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "../../types/trading";
+import type {
+  BrokerAccount,
+  BrokerCashBalance,
+  BrokerExecution,
+  BrokerOrder,
+  BrokerOrderPreview,
+  BrokerOrderRequest,
+} from "../../types/trading";
 import { parseReportSnapshot, parseFinStatements } from "./fundamental-parser";
 
 export interface IbkrGatewayConfig {
@@ -46,6 +53,141 @@ const DEFAULT_SNAPSHOT: IbkrSnapshot = {
   openOrders: [],
   executions: [],
 };
+
+type AccountSummaryValueMap = ReadonlyMap<string, { value: string }>;
+type AccountSummaryTags = ReadonlyMap<string, AccountSummaryValueMap>;
+
+function getAccountSummaryEntry(
+  values: AccountSummaryValueMap | undefined,
+  preferredCurrency?: string,
+): { currency: string; value: number } | null {
+  if (!values) return null;
+
+  if (preferredCurrency) {
+    const preferred = values.get(preferredCurrency);
+    if (preferred?.value) {
+      const numeric = parseFloat(preferred.value);
+      if (Number.isFinite(numeric)) {
+        return { currency: preferredCurrency, value: numeric };
+      }
+    }
+  }
+
+  for (const [currency, entry] of values.entries()) {
+    const numeric = parseFloat(entry?.value ?? "");
+    if (Number.isFinite(numeric)) {
+      return { currency, value: numeric };
+    }
+  }
+  return null;
+}
+
+function getAccountSummaryNumber(
+  tags: AccountSummaryTags | undefined,
+  tagName: string,
+  preferredCurrency?: string,
+): number | undefined {
+  return getAccountSummaryEntry(tags?.get(tagName), preferredCurrency)?.value;
+}
+
+function inferAccountCurrency(tags: AccountSummaryTags | undefined): string | undefined {
+  if (!tags) return undefined;
+  for (const tagName of ["NetLiquidation", "TotalCashValue", "SettledCash", "AvailableFunds"]) {
+    const entry = getAccountSummaryEntry(tags.get(tagName));
+    if (entry?.currency) return entry.currency;
+  }
+  return undefined;
+}
+
+function getSummaryMap(
+  tags: AccountSummaryTags | undefined,
+  tagName: string,
+): AccountSummaryValueMap | undefined {
+  const values = tags?.get(tagName);
+  return values && values.size > 0 ? values : undefined;
+}
+
+function buildCashBalancesFromSummary(
+  cashBalanceMap: AccountSummaryValueMap | undefined,
+  exchangeRateMap: AccountSummaryValueMap | undefined,
+  baseCurrency?: string,
+): BrokerCashBalance[] | undefined {
+  const balances: BrokerCashBalance[] = [];
+  for (const [currency, entry] of cashBalanceMap?.entries() ?? []) {
+    if (!currency || currency === "BASE") continue;
+    const numeric = parseFloat(entry?.value ?? "");
+    if (!Number.isFinite(numeric)) continue;
+
+    const exchangeRate = currency === baseCurrency
+      ? 1
+      : parseFloat(exchangeRateMap?.get(currency)?.value ?? "");
+    const baseValue = Number.isFinite(exchangeRate) ? numeric * exchangeRate : undefined;
+
+    balances.push({
+      currency,
+      quantity: numeric,
+      baseValue,
+      baseCurrency,
+    });
+  }
+
+  return balances.length > 0 ? balances : undefined;
+}
+
+function buildCashBalances(
+  tags: AccountSummaryTags | undefined,
+  aggregateTags: AccountSummaryTags | undefined,
+  baseCurrency: string | undefined,
+  allowAggregateFallback: boolean,
+): BrokerCashBalance[] | undefined {
+  const directLedger = buildCashBalancesFromSummary(
+    getSummaryMap(tags, "$LEDGER:ALL"),
+    undefined,
+    baseCurrency,
+  );
+  if (directLedger) return directLedger;
+
+  const directSummary = buildCashBalancesFromSummary(
+    getSummaryMap(tags, "CashBalance") ?? getSummaryMap(tags, "TotalCashBalance"),
+    getSummaryMap(tags, "ExchangeRate"),
+    baseCurrency,
+  );
+  if (directSummary) return directSummary;
+
+  if (!allowAggregateFallback) return undefined;
+
+  return buildCashBalancesFromSummary(
+    getSummaryMap(aggregateTags, "CashBalance") ?? getSummaryMap(aggregateTags, "TotalCashBalance"),
+    getSummaryMap(aggregateTags, "ExchangeRate"),
+    baseCurrency,
+  );
+}
+
+export function summarizeBrokerAccount(
+  accountId: string,
+  tags: AccountSummaryTags | undefined,
+  updatedAt: number,
+  aggregateTags?: AccountSummaryTags,
+  allowAggregateCashBalances = false,
+): BrokerAccount {
+  const currency = inferAccountCurrency(tags);
+  return {
+    accountId,
+    name: accountId,
+    currency,
+    source: "gateway",
+    updatedAt,
+    netLiquidation: getAccountSummaryNumber(tags, "NetLiquidation", currency),
+    totalCashValue: getAccountSummaryNumber(tags, "TotalCashValue", currency),
+    settledCash: getAccountSummaryNumber(tags, "SettledCash", currency),
+    availableFunds: getAccountSummaryNumber(tags, "AvailableFunds", currency),
+    buyingPower: getAccountSummaryNumber(tags, "BuyingPower", currency),
+    excessLiquidity: getAccountSummaryNumber(tags, "ExcessLiquidity", currency),
+    initMarginReq: getAccountSummaryNumber(tags, "InitMarginReq", currency),
+    maintMarginReq: getAccountSummaryNumber(tags, "MaintMarginReq", currency),
+    cashBalances: buildCashBalances(tags, aggregateTags, currency, allowAggregateCashBalances),
+  };
+}
 
 /** Wrap a promise with a timeout so that IBKR calls don't hang indefinitely. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -799,7 +941,10 @@ export class IbkrGatewayService {
     let summary: ReadonlyMap<string, ReadonlyMap<string, ReadonlyMap<string, { value: string }>>> | undefined;
     try {
       const result = await firstValueFrom(
-        this.api!.getAccountSummary("All", "NetLiquidation,AvailableFunds,BuyingPower,ExcessLiquidity,$LEDGER:ALL")
+        this.api!.getAccountSummary(
+          "All",
+          "NetLiquidation,TotalCashValue,SettledCash,AvailableFunds,BuyingPower,ExcessLiquidity,InitMarginReq,MaintMarginReq,$LEDGER:ALL",
+        )
           .pipe(take(1), timeout(10_000)),
       );
       summary = result.all;
@@ -807,31 +952,16 @@ export class IbkrGatewayService {
       // Account summary may fail; return accounts with basic info only.
     }
 
-    return managedAccounts.map((accountId) => {
-      const tags = summary?.get(accountId);
-      return {
-        accountId,
-        name: accountId,
-        currency: this.getAccountValue(tags, "$LEDGER:ALL", "USD") ? "USD" : undefined,
-        netLiquidation: this.getAccountValue(tags, "NetLiquidation"),
-        availableFunds: this.getAccountValue(tags, "AvailableFunds"),
-        buyingPower: this.getAccountValue(tags, "BuyingPower"),
-        excessLiquidity: this.getAccountValue(tags, "ExcessLiquidity"),
-      };
-    });
-  }
-
-  private getAccountValue(
-    tags: ReadonlyMap<string, ReadonlyMap<string, { value: string }>> | undefined,
-    tagName: string,
-    preferredCurrency?: string,
-  ): number | undefined {
-    const values = tags?.get(tagName);
-    if (!values) return undefined;
-    const entry = preferredCurrency ? values.get(preferredCurrency) : values.values().next().value;
-    if (!entry?.value) return undefined;
-    const numeric = parseFloat(entry.value);
-    return Number.isFinite(numeric) ? numeric : undefined;
+    const updatedAt = Date.now();
+    const aggregateTags = summary?.get("All");
+    const allowAggregateCashBalances = managedAccounts.length === 1;
+    return managedAccounts.map((accountId) => summarizeBrokerAccount(
+      accountId,
+      summary?.get(accountId),
+      updatedAt,
+      aggregateTags,
+      allowAggregateCashBalances,
+    ));
   }
 
   private contractDescriptionToSearchResult(description: ContractDescription): InstrumentSearchResult | null {

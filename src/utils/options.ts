@@ -1,3 +1,6 @@
+import type { BrokerContractRef } from "../types/instrument";
+import type { TickerRecord } from "../types/ticker";
+
 export const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Format a unix timestamp (seconds) as "Mon DD 'YY" */
@@ -22,6 +25,50 @@ export function parseOptionSymbol(symbol: string): { underlying: string; expTs: 
   const day = parseInt(dd!, 10);
   const expTs = Math.floor(new Date(year, month, day).getTime() / 1000);
   return { underlying: underlying!, expTs, strike, side: side as "C" | "P" };
+}
+
+export interface ResolvedOptionsTarget {
+  isOptionTicker: boolean;
+  parsedOption: ReturnType<typeof parseOptionSymbol>;
+  effectiveTicker: string;
+  effectiveExchange: string;
+  instrument: BrokerContractRef | null;
+  cacheKey: string;
+}
+
+function buildOptionsCacheKey(
+  effectiveTicker: string,
+  effectiveExchange: string,
+  instrument: BrokerContractRef | null,
+): string {
+  return [
+    effectiveTicker.trim().toUpperCase(),
+    effectiveExchange.trim().toUpperCase(),
+    instrument?.brokerInstanceId ?? "",
+    instrument?.conId != null ? String(instrument.conId) : "",
+  ].join("|");
+}
+
+export function resolveOptionsTarget(ticker: TickerRecord | null | undefined): ResolvedOptionsTarget | null {
+  if (!ticker) return null;
+
+  const isOptionTicker = ticker.metadata.assetCategory === "OPT";
+  const parsedOption = isOptionTicker ? parseOptionSymbol(ticker.metadata.ticker) : null;
+  const effectiveTicker = parsedOption?.underlying ?? ticker.metadata.ticker;
+
+  if (!effectiveTicker) return null;
+
+  const effectiveExchange = isOptionTicker ? "" : (ticker.metadata.exchange ?? "");
+  const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
+
+  return {
+    isOptionTicker,
+    parsedOption,
+    effectiveTicker,
+    effectiveExchange,
+    instrument,
+    cacheKey: buildOptionsCacheKey(effectiveTicker, effectiveExchange, instrument),
+  };
 }
 
 /**

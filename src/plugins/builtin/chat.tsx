@@ -365,7 +365,7 @@ export const chatPlugin: GloomPlugin = {
   },
 
   setup(ctx) {
-    chatController.attachPersistence(ctx.persistence);
+    chatController.attachPersistence(ctx.persistence, ctx.resume);
 
     ctx.registerPane({
       id: "chat",

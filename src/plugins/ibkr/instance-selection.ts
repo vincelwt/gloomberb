@@ -32,12 +32,5 @@ export function resolveIbkrTradingInstanceId(
 
   const gatewayInstance = getConfiguredIbkrGatewayInstances(config)[0];
   if (gatewayInstance) return gatewayInstance.id;
-
-  const preferredIbkrInstance = preferredInstanceId
-    ? config.brokerInstances.find((instance) => instance.id === preferredInstanceId && instance.brokerType === "ibkr")
-    : undefined;
-
-  return preferredIbkrInstance
-    ? preferredIbkrInstance.id
-    : getBrokerInstancesByType(config.brokerInstances, "ibkr")[0]?.id;
+  return undefined;
 }

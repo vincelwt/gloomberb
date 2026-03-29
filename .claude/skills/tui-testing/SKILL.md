@@ -1,25 +1,197 @@
 ---
 name: tui-testing
 description: >-
-  Interactive testing of the Gloomberb TUI app using tmux. Use this skill when
-  you need to manually test the app's UI — navigating tabs, opening the command
-  bar, selecting items, typing input, verifying rendered output, etc. This
-  covers starting the app, sending keystrokes, capturing the screen, and
-  validating what's displayed.
+  Testing Gloomberb at every level: CLI commands for fast data/integration checks,
+  OpenTUI's built-in test harness for component tests, and tmux for full end-to-end
+  TUI testing. Use this skill when you need to verify features, write regression
+  tests, or smoke-test the running app.
 ---
 
-# TUI Testing with tmux
+# Testing Gloomberb
 
-Test the Gloomberb terminal UI interactively by running it inside a tmux session and capturing the rendered output.
+Three testing approaches. **Start with the simplest level that covers your change** and escalate only when needed.
 
-## Prerequisites
+```
+What are you testing?
+├─ Data flow, config, business logic, or integration with external sources
+│  ├─ CLI command exists for it → Run the CLI command (fastest)
+│  └─ No CLI command, but it makes sense as one → Add it, then use it
+├─ A component's rendering, interaction, or visual regression
+│  └─ OpenTUI test harness (.test.tsx file)
+├─ Pure logic with no UI or data layer
+│  └─ Unit test (bun:test, no renderer needed)
+└─ Full app behavior across multiple views
+   └─ tmux (last resort)
+```
 
-- `tmux` must be installed (`brew install tmux`)
-- Dependencies installed (`bun install`)
+---
 
-## Setup
+## 1. CLI Commands (fastest feedback loop)
 
-Start the app in a detached tmux session:
+Gloomberb doubles as a CLI tool. CLI commands are the **fastest way to verify data flow, config state, and business logic** — no renderer, no harness setup, just run and check output.
+
+### Available commands
+
+```bash
+bun run dev help                        # Show all commands
+bun run dev portfolio                   # List all portfolios/watchlists with ticker counts
+bun run dev portfolio "Main Portfolio"  # Show detailed positions, P&L, quotes
+bun run dev ticker AAPL                 # Show quote, fundamentals, positions
+bun run dev plugins                     # List installed plugins
+```
+
+### When to use CLI testing
+
+- **Verifying data layer changes** — After modifying config, ticker storage, or persistence, run `portfolio` or `ticker` to confirm data loads correctly.
+- **Checking new data fields** — If you add a new field (e.g. earnings date), first expose it via the `ticker` CLI command and verify the output, before wiring it into the TUI.
+- **Smoke-testing integrations** — `ticker AAPL` exercises the Yahoo Finance client, quote formatting, and fundamentals parsing in one command.
+- **Testing plugin management** — `install`, `remove`, `update`, and `plugins` commands verify the plugin lifecycle.
+
+### Adding new CLI commands
+
+If you're building a feature and need to verify data that isn't exposed via CLI yet, consider adding a CLI command first when it makes sense (e.g. listing watchlists, showing config values, checking broker sync status). This gives you a fast feedback loop before building the TUI component.
+
+The CLI dispatcher is in `src/cli.ts` — add a new case to the `switch` in `runCli()`.
+
+### Example: verifying a data change via CLI
+
+```bash
+# After modifying how positions are calculated:
+$ bun run dev portfolio "Main Portfolio"
+Main Portfolio (USD)
+
+TICKER    PRICE         CHG%    SHARES  AVG COST      P&L
+------------------------------------------------------------
+AMD         $201.99    -0.87%    100     $150.00    +$5,199.00
+------------------------------------------------------------
+                                              Total: +$5,199.00
+```
+
+---
+
+## 2. OpenTUI Test Harness (component & snapshot tests)
+
+Headless, deterministic component and integration tests using Bun's test runner and OpenTUI's built-in test renderer. **Use this for UI component tests and visual regressions.**
+
+### Why use this
+
+- **Deterministic** — `renderOnce()` guarantees the frame is complete before capture. No timing guesswork.
+- **Fast** — Full suite runs in < 1 second.
+- **Isolated** — Each test gets its own headless renderer. No shared state, no cleanup burden.
+- **Composable** — Render individual components with controlled props/state.
+- **Snapshotable** — Built-in `toMatchSnapshot()` for visual regression testing.
+
+### Quick start
+
+```typescript
+import { test, expect, afterEach } from "bun:test";
+import { testRender } from "@opentui/react/test-utils";
+
+let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+
+afterEach(() => {
+  if (testSetup) {
+    testSetup.renderer.destroy();
+    testSetup = undefined;
+  }
+});
+
+test("renders my component", async () => {
+  testSetup = await testRender(<MyComponent someProp="value" />, {
+    width: 80,
+    height: 24,
+  });
+
+  await testSetup.renderOnce();
+  const frame = testSetup.captureCharFrame();
+
+  expect(frame).toContain("expected text");
+  // or: expect(frame).toMatchSnapshot();
+});
+```
+
+### Interaction testing
+
+Use `mockInput` and React's `act()` to simulate user input:
+
+```typescript
+import { act } from "react";
+
+test("arrow keys navigate the list", async () => {
+  testSetup = await testRender(<MyList items={items} />, {
+    width: 80,
+    height: 24,
+  });
+
+  await testSetup.renderOnce();
+
+  await act(async () => {
+    testSetup!.mockInput.pressArrow("down");
+    await testSetup!.renderOnce();
+  });
+
+  expect(testSetup.captureCharFrame()).toContain("▸ Second Item");
+});
+```
+
+### Testing components that need app context
+
+Many components require `AppContext`, `DialogProvider`, etc. Create a harness wrapper:
+
+```typescript
+function TestHarness({ children, overrides = {} }) {
+  const config = { ...createDefaultConfig("/tmp/test"), ...overrides };
+  const state = { ...createInitialState(config), ...overrides };
+  return (
+    <AppContext value={{ state, dispatch: () => {} }}>
+      <DialogProvider>{children}</DialogProvider>
+    </AppContext>
+  );
+}
+```
+
+See `src/components/command-bar/command-bar.test.tsx` for a full example of this pattern.
+
+### Test setup return object
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `renderer` | `Renderer` | The headless renderer instance |
+| `renderOnce` | `() => Promise<void>` | Trigger a single render cycle |
+| `captureCharFrame` | `() => string` | Capture current output as text |
+| `resize` | `(w, h) => void` | Resize the virtual terminal |
+| `mockInput` | `MockInput` | Simulate keyboard input (e.g. `pressArrow("down")`) |
+
+### Running tests
+
+```bash
+bun test                              # Run all tests
+bun test src/components/ui/ui.test.tsx # Run a specific file
+bun test --filter "CommandBar"        # Filter by name
+bun test --update-snapshots           # Update snapshot files
+```
+
+### Conventions
+
+- Test files live next to source: `foo.tsx` → `foo.test.tsx`
+- Always call `renderer.destroy()` in `afterEach`
+- Always call `renderOnce()` before `captureCharFrame()`
+- Use consistent dimensions for snapshot stability (80×24 default)
+
+---
+
+## 3. tmux (full end-to-end TUI testing)
+
+Run the actual app in a tmux session, send keystrokes, and capture the rendered screen. **Use this as a last resort** — for verifying full-app behavior that can't be tested with the harness or CLI.
+
+### When to use tmux
+
+- Verifying layout and pane arrangement with real data
+- Testing keyboard navigation flows across multiple views
+- Smoke-testing after major refactors
+- Debugging rendering issues that only appear with the full app
+
+### Setup
 
 ```bash
 # Kill any existing test session first
@@ -32,19 +204,15 @@ tmux new-session -d -s test -x 120 -y 40 'bun run dev 2>&1'
 sleep 3
 ```
 
-## Capturing the Screen
-
-Use `tmux capture-pane` to read what's currently displayed:
+### Capturing the screen
 
 ```bash
 tmux capture-pane -t test -p
 ```
 
-This returns the full rendered text grid including box-drawing characters, tab indicators, column headers, and content. It does NOT capture colors or styling.
+Returns the full rendered text grid including box-drawing characters. Does NOT capture colors or styling.
 
-## Sending Input
-
-### Keystrokes and shortcuts
+### Sending input
 
 ```bash
 # Special keys
@@ -56,27 +224,16 @@ tmux send-keys -t test Up            # Arrow keys
 tmux send-keys -t test Down
 tmux send-keys -t test j             # j/k — navigate lists
 tmux send-keys -t test k
-tmux send-keys -t test r             # r — refresh
-tmux send-keys -t test q             # q — quit
 
-# Shift combos (uppercase letter)
-tmux send-keys -t test C             # Shift+C — open chat
-```
-
-### Typing text
-
-Use the `-l` (literal) flag to type text strings:
-
-```bash
-tmux send-keys -t test -l 'AAPL'         # Type "AAPL"
-tmux send-keys -t test -l 'add pane'     # Type "add pane"
+# Typing text (always use -l flag for literal strings)
+tmux send-keys -t test -l 'AAPL'
 ```
 
 **Important:** Always use `-l` for text input. Without it, each character is interpreted as a key name.
 
-## Typical Test Flow
+### Typical test flow
 
-Always add a short delay (`sleep 0.5` to `sleep 1`) after sending input to let the UI re-render before capturing.
+Always add `sleep 0.5` to `sleep 1` after sending input to let the UI re-render.
 
 ```bash
 # 1. Start the app
@@ -87,55 +244,37 @@ sleep 3
 # 2. Capture initial state
 tmux capture-pane -t test -p
 
-# 3. Open command bar
+# 3. Open command bar and search
 tmux send-keys -t test C-p
 sleep 0.5
-tmux capture-pane -t test -p
-
-# 4. Search for something
 tmux send-keys -t test -l 'AAPL'
 sleep 0.5
 tmux capture-pane -t test -p
 
-# 5. Select it
+# 4. Select and verify
 tmux send-keys -t test Enter
 sleep 1
 tmux capture-pane -t test -p
 
-# 6. Clean up when done
+# 5. Always clean up
 tmux kill-session -t test
 ```
 
-## Common Commands in the Command Bar (Ctrl+P)
-
-These can be searched by typing in the command bar:
+### Common command bar actions (Ctrl+P)
 
 | Command              | Description                              |
 |----------------------|------------------------------------------|
 | (ticker symbol)      | Jump to or add a ticker                  |
-| Add Pane             | Add a pane to the layout                 |
-| Remove Pane          | Remove a pane from the layout            |
-| Float Pane           | Detach a docked pane into floating       |
-| Dock Pane            | Dock a floating pane back                |
-| New Portfolio        | Create a new portfolio                   |
-| New Watchlist        | Create a new watchlist                   |
-| Delete Portfolio     | Remove a portfolio                       |
-| Delete Watchlist     | Remove a watchlist                       |
+| Add Pane / Remove Pane | Manage panes in layout                 |
+| New Portfolio / New Watchlist | Create collections                |
+| Delete Portfolio / Delete Watchlist | Remove collections         |
 | Edit Columns         | Toggle visible table columns             |
 | Change Theme         | Switch color theme                       |
-| Toggle Status Bar    | Show/hide keyboard shortcuts bar         |
-| Add Broker Account   | Connect a new broker profile             |
-| Sync Broker Account  | Sync positions for a connected broker    |
 | Manage Plugins       | Toggle plugins on/off                    |
-| Export Config        | Save config to file                      |
 
-## Tips
+### Tips
 
-- **Timing:** If captures look incomplete or stale, increase the sleep duration. Network-dependent views (prices, news) take longer.
-- **Terminal size:** Using `-x 120 -y 40` gives a consistent layout. Smaller sizes may cause content to wrap or truncate differently.
-- **Multiple actions:** You can chain commands with `&&` and `sleep`:
-  ```bash
-  tmux send-keys -t test C-p && sleep 0.5 && tmux send-keys -t test -l 'theme' && sleep 0.5 && tmux send-keys -t test Enter && sleep 1 && tmux capture-pane -t test -p
-  ```
-- **Cleanup:** Always kill the tmux session when done testing: `tmux kill-session -t test`
-- **Debugging crashes:** If the app crashes, the tmux pane will show the error output since we redirect stderr with `2>&1`.
+- **Timing:** If captures look incomplete, increase sleep duration. Network-dependent views take longer.
+- **Terminal size:** `-x 120 -y 40` gives consistent layout. Smaller sizes may cause wrapping.
+- **Cleanup:** Always `tmux kill-session -t test` when done.
+- **Debugging crashes:** stderr is captured via `2>&1` so crash output is visible.

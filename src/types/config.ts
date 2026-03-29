@@ -3,9 +3,11 @@ import type { Portfolio, Watchlist } from "./ticker";
 export const CURRENT_CONFIG_VERSION = 8;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
+export type ChartRendererPreference = "auto" | "kitty" | "braille";
 
 export interface ChartPreferences {
   defaultRenderMode: DefaultChartRenderMode;
+  renderer: ChartRendererPreference;
 }
 
 export interface BrokerInstanceConfig {
@@ -106,6 +108,7 @@ export interface AppConfig {
   brokerInstances: BrokerInstanceConfig[];
   plugins: string[];
   disabledPlugins: string[];
+  pluginConfig: Record<string, Record<string, unknown>>;
   theme: string;
   chartPreferences: ChartPreferences;
   recentTickers: string[];
@@ -391,9 +394,11 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     brokerInstances: [],
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr"],
     disabledPlugins: [],
+    pluginConfig: {},
     theme: "amber",
     chartPreferences: {
       defaultRenderMode: "area",
+      renderer: "auto",
     },
     recentTickers: [],
   };

@@ -34,14 +34,14 @@ function makeTicker(symbol: string, name: string): TickerRecord {
   };
 }
 
-function makeDataProvider(): DataProvider {
+function makeDataProvider(searchImpl: DataProvider["search"] = async () => []): DataProvider {
   return {
     id: "test",
     name: "Test Provider",
     getTickerFinancials: async () => { throw new Error("unused"); },
     getQuote: async () => { throw new Error("unused"); },
     getExchangeRate: async () => 1,
-    search: async () => [],
+    search: searchImpl,
     getNews: async () => [],
     getArticleSummary: async () => null,
     getPriceHistory: async () => [],
@@ -142,6 +142,7 @@ function CommandBarHarness({
   live = false,
   configureConfig,
   configureState,
+  dataProvider = makeDataProvider(),
 }: {
   query: string;
   disabledPlugins?: string[];
@@ -149,6 +150,7 @@ function CommandBarHarness({
   live?: boolean;
   configureConfig?: (config: AppConfig) => AppConfig;
   configureState?: (state: AppState) => AppState;
+  dataProvider?: DataProvider;
 }) {
   let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
@@ -159,7 +161,6 @@ function CommandBarHarness({
     config = configureConfig(config);
   }
   const tickers = [makeTicker("AAPL", "Apple Inc."), makeTicker("MSFT", "Microsoft Corp.")];
-  const dataProvider = makeDataProvider();
   let state: AppState = {
     ...createInitialState(config),
     commandBarOpen: true,
@@ -337,5 +338,31 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("New Chat Pane");
     expect(frame).toContain("float");
+  });
+
+  test("groups ticker search sections and keeps exact open matches above loose provider results", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="T appl"
+        dataProvider={makeDataProvider(async () => [
+          { providerId: "yahoo", symbol: "IVSX", name: "Invsivx Holdings", exchange: "NYSE", type: "ETF" },
+          { providerId: "yahoo", symbol: "AAPL", name: "Apple Inc", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "AMAT", name: "Applied Materials", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "AAOI", name: "Applied Optoelectronics", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "APP", name: "AppLovin Corp", exchange: "NASDAQ", type: "EQUITY" },
+        ])}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await Bun.sleep(300);
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame.match(/Open/g)?.length).toBe(1);
+    expect(frame.match(/Search Results/g)?.length).toBe(1);
+    expect(frame.indexOf("AAPL")).toBeLessThan(frame.indexOf("APP"));
+    expect(frame).toMatchSnapshot();
   });
 });

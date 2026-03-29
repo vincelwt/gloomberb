@@ -1,4 +1,4 @@
-import type { PluginPersistence } from "../../types/plugin";
+import type { PluginPersistence, PluginResumeState } from "../../types/plugin";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 
 const SESSION_STATE_KEY = "session";
@@ -41,6 +41,7 @@ type ChatConnection = { send: (content: string, replyToId?: string) => void; clo
 
 export class ChatController {
   private persistence: PluginPersistence | null = null;
+  private resume: PluginResumeState | null = null;
   private hydrated = false;
   private sessionChecked = false;
   private user: { id: string; username: string } | null = null;
@@ -52,8 +53,9 @@ export class ChatController {
   private wsConnected = false;
   private listeners = new Set<(snapshot: ChatControllerSnapshot) => void>();
 
-  attachPersistence(persistence: PluginPersistence): void {
+  attachPersistence(persistence: PluginPersistence, resume?: PluginResumeState): void {
     this.persistence = persistence;
+    this.resume = resume ?? this.resume;
     this.hydrate();
   }
 
@@ -61,7 +63,9 @@ export class ChatController {
     if (this.hydrated || !this.persistence) return;
     this.hydrated = true;
 
-    const session = this.persistence.getState<PersistedSessionState>(SESSION_STATE_KEY, {
+    const session = this.resume?.getState<PersistedSessionState>(SESSION_STATE_KEY, {
+      schemaVersion: SESSION_SCHEMA_VERSION,
+    }) ?? this.persistence.getState<PersistedSessionState>(SESSION_STATE_KEY, {
       schemaVersion: SESSION_SCHEMA_VERSION,
     });
     if (session?.sessionToken) {
@@ -70,7 +74,9 @@ export class ChatController {
     this.user = session?.user ?? null;
     this.sessionChecked = true;
 
-    const channel = this.persistence.getState<PersistedChannelState>(CHANNEL_STATE_KEY, {
+    const channel = this.resume?.getState<PersistedChannelState>(CHANNEL_STATE_KEY, {
+      schemaVersion: CHANNEL_SCHEMA_VERSION,
+    }) ?? this.persistence.getState<PersistedChannelState>(CHANNEL_STATE_KEY, {
       schemaVersion: CHANNEL_SCHEMA_VERSION,
     });
     this.draft = channel?.draft ?? "";
@@ -230,20 +236,28 @@ export class ChatController {
   }
 
   private persistSession(): void {
-    this.persistence?.setState(SESSION_STATE_KEY, {
+    const value = {
       sessionToken: apiClient.getSessionToken(),
       user: this.user,
-    } satisfies PersistedSessionState, {
+    } satisfies PersistedSessionState;
+    this.resume?.setState(SESSION_STATE_KEY, value, {
+      schemaVersion: SESSION_SCHEMA_VERSION,
+    });
+    this.persistence?.setState(SESSION_STATE_KEY, value, {
       schemaVersion: SESSION_SCHEMA_VERSION,
     });
   }
 
   private persistChannelState(): void {
-    this.persistence?.setState(CHANNEL_STATE_KEY, {
+    const value = {
       draft: this.draft,
       replyToId: this.replyToId,
       lastCursor: this.lastCursor,
-    } satisfies PersistedChannelState, {
+    } satisfies PersistedChannelState;
+    this.resume?.setState(CHANNEL_STATE_KEY, value, {
+      schemaVersion: CHANNEL_SCHEMA_VERSION,
+    });
+    this.persistence?.setState(CHANNEL_STATE_KEY, value, {
       schemaVersion: CHANNEL_SCHEMA_VERSION,
     });
   }

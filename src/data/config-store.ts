@@ -90,6 +90,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
     disabledPlugins: sanitizeStringArray(saved.disabledPlugins, defaults.disabledPlugins),
+    pluginConfig: sanitizePluginConfig(saved.pluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
     recentTickers: sanitizeStringArray(saved.recentTickers, defaults.recentTickers),
@@ -102,6 +103,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     || !Array.isArray((saved.layout as { instances?: unknown })?.instances)
     || !Array.isArray(saved.layouts)
     || !Array.isArray(saved.brokerInstances)
+    || !isPluginConfigMap(saved.pluginConfig)
     || !isChartPreferences(saved.chartPreferences)
     || typeof saved.activeLayoutIndex !== "number";
 
@@ -130,6 +132,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
     disabledPlugins: sanitizeStringArray(config.disabledPlugins, []),
+    pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
@@ -170,19 +173,53 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
     : fallback;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPluginConfigMap(value: unknown): value is Record<string, Record<string, unknown>> {
+  if (!isPlainRecord(value)) return false;
+  return Object.values(value).every((entry) => isPlainRecord(entry));
+}
+
+function sanitizePluginConfig(value: unknown): Record<string, Record<string, unknown>> {
+  if (!isPluginConfigMap(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([pluginId, state]) => [pluginId, { ...state }]),
+  );
+}
+
 function isChartPreferences(value: unknown): value is ChartPreferences {
   if (!value || typeof value !== "object") return false;
   const defaultRenderMode = (value as ChartPreferences).defaultRenderMode;
-  return defaultRenderMode === "area"
+  const renderer = (value as ChartPreferences).renderer;
+  return (defaultRenderMode === "area"
     || defaultRenderMode === "line"
     || defaultRenderMode === "candles"
-    || defaultRenderMode === "ohlc";
+    || defaultRenderMode === "ohlc")
+    && (renderer === "auto" || renderer === "kitty" || renderer === "braille");
 }
 
 function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): ChartPreferences {
-  return isChartPreferences(value)
-    ? { defaultRenderMode: value.defaultRenderMode }
-    : { ...fallback };
+  if (!value || typeof value !== "object") return { ...fallback };
+
+  const candidate = value as Partial<ChartPreferences>;
+  const defaultRenderMode = candidate.defaultRenderMode === "area"
+    || candidate.defaultRenderMode === "line"
+    || candidate.defaultRenderMode === "candles"
+    || candidate.defaultRenderMode === "ohlc"
+    ? candidate.defaultRenderMode
+    : fallback.defaultRenderMode;
+  const renderer = candidate.renderer === "auto"
+    || candidate.renderer === "kitty"
+    || candidate.renderer === "braille"
+    ? candidate.renderer
+    : fallback.renderer;
+
+  return {
+    defaultRenderMode,
+    renderer,
+  };
 }
 
 function sanitizeColumns(value: unknown, fallback: ColumnConfig[]): ColumnConfig[] {

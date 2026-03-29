@@ -164,6 +164,22 @@ export interface PluginPersistence {
   deleteResource(kind: string, key: string, options?: { sourceKey?: string }): void;
 }
 
+export interface PluginResumeState {
+  getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null;
+  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void;
+  deleteState(key: string): void;
+  getPaneState<T = unknown>(paneId: string, key: string): T | null;
+  setPaneState(paneId: string, key: string, value: unknown): void;
+  deletePaneState(paneId: string, key: string): void;
+}
+
+export interface PluginConfigState {
+  get<T = unknown>(key: string): T | null;
+  set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<void>;
+  keys(): string[];
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
@@ -184,6 +200,8 @@ export interface GloomPluginContext {
   readonly storage: PluginStorage;
   readonly persistence: PluginPersistence;
   readonly log: PluginLogger;
+  readonly resume: PluginResumeState;
+  readonly configState: PluginConfigState;
 
   createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>): Promise<void>;

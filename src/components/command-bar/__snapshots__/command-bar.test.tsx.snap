@@ -107,3 +107,31 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
                                           
 "
 `;
+
+exports[`CommandBar groups ticker search sections and keeps exact open matches above loose provider results 1`] = `
+"                                                                                
+                                                                                
+                                                                                
+                  Commands                                esc                   
+                  T appl                                                        
+                                                                                
+                  Open                                                          
+                  AAPL                                                          
+                                                                                
+                  Search Results                                                
+                  APP                                                           
+                  AMAT                                                          
+                  AAOI                                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+"
+`;

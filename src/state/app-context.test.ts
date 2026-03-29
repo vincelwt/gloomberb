@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createInitialState, resolveTickerForPane } from "./app-context";
+import { appReducer, createInitialState, resolveCollectionForPane, resolveTickerForPane } from "./app-context";
 import { createDefaultConfig, createPaneInstance } from "../types/config";
+import type { AppSessionSnapshot } from "./session-persistence";
+import { buildBrokerPortfolioId } from "../utils/broker-instances";
 
 describe("resolveTickerForPane", () => {
   test("uses a portfolio pane cursor for inspector follow panes", () => {
@@ -33,5 +35,181 @@ describe("resolveTickerForPane", () => {
 
     const state = createInitialState(config);
     expect(resolveTickerForPane(state, instance.instanceId)).toBe("MSFT");
+  });
+
+  test("hydrates remembered pane-local tab and sort state from the previous session", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const sessionSnapshot: AppSessionSnapshot = {
+      paneState: {
+        "portfolio-list:main": {
+          collectionId: "watchlist",
+          collectionSorts: {
+            watchlist: { columnId: "change_pct", direction: "desc" },
+          },
+        },
+        "ticker-detail:main": {
+          activeTabId: "financials",
+        },
+      },
+      focusedPaneId: "ticker-detail:main",
+      activePanel: "right",
+      statusBarVisible: true,
+      openPaneIds: ["portfolio-list:main", "ticker-detail:main"],
+      hydrationTargets: [],
+      exchangeCurrencies: ["USD"],
+      savedAt: Date.now(),
+    };
+
+    const state = createInitialState(config, sessionSnapshot);
+
+    expect(state.paneState["portfolio-list:main"]).toEqual({
+      collectionId: "watchlist",
+      cursorSymbol: null,
+      collectionSorts: {
+        watchlist: { columnId: "change_pct", direction: "desc" },
+      },
+    });
+    expect(state.paneState["ticker-detail:main"]).toEqual({
+      activeTabId: "financials",
+    });
+    expect(state.focusedPaneId).toBe("ticker-detail:main");
+  });
+
+  test("preserves broker portfolio selection until broker portfolios are restored", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const brokerPortfolioId = buildBrokerPortfolioId("ibkr-live", "DU12345");
+    const sessionSnapshot: AppSessionSnapshot = {
+      paneState: {
+        "portfolio-list:main": {
+          collectionId: brokerPortfolioId,
+          cursorSymbol: "AAPL",
+        },
+      },
+      focusedPaneId: "portfolio-list:main",
+      activePanel: "left",
+      statusBarVisible: true,
+      openPaneIds: ["portfolio-list:main", "ticker-detail:main"],
+      hydrationTargets: [],
+      exchangeCurrencies: ["USD"],
+      savedAt: Date.now(),
+    };
+
+    const initial = createInitialState(config, sessionSnapshot);
+
+    expect(initial.paneState["portfolio-list:main"]).toEqual({
+      collectionId: brokerPortfolioId,
+      cursorSymbol: "AAPL",
+    });
+    expect(resolveCollectionForPane(initial, "portfolio-list:main")).toBe(brokerPortfolioId);
+    expect(resolveCollectionForPane(initial, "ticker-detail:main")).toBe(brokerPortfolioId);
+
+    const nextConfig = {
+      ...config,
+      portfolios: [
+        ...config.portfolios,
+        {
+          id: brokerPortfolioId,
+          name: "IBKR DU12345",
+          currency: "USD",
+          brokerId: "ibkr",
+          brokerInstanceId: "ibkr-live",
+          brokerAccountId: "DU12345",
+        },
+      ],
+    };
+
+    const next = appReducer(initial, { type: "SET_CONFIG", config: nextConfig });
+
+    expect(next.paneState["portfolio-list:main"]).toEqual({
+      collectionId: brokerPortfolioId,
+      cursorSymbol: "AAPL",
+    });
+    expect(resolveCollectionForPane(next, "portfolio-list:main")).toBe(brokerPortfolioId);
+  });
+
+  test("falls back for unknown non-broker collection ids", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const sessionSnapshot: AppSessionSnapshot = {
+      paneState: {
+        "portfolio-list:main": {
+          collectionId: "missing-collection",
+        },
+      },
+      focusedPaneId: "portfolio-list:main",
+      activePanel: "left",
+      statusBarVisible: true,
+      openPaneIds: ["portfolio-list:main", "ticker-detail:main"],
+      hydrationTargets: [],
+      exchangeCurrencies: ["USD"],
+      savedAt: Date.now(),
+    };
+
+    const state = createInitialState(config, sessionSnapshot);
+
+    expect(state.paneState["portfolio-list:main"]).toEqual({
+      collectionId: "main",
+      cursorSymbol: null,
+    });
+    expect(resolveCollectionForPane(state, "portfolio-list:main")).toBe("main");
+  });
+});
+
+describe("broker account cache", () => {
+  test("stores broker accounts by instance id", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const next = appReducer(state, {
+      type: "SET_BROKER_ACCOUNTS",
+      instanceId: "ibkr-flex",
+      accounts: [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+
+    expect(next.brokerAccounts).toEqual({
+      "ibkr-flex": [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+  });
+
+  test("preserves cached broker accounts across unrelated config updates", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.brokerInstances.push({
+      id: "ibkr-flex",
+      brokerType: "ibkr",
+      label: "Flex",
+      connectionMode: "flex",
+      config: { connectionMode: "flex", flex: { token: "t", queryId: "q" } },
+      enabled: true,
+    });
+    const state = appReducer(createInitialState(config), {
+      type: "SET_BROKER_ACCOUNTS",
+      instanceId: "ibkr-flex",
+      accounts: [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+
+    const next = appReducer(state, { type: "SET_CONFIG", config: { ...config, theme: "amber" } });
+
+    expect(next.brokerAccounts).toEqual(state.brokerAccounts);
+  });
+
+  test("clears cached broker accounts when the broker instance is removed", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.brokerInstances.push({
+      id: "ibkr-flex",
+      brokerType: "ibkr",
+      label: "Flex",
+      connectionMode: "flex",
+      config: { connectionMode: "flex", flex: { token: "t", queryId: "q" } },
+      enabled: true,
+    });
+    const state = appReducer(createInitialState(config), {
+      type: "SET_BROKER_ACCOUNTS",
+      instanceId: "ibkr-flex",
+      accounts: [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+
+    const next = appReducer(state, {
+      type: "SET_CONFIG",
+      config: { ...config, brokerInstances: [] },
+    });
+
+    expect(next.brokerAccounts).toEqual({});
   });
 });

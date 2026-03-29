@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useDialogState } from "@opentui-ui/dialog/react";
 import { saveConfig } from "../../data/config-store";
 import {
@@ -39,6 +39,7 @@ import {
 } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
+import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneWrapper } from "./pane";
 
@@ -366,7 +367,9 @@ function menuForPane(
 
 export function Shell({ pluginRegistry }: ShellProps) {
   const { state, dispatch } = useAppState();
+  const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
+  const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
   const contentHeight = height - (state.statusBarVisible ? 2 : 1);
   pluginRegistry.getTermSizeFn = () => ({ width, height: contentHeight });
@@ -451,6 +454,56 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
   const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
+  const nativePaneLayers = useMemo<NativePaneLayer[]>(() => {
+    const layers: NativePaneLayer[] = dockedPanes.map((pane) => ({
+      paneId: pane.instance.instanceId,
+      zIndex: 0,
+    }));
+    for (const pane of floatingPanes) {
+      layers.push({
+        paneId: pane.instance.instanceId,
+        zIndex: pane.floating?.zIndex ?? 50,
+      });
+    }
+    return layers;
+  }, [dockedPanes, floatingPanes]);
+
+  const nativeOccluders = useMemo<NativeOccluder[]>(() => {
+    const occluders: NativeOccluder[] = floatingPanes.map((pane) => ({
+      id: pane.instance.instanceId,
+      paneId: pane.instance.instanceId,
+      rect: {
+        x: pane.floating!.x,
+        y: pane.floating!.y + HEADER_HEIGHT,
+        width: pane.floating!.width,
+        height: pane.floating!.height,
+      },
+      zIndex: pane.floating?.zIndex ?? 50,
+    }));
+
+    if (overlayOpen) {
+      occluders.push({
+        id: "overlay:global",
+        paneId: null,
+        rect: {
+          x: 0,
+          y: HEADER_HEIGHT,
+          width,
+          height: contentHeight,
+        },
+        zIndex: Number.MAX_SAFE_INTEGER,
+      });
+    }
+
+    return occluders;
+  }, [contentHeight, floatingPanes, overlayOpen, width]);
+
+  useEffect(() => {
+    nativeSurfaceManager.setWindowState({
+      paneLayers: nativePaneLayers,
+      occluders: nativeOccluders,
+    });
+  }, [nativeOccluders, nativePaneLayers, nativeSurfaceManager]);
 
   const getPaneTitle = useCallback((pane: ResolvedPane): string => {
     if (pane.instance.paneId === "ticker-detail") {
