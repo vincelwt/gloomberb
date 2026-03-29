@@ -1,0 +1,35 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`renders the compact trade tab layout 1`] = `
+" Trade AMD · Advanced Micro Devices, Inc.                                               
+ $199.80  -3.97 · Bid 199.70 · Ask 199.90 · Spd 0.20                                    
+                                                                                        
+  Broker           Account     Net Liq                                                  
+   Paper Gateway    DU123456    —                                                       
+                                                                                        
+                                                                                        
+  Next Submit order   Ticket Standby   Refresh  r                                       
+                                                                                        
+  Refreshed Paper.                                                                      
+                                                                                        
+ ╭────────────────────────────────────────────────────────────────────────────────────╮ 
+ │ Ticket                                                         Click field / Enter │ 
+ │ Click a field or press Enter to edit. Shortcuts are shown inline.                  │ 
+ │                                                                                    │ 
+ │  Profile Paper              Ticker AMD STK             Account DU123456            │ 
+ │                                                                                    │ 
+ │  Side [b/v] BUY      Type [t] MKT        Qty [q] 1           TIF DAY               │ 
+ │                                                                                    │ 
+ │ Advanced Micro Devices, Inc.                                                       │ 
+ ╰────────────────────────────────────────────────────────────────────────────────────╯ 
+                                                                                        
+ ╭────────────────────────────────────────────────────────────────────────────────────╮ 
+ │ Preview                                                              Preview ready │ 
+ │ What-if: init 12.4k → 13.2k · commission $1.25                                     │ 
+ │  Fee $1.25                              Init 12.4k → 13.2k                         │ 
+ │  Maint 10.1k → 10.7k                    Equity 58.4k → 57.1k                       │ 
+ │  Preview  p  Submit Order  Enter                                                   │ 
+ ╰────────────────────────────────────────────────────────────────────────────────────╯ 
+                                                                                        
+"
+`;
