@@ -9,7 +9,7 @@ import { getCollectionName, getCollectionTickers } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
 import { EmptyState, FieldRow } from "../../components";
 import { TabBar } from "../../components/tab-bar";
-import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
+import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { normalizeTickerInput } from "../../utils/ticker-search";
 import { StockChart } from "../../components/chart/stock-chart";
@@ -149,6 +149,7 @@ export function QuoteMonitorPane({ focused, width }: PaneProps) {
 }
 
 function OverviewTab({ width }: { width?: number }) {
+  const { state } = useAppState();
   const { ticker, financials } = usePaneTicker();
   const { width: termWidth } = useTerminalDimensions();
   if (!ticker) return <EmptyState title="No ticker selected." />;
@@ -156,6 +157,11 @@ function OverviewTab({ width }: { width?: number }) {
   const q = financials?.quote;
   const f = financials?.fundamentals;
   const profile = financials?.profile;
+  const baseCurrency = state.config.baseCurrency;
+  const exchangeRates = state.exchangeRates;
+  const quoteCurrency = q?.currency ?? ticker.metadata.currency ?? baseCurrency;
+  const toBase = (value: number, fromCurrency: string) =>
+    convertCurrency(value, fromCurrency, baseCurrency, exchangeRates);
   const sector = ticker.metadata.sector ?? profile?.sector;
   const industry = ticker.metadata.industry ?? profile?.industry;
   const description = profile?.description?.trim();
@@ -231,11 +237,14 @@ function OverviewTab({ width }: { width?: number }) {
 
         {/* Key metrics */}
         <box flexDirection="column">
-          <FieldRow label="Market Cap" value={q?.marketCap ? formatCompact(q.marketCap) : "—"} />
+          <FieldRow
+            label="Market Cap"
+            value={q?.marketCap ? formatCompactCurrency(toBase(q.marketCap, quoteCurrency), baseCurrency) : "—"}
+          />
           <FieldRow label="P/E (TTM)" value={f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—"} />
           <FieldRow label="Forward P/E" value={f?.forwardPE ? formatNumber(f.forwardPE, 1) : "—"} />
           <FieldRow label="PEG Ratio" value={f?.pegRatio ? formatNumber(f.pegRatio, 2) : "—"} />
-          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps) : "—"} />
+          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps, quoteCurrency) : "—"} />
           <FieldRow label="Div Yield" value={f?.dividendYield != null ? formatPercent(f.dividendYield) : "—"} />
           <FieldRow label="Revenue" value={f?.revenue ? formatCompact(f.revenue) : "—"} />
           <FieldRow label="Net Income" value={f?.netIncome ? formatCompact(f.netIncome) : "—"} />
@@ -244,7 +253,7 @@ function OverviewTab({ width }: { width?: number }) {
           <FieldRow label="Profit Margin" value={f?.profitMargin != null ? formatPercent(f.profitMargin) : "—"} />
           <FieldRow
             label="52W Range"
-            value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w)} - ${formatCurrency(q.high52w)}` : "—"}
+            value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w, quoteCurrency)} - ${formatCurrency(q.high52w, quoteCurrency)}` : "—"}
           />
           <FieldRow
             label="1Y Return"
@@ -294,8 +303,22 @@ function OverviewTab({ width }: { width?: number }) {
             </box>
             {ticker.metadata.positions.map((pos, i) => {
               const costBasis = pos.shares * pos.avgCost * (pos.multiplier || 1);
-              const pnlText = pos.unrealizedPnl != null
-                ? `  P&L: ${pos.unrealizedPnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealizedPnl, pos.currency)}`
+              const positionCurrency = pos.currency || quoteCurrency;
+              const costBasisBase = toBase(costBasis, positionCurrency);
+              const marketValueBase = pos.marketValue != null
+                ? toBase(pos.marketValue, positionCurrency)
+                : pos.markPrice != null
+                  ? toBase(Math.abs(pos.shares) * pos.markPrice * (pos.multiplier || 1), positionCurrency)
+                  : q
+                    ? toBase(Math.abs(pos.shares) * q.price * (pos.multiplier || 1), quoteCurrency)
+                    : null;
+              const pnlValue = pos.unrealizedPnl != null
+                ? toBase(pos.unrealizedPnl, positionCurrency)
+                : marketValueBase != null
+                  ? marketValueBase - costBasisBase
+                  : null;
+              const pnlText = pnlValue != null
+                ? `  P&L: ${pnlValue >= 0 ? "+" : ""}${formatCurrency(pnlValue, baseCurrency)}`
                 : "";
               return (
                 <box key={i} flexDirection="column">
@@ -306,18 +329,18 @@ function OverviewTab({ width }: { width?: number }) {
                   </box>
                   <box flexDirection="row" height={1}>
                     <text fg={colors.text}>
-                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, pos.currency)}
-                      {" = "}{formatCurrency(costBasis, pos.currency)}
+                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, positionCurrency)}
+                      {" = "}{formatCurrency(costBasisBase, baseCurrency)}
                     </text>
                     {pnlText && (
-                      <text fg={priceColor(pos.unrealizedPnl!)}>{pnlText}</text>
+                      <text fg={priceColor(pnlValue ?? 0)}>{pnlText}</text>
                     )}
                   </box>
                   {pos.markPrice != null && (
                     <box flexDirection="row" height={1}>
-                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, pos.currency)}</text>
-                      {pos.marketValue != null && (
-                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(pos.marketValue, pos.currency)}</text>
+                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, positionCurrency)}</text>
+                      {marketValueBase != null && (
+                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(marketValueBase, baseCurrency)}</text>
                       )}
                     </box>
                   )}
