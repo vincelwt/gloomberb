@@ -85,10 +85,23 @@ import {
 } from "./state/session-persistence";
 import { initializeAppState } from "./state/app-bootstrap";
 import { TickerRefreshQueue } from "./state/ticker-refresh-queue";
+import { debugLog } from "./utils/debug-log";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
 const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
+const appLog = debugLog.createLogger("app");
+
+function summarizeError(error: unknown): Record<string, string> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack || "",
+    };
+  }
+  return { message: String(error) };
+}
 
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
@@ -945,9 +958,22 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       ...baseContext,
       activeTicker: resolvedOptions?.symbol ?? baseContext.activeTicker,
     };
-    if (template.canCreate && !template.canCreate(context, resolvedOptions)) {
-      pluginRegistry.showToastFn(`Can't create ${template.label.toLowerCase()} right now.`, { type: "info" });
-      return;
+    if (template.canCreate) {
+      try {
+        if (!template.canCreate(context, resolvedOptions)) {
+          pluginRegistry.showToastFn(`Can't create ${template.label.toLowerCase()} right now.`, { type: "info" });
+          return;
+        }
+      } catch (error) {
+        appLog.error("Pane template canCreate failed during creation", {
+          templateId: template.id,
+          pluginId: pluginRegistry.getPaneTemplatePluginId(template.id),
+          options: resolvedOptions,
+          error: summarizeError(error),
+        });
+        pluginRegistry.showToastFn(`Can't create ${template.label.toLowerCase()} right now.`, { type: "info" });
+        return;
+      }
     }
 
     const spec = await template.createInstance?.(context, resolvedOptions) ?? {};

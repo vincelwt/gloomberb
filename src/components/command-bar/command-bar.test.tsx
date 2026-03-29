@@ -158,6 +158,7 @@ function CommandBarHarness({
   live = false,
   configureConfig,
   configureState,
+  configurePluginRegistry,
   dataProvider = makeDataProvider(),
 }: {
   query: string;
@@ -166,6 +167,7 @@ function CommandBarHarness({
   live?: boolean;
   configureConfig?: (config: AppConfig) => AppConfig;
   configureState?: (state: AppState) => AppState;
+  configurePluginRegistry?: (pluginRegistry: PluginRegistry) => void;
   dataProvider?: DataProvider;
 }) {
   let config = {
@@ -203,6 +205,7 @@ function CommandBarHarness({
     saveTicker: async () => {},
   };
   const pluginRegistry = makePluginRegistry();
+  configurePluginRegistry?.(pluginRegistry);
   const [liveState, dispatch] = useReducer(appReducer, state);
 
   return (
@@ -381,6 +384,34 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
+  });
+
+  test("skips pane templates whose canCreate throws", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query=""
+      selectedTicker="AAPL"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.paneTemplates.set("broken-pane", {
+          id: "broken-pane",
+          paneId: "chat",
+          label: "Broken Pane",
+          description: "Should not crash the command bar",
+          shortcut: { prefix: "IBKR" },
+          canCreate: () => {
+            throw new ReferenceError("getIbkrInstances is not defined");
+          },
+        });
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor");
+    expect(frame).not.toContain("Broken Pane");
   });
 
   test("groups ticker search sections and keeps exact open matches above loose provider results", async () => {
