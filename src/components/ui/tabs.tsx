@@ -11,11 +11,12 @@ export interface TabsProps {
   tabs: TabItem[];
   activeValue: string;
   onSelect: (value: string) => void;
+  compact?: boolean;
 }
 
-export function Tabs({ tabs, activeValue, onSelect }: TabsProps) {
+export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps) {
   return (
-    <box flexDirection="row" height={2}>
+    <box flexDirection="row" height={compact ? 1 : 2}>
       {tabs.map((tab) => {
         const active = tab.value === activeValue;
         const tabWidth = tab.label.length + 2;
@@ -37,7 +38,7 @@ export function Tabs({ tabs, activeValue, onSelect }: TabsProps) {
             >
               {tab.label}
             </text>
-            <text fg={active ? colors.borderFocused : colors.bg}>{"▔".repeat(tabWidth)}</text>
+            {!compact && <text fg={active ? colors.borderFocused : colors.bg}>{"▔".repeat(tabWidth)}</text>}
           </box>
         );
       })}

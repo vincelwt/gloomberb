@@ -16,6 +16,7 @@ import {
   usePaneTicker,
 } from "../../state/app-context";
 import { PriceSelectorDialog } from "../../components";
+import { Button } from "../../components/ui/button";
 import { colors, hoverBg, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, padTo } from "../../utils/format";
 import { getBrokerInstance } from "../../utils/broker-instances";
@@ -29,7 +30,7 @@ import {
   normalizeIbkrConfig,
   type FlexQueryConfig,
 } from "./config";
-import { getFlexStatement, parseFlexPositions, requestFlexStatement } from "./flex";
+import { loadFlexStatement, parseFlexAccounts, parseFlexPositions } from "./flex";
 import { ibkrGatewayManager } from "./gateway-service";
 import {
   getConfiguredIbkrGatewayInstances,
@@ -127,6 +128,89 @@ function formatPreviewSummary(preview: import("../../types/trading").BrokerOrder
   return `What-if: init ${formatCompact(preview.initMarginBefore || 0)} → ${formatCompact(preview.initMarginAfter || 0)} · commission ${preview.commission != null ? formatCurrency(preview.commission, preview.commissionCurrency || "USD") : "—"}${preview.warningText ? ` · ${preview.warningText}` : ""}`;
 }
 
+type TradeTone = "neutral" | "accent" | "positive" | "negative";
+
+function getTradeTonePalette(tone: TradeTone) {
+  switch (tone) {
+    case "accent":
+      return { border: colors.borderFocused, text: colors.textBright, background: colors.selected };
+    case "positive":
+      return { border: colors.positive, text: colors.positive, background: colors.panel };
+    case "negative":
+      return { border: colors.negative, text: colors.negative, background: colors.panel };
+    case "neutral":
+    default:
+      return { border: colors.border, text: colors.text, background: colors.panel };
+  }
+}
+
+function formatPreviewMetric(before?: number, after?: number): string {
+  if (before == null && after == null) return "—";
+  return `${formatCompact(before || 0)} → ${formatCompact(after || 0)}`;
+}
+
+function truncateText(value: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (value.length <= maxWidth) return value;
+  if (maxWidth <= 3) return value.slice(0, maxWidth);
+  return `${value.slice(0, maxWidth - 3)}...`;
+}
+
+interface TradeBadgeProps {
+  label: string;
+  value: string;
+  tone?: TradeTone;
+  onPress?: () => void;
+}
+
+function TradeBadge({ label, value, tone = "neutral", onPress }: TradeBadgeProps) {
+  const palette = getTradeTonePalette(tone);
+
+  return (
+    <box
+      backgroundColor={palette.background}
+      paddingX={1}
+      marginRight={1}
+      marginBottom={1}
+      onMouseDown={onPress}
+    >
+      <text fg={colors.textDim}>{label}</text>
+      <text fg={palette.text} attributes={TextAttributes.BOLD}>{` ${value}`}</text>
+    </box>
+  );
+}
+
+interface TradeStepChipProps {
+  index: number;
+  label: string;
+  status: "pending" | "active" | "done";
+  onPress?: () => void;
+}
+
+function TradeStepChip({ index, label, status, onPress }: TradeStepChipProps) {
+  const palette = status === "done"
+    ? getTradeTonePalette("positive")
+    : status === "active"
+      ? getTradeTonePalette("accent")
+      : getTradeTonePalette("neutral");
+
+  return (
+    <box
+      border
+      borderStyle="rounded"
+      borderColor={palette.border}
+      paddingX={1}
+      marginRight={1}
+      marginBottom={1}
+      onMouseDown={onPress}
+    >
+      <text fg={status === "pending" ? colors.textDim : palette.text} attributes={status === "active" ? TextAttributes.BOLD : 0}>
+        {`${index} ${label}`}
+      </text>
+    </box>
+  );
+}
+
 function findTickerForOrder(
   order: { contract: BrokerContractRef },
   tickers: Map<string, import("../../types/ticker").TickerRecord>,
@@ -162,8 +246,7 @@ function isMarketDataWarning(message?: string): boolean {
 }
 
 async function importFlexPositions(config: FlexQueryConfig): Promise<BrokerPosition[]> {
-  const referenceCode = await requestFlexStatement(config);
-  const xml = await getFlexStatement(config.token, referenceCode);
+  const xml = await loadFlexStatement(config);
   return parseFlexPositions(xml);
 }
 
@@ -215,8 +298,11 @@ const ibkrBroker: BrokerAdapter = {
 
   async listAccounts(instance) {
     const normalized = normalizeIbkrConfig(instance.config);
-    if (normalized.connectionMode !== "gateway") return [];
-    return ibkrGatewayManager.getService(instance.id).getAccounts(normalized.gateway);
+    if (normalized.connectionMode === "gateway") {
+      return ibkrGatewayManager.getService(instance.id).getAccounts(normalized.gateway);
+    }
+    const xml = await loadFlexStatement(normalized.flex);
+    return parseFlexAccounts(xml);
   },
 
   async searchInstruments(query, instance) {
@@ -601,9 +687,9 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
       content: (ctx) => <InputDialog {...ctx} step={{
         key: "query",
         type: "text",
-        label: "Search IBKR Contract",
+        label: "Override Ticker Contract",
         placeholder: "AAPL, ES, SPY 260619C00500000",
-        body: ["Search Interactive Brokers contracts by symbol, future, or local symbol."],
+        body: ["The current ticker is preloaded. Search only if you need a different listing, future, or options contract."],
       }} />,
     });
     if (!search) return;
@@ -915,179 +1001,440 @@ function TradeTab({ focused, width, height, onCapture }: DetailTabProps) {
     );
   }
 
-  const rowWidth = Math.max(20, Math.floor((width - 4) / 4));
   const showLimit = isLimitOrder(ticketState.draft.orderType);
   const showStop = isStopOrder(ticketState.draft.orderType);
+  const hasProfile = Boolean(selectedInstance);
+  const wideLayout = width >= 120;
+  const previewPanelWidth = wideLayout ? Math.min(42, Math.max(34, Math.floor(width * 0.32))) : undefined;
+  const ticketPanelWidth = wideLayout ? Math.max(56, width - (previewPanelWidth ?? 0) - 7) : Math.max(36, width - 4);
+  const cardsPerRow = ticketPanelWidth >= 96 ? 4 : ticketPanelWidth >= 58 ? 2 : 1;
+  const fieldWidth = Math.max(18, Math.floor((ticketPanelWidth - (cardsPerRow - 1)) / cardsPerRow));
+  const fieldTextWidth = Math.max(10, fieldWidth - 3);
+  const activeContract = ticketState.draft.contract.symbol ? ticketState.draft.contract : normalizeContract(ticker);
+  const hasContract = Boolean(activeContract.symbol);
+  const hasAccount = Boolean(currentAccountId);
+  const hasPreview = Boolean(ticketState.preview);
+  const previewTextWidth = Math.max(18, (previewPanelWidth ?? Math.max(34, width - 6)) - 6);
+  const contractValue = truncateText(formatContractLabel(activeContract), fieldTextWidth);
+  const contractMeta = truncateText(
+    ticketState.contractName || ticker.metadata.name || "Using current ticker",
+    fieldTextWidth,
+  );
+  const connectionTone: TradeTone = gatewaySnapshot.status.state === "connected"
+    ? "positive"
+    : gatewaySnapshot.status.state === "error"
+      ? "negative"
+      : "neutral";
+  const statusTone: TradeTone = ticketState.lastError
+    ? "negative"
+    : ticketState.isSuccess
+      ? "positive"
+      : "accent";
+  const statusText = ticketState.busy
+    ? "Working…"
+    : ticketState.lastError
+      || ticketState.lastInfo
+      || gatewaySnapshot.status.message
+      || gatewaySnapshot.lastError
+      || "Click a workflow step or field to activate the ticket, then preview before submit.";
+  const previewTone: TradeTone = !ticketState.preview
+    ? "neutral"
+    : ticketState.preview.warningText
+      ? "negative"
+      : "positive";
+  const previewHeading = !ticketState.preview
+    ? "Preview required"
+    : ticketState.preview.warningText
+      ? "Preview warning"
+      : "Preview ready";
+
+  const renderFieldCard = ({
+    id,
+    label,
+    value,
+    valueColor,
+    valueAttributes = 0,
+    disabled = false,
+    active = false,
+    onPress,
+  }: {
+    id: string;
+    label: string;
+    value: string;
+    valueColor?: string;
+    valueAttributes?: number;
+    disabled?: boolean;
+    active?: boolean;
+    onPress?: () => void;
+  }) => {
+    const hovered = hoveredField === id;
+    const outlined = !active && !hovered;
+    const borderColor = disabled ? colors.border : active || hovered ? colors.borderFocused : colors.border;
+    const backgroundColor = disabled
+      ? undefined
+      : active
+        ? colors.selected
+        : hovered
+          ? fieldHoverBg
+          : undefined;
+
+    return (
+      <box
+        key={id}
+        width={fieldWidth}
+        minWidth={18}
+        height={4}
+        flexDirection="column"
+        border={outlined}
+        borderStyle={outlined ? "rounded" : undefined}
+        borderColor={outlined ? borderColor : undefined}
+        backgroundColor={backgroundColor}
+        paddingX={1}
+        onMouseMove={() => {
+          if (!disabled) setHoveredField(id);
+        }}
+        onMouseDown={disabled ? undefined : () => {
+          enterInteractive();
+          onPress?.();
+        }}
+      >
+        <text fg={disabled ? colors.textMuted : colors.textDim}>{label}</text>
+        <text fg={valueColor ?? (disabled ? colors.textMuted : colors.text)} attributes={valueAttributes}>
+          {truncateText(value, fieldTextWidth)}
+        </text>
+      </box>
+    );
+  };
 
   return (
     <scrollbox flexGrow={1} scrollY>
-      <box flexDirection="column" paddingX={1} paddingBottom={1} onMouseDown={enterInteractive}>
-        <box height={1} flexDirection="row">
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.metadata.ticker}`}</text>
-          {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
-            <text fg={colors.textDim}>{` · ${ticker.metadata.name}`}</text>
-          )}
+      <box flexDirection="column" paddingX={1} paddingBottom={1} gap={1} onMouseDown={enterInteractive}>
+        <box flexDirection="row" flexWrap="wrap" justifyContent="space-between">
+          <box flexDirection="column" marginBottom={1}>
+            <box height={1} flexDirection="row">
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.metadata.ticker}`}</text>
+              {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
+                <text fg={colors.textDim}>{` · ${ticker.metadata.name}`}</text>
+              )}
+            </box>
+            <box height={1}>
+              <text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote)}</text>
+            </box>
+          </box>
+
+          <box flexDirection="row" flexWrap="wrap" justifyContent="flex-end">
+            <TradeBadge
+              label="Broker"
+              value={selectedInstance ? `${selectedInstance.label} ${isGatewayMode ? "Gateway" : "Flex"}` : "Select profile"}
+              tone={connectionTone}
+              onPress={() => {
+                enterInteractive();
+                chooseBrokerInstance().catch(() => {});
+              }}
+            />
+            <TradeBadge
+              label="Account"
+              value={currentAccountId || (lockedBrokerInstanceId ? "Locked" : "Select")}
+              tone={hasAccount ? "accent" : "neutral"}
+              onPress={() => {
+                enterInteractive();
+                chooseAccount().catch(() => {});
+              }}
+            />
+            <TradeBadge
+              label="Net Liq"
+              value={activeAccount ? formatCurrency(activeAccount.netLiquidation || 0, activeAccount.currency || "USD") : "—"}
+              tone="neutral"
+              onPress={activeAccount ? undefined : () => {
+                enterInteractive();
+                chooseAccount().catch(() => {});
+              }}
+            />
+          </box>
         </box>
 
-        <box height={1} flexDirection="row" onMouseDown={() => { enterInteractive(); chooseBrokerInstance().catch(() => {}); }}>
-          <text fg={
-            gatewaySnapshot.status.state === "connected"
-              ? colors.positive
-              : gatewaySnapshot.status.state === "error"
-                ? colors.negative
-                : colors.textDim
-          }>
-            {selectedInstance
-              ? `${selectedInstance.label} · ${isGatewayMode ? "Gateway" : "Flex"}`
-              : "IBKR · no profile selected"}
-          </text>
-          <text fg={colors.textMuted}>{` · ${interactive ? "ticket active" : "press Enter to activate ticket"}`}</text>
-        </box>
-
-        <box height={1} flexDirection="row" onMouseDown={() => { enterInteractive(); chooseAccount().catch(() => {}); }}>
-          <text fg={colors.textDim}>
-            {activeAccount
-              ? `${selectedInstance?.label || "IBKR"} → ${activeAccount.accountId} · ${formatCurrency(activeAccount.netLiquidation || 0, activeAccount.currency || "USD")} net liq`
-              : isGatewayMode
-                ? lockedBrokerInstanceId
-                  ? `Locked to ${selectedInstance?.label || "IBKR"}`
-                  : "No account selected"
-                : gatewayInstances.length > 0
-                  ? "Choose a Gateway / TWS profile"
-                  : "Connect an IBKR profile"}
-          </text>
-          <box flexGrow={1} />
-          <text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote)}</text>
-        </box>
-
-        <box height={1} flexDirection="row" onMouseDown={() => { enterInteractive(); chooseInstrument().catch(() => {}); }}>
-          <text fg={colors.text} attributes={TextAttributes.BOLD}>
-            {ticketState.draft.contract.symbol ? formatContractLabel(ticketState.draft.contract) : "No contract selected"}
-          </text>
-          {ticketState.contractName && (
-            <text fg={colors.textDim}>{` · ${ticketState.contractName}`}</text>
-          )}
-        </box>
-
-        <box height={1}>
-          <text fg={ticketState.lastError ? colors.negative : ticketState.isSuccess ? colors.positive : colors.textDim}>
-            {ticketState.busy
-              ? "Working…"
-              : ticketState.lastError
-              || ticketState.lastInfo
-              || gatewaySnapshot.status.message
-              || gatewaySnapshot.lastError
-              || "Enter to activate, then use i profile · s contract · a account · p preview."}
-          </text>
-        </box>
-
-        <box height={1}>
-          <text fg={ticketState.preview?.warningText ? colors.negative : colors.textDim}>
-            {formatPreviewSummary(ticketState.preview)}
-          </text>
-        </box>
-
-        <box height={1}>
-          <text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</text>
-        </box>
-
-        <box flexDirection="row">
-          <box width={rowWidth} flexDirection="column"
-            backgroundColor={hoveredField === "action" ? fieldHoverBg : undefined}
-            onMouseMove={() => setHoveredField("action")}
-            onMouseDown={() => {
+        <box flexDirection="row" flexWrap="wrap">
+          <TradeStepChip
+            index={1}
+            label="Profile"
+            status={hasProfile ? "done" : "active"}
+            onPress={() => {
               enterInteractive();
-              if (symbol && ticker) setTradeTicketDraft(symbol, { action: ticketState.draft.action === "BUY" ? "SELL" : "BUY" }, ticker);
-            }}>
-            <text fg={colors.textDim}>Action</text>
-            <text fg={ticketState.draft.action === "BUY" ? colors.positive : colors.negative} attributes={TextAttributes.BOLD}>
-              {ticketState.draft.action}
-            </text>
-          </box>
-          <box width={rowWidth} flexDirection="column"
-            backgroundColor={hoveredField === "orderType" ? fieldHoverBg : undefined}
-            onMouseMove={() => setHoveredField("orderType")}
-            onMouseDown={() => { enterInteractive(); editOrderType().catch(() => {}); }}>
-            <text fg={colors.textDim}>Order Type</text>
-            <text fg={colors.text}>{ticketState.draft.orderType}</text>
-          </box>
-          <box width={rowWidth} flexDirection="column"
-            backgroundColor={hoveredField === "quantity" ? fieldHoverBg : undefined}
-            onMouseMove={() => setHoveredField("quantity")}
-            onMouseDown={() => {
+              chooseBrokerInstance().catch(() => {});
+            }}
+          />
+            <TradeStepChip
+              index={2}
+            label="Ticker"
+            status={hasContract ? "done" : hasProfile ? "active" : "pending"}
+            onPress={() => {
               enterInteractive();
-              editNumericField("Quantity", ticketState.draft.quantity, (value) => {
-                if (value != null && symbol && ticker) setTradeTicketDraft(symbol, { quantity: value }, ticker);
-              }).catch(() => {});
-            }}>
-            <text fg={colors.textDim}>Quantity</text>
-            <text fg={colors.text}>{formatNumber(ticketState.draft.quantity, 0)}</text>
-          </box>
-          <box width={rowWidth} flexDirection="column"
-            backgroundColor={hoveredField === "account" ? fieldHoverBg : undefined}
-            onMouseMove={() => setHoveredField("account")}
-            onMouseDown={() => { enterInteractive(); chooseAccount().catch(() => {}); }}>
-            <text fg={colors.textDim}>Account</text>
-            <text fg={colors.text}>{currentAccountId || "auto"}</text>
-          </box>
+              chooseInstrument().catch(() => {});
+            }}
+          />
+          <TradeStepChip
+            index={3}
+            label="Account"
+            status={hasAccount ? "done" : hasContract ? "active" : "pending"}
+            onPress={() => {
+              enterInteractive();
+              chooseAccount().catch(() => {});
+            }}
+          />
+          <TradeStepChip
+            index={4}
+            label="Ticket"
+            status={hasProfile && hasContract && hasAccount ? "done" : "pending"}
+            onPress={enterInteractive}
+          />
+          <TradeStepChip
+            index={5}
+            label="Preview"
+            status={hasPreview ? "done" : hasProfile && hasContract && hasAccount ? "active" : "pending"}
+            onPress={() => previewOrder().catch(() => {})}
+          />
+          <TradeStepChip
+            index={6}
+            label="Submit"
+            status={hasPreview ? "active" : "pending"}
+            onPress={() => submitOrder().catch(() => {})}
+          />
         </box>
 
-        <box flexDirection="row">
-          <box width={rowWidth} flexDirection="column"
-            backgroundColor={showLimit && hoveredField === "limitPrice" ? fieldHoverBg : undefined}
-            onMouseMove={() => { if (showLimit) setHoveredField("limitPrice"); }}
-            onMouseDown={showLimit ? () => {
-              enterInteractive();
-              editPriceField("Limit Price", ticketState.draft.limitPrice, (value) => {
-                if (symbol && ticker) setTradeTicketDraft(symbol, { limitPrice: value }, ticker);
-              }).catch(() => {});
-            } : undefined}>
-            <text fg={showLimit ? colors.textDim : colors.textMuted}>Limit Price</text>
-            <text fg={showLimit ? colors.text : colors.textMuted}>
-              {showLimit ? (ticketState.draft.limitPrice != null ? ticketState.draft.limitPrice.toFixed(2) : "—") : "n/a"}
-            </text>
-          </box>
-          <box width={rowWidth} flexDirection="column"
-            backgroundColor={showStop && hoveredField === "stopPrice" ? fieldHoverBg : undefined}
-            onMouseMove={() => { if (showStop) setHoveredField("stopPrice"); }}
-            onMouseDown={showStop ? () => {
-              enterInteractive();
-              editPriceField("Stop Price", ticketState.draft.stopPrice, (value) => {
-                if (symbol && ticker) setTradeTicketDraft(symbol, { stopPrice: value }, ticker);
-              }).catch(() => {});
-            } : undefined}>
-            <text fg={showStop ? colors.textDim : colors.textMuted}>Stop Price</text>
-            <text fg={showStop ? colors.text : colors.textMuted}>
-              {showStop ? (ticketState.draft.stopPrice != null ? ticketState.draft.stopPrice.toFixed(2) : "—") : "n/a"}
-            </text>
-          </box>
-          <box width={rowWidth} flexDirection="column">
-            <text fg={colors.textDim}>Time In Force</text>
-            <text fg={colors.text}>{ticketState.draft.tif || "DAY"}</text>
-          </box>
-          <box width={rowWidth} flexDirection="column">
-            <text fg={colors.textDim}>Editing</text>
-            <text fg={colors.text}>{ticketState.editingOrderId ? `#${ticketState.editingOrderId}` : "New order"}</text>
-          </box>
-        </box>
-
-        <box height={1} />
-        {interactive ? (
-          <box flexDirection="row" flexWrap="wrap">
-            <text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => chooseInstrument().catch(() => {})}>{" [s] Contract "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => { if (symbol && ticker) setTradeTicketDraft(symbol, { action: "BUY" }, ticker); }}>{" [b] Buy "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => { if (symbol && ticker) setTradeTicketDraft(symbol, { action: "SELL" }, ticker); }}>{" [v] Sell "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => previewOrder().catch(() => {})}>{" [p] Preview "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => submitOrder().catch(() => {})}>{" [Enter] Submit "}</text>
-            <text fg={colors.textMuted} onMouseDown={() => exitInteractive()}>{" [Esc] Release "}</text>
-          </box>
-        ) : (
-          <text fg={colors.textMuted} onMouseDown={() => enterInteractive()}>
-            {"Click here or press Enter to activate the ticket."}
+        <box
+          border
+          borderStyle="rounded"
+          borderColor={getTradeTonePalette(statusTone).border}
+          paddingX={1}
+        >
+          <text fg={ticketState.lastError ? colors.negative : ticketState.isSuccess ? colors.positive : colors.text}>
+            {statusText}
           </text>
-        )}
+        </box>
+
+        <box flexDirection={wideLayout ? "row" : "column"} alignItems="stretch" gap={1}>
+          <box
+            flexDirection="column"
+            flexGrow={1}
+            width={wideLayout ? ticketPanelWidth : undefined}
+            border
+            borderStyle="rounded"
+            borderColor={interactive ? colors.borderFocused : colors.border}
+            paddingX={1}
+            paddingY={1}
+          >
+            <box height={1} flexDirection="row">
+              <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Ticket</text>
+              <box flexGrow={1} />
+              <text fg={interactive ? colors.positive : colors.textMuted}>
+                {interactive ? "Active" : "Click field to activate"}
+              </text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textMuted}>
+                {interactive
+                  ? "Mouse and keyboard are captured here. Esc releases the ticket."
+                  : "Current ticker is loaded by default. Click a field to adjust, then preview."}
+              </text>
+            </box>
+            <box height={1} />
+
+            <box flexDirection="row" flexWrap="wrap" gap={1}>
+              {renderFieldCard({
+                id: "profile",
+                label: "Profile",
+                value: selectedInstance ? selectedInstance.label : "Choose profile",
+                active: hasProfile,
+                onPress: () => chooseBrokerInstance().catch(() => {}),
+              })}
+              {renderFieldCard({
+                id: "contract",
+                label: "Ticker",
+                value: contractValue,
+                active: hasContract,
+                onPress: () => chooseInstrument().catch(() => {}),
+              })}
+              {renderFieldCard({
+                id: "account",
+                label: "Account",
+                value: currentAccountId || "Select account",
+                active: hasAccount,
+                onPress: () => chooseAccount().catch(() => {}),
+              })}
+              <box
+                width={fieldWidth}
+                minWidth={18}
+                height={4}
+                flexDirection="column"
+                backgroundColor={hoveredField === "action" ? fieldHoverBg : undefined}
+                paddingX={1}
+                onMouseMove={() => setHoveredField("action")}
+              >
+                <text fg={colors.textDim}>Action</text>
+                <box flexDirection="row" gap={1}>
+                  <text
+                    fg={ticketState.draft.action === "BUY" ? colors.textBright : colors.textDim}
+                    attributes={ticketState.draft.action === "BUY" ? TextAttributes.BOLD : 0}
+                    onMouseDown={() => {
+                      enterInteractive();
+                      setTradeTicketDraft(symbol, { action: "BUY" }, ticker);
+                    }}
+                  >
+                    BUY [b]
+                  </text>
+                  <text
+                    fg={ticketState.draft.action === "SELL" ? colors.textBright : colors.textDim}
+                    attributes={ticketState.draft.action === "SELL" ? TextAttributes.BOLD : 0}
+                    onMouseDown={() => {
+                      enterInteractive();
+                      setTradeTicketDraft(symbol, { action: "SELL" }, ticker);
+                    }}
+                  >
+                    SELL [v]
+                  </text>
+                </box>
+              </box>
+
+              {renderFieldCard({
+                id: "orderType",
+                label: "Type [t]",
+                value: ticketState.draft.orderType,
+                onPress: () => editOrderType().catch(() => {}),
+              })}
+              {renderFieldCard({
+                id: "quantity",
+                label: "Qty [q]",
+                value: formatNumber(ticketState.draft.quantity, 0),
+                onPress: () => {
+                  editNumericField("Quantity", ticketState.draft.quantity, (value) => {
+                    if (value != null && symbol && ticker) setTradeTicketDraft(symbol, { quantity: value }, ticker);
+                  }).catch(() => {});
+                },
+              })}
+              {renderFieldCard({
+                id: "limitPrice",
+                label: "Limit [l]",
+                value: showLimit ? (ticketState.draft.limitPrice != null ? ticketState.draft.limitPrice.toFixed(2) : "—") : "n/a",
+                disabled: !showLimit,
+                onPress: showLimit ? () => {
+                  editPriceField("Limit Price", ticketState.draft.limitPrice, (value) => {
+                    if (symbol && ticker) setTradeTicketDraft(symbol, { limitPrice: value }, ticker);
+                  }).catch(() => {});
+                } : undefined,
+              })}
+              {renderFieldCard({
+                id: "stopPrice",
+                label: "Stop [x]",
+                value: showStop ? (ticketState.draft.stopPrice != null ? ticketState.draft.stopPrice.toFixed(2) : "—") : "n/a",
+                disabled: !showStop,
+                onPress: showStop ? () => {
+                  editPriceField("Stop Price", ticketState.draft.stopPrice, (value) => {
+                    if (symbol && ticker) setTradeTicketDraft(symbol, { stopPrice: value }, ticker);
+                  }).catch(() => {});
+                } : undefined,
+              })}
+              {renderFieldCard({
+                id: "tif",
+                label: "TIF",
+                value: ticketState.draft.tif || "DAY",
+                active: Boolean(ticketState.draft.tif),
+              })}
+              {renderFieldCard({
+                id: "editing",
+                label: "Mode",
+                value: ticketState.editingOrderId ? `Editing #${ticketState.editingOrderId}` : "New order",
+                valueColor: ticketState.editingOrderId ? colors.textBright : colors.text,
+              })}
+            </box>
+            <box height={1} />
+            <text fg={colors.textMuted}>{contractMeta}</text>
+          </box>
+
+          <box
+            flexDirection="column"
+            width={previewPanelWidth}
+            minWidth={34}
+            border
+            borderStyle="rounded"
+            borderColor={getTradeTonePalette(previewTone).border}
+            paddingX={1}
+            paddingY={1}
+          >
+            <box height={1} flexDirection="row">
+              <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Preview</text>
+              <box flexGrow={1} />
+              <text fg={getTradeTonePalette(previewTone).text}>{previewHeading}</text>
+            </box>
+            <box height={1}>
+              <text fg={ticketState.preview?.warningText ? colors.negative : colors.textMuted}>
+                {truncateText(formatPreviewSummary(ticketState.preview), previewTextWidth)}
+              </text>
+            </box>
+            <box height={1} />
+
+            <box flexDirection="column">
+              <box height={1} flexDirection="row">
+                <box width={12}><text fg={colors.textDim}>Fee</text></box>
+                <text fg={colors.text}>{ticketState.preview?.commission != null ? formatCurrency(ticketState.preview.commission, ticketState.preview.commissionCurrency || "USD") : "—"}</text>
+              </box>
+              <box height={1} flexDirection="row">
+                <box width={12}><text fg={colors.textDim}>Init</text></box>
+                <text fg={colors.text}>{formatPreviewMetric(ticketState.preview?.initMarginBefore, ticketState.preview?.initMarginAfter)}</text>
+              </box>
+              <box height={1} flexDirection="row">
+                <box width={12}><text fg={colors.textDim}>Maint</text></box>
+                <text fg={colors.text}>{formatPreviewMetric(ticketState.preview?.maintMarginBefore, ticketState.preview?.maintMarginAfter)}</text>
+              </box>
+              <box height={1} flexDirection="row">
+                <box width={12}><text fg={colors.textDim}>Equity</text></box>
+                <text fg={colors.text}>{formatPreviewMetric(ticketState.preview?.equityWithLoanBefore, ticketState.preview?.equityWithLoanAfter)}</text>
+              </box>
+              <box height={1} flexDirection="row">
+                <box width={12}><text fg={colors.textDim}>Warning</text></box>
+                <text fg={ticketState.preview?.warningText ? colors.negative : colors.textMuted}>
+                  {truncateText(ticketState.preview?.warningText || "None", 20)}
+                </text>
+              </box>
+            </box>
+
+            <box height={1} />
+            <box flexDirection="column">
+              <Button
+                label="Preview"
+                shortcut="p"
+                variant="secondary"
+                disabled={ticketState.busy}
+                onPress={() => previewOrder().catch(() => {})}
+              />
+              <box height={1} />
+              <Button
+                label={ticketState.editingOrderId ? "Submit Change" : "Submit Order"}
+                shortcut="Enter"
+                variant="primary"
+                disabled={!ticketState.preview || ticketState.busy}
+                onPress={() => submitOrder().catch(() => {})}
+              />
+            </box>
+          </box>
+        </box>
+
+        <box
+          border
+          borderStyle="rounded"
+          borderColor={interactive ? colors.borderFocused : colors.border}
+          paddingX={1}
+          paddingY={1}
+          flexDirection="row"
+          flexWrap="wrap"
+          gap={1}
+        >
+          <Button label="Profile" shortcut="i" variant="ghost" disabled={ticketState.busy} onPress={() => chooseBrokerInstance().catch(() => {})} />
+          <Button label="Override" shortcut="s" variant="ghost" disabled={ticketState.busy} onPress={() => chooseInstrument().catch(() => {})} />
+          <Button label="Account" shortcut="a" variant="ghost" disabled={ticketState.busy} onPress={() => chooseAccount().catch(() => {})} />
+          <Button label="Preview" shortcut="p" variant="secondary" disabled={ticketState.busy} onPress={() => previewOrder().catch(() => {})} />
+          <Button label={ticketState.editingOrderId ? "Submit Change" : "Submit"} shortcut="Enter" variant="primary" disabled={!ticketState.preview || ticketState.busy} onPress={() => submitOrder().catch(() => {})} />
+          <Button label={interactive ? "Release Ticket" : "Activate Ticket"} shortcut={interactive ? "Esc" : "Enter"} variant="ghost" onPress={() => (interactive ? exitInteractive() : enterInteractive())} />
+        </box>
       </box>
     </scrollbox>
   );

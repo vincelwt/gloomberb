@@ -35,12 +35,18 @@ import {
 import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { BrokerContractRef } from "./types/instrument";
+import type { BrokerAccount } from "./types/trading";
 
 // Built-in plugins
 import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
 import { tickerDetailPlugin } from "./plugins/builtin/ticker-detail";
 import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
 import { ibkrPlugin } from "./plugins/ibkr";
+import {
+  clearPersistedIbkrAccounts,
+  loadPersistedIbkrAccountMap,
+  persistIbkrAccounts,
+} from "./plugins/ibkr/account-cache";
 import { newsPlugin } from "./plugins/builtin/news";
 import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
@@ -376,9 +382,20 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     if (!valid) return;
 
     const existingTickers = tickerMap ?? new Map(state.tickers);
-    const brokerAccounts = broker.listAccounts
-      ? await broker.listAccounts(instance).catch(() => [])
-      : [];
+    let brokerAccounts: BrokerAccount[] = [];
+    if (broker.listAccounts) {
+      try {
+        brokerAccounts = await broker.listAccounts(instance);
+        if (instance.brokerType === "ibkr") {
+          try {
+            persistIbkrAccounts(pluginRegistry.persistence.resources, instance, brokerAccounts);
+          } catch {}
+        }
+        dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId: instance.id, accounts: brokerAccounts });
+      } catch {
+        brokerAccounts = [];
+      }
+    }
     const accountMetadata = new Map(
       brokerAccounts.map((account) => [
         account.accountId,
@@ -526,6 +543,13 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     (globalThis as any).__gloomInitStarted = true;
     (async () => {
       try {
+        let persistedBrokerAccounts: Record<string, BrokerAccount[]> = {};
+        try {
+          persistedBrokerAccounts = loadPersistedIbkrAccountMap(
+            pluginRegistry.persistence.resources,
+            state.config.brokerInstances,
+          );
+        } catch {}
         await initializeAppState({
           config: state.config,
           tickerRepository,
@@ -534,6 +558,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
           dispatch,
           refreshTicker,
           autoImportBrokerPositions,
+          persistedBrokerAccounts,
         });
       } catch (err) {
         // Will show empty state
@@ -559,7 +584,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     dispatch({ type: "UPDATE_PANE_STATE", paneId, patch });
   };
   pluginRegistry.getPluginConfigValueFn = (pluginId, key) => (
-    state.config.pluginConfig[pluginId]?.[key] ?? null
+    (state.config.pluginConfig[pluginId]?.[key] as any) ?? null
   );
   pluginRegistry.setPluginConfigValueFn = async (pluginId, key, value) => {
     const nextConfig = {
@@ -625,6 +650,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     return instance;
   };
   pluginRegistry.updateBrokerInstanceFn = async (instanceId, values) => {
+    clearPersistedIbkrAccounts(pluginRegistry.persistence.resources, instanceId);
     const nextConfig = {
       ...state.config,
       brokerInstances: state.config.brokerInstances.map((instance) =>
@@ -647,6 +673,8 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
   pluginRegistry.removeBrokerInstanceFn = async (instanceId) => {
     const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
     if (!instance) return;
+
+    clearPersistedIbkrAccounts(pluginRegistry.persistence.resources, instanceId);
 
     const broker = pluginRegistry.brokers.get(instance.brokerType);
     await broker?.disconnect?.(instance).catch(() => {});

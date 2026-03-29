@@ -3,14 +3,28 @@ import type { BrokerContractRef } from "./instrument";
 export type BrokerOrderAction = "BUY" | "SELL";
 export type BrokerOrderType = "MKT" | "LMT" | "STP" | "STP LMT";
 
+export interface BrokerCashBalance {
+  currency: string;
+  quantity: number;
+  baseValue?: number;
+  baseCurrency?: string;
+}
+
 export interface BrokerAccount {
   accountId: string;
   name: string;
   currency?: string;
+  source?: "gateway" | "flex";
+  updatedAt?: number;
   netLiquidation?: number;
+  totalCashValue?: number;
+  settledCash?: number;
   buyingPower?: number;
   availableFunds?: number;
   excessLiquidity?: number;
+  initMarginReq?: number;
+  maintMarginReq?: number;
+  cashBalances?: BrokerCashBalance[];
 }
 
 export interface BrokerOrderRequest {

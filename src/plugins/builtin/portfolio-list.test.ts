@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { CollectionSortPreference } from "../../state/app-context";
-import { resolveCollectionSortPreference } from "./portfolio-list";
+import type { BrokerAccount } from "../../types/trading";
+import {
+  buildPortfolioSummarySegments,
+  calculatePortfolioSummaryWidth,
+  resolveCollectionSortPreference,
+  shouldToggleCashMarginDrawer,
+  type PortfolioSummaryTotals,
+} from "./portfolio-list";
 
 describe("resolveCollectionSortPreference", () => {
   test("defaults portfolio tabs to market value descending", () => {
@@ -27,5 +34,81 @@ describe("resolveCollectionSortPreference", () => {
       columnId: "pnl",
       direction: "asc",
     } satisfies CollectionSortPreference);
+  });
+});
+
+describe("buildPortfolioSummarySegments", () => {
+  const totals: PortfolioSummaryTotals = {
+    totalMktValue: 125000,
+    dailyPnl: 5000,
+    dailyPnlPct: 4.17,
+    totalCostBasis: 100000,
+    hasPositions: true,
+    unrealizedPnl: 25000,
+    unrealizedPnlPct: 25,
+    avgWatchlistChange: 0,
+    watchlistCount: 0,
+  };
+
+  const account: BrokerAccount = {
+    accountId: "DU12345",
+    name: "DU12345",
+    totalCashValue: -50000,
+    settledCash: -45000,
+    availableFunds: 12000,
+    excessLiquidity: 10000,
+    buyingPower: 24000,
+  };
+
+  test("keeps value and cash at narrow widths for broker portfolios", () => {
+    const segments = buildPortfolioSummarySegments({
+      totals,
+      accountState: { account, sourceLabel: "Live" },
+      widthBudget: 24,
+    });
+
+    expect(segments.map((segment) => segment.id)).toEqual(["val", "cash"]);
+  });
+
+  test("drops low-priority broker segments before required ones", () => {
+    const segments = buildPortfolioSummarySegments({
+      totals,
+      accountState: { account, sourceLabel: "Live" },
+      widthBudget: 100,
+    });
+
+    expect(segments.map((segment) => segment.id)).toEqual([
+      "val",
+      "cash",
+      "day",
+      "pnl",
+      "settled",
+      "avail",
+      "excess",
+    ]);
+  });
+
+  test("includes the source badge only when width permits", () => {
+    const segments = buildPortfolioSummarySegments({
+      totals,
+      accountState: { account, sourceLabel: "Live" },
+      widthBudget: 110,
+    });
+
+    expect(segments.map((segment) => segment.id)).toContain("source");
+  });
+
+  test("treats c as the cash drawer shortcut only when the drawer is available", () => {
+    expect(shouldToggleCashMarginDrawer("c", true)).toBe(true);
+    expect(shouldToggleCashMarginDrawer("c", false)).toBe(false);
+    expect(shouldToggleCashMarginDrawer("j", true)).toBe(false);
+  });
+
+  test("hides the broker summary when tabs need the row width", () => {
+    expect(calculatePortfolioSummaryWidth(70, ["Main", "coldstart", "Interactive Brokers Paper"])).toBe(0);
+  });
+
+  test("uses leftover row width for the broker summary when tabs leave room", () => {
+    expect(calculatePortfolioSummaryWidth(100, ["Main", "coldstart"])).toBe(55);
   });
 });
