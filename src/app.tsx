@@ -50,6 +50,7 @@ import {
   persistIbkrAccounts,
 } from "./plugins/ibkr/account-cache";
 import { newsPlugin } from "./plugins/builtin/news";
+import { secPlugin } from "./plugins/builtin/sec";
 import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
@@ -1195,6 +1196,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
     pluginRegistry.register(ibkrPlugin);
     pluginRegistry.register(layoutManagerPlugin);
     pluginRegistry.register(newsPlugin);
+    pluginRegistry.register(secPlugin);
     pluginRegistry.register(optionsPlugin);
     pluginRegistry.register(notesPlugin);
     pluginRegistry.register(askAiPlugin);

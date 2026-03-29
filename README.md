@@ -39,6 +39,7 @@ Plugins and built-in panes share a common TUI component kit for tabs, lists, tog
 | **Portfolio List** | Main ticker list with portfolios & watchlists | No (core) |
 | **Ticker Detail** | Overview, financials, and chart tabs | No (core) |
 | **News** | View latest news for each ticker (via Yahoo Finance) | Yes |
+| **SEC** | View recent SEC filings for supported US equities | Yes |
 | **Notes** | Write and save markdown notes per ticker, stored locally | Yes |
 | **Ask AI** | Chat with AI about tickers using local CLI tools | Yes |
 | **Charts** | _WIP_ | — |

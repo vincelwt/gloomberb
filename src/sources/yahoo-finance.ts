@@ -1,7 +1,8 @@
 import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain } from "../types/financials";
-import type { DataProvider, MarketDataRequestContext, NewsItem } from "../types/data-provider";
+import type { DataProvider, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { InstrumentSearchResult } from "../types/instrument";
+import { SecEdgarClient } from "./sec-edgar";
 
 // Exchange suffix mapping for Yahoo Finance ticker symbols
 // Includes both canonical codes and common IBKR listing exchange aliases
@@ -245,6 +246,7 @@ export class YahooFinanceClient implements DataProvider {
   private crumb: string | null = null;
   private cookie: string | null = null;
   private crumbPromise: Promise<void> | null = null;
+  private readonly secClient = new SecEdgarClient();
 
   constructor() {}
 
@@ -783,6 +785,14 @@ export class YahooFinanceClient implements DataProvider {
     } catch {
       return [];
     }
+  }
+
+  async getSecFilings(ticker: string, count = 10, _exchange = "", _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
+    return this.secClient.getRecentFilings(ticker, count);
+  }
+
+  async getSecFilingContent(filing: SecFilingItem): Promise<string | null> {
+    return this.secClient.getFilingContent(filing);
   }
 
   /** Fetch article summary by scraping og:description from the article page */
