@@ -155,6 +155,10 @@ function OverviewTab({ width }: { width?: number }) {
 
   const q = financials?.quote;
   const f = financials?.fundamentals;
+  const profile = financials?.profile;
+  const sector = ticker.metadata.sector ?? profile?.sector;
+  const industry = ticker.metadata.industry ?? profile?.industry;
+  const description = profile?.description?.trim();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
@@ -254,17 +258,27 @@ function OverviewTab({ width }: { width?: number }) {
           />
         </box>
 
+        {/* Company description */}
+        {description && (
+          <box flexDirection="column" paddingTop={1}>
+            <box height={1}>
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Description</text>
+            </box>
+            <text fg={colors.text}>{description}</text>
+          </box>
+        )}
+
         {/* Sector / classification */}
-        {(ticker.metadata.sector || ticker.metadata.industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
+        {(sector || industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
           <box flexDirection="column">
             {ticker.metadata.assetCategory && (
               <FieldRow label="Type" value={ticker.metadata.assetCategory} />
             )}
-            {ticker.metadata.sector && (
-              <FieldRow label="Sector" value={ticker.metadata.sector} />
+            {sector && (
+              <FieldRow label="Sector" value={sector} />
             )}
-            {ticker.metadata.industry && (
-              <FieldRow label="Industry" value={ticker.metadata.industry} />
+            {industry && (
+              <FieldRow label="Industry" value={industry} />
             )}
             {ticker.metadata.isin && (
               <FieldRow label="ISIN" value={ticker.metadata.isin} />

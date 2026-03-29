@@ -4,6 +4,7 @@ import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
+import { ListView, type ListViewItem } from "../../components/ui";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
@@ -19,7 +20,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const [expIdx, setExpIdx] = useState(0);
   const [strikeIdx, setStrikeIdx] = useState(0);
   const [interactive, setInteractive] = useState(false);
-  const [hoveredStrikeIdx, setHoveredStrikeIdx] = useState<number | null>(null);
   const [hoveredExpIdx, setHoveredExpIdx] = useState<number | null>(null);
   const target = resolveOptionsTarget(ticker);
   const isOpt = target?.isOptionTicker ?? false;
@@ -46,6 +46,10 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   useEffect(() => {
     exitInteractive();
   }, [effectiveTicker]);
+
+  useEffect(() => {
+    setHoveredExpIdx(null);
+  }, [expIdx]);
 
   // Fetch initial chain (all expirations list + nearest expiration data)
   useEffect(() => {
@@ -201,6 +205,10 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const selectedStrike = strikes[strikeIdx];
   const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
   const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
+  const strikeItems: ListViewItem[] = strikes.map((strike) => ({
+    id: String(strike),
+    label: formatStrikeLabel(strike),
+  }));
 
   const hoverColor = hoverBg();
 
@@ -217,6 +225,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
             <box
               key={ts}
               onMouseMove={() => setHoveredExpIdx(realIdx)}
+              onMouseOut={() => setHoveredExpIdx(null)}
               onMouseDown={() => { enterInteractive(); setExpIdx(realIdx); }}
             >
               <text
@@ -258,7 +267,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
         </box>
         <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
         <box width={strikeW}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>{padTo("Strike", strikeW, "right")}</text>
+          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>{padTo("Strike", strikeW, "center")}</text>
         </box>
         <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
         <box width={sideW}>
@@ -269,32 +278,25 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
       </box>
 
       {/* Chain rows */}
-      <scrollbox flexGrow={1} scrollY>
-        {strikes.map((strike, i) => {
+      <ListView
+        items={strikeItems}
+        selectedIndex={interactive ? strikeIdx : -1}
+        scrollIndex={strikeIdx}
+        onSelect={(index) => {
+          enterInteractive();
+          setStrikeIdx(index);
+        }}
+        renderRow={(_, state, i) => {
+          const strike = strikes[i]!;
           const call = callsByStrike.get(strike);
           const put = putsByStrike.get(strike);
-          const isSelected = interactive && i === strikeIdx;
-          const isHovered = i === hoveredStrikeIdx && !isSelected;
+          const isSelected = state.selected;
           const isPositionStrike = parsed && Math.abs(strike - parsed.strike) < 0.01;
-          const bg = isSelected
-            ? colors.selected
-            : isHovered
-              ? hoverColor
-              : isPositionStrike
-                ? colors.selected
-                : colors.bg;
           const callItm = call?.inTheMoney;
           const putItm = put?.inTheMoney;
 
           return (
-            <box
-              key={strike}
-              flexDirection="row"
-              height={1}
-              backgroundColor={bg}
-              onMouseMove={() => setHoveredStrikeIdx(i)}
-              onMouseDown={() => { enterInteractive(); setStrikeIdx(i); }}
-            >
+            <box flexDirection="row">
               <box width={sideW}>
                 <text fg={callItm ? colors.textBright : colors.text}>
                   {formatContractRow(call, colW)}
@@ -303,7 +305,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
               <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
               <box width={strikeW}>
                 <text fg={isSelected ? colors.textBright : colors.neutral} attributes={isSelected ? TextAttributes.BOLD : 0}>
-                  {padTo(formatNumber(strike, strike % 1 === 0 ? 0 : 2), strikeW, "right")}
+                  {padTo(formatStrikeLabel(strike), strikeW, "center")}
                 </text>
               </box>
               <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
@@ -314,8 +316,18 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
               </box>
             </box>
           );
-        })}
-      </scrollbox>
+        }}
+        getRowBackgroundColor={(_, state, i) => {
+          const strike = strikes[i]!;
+          const isPositionStrike = parsed && Math.abs(strike - parsed.strike) < 0.01;
+          if (state.selected) return colors.selected;
+          if (state.hovered) return hoverColor;
+          return isPositionStrike ? colors.selected : colors.bg;
+        }}
+        hoverBgColor={hoverColor}
+        flexGrow={1}
+        scrollable
+      />
 
       {/* Detail for selected row */}
       {interactive && (selectedCall || selectedPut) && (
@@ -345,6 +357,11 @@ function buildStrikeList(chain: OptionsChain): number[] {
   for (const c of chain.calls) set.add(c.strike);
   for (const p of chain.puts) set.add(p.strike);
   return Array.from(set).sort((a, b) => a - b);
+}
+
+function formatStrikeLabel(strike: number): string {
+  const decimals = strike % 1 === 0 ? 0 : 2;
+  return formatNumber(strike, decimals).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
 }
 
 interface ColWidths {

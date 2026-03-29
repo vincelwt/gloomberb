@@ -102,8 +102,21 @@ function hasMeaningfulFundamentals(data: TickerFinancials | null | undefined): b
   return !!data && Object.keys(data.fundamentals ?? {}).length > 0;
 }
 
+function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolean {
+  return !!data && !!(
+    data.profile?.description
+    || data.profile?.sector
+    || data.profile?.industry
+  );
+}
+
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
-  if (primary && hasMeaningfulFundamentals(primary)) return primary;
+  if (primary && hasMeaningfulFundamentals(primary)) {
+    if (!primary.profile && fallback?.profile) {
+      return { ...primary, profile: fallback.profile };
+    }
+    return primary;
+  }
   if (primary && fallback) {
     return {
       ...fallback,
@@ -188,6 +201,10 @@ export class ProviderRouter implements DataProvider {
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
     const cached = this.readCachedMergedFinancials(ticker, exchange, context, false);
     if (cached) {
+      if (!hasMeaningfulProfile(cached)) {
+        const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
+        return mergeFinancials(cached, providerResult?.value ?? null) ?? cached;
+      }
       this.scheduleRevalidation(this.makeRevalidationKey("financials", ticker, exchange, context), async () => {
         await this.revalidateFinancials(ticker, exchange, context);
       });
@@ -1025,7 +1042,7 @@ export class ProviderRouter implements DataProvider {
 
   private async revalidateFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
     const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
-    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value);
+    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value) || !hasMeaningfulProfile(brokerResult.value);
     if (needsProvider) {
       await this.fetchProviderFinancials(ticker, exchange, context);
     }
