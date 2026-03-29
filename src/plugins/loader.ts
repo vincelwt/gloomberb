@@ -2,6 +2,9 @@ import { readdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import type { GloomPlugin } from "../types/plugin";
+import { debugLog } from "../utils/debug-log";
+
+const loaderLog = debugLog.createLogger("plugin-loader");
 
 const PLUGINS_DIR = join(process.env.HOME || "~", ".gloomberb", "plugins");
 
@@ -51,9 +54,11 @@ export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
       const mod = await import(entryFile);
       const plugin: GloomPlugin = mod.default ?? mod.plugin;
       if (plugin && plugin.id && plugin.name) {
+        loaderLog.info(`Loaded external plugin: ${plugin.id} v${plugin.version ?? "0.0.0"}`);
         results.push({ plugin, path: pluginDir });
       }
     } catch (err) {
+      loaderLog.error(`Failed to load plugin from ${pluginDir}: ${err}`);
       results.push({
         plugin: { id: entry.name, name: entry.name, version: "0.0.0" } as GloomPlugin,
         path: pluginDir,

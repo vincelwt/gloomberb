@@ -3,8 +3,8 @@ import { act, useReducer } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { CommandBar } from "./command-bar";
-import { AppContext, appReducer, createInitialState } from "../../state/app-context";
-import { createDefaultConfig } from "../../types/config";
+import { AppContext, type AppState, appReducer, createInitialState } from "../../state/app-context";
+import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -50,6 +50,53 @@ function makeDataProvider(): DataProvider {
 
 function makePluginRegistry(): PluginRegistry {
   return {
+    panes: new Map([
+      ["portfolio-list", {
+        id: "portfolio-list",
+        name: "Portfolio List",
+        component: () => null,
+        defaultPosition: "left",
+      }],
+      ["ticker-detail", {
+        id: "ticker-detail",
+        name: "Ticker Detail",
+        component: () => null,
+        defaultPosition: "right",
+      }],
+      ["chat", {
+        id: "chat",
+        name: "Chat",
+        component: () => null,
+        defaultPosition: "right",
+        defaultMode: "floating",
+      }],
+    ]),
+    paneTemplates: new Map([
+      ["new-portfolio-pane", {
+        id: "new-portfolio-pane",
+        paneId: "portfolio-list",
+        label: "New Portfolio Pane",
+        description: "Open another portfolio list pane",
+      }],
+      ["new-watchlist-pane", {
+        id: "new-watchlist-pane",
+        paneId: "portfolio-list",
+        label: "New Watchlist Pane",
+        description: "Open another watchlist pane",
+      }],
+      ["new-ticker-detail-pane", {
+        id: "new-ticker-detail-pane",
+        paneId: "ticker-detail",
+        label: "New Ticker Detail Pane",
+        description: "Open another detail pane",
+      }],
+      ["new-chat-pane", {
+        id: "new-chat-pane",
+        paneId: "chat",
+        label: "New Chat Pane",
+        description: "Open another floating chat window",
+      }],
+    ]),
     commands: new Map([
       ["plugin:scan", {
         id: "plugin:scan",
@@ -72,8 +119,15 @@ function makePluginRegistry(): PluginRegistry {
       ["notes", { id: "notes", name: "Notes", version: "1.0.0", description: "Ticker notes", toggleable: true }],
     ]),
     getCommandPluginId: () => "news",
+    getPaneTemplatePluginId: (templateId: string) => (
+      templateId === "new-chat-pane" ? "news" : "notes"
+    ),
     getPluginPaneIds: () => [],
+    getPluginPaneTemplateIds: () => [],
     hideWidget: () => {},
+    updateLayoutFn: () => {},
+    getTermSizeFn: () => ({ width: 80, height: 24 }),
+    createPaneFromTemplateFn: () => {},
     createBrokerInstanceFn: async () => { throw new Error("unused"); },
     syncBrokerInstanceFn: async () => {},
     removeBrokerInstanceFn: async () => {},
@@ -86,20 +140,27 @@ function CommandBarHarness({
   disabledPlugins = [],
   selectedTicker,
   live = false,
+  configureConfig,
+  configureState,
 }: {
   query: string;
   disabledPlugins?: string[];
   selectedTicker?: string;
   live?: boolean;
+  configureConfig?: (config: AppConfig) => AppConfig;
+  configureState?: (state: AppState) => AppState;
 }) {
-  const config = {
+  let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
     recentTickers: ["AAPL", "MSFT"],
     disabledPlugins,
   };
+  if (configureConfig) {
+    config = configureConfig(config);
+  }
   const tickers = [makeTicker("AAPL", "Apple Inc."), makeTicker("MSFT", "Microsoft Corp.")];
   const dataProvider = makeDataProvider();
-  const state = {
+  let state: AppState = {
     ...createInitialState(config),
     commandBarOpen: true,
     commandBarQuery: query,
@@ -114,6 +175,9 @@ function CommandBarHarness({
       }
       : createInitialState(config).paneState,
   };
+  if (configureState) {
+    state = configureState(state);
+  }
   const tickerRepository = {
     loadTicker: async () => null,
     createTicker: async (metadata: TickerRecord["metadata"]) => ({
@@ -201,5 +265,77 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("theme:green");
+  });
+
+  const layoutModeConfig = (config: AppConfig): AppConfig => {
+    const research = cloneLayout(config.layout);
+    research.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    research.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 36, height: 12 }];
+    return {
+      ...config,
+      layouts: [
+        { name: "Default", layout: cloneLayout(config.layout) },
+        { name: "Research", layout: research },
+      ],
+    };
+  };
+
+  const layoutModeState = (state: AppState): AppState => ({
+    ...state,
+    layoutHistory: {
+      0: {
+        past: [cloneLayout(state.config.layout)],
+        future: [],
+      },
+    },
+  });
+
+  test("renders layout mode with focused pane actions", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="LAY "
+      configureConfig={layoutModeConfig}
+      configureState={layoutModeState}
+    />, {
+      width: 90,
+      height: 28,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Focused Pane");
+    expect(frame).toContain("Float Pane");
+    expect(frame).toContain("Undo Layout Change");
+    expect(frame).toContain("Current Layout");
+  });
+
+  test("renders filtered saved layouts with textual previews", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="LAY Research"
+      configureConfig={layoutModeConfig}
+      configureState={layoutModeState}
+    />, {
+      width: 120,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Research");
+    expect(frame).toContain("1c / 1d");
+  });
+
+  test("renders new pane mode with plugin-defined pane templates", async () => {
+    testSetup = await testRender(<CommandBarHarness query="NP chat" />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("New Chat Pane");
+    expect(frame).toContain("float");
   });
 });

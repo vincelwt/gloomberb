@@ -2,6 +2,7 @@ import { findPaneInstance, type AppConfig } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { BrokerContractRef } from "../types/instrument";
 import type { TickerRecord } from "../types/ticker";
+import { getDockedPaneIds } from "../plugins/pane-manager";
 
 export const APP_SESSION_SCHEMA_VERSION = 1;
 export const APP_SESSION_ID = "app";
@@ -115,7 +116,7 @@ export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSna
     activePanel: state.activePanel,
     statusBarVisible: state.statusBarVisible,
     openPaneIds: [
-      ...state.config.layout.docked.map((entry) => entry.instanceId),
+      ...getDockedPaneIds(state.config.layout),
       ...state.config.layout.floating.map((entry) => entry.instanceId),
     ],
     hydrationTargets,
@@ -136,9 +137,10 @@ export function reconcileAppSessionSnapshot(
     Object.entries(snapshot.paneState ?? {}).filter(([paneId]) => validPaneIds.has(paneId)),
   );
   const openPaneIds = (snapshot.openPaneIds ?? []).filter((paneId) => validPaneIds.has(paneId));
+  const defaultOpenPaneId = getDockedPaneIds(config.layout)[0] ?? config.layout.floating[0]?.instanceId ?? null;
   const focusedPaneId = snapshot.focusedPaneId && validPaneIds.has(snapshot.focusedPaneId)
     ? snapshot.focusedPaneId
-    : openPaneIds[0] ?? config.layout.docked[0]?.instanceId ?? config.layout.floating[0]?.instanceId ?? null;
+    : openPaneIds[0] ?? defaultOpenPaneId;
   const hydrationTargets = (snapshot.hydrationTargets ?? [])
     .map(normalizeHydrationTarget)
     .filter((target) => !target.brokerInstanceId || validBrokerInstanceIds.has(target.brokerInstanceId));

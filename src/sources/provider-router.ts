@@ -9,6 +9,9 @@ import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrum
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { HydrationTarget } from "../state/session-persistence";
+import { debugLog } from "../utils/debug-log";
+
+const providerLog = debugLog.createLogger("provider-router");
 
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
 const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
@@ -598,7 +601,7 @@ export class ProviderRouter implements DataProvider {
         if (result != null) return { sourceKey: this.providerSourceKey(provider), value: result };
       } catch (err) {
         if (shouldLogProviderError(err)) {
-          console.error(`[ProviderRouter] ${provider.id} failed:`, err);
+          providerLog.error(`${provider.id} failed: ${err}`);
         }
       }
     }

@@ -10,6 +10,7 @@ import { useAppState, usePaneCollection, usePaneInstanceId, usePaneStateValue } 
 import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
+import { clampQuoteTimestamp, formatQuoteAgeWithSource, getMostRecentQuoteUpdate } from "../../utils/quote-time";
 import type { ColumnConfig } from "../../types/config";
 import type { TickerRecord } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
@@ -171,16 +172,7 @@ function getColumnValue(
       return { text: "—" };
     }
     case "latency": {
-      if (!q?.lastUpdated) return { text: "—" };
-      const ago = (ctx.now - q.lastUpdated) / 1000;
-      // ◷ = delayed broker data, ◌ = Yahoo fallback, no prefix = live
-      const prefix = q.dataSource === "delayed" ? "◷" : q.dataSource === "yahoo" ? "◌" : "";
-      let age: string;
-      if (ago < 60) age = `${Math.floor(ago)}s`;
-      else if (ago < 3600) age = `${Math.floor(ago / 60)}m`;
-      else if (ago < 86400) age = `${Math.floor(ago / 3600)}h`;
-      else age = `${Math.floor(ago / 86400)}d`;
-      return { text: prefix ? `${prefix}${age}` : age };
+      return { text: formatQuoteAgeWithSource(q, ctx.now) };
     }
     default:
       return { text: "—" };
@@ -269,7 +261,7 @@ function getSortValue(
       return null;
     }
     case "latency":
-      return q?.lastUpdated ?? null;
+      return q?.lastUpdated != null ? ctx.now - (clampQuoteTimestamp(q.lastUpdated, ctx.now) ?? ctx.now) : null;
     default:
       return null;
   }
@@ -297,28 +289,11 @@ function PortfolioSummaryBar({
   isPortfolio: boolean;
   collectionId: string | null;
 }) {
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-
-  // Track last refresh time — update whenever refreshing set goes from non-empty to empty
-  const wasRefreshing = useRef(false);
-  useEffect(() => {
-    if (state.refreshing.size > 0) {
-      wasRefreshing.current = true;
-    } else if (wasRefreshing.current) {
-      wasRefreshing.current = false;
-      setLastRefresh(new Date());
-    }
-  }, [state.refreshing.size]);
-
-  // Also set initial refresh time when financials first appear
-  useEffect(() => {
-    if (state.financials.size > 0 && !lastRefresh) {
-      setLastRefresh(new Date());
-    }
-  }, [state.financials.size, lastRefresh]);
-
   const baseCurrency = state.config.baseCurrency;
   const exchangeRates = state.exchangeRates;
+  const lastRefreshTimestamp = useMemo(() => getMostRecentQuoteUpdate(
+    tickers.map((ticker) => state.financials.get(ticker.metadata.ticker)?.quote),
+  ), [tickers, state.financials]);
 
   const totals = useMemo(() => {
     let totalMktValue = 0;
@@ -383,10 +358,9 @@ function PortfolioSummaryBar({
     };
   }, [tickers, state.financials, collectionId, baseCurrency, exchangeRates, isPortfolio]);
 
-  const refreshText = lastRefresh
-    ? lastRefresh.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+  const refreshText = lastRefreshTimestamp != null
+    ? new Date(lastRefreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     : "—";
-  const isRefreshing = state.refreshing.size > 0;
 
   // Watchlist: show average daily change %
   if (!isPortfolio) {
@@ -397,7 +371,7 @@ function PortfolioSummaryBar({
         <text fg={priceColor(totals.avgWatchlistChange)} attributes={TextAttributes.BOLD}>
           {formatPercentRaw(totals.avgWatchlistChange)}
         </text>
-        <text fg={colors.textDim}>{"  " + (isRefreshing ? "Refreshing…" : refreshText)}</text>
+        <text fg={colors.textDim}>{"  " + refreshText}</text>
       </box>
     );
   }
@@ -424,7 +398,7 @@ function PortfolioSummaryBar({
       <text fg={priceColor(totals.unrealizedPnlPct)}>
         {" (" + formatPercentRaw(totals.unrealizedPnlPct) + ")"}
       </text>
-      <text fg={colors.textDim}>{"  " + (isRefreshing ? "Refreshing…" : refreshText)}</text>
+      <text fg={colors.textDim}>{"  " + refreshText}</text>
     </box>
   );
 }
@@ -441,11 +415,18 @@ function PortfolioListPane({ focused }: PaneProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [now, setNow] = useState(Date.now());
+  const [, setClockTick] = useState(0);
   const [flashSymbols, setFlashSymbols] = useState<Set<string>>(new Set());
   const prevPrices = useRef<Map<string, number>>(new Map());
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const syncHeaderScroll = useCallback(() => {
+    const body = scrollRef.current;
+    const header = headerScrollRef.current;
+    if (body && header && header.scrollLeft !== body.scrollLeft) {
+      header.scrollLeft = body.scrollLeft;
+    }
+  }, []);
 
   const currentTabIdx = tabs.findIndex((t) => t.id === currentCollectionId);
   const isPortfolioTab = getCollectionType(state, currentCollectionId) === "portfolio";
@@ -464,7 +445,7 @@ function PortfolioListPane({ focused }: PaneProps) {
     activeTab: isPortfolioTab ? currentCollectionId : undefined,
     baseCurrency: state.config.baseCurrency,
     exchangeRates: state.exchangeRates,
-    now,
+    now: Date.now(),
   };
 
   // Sort tickers
@@ -553,20 +534,13 @@ function PortfolioListPane({ focused }: PaneProps) {
 
   useKeyboard(handleKeyboard);
 
-  // Hide header scrollbar and sync horizontal scroll with body
+  // Hide the decorative header scrollbar and keep it aligned when the body scrolls.
   useEffect(() => {
     if (headerScrollRef.current) {
       headerScrollRef.current.horizontalScrollBar.visible = false;
     }
-    const id = setInterval(() => {
-      const body = scrollRef.current;
-      const header = headerScrollRef.current;
-      if (body && header && header.scrollLeft !== body.scrollLeft) {
-        header.scrollLeft = body.scrollLeft;
-      }
-    }, 16);
-    return () => clearInterval(id);
-  }, []);
+    syncHeaderScroll();
+  }, [syncHeaderScroll]);
 
   // Auto-scroll to keep selected row visible
   useEffect(() => {
@@ -589,7 +563,7 @@ function PortfolioListPane({ focused }: PaneProps) {
 
   // Tick every 5s to keep latency column fresh
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 5000);
+    const id = setInterval(() => setClockTick((value) => value + 1), 5000);
     return () => clearInterval(id);
   }, []);
 
@@ -671,6 +645,10 @@ function PortfolioListPane({ focused }: PaneProps) {
         scrollX
         scrollY
         focusable={false}
+        onMouseDown={() => queueMicrotask(syncHeaderScroll)}
+        onMouseUp={() => queueMicrotask(syncHeaderScroll)}
+        onMouseDrag={() => queueMicrotask(syncHeaderScroll)}
+        onMouseScroll={() => queueMicrotask(syncHeaderScroll)}
       >
         {sortedTickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
@@ -732,6 +710,38 @@ export const portfolioListPlugin: GloomPlugin = {
       component: PortfolioListPane,
       defaultPosition: "left",
       defaultWidth: "40%",
+    },
+  ],
+  paneTemplates: [
+    {
+      id: "new-portfolio-pane",
+      paneId: "portfolio-list",
+      label: "New Portfolio Pane",
+      description: "Open another portfolio list pane",
+      keywords: ["new", "portfolio", "pane", "list"],
+      canCreate: (context) => context.config.portfolios.length > 0,
+      createInstance: (context) => {
+        const collectionId = context.activeCollectionId && context.config.portfolios.some((portfolio) => portfolio.id === context.activeCollectionId)
+          ? context.activeCollectionId
+          : (context.config.portfolios[0]?.id ?? null);
+        if (!collectionId) return null;
+        return { params: { collectionId } };
+      },
+    },
+    {
+      id: "new-watchlist-pane",
+      paneId: "portfolio-list",
+      label: "New Watchlist Pane",
+      description: "Open another watchlist pane",
+      keywords: ["new", "watchlist", "pane", "list"],
+      canCreate: (context) => context.config.watchlists.length > 0,
+      createInstance: (context) => {
+        const collectionId = context.activeCollectionId && context.config.watchlists.some((watchlist) => watchlist.id === context.activeCollectionId)
+          ? context.activeCollectionId
+          : (context.config.watchlists[0]?.id ?? null);
+        if (!collectionId) return null;
+        return { params: { collectionId } };
+      },
     },
   ],
 };

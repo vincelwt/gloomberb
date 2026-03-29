@@ -4,6 +4,13 @@ import { useAppState, useFocusedTicker } from "../../state/app-context";
 import { marketStateLabel, marketStateColor, exchangeShortName, getExtendedHoursInfo } from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
 
+function truncate(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 2) return ".".repeat(width);
+  return `${text.slice(0, width - 2)}..`;
+}
+
 export function StatusBar() {
   const registry = getSharedRegistry();
   const { state, dispatch } = useAppState();
@@ -32,12 +39,13 @@ export function StatusBar() {
       height={1}
       backgroundColor={colors.panel}
     >
-      {hasMultipleLayouts ? (
-        <box paddingLeft={1} flexShrink={0} flexDirection="row">
-          {layouts.map((l, i) => {
+      <box paddingLeft={1} flexShrink={0} flexDirection="row">
+        {hasMultipleLayouts ? (
+          layouts.map((l, i) => {
             const isActive = i === activeLayoutIdx;
             const isHovered = hoveredTab === i && !isActive;
             const num = i + 1;
+            const label = truncate(l.name, 14);
             const bg = isActive ? colors.header : isHovered ? hoverBg() : undefined;
             const fg = isActive ? colors.headerText : isHovered ? colors.text : colors.textDim;
             return (
@@ -48,18 +56,16 @@ export function StatusBar() {
                 onMouseMove={() => setHoveredTab(i)}
                 onMouseDown={() => dispatch({ type: "SWITCH_LAYOUT", index: i })}
               >
-                {` ^${num} `}<span fg={isActive ? colors.headerText : colors.text}>{l.name}</span>{" "}
+                {` ^${num} `}<span fg={isActive ? colors.headerText : colors.text}>{label}</span>{" "}
               </text>
             );
-          })}
-        </box>
-      ) : (
-        <box paddingLeft={1}>
+          })
+        ) : (
           <text fg={colors.textDim}>
             <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>j/k</span> navigate  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
           </text>
-        </box>
-      )}
+        )}
+      </box>
       <box flexGrow={1} />
       {extText && (
         <box paddingRight={1}>

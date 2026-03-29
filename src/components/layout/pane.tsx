@@ -1,19 +1,31 @@
 import type { ReactNode } from "react";
-import { colors, paneBg, paneTitleBg, paneTitleText } from "../../theme/colors";
+import { paneBg } from "../../theme/colors";
+import { PaneHeader } from "./pane-header";
 
 interface PaneWrapperProps {
   title?: string;
   focused: boolean;
-  width?: number | `${number}%` | "auto";
+  width?: number;
   height?: number | `${number}%` | "auto";
   flexGrow?: number;
-  onMouseDown?: () => void;
+  showActions?: boolean;
+  onMouseDown?: (event: any) => void;
+  onMouseMove?: (event: any) => void;
   children: ReactNode;
 }
 
-export function PaneWrapper({ title, focused, width, height, flexGrow, onMouseDown, children }: PaneWrapperProps) {
+export function PaneWrapper({
+  title,
+  focused,
+  width = 0,
+  height,
+  flexGrow,
+  showActions = false,
+  onMouseDown,
+  onMouseMove,
+  children,
+}: PaneWrapperProps) {
   const bg = paneBg(focused);
-  const titleBgColor = paneTitleBg(focused);
 
   return (
     <box
@@ -24,11 +36,10 @@ export function PaneWrapper({ title, focused, width, height, flexGrow, onMouseDo
       backgroundColor={bg}
       overflow="hidden"
       onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
     >
       {title && (
-        <box height={1} backgroundColor={titleBgColor}>
-          <text fg={paneTitleText(focused)}>{title}</text>
-        </box>
+        <PaneHeader title={title} width={width} focused={focused} showActions={showActions} />
       )}
       <box flexGrow={1} overflow="hidden">
         {children}

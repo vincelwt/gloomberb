@@ -32,6 +32,7 @@ import {
   type PaneBinding,
   type PaneInstanceConfig,
 } from "./types/config";
+import type { PaneTemplateContext, PaneTemplateInstanceConfig } from "./types/plugin";
 import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { BrokerContractRef } from "./types/instrument";
@@ -46,13 +47,24 @@ import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { chatPlugin } from "./plugins/builtin/chat";
+import { debugPlugin } from "./plugins/builtin/debug";
 import { layoutManagerPlugin, setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
 import { checkForUpdate, performUpdate } from "./updater";
 import { VERSION } from "./version";
 import { join } from "path";
-import { addPaneFloating, addPaneToLayout, bringToFront, isPaneInLayout, removePane } from "./plugins/pane-manager";
+import {
+  addPaneFloating,
+  addPaneToLayout,
+  bringToFront,
+  findDockLeaf,
+  getDockLeafLayouts,
+  getDockedPaneIds,
+  getLeafRect,
+  isPaneInLayout,
+  removePane,
+} from "./plugins/pane-manager";
 import {
   buildBrokerPortfolioId,
   createBrokerInstanceId,
@@ -69,6 +81,7 @@ import { TickerRefreshQueue } from "./state/ticker-refresh-queue";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
+const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
 
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
@@ -80,6 +93,7 @@ interface AppInnerProps {
 function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const renderer = useRenderer();
+  const focusedCollectionId = getFocusedCollectionId(state);
 
   const resolvePrimaryPaneInstanceId = useCallback((paneId: string): string | null => {
     const instances = state.config.layout.instances.filter((instance) => instance.paneId === paneId);
@@ -101,7 +115,6 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
   }, [resolvePrimaryPaneInstanceId, state.config.layout.instances]);
 
   const getPreferredPortfolio = useCallback((ticker: TickerRecord | null) => {
-    const focusedCollectionId = getFocusedCollectionId(state);
     const focusedPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === focusedCollectionId);
     if (focusedPortfolio) return focusedPortfolio;
     if (ticker) {
@@ -111,7 +124,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       }
     }
     return state.config.portfolios[0] ?? null;
-  }, [state]);
+  }, [focusedCollectionId, state.config.portfolios]);
 
   const resolveCollectionSourcePaneId = useCallback((preferredPaneId?: string | null) => {
     const tryResolve = (candidate: string | null | undefined): string | null => {
@@ -181,7 +194,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       binding: { kind: "follow", sourceInstanceId: sourcePaneId },
     });
     const { width, height } = pluginRegistry.getTermSizeFn();
-    const sourceDocked = state.config.layout.docked.find((entry) => entry.instanceId === sourcePaneId);
+    const sourceDocked = findDockLeaf(state.config.layout, sourcePaneId);
     const layout = sourceDocked
       ? addPaneToLayout(state.config.layout, instance, { relativeTo: sourcePaneId, position: "right" })
       : addPaneFloating(state.config.layout, instance, width, height, paneDef);
@@ -199,6 +212,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       const ensured = ensureInspectorPane(sourcePaneId);
       if (!ensured) return null;
       if (ensured.layout !== state.config.layout) {
+        dispatch({ type: "PUSH_LAYOUT_HISTORY" });
         const layouts = state.config.layouts.map((savedLayout, index) => (
           index === state.config.activeLayoutIndex ? { ...savedLayout, layout: ensured.layout } : savedLayout
         ));
@@ -365,7 +379,11 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
   }, []);
 
   // Import positions from a single broker instance
-  const importBrokerPositions = useCallback(async (instanceId: string, tickerMap?: Map<string, TickerRecord>) => {
+  const importBrokerPositions = useCallback(async (
+    instanceId: string,
+    tickerMap?: Map<string, TickerRecord>,
+    options?: { refreshImportedTickers?: boolean },
+  ) => {
     const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
     if (!instance || instance.enabled === false) return;
 
@@ -495,7 +513,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
       // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
       // Position data (markPrice, marketValue, unrealizedPnl) is used directly.
-      if (pos.assetCategory !== "OPT") {
+      if (options?.refreshImportedTickers !== false && pos.assetCategory !== "OPT") {
         refreshTicker(pos.ticker, pos.exchange, undefined, 1);
       }
     }
@@ -506,7 +524,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     for (const instance of state.config.brokerInstances) {
       if (instance.enabled === false) continue;
       try {
-        await importBrokerPositions(instance.id, tickerMap);
+        await importBrokerPositions(instance.id, tickerMap, { refreshImportedTickers: false });
       } catch {
         // Silently fail — broker import is best-effort on startup
       }
@@ -668,11 +686,14 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
   pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
   pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
   pluginRegistry.openCommandBarFn = (query) => dispatch({ type: "SET_COMMAND_BAR", open: true, query });
-  const persistLayout = (layout: LayoutConfig) => {
+  const persistLayout = (layout: LayoutConfig, options?: { pushHistory?: boolean }) => {
     const normalizedLayout = normalizePaneLayout(layout);
     const layouts = state.config.layouts.map((savedLayout, index) => (
       index === state.config.activeLayoutIndex ? { ...savedLayout, layout: normalizedLayout } : savedLayout
     ));
+    if (options?.pushHistory !== false) {
+      dispatch({ type: "PUSH_LAYOUT_HISTORY" });
+    }
     dispatch({ type: "UPDATE_LAYOUT", layout: normalizedLayout });
     saveConfig({ ...state.config, layout: normalizedLayout, layouts }).catch(() => {});
   };
@@ -686,13 +707,72 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       return paneDef?.defaultPosition ?? "right";
     }
 
-    const docked = state.config.layout.docked.find((entry) => entry.instanceId === instanceId);
-    if (!docked) {
+    const rect = getLeafRect(state.config.layout, instanceId, PANEL_RESOLUTION_BOUNDS);
+    if (!rect) {
       return paneDef?.defaultPosition ?? "right";
     }
 
-    return docked.columnIndex <= 0 ? "left" : "right";
+    const midpoint = PANEL_RESOLUTION_BOUNDS.width / 2;
+    return rect.x + (rect.width / 2) <= midpoint ? "left" : "right";
   };
+  const placePaneInstance = useCallback((
+    instance: PaneInstanceConfig,
+    paneDef: NonNullable<ReturnType<typeof pluginRegistry.panes.get>>,
+    options?: PaneTemplateInstanceConfig,
+  ) => {
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    const relativeTo = options?.relativeToPaneId
+      ? resolvePaneTarget(options.relativeToPaneId)
+      : (state.focusedPaneId && isPaneInLayout(state.config.layout, state.focusedPaneId) ? state.focusedPaneId : null);
+    const relativePosition = options?.relativePosition ?? "right";
+    let nextLayout = state.config.layout;
+    const selectEdgeAnchor = (edge: "left" | "right") => {
+      const leaves = getDockLeafLayouts(nextLayout, PANEL_RESOLUTION_BOUNDS);
+      if (leaves.length === 0) return null;
+      const edgeCoordinate = edge === "left"
+        ? Math.min(...leaves.map((leaf) => leaf.rect.x))
+        : Math.max(...leaves.map((leaf) => leaf.rect.x + leaf.rect.width));
+      return [...leaves]
+        .filter((leaf) => (
+          edge === "left"
+            ? leaf.rect.x === edgeCoordinate
+            : leaf.rect.x + leaf.rect.width === edgeCoordinate
+        ))
+        .sort((a, b) => (b.rect.y + b.rect.height) - (a.rect.y + a.rect.height))
+        [0]?.instanceId ?? null;
+    };
+    const dockedPaneIds = getDockedPaneIds(nextLayout);
+
+    if (options?.placement === "floating" || (options?.placement !== "docked" && paneDef.defaultMode === "floating")) {
+      nextLayout = addPaneFloating(nextLayout, instance, width, height, paneDef);
+    } else if (relativeTo && findDockLeaf(nextLayout, relativeTo)) {
+      nextLayout = addPaneToLayout(nextLayout, instance, { relativeTo, position: relativePosition });
+    } else if (dockedPaneIds.length === 0) {
+      nextLayout = addPaneToLayout(nextLayout, instance, { relativeTo: instance.instanceId, position: "right" });
+    } else if (paneDef.defaultPosition === "left") {
+      const leftAnchor = selectEdgeAnchor("left");
+      nextLayout = leftAnchor
+        ? addPaneToLayout(nextLayout, instance, { relativeTo: leftAnchor, position: "below" })
+        : addPaneToLayout(nextLayout, instance, { relativeTo: dockedPaneIds[0]!, position: "left" });
+    } else {
+      const rightAnchor = selectEdgeAnchor("right");
+      nextLayout = rightAnchor
+        ? addPaneToLayout(nextLayout, instance, { relativeTo: rightAnchor, position: "below" })
+        : addPaneToLayout(nextLayout, instance, { relativeTo: dockedPaneIds[dockedPaneIds.length - 1]!, position: "right" });
+    }
+
+    persistLayout(nextLayout);
+    dispatch({ type: "FOCUS_PANE", paneId: instance.instanceId });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instance.instanceId) });
+  }, [
+    dispatch,
+    pluginRegistry,
+    persistLayout,
+    resolvePanelForPane,
+    resolvePaneTarget,
+    state.config.layout,
+    state.focusedPaneId,
+  ]);
   const showPane = (paneId: string) => {
     const paneDef = pluginRegistry.panes.get(paneId);
     if (!paneDef) return;
@@ -728,42 +808,52 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       }
       return;
     }
+    placePaneInstance(instance, paneDef, { placement: "default" });
+  };
+  const createPaneFromTemplate = useCallback(async (templateId: string) => {
+    const template = pluginRegistry.paneTemplates.get(templateId);
+    if (!template) return;
 
-    const { width, height } = pluginRegistry.getTermSizeFn();
-    let nextLayout = state.config.layout;
-
-    if (paneDef.defaultMode === "floating") {
-      nextLayout = addPaneFloating(nextLayout, instance, width, height, paneDef);
-    } else if (nextLayout.docked.length === 0) {
-      const columns = nextLayout.columns.length >= 2 ? nextLayout.columns : [{ width: "40%" }, { width: "60%" }];
-      const columnIndex = paneDef.defaultPosition === "left" ? 0 : Math.max(0, columns.length - 1);
-      nextLayout = {
-        ...nextLayout,
-        columns,
-        instances: [...nextLayout.instances, instance],
-        docked: [{ instanceId: instance.instanceId, columnIndex, order: 0 }],
-      };
-    } else if (paneDef.defaultPosition === "left") {
-      const firstColumnPane = nextLayout.docked.find((entry) => entry.columnIndex === 0);
-      nextLayout = firstColumnPane
-        ? addPaneToLayout(nextLayout, instance, { relativeTo: firstColumnPane.instanceId, position: "below" })
-        : addPaneToLayout(nextLayout, instance, { relativeTo: nextLayout.docked[0]!.instanceId, position: "left" });
-    } else {
-      const lastColumnIndex = Math.max(...nextLayout.docked.map((entry) => entry.columnIndex));
-      const lastColumnPane = [...nextLayout.docked].reverse().find((entry) => entry.columnIndex === lastColumnIndex);
-      nextLayout = lastColumnPane
-        ? addPaneToLayout(nextLayout, instance, { relativeTo: lastColumnPane.instanceId, position: "below" })
-        : addPaneToLayout(nextLayout, instance, { relativeTo: nextLayout.docked[nextLayout.docked.length - 1]!.instanceId, position: "right" });
+    const pluginId = pluginRegistry.getPaneTemplatePluginId(templateId);
+    if (pluginId && state.config.disabledPlugins.includes(pluginId)) {
+      pluginRegistry.showToastFn("Enable this plugin before creating its pane.", { type: "info" });
+      return;
     }
 
-    persistLayout(nextLayout);
-    dispatch({ type: "FOCUS_PANE", paneId: instance.instanceId });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instance.instanceId) });
-  };
+    const context: PaneTemplateContext = {
+      config: state.config,
+      layout: state.config.layout,
+      focusedPaneId: state.focusedPaneId,
+      activeTicker: getFocusedTickerSymbol(state),
+      activeCollectionId: getFocusedCollectionId(state),
+    };
+    if (template.canCreate && !template.canCreate(context)) {
+      pluginRegistry.showToastFn(`Can't create ${template.label.toLowerCase()} right now.`, { type: "info" });
+      return;
+    }
+
+    const spec = await template.createInstance?.(context) ?? {};
+    if (spec === null) return;
+
+    const paneDef = pluginRegistry.panes.get(template.paneId);
+    if (!paneDef) return;
+    const instance = buildPaneInstance(template.paneId, {
+      title: spec.title,
+      binding: spec.binding,
+      params: spec.params,
+    });
+    if (!instance) {
+      pluginRegistry.showToastFn("Open a matching ticker or collection context first.", { type: "info" });
+      return;
+    }
+
+    placePaneInstance(instance, paneDef, spec);
+  }, [buildPaneInstance, placePaneInstance, pluginRegistry, state]);
 
   pluginRegistry.getLayoutFn = () => state.config.layout;
   pluginRegistry.updateLayoutFn = (layout) => persistLayout(layout);
   pluginRegistry.showPaneFn = (paneId) => showPane(paneId);
+  pluginRegistry.createPaneFromTemplateFn = (templateId) => { void createPaneFromTemplate(templateId); };
   pluginRegistry.hidePaneFn = (paneId) => {
     const instanceId = resolvePaneTarget(paneId);
     if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) return;
@@ -781,7 +871,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       : state.config.layout;
 
     if (layout !== state.config.layout) {
-      persistLayout(layout);
+      persistLayout(layout, { pushHistory: false });
     }
     dispatch({ type: "FOCUS_PANE", paneId: instanceId });
     dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instanceId) });
@@ -805,7 +895,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
         {
           relativeTo: state.focusedPaneId && isPaneInLayout(state.config.layout, state.focusedPaneId)
             ? state.focusedPaneId
-            : (state.config.layout.docked[state.config.layout.docked.length - 1]?.instanceId ?? instance.instanceId),
+            : (getDockedPaneIds(state.config.layout).at(-1) ?? instance.instanceId),
           position: "right",
         },
       );
@@ -818,6 +908,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     layout: state.config.layout,
     termWidth: pluginRegistry.getTermSizeFn().width,
     termHeight: pluginRegistry.getTermSizeFn().height,
+    focusedPaneId: state.focusedPaneId,
   }));
 
   // Wire up toast
@@ -887,18 +978,10 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     if (event.name === "tab") {
       // Build pane order from current layout for cycling
       const layout = state.config.layout;
-      const paneOrder: string[] = [];
-      // Docked panes by column, then floating
-      const byCol = new Map<number, string[]>();
-      for (const d of layout.docked) {
-        const list = byCol.get(d.columnIndex) ?? [];
-        list.push(d.instanceId);
-        byCol.set(d.columnIndex, list);
-      }
-      for (const colIdx of [...byCol.keys()].sort((a, b) => a - b)) {
-        paneOrder.push(...byCol.get(colIdx)!);
-      }
-      for (const f of layout.floating) paneOrder.push(f.instanceId);
+      const paneOrder = [
+        ...getDockedPaneIds(layout),
+        ...layout.floating.map((entry) => entry.instanceId),
+      ];
 
       if (event.shift) {
         dispatch({ type: "FOCUS_PREV", paneOrder });
@@ -998,6 +1081,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
     pluginRegistry.register(notesPlugin);
     pluginRegistry.register(askAiPlugin);
     pluginRegistry.register(chatPlugin);
+    pluginRegistry.register(debugPlugin);
 
     for (const { plugin, error } of externalPlugins) {
       if (!error) pluginRegistry.register(plugin);

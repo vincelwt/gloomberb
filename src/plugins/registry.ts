@@ -15,6 +15,7 @@ import type {
   GloomSlots,
   KeyboardShortcut,
   PaneDef,
+  PaneTemplateDef,
   PluginStorage,
   TickerAction,
 } from "../types/plugin";
@@ -23,15 +24,18 @@ import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
 import { createPaneInstance } from "../types/config";
 import { createPluginPersistence, createPluginStorage } from "./plugin-persistence";
+import { debugLog } from "../utils/debug-log";
 
 let sharedDataProvider: DataProvider | undefined;
 let sharedRegistry: PluginRegistry | undefined;
+const SLOT_REGISTRY_CONTEXT: Record<string, never> = {};
 
 export function getSharedDataProvider(): DataProvider | undefined { return sharedDataProvider; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
 
 interface PluginItems {
   panes: string[];
+  paneTemplates: string[];
   commands: string[];
   columns: string[];
   brokers: string[];
@@ -48,9 +52,11 @@ export class PluginRegistry {
   private unregisterFns = new Map<string, () => void>();
   private pluginItems = new Map<string, PluginItems>();
   private commandOwners = new Map<string, string>();
+  private paneTemplateOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
 
   private panesMap = new Map<string, PaneDef>();
+  private paneTemplatesMap = new Map<string, PaneTemplateDef>();
   private commandsMap = new Map<string, CommandDef>();
   private columnsMap = new Map<string, CustomColumnDef>();
   private brokersMap = new Map<string, BrokerAdapter>();
@@ -79,11 +85,12 @@ export class PluginRegistry {
   switchTabFn: ((tabId: string, paneId?: string) => void) = () => {};
   openCommandBarFn: ((query?: string) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
+  createPaneFromTemplateFn: ((templateId: string) => void) = () => {};
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
 
-  getLayoutFn: (() => LayoutConfig) = () => ({ columns: [], instances: [], docked: [], floating: [] });
+  getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [] });
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
@@ -99,12 +106,14 @@ export class PluginRegistry {
 
     sharedDataProvider = dataProvider;
     sharedRegistry = this;
+    (globalThis as any).__gloomRegistry = this;
 
-    this.slotRegistry = createReactSlotRegistry<GloomSlots & Record<string, object>>(renderer, {});
+    this.slotRegistry = createReactSlotRegistry<GloomSlots & Record<string, object>>(renderer, SLOT_REGISTRY_CONTEXT);
     this.Slot = createSlot(this.slotRegistry) as any;
   }
 
   get panes(): ReadonlyMap<string, PaneDef> { return this.panesMap; }
+  get paneTemplates(): ReadonlyMap<string, PaneTemplateDef> { return this.paneTemplatesMap; }
   get commands(): ReadonlyMap<string, CommandDef> { return this.commandsMap; }
   get columns(): ReadonlyMap<string, CustomColumnDef> { return this.columnsMap; }
   get brokers(): ReadonlyMap<string, BrokerAdapter> { return this.brokersMap; }
@@ -124,6 +133,10 @@ export class PluginRegistry {
     return this.pluginItems.get(pluginId)?.panes ?? [];
   }
 
+  getPluginPaneTemplateIds(pluginId: string): string[] {
+    return this.pluginItems.get(pluginId)?.paneTemplates ?? [];
+  }
+
   private resolvePrimaryPaneInstanceId(paneId: string): string | undefined {
     const layout = this.getLayoutFn();
     return layout.instances.find((instance) => instance.paneId === paneId)?.instanceId;
@@ -138,6 +151,10 @@ export class PluginRegistry {
 
   getCommandPluginId(commandId: string): string | undefined {
     return this.commandOwners.get(commandId);
+  }
+
+  getPaneTemplatePluginId(templateId: string): string | undefined {
+    return this.paneTemplateOwners.get(templateId);
   }
 
   getShortcutPluginId(shortcutId: string): string | undefined {
@@ -177,13 +194,7 @@ export class PluginRegistry {
     const instance = existingInstanceId
       ? layout.instances.find((entry) => entry.instanceId === existingInstanceId)!
       : createPaneInstance(paneId, { instanceId: `${paneId}:main` });
-    const nextLayout = addPaneFloating(
-      { ...layout, docked: layout.docked.filter((entry) => entry.instanceId !== instance.instanceId) },
-      instance,
-      width,
-      height,
-      def,
-    );
+    const nextLayout = addPaneFloating(layout, instance, width, height, def);
     this.updateLayoutFn(nextLayout);
     this.focusPaneFn(instance.instanceId);
   }
@@ -197,6 +208,7 @@ export class PluginRegistry {
   private createContext(pluginId: string): GloomPluginContext {
     const items: PluginItems = {
       panes: [],
+      paneTemplates: [],
       commands: [],
       columns: [],
       brokers: [],
@@ -212,9 +224,15 @@ export class PluginRegistry {
 
     const storage: PluginStorage = createPluginStorage(this.persistence.pluginState, pluginId);
     const persistence = createPluginPersistence(this.persistence.pluginState, this.persistence.resources, pluginNamespace, pluginId);
+    const log = debugLog.createLogger(pluginId);
 
     return {
       registerPane: (pane) => { this.panesMap.set(pane.id, pane); items.panes.push(pane.id); },
+      registerPaneTemplate: (template) => {
+        this.paneTemplatesMap.set(template.id, template);
+        this.paneTemplateOwners.set(template.id, pluginId);
+        items.paneTemplates.push(template.id);
+      },
       registerCommand: (command) => {
         this.commandsMap.set(command.id, command);
         this.commandOwners.set(command.id, pluginId);
@@ -239,6 +257,7 @@ export class PluginRegistry {
       tickerRepository: this.tickerRepository,
       storage,
       persistence,
+      log,
 
       createBrokerInstance: (brokerType, label, values) => this.createBrokerInstanceFn(brokerType, label, values),
       updateBrokerInstance: (instanceId, values) => this.updateBrokerInstanceFn(instanceId, values),
@@ -250,6 +269,7 @@ export class PluginRegistry {
       switchTab: (tabId, paneId) => this.switchTabFn(tabId, paneId),
       openCommandBar: (query) => this.openCommandBarFn(query),
       showPane: (paneId) => this.showPaneFn(paneId),
+      createPaneFromTemplate: (templateId) => this.createPaneFromTemplateFn(templateId),
       hidePane: (paneId) => this.hidePaneFn(paneId),
       focusPane: (paneId) => this.focusPaneFn(paneId),
       pinTicker: (symbol, options) => this.pinTickerFn(symbol, options),
@@ -267,10 +287,20 @@ export class PluginRegistry {
     };
   }
 
+  private registryLog = debugLog.createLogger("registry");
+
   async register(plugin: GloomPlugin): Promise<void> {
+    this.registryLog.info(`Registering plugin: ${plugin.id} v${plugin.version ?? "?"}`);
     if (plugin.panes) {
       for (const pane of plugin.panes) {
         this.panesMap.set(pane.id, pane);
+      }
+    }
+
+    if (plugin.paneTemplates) {
+      for (const template of plugin.paneTemplates) {
+        this.paneTemplatesMap.set(template.id, template);
+        this.paneTemplateOwners.set(template.id, plugin.id);
       }
     }
 
@@ -311,6 +341,7 @@ export class PluginRegistry {
   unregister(pluginId: string): void {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) return;
+    this.registryLog.info(`Unregistering plugin: ${pluginId}`);
 
     plugin.dispose?.();
     this.unregisterFns.get(pluginId)?.();
@@ -319,6 +350,10 @@ export class PluginRegistry {
     const items = this.pluginItems.get(pluginId);
     if (items) {
       for (const paneId of items.panes) this.panesMap.delete(paneId);
+      for (const templateId of items.paneTemplates) {
+        this.paneTemplatesMap.delete(templateId);
+        this.paneTemplateOwners.delete(templateId);
+      }
       for (const commandId of items.commands) {
         this.commandsMap.delete(commandId);
         this.commandOwners.delete(commandId);
@@ -338,6 +373,12 @@ export class PluginRegistry {
 
     if (plugin.panes) {
       for (const pane of plugin.panes) this.panesMap.delete(pane.id);
+    }
+    if (plugin.paneTemplates) {
+      for (const template of plugin.paneTemplates) {
+        this.paneTemplatesMap.delete(template.id);
+        this.paneTemplateOwners.delete(template.id);
+      }
     }
     if (plugin.broker) this.brokersMap.delete(plugin.broker.id);
     if (plugin.dataProvider) this.dataProvidersMap.delete(plugin.dataProvider.id);
