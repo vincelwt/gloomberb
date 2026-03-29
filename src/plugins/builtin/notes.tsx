@@ -389,6 +389,7 @@ export const notesPlugin: GloomPlugin = {
       label: "Quick Notes",
       description: "Open a general-purpose notes scratchpad",
       keywords: ["notes", "quick", "scratchpad", "memo"],
+      shortcut: { prefix: "NOTE" },
       createInstance: () => ({ placement: "floating" }),
     });
   },

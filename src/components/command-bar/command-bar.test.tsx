@@ -70,6 +70,13 @@ function makePluginRegistry(): PluginRegistry {
         defaultPosition: "right",
         defaultMode: "floating",
       }],
+      ["quote-monitor", {
+        id: "quote-monitor",
+        name: "Quote Monitor",
+        component: () => null,
+        defaultPosition: "right",
+        defaultMode: "floating",
+      }],
     ]),
     paneTemplates: new Map([
       ["new-portfolio-pane", {
@@ -77,6 +84,7 @@ function makePluginRegistry(): PluginRegistry {
         paneId: "portfolio-list",
         label: "New Portfolio Pane",
         description: "Open another portfolio list pane",
+        shortcut: { prefix: "PF" },
       }],
       ["new-watchlist-pane", {
         id: "new-watchlist-pane",
@@ -95,6 +103,14 @@ function makePluginRegistry(): PluginRegistry {
         paneId: "chat",
         label: "New Chat Pane",
         description: "Open another floating chat window",
+        shortcut: { prefix: "CHAT" },
+      }],
+      ["quote-monitor-pane", {
+        id: "quote-monitor-pane",
+        paneId: "quote-monitor",
+        label: "Quote Monitor",
+        description: "Open a compact quote monitor for the selected ticker",
+        shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
       }],
     ]),
     commands: new Map([
@@ -338,6 +354,33 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("New Chat Pane");
     expect(frame).toContain("float");
+  });
+
+  test("shows pane shortcuts in the default browse results", async () => {
+    testSetup = await testRender(<CommandBarHarness query="" selectedTicker="AAPL" />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Panes");
+    expect(frame).toContain("Quote Monitor");
+    expect(frame).toContain("QQ");
+  });
+
+  test("matches direct pane shortcut queries", async () => {
+    testSetup = await testRender(<CommandBarHarness query="QQ MSFT" selectedTicker="AAPL" />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor");
+    expect(frame).toContain("QQ");
   });
 
   test("groups ticker search sections and keeps exact open matches above loose provider results", async () => {

@@ -11,16 +11,16 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
                   AAPL                                                          
                   MSFT                                                          
                                                                                 
+                  Panes                                                         
+                  New Portfolio Pane                                            
+                  New Chat Pane                                                 
+                  Quote Monitor                                                 
+                                                                                
                   Search                                                        
                   Search Ticker                                                 
                                                                                 
                   Portfolio                                                     
                   Add AAPL to Watchlist                                         
-                  Add AAPL to Portfolio                                         
-                                                                                
-                  Create                                                        
-                  New Portfolio                                                 
-                  New Watchlist                                                 
                                                                                 
                                                                                 
                                                                                 
@@ -95,12 +95,12 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
        AAPL                               
        MSFT                               
                                           
-       Search                             
-       Search Ticker                      
+       Panes                              
+       New Portfolio Pane                 
+       New Chat Pane                      
+       Quote Monitor                      
                                           
-       Portfolio                          
-       Add AAPL to Watchlist              
-       Add AAPL to Portfolio              
+       Search                             
                                           
                                           
                                           

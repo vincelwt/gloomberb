@@ -11,6 +11,7 @@ import { EmptyState, FieldRow } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
+import { normalizeTickerInput } from "../../utils/ticker-search";
 import { StockChart } from "../../components/chart/stock-chart";
 import type { TickerFinancials } from "../../types/financials";
 import { getConfiguredIbkrGatewayInstances } from "../ibkr/instance-selection";
@@ -763,16 +764,18 @@ export const tickerDetailPlugin: GloomPlugin = {
       label: "Quote Monitor",
       description: "Open a compact quote monitor for the selected ticker",
       keywords: ["quote", "monitor", "price", "ticker", "pane"],
-      canCreate: (context) => context.activeTicker !== null,
-      createInstance: (context) => (
-        context.activeTicker
+      shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
+      canCreate: (context, options) => (options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg)) !== null,
+      createInstance: (context, options) => {
+        const ticker = options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg);
+        return ticker
           ? {
-            title: context.activeTicker,
-            binding: { kind: "fixed", symbol: context.activeTicker },
+            title: ticker,
+            binding: { kind: "fixed", symbol: ticker },
             placement: "floating",
           }
-          : null
-      ),
+          : null;
+      },
     },
   ],
 };

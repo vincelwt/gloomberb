@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import { Spinner } from "../spinner";
@@ -21,9 +21,9 @@ import { getCurrentThemeId, applyTheme } from "../../theme/colors";
 import { saveConfig, resetAllData, exportConfig, importConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
-import type { TickerRecord, TickerMetadata } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { CommandDef, WizardStep } from "../../types/plugin";
+import type { CommandDef, PaneTemplateCreateOptions, PaneTemplateDef, WizardStep } from "../../types/plugin";
 import { DEFAULT_LAYOUT, cloneLayout, createPaneInstance, findPaneInstance, type ColumnConfig, type LayoutConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
@@ -48,10 +48,17 @@ import {
   buildSections,
   getEmptyState,
   getRowPresentation,
-  rankTickerSearchItems,
   resolveCommandBarMode,
   truncateText,
 } from "./view-model";
+import {
+  createLocalTickerSearchCandidates,
+  findExactTickerSearchMatch,
+  rankTickerSearchItems,
+  upsertTickerFromSearchResult,
+  searchTickerCandidates,
+  type TickerSearchCandidate,
+} from "../../utils/ticker-search";
 
 /** All available columns that can be toggled */
 const ALL_COLUMNS: ColumnConfig[] = [
@@ -94,6 +101,11 @@ interface ResultItem {
   checked?: boolean;
   current?: boolean;
   action: () => void | Promise<void>;
+}
+
+interface PaneShortcutMatch {
+  template: PaneTemplateDef;
+  arg: string;
 }
 
 // --- Wizard dialog content components ---
@@ -796,51 +808,57 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
   const openTickerDetail = useCallback((result: InstrumentSearchResult, options?: { forceNewPane?: boolean }) => {
     (async () => {
-      const symbol = result.brokerContract?.localSymbol || result.symbol.split(".")[0]!;
-      let existing = await tickerRepository.loadTicker(symbol);
-      const created = !existing;
-      if (!existing) {
-        const metadata: TickerMetadata = {
-          ticker: symbol,
-          exchange: result.exchange,
-          currency: result.currency || result.brokerContract?.currency || "USD",
-          name: result.name,
-          assetCategory: result.brokerContract?.secType || result.type || undefined,
-          broker_contracts: result.brokerContract ? [result.brokerContract] : [],
-          portfolios: [],
-          watchlists: [],
-          positions: [],
-          custom: {},
-          tags: [],
-        };
-        existing = await tickerRepository.createTicker(metadata);
-      } else {
-        existing.metadata.name = existing.metadata.name || result.name;
-        existing.metadata.exchange = existing.metadata.exchange || result.exchange;
-        existing.metadata.currency = existing.metadata.currency || result.currency || "USD";
-        existing.metadata.assetCategory = existing.metadata.assetCategory || result.brokerContract?.secType || result.type || undefined;
-        const existingContracts = existing.metadata.broker_contracts ?? [];
-        if (result.brokerContract) {
-          const nextContracts = [...existingContracts];
-          const hasContract = nextContracts.some((contract) =>
-            contract.brokerId === result.brokerContract!.brokerId
-            && contract.brokerInstanceId === result.brokerContract!.brokerInstanceId
-            && contract.conId === result.brokerContract!.conId
-            && contract.localSymbol === result.brokerContract!.localSymbol,
-          );
-          if (!hasContract) nextContracts.push(result.brokerContract);
-          existing.metadata.broker_contracts = nextContracts;
-        }
-        await tickerRepository.saveTicker(existing);
-      }
-      dispatch({ type: "UPDATE_TICKER", ticker: existing });
+      const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, result);
+      dispatch({ type: "UPDATE_TICKER", ticker });
       if (created) {
-        pluginRegistry.events.emit("ticker:added", { symbol, ticker: existing });
+        pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
       }
-      focusTicker(symbol, options);
+      focusTicker(ticker.metadata.ticker, options);
       close();
     })();
   }, [tickerRepository, dispatch, close, focusTicker, pluginRegistry.events]);
+
+  const mapTickerSearchCandidateToResultItem = useCallback((candidate: TickerSearchCandidate): ResultItem => {
+    if (candidate.kind === "ticker" && candidate.ticker) {
+      return {
+        id: candidate.id,
+        label: candidate.label,
+        detail: candidate.detail,
+        right: candidate.right,
+        category: candidate.category,
+        kind: "ticker",
+        secondaryAction: () => { focusTicker(candidate.ticker!.metadata.ticker, { forceNewPane: true }); close(); },
+        action: () => { focusTicker(candidate.ticker!.metadata.ticker); close(); },
+      };
+    }
+
+    const result = candidate.result!;
+    return {
+      id: candidate.id,
+      label: candidate.label,
+      detail: candidate.detail,
+      right: candidate.right,
+      category: candidate.category,
+      kind: "search",
+      secondaryAction: () => openTickerDetail(result, { forceNewPane: true }),
+      action: () => openTickerDetail(result),
+    };
+  }, [close, focusTicker, openTickerDetail]);
+
+  const localTickerSearchResultItems = useCallback((query?: string, options?: {
+    category?: string;
+    limit?: number;
+  }): ResultItem[] => {
+    const items = query
+      ? rankTickerSearchItems(createLocalTickerSearchCandidates(state.tickers.values()), query)
+      : createLocalTickerSearchCandidates(state.tickers.values());
+    return items
+      .slice(0, options?.limit)
+      .map((candidate) => ({
+        ...mapTickerSearchCandidateToResultItem(candidate),
+        category: options?.category ?? candidate.category,
+      }));
+  }, [mapTickerSearchCandidateToResultItem, state.tickers]);
 
   const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
     pluginRegistry.updateLayoutFn(nextLayout);
@@ -988,53 +1006,119 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         },
       }));
   }, [pluginRegistry.tickerActions, activeTickerData, activeFinancials, close]);
-  const paneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
+
+  const getPaneTemplateContext = useCallback(() => ({
+    config: state.config,
+    layout: state.config.layout,
+    focusedPaneId: state.focusedPaneId,
+    activeTicker: activeTickerSymbol,
+    activeCollectionId,
+  }), [activeCollectionId, activeTickerSymbol, state.config, state.focusedPaneId]);
+
+  const getAvailablePaneTemplates = useCallback((options?: PaneTemplateCreateOptions): PaneTemplateDef[] => {
     const disabledPlugins = new Set(state.config.disabledPlugins || []);
-    const context = {
-      config: state.config,
-      layout: state.config.layout,
-      focusedPaneId: state.focusedPaneId,
-      activeTicker: activeTickerSymbol,
-      activeCollectionId,
-    };
-    const items = [...pluginRegistry.paneTemplates.values()]
+    const context = getPaneTemplateContext();
+    return [...pluginRegistry.paneTemplates.values()]
       .filter((template) => {
         const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
         if (pluginId && disabledPlugins.has(pluginId)) return false;
-        return !template.canCreate || template.canCreate(context);
-      })
-      .map((template) => {
-        const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
-        const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
-        const paneDef = pluginRegistry.panes.get(template.paneId);
-        return {
-          id: `pane-template:${template.id}`,
-          label: template.label,
-          detail: template.description,
-          category: pluginName ? `${pluginName} Panes` : "New Panes",
-          kind: "action" as const,
-          right: paneDef?.defaultMode === "floating" ? "float" : "dock",
-          searchText: `${template.paneId} ${template.keywords?.join(" ") || ""}`,
-          action: () => {
-            close();
-            pluginRegistry.createPaneFromTemplateFn(template.id);
-          },
-        };
+        return !template.canCreate || template.canCreate(context, options);
       });
+  }, [getPaneTemplateContext, pluginRegistry, state.config.disabledPlugins]);
+
+  const createPaneTemplateItem = useCallback((
+    template: PaneTemplateDef,
+    options?: {
+      category?: string;
+      createOptions?: PaneTemplateCreateOptions;
+      showShortcut?: boolean;
+    },
+  ): ResultItem => {
+    const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
+    const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
+    const paneDef = pluginRegistry.panes.get(template.paneId);
+    const shortcutLabel = template.shortcut
+      ? [template.shortcut.prefix, template.shortcut.argPlaceholder && `<${template.shortcut.argPlaceholder}>`].filter(Boolean).join(" ")
+      : null;
+    const placementLabel = paneDef?.defaultMode === "floating" ? "float" : "dock";
+    return {
+      id: `pane-template:${template.id}:${options?.createOptions?.arg || ""}`,
+      label: template.label,
+      detail: shortcutLabel ? `${template.description} · ${shortcutLabel}` : template.description,
+      category: options?.category ?? (pluginName ? `${pluginName} Panes` : "New Panes"),
+      kind: "action",
+      right: options?.showShortcut ? (template.shortcut?.prefix || placementLabel) : placementLabel,
+      searchText: `${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
+      action: () => {
+        close();
+        pluginRegistry.createPaneFromTemplateFn(template.id, options?.createOptions);
+      },
+    };
+  }, [close, pluginRegistry]);
+
+  const paneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
+    const items = getAvailablePaneTemplates()
+      .map((template) => createPaneTemplateItem(template));
 
     return filterQuery
       ? fuzzyFilter(items, filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
       : items;
-  }, [
-    activeCollectionId,
-    activeTickerSymbol,
-    close,
-    pluginRegistry,
-    state.config,
-    state.focusedPaneId,
-  ]);
+  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
+
+  const paneShortcutItems = useCallback((options?: {
+    filterQuery?: string;
+    createOptions?: PaneTemplateCreateOptions;
+  }): ResultItem[] => {
+    const items = getAvailablePaneTemplates(options?.createOptions)
+      .filter((template) => template.shortcut)
+      .map((template) => createPaneTemplateItem(template, {
+        category: "Panes",
+        createOptions: options?.createOptions,
+        showShortcut: true,
+      }));
+
+    return options?.filterQuery
+      ? fuzzyFilter(items, options.filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
+      : items;
+  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
+
+  const nonShortcutPaneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
+    const items = getAvailablePaneTemplates()
+      .filter((template) => !template.shortcut)
+      .map((template) => createPaneTemplateItem(template, { category: "Panes" }));
+
+    return filterQuery
+      ? fuzzyFilter(items, filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
+      : items;
+  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
+
+  const matchPaneShortcut = useCallback((input: string): PaneShortcutMatch | null => {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+
+    const upper = trimmed.toUpperCase();
+    const templates = [...pluginRegistry.paneTemplates.values()]
+      .filter((template) => template.shortcut)
+      .sort((a, b) => (b.shortcut?.prefix.length ?? 0) - (a.shortcut?.prefix.length ?? 0));
+
+    for (const template of templates) {
+      const prefix = template.shortcut?.prefix.toUpperCase();
+      if (!prefix) continue;
+      if (!upper.startsWith(`${prefix} `) && upper !== prefix) continue;
+
+      const arg = trimmed.slice(prefix.length).trim();
+      const createOptions = arg ? { arg } : undefined;
+      if (!getAvailablePaneTemplates(createOptions).some((entry) => entry.id === template.id)) {
+        continue;
+      }
+      return { template, arg };
+    }
+
+    return null;
+  }, [getAvailablePaneTemplates, pluginRegistry.paneTemplates]);
 
   const activeMatch = matchPrefix(query);
+  const paneShortcutMatch = useMemo(() => matchPaneShortcut(query), [matchPaneShortcut, query]);
   const modeInfo = resolveCommandBarMode(query);
   const isThemeMode = modeInfo.kind === "themes";
   const isPluginMode = modeInfo.kind === "plugins";
@@ -1157,7 +1241,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     const match = matchPrefix(query);
     let initialIdx = 0;
 
-    if (match && match.command.id === "plugins") {
+    if (paneShortcutMatch) {
+      items.push(createPaneTemplateItem(paneShortcutMatch.template, {
+        category: "Panes",
+        createOptions: paneShortcutMatch.arg ? { arg: paneShortcutMatch.arg } : undefined,
+        showShortcut: true,
+      }));
+    } else if (match && match.command.id === "plugins") {
       const toggleablePlugins = [...pluginRegistry.allPlugins.values()].filter((p) => p.toggleable);
       const disabledPlugins = state.config.disabledPlugins || [];
       const filtered = match.arg
@@ -1520,20 +1610,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           action: () => {},
         });
       } else {
-        const localMatches = rankTickerSearchItems(
-          Array.from(state.tickers.values()).map((ticker) => ({
-            id: `goto:${ticker.metadata.ticker}`,
-            label: ticker.metadata.ticker,
-            detail: ticker.metadata.name,
-            right: ticker.metadata.exchange,
-            category: "Open",
-            kind: "ticker" as const,
-            secondaryAction: () => { focusTicker(ticker.metadata.ticker, { forceNewPane: true }); close(); },
-            action: () => { focusTicker(ticker.metadata.ticker); close(); },
-          })),
-          match.arg,
-        );
-        items.push(...localMatches.slice(0, 6));
+        items.push(...localTickerSearchResultItems(match.arg, { limit: 6 }));
       }
     } else if (match && !match.command.hasArg) {
       if (shouldShow(match.command)) {
@@ -1560,17 +1637,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           if (!recentSet.has(t.metadata.ticker)) recentTickers.push(t);
         }
       }
-      for (const t of recentTickers) {
-        items.push({
-          id: `goto:${t.metadata.ticker}`,
-          label: t.metadata.ticker,
-          detail: t.metadata.name,
-          category: "Tickers",
-          kind: "ticker",
-          secondaryAction: () => { focusTicker(t.metadata.ticker, { forceNewPane: true }); close(); },
-          action: () => { focusTicker(t.metadata.ticker); close(); },
-        });
-      }
+      items.push(...recentTickers.map((ticker) => ({
+        ...mapTickerSearchCandidateToResultItem(createLocalTickerSearchCandidates([ticker])[0]!),
+        category: "Tickers",
+      })));
+      items.push(...paneShortcutItems());
       for (const cmd of commands) {
         const item = cmdToItem(cmd);
         if (item) items.push(item);
@@ -1578,17 +1649,16 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       items.push(...tickerActionItems());
       items.push(...pluginCommandItems());
     } else {
-      const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
-        id: `goto:${t.metadata.ticker}`,
-        label: t.metadata.ticker,
-        detail: t.metadata.name,
-        category: "Tickers",
-        kind: "ticker",
-        secondaryAction: () => { focusTicker(t.metadata.ticker, { forceNewPane: true }); close(); },
-        action: () => { focusTicker(t.metadata.ticker); close(); },
-      }));
+      const tickerItems = localTickerSearchResultItems(undefined, { category: "Tickers" });
       const cmdItems = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
-      const allItems = [...tickerItems, ...cmdItems, ...paneTemplateItems(), ...tickerActionItems(), ...pluginCommandItems()];
+      const allItems = [
+        ...tickerItems,
+        ...cmdItems,
+        ...paneShortcutItems(),
+        ...nonShortcutPaneTemplateItems(),
+        ...tickerActionItems(),
+        ...pluginCommandItems(),
+      ];
       items.push(...fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.searchText || ""} ${i.right || ""}`));
     }
 
@@ -1617,42 +1687,19 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       searchTimerRef.current = setTimeout(async () => {
         try {
           const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
-          const searchResults = await dataProvider.search(searchQuery, {
-            preferBroker: true,
-            brokerId: activePortfolio?.brokerId,
-            brokerInstanceId: activePortfolio?.brokerInstanceId,
+          const combined = await searchTickerCandidates({
+            query: searchQuery,
+            tickers: state.tickers,
+            dataProvider,
+            searchContext: {
+              preferBroker: true,
+              brokerId: activePortfolio?.brokerId,
+              brokerInstanceId: activePortfolio?.brokerInstanceId,
+            },
           });
           if (requestId !== searchRequestIdRef.current) return; // stale response
-          const localItems = rankTickerSearchItems(
-            Array.from(state.tickers.values()).map((ticker) => ({
-              id: `goto:${ticker.metadata.ticker}`,
-              label: ticker.metadata.ticker,
-              detail: ticker.metadata.name,
-              right: ticker.metadata.exchange,
-              category: "Open",
-              kind: "ticker" as const,
-              secondaryAction: () => { focusTicker(ticker.metadata.ticker, { forceNewPane: true }); close(); },
-              action: () => { focusTicker(ticker.metadata.ticker); close(); },
-            })),
-            searchQuery,
-          ).slice(0, 6);
-          const searchItems: ResultItem[] = searchResults
-            .map((r) => {
-              const sym = r.brokerContract?.localSymbol || r.symbol.split(".")[0]!;
-              const isExisting = state.tickers.has(sym);
-              return {
-                id: `search:${r.symbol}`,
-                label: sym,
-                detail: [r.name, r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" | "),
-                right: r.exchange || r.type || undefined,
-                category: isExisting ? "Open" : "Search Results",
-                kind: "search",
-                secondaryAction: () => openTickerDetail(r, { forceNewPane: true }),
-                action: () => openTickerDetail(r),
-              };
-            });
-          const combined = rankTickerSearchItems([...localItems, ...searchItems], searchQuery).slice(0, 8);
-          setResults(combined.length > 0 ? combined : [{
+          const resultItems = combined.map((candidate) => mapTickerSearchCandidateToResultItem(candidate));
+          setResults(resultItems.length > 0 ? resultItems : [{
               id: "no-results",
               label: `No matches for "${searchQuery}"`,
               detail: "Try a symbol, company name, or exchange variant",
@@ -1687,10 +1734,17 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     activeTickerData,
     activeTickerSymbol,
     close,
+    createPaneTemplateItem,
+    dataProvider,
     dialog,
     dispatch,
     duplicatePane,
     focusTicker,
+    localTickerSearchResultItems,
+    mapTickerSearchCandidateToResultItem,
+    nonShortcutPaneTemplateItems,
+    paneShortcutItems,
+    paneShortcutMatch,
     paneTemplateItems,
     persistLayoutChange,
     pluginCommandItems,
@@ -1702,12 +1756,10 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   ]);
 
   const exactTickerResult = (() => {
-    const normalizedQuery = (searchModeQuery || query).trim().toUpperCase();
-    if (!normalizedQuery) return null;
-    return results.find((item) =>
-      (item.id.startsWith("goto:") || item.id.startsWith("search:"))
-      && item.label.toUpperCase() === normalizedQuery,
-    ) ?? null;
+    return findExactTickerSearchMatch(
+      results.filter((item) => item.id.startsWith("goto:") || item.id.startsWith("search:")),
+      searchModeQuery || query,
+    );
   })();
 
   // Live preview: apply theme as user arrows through the list

@@ -4,7 +4,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
-import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin, PaneProps, PaneTemplateContext } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
 import {
   useAppState,
@@ -1233,6 +1233,19 @@ export const portfolioListPlugin: GloomPlugin = {
   ],
   paneTemplates: [
     {
+      id: "new-collection-pane",
+      paneId: "portfolio-list",
+      label: "Collection Pane",
+      description: "Open another pane for the current portfolio or watchlist",
+      keywords: ["portfolio", "watchlist", "collection", "pane", "list"],
+      shortcut: { prefix: "PF" },
+      canCreate: (context) => resolveCollectionPaneId(context) !== null,
+      createInstance: (context) => {
+        const collectionId = resolveCollectionPaneId(context);
+        return collectionId ? { params: { collectionId } } : null;
+      },
+    },
+    {
       id: "new-portfolio-pane",
       paneId: "portfolio-list",
       label: "New Portfolio Pane",
@@ -1264,3 +1277,15 @@ export const portfolioListPlugin: GloomPlugin = {
     },
   ],
 };
+
+function resolveCollectionPaneId(context: PaneTemplateContext): string | null {
+  if (context.activeCollectionId) {
+    const isPortfolio = context.config.portfolios.some((portfolio) => portfolio.id === context.activeCollectionId);
+    const isWatchlist = context.config.watchlists.some((watchlist) => watchlist.id === context.activeCollectionId);
+    if (isPortfolio || isWatchlist) {
+      return context.activeCollectionId;
+    }
+  }
+
+  return context.config.portfolios[0]?.id ?? context.config.watchlists[0]?.id ?? null;
+}
