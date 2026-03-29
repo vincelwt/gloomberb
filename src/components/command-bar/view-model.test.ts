@@ -31,6 +31,17 @@ describe("command bar view model helpers", () => {
     expect(sections[0]?.items.map((item) => item.id)).toEqual(["a", "c"]);
   });
 
+  test("moves danger and debug sections to the end", () => {
+    const sections = buildSections([
+      { id: "a", category: "Tickers" },
+      { id: "b", category: "Danger" },
+      { id: "c", category: "Debug" },
+      { id: "d", category: "Config" },
+    ]);
+
+    expect(sections.map((section) => section.category)).toEqual(["Tickers", "Config", "Danger", "Debug"]);
+  });
+
   test("returns footer hints for plugin toggles", () => {
     expect(getFooterHints("plugins", false)).toEqual({
       left: "up/down move  enter select  space toggle",

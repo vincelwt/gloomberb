@@ -16,6 +16,7 @@ import type {
   GloomSlots,
   KeyboardShortcut,
   PaneDef,
+  PaneTemplateCreateOptions,
   PaneTemplateDef,
   PluginStorage,
   PluginResumeState,
@@ -96,7 +97,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   switchTabFn: ((tabId: string, paneId?: string) => void) = () => {};
   openCommandBarFn: ((query?: string) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
-  createPaneFromTemplateFn: ((templateId: string) => void) = () => {};
+  createPaneFromTemplateFn: ((templateId: string, options?: PaneTemplateCreateOptions) => void) = () => {};
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
@@ -410,7 +411,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       switchTab: (tabId, paneId) => this.switchTabFn(tabId, paneId),
       openCommandBar: (query) => this.openCommandBarFn(query),
       showPane: (paneId) => this.showPaneFn(paneId),
-      createPaneFromTemplate: (templateId) => this.createPaneFromTemplateFn(templateId),
+      createPaneFromTemplate: (templateId, options) => this.createPaneFromTemplateFn(templateId, options),
       hidePane: (paneId) => this.hidePaneFn(paneId),
       focusPane: (paneId) => this.focusPaneFn(paneId),
       pinTicker: (symbol, options) => this.pinTickerFn(symbol, options),

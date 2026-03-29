@@ -14,6 +14,7 @@ import type { DataProvider } from "./data-provider";
 import type { TickerFinancials } from "./financials";
 import type { CachePolicy, PersistedResourceValue } from "./persistence";
 import type { TickerRecord } from "./ticker";
+import type { InstrumentSearchResult } from "./instrument";
 
 export interface GloomSlots {
   "detail:tab": { ticker: TickerRecord; financials: TickerFinancials | null };
@@ -55,6 +56,18 @@ export interface PaneTemplateContext {
   activeCollectionId: string | null;
 }
 
+export interface PaneTemplateShortcut {
+  prefix: string;
+  argPlaceholder?: string;
+}
+
+export interface PaneTemplateCreateOptions {
+  arg?: string;
+  symbol?: string | null;
+  ticker?: TickerRecord | null;
+  searchResult?: InstrumentSearchResult | null;
+}
+
 export interface PaneTemplateInstanceConfig {
   title?: string;
   binding?: PaneBinding;
@@ -70,9 +83,11 @@ export interface PaneTemplateDef {
   label: string;
   description: string;
   keywords?: string[];
-  canCreate?: (context: PaneTemplateContext) => boolean;
+  shortcut?: PaneTemplateShortcut;
+  canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
   createInstance?: (
     context: PaneTemplateContext,
+    options?: PaneTemplateCreateOptions,
   ) => PaneTemplateInstanceConfig | null | Promise<PaneTemplateInstanceConfig | null>;
 }
 
@@ -213,7 +228,7 @@ export interface GloomPluginContext {
   switchTab(tabId: string, paneId?: string): void;
   openCommandBar(query?: string): void;
   showPane(paneId: string): void;
-  createPaneFromTemplate(templateId: string): void;
+  createPaneFromTemplate(templateId: string, options?: PaneTemplateCreateOptions): void;
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;

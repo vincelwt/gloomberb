@@ -356,6 +356,7 @@ export const chatPlugin: GloomPlugin = {
       label: "New Chat Pane",
       description: "Open another floating chat window",
       keywords: ["new", "chat", "pane", "message"],
+      shortcut: { prefix: "CHAT" },
       createInstance: () => ({ placement: "floating" }),
     },
   ],
