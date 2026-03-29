@@ -154,3 +154,107 @@ export function truncateText(text: string, width: number): string {
   if (width <= 3) return ".".repeat(width);
   return `${text.slice(0, width - 3)}...`;
 }
+
+function normalizeSearchText(text: string): string {
+  return text.trim().toUpperCase().replace(/[^A-Z0-9]+/g, " ");
+}
+
+function scoreSearchField(query: string, value: string, weights: { exact: number; prefix: number; substring: number; fuzzy: number }): number {
+  if (!query || !value) return 0;
+  if (value === query) return weights.exact - value.length;
+  if (value.startsWith(query)) return weights.prefix - value.length;
+
+  const substringIndex = value.indexOf(query);
+  if (substringIndex >= 0) {
+    return weights.substring - substringIndex * 25 - value.length;
+  }
+
+  let qi = 0;
+  let score = 0;
+  for (let i = 0; i < value.length && qi < query.length; i++) {
+    if (value[i] !== query[qi]) continue;
+    score += i === 0 || value[i - 1] === " " ? 10 : 2;
+    qi += 1;
+  }
+  return qi === query.length ? weights.fuzzy + score : 0;
+}
+
+function getTickerSearchDedupKey(item: Pick<CommandBarItemView, "id" | "kind" | "label" | "detail" | "right">): string {
+  if (item.kind !== "ticker" && item.kind !== "search") return item.id;
+  const qualifier = normalizeSearchText(item.right || item.detail.split("|").at(-1) || "");
+  return `${normalizeSearchText(item.label)}|${qualifier}`;
+}
+
+export function rankTickerSearchItems<T extends Pick<CommandBarItemView, "id" | "label" | "detail" | "kind" | "category" | "right">>(
+  items: T[],
+  query: string,
+): T[] {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return items;
+
+  const openSymbols = new Set(
+    items
+      .filter((item) => item.kind === "ticker" || item.category === "Open")
+      .map((item) => normalizeSearchText(item.label)),
+  );
+
+  const ranked = items
+    .map((item, index) => {
+      const normalizedLabel = normalizeSearchText(item.label);
+      const normalizedDetail = normalizeSearchText(item.detail);
+      const normalizedRight = normalizeSearchText(item.right || "");
+      const labelScore = scoreSearchField(normalizedQuery, normalizedLabel, {
+        exact: 24_000,
+        prefix: 18_000,
+        substring: 14_000,
+        fuzzy: 7_000,
+      });
+      const detailScore = Math.max(
+        scoreSearchField(normalizedQuery, normalizedDetail, {
+          exact: 4_500,
+          prefix: 3_800,
+          substring: 2_600,
+          fuzzy: 600,
+        }),
+        scoreSearchField(normalizedQuery, normalizedRight, {
+          exact: 1_200,
+          prefix: 1_000,
+          substring: 700,
+          fuzzy: 100,
+        }),
+      );
+      const isOpenItem = item.kind === "ticker" || item.category === "Open";
+      const matchScore = labelScore + detailScore;
+
+      return {
+        item,
+        index,
+        normalizedLabel,
+        matchScore,
+        score: matchScore + (matchScore > 0 && isOpenItem ? 900 : 0),
+      };
+    })
+    .filter(({ item, normalizedLabel, matchScore }) => {
+      if (matchScore <= 0) return false;
+      if (item.kind !== "search") return true;
+      return !openSymbols.has(normalizedLabel);
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aOpen = a.item.kind === "ticker" || a.item.category === "Open";
+      const bOpen = b.item.kind === "ticker" || b.item.category === "Open";
+      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+      if (a.item.label.length !== b.item.label.length) return a.item.label.length - b.item.label.length;
+      return a.index - b.index;
+    });
+
+  const deduped: T[] = [];
+  const seen = new Set<string>();
+  for (const entry of ranked) {
+    const key = getTickerSearchDedupKey(entry.item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(entry.item);
+  }
+  return deduped;
+}

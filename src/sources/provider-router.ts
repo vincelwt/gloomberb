@@ -57,6 +57,31 @@ function compactDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizeSearchKeyPart(value?: string): string {
+  return (value ?? "").trim().toUpperCase();
+}
+
+function buildSearchResultKey(item: InstrumentSearchResult): string {
+  return [
+    normalizeSearchKeyPart(item.symbol),
+    normalizeSearchKeyPart(item.exchange),
+    normalizeSearchKeyPart(item.type),
+    normalizeSearchKeyPart(item.primaryExchange),
+    normalizeSearchKeyPart(item.currency),
+  ].join("|");
+}
+
+function getSearchResultRichness(item: InstrumentSearchResult, context?: SearchRequestContext): number {
+  let score = 0;
+  if (item.brokerContract) score += 500;
+  if (item.brokerInstanceId) score += 250;
+  if (item.brokerLabel) score += 100;
+  if (item.name) score += Math.min(80, item.name.length);
+  if (context?.brokerInstanceId && item.brokerInstanceId === context.brokerInstanceId) score += 800;
+  if (context?.brokerId && item.brokerContract?.brokerId === context.brokerId) score += 400;
+  return score;
+}
+
 function buildVariantKey(parts: Array<[string, string | number | undefined | null]>): string {
   return parts
     .filter(([, value]) => value !== undefined && value !== null && String(value).length > 0)
@@ -215,14 +240,22 @@ export class ProviderRouter implements DataProvider {
 
   async search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
     const results: InstrumentSearchResult[] = [];
-    const seen = new Set<string>();
+    const resultIndexByKey = new Map<string, number>();
 
     const push = (items: InstrumentSearchResult[]) => {
       for (const item of items) {
-        const key = `${item.symbol}|${item.exchange}|${item.type}|${item.providerId}|${item.brokerInstanceId ?? ""}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        results.push(item);
+        const key = buildSearchResultKey(item);
+        const existingIndex = resultIndexByKey.get(key);
+        if (existingIndex == null) {
+          resultIndexByKey.set(key, results.length);
+          results.push(item);
+          continue;
+        }
+
+        const existing = results[existingIndex]!;
+        if (getSearchResultRichness(item, context) > getSearchResultRichness(existing, context)) {
+          results[existingIndex] = item;
+        }
       }
     };
 

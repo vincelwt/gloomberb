@@ -32,8 +32,10 @@ import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import { DialogFrame, ListView, TextField } from "../ui";
 import {
+  buildSections,
   getEmptyState,
   getRowPresentation,
+  rankTickerSearchItems,
   resolveCommandBarMode,
   truncateText,
 } from "./view-model";
@@ -953,6 +955,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const isThemeMode = modeInfo.kind === "themes";
   const isPluginMode = modeInfo.kind === "plugins";
   const isColumnsMode = modeInfo.kind === "columns";
+  const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
 
   // Toggle a column on/off
   const toggleColumn = useCallback((colId: string) => {
@@ -1151,6 +1154,21 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           kind: "info",
           action: () => {},
         });
+      } else {
+        const localMatches = rankTickerSearchItems(
+          Array.from(state.tickers.values()).map((ticker) => ({
+            id: `goto:${ticker.metadata.ticker}`,
+            label: ticker.metadata.ticker,
+            detail: ticker.metadata.name,
+            right: ticker.metadata.exchange,
+            category: "Open",
+            kind: "ticker" as const,
+            secondaryAction: () => { focusTicker(ticker.metadata.ticker, { forceNewPane: true }); close(); },
+            action: () => { focusTicker(ticker.metadata.ticker); close(); },
+          })),
+          match.arg,
+        );
+        items.push(...localMatches.slice(0, 6));
       }
     } else if (match && !match.command.hasArg) {
       if (shouldShow(match.command)) {
@@ -1240,8 +1258,20 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
             brokerInstanceId: activePortfolio?.brokerInstanceId,
           });
           if (requestId !== searchRequestIdRef.current) return; // stale response
+          const localItems = rankTickerSearchItems(
+            Array.from(state.tickers.values()).map((ticker) => ({
+              id: `goto:${ticker.metadata.ticker}`,
+              label: ticker.metadata.ticker,
+              detail: ticker.metadata.name,
+              right: ticker.metadata.exchange,
+              category: "Open",
+              kind: "ticker" as const,
+              secondaryAction: () => { focusTicker(ticker.metadata.ticker, { forceNewPane: true }); close(); },
+              action: () => { focusTicker(ticker.metadata.ticker); close(); },
+            })),
+            searchQuery,
+          ).slice(0, 6);
           const searchItems: ResultItem[] = searchResults
-            .slice(0, 8)
             .map((r) => {
               const sym = r.brokerContract?.localSymbol || r.symbol.split(".")[0]!;
               const isExisting = state.tickers.has(sym);
@@ -1249,13 +1279,15 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
                 id: `search:${r.symbol}`,
                 label: sym,
                 detail: [r.name, r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" | "),
+                right: r.exchange || r.type || undefined,
                 category: isExisting ? "Open" : "Search Results",
                 kind: "search",
                 secondaryAction: () => openTickerDetail(r, { forceNewPane: true }),
                 action: () => openTickerDetail(r),
               };
             });
-          setResults(searchItems.length > 0 ? searchItems : [{
+          const combined = rankTickerSearchItems([...localItems, ...searchItems], searchQuery).slice(0, 8);
+          setResults(combined.length > 0 ? combined : [{
               id: "no-results",
               label: `No matches for "${searchQuery}"`,
               detail: "Try a symbol, company name, or exchange variant",
@@ -1288,7 +1320,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   }, [query, state.tickers, activeTickerSymbol, activeTickerData, activeCollectionId, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems, focusTicker]);
 
   const exactTickerResult = (() => {
-    const normalizedQuery = query.trim().toUpperCase();
+    const normalizedQuery = (searchModeQuery || query).trim().toUpperCase();
     if (!normalizedQuery) return null;
     return results.find((item) =>
       (item.id.startsWith("goto:") || item.id.startsWith("search:"))
@@ -1401,7 +1433,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
   const barWidth = Math.max(42, Math.min(64, termWidth - 8, Math.floor(termWidth * 0.62)));
   const isNarrow = barWidth < 52;
-  const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
   const contentPadding = 3;
   const bodyHeight = Math.min(14, Math.max(8, termHeight - 10));
   const barHeight = bodyHeight + 5;
@@ -1423,25 +1454,25 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     | { kind: "spinner"; id: string; label: string }
     | { kind: "filler"; id: string }
   > = [];
-  let previousCategory: string | null = null;
-  for (let i = 0; i < results.length; i++) {
-    const item = results[i]!;
-    if (previousCategory !== null && item.category !== previousCategory) {
+  const sections = buildSections(results);
+  let globalIdx = 0;
+  sections.forEach((section, sectionIndex) => {
+    if (sectionIndex > 0) {
       allRows.push({
         kind: "spacer",
-        id: `spacer:${i}:${item.category}`,
+        id: `spacer:${sectionIndex}:${section.category}`,
       });
     }
-    if (item.category !== previousCategory) {
-      allRows.push({
-        kind: "heading",
-        id: `heading:${i}:${item.category}`,
-        label: item.category,
-      });
+    allRows.push({
+      kind: "heading",
+      id: `heading:${sectionIndex}:${section.category}`,
+      label: section.category,
+    });
+    for (const item of section.items) {
+      allRows.push({ kind: "item", item, globalIdx });
+      globalIdx += 1;
     }
-    previousCategory = item.category;
-    allRows.push({ kind: "item", item, globalIdx: i });
-  }
+  });
   const emptyState = getEmptyState(modeInfo.kind, query, searchModeQuery);
   const resultsInnerWidth = Math.max(12, barWidth - contentPadding * 2);
   const trailingWidth = isNarrow ? 0 : Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
@@ -1449,7 +1480,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const queryDisplayWidth = Math.max(8, barWidth - contentPadding * 2);
 
   let visibleRows: typeof allRows;
-  if (searching) {
+  if (searching && allRows.length === 0) {
     visibleRows = [{ kind: "spinner", id: "searching", label: "Searching providers..." }];
   } else if (allRows.length === 0) {
     visibleRows = [{ kind: "message", id: "empty", label: emptyState.label }];
@@ -1459,6 +1490,12 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     let windowStart = Math.max(0, Math.min(selectedRowIdx - halfWindow, allRows.length - bodyHeight));
     if (windowStart < 0) windowStart = 0;
     visibleRows = allRows.slice(windowStart, windowStart + bodyHeight);
+    if (searching) {
+      if (visibleRows.length >= bodyHeight) {
+        visibleRows = visibleRows.slice(0, bodyHeight - 1);
+      }
+      visibleRows.push({ kind: "spinner", id: "searching", label: "Searching providers..." });
+    }
   }
 
   while (visibleRows.length < bodyHeight) {
