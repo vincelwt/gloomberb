@@ -1,21 +1,55 @@
 import { useRef, useEffect, useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
-import { colors, hoverBg } from "../../theme/colors";
-import { padTo, formatTimeAgo } from "../../utils/format";
+import { colors } from "../../theme/colors";
 import type { NewsItem } from "../../types/data-provider";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
+import { DetailFeedView, type DetailFeedItem } from "../../components/detail-feed-view";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
   expireMs: 90 * 24 * 60 * 60_000,
 };
+const NEWS_ITEM_LIMIT = 50;
 
 let _persistence: import("../../types/plugin").PluginPersistence | null = null;
+
+function getFeedItems(
+  news: NewsItem[],
+  selectedUrl: string | undefined,
+  summaryCache: Map<string, string>,
+  loadingSummary: boolean,
+): DetailFeedItem[] {
+  return news.map((item) => {
+    const preview = summaryCache.get(item.url) ?? item.summary ?? undefined;
+    const isSelected = item.url === selectedUrl;
+    return {
+      id: item.url || `${item.title}:${item.publishedAt.toISOString()}`,
+      eyebrow: item.source,
+      title: item.title,
+      timestamp: item.publishedAt,
+      preview,
+      detailTitle: item.title,
+      detailMeta: [
+        item.source,
+        `Published ${item.publishedAt.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}`,
+      ],
+      detailBody: isSelected
+        ? preview ?? (loadingSummary ? "Loading preview..." : "No preview available.")
+        : preview ?? "",
+      detailNote: item.url,
+    };
+  });
+}
 
 function NewsTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
@@ -31,27 +65,54 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
 
   useEffect(() => {
     const provider = getSharedDataProvider();
-    if (!ticker || !provider) return;
     let cancelled = false;
+
+    summaryFetchRef.current += 1;
+    setSummaryCache(new Map());
+    setLoadingSummary(false);
+    setHoveredIdx(null);
+
+    if (!ticker || !provider) {
+      setNews([]);
+      setLoading(false);
+      setError(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setLoading(true);
     setError(null);
-    setSummaryCache(new Map());
-    provider.getNews(ticker.metadata.ticker, 15).then((items) => {
+    provider.getNews(ticker.metadata.ticker, NEWS_ITEM_LIMIT).then((items) => {
       if (!cancelled) setNews(items);
     }).catch((err) => {
       if (!cancelled) setError(err?.message ?? "Failed to load news");
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [ticker?.metadata.ticker]);
 
-  // Lazy-load summary when selection changes
   const selected = news[selectedIdx];
+  const cachedSelectedSummary = selected ? summaryCache.get(selected.url) : undefined;
   useEffect(() => {
     const provider = getSharedDataProvider();
-    if (!selected || !provider) return;
-    if (summaryCache.has(selected.url)) return;
+    if (!selected || !provider) {
+      setLoadingSummary(false);
+      return;
+    }
+    if (selected.summary) {
+      setSummaryCache((prev) => prev.has(selected.url) ? prev : new Map(prev).set(selected.url, selected.summary!));
+      setLoadingSummary(false);
+      return;
+    }
+    if (cachedSelectedSummary) {
+      setLoadingSummary(false);
+      return;
+    }
     const cached = _persistence?.getResource<string>("article-summary", selected.url, {
       sourceKey: "provider",
       schemaVersion: 1,
@@ -59,31 +120,31 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     });
     if (cached?.value) {
       setSummaryCache((prev) => new Map(prev).set(selected.url, cached.value));
+      setLoadingSummary(false);
       return;
     }
-    const id = ++summaryFetchRef.current;
+
+    const requestId = ++summaryFetchRef.current;
     setLoadingSummary(true);
     provider.getArticleSummary(selected.url).then((summary) => {
-      if (id !== summaryFetchRef.current) return;
-      if (summary) {
-        setSummaryCache((prev) => new Map(prev).set(selected.url, summary));
-        _persistence?.setResource("article-summary", selected.url, summary, {
-          sourceKey: "provider",
-          schemaVersion: 1,
-          cachePolicy: ARTICLE_SUMMARY_CACHE_POLICY,
-        });
-      }
+      if (requestId !== summaryFetchRef.current || !summary) return;
+      setSummaryCache((prev) => new Map(prev).set(selected.url, summary));
+      _persistence?.setResource("article-summary", selected.url, summary, {
+        sourceKey: "provider",
+        schemaVersion: 1,
+        cachePolicy: ARTICLE_SUMMARY_CACHE_POLICY,
+      });
     }).catch(() => {}).finally(() => {
-      if (id === summaryFetchRef.current) setLoadingSummary(false);
+      if (requestId === summaryFetchRef.current) setLoadingSummary(false);
     });
-  }, [selected?.url]);
+  }, [cachedSelectedSummary, selected?.summary, selected?.url]);
 
   useKeyboard((event) => {
     if (!focused || news.length === 0) return;
     if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((i) => Math.min(i + 1, news.length - 1));
+      setSelectedIdx((index) => Math.min(index + 1, news.length - 1));
     } else if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((i) => Math.max(i - 1, 0));
+      setSelectedIdx((index) => Math.max(index - 1, 0));
     }
   });
 
@@ -98,112 +159,20 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   if (error) return <text fg={colors.textDim}>Error: {error}</text>;
   if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.metadata.ticker}.</text>;
 
-  const innerWidth = Math.max(width - 4, 40);
-  const timeColW = 8;
-  const sourceColW = 16;
-  const titleColW = Math.max(innerWidth - timeColW - sourceColW - 2, 10);
-  const summary = selected ? summaryCache.get(selected.url) : undefined;
-
-  const detailHeight = Math.max(Math.floor((height - 3) / 3), 4);
-  const listHeight = Math.max(height - detailHeight - 3, 4);
+  const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary);
 
   return (
-    <box flexDirection="column" flexGrow={1} paddingX={1}>
-      {/* Header */}
-      <box flexDirection="row" height={1}>
-        <box width={titleColW + 1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("Title", titleColW)}
-          </text>
-        </box>
-        <box width={sourceColW + 1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("Source", sourceColW)}
-          </text>
-        </box>
-        <box width={timeColW}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("When", timeColW, "right")}
-          </text>
-        </box>
-      </box>
-
-      {/* News list */}
-      <scrollbox height={listHeight} scrollY>
-        {news.map((item, i) => {
-          const isSelected = i === selectedIdx;
-          const isHovered = i === hoveredIdx && !isSelected;
-          const title = item.title.length > titleColW
-            ? item.title.slice(0, titleColW - 1) + "\u2026"
-            : item.title;
-          const source = item.source.length > sourceColW
-            ? item.source.slice(0, sourceColW - 1) + "\u2026"
-            : item.source;
-          return (
-            <box
-              key={i}
-              flexDirection="row"
-              height={1}
-              backgroundColor={isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg}
-              onMouseMove={() => setHoveredIdx(i)}
-              onMouseDown={() => setSelectedIdx(i)}
-            >
-              <box width={titleColW + 1}>
-                <text fg={isSelected ? colors.selectedText : colors.text}>
-                  {padTo(title, titleColW)}
-                </text>
-              </box>
-              <box width={sourceColW + 1}>
-                <text fg={colors.textMuted}>
-                  {padTo(source, sourceColW)}
-                </text>
-              </box>
-              <box width={timeColW}>
-                <text fg={colors.textDim}>
-                  {padTo(formatTimeAgo(item.publishedAt), timeColW, "right")}
-                </text>
-              </box>
-            </box>
-          );
-        })}
-      </scrollbox>
-
-      {/* Divider */}
-      <box height={1}>
-        <text fg={colors.textDim}>{"\u2500".repeat(innerWidth)}</text>
-      </box>
-
-      {/* Detail pane for selected article */}
-      {selected && (
-        <scrollbox height={detailHeight} scrollY>
-          <box flexDirection="column">
-            <box height={1}>
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-                {selected.title}
-              </text>
-            </box>
-            <box flexDirection="row" height={1} gap={2}>
-              <text fg={colors.textMuted}>{selected.source}</text>
-              <text fg={colors.textDim}>{formatTimeAgo(selected.publishedAt)}</text>
-            </box>
-            <box paddingTop={1}>
-              {summary ? (
-                <text fg={colors.text}>{summary}</text>
-              ) : loadingSummary ? (
-                <Spinner label="Loading preview..." />
-              ) : (
-                <text fg={colors.text}>No preview available.</text>
-              )}
-            </box>
-          </box>
-        </scrollbox>
-      )}
-
-      {/* Help */}
-      <box height={1}>
-        <text fg={colors.textMuted}>j/k navigate</text>
-      </box>
-    </box>
+    <DetailFeedView
+      width={width}
+      height={height}
+      items={items}
+      selectedIdx={selectedIdx}
+      hoveredIdx={hoveredIdx}
+      onSelect={setSelectedIdx}
+      onHover={setHoveredIdx}
+      listVariant="single-line"
+      splitListWidthRatio={0.36}
+    />
   );
 }
 
