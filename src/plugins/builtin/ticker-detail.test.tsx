@@ -175,12 +175,16 @@ function createDetailState(
   ticker: TickerRecord,
   financials: TickerFinancials | null,
   activeTabId = "overview",
+  exchangeRates?: Map<string, number>,
 ) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
   state.tickers = new Map([[ticker.metadata.ticker, ticker]]);
   state.financials = financials ? new Map([[ticker.metadata.ticker, financials]]) : new Map();
   state.paneState[TEST_PANE_ID] = { activeTabId };
+  if (exchangeRates) {
+    state.exchangeRates = exchangeRates;
+  }
   return state;
 }
 
@@ -189,13 +193,19 @@ function DetailHarness({
   ticker,
   financials,
   activeTabId = "overview",
+  exchangeRates,
+  width = 90,
+  height = 24,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials | null;
   activeTabId?: string;
+  exchangeRates?: Map<string, number>;
+  width?: number;
+  height?: number;
 }) {
-  const initialState = createDetailState(config, ticker, financials, activeTabId);
+  const initialState = createDetailState(config, ticker, financials, activeTabId, exchangeRates);
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
 
@@ -207,8 +217,8 @@ function DetailHarness({
           paneId={TEST_PANE_ID}
           paneType="ticker-detail"
           focused
-          width={90}
-          height={24}
+          width={width}
+          height={height}
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -401,6 +411,59 @@ describe("TickerDetailPane", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Description");
     expect(frame).toContain("Builds widgets for industrial customers.");
+  });
+
+  test("keeps quote prices native while converting market cap and position totals to base currency", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setSharedDataProviderForTests(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("SAP")}
+        ticker={makeTicker("SAP", "SAP SE", {
+          exchange: "XETRA",
+          currency: "EUR",
+          positions: [{
+            portfolio: "main",
+            shares: 10,
+            avgCost: 100,
+            currency: "EUR",
+            broker: "manual",
+            markPrice: 125,
+            marketValue: 1250,
+            unrealizedPnl: 250,
+          }],
+        })}
+        financials={makeFinancials({
+          quote: {
+            symbol: "SAP",
+            price: 125,
+            currency: "EUR",
+            change: 5,
+            changePercent: 4.17,
+            marketCap: 2_000_000_000,
+            previousClose: 120,
+            name: "SAP SE",
+            lastUpdated: Date.now(),
+            marketState: "REGULAR",
+          },
+        })}
+        exchangeRates={new Map([["USD", 1], ["EUR", 1.1]])}
+        height={32}
+      />,
+      { width: 90, height: 32 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("€125.00");
+    expect(frame).toContain("2.2B USD");
+    expect(frame).toContain("@ €100.00");
+    expect(frame).toContain("= $1,100.00");
+    expect(frame).toContain("P&L: +$275.00");
+    expect(frame).toContain("Mark: €125.00");
+    expect(frame).toContain("Mkt Value: $1,375.00");
   });
 
   test("falls back to Overview when a hidden active tab becomes unavailable", async () => {

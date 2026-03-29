@@ -33,6 +33,9 @@ interface ColumnContext {
   now: number;
 }
 
+function getPositionCurrency(positions: TickerRecord["metadata"]["positions"], fallbackCurrency: string): string {
+  return positions.find((position) => position.currency)?.currency || fallbackCurrency;
+}
 type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 
 interface PortfolioPaneSettings {
@@ -63,7 +66,15 @@ const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
 ];
 
 const PORTFOLIO_COLUMNS_BY_ID = new Map(PORTFOLIO_COLUMN_DEFS.map((column) => [column.id, column]));
-const DEFAULT_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
+const DEFAULT_PORTFOLIO_COLUMN_IDS = [
+  ...DEFAULT_COLUMNS.map((column) => column.id),
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+];
 const PORTFOLIO_ONLY_COLUMN_IDS = new Set([
   "shares",
   "avg_cost",
@@ -95,7 +106,6 @@ const COLLECTION_SCOPE_OPTIONS: PaneSettingOption[] = [
     description: "Choose exactly which collections this pane should show.",
   },
 ];
-
 function getColumnValue(
   col: ColumnConfig,
   ticker: TickerRecord,
@@ -106,13 +116,15 @@ function getColumnValue(
   const f = financials?.fundamentals;
   const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
 
-  const toBase = (v: number) =>
-    convertCurrency(v, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
-
   // Helper to get positions relevant to the active portfolio tab
   const tabPositions = ctx.activeTab
     ? ticker.metadata.positions.filter((p) => p.portfolio === ctx.activeTab)
     : ticker.metadata.positions;
+  const positionCurrency = getPositionCurrency(tabPositions, quoteCurrency);
+  const toBaseQuote = (value: number) =>
+    convertCurrency(value, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
+  const toBasePosition = (value: number) =>
+    convertCurrency(value, positionCurrency, ctx.baseCurrency, ctx.exchangeRates);
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
     (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
@@ -142,22 +154,20 @@ function getColumnValue(
     }
     case "price": {
       if (q) {
-        const converted = toBase(q.price);
         return {
-          text: formatCurrency(converted, ctx.baseCurrency),
+          text: formatCurrency(q.price, quoteCurrency),
           color: priceColor(q.change),
         };
       }
       if (isOption && brokerMarkPrice != null) {
-        return { text: formatCurrency(toBase(brokerMarkPrice), ctx.baseCurrency) };
+        return { text: formatCurrency(brokerMarkPrice, positionCurrency) };
       }
       return { text: "—" };
     }
     case "change": {
       if (!q) return { text: "—" };
-      const converted = toBase(q.change);
       return {
-        text: (converted >= 0 ? "+" : "") + converted.toFixed(2),
+        text: (q.change >= 0 ? "+" : "") + q.change.toFixed(2),
         color: priceColor(q.change),
       };
     }
@@ -178,7 +188,7 @@ function getColumnValue(
     }
     case "market_cap": {
       if (!q?.marketCap) return { text: "—" };
-      return { text: formatCompact(toBase(q.marketCap)) };
+      return { text: formatCompact(toBaseQuote(q.marketCap)) };
     }
     case "pe":
       return { text: f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—" };
@@ -204,42 +214,45 @@ function getColumnValue(
     case "avg_cost": {
       if (totalShares === 0) return { text: "—" };
       const avgCost = totalCost / Math.abs(totalShares);
-      return { text: formatCurrency(toBase(avgCost), ctx.baseCurrency) };
+      return { text: formatCurrency(avgCost, positionCurrency) };
     }
     case "cost_basis": {
       if (totalCost === 0) return { text: "—" };
-      return { text: formatCompact(toBase(totalCost)) };
+      return { text: formatCompact(toBasePosition(totalCost)) };
     }
     case "mkt_value": {
       if (q && totalShares !== 0) {
         const mv = Math.abs(totalShares) * q.price;
-        return { text: formatCompact(toBase(mv)) };
+        return { text: formatCompact(toBaseQuote(mv)) };
       }
       if (isOption && brokerMktValue !== 0) {
-        return { text: formatCompact(toBase(brokerMktValue)) };
+        return { text: formatCompact(toBasePosition(brokerMktValue)) };
       }
       return { text: "—" };
     }
     case "pnl": {
       if (q && totalShares !== 0) {
         const mv = Math.abs(totalShares) * q.price;
-        const pnl = toBase(mv - totalCost);
+        const pnl = toBaseQuote(mv) - toBasePosition(totalCost);
         return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
       }
       if (isOption && brokerPnl !== 0) {
-        const pnl = toBase(brokerPnl);
+        const pnl = toBasePosition(brokerPnl);
         return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
       }
       return { text: "—" };
     }
     case "pnl_pct": {
       if (q && totalCost !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
-        const pct = ((mv - totalCost) / totalCost) * 100;
+        const mv = toBaseQuote(Math.abs(totalShares) * q.price);
+        const costBasis = toBasePosition(totalCost);
+        const pct = costBasis !== 0 ? ((mv - costBasis) / costBasis) * 100 : 0;
         return { text: formatPercentRaw(pct), color: priceColor(pct) };
       }
       if (isOption && brokerPnl !== 0 && totalCost !== 0) {
-        const pct = (brokerPnl / totalCost) * 100;
+        const costBasis = toBasePosition(totalCost);
+        const pnl = toBasePosition(brokerPnl);
+        const pct = costBasis !== 0 ? (pnl / costBasis) * 100 : 0;
         return { text: formatPercentRaw(pct), color: priceColor(pct) };
       }
       return { text: "—" };
@@ -262,12 +275,15 @@ function getSortValue(
   const q = financials?.quote;
   const f = financials?.fundamentals;
   const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
-  const toBase = (v: number) =>
-    convertCurrency(v, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
 
   const tabPositions = ctx.activeTab
     ? ticker.metadata.positions.filter((p) => p.portfolio === ctx.activeTab)
     : ticker.metadata.positions;
+  const positionCurrency = getPositionCurrency(tabPositions, quoteCurrency);
+  const toBaseQuote = (value: number) =>
+    convertCurrency(value, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
+  const toBasePosition = (value: number) =>
+    convertCurrency(value, positionCurrency, ctx.baseCurrency, ctx.exchangeRates);
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
     (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
@@ -283,18 +299,18 @@ function getSortValue(
     case "ticker":
       return ticker.metadata.ticker;
     case "price":
-      if (q) return toBase(q.price);
-      if (isOption && brokerMarkPrice != null) return toBase(brokerMarkPrice);
+      if (q) return q.price;
+      if (isOption && brokerMarkPrice != null) return brokerMarkPrice;
       return null;
     case "change":
-      return q ? toBase(q.change) : null;
+      return q ? q.change : null;
     case "change_pct": {
       if (q?.marketState === "PRE" && q.preMarketPrice != null) return q.preMarketChangePercent ?? 0;
       if (q?.marketState === "POST" && q.postMarketPrice != null) return q.postMarketChangePercent ?? 0;
       return q?.changePercent ?? null;
     }
     case "market_cap":
-      return q?.marketCap ? toBase(q.marketCap) : null;
+      return q?.marketCap ? toBaseQuote(q.marketCap) : null;
     case "pe":
       return f?.trailingPE ?? null;
     case "forward_pe":
@@ -309,28 +325,33 @@ function getSortValue(
     case "shares":
       return totalShares !== 0 ? totalShares : null;
     case "avg_cost":
-      return totalShares !== 0 ? toBase(totalCost / Math.abs(totalShares)) : null;
+      return totalShares !== 0 ? totalCost / Math.abs(totalShares) : null;
     case "cost_basis":
-      return totalCost !== 0 ? toBase(totalCost) : null;
+      return totalCost !== 0 ? toBasePosition(totalCost) : null;
     case "mkt_value": {
-      if (q && totalShares !== 0) return toBase(Math.abs(totalShares) * q.price);
-      if (isOption && brokerMktValue !== 0) return toBase(brokerMktValue);
+      if (q && totalShares !== 0) return toBaseQuote(Math.abs(totalShares) * q.price);
+      if (isOption && brokerMktValue !== 0) return toBasePosition(brokerMktValue);
       return null;
     }
     case "pnl": {
       if (q && totalShares !== 0) {
         const mv = Math.abs(totalShares) * q.price;
-        return toBase(mv - totalCost);
+        return toBaseQuote(mv) - toBasePosition(totalCost);
       }
-      if (isOption && brokerPnl !== 0) return toBase(brokerPnl);
+      if (isOption && brokerPnl !== 0) return toBasePosition(brokerPnl);
       return null;
     }
     case "pnl_pct": {
       if (q && totalCost !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
-        return ((mv - totalCost) / totalCost) * 100;
+        const mv = toBaseQuote(Math.abs(totalShares) * q.price);
+        const costBasis = toBasePosition(totalCost);
+        return costBasis !== 0 ? ((mv - costBasis) / costBasis) * 100 : null;
       }
-      if (isOption && brokerPnl !== 0 && totalCost !== 0) return (brokerPnl / totalCost) * 100;
+      if (isOption && brokerPnl !== 0 && totalCost !== 0) {
+        const costBasis = toBasePosition(totalCost);
+        const pnl = toBasePosition(brokerPnl);
+        return costBasis !== 0 ? (pnl / costBasis) * 100 : null;
+      }
       return null;
     }
     case "latency":
@@ -683,7 +704,6 @@ function calculatePortfolioSummaryTotals(
     const fin = state.financials.get(ticker.metadata.ticker);
     const q = fin?.quote;
     const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
-    const toBase = (value: number) => convertCurrency(value, quoteCurrency, baseCurrency, exchangeRates);
 
     if (!isPortfolio) {
       if (q?.changePercent != null) {
@@ -696,6 +716,9 @@ function calculatePortfolioSummaryTotals(
     const tabPositions = collectionId
       ? ticker.metadata.positions.filter((position) => position.portfolio === collectionId)
       : ticker.metadata.positions;
+    const positionCurrency = getPositionCurrency(tabPositions, quoteCurrency);
+    const toBaseQuote = (value: number) => convertCurrency(value, quoteCurrency, baseCurrency, exchangeRates);
+    const toBasePosition = (value: number) => convertCurrency(value, positionCurrency, baseCurrency, exchangeRates);
     const totalShares = tabPositions.reduce((sum, position) => sum + position.shares * (position.side === "short" ? -1 : 1), 0);
     const totalCost = tabPositions.reduce(
       (sum, position) => sum + position.shares * position.avgCost * (position.multiplier || 1),
@@ -708,15 +731,15 @@ function calculatePortfolioSummaryTotals(
     if (q && totalShares !== 0) {
       hasPositions = true;
       const marketValue = Math.abs(totalShares) * q.price;
-      totalMktValue += toBase(marketValue);
+      totalMktValue += toBaseQuote(marketValue);
       const prevClose = q.previousClose || (q.price - q.change);
-      totalPrevValue += toBase(Math.abs(totalShares) * prevClose);
-      totalCostBasis += toBase(totalCost);
+      totalPrevValue += toBaseQuote(Math.abs(totalShares) * prevClose);
+      totalCostBasis += toBasePosition(totalCost);
     } else if (isOption && brokerMktValue !== 0) {
       hasPositions = true;
-      totalMktValue += toBase(brokerMktValue);
-      totalCostBasis += toBase(totalCost);
-      totalPrevValue += toBase(brokerMktValue);
+      totalMktValue += toBasePosition(brokerMktValue);
+      totalCostBasis += toBasePosition(totalCost);
+      totalPrevValue += toBasePosition(brokerMktValue);
     }
   }
 
