@@ -196,6 +196,90 @@ describe("ProviderRouter", () => {
     expect(results[0]?.brokerContract?.brokerInstanceId).toBe("ibkr-work");
   });
 
+  test("keeps the richer search result when providers return the same instrument", async () => {
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      async searchInstruments() {
+        return [{
+          providerId: "ibkr",
+          symbol: "AAPL",
+          name: "Apple Inc",
+          exchange: "NASDAQ",
+          type: "STK",
+          brokerLabel: "Work",
+          brokerContract: {
+            brokerId: "ibkr",
+            brokerInstanceId: "ibkr-work",
+            symbol: "AAPL",
+            localSymbol: "AAPL",
+            exchange: "SMART",
+          },
+        }];
+      },
+    };
+    const provider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async search() {
+        return [{
+          providerId: "yahoo",
+          symbol: "AAPL",
+          name: "Apple",
+          exchange: "NASDAQ",
+          type: "STK",
+        }];
+      },
+    };
+    const router = new ProviderRouter(fallbackProvider, [provider]);
+
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    }));
+
+    const results = await router.search("AAPL", { preferBroker: true, brokerInstanceId: "ibkr-work" });
+    expect(results).toHaveLength(1);
+    expect(results[0]?.providerId).toBe("ibkr");
+    expect(results[0]?.brokerContract?.localSymbol).toBe("AAPL");
+  });
+
   test("merges cached broker financials with cached fallback fundamentals", async () => {
     const dbPath = createTempDbPath("cache-merge");
     const persistence = new AppPersistence(dbPath);

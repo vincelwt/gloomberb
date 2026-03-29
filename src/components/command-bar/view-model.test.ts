@@ -4,6 +4,7 @@ import {
   getEmptyState,
   getFooterHints,
   getRowPresentation,
+  rankTickerSearchItems,
   resolveCommandBarMode,
 } from "./view-model";
 
@@ -76,5 +77,47 @@ describe("command bar view model helpers", () => {
       glyph: " ",
       trailing: "current",
     });
+  });
+
+  test("ranks ticker search matches by symbol relevance and hides duplicate open symbols", () => {
+    const items = rankTickerSearchItems([
+      {
+        id: "search:IVSX",
+        label: "IVSX",
+        detail: "Invsivx Holdings | ETF",
+        category: "Search Results",
+        kind: "search",
+        right: "NYSE",
+      },
+      {
+        id: "goto:AAPL",
+        label: "AAPL",
+        detail: "Apple Inc.",
+        category: "Open",
+        kind: "ticker",
+        right: "NASDAQ",
+      },
+      {
+        id: "search:APP",
+        label: "APP",
+        detail: "AppLovin Corp | EQUITY",
+        category: "Search Results",
+        kind: "search",
+        right: "NASDAQ",
+      },
+      {
+        id: "search:AAPL",
+        label: "AAPL",
+        detail: "Apple Inc | EQUITY",
+        category: "Search Results",
+        kind: "search",
+        right: "NASDAQ",
+      },
+    ], "appl");
+
+    expect(items.map((item) => item.id)).toEqual([
+      "goto:AAPL",
+      "search:APP",
+    ]);
   });
 });
