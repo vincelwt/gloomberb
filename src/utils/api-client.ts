@@ -86,6 +86,13 @@ function marketKey(symbol: string, exchange?: string): string {
 type ChannelListener = (message: ChatMessage) => void;
 type QuoteListener = (target: QuoteStreamTarget, quote: CloudQuotePayload) => void;
 
+class ApiRequestError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 class GloomApiClient {
   private sessionToken: string | null = null;
   private websocketToken: string | null = null;
@@ -181,7 +188,7 @@ class GloomApiClient {
       } catch {
         msg = body;
       }
-      throw new Error(msg);
+      throw new ApiRequestError(msg, res.status);
     }
 
     const text = await res.text();
@@ -382,7 +389,10 @@ class GloomApiClient {
       const user = result?.user ?? null;
       this.setCurrentUser(user);
       return user;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ApiRequestError) || (error.status !== 401 && error.status !== 403)) {
+        throw error;
+      }
       this.setCurrentUser(null);
       return null;
     }

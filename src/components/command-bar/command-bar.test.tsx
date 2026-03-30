@@ -77,6 +77,13 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         defaultPosition: "right",
         defaultMode: "floating",
       }],
+      ["ibkr-trading", {
+        id: "ibkr-trading",
+        name: "IBKR Console",
+        component: () => null,
+        defaultPosition: "right",
+        defaultMode: "floating",
+      }],
     ]),
     paneTemplates: new Map([
       ["new-portfolio-pane", {
@@ -112,6 +119,18 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         description: "Open a compact quote monitor for the selected ticker",
         shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
       }],
+      ["new-ibkr-trading-pane", {
+        id: "new-ibkr-trading-pane",
+        paneId: "ibkr-trading",
+        label: "New IBKR Trading Pane",
+        description: "Open another floating IBKR trading console",
+        shortcut: { prefix: "IBKR" },
+        canCreate: (context) => context.config.brokerInstances.some((instance) => (
+          instance.brokerType === "ibkr"
+          && instance.connectionMode === "gateway"
+          && instance.enabled !== false
+        )),
+      }],
     ]),
     commands: new Map([
       ["plugin:scan", {
@@ -142,6 +161,7 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     getPluginPaneTemplateIds: () => [],
     hasPaneSettings,
     hideWidget: () => {},
+    showWidget: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
     createPaneFromTemplateFn: () => {},
@@ -407,6 +427,45 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
+  });
+
+  test("matches the IBKR trading shortcut when a gateway profile exists", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="IBKR"
+      configureConfig={(config) => ({
+        ...config,
+        brokerInstances: [{
+          id: "ibkr-paper",
+          brokerType: "ibkr",
+          label: "Paper",
+          connectionMode: "gateway",
+          config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
+          enabled: true,
+        }],
+      })}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("New IBKR Trading Pane");
+    expect(frame).toContain("IBKR");
+  });
+
+  test("matches the direct help command", async () => {
+    testSetup = await testRender(<CommandBarHarness query="help" />, {
+      width: 80,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Help");
+    expect(frame).toContain("Navigation");
   });
 
   test("skips pane templates whose canCreate throws", async () => {

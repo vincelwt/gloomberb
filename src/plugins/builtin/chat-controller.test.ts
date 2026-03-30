@@ -7,6 +7,7 @@ import { ChatController } from "./chat-controller";
 const TRANSCRIPT_KIND = "channel-transcript";
 const TRANSCRIPT_KEY = "everyone";
 const TRANSCRIPT_SOURCE = "server";
+const originalGetSession = apiClient.getSession.bind(apiClient);
 
 class MemoryPersistence implements PluginPersistence {
   private readonly state = new Map<string, { schemaVersion: number; value: unknown }>();
@@ -76,6 +77,7 @@ class MemoryPersistence implements PluginPersistence {
 
 afterEach(() => {
   apiClient.setSessionToken(null);
+  apiClient.getSession = originalGetSession;
 });
 
 describe("ChatController", () => {
@@ -161,5 +163,32 @@ describe("ChatController", () => {
     expect((controller as any).verificationPollTimer).not.toBeNull();
 
     controller.reset(true);
+  });
+
+  test("keeps the cached session when session refresh fails transiently", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+
+    controller.attachPersistence(persistence);
+    apiClient.getSession = async () => {
+      throw new Error("network down");
+    };
+
+    await expect(controller.refreshSession()).rejects.toThrow("network down");
+    expect(apiClient.getSessionToken()).toBe("token-123");
+    expect(persistence.getState("session", { schemaVersion: 1 })).toEqual({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    expect(controller.getSnapshot().user).toEqual({
+      id: "u1",
+      username: "vince",
+      emailVerified: true,
+    });
   });
 });

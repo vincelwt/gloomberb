@@ -11,6 +11,7 @@ import {
   buildChartScene,
   formatDateShort,
   formatAxisValue,
+  getActivePointIndex,
   getPointTerminalColumn,
   renderChart,
   resolveChartPalette,
@@ -239,6 +240,34 @@ function buildDisplayCursorState(
     pixelX: derivedPixels?.pixelX ?? null,
     pixelY: derivedPixels?.pixelY ?? null,
   };
+}
+
+export function resolveSelectionDisplayCursorState(
+  cursorX: number | null,
+  cursorY: number | null,
+  fallbackCursorX: number | null,
+  fallbackCursorY: number | null,
+  renderable: BoxRenderable | null,
+  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
+): DisplayCursorState {
+  const resolvedCursorX = cursorY === null ? (fallbackCursorX ?? cursorX) : cursorX;
+  const resolvedCursorY = cursorY ?? fallbackCursorY;
+  if (resolvedCursorX === null) return EMPTY_DISPLAY_CURSOR;
+  return buildDisplayCursorState(resolvedCursorX, resolvedCursorY, renderable, renderer);
+}
+
+export function resolveAdjacentSelectionCursorX(
+  cursorX: number | null,
+  step: -1 | 1,
+  pointCount: number,
+  width: number,
+  mode: ChartRenderMode,
+): number | null {
+  if (pointCount <= 0 || width <= 0) return null;
+  const anchorX = cursorX ?? (step < 0 ? width - 1 : 0);
+  const currentIndex = getActivePointIndex(pointCount, width, anchorX, mode);
+  const nextIndex = clamp(currentIndex + step, 0, pointCount - 1);
+  return getPointTerminalColumn(nextIndex, pointCount, width, mode);
 }
 
 export function getLocalPlotPointer(
@@ -762,6 +791,35 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     setViewState((current) => ({ ...current, renderMode: mode }));
   };
 
+  const headerRows = compact ? 0 : 3;
+  const helpRow = compact ? 0 : 1;
+  const timeAxisRow = 1;
+  const volumeHeight = showVolume && !compact ? 3 : 0;
+  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
+  const isDetailView = viewState.zoomLevel > 1 && detailHistory != null && detailHistory.length > 0;
+  const historyRenderKey = history.length === 0
+    ? "empty"
+    : [
+      history.length,
+      new Date(history[0]!.date).getTime(),
+      new Date(history[history.length - 1]!.date).getTime(),
+      history[history.length - 1]!.close,
+    ].join(":");
+
+  useEffect(() => {
+    queueMicrotask(() => renderer.requestRender());
+  }, [chartHeight, chartWidth, compact, historyRenderKey, renderer, ticker?.metadata.ticker, viewState.renderMode]);
+
+  const chartWindow = useMemo(() => (
+    isDetailView
+      ? { points: history, startIdx: 0, endIdx: history.length }
+      : getVisibleWindow(history, viewState, chartWidth)
+  ), [chartWidth, history, isDetailView, viewState.panOffset, viewState.timeRange, viewState.zoomLevel]);
+
+  const projection = useMemo(() => (
+    projectChartData(chartWindow.points, chartWidth, viewState.renderMode, !!compact)
+  ), [chartWindow.points, chartWidth, compact, viewState.renderMode]);
+
   useKeyboard((event) => {
     if (!focused || compact) return;
 
@@ -811,11 +869,32 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         } else {
           cursorMotionKindRef.current = "discrete";
           setViewState((current) => {
-            const nextCursor = current.cursorX === null ? maxCursorX : current.cursorX - 1;
-            if (nextCursor < 0) {
-              return { ...current, cursorX: 0, panOffset: current.panOffset + 1 };
+            const pointCount = projection.points.length;
+            const currentIndex = pointCount <= 0
+              ? -1
+              : getActivePointIndex(
+                pointCount,
+                chartWidth,
+                current.cursorX ?? maxCursorX,
+                projection.effectiveMode,
+              );
+            const nextCursor = resolveAdjacentSelectionCursorX(
+              current.cursorX,
+              -1,
+              pointCount,
+              chartWidth,
+              projection.effectiveMode,
+            );
+            const maxPan = getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth);
+            if (currentIndex <= 0) {
+              return {
+                ...current,
+                cursorX: nextCursor,
+                cursorY: null,
+                panOffset: clamp(current.panOffset + 1, 0, maxPan),
+              };
             }
-            return { ...current, cursorX: nextCursor };
+            return { ...current, cursorX: nextCursor, cursorY: null };
           });
         }
         return;
@@ -825,45 +904,36 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         } else {
           cursorMotionKindRef.current = "discrete";
           setViewState((current) => {
-            const nextCursor = current.cursorX === null ? 0 : current.cursorX + 1;
-            if (nextCursor > maxCursorX) {
-              return { ...current, cursorX: maxCursorX, panOffset: Math.max(current.panOffset - 1, 0) };
+            const pointCount = projection.points.length;
+            const currentIndex = pointCount <= 0
+              ? -1
+              : getActivePointIndex(
+                pointCount,
+                chartWidth,
+                current.cursorX ?? 0,
+                projection.effectiveMode,
+              );
+            const nextCursor = resolveAdjacentSelectionCursorX(
+              current.cursorX,
+              1,
+              pointCount,
+              chartWidth,
+              projection.effectiveMode,
+            );
+            if (currentIndex >= pointCount - 1) {
+              return {
+                ...current,
+                cursorX: nextCursor,
+                cursorY: null,
+                panOffset: Math.max(current.panOffset - 1, 0),
+              };
             }
-            return { ...current, cursorX: nextCursor };
+            return { ...current, cursorX: nextCursor, cursorY: null };
           });
         }
         return;
     }
   });
-
-  const headerRows = compact ? 0 : 3;
-  const helpRow = compact ? 0 : 1;
-  const timeAxisRow = 1;
-  const volumeHeight = showVolume && !compact ? 3 : 0;
-  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
-  const isDetailView = viewState.zoomLevel > 1 && detailHistory != null && detailHistory.length > 0;
-  const historyRenderKey = history.length === 0
-    ? "empty"
-    : [
-      history.length,
-      new Date(history[0]!.date).getTime(),
-      new Date(history[history.length - 1]!.date).getTime(),
-      history[history.length - 1]!.close,
-    ].join(":");
-
-  useEffect(() => {
-    queueMicrotask(() => renderer.requestRender());
-  }, [chartHeight, chartWidth, compact, historyRenderKey, renderer, ticker?.metadata.ticker, viewState.renderMode]);
-
-  const chartWindow = useMemo(() => (
-    isDetailView
-      ? { points: history, startIdx: 0, endIdx: history.length }
-      : getVisibleWindow(history, viewState, chartWidth)
-  ), [chartWidth, history, isDetailView, viewState.panOffset, viewState.timeRange, viewState.zoomLevel]);
-
-  const projection = useMemo(() => (
-    projectChartData(chartWindow.points, chartWidth, viewState.renderMode, !!compact)
-  ), [chartWindow.points, chartWidth, compact, viewState.renderMode]);
 
   const chartColors = useMemo(() => {
     const rawChange = chartWindow.points.length >= 2
@@ -880,6 +950,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
       negative: colors.negative,
     }, trend);
   }, [chartWindow.points]);
+  const chartCurrency = financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;
@@ -895,6 +966,21 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         : { ...current, cursorX: next.cursorX, cursorY: next.cursorY }
     ));
   };
+
+  const selectionScene = useMemo(() => buildChartScene(projection.points, {
+    width: chartWidth,
+    height: chartHeight,
+    showVolume: showVolume && !compact,
+    volumeHeight,
+    cursorX: selectionCursorX,
+    cursorY: selectionCursorY,
+    mode: projection.effectiveMode,
+    axisMode,
+    colors: chartColors,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, volumeHeight]);
+  const snappedSelectionCursorX = selectionScene
+    ? getPointTerminalColumn(selectionScene.activeIdx, projection.points.length, chartWidth, projection.effectiveMode)
+    : null;
 
   useEffect(() => {
     const remapCursor = (cursor: DisplayCursorState) => buildDisplayCursorState(
@@ -913,22 +999,17 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   useEffect(() => {
     if (cursorMotionKindRef.current === "pixel") return;
     updateDisplayCursorTarget(
-      buildDisplayCursorState(selectionCursorX, selectionCursorY, plotRef.current, renderer),
+      resolveSelectionDisplayCursorState(
+        selectionCursorX,
+        selectionCursorY,
+        cursorMotionKindRef.current === "discrete" ? snappedSelectionCursorX : null,
+        selectionScene?.cursorY ?? null,
+        plotRef.current,
+        renderer,
+      ),
       cursorMotionKindRef.current,
     );
-  }, [renderer, selectionCursorX, selectionCursorY]);
-
-  const selectionScene = useMemo(() => buildChartScene(projection.points, {
-    width: chartWidth,
-    height: chartHeight,
-    showVolume: showVolume && !compact,
-    volumeHeight,
-    cursorX: selectionCursorX,
-    cursorY: selectionCursorY,
-    mode: projection.effectiveMode,
-    axisMode,
-    colors: chartColors,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, volumeHeight]);
+  }, [renderer, selectionCursorX, selectionCursorY, selectionScene?.cursorY, snappedSelectionCursorX]);
 
   const nativeBaseScene = useMemo(() => buildChartScene(projection.points, {
     width: chartWidth,
@@ -954,8 +1035,9 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     cursorY: null,
     mode: projection.effectiveMode,
     axisMode,
+    currency: chartCurrency,
     colors: chartColors,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty"
@@ -969,9 +1051,10 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         cursorY: displayCursorY,
         mode: projection.effectiveMode,
         axisMode,
+        currency: chartCurrency,
         colors: chartColors,
       })
-  ), [axisMode, chartColors, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  ), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
 
@@ -1235,7 +1318,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   const activePoint = showOhlcSummary ? (selectionScene?.activePoint ?? null) : null;
   const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
   const cursorAxisLabel = hasDisplayCursor && cursorRow !== null && crosshairPrice !== null
-    ? formatAxisValue(crosshairPrice, axisMode, projection.points[0]?.close ?? 0)
+    ? formatAxisValue(crosshairPrice, axisMode, projection.points[0]?.close ?? 0, chartCurrency)
     : null;
 
   const handlePlotMove = (event: ChartMouseEvent) => {
@@ -1441,7 +1524,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
           {ticker?.metadata.ticker ?? ""} - {viewState.timeRange}
         </text>
         <text fg={priceColor(displayChange)}>
-          {formatCurrency(displayPrice)}
+          {formatCurrency(displayPrice, chartCurrency)}
         </text>
         <text fg={priceColor(displayChange)}>
           {displayChange >= 0 ? "+" : ""}{displayChange.toFixed(2)} ({displayChangePct >= 0 ? "+" : ""}{displayChangePct.toFixed(2)}%)
@@ -1449,10 +1532,10 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         {displayDate && <text fg={colors.textDim}>{displayDate}</text>}
         {showOhlcSummary && activePoint && (
           <>
-            <text fg={colors.textDim}>O {formatCurrency(activePoint.open)}</text>
-            <text fg={colors.textDim}>H {formatCurrency(activePoint.high)}</text>
-            <text fg={colors.textDim}>L {formatCurrency(activePoint.low)}</text>
-            <text fg={colors.textDim}>C {formatCurrency(activePoint.close)}</text>
+            <text fg={colors.textDim}>O {formatCurrency(activePoint.open, chartCurrency)}</text>
+            <text fg={colors.textDim}>H {formatCurrency(activePoint.high, chartCurrency)}</text>
+            <text fg={colors.textDim}>L {formatCurrency(activePoint.low, chartCurrency)}</text>
+            <text fg={colors.textDim}>C {formatCurrency(activePoint.close, chartCurrency)}</text>
             <text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</text>
           </>
         )}

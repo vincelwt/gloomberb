@@ -57,6 +57,7 @@ import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { gloomberbCloudPlugin } from "./plugins/builtin/chat";
 import { chatController } from "./plugins/builtin/chat-controller";
+import { helpPlugin } from "./plugins/builtin/help";
 import {
   buildComparisonChartPaneTitle,
   COMPARISON_CHART_PANE_ID,
@@ -1550,6 +1551,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
     pluginRegistry.register(optionsPlugin);
     pluginRegistry.register(notesPlugin);
     pluginRegistry.register(askAiPlugin);
+    pluginRegistry.register(helpPlugin);
     pluginRegistry.register(comparisonChartPlugin);
     pluginRegistry.register(debugPlugin);
 
