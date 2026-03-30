@@ -872,6 +872,7 @@ function ShortcutsStep() {
     { key: "Ctrl+P / `  ", desc: "Open the command bar" },
     { key: "help        ", desc: "Open the help window" },
     { key: "Tab         ", desc: "Switch between panels" },
+    { key: "Ctrl+W      ", desc: "Close the focused pane" },
     { key: "T AAPL      ", desc: "Search and add any ticker" },
     { key: "TH          ", desc: "Switch theme" },
     { key: "PL          ", desc: "Toggle plugins" },

@@ -63,6 +63,7 @@ describe("HelpPane", () => {
     expect(frame).toContain("QQ");
     expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("Layout System");
+    expect(frame).toContain("Ctrl+W");
     expect(frame).toContain("Open Debug Log");
   });
 
