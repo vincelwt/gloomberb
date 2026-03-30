@@ -7,6 +7,8 @@ import { execSync } from "child_process";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { useAppState, usePaneTicker } from "../../state/app-context";
 import { usePluginState } from "../../plugins/plugin-runtime";
+import { useInlineTickers } from "../../state/use-inline-tickers";
+import { TickerBadgeText } from "../../components/ticker-badge-text";
 import { colors } from "../../theme/colors";
 import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent } from "../../utils/format";
 import type { TickerRecord } from "../../types/ticker";
@@ -63,6 +65,14 @@ function detectProviders(): AiProvider[] {
 
 export function __setDetectedProvidersForTests(providers: AiProvider[] | null): void {
   _detectedProviders = providers;
+}
+
+export function __setAskAiHistoryForTests(symbol: string, messages: ChatMessage[]): void {
+  chatHistories.set(symbol, messages);
+}
+
+export function __resetAskAiHistoryForTests(): void {
+  chatHistories.clear();
 }
 
 function truncateWithEllipsis(text: string, width: number): string {
@@ -351,6 +361,8 @@ export function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) 
     };
   }, []);
 
+  const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
+
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to ask AI.</text>;
 
   if (availableProviders.length === 0) {
@@ -416,7 +428,13 @@ export function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) 
                 </box>
                 <box>
                   {msg.content ? (
-                    <text fg={colors.text}>{msg.content}</text>
+                    <TickerBadgeText
+                      text={msg.content}
+                      lineWidth={contentWidth}
+                      catalog={catalog}
+                      textColor={colors.text}
+                      openTicker={openTicker}
+                    />
                   ) : msg.loading ? (
                     <Spinner label="Generating..." />
                   ) : (

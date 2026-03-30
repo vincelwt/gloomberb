@@ -3,6 +3,8 @@ import { useKeyboard } from "@opentui/react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
+import { useInlineTickers } from "../../state/use-inline-tickers";
+import { TickerBadgeText } from "../../components/ticker-badge-text";
 import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
@@ -10,40 +12,10 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 
-function renderMessageContent(
-  text: string,
-  selectTicker: (symbol: string) => void,
-  lineWidth: number,
-) {
-  const parts = text.split(/(\$[A-Z]{1,5})/g);
-  return (
-    <box flexDirection="row" flexWrap="wrap" width={lineWidth}>
-      {parts.map((part, i) => {
-        if (/^\$[A-Z]{1,5}$/.test(part)) {
-          const symbol = part.slice(1);
-          return (
-            <text
-              key={i}
-              fg={colors.positive}
-              attributes={TextAttributes.BOLD | TextAttributes.INVERSE}
-              onMouseDown={() => selectTicker(symbol)}
-            >
-              {` ${part} `}
-            </text>
-          );
-        }
-        if (!part) return null;
-        return <text key={i} fg={colors.text}>{part}</text>;
-      })}
-    </box>
-  );
-}
-
 interface ChatContentProps {
   width: number;
   height: number;
   focused: boolean;
-  selectTicker: (symbol: string) => void;
   close?: () => void;
   controller?: Pick<
     ChatController,
@@ -60,7 +32,7 @@ function estimateWrappedLineCount(text: string, width: number) {
 
 function estimateMessageHeight(message: ChatMessage, width: number) {
   const contentLineWidth = Math.max(width - 4, 1);
-  const normalizedContent = message.content.replace(/\$[A-Z]{1,5}/g, (match) => ` ${match} `);
+  const normalizedContent = message.content.replace(/\$[A-Z][A-Z0-9.-]{0,9}/g, (match) => ` ${match.slice(1)} +0% `);
   return 1 + (message.replyTo ? 1 : 0) + estimateWrappedLineCount(normalizedContent, contentLineWidth);
 }
 
@@ -81,7 +53,6 @@ export function ChatContent({
   width,
   height,
   focused,
-  selectTicker,
   close,
   controller = chatController,
 }: ChatContentProps) {
@@ -116,6 +87,8 @@ export function ChatContent({
     void controller.refreshSession().catch(() => {});
     return unsubscribe;
   }, [controller]);
+
+  const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
 
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
@@ -250,6 +223,12 @@ export function ChatContent({
     }
   }, [contentWidth, followMessages, messages, selectedIdx]);
 
+  const replyBarHeight = replyTo ? 1 : 0;
+  const inputAreaHeight = 1 + replyBarHeight;
+  const headerHeight = 1;
+  const separatorHeight = 1;
+  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
+
   if (loading) {
     return (
       <box flexGrow={1} alignItems="center" justifyContent="center">
@@ -279,12 +258,6 @@ export function ChatContent({
       </box>
     );
   }
-
-  const replyBarHeight = replyTo ? 1 : 0;
-  const inputAreaHeight = 1 + replyBarHeight;
-  const headerHeight = 1;
-  const separatorHeight = 1;
-  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
 
   return (
     <box flexDirection="column" width={width} height={height}>
@@ -346,7 +319,13 @@ export function ChatContent({
                 <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
               </box>
               <box paddingLeft={3}>
-                {renderMessageContent(msg.content, selectTicker, contentWidth - 4)}
+                <TickerBadgeText
+                  text={msg.content}
+                  lineWidth={contentWidth - 4}
+                  catalog={catalog}
+                  textColor={colors.text}
+                  openTicker={openTicker}
+                />
               </box>
             </box>
           );
@@ -390,22 +369,12 @@ export function ChatContent({
   );
 }
 
-function ChatPane({ focused, width, height, close }: PaneProps) {
-  const registry = getSharedRegistry();
-  const selectTicker = useCallback((symbol: string) => {
-    registry?.selectTickerFn(symbol);
-    if (close) {
-      registry?.switchTabFn("overview");
-      close();
-    }
-  }, [registry, close]);
-
+export function ChatPane({ focused, width, height, close }: PaneProps) {
   return (
     <ChatContent
       width={width}
       height={height}
       focused={focused}
-      selectTicker={selectTicker}
       close={close}
     />
   );

@@ -4,7 +4,8 @@ import { testRender } from "@opentui/react/test-utils";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
-import { AskAiTab, __setDetectedProvidersForTests, type AiProvider } from "./ask-ai";
+import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
+import { AskAiTab, __resetAskAiHistoryForTests, __setAskAiHistoryForTests, __setDetectedProvidersForTests, type AiProvider } from "./ask-ai";
 import type { TickerRecord } from "../../types/ticker";
 
 const PANE_ID = "ticker-detail:main";
@@ -77,7 +78,19 @@ function createAskAiHarness(
   const state = createInitialState(config);
   state.focusedPaneId = PANE_ID;
   state.tickers = new Map([["AAPL", makeTicker("AAPL", "Apple Inc.")]]);
-  state.financials = new Map();
+  state.financials = new Map([["AAPL", {
+    annualStatements: [],
+    quarterlyStatements: [],
+    priceHistory: [],
+    quote: {
+      symbol: "AAPL",
+      price: 210,
+      currency: "USD",
+      change: 6.3,
+      changePercent: 3,
+      lastUpdated: Date.now(),
+    },
+  }]]);
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
@@ -103,6 +116,9 @@ function setProviders(providers: AiProvider[]) {
 
 afterEach(() => {
   __setDetectedProvidersForTests(null);
+  __resetAskAiHistoryForTests();
+  setSharedRegistryForTests(undefined);
+  setSharedDataProviderForTests(undefined);
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
@@ -178,5 +194,46 @@ describe("AskAiTab", () => {
 
     const frameAfterType = testSetup.captureCharFrame();
     expect(frameAfterType).toContain("> DCF");
+  });
+
+  test("renders assistant ticker badges and opens a floating detail pane on click", async () => {
+    setProviders([
+      { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
+    ]);
+
+    const opened: string[] = [];
+    setSharedRegistryForTests({
+      pinTickerFn(symbol: string) {
+        opened.push(symbol);
+      },
+    } as any);
+
+    __setAskAiHistoryForTests("AAPL", [
+      { role: "assistant", content: "Watch $AAPL here.", loading: false },
+    ]);
+
+    await act(async () => {
+      testSetup = await testRender(createAskAiHarness(60, 12), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("AAPL +3%"));
+    const col = lines[row]?.indexOf("AAPL +3%") ?? -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(opened).toEqual(["AAPL"]);
   });
 });

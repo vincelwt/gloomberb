@@ -3,9 +3,10 @@ import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { AppContext, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
-import type { PluginPersistence } from "../../types/plugin";
 import type { PersistedResourceValue } from "../../types/persistence";
+import type { PluginPersistence } from "../../types/plugin";
 import type { ChatMessage } from "../../utils/api-client";
+import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
 import { ChatContent } from "./chat";
 import { ChatController } from "./chat-controller";
 
@@ -120,8 +121,19 @@ function createController(messages: ChatMessage[] = []) {
   return controller;
 }
 
-function createHarness(controller: ChatController, width = 60, height = 12) {
+function createHarness(
+  controller: ChatController,
+  options?: {
+    width?: number;
+    height?: number;
+    configureState?: (state: ReturnType<typeof createInitialState>) => void;
+  },
+) {
+  const width = options?.width ?? 60;
+  const height = options?.height ?? 12;
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+  options?.configureState?.(state);
+
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <ChatContent
@@ -129,7 +141,6 @@ function createHarness(controller: ChatController, width = 60, height = 12) {
         width={width}
         height={height}
         focused
-        selectTicker={() => {}}
       />
     </AppContext>
   );
@@ -143,6 +154,9 @@ async function flushFrame() {
 }
 
 afterEach(async () => {
+  setSharedRegistryForTests(undefined);
+  setSharedDataProviderForTests(undefined);
+
   if (testSetup) {
     await act(async () => {
       testSetup!.renderer.destroy();
@@ -199,7 +213,7 @@ describe("ChatContent", () => {
     ]);
 
     await act(async () => {
-      testSetup = await testRender(createHarness(controller, 60, 12), {
+      testSetup = await testRender(createHarness(controller, { width: 60, height: 12 }), {
         width: 60,
         height: 12,
       });
@@ -221,5 +235,78 @@ describe("ChatContent", () => {
     expect(frameAfterUpdate).toContain("7 messages");
     expect(frameAfterUpdate).toContain("message 7");
     expect(frameAfterUpdate).not.toContain("message 1");
+  });
+
+  test("renders ticker badges and opens a floating detail pane on click", async () => {
+    const controller = createController([{
+      id: "m1",
+      channelId: "everyone",
+      content: "Watching $TSLA today",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u1", username: "vince", displayName: "Vince" },
+    }]);
+    const opened: string[] = [];
+
+    setSharedRegistryForTests({
+      pinTickerFn(symbol: string) {
+        opened.push(symbol);
+      },
+    } as any);
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 60,
+        height: 12,
+        configureState(state) {
+          state.tickers = new Map([["TSLA", {
+            metadata: {
+              ticker: "TSLA",
+              exchange: "NASDAQ",
+              currency: "USD",
+              name: "Tesla, Inc.",
+              portfolios: [],
+              watchlists: [],
+              positions: [],
+              custom: {},
+              tags: [],
+            },
+          }]]);
+          state.financials = new Map([["TSLA", {
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+            quote: {
+              symbol: "TSLA",
+              price: 250,
+              currency: "USD",
+              change: -12.5,
+              changePercent: -5,
+              lastUpdated: Date.now(),
+            },
+          }]]);
+        },
+      }), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("TSLA -5%"));
+    const col = lines[row]?.indexOf("TSLA -5%") ?? -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(opened).toEqual(["TSLA"]);
   });
 });
