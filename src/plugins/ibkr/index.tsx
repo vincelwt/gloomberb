@@ -1872,6 +1872,7 @@ export const ibkrPlugin: GloomPlugin = {
       label: "New IBKR Trading Pane",
       description: "Open another floating IBKR trading console",
       keywords: ["new", "ibkr", "trading", "status", "orders", "pane"],
+      shortcut: { prefix: "IBKR" },
       canCreate: (context) => getConfiguredIbkrGatewayInstances(context.config).length > 0,
       createInstance: () => ({ placement: "floating" }),
     },

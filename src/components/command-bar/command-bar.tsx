@@ -611,6 +611,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         close();
         return;
       }
+      case "help": {
+        close();
+        pluginRegistry.showWidget("help");
+        return;
+      }
       case "cycle-chart-renderer": {
         const current = state.config.chartPreferences.renderer;
         const index = CHART_RENDERER_PREFERENCES.indexOf(current);

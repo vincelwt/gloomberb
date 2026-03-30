@@ -870,6 +870,7 @@ function PluginsStep({
 function ShortcutsStep() {
   const shortcuts = [
     { key: "Ctrl+P / `  ", desc: "Open the command bar" },
+    { key: "help        ", desc: "Open the help window" },
     { key: "Tab         ", desc: "Switch between panels" },
     { key: "T AAPL      ", desc: "Search and add any ticker" },
     { key: "TH          ", desc: "Switch theme" },
