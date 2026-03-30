@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
-import type { InputRenderable } from "@opentui/core";
+import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
 import { useInlineTickers } from "../../state/use-inline-tickers";
@@ -10,7 +9,7 @@ import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
-import { chatController } from "./chat-controller";
+import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 
 interface ChatContentProps {
@@ -18,26 +17,64 @@ interface ChatContentProps {
   height: number;
   focused: boolean;
   close?: () => void;
+  controller?: Pick<
+    ChatController,
+    "getSnapshot" | "refreshSession" | "send" | "setDraft" | "setReplyToId" | "subscribe"
+  >;
 }
 
-function ChatContent({ width, height, focused, close }: ChatContentProps) {
+function estimateWrappedLineCount(text: string, width: number) {
+  const safeWidth = Math.max(width, 1);
+  return text.split("\n").reduce((total, line) => (
+    total + Math.max(1, Math.ceil(Math.max(line.length, 1) / safeWidth))
+  ), 0);
+}
+
+function estimateMessageHeight(message: ChatMessage, width: number) {
+  const contentLineWidth = Math.max(width - 4, 1);
+  const normalizedContent = message.content.replace(/\$[A-Z][A-Z0-9.-]{0,9}/g, (match) => ` ${match.slice(1)} +0% `);
+  return 1 + (message.replyTo ? 1 : 0) + estimateWrappedLineCount(normalizedContent, contentLineWidth);
+}
+
+function getMessageTopOffset(messages: ChatMessage[], index: number, width: number) {
+  let offset = 0;
+  for (let i = 0; i < index; i += 1) {
+    offset += estimateMessageHeight(messages[i]!, width);
+  }
+  return offset;
+}
+
+function scrollToBottom(scrollBox: ScrollBoxRenderable | null) {
+  if (!scrollBox) return;
+  scrollBox.scrollTo(Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height));
+}
+
+export function ChatContent({
+  width,
+  height,
+  focused,
+  close,
+  controller = chatController,
+}: ChatContentProps) {
   const { dispatch } = useAppState();
-  const initialSnapshot = chatController.getSnapshot();
+  const initialSnapshot = controller.getSnapshot();
   const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
-  const [user, setUser] = useState<{ id: string; username: string } | null>(initialSnapshot.user);
+  const [user, setUser] = useState<{ id: string; username: string; emailVerified: boolean } | null>(initialSnapshot.user);
   const [loading, setLoading] = useState(initialSnapshot.loading);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState(initialSnapshot.draft);
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [followMessages, setFollowMessages] = useState(true);
+  const contentWidth = Math.max(width - 2, 1);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => (
     initialSnapshot.replyToId ? initialSnapshot.messages.find((message) => message.id === initialSnapshot.replyToId) ?? null : null
   ));
-  const [scrollOffset, setScrollOffset] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   useEffect(() => {
-    const unsubscribe = chatController.subscribe((snapshot) => {
+    const unsubscribe = controller.subscribe((snapshot) => {
       setMessages(snapshot.messages);
       setUser(snapshot.user);
       setLoading(snapshot.loading);
@@ -47,38 +84,60 @@ function ChatContent({ width, height, focused, close }: ChatContentProps) {
         : null);
     });
 
-    void chatController.refreshSession().catch(() => {});
+    void controller.refreshSession().catch(() => {});
     return unsubscribe;
-  }, []);
+  }, [controller]);
 
-  useEffect(() => {
-    if (inputRef.current && initialSnapshot.draft) {
-      (inputRef.current as any).editBuffer?.setText?.(initialSnapshot.draft) || (inputRef.current as any).setText?.(initialSnapshot.draft);
-    }
-  }, [initialSnapshot.draft]);
+  const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
 
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
 
+  const focusInput = useCallback(() => {
+    setInputFocused(true);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+    inputRef.current?.focus();
+  }, [dispatch]);
+
+  const blurInput = useCallback(() => {
+    setInputFocused(false);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [dispatch]);
+
+  const updateDraft = useCallback((draft: string) => {
+    setInputValue(draft);
+    controller.setDraft(draft);
+  }, [controller]);
+
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
-    chatController.send(content, replyToRef.current?.id);
-    setInputValue("");
+    controller.send(content, replyToRef.current?.id);
     setReplyTo(null);
-    setScrollOffset(0);
     setSelectedIdx(-1);
-  }, []);
+    setFollowMessages(true);
+  }, [controller]);
+
+  useEffect(() => {
+    if (!focused && inputFocused) {
+      blurInput();
+    }
+  }, [blurInput, focused, inputFocused]);
+
+  useEffect(() => {
+    if (focused && inputFocused) {
+      inputRef.current?.focus();
+    }
+  }, [focused, inputFocused]);
 
   useKeyboard((event) => {
     if (!focused) return;
 
     if (event.name === "c" && event.shift) {
       if (inputFocused) {
-        setInputFocused(false);
-        dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+        blurInput();
       }
       close?.();
       return;
@@ -88,18 +147,16 @@ function ChatContent({ width, height, focused, close }: ChatContentProps) {
       if (event.name === "escape") {
         if (replyTo) {
           setReplyTo(null);
-          chatController.setReplyToId(null);
+          controller.setReplyToId(null);
         } else {
-          setInputFocused(false);
-          dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+          blurInput();
         }
       }
       return;
     }
 
     if (event.name === "return" || event.name === "i") {
-      setInputFocused(true);
-      dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+      focusInput();
       return;
     }
 
@@ -109,43 +166,68 @@ function ChatContent({ width, height, focused, close }: ChatContentProps) {
     }
 
     if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((prev) => Math.min(prev + 1, messages.length - 1));
+      if (messages.length === 0) return;
+      const next = Math.min(selectedIdx + 1, messages.length - 1);
+      setSelectedIdx(next);
+      setFollowMessages(next === messages.length - 1);
       return;
     }
     if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((prev) => Math.max(prev - 1, 0));
+      if (messages.length === 0) return;
+      const start = selectedIdx < 0 ? messages.length - 1 : selectedIdx;
+      const next = Math.max(start - 1, 0);
+      setSelectedIdx(next);
+      setFollowMessages(false);
       return;
     }
 
     if (event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
       const nextReplyTo = messages[selectedIdx] ?? null;
       setReplyTo(nextReplyTo);
-      chatController.setReplyToId(nextReplyTo?.id ?? null);
-      setInputFocused(true);
-      dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+      controller.setReplyToId(nextReplyTo?.id ?? null);
+      focusInput();
       return;
     }
 
     if (event.name === "g" && !event.shift) {
-      setScrollOffset(0);
       setSelectedIdx(0);
+      setFollowMessages(false);
+      scrollRef.current?.scrollTo(0);
       return;
     }
     if (event.name === "g" && event.shift) {
-      setScrollOffset(Math.max(0, messages.length - (height - 4)));
       setSelectedIdx(messages.length - 1);
+      setFollowMessages(true);
+      queueMicrotask(() => scrollToBottom(scrollRef.current));
+      return;
     }
-  });
+  }, [blurInput, close, controller, focusInput, focused, inputFocused, messages, replyTo, selectedIdx]);
+
+  useEffect(() => {
+    if (selectedIdx < messages.length) return;
+    setSelectedIdx(messages.length - 1);
+  }, [messages.length, selectedIdx]);
+
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb) return;
+    if (followMessages) return;
+    if (selectedIdx < 0 || selectedIdx >= messages.length) return;
+    const top = getMessageTopOffset(messages, selectedIdx, contentWidth);
+    const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth);
+    const viewportHeight = Math.max(sb.viewport.height, 1);
+    if (top < sb.scrollTop) {
+      sb.scrollTo(top);
+    } else if (top + rowHeight > sb.scrollTop + viewportHeight) {
+      sb.scrollTo(Math.max(top + rowHeight - viewportHeight, 0));
+    }
+  }, [contentWidth, followMessages, messages, selectedIdx]);
 
   const replyBarHeight = replyTo ? 1 : 0;
   const inputAreaHeight = 1 + replyBarHeight;
   const headerHeight = 1;
   const separatorHeight = 1;
   const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
-  const visibleStart = Math.max(0, messages.length - messageAreaHeight - scrollOffset);
-  const visibleMessages = messages.slice(visibleStart, visibleStart + messageAreaHeight);
-  const contentWidth = width - 2;
-  const { catalog, openTicker } = useInlineTickers(visibleMessages.map((message) => message.content));
 
   if (loading) {
     return (
@@ -189,16 +271,22 @@ function ChatContent({ width, height, focused, close }: ChatContentProps) {
         <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
       </box>
 
-      <scrollbox height={messageAreaHeight} scrollY>
-        {visibleMessages.length === 0 && (
+      <scrollbox
+        ref={scrollRef}
+        height={messageAreaHeight}
+        scrollY
+        focusable={false}
+        stickyScroll={followMessages}
+        stickyStart="bottom"
+      >
+        {messages.length === 0 && (
           <box alignItems="center" justifyContent="center" flexGrow={1}>
             <text fg={colors.textDim}>No messages yet. Be the first to say something!</text>
           </box>
         )}
-        {visibleMessages.map((msg, i) => {
-          const globalIdx = visibleStart + i;
-          const isSelected = globalIdx === selectedIdx;
-          const isHovered = globalIdx === hoveredIdx && !isSelected;
+        {messages.map((msg, index) => {
+          const isSelected = index === selectedIdx;
+          const isHovered = index === hoveredIdx && !isSelected;
           const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
 
           return (
@@ -207,8 +295,11 @@ function ChatContent({ width, height, focused, close }: ChatContentProps) {
               flexDirection="column"
               width={contentWidth}
               backgroundColor={bgColor}
-              onMouseMove={() => setHoveredIdx(globalIdx)}
-              onMouseDown={() => setSelectedIdx(globalIdx)}
+              onMouseMove={() => setHoveredIdx(index)}
+              onMouseDown={() => {
+                setSelectedIdx(index);
+                setFollowMessages(index === messages.length - 1);
+              }}
             >
               {msg.replyTo && (
                 <box flexDirection="row" height={1} paddingLeft={2}>
@@ -254,26 +345,22 @@ function ChatContent({ width, height, focused, close }: ChatContentProps) {
         </box>
       )}
 
-      <box height={1} width={contentWidth} flexDirection="row">
+      <box height={1} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
         <text fg={colors.textDim}> {">"} </text>
         <input
           ref={inputRef}
+          value={inputValue}
           focused={inputFocused && focused}
           placeholder="Type a message..."
           placeholderColor={colors.textMuted}
           textColor={colors.text}
           backgroundColor={colors.bg}
           flexGrow={1}
-          onInput={(val) => {
-            setInputValue(val);
-            chatController.setDraft(val);
-          }}
+          onInput={updateDraft}
+          onChange={updateDraft}
           onSubmit={() => {
-            if (inputValue.trim()) {
+            if (inputValueRef.current.trim()) {
               sendMessage();
-              if (inputRef.current) {
-                (inputRef.current as any).editBuffer?.setText?.("") || (inputRef.current as any).setText?.("");
-              }
             }
           }}
         />

@@ -170,6 +170,7 @@ function ComparisonChartCard({
     : (financials?.priceHistory ?? []);
   const windowedHistory = useMemo(() => filterByTimeRange(history, "1Y"), [history]);
   const displayQuote = getDisplayQuote(financials?.quote, windowedHistory);
+  const currency = financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
   const axisWidth = axisMode === "percent" ? 11 : 10;
   const plotWidth = Math.max(width - axisWidth - 4, 18);
   const plotHeight = Math.max(height - 4, 4);
@@ -201,12 +202,12 @@ function ComparisonChartCard({
       cursorX: null,
       mode: projection.effectiveMode,
       axisMode,
+      currency,
       colors: chartColors,
     })
-  ), [axisMode, chartColors, plotHeight, plotWidth, projection.effectiveMode, projection.points]);
+  ), [axisMode, chartColors, currency, plotHeight, plotWidth, projection.effectiveMode, projection.points]);
 
   const axisLabels = new Map(result.axisLabels.map((entry) => [entry.row, entry.label]));
-  const currency = financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
   const headerColor = priceColor(displayQuote?.change ?? 0);
 
   return (
