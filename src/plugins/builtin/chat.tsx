@@ -4,6 +4,8 @@ import { TextAttributes } from "@opentui/core";
 import type { InputRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
+import { useInlineTickers } from "../../state/use-inline-tickers";
+import { TickerBadgeText } from "../../components/ticker-badge-text";
 import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
@@ -11,44 +13,14 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { chatController } from "./chat-controller";
 import { createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 
-function renderMessageContent(
-  text: string,
-  selectTicker: (symbol: string) => void,
-  lineWidth: number,
-) {
-  const parts = text.split(/(\$[A-Z]{1,5})/g);
-  return (
-    <box flexDirection="row" flexWrap="wrap" width={lineWidth}>
-      {parts.map((part, i) => {
-        if (/^\$[A-Z]{1,5}$/.test(part)) {
-          const symbol = part.slice(1);
-          return (
-            <text
-              key={i}
-              fg={colors.positive}
-              attributes={TextAttributes.BOLD | TextAttributes.INVERSE}
-              onMouseDown={() => selectTicker(symbol)}
-            >
-              {` ${part} `}
-            </text>
-          );
-        }
-        if (!part) return null;
-        return <text key={i} fg={colors.text}>{part}</text>;
-      })}
-    </box>
-  );
-}
-
 interface ChatContentProps {
   width: number;
   height: number;
   focused: boolean;
-  selectTicker: (symbol: string) => void;
   close?: () => void;
 }
 
-function ChatContent({ width, height, focused, selectTicker, close }: ChatContentProps) {
+function ChatContent({ width, height, focused, close }: ChatContentProps) {
   const { dispatch } = useAppState();
   const initialSnapshot = chatController.getSnapshot();
   const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
@@ -165,6 +137,16 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
     }
   });
 
+  const replyBarHeight = replyTo ? 1 : 0;
+  const inputAreaHeight = 1 + replyBarHeight;
+  const headerHeight = 1;
+  const separatorHeight = 1;
+  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
+  const visibleStart = Math.max(0, messages.length - messageAreaHeight - scrollOffset);
+  const visibleMessages = messages.slice(visibleStart, visibleStart + messageAreaHeight);
+  const contentWidth = width - 2;
+  const { catalog, openTicker } = useInlineTickers(visibleMessages.map((message) => message.content));
+
   if (loading) {
     return (
       <box flexGrow={1} alignItems="center" justifyContent="center">
@@ -194,15 +176,6 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
       </box>
     );
   }
-
-  const replyBarHeight = replyTo ? 1 : 0;
-  const inputAreaHeight = 1 + replyBarHeight;
-  const headerHeight = 1;
-  const separatorHeight = 1;
-  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
-  const visibleStart = Math.max(0, messages.length - messageAreaHeight - scrollOffset);
-  const visibleMessages = messages.slice(visibleStart, visibleStart + messageAreaHeight);
-  const contentWidth = width - 2;
 
   return (
     <box flexDirection="column" width={width} height={height}>
@@ -255,7 +228,13 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
                 <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
               </box>
               <box paddingLeft={3}>
-                {renderMessageContent(msg.content, selectTicker, contentWidth - 4)}
+                <TickerBadgeText
+                  text={msg.content}
+                  lineWidth={contentWidth - 4}
+                  catalog={catalog}
+                  textColor={colors.text}
+                  openTicker={openTicker}
+                />
               </box>
             </box>
           );
@@ -303,22 +282,12 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
   );
 }
 
-function ChatPane({ focused, width, height, close }: PaneProps) {
-  const registry = getSharedRegistry();
-  const selectTicker = useCallback((symbol: string) => {
-    registry?.selectTickerFn(symbol);
-    if (close) {
-      registry?.switchTabFn("overview");
-      close();
-    }
-  }, [registry, close]);
-
+export function ChatPane({ focused, width, height, close }: PaneProps) {
   return (
     <ChatContent
       width={width}
       height={height}
       focused={focused}
-      selectTicker={selectTicker}
       close={close}
     />
   );
