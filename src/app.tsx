@@ -315,7 +315,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     });
     const { width, height } = pluginRegistry.getTermSizeFn();
     const sourceDocked = findDockLeaf(state.config.layout, sourcePaneId);
-    const layout = sourceDocked
+    const layout = sourceDocked && paneDef.defaultMode !== "floating"
       ? addPaneToLayout(state.config.layout, instance, { relativeTo: sourcePaneId, position: "right" })
       : addPaneFloating(state.config.layout, instance, width, height, paneDef);
     return { layout, instance };

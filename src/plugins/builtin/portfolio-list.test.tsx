@@ -228,6 +228,12 @@ afterEach(async () => {
 });
 
 describe("PortfolioListPane cash and margin UI", () => {
+  test("defaults new portfolio panes to floating", () => {
+    const paneDef = portfolioListPlugin.panes?.find((entry) => entry.id === "portfolio-list");
+
+    expect(paneDef?.defaultMode).toBe("floating");
+  });
+
   test("keeps non-broker portfolios unchanged", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-portfolio-list");
     const layout = {

@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { CliRenderer } from "@opentui/core";
+import { projectComparisonChartData } from "../comparison-chart-data";
+import { buildComparisonChartScene } from "../comparison-chart-renderer";
 import { buildChartScene, resolveChartPalette } from "../chart-renderer";
 import {
   computeBitmapSize,
   computeNativePlacement,
   excludeCellRects,
+  renderNativeComparisonChartBase,
   renderNativeChartBase,
   renderNativeCrosshairOverlay,
   type CellRect,
@@ -201,6 +204,67 @@ describe("renderNativeChartBase", () => {
     const withoutCursor = renderNativeChartBase(scene!, 120, 60);
     const withCursor = renderNativeChartBase(sceneWithCursor!, 120, 60);
     expect(withCursor.pixels).toEqual(withoutCursor.pixels);
+  });
+});
+
+describe("renderNativeComparisonChartBase", () => {
+  test("renders multi-series comparison overlays into an opaque bitmap", () => {
+    const projection = projectComparisonChartData([
+      {
+        symbol: "AAPL",
+        color: "#00ff00",
+        fillColor: "#004400",
+        currency: "USD",
+        points: [
+          { date: new Date("2024-01-02"), close: 10 },
+          { date: new Date("2024-01-03"), close: 12 },
+          { date: new Date("2024-01-04"), close: 11 },
+        ],
+      },
+      {
+        symbol: "MSFT",
+        color: "#ff0000",
+        fillColor: "#440000",
+        currency: "USD",
+        points: [
+          { date: new Date("2024-01-02"), close: 8 },
+          { date: new Date("2024-01-03"), close: 9 },
+          { date: new Date("2024-01-04"), close: 10 },
+        ],
+      },
+    ], 12, {
+      timeRange: "ALL",
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "line",
+    }, "percent");
+    const scene = buildComparisonChartScene(projection, {
+      width: 12,
+      height: 6,
+      cursorX: null,
+      cursorY: null,
+      selectedSymbol: "MSFT",
+      colors: {
+        bgColor: "#112233",
+        gridColor: "#334455",
+        crosshairColor: "#ffffff",
+      },
+    });
+
+    expect(scene).not.toBeNull();
+
+    const bitmap = renderNativeComparisonChartBase(scene!, 120, 60);
+    for (let offset = 3; offset < bitmap.pixels.length; offset += 4) {
+      expect(bitmap.pixels[offset]).toBe(0xff);
+    }
+
+    const brightPixels = [];
+    for (let offset = 0; offset < bitmap.pixels.length; offset += 4) {
+      if (bitmap.pixels[offset] !== 17 || bitmap.pixels[offset + 1] !== 34 || bitmap.pixels[offset + 2] !== 51) {
+        brightPixels.push(offset);
+      }
+    }
+    expect(brightPixels.length).toBeGreaterThan(0);
   });
 });
 
