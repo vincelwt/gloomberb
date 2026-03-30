@@ -7,14 +7,28 @@ import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { filterByTimeRange, getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
-import { buildChartScene, formatDateShort, formatPrice, getPointTerminalColumn, renderChart, resolveChartPalette } from "./chart-renderer";
+import {
+  buildChartScene,
+  formatDateShort,
+  formatAxisValue,
+  getPointTerminalColumn,
+  renderChart,
+  resolveChartPalette,
+} from "./chart-renderer";
 import {
   CELL_CURSOR_SNAP_DISTANCE,
   sameCursorPosition,
   stepCursorTowards,
   type ChartCursorMotionKind,
 } from "./cursor-motion";
-import { CHART_RENDER_MODES, TIME_RANGES, type ChartRenderMode, type ChartViewState, type ResolvedChartRenderer } from "./chart-types";
+import {
+  CHART_RENDER_MODES,
+  TIME_RANGES,
+  type ChartAxisMode,
+  type ChartRenderMode,
+  type ChartViewState,
+  type ResolvedChartRenderer,
+} from "./chart-types";
 import {
   computeBitmapSize,
   intersectCellRects,
@@ -49,6 +63,7 @@ interface StockChartProps {
   focused: boolean;
   interactive?: boolean;
   compact?: boolean;
+  axisMode?: ChartAxisMode;
 }
 
 interface DragState {
@@ -457,7 +472,7 @@ function resolveSelectionCursor(
   };
 }
 
-export function StockChart({ width, height, focused, interactive, compact }: StockChartProps) {
+export function StockChart({ width, height, focused, interactive, compact, axisMode = "price" }: StockChartProps) {
   const renderer = useRenderer();
   const { state, dispatch } = useAppState();
   const paneId = usePaneInstanceId();
@@ -599,7 +614,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const baseHistoryEndMs = baseHistory.length > 0
     ? new Date(baseHistory[baseHistory.length - 1]!.date).getTime()
     : null;
-  const axisWidth = compact ? 8 : 10;
+  const axisWidth = compact
+    ? axisMode === "percent" ? 11 : 8
+    : axisMode === "percent" ? 11 : 10;
   const axisGap = axisWidth > 0 ? 1 : 0;
   const chartWidth = Math.max(width - axisWidth - axisGap, compact ? 12 : 20);
   const maxCursorX = chartWidth - 1;
@@ -897,8 +914,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     cursorX: selectionCursorX,
     cursorY: selectionCursorY,
     mode: projection.effectiveMode,
+    axisMode,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, volumeHeight]);
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, volumeHeight]);
 
   const nativeBaseScene = useMemo(() => buildChartScene(projection.points, {
     width: chartWidth,
@@ -908,8 +926,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     cursorX: null,
     cursorY: null,
     mode: projection.effectiveMode,
+    axisMode,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
@@ -922,8 +941,9 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
     cursorX: null,
     cursorY: null,
     mode: projection.effectiveMode,
+    axisMode,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty"
@@ -936,9 +956,10 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
         cursorX: displayCursorX,
         cursorY: displayCursorY,
         mode: projection.effectiveMode,
+        axisMode,
         colors: chartColors,
       })
-  ), [chartColors, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  ), [axisMode, chartColors, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
 
   const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
 
@@ -1194,7 +1215,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const activePoint = showOhlcSummary ? (selectionScene?.activePoint ?? null) : null;
   const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
   const cursorAxisLabel = hasDisplayCursor && cursorRow !== null && crosshairPrice !== null
-    ? formatPrice(crosshairPrice)
+    ? formatAxisValue(crosshairPrice, axisMode, projection.points[0]?.close ?? 0)
     : null;
 
   const handlePlotMove = (event: ChartMouseEvent) => {

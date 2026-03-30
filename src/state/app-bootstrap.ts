@@ -2,10 +2,12 @@ import type { Dispatch } from "react";
 import type { TickerRepository } from "../data/ticker-repository";
 import { findPaneInstance, type AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
+import type { BrokerAccount } from "../types/trading";
 import type { TickerMetadata, TickerRecord } from "../types/ticker";
 import { ProviderRouter } from "../sources/provider-router";
 import type { AppAction, PaneRuntimeState } from "./app-context";
 import type { AppSessionSnapshot } from "./session-persistence";
+import { getDockedPaneIds } from "../plugins/pane-manager";
 
 const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [
   { ticker: "AAPL", exchange: "NASDAQ", currency: "USD", name: "Apple Inc." },
@@ -31,6 +33,8 @@ interface RefreshPlanEntry {
   priority: number;
 }
 
+const MAX_BACKGROUND_WARMUP_TICKERS = 0;
+
 export interface InitializeAppStateArgs {
   config: AppConfig;
   tickerRepository: TickerRepository;
@@ -39,6 +43,7 @@ export interface InitializeAppStateArgs {
   dispatch: Dispatch<AppAction>;
   refreshTicker: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
   autoImportBrokerPositions: (tickerMap: Map<string, TickerRecord>) => Promise<void>;
+  persistedBrokerAccounts?: Record<string, BrokerAccount[]>;
 }
 
 function buildPaneStateSeed(
@@ -122,8 +127,8 @@ function buildRefreshPlan(
     plan.push({ ticker, priority });
   };
 
-  for (const entry of config.layout.docked) {
-    enqueueSymbol(resolveSymbolForPane(config, entry.instanceId, paneStateSeed, sessionSnapshot, tickerMap), 0);
+  for (const instanceId of getDockedPaneIds(config.layout)) {
+    enqueueSymbol(resolveSymbolForPane(config, instanceId, paneStateSeed, sessionSnapshot, tickerMap), 0);
   }
 
   for (const entry of config.layout.floating) {
@@ -138,8 +143,14 @@ function buildRefreshPlan(
     workingSetSymbols.add(symbol);
   }
 
+  let backgroundWarmups = 0;
   for (const symbol of workingSetSymbols) {
+    if (backgroundWarmups >= MAX_BACKGROUND_WARMUP_TICKERS) break;
+    if (queued.has(symbol)) continue;
     enqueueSymbol(symbol, 2);
+    if (queued.has(symbol)) {
+      backgroundWarmups += 1;
+    }
   }
 
   return plan;
@@ -153,6 +164,7 @@ export async function initializeAppState({
   dispatch,
   refreshTicker,
   autoImportBrokerPositions,
+  persistedBrokerAccounts = {},
 }: InitializeAppStateArgs): Promise<void> {
   let tickers = await tickerRepository.loadAllTickers();
 
@@ -178,6 +190,10 @@ export async function initializeAppState({
     tickerMap.set(ticker.metadata.ticker, ticker);
   }
   dispatch({ type: "SET_TICKERS", tickers: tickerMap });
+
+  for (const [instanceId, accounts] of Object.entries(persistedBrokerAccounts)) {
+    dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
+  }
 
   if (dataProvider instanceof ProviderRouter) {
     const cachedFinancials = dataProvider.getCachedFinancialsForTargets(sessionSnapshot?.hydrationTargets ?? [], {

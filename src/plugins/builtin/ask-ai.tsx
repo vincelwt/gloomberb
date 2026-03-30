@@ -5,17 +5,17 @@ import type { InputRenderable } from "@opentui/core";
 import { spawn, type Subprocess } from "bun";
 import { execSync } from "child_process";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
-import { usePaneTicker } from "../../state/app-context";
+import { useAppState, usePaneTicker } from "../../state/app-context";
 import { usePluginState } from "../../plugins/plugin-runtime";
 import { colors } from "../../theme/colors";
-import { formatCurrency, formatCompact, formatPercent } from "../../utils/format";
+import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent } from "../../utils/format";
 import type { TickerRecord } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
 import { Spinner } from "../../components/spinner";
 
 // --- AI Provider Detection ---
 
-interface AiProvider {
+export interface AiProvider {
   id: string;
   name: string;
   command: string;
@@ -61,24 +61,67 @@ function detectProviders(): AiProvider[] {
   return _detectedProviders;
 }
 
+export function __setDetectedProvidersForTests(providers: AiProvider[] | null): void {
+  _detectedProviders = providers;
+}
+
+function truncateWithEllipsis(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 3) return text.slice(0, width);
+  return `${text.slice(0, width - 3)}...`;
+}
+
+function getProviderHeaderParts(providerName: string, canSwitch: boolean, width: number): { prefix: string; label: string } {
+  if (width <= 0) return { prefix: "", label: "" };
+
+  const variants = [
+    { prefix: "Provider: ", label: canSwitch ? `${providerName} (t to switch)` : providerName },
+    { prefix: "Provider: ", label: canSwitch ? `${providerName} (t)` : providerName },
+    { prefix: "", label: canSwitch ? `${providerName} (t to switch)` : providerName },
+    { prefix: "", label: canSwitch ? `${providerName} (t)` : providerName },
+    { prefix: "", label: providerName },
+  ];
+
+  for (const variant of variants) {
+    if (variant.prefix.length + variant.label.length <= width) {
+      return variant;
+    }
+  }
+
+  return { prefix: "", label: truncateWithEllipsis(providerName, width) };
+}
+
 // --- Context Builder ---
 
-function buildContext(ticker: TickerRecord, financials: TickerFinancials | null): string {
+function buildContext(
+  ticker: TickerRecord,
+  financials: TickerFinancials | null,
+  baseCurrency: string,
+  exchangeRates: Map<string, number>,
+): string {
   const f = ticker.metadata;
   const q = financials?.quote;
   const fund = financials?.fundamentals;
+  const profile = financials?.profile;
+  const quoteCurrency = q?.currency ?? f.currency ?? baseCurrency;
+  const toBase = (value: number, fromCurrency: string) =>
+    convertCurrency(value, fromCurrency, baseCurrency, exchangeRates);
+  const sector = f.sector ?? profile?.sector;
+  const industry = f.industry ?? profile?.industry;
 
   const lines: string[] = [
     `Company: ${f.name} (${f.ticker})`,
     `Exchange: ${f.exchange}`,
   ];
 
-  if (f.sector) lines.push(`Sector: ${f.sector}`);
-  if (f.industry) lines.push(`Industry: ${f.industry}`);
+  if (sector) lines.push(`Sector: ${sector}`);
+  if (industry) lines.push(`Industry: ${industry}`);
+  if (profile?.description) lines.push(`Description: ${profile.description}`);
 
   if (q) {
     lines.push(`Current Price: ${formatCurrency(q.price, q.currency)} (${q.change >= 0 ? "+" : ""}${q.changePercent.toFixed(2)}%)`);
-    if (q.marketCap) lines.push(`Market Cap: ${formatCompact(q.marketCap)}`);
+    if (q.marketCap) lines.push(`Market Cap: ${formatCompactCurrency(toBase(q.marketCap, quoteCurrency), baseCurrency)}`);
     if (q.high52w && q.low52w) lines.push(`52W Range: ${formatCurrency(q.low52w, q.currency)} - ${formatCurrency(q.high52w, q.currency)}`);
   }
 
@@ -134,7 +177,8 @@ interface PersistedConversation {
 
 // --- Component ---
 
-function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
+export function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
+  const { state } = useAppState();
   const { ticker, financials } = usePaneTicker();
   const [providers] = useState(() => detectProviders());
   const defaultProviderIdx = (() => {
@@ -148,7 +192,9 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
   const inputRef = useRef<InputRenderable>(null);
   const procRef = useRef<Subprocess | null>(null);
   const availableProviders = providers.filter((p) => p.available);
-  const currentProvider = providers[providerIdx] ?? providers[defaultProviderIdx] ?? providers[0];
+  const currentProvider = providers[providerIdx]?.available
+    ? providers[providerIdx]
+    : providers[defaultProviderIdx] ?? providers[0];
 
   const tickerSymbol = ticker?.metadata.ticker ?? null;
 
@@ -161,9 +207,14 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
       if (persisted && Date.now() - persisted.updatedAt <= ASK_AI_RETENTION_MS) {
         chatHistories.set(tickerSymbol, persisted.messages);
       }
-      setMessages(chatHistories.get(tickerSymbol) || []);
+      const nextMessages = chatHistories.get(tickerSymbol) ?? [];
+      setMessages((prev) => (
+        prev.length === nextMessages.length && prev.every((message, index) => message === nextMessages[index])
+          ? prev
+          : nextMessages
+      ));
     } else {
-      setMessages([]);
+      setMessages((prev) => (prev.length === 0 ? prev : []));
     }
   }, [currentProvider?.id, tickerSymbol]);
 
@@ -194,6 +245,17 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
     });
   }, [providers, availableProviders.length]);
 
+  const focusInput = useCallback(() => {
+    setInputFocused(true);
+    onCapture(true);
+    inputRef.current?.focus();
+  }, [onCapture]);
+
+  const blurInput = useCallback(() => {
+    setInputFocused(false);
+    onCapture(false);
+  }, [onCapture]);
+
   const sendMessage = useCallback(async (text: string) => {
     if (!ticker || !currentProvider?.available) return;
 
@@ -203,7 +265,7 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
     // Build the full prompt with context
-    const context = buildContext(ticker, financials);
+    const context = buildContext(ticker, financials, state.config.baseCurrency, state.exchangeRates);
     const fullPrompt = `You are a financial analyst assistant. Here is the current financial data for the company being discussed:\n\n${context}\n\nUser question: ${text}`;
 
     try {
@@ -254,19 +316,16 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
     } finally {
       procRef.current = null;
     }
-  }, [ticker, financials, currentProvider]);
+  }, [ticker, financials, currentProvider, state.config.baseCurrency, state.exchangeRates]);
 
-  // Handle keyboard
-  useKeyboard((event) => {
+  const handleKeyboard = useCallback((event: { name: string }) => {
     if (!focused) return;
 
     const isEnter = event.name === "enter" || event.name === "return";
 
     if (!inputFocused) {
       if (isEnter) {
-        setInputFocused(true);
-        onCapture(true);
-        setTimeout(() => inputRef.current?.focus(), 0);
+        focusInput();
         return;
       }
       if (event.name === "t" || event.name === "T") {
@@ -276,11 +335,12 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
     }
 
     if (inputFocused && event.name === "escape") {
-      setInputFocused(false);
-      onCapture(false);
+      blurInput();
       return;
     }
-  });
+  }, [blurInput, cycleProvider, focusInput, focused, inputFocused]);
+  // Handle keyboard
+  useKeyboard(handleKeyboard);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -309,13 +369,15 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
     );
   }
 
-  const innerWidth = Math.max(width - 4, 40);
+  const contentWidth = Math.max(width - 2, 0);
+  const dividerWidth = Math.max(contentWidth, 0);
   // Reserve: header(1) + chat + divider(1) + input(1) + padding(2 top+bottom)
   const chatHeight = Math.max(height - 7, 4);
-
-  const providerLabel = availableProviders.length > 1
-    ? `${currentProvider?.name || "None"} (t to switch)`
-    : currentProvider?.name || "None";
+  const providerHeader = getProviderHeaderParts(
+    currentProvider?.name || "None",
+    availableProviders.length > 1,
+    Math.max(contentWidth - "Ask AI".length - 1, 0),
+  );
 
   return (
     <box flexDirection="column" paddingX={1} paddingTop={1} height={height - 2}>
@@ -324,8 +386,10 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</text>
         <box flexGrow={1} />
         <box onMouseDown={cycleProvider}>
-          <text fg={colors.textMuted}>Provider: </text>
-          <text fg={colors.textBright}>{providerLabel}</text>
+          <text fg={colors.textMuted}>
+            {providerHeader.prefix}
+            <span fg={colors.textBright}>{providerHeader.label}</span>
+          </text>
         </box>
       </box>
 
@@ -367,20 +431,20 @@ function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
 
       {/* Divider */}
       <box height={1}>
-        <text fg={colors.textDim}>{"\u2500".repeat(innerWidth)}</text>
+        <text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</text>
       </box>
 
       {/* Input area */}
-      <box flexDirection="row" height={1}>
+      <box flexDirection="row" height={1} onMouseDown={focusInput}>
         <text fg={colors.textMuted}>{"> "}</text>
         <box flexGrow={1}>
           <input
             ref={inputRef}
             placeholder={inputFocused ? "Ask a question..." : "Enter to start typing"}
-            focused={inputFocused}
+            focused={inputFocused && focused}
             textColor={colors.text}
             placeholderColor={colors.textDim}
-            backgroundColor={inputFocused ? colors.panel : colors.bg}
+            backgroundColor={inputFocused && focused ? colors.panel : colors.bg}
             onInput={(val) => setInputValue(val)}
             onChange={(val) => setInputValue(val)}
             onSubmit={() => {

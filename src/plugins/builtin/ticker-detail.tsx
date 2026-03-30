@@ -1,16 +1,19 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { GloomPlugin, PaneProps, DetailTabDef } from "../../types/plugin";
+import type { GloomPlugin, PaneProps, DetailTabDef, PaneSettingsDef } from "../../types/plugin";
+import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
 import { getCollectionName, getCollectionTickers } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
 import { EmptyState, FieldRow } from "../../components";
 import { TabBar } from "../../components/tab-bar";
-import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
+import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
+import { normalizeTickerInput } from "../../utils/ticker-search";
 import { StockChart } from "../../components/chart/stock-chart";
+import type { ChartAxisMode } from "../../components/chart/chart-types";
 import type { TickerFinancials } from "../../types/financials";
 import { getConfiguredIbkrGatewayInstances } from "../ibkr/instance-selection";
 import { useOptionsAvailability } from "./options-availability";
@@ -19,12 +22,98 @@ const CORE_OVERVIEW_TAB = { id: "overview", name: "Overview", order: 10 };
 const CORE_FINANCIALS_TAB = { id: "financials", name: "Financials", order: 20 };
 const CORE_CHART_TAB = { id: "chart", name: "Chart", order: 30 };
 
+interface TickerDetailPaneSettings {
+  hideTabs: boolean;
+  lockedTabId: string;
+  chartAxisMode: ChartAxisMode;
+}
+
+function getTickerDetailPaneSettings(settings: Record<string, unknown> | undefined): TickerDetailPaneSettings {
+  return {
+    hideTabs: settings?.hideTabs === true,
+    lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
+    chartAxisMode: settings?.chartAxisMode === "percent" ? "percent" : "price",
+  };
+}
+
+function resolveLockedTabId(
+  settings: TickerDetailPaneSettings,
+  tabs: Array<{ id: string; name: string; order: number }>,
+): string {
+  if (tabs.some((tab) => tab.id === settings.lockedTabId)) {
+    return settings.lockedTabId;
+  }
+  return tabs[0]?.id ?? "overview";
+}
+
+function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneSettingsDef {
+  const registry = getSharedRegistry();
+  const pluginTabs = registry
+    ? [...registry.detailTabs.values()].map((tab) => ({
+      id: tab.id,
+      name: tab.name,
+      order: tab.order,
+    }))
+    : [];
+  const tabs = [CORE_OVERVIEW_TAB, CORE_FINANCIALS_TAB, CORE_CHART_TAB, ...pluginTabs]
+    .sort((left, right) => left.order - right.order)
+    .filter((tab, index, allTabs) => allTabs.findIndex((candidate) => candidate.id === tab.id) === index);
+
+  return {
+    title: "Detail Pane Settings",
+    fields: [
+      {
+        key: "hideTabs",
+        label: "Hide Tabs",
+        description: "Hide the detail tabs and lock this pane to one view.",
+        type: "toggle",
+      },
+      ...(settings.hideTabs ? [{
+        key: "lockedTabId",
+        label: "Locked Tab",
+        description: "Choose which tab this pane should stay pinned to when tabs are hidden.",
+        type: "select",
+        options: tabs.map((tab) => ({
+          value: tab.id,
+          label: tab.name,
+        })),
+      }] : []),
+      {
+        key: "chartAxisMode",
+        label: "Chart Y-Axis",
+        description: "Show chart values as raw prices or percent change from the first visible point.",
+        type: "select",
+        options: [
+          { value: "price", label: "Price" },
+          { value: "percent", label: "Percent" },
+        ],
+      },
+    ],
+  };
+}
+
+function buildQuoteMonitorSettingsDef(): PaneSettingsDef {
+  return {
+    title: "Quote Monitor Settings",
+    fields: [
+      {
+        key: "symbol",
+        label: "Ticker",
+        description: "Set the fixed ticker symbol for this quote monitor.",
+        type: "text",
+        placeholder: "AAPL",
+      },
+    ],
+  };
+}
+
 function hasStatementFinancials(financials: TickerFinancials | null | undefined): boolean {
   return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
 }
 
 export function buildVisibleDetailTabs(
   pluginTabs: DetailTabDef[],
+  ticker: import("../../types/ticker").TickerRecord | null,
   financials: TickerFinancials | null | undefined,
   options: {
     hasIbkrGatewayTrading: boolean;
@@ -38,6 +127,12 @@ export function buildVisibleDetailTabs(
   tabs.push(CORE_CHART_TAB);
 
   for (const tab of pluginTabs) {
+    if (tab.isVisible && !tab.isVisible({
+      ticker,
+      financials,
+      hasIbkrGatewayTrading: options.hasIbkrGatewayTrading,
+      hasOptionsChain: options.hasOptionsChain,
+    })) continue;
     if (tab.id === "ibkr-trade" && !options.hasIbkrGatewayTrading) continue;
     if (tab.id === "options" && !options.hasOptionsChain) continue;
     tabs.push({ id: tab.id, name: tab.name, order: tab.order });
@@ -46,13 +141,116 @@ export function buildVisibleDetailTabs(
   return tabs.sort((a, b) => a.order - b.order);
 }
 
+function getQuoteMonitorDisplay(quote: Quote | null | undefined) {
+  if (!quote) return null;
+
+  if (quote.marketState === "PRE" && quote.preMarketPrice != null) {
+    return {
+      price: quote.preMarketPrice,
+      change: quote.preMarketChange ?? 0,
+      changePercent: quote.preMarketChangePercent ?? 0,
+    };
+  }
+
+  if (quote.marketState === "POST" && quote.postMarketPrice != null) {
+    return {
+      price: quote.postMarketPrice,
+      change: quote.postMarketChange ?? 0,
+      changePercent: quote.postMarketChangePercent ?? 0,
+    };
+  }
+
+  return {
+    price: quote.price,
+    change: quote.change,
+    changePercent: quote.changePercent,
+  };
+}
+
+export function QuoteMonitorPane({ focused, width }: PaneProps) {
+  const { ticker, financials } = usePaneTicker();
+
+  if (!ticker) {
+    return (
+      <box flexDirection="column" flexGrow={1} paddingX={1}>
+        <EmptyState title="No ticker selected." />
+      </box>
+    );
+  }
+
+  const display = getQuoteMonitorDisplay(financials?.quote);
+  const changeColor = priceColor(display?.change ?? 0);
+  const compact = width < 56;
+  const currency = financials?.quote?.currency ?? ticker.metadata.currency ?? "USD";
+
+  return (
+    <box flexDirection="column" flexGrow={1} backgroundColor={colors.panel} padding={1}>
+      <box
+        flexGrow={1}
+        border
+        borderColor={focused ? colors.borderFocused : colors.border}
+        backgroundColor={colors.bg}
+        paddingX={compact ? 2 : 4}
+        paddingY={1}
+        justifyContent="center"
+      >
+        {!display ? (
+          <box flexDirection="column" alignItems="center" justifyContent="center" gap={1} flexGrow={1}>
+            <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+              {ticker.metadata.ticker}
+            </text>
+            <text fg={colors.textDim}>Waiting for quote...</text>
+          </box>
+        ) : (
+          <box
+            flexDirection={compact ? "column" : "row"}
+            alignItems={compact ? "flex-start" : "center"}
+            justifyContent="space-between"
+            gap={compact ? 1 : 2}
+            flexGrow={1}
+          >
+            <box flexGrow={1} justifyContent="center">
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+                {ticker.metadata.ticker}
+              </text>
+            </box>
+
+            <box flexDirection="column" alignItems={compact ? "flex-start" : "flex-end"}>
+              <text attributes={TextAttributes.BOLD} fg={changeColor}>
+                {formatCurrency(display.price, currency)}
+              </text>
+              <box flexDirection="row" gap={1}>
+                <text fg={changeColor}>{formatPercentRaw(display.changePercent)}</text>
+                <text fg={changeColor}>
+                  {display.change > 0 ? "+" : ""}
+                  {display.change.toFixed(2)}
+                </text>
+              </box>
+            </box>
+          </box>
+        )}
+      </box>
+    </box>
+  );
+}
+
 function OverviewTab({ width }: { width?: number }) {
+  const { state } = useAppState();
   const { ticker, financials } = usePaneTicker();
   const { width: termWidth } = useTerminalDimensions();
   if (!ticker) return <EmptyState title="No ticker selected." />;
 
   const q = financials?.quote;
   const f = financials?.fundamentals;
+  const profile = financials?.profile;
+  const baseCurrency = state.config.baseCurrency;
+  const exchangeRates = state.exchangeRates;
+  const quoteCurrency = q?.currency ?? ticker.metadata.currency ?? baseCurrency;
+  const toBase = (value: number, fromCurrency: string) =>
+    convertCurrency(value, fromCurrency, baseCurrency, exchangeRates);
+  const sector = ticker.metadata.sector ?? profile?.sector;
+  const industry = ticker.metadata.industry ?? profile?.industry;
+  const description = profile?.description?.trim();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
@@ -125,11 +323,14 @@ function OverviewTab({ width }: { width?: number }) {
 
         {/* Key metrics */}
         <box flexDirection="column">
-          <FieldRow label="Market Cap" value={q?.marketCap ? formatCompact(q.marketCap) : "—"} />
+          <FieldRow
+            label="Market Cap"
+            value={q?.marketCap ? formatCompactCurrency(toBase(q.marketCap, quoteCurrency), baseCurrency) : "—"}
+          />
           <FieldRow label="P/E (TTM)" value={f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—"} />
           <FieldRow label="Forward P/E" value={f?.forwardPE ? formatNumber(f.forwardPE, 1) : "—"} />
           <FieldRow label="PEG Ratio" value={f?.pegRatio ? formatNumber(f.pegRatio, 2) : "—"} />
-          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps) : "—"} />
+          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps, quoteCurrency) : "—"} />
           <FieldRow label="Div Yield" value={f?.dividendYield != null ? formatPercent(f.dividendYield) : "—"} />
           <FieldRow label="Revenue" value={f?.revenue ? formatCompact(f.revenue) : "—"} />
           <FieldRow label="Net Income" value={f?.netIncome ? formatCompact(f.netIncome) : "—"} />
@@ -138,7 +339,7 @@ function OverviewTab({ width }: { width?: number }) {
           <FieldRow label="Profit Margin" value={f?.profitMargin != null ? formatPercent(f.profitMargin) : "—"} />
           <FieldRow
             label="52W Range"
-            value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w)} - ${formatCurrency(q.high52w)}` : "—"}
+            value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w, quoteCurrency)} - ${formatCurrency(q.high52w, quoteCurrency)}` : "—"}
           />
           <FieldRow
             label="1Y Return"
@@ -152,17 +353,27 @@ function OverviewTab({ width }: { width?: number }) {
           />
         </box>
 
+        {/* Company description */}
+        {description && (
+          <box flexDirection="column" paddingTop={1}>
+            <box height={1}>
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Description</text>
+            </box>
+            <text fg={colors.text}>{description}</text>
+          </box>
+        )}
+
         {/* Sector / classification */}
-        {(ticker.metadata.sector || ticker.metadata.industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
+        {(sector || industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
           <box flexDirection="column">
             {ticker.metadata.assetCategory && (
               <FieldRow label="Type" value={ticker.metadata.assetCategory} />
             )}
-            {ticker.metadata.sector && (
-              <FieldRow label="Sector" value={ticker.metadata.sector} />
+            {sector && (
+              <FieldRow label="Sector" value={sector} />
             )}
-            {ticker.metadata.industry && (
-              <FieldRow label="Industry" value={ticker.metadata.industry} />
+            {industry && (
+              <FieldRow label="Industry" value={industry} />
             )}
             {ticker.metadata.isin && (
               <FieldRow label="ISIN" value={ticker.metadata.isin} />
@@ -178,8 +389,22 @@ function OverviewTab({ width }: { width?: number }) {
             </box>
             {ticker.metadata.positions.map((pos, i) => {
               const costBasis = pos.shares * pos.avgCost * (pos.multiplier || 1);
-              const pnlText = pos.unrealizedPnl != null
-                ? `  P&L: ${pos.unrealizedPnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealizedPnl, pos.currency)}`
+              const positionCurrency = pos.currency || quoteCurrency;
+              const costBasisBase = toBase(costBasis, positionCurrency);
+              const marketValueBase = pos.marketValue != null
+                ? toBase(pos.marketValue, positionCurrency)
+                : pos.markPrice != null
+                  ? toBase(Math.abs(pos.shares) * pos.markPrice * (pos.multiplier || 1), positionCurrency)
+                  : q
+                    ? toBase(Math.abs(pos.shares) * q.price * (pos.multiplier || 1), quoteCurrency)
+                    : null;
+              const pnlValue = pos.unrealizedPnl != null
+                ? toBase(pos.unrealizedPnl, positionCurrency)
+                : marketValueBase != null
+                  ? marketValueBase - costBasisBase
+                  : null;
+              const pnlText = pnlValue != null
+                ? `  P&L: ${pnlValue >= 0 ? "+" : ""}${formatCurrency(pnlValue, baseCurrency)}`
                 : "";
               return (
                 <box key={i} flexDirection="column">
@@ -190,18 +415,18 @@ function OverviewTab({ width }: { width?: number }) {
                   </box>
                   <box flexDirection="row" height={1}>
                     <text fg={colors.text}>
-                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, pos.currency)}
-                      {" = "}{formatCurrency(costBasis, pos.currency)}
+                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, positionCurrency)}
+                      {" = "}{formatCurrency(costBasisBase, baseCurrency)}
                     </text>
                     {pnlText && (
-                      <text fg={priceColor(pos.unrealizedPnl!)}>{pnlText}</text>
+                      <text fg={priceColor(pnlValue ?? 0)}>{pnlText}</text>
                     )}
                   </box>
                   {pos.markPrice != null && (
                     <box flexDirection="row" height={1}>
-                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, pos.currency)}</text>
-                      {pos.marketValue != null && (
-                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(pos.marketValue, pos.currency)}</text>
+                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, positionCurrency)}</text>
+                      {marketValueBase != null && (
+                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(marketValueBase, baseCurrency)}</text>
                       )}
                     </box>
                   )}
@@ -296,6 +521,11 @@ const BALANCE_KEYS = new Set<string>([
   "totalEquity", "retainedEarnings", "dilutedShares",
 ]);
 
+const FINANCIAL_COL_W = 18;
+const FINANCIAL_LABEL_W = 20;
+const FINANCIAL_GROWTH_W = 7;
+const FINANCIAL_VALUE_W = FINANCIAL_COL_W - FINANCIAL_GROWTH_W;
+
 function computeTTM(quarterlyStmts: import("../../types/financials").FinancialStatement[]): import("../../types/financials").FinancialStatement | null {
   const last4 = quarterlyStmts.slice(-4);
   if (last4.length < 4) return null;
@@ -320,7 +550,15 @@ function computeGrowth(current: number | undefined, previous: number | undefined
   return (current - previous) / Math.abs(previous);
 }
 
-function FinancialsTab({ focused }: { focused: boolean }) {
+function formatFinancialCell(value: string, growth: number | undefined): { valueText: string; growthText: string } {
+  const growthText = growth != null ? formatGrowthShort(growth) : "";
+  return {
+    valueText: padTo(value, FINANCIAL_VALUE_W, "right"),
+    growthText: padTo(growthText ? ` ${growthText}` : "", FINANCIAL_GROWTH_W, "right"),
+  };
+}
+
+export function FinancialsTab({ focused }: { focused: boolean }) {
   const { financials } = usePaneTicker();
   const hasAnnualStatements = (financials?.annualStatements.length ?? 0) > 0;
   const hasQuarterlyStatements = (financials?.quarterlyStatements.length ?? 0) > 0;
@@ -383,9 +621,6 @@ function FinancialsTab({ focused }: { focused: boolean }) {
     prevMap.set("TTM", prevTtm);
   }
 
-  const COL_W = 18;
-  const LABEL_W = 20;
-
   return (
     <scrollbox flexGrow={1} scrollY>
       <box flexDirection="column" paddingX={2} paddingBottom={1}>
@@ -415,9 +650,9 @@ function FinancialsTab({ focused }: { focused: boolean }) {
 
         {/* Column headers */}
         <box flexDirection="row" height={1}>
-          <box width={LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
+          <box width={FINANCIAL_LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
           {displayStmts.map((s) => (
-            <box key={s.date} width={COL_W}>
+            <box key={s.date} width={FINANCIAL_COL_W}>
               <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.textBright : colors.textDim}>
                 {s.date === "TTM" ? "TTM" : s.date.slice(0, 7)}
               </text>
@@ -437,24 +672,23 @@ function FinancialsTab({ focused }: { focused: boolean }) {
             <box key={key} flexDirection="column">
               {idx > 0 && idx % 4 === 0 && <box height={1} />}
               <box flexDirection="row" height={1}>
-              <box width={LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
-              {displayStmts.map((s) => {
-                const val = s[key] as number | undefined;
-                const prev = prevMap.get(s.date);
-                const prevVal = prev ? (prev[key] as number | undefined) : undefined;
-                const growth = computeGrowth(val, prevVal);
-                const formatted = val != null
-                  ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
-                  : "—";
-                const growthStr = growth != null ? " " + formatGrowthShort(growth) : "";
-                const isNeg = val != null && val < 0;
-                return (
-                  <box key={s.date} width={COL_W} flexDirection="row" marginLeft={isNeg ? -1 : 0}>
-                    <text fg={colors.text}>{formatted}</text>
-                    {growthStr ? <text fg={priceColor(growth!)}>{growthStr}</text> : null}
-                  </box>
-                );
-              })}
+                <box width={FINANCIAL_LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
+                {displayStmts.map((s) => {
+                  const val = s[key] as number | undefined;
+                  const prev = prevMap.get(s.date);
+                  const prevVal = prev ? (prev[key] as number | undefined) : undefined;
+                  const growth = computeGrowth(val, prevVal);
+                  const formatted = val != null
+                    ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
+                    : "—";
+                  const cell = formatFinancialCell(formatted, growth);
+                  return (
+                    <box key={s.date} width={FINANCIAL_COL_W} flexDirection="row">
+                      <text fg={colors.text}>{cell.valueText}</text>
+                      <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
+                    </box>
+                  );
+                })}
               </box>
             </box>
           );
@@ -464,7 +698,21 @@ function FinancialsTab({ focused }: { focused: boolean }) {
   );
 }
 
-function ChartTab({ width, height, focused, interactive, onActivate }: { width?: number; height?: number; focused: boolean; interactive: boolean; onActivate?: () => void }) {
+function ChartTab({
+  width,
+  height,
+  focused,
+  interactive,
+  axisMode,
+  onActivate,
+}: {
+  width?: number;
+  height?: number;
+  focused: boolean;
+  interactive: boolean;
+  axisMode: ChartAxisMode;
+  onActivate?: () => void;
+}) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
@@ -472,7 +720,7 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
 
   return (
     <box flexDirection="column" paddingX={1} flexGrow={1} onMouseDown={() => { if (!interactive && onActivate) onActivate(); }}>
-      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} />
+      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} axisMode={axisMode} />
     </box>
   );
 }
@@ -486,6 +734,7 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
+  const paneSettings = getTickerDetailPaneSettings(paneInstance?.settings);
   const hasOptionsChain = useOptionsAvailability(ticker);
   const collectionTickers = getCollectionTickers(state, collectionId);
   const collectionName = getCollectionName(state, collectionId);
@@ -498,21 +747,40 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
     : [];
   const hasIbkrGatewayTrading = getConfiguredIbkrGatewayInstances(state.config).length > 0;
 
-  const allTabs = buildVisibleDetailTabs(pluginTabs, financials, {
+  const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {
     hasIbkrGatewayTrading,
     hasOptionsChain,
   });
+  const resolvedTabId = paneSettings.hideTabs
+    ? resolveLockedTabId(paneSettings, allTabs)
+    : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
   const visiblePluginTabs = pluginTabs.filter((tab) => allTabs.some((visibleTab) => visibleTab.id === tab.id));
 
-  const tabIdx = Math.max(0, allTabs.findIndex((t) => t.id === activeTabId));
-  const isPluginTab = visiblePluginTabs.some((t) => t.id === activeTabId);
-  const activePluginTab = isPluginTab ? visiblePluginTabs.find((t) => t.id === activeTabId) : null;
+  const tabIdx = Math.max(0, allTabs.findIndex((tab) => tab.id === resolvedTabId));
+  const isPluginTab = visiblePluginTabs.some((tab) => tab.id === resolvedTabId);
+  const activePluginTab = isPluginTab ? visiblePluginTabs.find((tab) => tab.id === resolvedTabId) : null;
 
   // Refs to avoid stale closures in useKeyboard
   const allTabsRef = useRef(allTabs);
   allTabsRef.current = allTabs;
-  const stateRef = useRef({ focused, chartInteractive, pluginCaptured, activeTabId, tabIdx, allTabCount: allTabs.length });
-  stateRef.current = { focused, chartInteractive, pluginCaptured, activeTabId, tabIdx, allTabCount: allTabs.length };
+  const stateRef = useRef({
+    focused,
+    chartInteractive,
+    pluginCaptured,
+    activeTabId: resolvedTabId,
+    tabIdx,
+    allTabCount: allTabs.length,
+    hideTabs: paneSettings.hideTabs,
+  });
+  stateRef.current = {
+    focused,
+    chartInteractive,
+    pluginCaptured,
+    activeTabId: resolvedTabId,
+    tabIdx,
+    allTabCount: allTabs.length,
+    hideTabs: paneSettings.hideTabs,
+  };
 
   const setChartInteractiveEager = useCallback((val: boolean) => {
     stateRef.current = { ...stateRef.current, chartInteractive: val };
@@ -527,19 +795,19 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   // Exit chart interactive mode when switching away from chart tab
   useEffect(() => {
-    if (activeTabId !== "chart") {
+    if (resolvedTabId !== "chart") {
       setChartInteractive(false);
     }
     // Reset plugin capture when switching tabs
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
-  }, [activeTabId, dispatch]);
+  }, [resolvedTabId, dispatch]);
 
   useEffect(() => {
-    if (!allTabs.some((tab) => tab.id === activeTabId)) {
-      setActiveTabId("overview");
+    if (resolvedTabId !== activeTabId) {
+      setActiveTabId(resolvedTabId);
     }
-  }, [activeTabId, allTabs, setActiveTabId]);
+  }, [activeTabId, resolvedTabId, setActiveTabId]);
 
   const handleKeyboard = useCallback((event: { name?: string }) => {
     const s = stateRef.current;
@@ -564,6 +832,8 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
     // Tab switching
     const tabs = allTabsRef.current;
+    if (s.hideTabs) return;
+
     if (event.name === "h" || event.name === "left") {
       const newIdx = Math.max(s.tabIdx - 1, 0);
       setActiveTabId(tabs[newIdx]!.id);
@@ -591,15 +861,26 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <TabBar
-        tabs={allTabs.map((t) => ({ label: t.name, value: t.id }))}
-        activeValue={activeTabId}
-        onSelect={setActiveTabId}
-      />
+      {!paneSettings.hideTabs && (
+        <TabBar
+          tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
+          activeValue={resolvedTabId}
+          onSelect={setActiveTabId}
+        />
+      )}
 
-      {activeTabId === "overview" && <OverviewTab width={width} />}
-      {activeTabId === "financials" && <FinancialsTab focused={focused} />}
-      {activeTabId === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {resolvedTabId === "overview" && <OverviewTab width={width} />}
+      {resolvedTabId === "financials" && <FinancialsTab focused={focused} />}
+      {resolvedTabId === "chart" && (
+        <ChartTab
+          width={width}
+          height={height}
+          focused={focused}
+          interactive={chartInteractive}
+          axisMode={paneSettings.chartAxisMode}
+          onActivate={() => setChartInteractiveEager(true)}
+        />
+      )}
 
       {/* Dynamic plugin tabs */}
       {activePluginTab && (
@@ -626,6 +907,55 @@ export const tickerDetailPlugin: GloomPlugin = {
       icon: "D",
       component: TickerDetailPane,
       defaultPosition: "right",
+      settings: (context) => buildTickerDetailSettingsDef(getTickerDetailPaneSettings(context.settings)),
+    },
+    {
+      id: "quote-monitor",
+      name: "Quote Monitor",
+      icon: "Q",
+      component: QuoteMonitorPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 64, height: 8 },
+      settings: buildQuoteMonitorSettingsDef(),
+    },
+  ],
+  paneTemplates: [
+    {
+      id: "new-ticker-detail-pane",
+      paneId: "ticker-detail",
+      label: "New Ticker Detail Pane",
+      description: "Open another detail pane for the selected ticker or current collection",
+      keywords: ["new", "ticker", "detail", "pane", "inspector"],
+      canCreate: (context) => context.activeTicker !== null || context.activeCollectionId !== null,
+      createInstance: (context) => (
+        context.activeTicker
+          ? {
+            title: context.activeTicker,
+            binding: { kind: "fixed", symbol: context.activeTicker },
+          }
+          : {}
+      ),
+    },
+    {
+      id: "quote-monitor-pane",
+      paneId: "quote-monitor",
+      label: "Quote Monitor",
+      description: "Open a compact quote monitor for the selected ticker",
+      keywords: ["quote", "monitor", "price", "ticker", "pane"],
+      shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
+      canCreate: (context, options) => (options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg)) !== null,
+      createInstance: (context, options) => {
+        const ticker = options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg);
+        return ticker
+          ? {
+            title: ticker,
+            binding: { kind: "fixed", symbol: ticker },
+            settings: { symbol: ticker },
+            placement: "floating",
+          }
+          : null;
+      },
     },
   ],
 };

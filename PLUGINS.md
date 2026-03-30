@@ -122,6 +122,71 @@ ctx.selectTicker("AAPL");          // Select ticker + focus right panel
 ctx.switchPanel("left");           // Switch active panel
 ctx.switchTab("chart");            // Switch detail tab by id
 ctx.openCommandBar();              // Open the command bar
+ctx.openPaneSettings();            // Open settings for the focused pane
+```
+
+### Pane settings
+
+Panes can expose per-instance settings that persist with the layout. These settings are part of the pane definition, can be edited from the pane header or command bar, and are available to both first-party and external plugins.
+
+```typescript
+ctx.registerPane({
+  id: "my-pane",
+  name: "My Pane",
+  component: MyPane,
+  defaultPosition: "right",
+  settings: {
+    title: "My Pane Settings",
+    fields: [
+      {
+        key: "symbol",
+        label: "Ticker",
+        type: "text",
+        placeholder: "AAPL",
+      },
+      {
+        key: "hideTabs",
+        label: "Hide Tabs",
+        type: "toggle",
+      },
+      {
+        key: "columnIds",
+        label: "Columns",
+        type: "ordered-multi-select",
+        options: [
+          { value: "ticker", label: "Ticker" },
+          { value: "price", label: "Price" },
+        ],
+      },
+    ],
+  },
+});
+```
+
+Available field types:
+- `toggle`
+- `text`
+- `select`
+- `multi-select`
+- `ordered-multi-select`
+
+Imperative pane settings access is available on the plugin context:
+
+```typescript
+const symbol = ctx.paneSettings.get<string>("quote-monitor:main", "symbol");
+await ctx.paneSettings.set("quote-monitor:main", "symbol", "MSFT");
+await ctx.paneSettings.delete("quote-monitor:main", "symbol");
+```
+
+Inside pane components, use `usePaneSettingValue()` to read and update the current pane's persisted settings:
+
+```typescript
+import { usePaneSettingValue } from "gloomberb/components";
+
+function MyPane() {
+  const [hideTabs, setHideTabs] = usePaneSettingValue("hideTabs", false);
+  // ...
+}
 ```
 
 ### Events
@@ -199,7 +264,7 @@ import {
   ProgressBar,
   colors,
 } from "gloomberb/components";
-import { useAppState, usePaneTicker, useSelectedTicker } from "gloomberb/components";
+import { useAppState, usePaneSettingValue, usePaneTicker, useSelectedTicker } from "gloomberb/components";
 import { formatCurrency, formatCompact, padTo } from "gloomberb/components";
 ```
 

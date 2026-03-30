@@ -6,8 +6,15 @@ import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { runCli } from "./cli";
 import { loadExternalPlugins } from "./plugins/loader";
+import { debugLog } from "./utils/debug-log";
 
 async function main() {
+  // Intercept console.log/warn/error to capture in debug log
+  debugLog.interceptConsole();
+
+  const appLog = debugLog.createLogger("app");
+  appLog.info("Gloomberb starting");
+
   // Handle CLI subcommands (install, remove, update, plugins)
   const cliArgs = process.argv.slice(2);
   if (cliArgs.length > 0) {

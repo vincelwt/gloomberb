@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import { Spinner } from "../spinner";
@@ -21,42 +21,45 @@ import { getCurrentThemeId, applyTheme } from "../../theme/colors";
 import { saveConfig, resetAllData, exportConfig, importConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
-import type { TickerRecord, TickerMetadata } from "../../types/ticker";
+import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { CommandDef, WizardStep } from "../../types/plugin";
-import { findPaneInstance, type ColumnConfig } from "../../types/config";
+import type { CommandDef, PaneTemplateCreateOptions, PaneTemplateDef, WizardStep } from "../../types/plugin";
+import { DEFAULT_LAYOUT, cloneLayout, createPaneInstance, findPaneInstance, type LayoutConfig } from "../../types/config";
 import type { PromptContext, AlertContext } from "@opentui-ui/dialog/react";
 import { resolveBrokerConfigFields } from "../../types/broker";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import {
+  addPaneFloating,
+  addPaneToLayout,
+  dockPane,
+  floatPane,
+  getDockedPaneIds,
+  gridlockAllPanes,
+  getLayoutPreview,
+  isPaneDocked,
+  movePaneRelative,
+  removePane,
+  swapPanes,
+} from "../../plugins/pane-manager";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import { DialogFrame, ListView, TextField } from "../ui";
 import {
+  buildSections,
   getEmptyState,
   getRowPresentation,
   resolveCommandBarMode,
   truncateText,
 } from "./view-model";
-
-/** All available columns that can be toggled */
-const ALL_COLUMNS: ColumnConfig[] = [
-  { id: "ticker", label: "TICKER", width: 8, align: "left" },
-  { id: "price", label: "PRICE", width: 10, align: "right", format: "currency" },
-  { id: "change", label: "CHG", width: 9, align: "right", format: "currency" },
-  { id: "change_pct", label: "CHG%", width: 8, align: "right", format: "percent" },
-  { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
-  { id: "market_cap", label: "MCAP", width: 10, align: "right", format: "compact" },
-  { id: "pe", label: "P/E", width: 7, align: "right", format: "number" },
-  { id: "forward_pe", label: "FWD P/E", width: 8, align: "right", format: "number" },
-  { id: "dividend_yield", label: "DIV%", width: 7, align: "right", format: "percent" },
-  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
-  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
-  { id: "cost_basis", label: "COST", width: 10, align: "right", format: "compact" },
-  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
-  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
-  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
-  { id: "latency", label: "AGE", width: 6, align: "right" },
-];
+import {
+  createLocalTickerSearchCandidates,
+  findExactTickerSearchMatch,
+  rankTickerSearchItems,
+  upsertTickerFromSearchResult,
+  searchTickerCandidates,
+  type TickerSearchCandidate,
+} from "../../utils/ticker-search";
+import { debugLog } from "../../utils/debug-log";
 
 interface CommandBarProps {
   dataProvider: DataProvider;
@@ -70,14 +73,33 @@ interface ResultItem {
   label: string;
   detail: string;
   category: string;
-  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "column" | "action" | "info";
+  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "action" | "info";
   right?: string;
+  searchText?: string;
   themeId?: string; // for theme items — enables live preview
   pluginToggle?: () => void; // for plugin items — toggle with space
   secondaryAction?: () => void | Promise<void>;
   checked?: boolean;
   current?: boolean;
   action: () => void | Promise<void>;
+}
+
+interface PaneShortcutMatch {
+  template: PaneTemplateDef;
+  arg: string;
+}
+
+const commandBarLog = debugLog.createLogger("command-bar");
+
+function summarizeError(error: unknown): Record<string, string> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack || "",
+    };
+  }
+  return { message: String(error) };
 }
 
 // --- Wizard dialog content components ---
@@ -582,9 +604,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         })();
         return;
       }
-      case "columns": {
-        // Enter columns mode by setting the prefix
-        dispatch({ type: "SET_COMMAND_BAR_QUERY", query: "COL " });
+      case "pane-settings": {
+        if (state.focusedPaneId) {
+          pluginRegistry.openPaneSettingsFn(state.focusedPaneId);
+        }
+        close();
         return;
       }
       case "cycle-chart-renderer": {
@@ -780,51 +804,83 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
   const openTickerDetail = useCallback((result: InstrumentSearchResult, options?: { forceNewPane?: boolean }) => {
     (async () => {
-      const symbol = result.brokerContract?.localSymbol || result.symbol.split(".")[0]!;
-      let existing = await tickerRepository.loadTicker(symbol);
-      const created = !existing;
-      if (!existing) {
-        const metadata: TickerMetadata = {
-          ticker: symbol,
-          exchange: result.exchange,
-          currency: result.currency || result.brokerContract?.currency || "USD",
-          name: result.name,
-          assetCategory: result.brokerContract?.secType || result.type || undefined,
-          broker_contracts: result.brokerContract ? [result.brokerContract] : [],
-          portfolios: [],
-          watchlists: [],
-          positions: [],
-          custom: {},
-          tags: [],
-        };
-        existing = await tickerRepository.createTicker(metadata);
-      } else {
-        existing.metadata.name = existing.metadata.name || result.name;
-        existing.metadata.exchange = existing.metadata.exchange || result.exchange;
-        existing.metadata.currency = existing.metadata.currency || result.currency || "USD";
-        existing.metadata.assetCategory = existing.metadata.assetCategory || result.brokerContract?.secType || result.type || undefined;
-        const existingContracts = existing.metadata.broker_contracts ?? [];
-        if (result.brokerContract) {
-          const nextContracts = [...existingContracts];
-          const hasContract = nextContracts.some((contract) =>
-            contract.brokerId === result.brokerContract!.brokerId
-            && contract.brokerInstanceId === result.brokerContract!.brokerInstanceId
-            && contract.conId === result.brokerContract!.conId
-            && contract.localSymbol === result.brokerContract!.localSymbol,
-          );
-          if (!hasContract) nextContracts.push(result.brokerContract);
-          existing.metadata.broker_contracts = nextContracts;
-        }
-        await tickerRepository.saveTicker(existing);
-      }
-      dispatch({ type: "UPDATE_TICKER", ticker: existing });
+      const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, result);
+      dispatch({ type: "UPDATE_TICKER", ticker });
       if (created) {
-        pluginRegistry.events.emit("ticker:added", { symbol, ticker: existing });
+        pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
       }
-      focusTicker(symbol, options);
+      focusTicker(ticker.metadata.ticker, options);
       close();
     })();
   }, [tickerRepository, dispatch, close, focusTicker, pluginRegistry.events]);
+
+  const mapTickerSearchCandidateToResultItem = useCallback((candidate: TickerSearchCandidate): ResultItem => {
+    if (candidate.kind === "ticker" && candidate.ticker) {
+      return {
+        id: candidate.id,
+        label: candidate.label,
+        detail: candidate.detail,
+        right: candidate.right,
+        category: candidate.category,
+        kind: "ticker",
+        secondaryAction: () => { focusTicker(candidate.ticker!.metadata.ticker, { forceNewPane: true }); close(); },
+        action: () => { focusTicker(candidate.ticker!.metadata.ticker); close(); },
+      };
+    }
+
+    const result = candidate.result!;
+    return {
+      id: candidate.id,
+      label: candidate.label,
+      detail: candidate.detail,
+      right: candidate.right,
+      category: candidate.category,
+      kind: "search",
+      secondaryAction: () => openTickerDetail(result, { forceNewPane: true }),
+      action: () => openTickerDetail(result),
+    };
+  }, [close, focusTicker, openTickerDetail]);
+
+  const localTickerSearchResultItems = useCallback((query?: string, options?: {
+    category?: string;
+    limit?: number;
+  }): ResultItem[] => {
+    const items = query
+      ? rankTickerSearchItems(createLocalTickerSearchCandidates(state.tickers.values()), query)
+      : createLocalTickerSearchCandidates(state.tickers.values());
+    return items
+      .slice(0, options?.limit)
+      .map((candidate) => ({
+        ...mapTickerSearchCandidateToResultItem(candidate),
+        category: options?.category ?? candidate.category,
+      }));
+  }, [mapTickerSearchCandidateToResultItem, state.tickers]);
+
+  const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
+    pluginRegistry.updateLayoutFn(nextLayout);
+  }, [pluginRegistry]);
+
+  const duplicatePane = useCallback((paneId: string) => {
+    const currentState = stateRef.current;
+    const pane = findPaneInstance(currentState.config.layout, paneId);
+    if (!pane) return;
+    const paneDef = pluginRegistry.panes.get(pane.paneId);
+    if (!paneDef) return;
+
+    const duplicate = createPaneInstance(pane.paneId, {
+      title: pane.title,
+      binding: pane.binding,
+      params: pane.params,
+      settings: pane.settings,
+    });
+
+    const { width, height } = pluginRegistry.getTermSizeFn();
+    const nextLayout = currentState.config.layout.floating.some((entry) => entry.instanceId === paneId)
+      ? addPaneFloating(currentState.config.layout, duplicate, width, height, paneDef)
+      : addPaneToLayout(currentState.config.layout, duplicate, { relativeTo: paneId, position: "right" });
+    persistLayoutChange(nextLayout);
+    dispatch({ type: "FOCUS_PANE", paneId: duplicate.instanceId });
+  }, [dispatch, persistLayoutChange, pluginRegistry]);
 
   // Run a wizard command through sequential dialogs
   const runWizard = useCallback(async (cmd: CommandDef) => {
@@ -948,30 +1004,135 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       }));
   }, [pluginRegistry.tickerActions, activeTickerData, activeFinancials, close]);
 
+  const getPaneTemplateContext = useCallback(() => ({
+    config: state.config,
+    layout: state.config.layout,
+    focusedPaneId: state.focusedPaneId,
+    activeTicker: activeTickerSymbol,
+    activeCollectionId,
+  }), [activeCollectionId, activeTickerSymbol, state.config, state.focusedPaneId]);
+
+  const getAvailablePaneTemplates = useCallback((options?: PaneTemplateCreateOptions): PaneTemplateDef[] => {
+    const disabledPlugins = new Set(state.config.disabledPlugins || []);
+    const context = getPaneTemplateContext();
+    return [...pluginRegistry.paneTemplates.values()]
+      .filter((template) => {
+        const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
+        if (pluginId && disabledPlugins.has(pluginId)) return false;
+        if (!template.canCreate) return true;
+        try {
+          return template.canCreate(context, options);
+        } catch (error) {
+          commandBarLog.error("Pane template canCreate failed", {
+            templateId: template.id,
+            pluginId,
+            options,
+            error: summarizeError(error),
+          });
+          return false;
+        }
+      });
+  }, [getPaneTemplateContext, pluginRegistry, state.config.disabledPlugins]);
+
+  const createPaneTemplateItem = useCallback((
+    template: PaneTemplateDef,
+    options?: {
+      category?: string;
+      createOptions?: PaneTemplateCreateOptions;
+      showShortcut?: boolean;
+    },
+  ): ResultItem => {
+    const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
+    const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
+    const paneDef = pluginRegistry.panes.get(template.paneId);
+    const shortcutLabel = template.shortcut
+      ? [template.shortcut.prefix, template.shortcut.argPlaceholder && `<${template.shortcut.argPlaceholder}>`].filter(Boolean).join(" ")
+      : null;
+    const placementLabel = paneDef?.defaultMode === "floating" ? "float" : "dock";
+    return {
+      id: `pane-template:${template.id}:${options?.createOptions?.arg || ""}`,
+      label: template.label,
+      detail: shortcutLabel ? `${template.description} · ${shortcutLabel}` : template.description,
+      category: options?.category ?? (pluginName ? `${pluginName} Panes` : "New Panes"),
+      kind: "action",
+      right: options?.showShortcut ? (template.shortcut?.prefix || placementLabel) : placementLabel,
+      searchText: `${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
+      action: () => {
+        close();
+        pluginRegistry.createPaneFromTemplateFn(template.id, options?.createOptions);
+      },
+    };
+  }, [close, pluginRegistry]);
+
+  const paneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
+    const items = getAvailablePaneTemplates()
+      .map((template) => createPaneTemplateItem(template));
+
+    return filterQuery
+      ? fuzzyFilter(items, filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
+      : items;
+  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
+
+  const paneShortcutItems = useCallback((options?: {
+    filterQuery?: string;
+    createOptions?: PaneTemplateCreateOptions;
+  }): ResultItem[] => {
+    const items = getAvailablePaneTemplates(options?.createOptions)
+      .filter((template) => template.shortcut)
+      .map((template) => createPaneTemplateItem(template, {
+        category: "Panes",
+        createOptions: options?.createOptions,
+        showShortcut: true,
+      }));
+
+    return options?.filterQuery
+      ? fuzzyFilter(items, options.filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
+      : items;
+  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
+
+  const nonShortcutPaneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
+    const items = getAvailablePaneTemplates()
+      .filter((template) => !template.shortcut)
+      .map((template) => createPaneTemplateItem(template, { category: "Panes" }));
+
+    return filterQuery
+      ? fuzzyFilter(items, filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
+      : items;
+  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
+
+  const matchPaneShortcut = useCallback((input: string): PaneShortcutMatch | null => {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+
+    const upper = trimmed.toUpperCase();
+    const templates = [...pluginRegistry.paneTemplates.values()]
+      .filter((template) => template.shortcut)
+      .sort((a, b) => (b.shortcut?.prefix.length ?? 0) - (a.shortcut?.prefix.length ?? 0));
+
+    for (const template of templates) {
+      const prefix = template.shortcut?.prefix.toUpperCase();
+      if (!prefix) continue;
+      if (!upper.startsWith(`${prefix} `) && upper !== prefix) continue;
+
+      const arg = trimmed.slice(prefix.length).trim();
+      const createOptions = arg ? { arg } : undefined;
+      if (!getAvailablePaneTemplates(createOptions).some((entry) => entry.id === template.id)) {
+        continue;
+      }
+      return { template, arg };
+    }
+
+    return null;
+  }, [getAvailablePaneTemplates, pluginRegistry.paneTemplates]);
+
   const activeMatch = matchPrefix(query);
+  const paneShortcutMatch = useMemo(() => matchPaneShortcut(query), [matchPaneShortcut, query]);
   const modeInfo = resolveCommandBarMode(query);
   const isThemeMode = modeInfo.kind === "themes";
   const isPluginMode = modeInfo.kind === "plugins";
-  const isColumnsMode = modeInfo.kind === "columns";
-
-  // Toggle a column on/off
-  const toggleColumn = useCallback((colId: string) => {
-    const current = state.config.columns;
-    const isActive = current.some((c) => c.id === colId);
-    let newCols: ColumnConfig[];
-    if (isActive) {
-      // Don't allow removing all columns
-      if (current.length <= 1) return;
-      newCols = current.filter((c) => c.id !== colId);
-    } else {
-      const colDef = ALL_COLUMNS.find((c) => c.id === colId);
-      if (!colDef) return;
-      newCols = [...current, colDef];
-    }
-    const newConfig = { ...state.config, columns: newCols };
-    dispatch({ type: "SET_CONFIG", config: newConfig });
-    saveConfig(newConfig).catch(() => {});
-  }, [state.config, dispatch]);
+  const isLayoutMode = modeInfo.kind === "layout";
+  const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
+  const focusedPaneHasSettings = !!state.focusedPaneId && pluginRegistry.hasPaneSettings(state.focusedPaneId);
 
   useEffect(() => {
     const isWatchlistTab = state.config.watchlists.some((w) => w.id === activeCollectionId);
@@ -1009,6 +1170,8 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
         case "disconnect-broker-account":
           return state.config.brokerInstances.length > 0;
+        case "pane-settings":
+          return focusedPaneHasSettings;
         default:
           return true;
       }
@@ -1069,7 +1232,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     const match = matchPrefix(query);
     let initialIdx = 0;
 
-    if (match && match.command.id === "plugins") {
+    if (paneShortcutMatch) {
+      items.push(createPaneTemplateItem(paneShortcutMatch.template, {
+        category: "Panes",
+        createOptions: paneShortcutMatch.arg ? { arg: paneShortcutMatch.arg } : undefined,
+        showShortcut: true,
+      }));
+    } else if (match && match.command.id === "plugins") {
       const toggleablePlugins = [...pluginRegistry.allPlugins.values()].filter((p) => p.toggleable);
       const disabledPlugins = state.config.disabledPlugins || [];
       const filtered = match.arg
@@ -1100,21 +1269,286 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           action: toggleAction,
         });
       }
-    } else if (match && match.command.id === "columns") {
-      const activeIds = new Set(state.config.columns.map((c) => c.id));
-      for (const col of ALL_COLUMNS) {
-        const isOn = activeIds.has(col.id);
-        items.push({
-          id: `col:${col.id}`,
-          label: col.label,
-          detail: `${col.id} | w:${col.width} | ${col.align}`,
-          right: col.format || "",
-          category: "Columns",
-          kind: "column",
-          checked: isOn,
-          action: () => toggleColumn(col.id),
+    } else if (match && match.command.id === "new-pane") {
+      items.push(...paneTemplateItems(match.arg));
+    } else if (match && match.command.id === "layout") {
+      const layoutItems: ResultItem[] = [];
+      const currentLayout = state.config.layout;
+      const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
+      const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
+      const dockedPaneIds = getDockedPaneIds(currentLayout);
+      const focusedDocked = focusedPane ? isPaneDocked(currentLayout, focusedPane.instanceId) : false;
+      const focusedFloating = focusedPane ? currentLayout.floating.find((entry) => entry.instanceId === focusedPane.instanceId) : null;
+      const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
+      const layoutSnapshot = JSON.stringify(currentLayout);
+      const canMove = (direction: "left" | "right" | "above" | "below") => (
+        !!focusedPane && JSON.stringify(movePaneRelative(currentLayout, focusedPane.instanceId, direction)) !== layoutSnapshot
+      );
+
+      if (focusedPane && focusedPaneDef) {
+        layoutItems.push({
+          id: "layout-toggle-mode",
+          label: focusedFloating ? "Dock Pane" : "Float Pane",
+          detail: focusedFloating ? "Return the focused window to the layout" : "Detach the focused pane into a floating window",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            const { width, height } = pluginRegistry.getTermSizeFn();
+            const nextLayout = focusedFloating
+              ? dockPane(currentLayout, focusedPane.instanceId)
+              : floatPane(currentLayout, focusedPane.instanceId, width, height, focusedPaneDef);
+            persistLayoutChange(nextLayout);
+            close();
+          },
+        });
+
+        const moveActions: Array<{
+          id: string;
+          label: string;
+          direction: "left" | "right" | "above" | "below";
+          available: boolean;
+          unavailableDetail: string;
+        }> = [
+          {
+            id: "layout-move-left",
+            label: "Move Left",
+            direction: "left",
+            available: canMove("left"),
+            unavailableDetail: "No column to the left",
+          },
+          {
+            id: "layout-move-right",
+            label: "Move Right",
+            direction: "right",
+            available: canMove("right"),
+            unavailableDetail: "No column to the right",
+          },
+          {
+            id: "layout-move-up",
+            label: "Move Up",
+            direction: "above",
+            available: canMove("above"),
+            unavailableDetail: "No pane above",
+          },
+          {
+            id: "layout-move-down",
+            label: "Move Down",
+            direction: "below",
+            available: canMove("below"),
+            unavailableDetail: "No pane below",
+          },
+        ];
+
+        moveActions.forEach((actionItem) => {
+          layoutItems.push({
+            id: actionItem.id,
+            label: actionItem.label,
+            detail: actionItem.available ? "Reposition the focused pane" : actionItem.unavailableDetail,
+            category: "Focused Pane",
+            kind: "action",
+            action: actionItem.available
+              ? () => {
+                persistLayoutChange(movePaneRelative(currentLayout, focusedPane.instanceId, actionItem.direction));
+                close();
+              }
+              : () => {},
+          });
+        });
+
+        layoutItems.push({
+          id: "layout-swap",
+          label: "Swap With...",
+          detail: dockedPaneIds.length + currentLayout.floating.length > 1
+            ? "Choose another pane to swap positions"
+            : "Need at least two panes",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            close();
+            (async () => {
+              const choices = [
+                ...dockedPaneIds,
+                ...currentLayout.floating.map((entry) => entry.instanceId),
+              ]
+                .filter((paneId) => paneId !== focusedPane.instanceId)
+                .map((paneId) => {
+                  const instance = findPaneInstance(currentLayout, paneId)!;
+                  return {
+                    id: paneId,
+                    label: instance.title || pluginRegistry.panes.get(instance.paneId)?.name || instance.paneId,
+                    desc: currentLayout.floating.some((entry) => entry.instanceId === paneId) ? "Floating window" : "Docked pane",
+                  };
+                });
+              if (choices.length === 0) return;
+              const target = await dialog.prompt<string>({
+                content: (ctx) => <ChoiceContent {...ctx} title="Swap With..." choices={choices} />,
+              });
+              if (!target) return;
+              persistLayoutChange(swapPanes(currentLayout, focusedPane.instanceId, target));
+            })();
+          },
+        });
+
+        layoutItems.push({
+          id: "layout-duplicate-pane",
+          label: "Duplicate Pane",
+          detail: "Create another instance next to the focused pane",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            duplicatePane(focusedPane.instanceId);
+            close();
+          },
+        });
+
+        layoutItems.push({
+          id: "layout-close-pane",
+          label: "Close Pane",
+          detail: "Remove the focused pane from the layout",
+          category: "Focused Pane",
+          kind: "action",
+          action: () => {
+            persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
+            close();
+          },
+        });
+      } else {
+        layoutItems.push({
+          id: "layout-no-focused-pane",
+          label: "No focused pane",
+          detail: "Focus a pane to show pane-specific layout actions",
+          category: "Focused Pane",
+          kind: "info",
+          action: () => {},
         });
       }
+
+      layoutItems.push({
+        id: "layout-undo",
+        label: "Undo Layout Change",
+        detail: (layoutHistory?.past.length ?? 0) > 0 ? "Restore the previous layout state" : "No previous layout state",
+        category: "Current Layout",
+        kind: "action",
+        action: (layoutHistory?.past.length ?? 0) > 0
+          ? () => {
+            dispatch({ type: "UNDO_LAYOUT" });
+            close();
+          }
+          : () => {},
+      });
+      layoutItems.push({
+        id: "layout-redo",
+        label: "Redo Layout Change",
+        detail: (layoutHistory?.future.length ?? 0) > 0 ? "Reapply the next layout state" : "No later layout state",
+        category: "Current Layout",
+        kind: "action",
+        action: (layoutHistory?.future.length ?? 0) > 0
+          ? () => {
+            dispatch({ type: "REDO_LAYOUT" });
+            close();
+          }
+          : () => {},
+      });
+      layoutItems.push({
+        id: "layout-reset",
+        label: "Reset Current Layout",
+        detail: "Restore the default two-pane layout",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
+          close();
+        },
+      });
+      layoutItems.push({
+        id: "layout-gridlock",
+        label: "Gridlock All Windows",
+        detail: currentLayout.floating.length > 0
+          ? "Infer a tiled layout from the current window positions"
+          : "Retile all panes from their current arrangement",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          const { width, height } = pluginRegistry.getTermSizeFn();
+          persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
+          close();
+        },
+      });
+      layoutItems.push({
+        id: "layout-rename",
+        label: "Rename Layout",
+        detail: "Change the current saved layout name",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          close();
+          (async () => {
+            const name = await dialog.prompt<string>({
+              content: (ctx) => <InputStepContent {...ctx} step={{
+                key: "name",
+                type: "text",
+                label: "Rename Layout",
+                placeholder: state.config.layouts[state.config.activeLayoutIndex]?.name || "Layout name",
+              }} />,
+            });
+            if (!name?.trim()) return;
+            dispatch({ type: "RENAME_LAYOUT", index: state.config.activeLayoutIndex, name: name.trim() });
+          })();
+        },
+      });
+      layoutItems.push({
+        id: "layout-duplicate",
+        label: "Duplicate Layout",
+        detail: "Create a copy of the current layout",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          dispatch({ type: "DUPLICATE_LAYOUT", index: state.config.activeLayoutIndex });
+          close();
+        },
+      });
+      layoutItems.push({
+        id: "layout-new",
+        label: "New Layout",
+        detail: "Create a fresh saved layout",
+        category: "Current Layout",
+        kind: "action",
+        action: () => {
+          close();
+          (async () => {
+            const name = await dialog.prompt<string>({
+              content: (ctx) => <InputStepContent {...ctx} step={{
+                key: "name",
+                type: "text",
+                label: "New Layout",
+                placeholder: "Trading, Research, Overview",
+              }} />,
+            });
+            if (!name?.trim()) return;
+            dispatch({ type: "NEW_LAYOUT", name: name.trim() });
+          })();
+        },
+      });
+
+      state.config.layouts.forEach((savedLayout, index) => {
+        layoutItems.push({
+          id: `layout-switch:${index}`,
+          label: savedLayout.name,
+          detail: index === state.config.activeLayoutIndex ? "Current layout" : "Switch to this saved layout",
+          right: getLayoutPreview(savedLayout.layout),
+          category: "Saved Layouts",
+          kind: "action",
+          current: index === state.config.activeLayoutIndex,
+          action: () => {
+            dispatch({ type: "SWITCH_LAYOUT", index });
+            close();
+          },
+        });
+      });
+
+      items.push(...(match.arg
+        ? fuzzyFilter(layoutItems, match.arg, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
+        : layoutItems));
     } else if (match && match.command.id === "theme") {
       const themeOptions = getThemeOptions();
       const savedThemeId = originalThemeRef.current;
@@ -1151,6 +1585,8 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           kind: "info",
           action: () => {},
         });
+      } else {
+        items.push(...localTickerSearchResultItems(match.arg, { limit: 6 }));
       }
     } else if (match && !match.command.hasArg) {
       if (shouldShow(match.command)) {
@@ -1177,17 +1613,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           if (!recentSet.has(t.metadata.ticker)) recentTickers.push(t);
         }
       }
-      for (const t of recentTickers) {
-        items.push({
-          id: `goto:${t.metadata.ticker}`,
-          label: t.metadata.ticker,
-          detail: t.metadata.name,
-          category: "Tickers",
-          kind: "ticker",
-          secondaryAction: () => { focusTicker(t.metadata.ticker, { forceNewPane: true }); close(); },
-          action: () => { focusTicker(t.metadata.ticker); close(); },
-        });
-      }
+      items.push(...recentTickers.map((ticker) => ({
+        ...mapTickerSearchCandidateToResultItem(createLocalTickerSearchCandidates([ticker])[0]!),
+        category: "Tickers",
+      })));
+      items.push(...paneShortcutItems());
       for (const cmd of commands) {
         const item = cmdToItem(cmd);
         if (item) items.push(item);
@@ -1195,18 +1625,17 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       items.push(...tickerActionItems());
       items.push(...pluginCommandItems());
     } else {
-      const tickerItems: ResultItem[] = Array.from(state.tickers.values()).map((t) => ({
-        id: `goto:${t.metadata.ticker}`,
-        label: t.metadata.ticker,
-        detail: t.metadata.name,
-        category: "Tickers",
-        kind: "ticker",
-        secondaryAction: () => { focusTicker(t.metadata.ticker, { forceNewPane: true }); close(); },
-        action: () => { focusTicker(t.metadata.ticker); close(); },
-      }));
+      const tickerItems = localTickerSearchResultItems(undefined, { category: "Tickers" });
       const cmdItems = commands.map((cmd) => cmdToItem(cmd)).filter((item): item is ResultItem => item !== null);
-      const allItems = [...tickerItems, ...cmdItems, ...tickerActionItems(), ...pluginCommandItems()];
-      items.push(...fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.right || ""}`));
+      const allItems = [
+        ...tickerItems,
+        ...cmdItems,
+        ...paneShortcutItems(),
+        ...nonShortcutPaneTemplateItems(),
+        ...tickerActionItems(),
+        ...pluginCommandItems(),
+      ];
+      items.push(...fuzzyFilter(allItems, query, (i) => `${i.label} ${i.detail} ${i.searchText || ""} ${i.right || ""}`));
     }
 
     setResults(items);
@@ -1215,7 +1644,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       previousSelectionContextRef.current?.query !== query
       || previousSelectionContextRef.current?.mode !== modeInfo.kind;
 
-    if (match?.command.id === "columns" || match?.command.id === "plugins" || !selectionContextChanged) {
+    if (match?.command.id === "plugins" || !selectionContextChanged) {
       setSelectedIdx((prev) => Math.max(0, Math.min(prev, items.length - 1)));
     } else {
       setSelectedIdx(initialIdx);
@@ -1234,28 +1663,19 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       searchTimerRef.current = setTimeout(async () => {
         try {
           const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
-          const searchResults = await dataProvider.search(searchQuery, {
-            preferBroker: true,
-            brokerId: activePortfolio?.brokerId,
-            brokerInstanceId: activePortfolio?.brokerInstanceId,
+          const combined = await searchTickerCandidates({
+            query: searchQuery,
+            tickers: state.tickers,
+            dataProvider,
+            searchContext: {
+              preferBroker: true,
+              brokerId: activePortfolio?.brokerId,
+              brokerInstanceId: activePortfolio?.brokerInstanceId,
+            },
           });
           if (requestId !== searchRequestIdRef.current) return; // stale response
-          const searchItems: ResultItem[] = searchResults
-            .slice(0, 8)
-            .map((r) => {
-              const sym = r.brokerContract?.localSymbol || r.symbol.split(".")[0]!;
-              const isExisting = state.tickers.has(sym);
-              return {
-                id: `search:${r.symbol}`,
-                label: sym,
-                detail: [r.name, r.brokerLabel, r.type || r.exchange].filter(Boolean).join(" | "),
-                category: isExisting ? "Open" : "Search Results",
-                kind: "search",
-                secondaryAction: () => openTickerDetail(r, { forceNewPane: true }),
-                action: () => openTickerDetail(r),
-              };
-            });
-          setResults(searchItems.length > 0 ? searchItems : [{
+          const resultItems = combined.map((candidate) => mapTickerSearchCandidateToResultItem(candidate));
+          setResults(resultItems.length > 0 ? resultItems : [{
               id: "no-results",
               label: `No matches for "${searchQuery}"`,
               detail: "Try a symbol, company name, or exchange variant",
@@ -1285,15 +1705,37 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [query, state.tickers, activeTickerSymbol, activeTickerData, activeCollectionId, state.config.watchlists, state.config.portfolios, state.config.brokerInstances, state.config.disabledPlugins, state.config.columns, toggleColumn, tickerActionItems, pluginCommandItems, focusTicker]);
+  }, [
+    activeCollectionId,
+    activeTickerData,
+    activeTickerSymbol,
+    close,
+    createPaneTemplateItem,
+    dataProvider,
+    dialog,
+    dispatch,
+    duplicatePane,
+    focusTicker,
+    focusedPaneHasSettings,
+    localTickerSearchResultItems,
+    mapTickerSearchCandidateToResultItem,
+    nonShortcutPaneTemplateItems,
+    paneShortcutItems,
+    paneShortcutMatch,
+    paneTemplateItems,
+    persistLayoutChange,
+    pluginCommandItems,
+    pluginRegistry,
+    query,
+    state,
+    tickerActionItems,
+  ]);
 
   const exactTickerResult = (() => {
-    const normalizedQuery = query.trim().toUpperCase();
-    if (!normalizedQuery) return null;
-    return results.find((item) =>
-      (item.id.startsWith("goto:") || item.id.startsWith("search:"))
-      && item.label.toUpperCase() === normalizedQuery,
-    ) ?? null;
+    return findExactTickerSearchMatch(
+      results.filter((item) => item.id.startsWith("goto:") || item.id.startsWith("search:")),
+      searchModeQuery || query,
+    );
   })();
 
   // Live preview: apply theme as user arrows through the list
@@ -1370,14 +1812,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         return;
       }
 
-      if (event.name === "space" && isColumnsMode) {
-        event.stopPropagation();
-        event.preventDefault();
-        const selected = results[selectedIdx];
-        if (selected) selected.action();
-        return;
-      }
-
       if (event.name === "return" || event.name === "enter") {
         event.stopPropagation();
         event.preventDefault();
@@ -1397,11 +1831,10 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     return () => {
       renderer.keyInput.off("keypress", handleKeyPress);
     };
-  }, [close, closeAndRevert, exactTickerResult, isColumnsMode, isPluginMode, isThemeMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
+  }, [close, closeAndRevert, exactTickerResult, isPluginMode, isThemeMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
 
   const barWidth = Math.max(42, Math.min(64, termWidth - 8, Math.floor(termWidth * 0.62)));
   const isNarrow = barWidth < 52;
-  const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
   const contentPadding = 3;
   const bodyHeight = Math.min(14, Math.max(8, termHeight - 10));
   const barHeight = bodyHeight + 5;
@@ -1423,25 +1856,25 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     | { kind: "spinner"; id: string; label: string }
     | { kind: "filler"; id: string }
   > = [];
-  let previousCategory: string | null = null;
-  for (let i = 0; i < results.length; i++) {
-    const item = results[i]!;
-    if (previousCategory !== null && item.category !== previousCategory) {
+  const sections = buildSections(results);
+  let globalIdx = 0;
+  sections.forEach((section, sectionIndex) => {
+    if (sectionIndex > 0) {
       allRows.push({
         kind: "spacer",
-        id: `spacer:${i}:${item.category}`,
+        id: `spacer:${sectionIndex}:${section.category}`,
       });
     }
-    if (item.category !== previousCategory) {
-      allRows.push({
-        kind: "heading",
-        id: `heading:${i}:${item.category}`,
-        label: item.category,
-      });
+    allRows.push({
+      kind: "heading",
+      id: `heading:${sectionIndex}:${section.category}`,
+      label: section.category,
+    });
+    for (const item of section.items) {
+      allRows.push({ kind: "item", item, globalIdx });
+      globalIdx += 1;
     }
-    previousCategory = item.category;
-    allRows.push({ kind: "item", item, globalIdx: i });
-  }
+  });
   const emptyState = getEmptyState(modeInfo.kind, query, searchModeQuery);
   const resultsInnerWidth = Math.max(12, barWidth - contentPadding * 2);
   const trailingWidth = isNarrow ? 0 : Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
@@ -1449,7 +1882,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const queryDisplayWidth = Math.max(8, barWidth - contentPadding * 2);
 
   let visibleRows: typeof allRows;
-  if (searching) {
+  if (searching && allRows.length === 0) {
     visibleRows = [{ kind: "spinner", id: "searching", label: "Searching providers..." }];
   } else if (allRows.length === 0) {
     visibleRows = [{ kind: "message", id: "empty", label: emptyState.label }];
@@ -1459,6 +1892,12 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     let windowStart = Math.max(0, Math.min(selectedRowIdx - halfWindow, allRows.length - bodyHeight));
     if (windowStart < 0) windowStart = 0;
     visibleRows = allRows.slice(windowStart, windowStart + bodyHeight);
+    if (searching) {
+      if (visibleRows.length >= bodyHeight) {
+        visibleRows = visibleRows.slice(0, bodyHeight - 1);
+      }
+      visibleRows.push({ kind: "spinner", id: "searching", label: "Searching providers..." });
+    }
   }
 
   while (visibleRows.length < bodyHeight) {

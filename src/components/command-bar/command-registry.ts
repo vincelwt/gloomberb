@@ -117,12 +117,31 @@ export const commands: Command[] = [
     execute: () => {},
   },
 
-  // Columns
   {
-    id: "columns",
-    prefix: "COL",
-    label: "Edit Columns",
-    description: "Toggle visible table columns",
+    id: "pane-settings",
+    prefix: "PS",
+    label: "Pane Settings",
+    description: "Edit settings for the focused pane",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
+  {
+    id: "layout",
+    prefix: "LAY",
+    label: "Layout Actions",
+    description: "Organize panes and saved layouts",
+    hasArg: true,
+    argPlaceholder: "action",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
+  {
+    id: "new-pane",
+    prefix: "NP",
+    label: "New Pane",
+    description: "Add or create a new pane from plugin templates",
+    hasArg: true,
+    argPlaceholder: "pane",
     category: "Config",
     execute: () => {}, // handled by command bar
   },

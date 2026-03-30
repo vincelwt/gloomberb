@@ -4,8 +4,9 @@ import type {
   AppConfig,
   BrokerInstanceConfig,
   ChartPreferences,
-  ColumnConfig,
+  FloatingPlacementMemory,
   LayoutConfig,
+  PanePlacementMemory,
   PaneBinding,
   PaneInstanceConfig,
   SavedLayout,
@@ -15,12 +16,27 @@ import {
   createDefaultConfig,
   createPaneInstanceId,
   CURRENT_CONFIG_VERSION,
+  clonePaneSettings,
   normalizePaneLayout,
 } from "../types/config";
 import type { Portfolio, Watchlist } from "../types/ticker";
+import { debugLog } from "../utils/debug-log";
+
+const configLog = debugLog.createLogger("config");
 
 const GLOBAL_CONFIG_DIR = join(process.env.HOME || "~", ".gloomberb");
 const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, "config.json");
+
+interface LegacyLayoutColumn {
+  width?: string;
+}
+
+interface LegacyDockedEntry {
+  instanceId: string;
+  columnIndex: number;
+  order?: number;
+  height?: string;
+}
 
 export async function getDataDir(): Promise<string | null> {
   try {
@@ -67,7 +83,6 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     refreshIntervalMinutes: typeof saved.refreshIntervalMinutes === "number" ? saved.refreshIntervalMinutes : defaults.refreshIntervalMinutes,
     portfolios: sanitizePortfolios(saved.portfolios, defaults.portfolios),
     watchlists: sanitizeWatchlists(saved.watchlists, defaults.watchlists),
-    columns: sanitizeColumns(saved.columns, defaults.columns),
     layout,
     layouts: syncedLayouts,
     activeLayoutIndex,
@@ -107,7 +122,6 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   const persisted: AppConfig = {
     ...config,
     configVersion: CURRENT_CONFIG_VERSION,
-    columns: sanitizeColumns(config.columns, createDefaultConfig(config.dataDir).columns),
     portfolios: sanitizePortfolios(config.portfolios, []),
     watchlists: sanitizeWatchlists(config.watchlists, []),
     layout,
@@ -125,6 +139,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
 }
 
 export async function initDataDir(dataDir: string): Promise<AppConfig> {
+  configLog.info(`Initializing data directory: ${dataDir}`);
   await mkdir(dataDir, { recursive: true });
   const { config, needsSave } = await loadConfigState(dataDir);
   if (needsSave) {
@@ -205,20 +220,6 @@ function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): C
   };
 }
 
-function sanitizeColumns(value: unknown, fallback: ColumnConfig[]): ColumnConfig[] {
-  if (!Array.isArray(value)) return fallback.map((column) => ({ ...column }));
-  return value
-    .filter((entry): entry is ColumnConfig =>
-      !!entry
-      && typeof entry === "object"
-      && typeof (entry as ColumnConfig).id === "string"
-      && typeof (entry as ColumnConfig).label === "string"
-      && typeof (entry as ColumnConfig).width === "number"
-      && ((entry as ColumnConfig).align === "left" || (entry as ColumnConfig).align === "right"),
-    )
-    .map((entry) => ({ ...entry }));
-}
-
 function sanitizePortfolios(value: unknown, fallback: Portfolio[]): Portfolio[] {
   if (!Array.isArray(value)) return fallback.map((portfolio) => ({ ...portfolio }));
   return value
@@ -266,9 +267,13 @@ function sanitizeBrokerInstances(value: unknown): BrokerInstanceConfig[] {
 function isLayoutConfig(value: unknown): value is LayoutConfig {
   return !!value
     && typeof value === "object"
-    && Array.isArray((value as LayoutConfig).columns)
-    && Array.isArray((value as LayoutConfig).docked)
-    && Array.isArray((value as LayoutConfig).floating);
+    && Array.isArray((value as LayoutConfig).instances)
+    && Array.isArray((value as LayoutConfig).floating)
+    && (
+      "dockRoot" in (value as Record<string, unknown>)
+      || Array.isArray((value as { docked?: unknown }).docked)
+      || Array.isArray((value as { columns?: unknown }).columns)
+    );
 }
 
 function sanitizePaneBinding(value: unknown, fallback: PaneBinding = { kind: "none" }): PaneBinding {
@@ -281,6 +286,55 @@ function sanitizePaneBinding(value: unknown, fallback: PaneBinding = { kind: "no
   }
   if ((value as PaneBinding).kind === "none") return { kind: "none" };
   return fallback;
+}
+
+function sanitizePercentage(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed.endsWith("%")) return undefined;
+  const parsed = Number.parseFloat(trimmed.slice(0, -1));
+  if (!Number.isFinite(parsed)) return undefined;
+  const clamped = Math.max(1, Math.min(100, parsed));
+  return `${Math.round(clamped)}%`;
+}
+
+function sanitizeFloatingPlacementMemory(value: unknown): FloatingPlacementMemory | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const x = typeof (value as FloatingPlacementMemory).x === "number" ? Math.max(0, Math.round((value as FloatingPlacementMemory).x)) : null;
+  const y = typeof (value as FloatingPlacementMemory).y === "number" ? Math.max(0, Math.round((value as FloatingPlacementMemory).y)) : null;
+  const width = typeof (value as FloatingPlacementMemory).width === "number" ? Math.max(1, Math.round((value as FloatingPlacementMemory).width)) : null;
+  const height = typeof (value as FloatingPlacementMemory).height === "number" ? Math.max(1, Math.round((value as FloatingPlacementMemory).height)) : null;
+  if (x === null || y === null || width === null || height === null) return undefined;
+  return { x, y, width, height };
+}
+
+function sanitizePlacementMemory(value: unknown): PanePlacementMemory | undefined {
+  if (!value || typeof value !== "object") return undefined;
+
+  const docked = (() => {
+    const raw = (value as PanePlacementMemory).docked;
+    if (!raw || typeof raw !== "object") return undefined;
+    const path = Array.isArray((raw as { path?: unknown }).path)
+      ? (raw as { path?: unknown }).path
+        ?.filter((segment): segment is 0 | 1 => segment === 0 || segment === 1)
+      : undefined;
+    const anchorInstanceId = typeof (raw as { anchorInstanceId?: unknown }).anchorInstanceId === "string"
+      ? (raw as { anchorInstanceId: string }).anchorInstanceId
+      : undefined;
+    const position = ["left", "right", "above", "below"].includes(String((raw as { position?: unknown }).position))
+      ? (raw as { position: "left" | "right" | "above" | "below" }).position
+      : undefined;
+    if (!path && !anchorInstanceId && !position) return undefined;
+    return {
+      path,
+      anchorInstanceId,
+      position,
+    };
+  })();
+
+  const floating = sanitizeFloatingPlacementMemory((value as PanePlacementMemory).floating);
+  if (!docked && !floating) return undefined;
+  return { docked, floating };
 }
 
 function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInstanceConfig[] {
@@ -306,13 +360,162 @@ function sanitizePaneInstances(value: unknown, fallback: LayoutConfig): PaneInst
             Object.entries(entry.params).filter((param): param is [string, string] => typeof param[1] === "string"),
           )
           : undefined,
+        settings: sanitizePaneSettings(entry.settings),
+        placementMemory: sanitizePlacementMemory(entry.placementMemory),
       };
     });
   return instances.length > 0 ? instances : cloneLayout(fallback).instances;
 }
 
+function sanitizePaneSettings(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const sanitizeValue = (entry: unknown): unknown => {
+    if (entry == null) return entry;
+    if (typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean") {
+      return entry;
+    }
+    if (Array.isArray(entry)) {
+      return entry
+        .map((child) => sanitizeValue(child))
+        .filter((child) => child !== undefined);
+    }
+    if (typeof entry === "object") {
+      return Object.fromEntries(
+        Object.entries(entry as Record<string, unknown>)
+          .map(([key, child]) => [key, sanitizeValue(child)])
+          .filter(([, child]) => child !== undefined),
+      );
+    }
+    return undefined;
+  };
+
+  const settings = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([key, entry]) => [key, sanitizeValue(entry)])
+      .filter(([, entry]) => entry !== undefined),
+  );
+
+  return Object.keys(settings).length > 0 ? clonePaneSettings(settings) : undefined;
+}
+
 function getDefaultFollowSourceInstanceId(instances: PaneInstanceConfig[]): string | null {
   return instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId ?? null;
+}
+
+function parseLegacyRatio(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.endsWith("%")) return null;
+  const parsed = Number.parseFloat(trimmed.slice(0, -1));
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0.01, parsed / 100);
+}
+
+function sanitizeLegacyDockedEntries(value: unknown, validInstanceIds: Set<string>): LegacyDockedEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is LegacyDockedEntry =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as LegacyDockedEntry).instanceId === "string"
+      && typeof (entry as LegacyDockedEntry).columnIndex === "number",
+    )
+    .filter((entry) => validInstanceIds.has(entry.instanceId))
+    .map((entry) => ({
+      instanceId: entry.instanceId,
+      columnIndex: Math.max(0, Math.round(entry.columnIndex)),
+      order: typeof entry.order === "number" ? Math.max(0, Math.round(entry.order)) : undefined,
+      height: sanitizePercentage(entry.height),
+    }));
+}
+
+function sanitizeFloatingEntries(value: unknown, validInstanceIds: Set<string>): LayoutConfig["floating"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is LayoutConfig["floating"][number] =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as LayoutConfig["floating"][number]).instanceId === "string"
+      && typeof (entry as LayoutConfig["floating"][number]).x === "number"
+      && typeof (entry as LayoutConfig["floating"][number]).y === "number"
+      && typeof (entry as LayoutConfig["floating"][number]).width === "number"
+      && typeof (entry as LayoutConfig["floating"][number]).height === "number",
+    )
+    .filter((entry) => validInstanceIds.has(entry.instanceId))
+    .map((entry) => ({
+      ...entry,
+      x: Math.max(0, Math.round(entry.x)),
+      y: Math.max(0, Math.round(entry.y)),
+      width: Math.max(1, Math.round(entry.width)),
+      height: Math.max(1, Math.round(entry.height)),
+      zIndex: typeof entry.zIndex === "number" ? Math.round(entry.zIndex) : entry.zIndex,
+    }));
+}
+
+function buildSplitChain(
+  instanceIds: string[],
+  weights: number[],
+  axis: "horizontal" | "vertical",
+): LayoutConfig["dockRoot"] {
+  if (instanceIds.length === 0) return null;
+  if (instanceIds.length === 1) return { kind: "pane", instanceId: instanceIds[0]! };
+
+  const [firstId, ...restIds] = instanceIds;
+  const [firstWeight, ...restWeights] = weights;
+  const remainingWeight = restWeights.reduce((sum, weight) => sum + weight, 0);
+  const ratioBase = Math.max(0.01, firstWeight + remainingWeight);
+
+  return {
+    kind: "split",
+    axis,
+    ratio: Math.max(0.1, Math.min(0.9, firstWeight / ratioBase)),
+    first: { kind: "pane", instanceId: firstId! },
+    second: buildSplitChain(restIds, restWeights, axis)!,
+  };
+}
+
+function migrateLegacyDockRoot(
+  value: Record<string, unknown>,
+  validInstanceIds: Set<string>,
+): LayoutConfig["dockRoot"] {
+  const docked = sanitizeLegacyDockedEntries(value.docked, validInstanceIds);
+  if (docked.length === 0) return null;
+
+  const columnGroups = new Map<number, LegacyDockedEntry[]>();
+  for (const entry of docked) {
+    const group = columnGroups.get(entry.columnIndex) ?? [];
+    group.push(entry);
+    columnGroups.set(entry.columnIndex, group);
+  }
+
+  const sortedColumnIndexes = [...columnGroups.keys()].sort((a, b) => a - b);
+  const legacyColumns = Array.isArray(value.columns) ? value.columns as LegacyLayoutColumn[] : [];
+
+  const columnNodes = sortedColumnIndexes.map((columnIndex) => {
+    const entries = (columnGroups.get(columnIndex) ?? [])
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const weights = entries.map((entry) => parseLegacyRatio(entry.height) ?? 1);
+    return {
+      node: buildSplitChain(entries.map((entry) => entry.instanceId), weights, "vertical"),
+      weight: parseLegacyRatio(legacyColumns[columnIndex]?.width) ?? 1,
+    };
+  }).filter((entry): entry is { node: NonNullable<LayoutConfig["dockRoot"]>; weight: number } => entry.node !== null);
+
+  if (columnNodes.length === 0) return null;
+  const buildColumns = (index: number): NonNullable<LayoutConfig["dockRoot"]> => {
+    const current = columnNodes[index]!;
+    if (index === columnNodes.length - 1) return current.node;
+    const remainingWeight = columnNodes.slice(index + 1).reduce((sum, entry) => sum + entry.weight, 0);
+    return {
+      kind: "split",
+      axis: "horizontal",
+      ratio: Math.max(0.1, Math.min(0.9, current.weight / Math.max(0.01, current.weight + remainingWeight))),
+      first: current.node,
+      second: buildColumns(index + 1),
+    };
+  };
+  return buildColumns(0);
 }
 
 export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
@@ -327,42 +530,16 @@ export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutCo
     });
   }
 
-  const columns = value.columns
-    .filter((entry): entry is LayoutConfig["columns"][number] =>
-      !!entry && typeof entry === "object" && (typeof entry.width === "string" || typeof entry.width === "undefined"),
-    )
-    .map((entry) => ({ ...entry }));
-
   const instances = sanitizePaneInstances((value as LayoutConfig & { instances?: unknown }).instances, fallback);
   const validInstanceIds = new Set(instances.map((entry) => entry.instanceId));
+  const dockRoot = "dockRoot" in (value as Record<string, unknown>)
+    ? ((value as { dockRoot?: LayoutConfig["dockRoot"] }).dockRoot ?? null)
+    : migrateLegacyDockRoot(value as Record<string, unknown>, validInstanceIds);
+  const floating = sanitizeFloatingEntries((value as { floating?: unknown }).floating, validInstanceIds);
 
-  const docked = value.docked
-    .filter((entry): entry is LayoutConfig["docked"][number] =>
-      !!entry
-      && typeof entry === "object"
-      && typeof entry.instanceId === "string"
-      && typeof entry.columnIndex === "number",
-    )
-    .filter((entry) => validInstanceIds.has(entry.instanceId))
-    .map((entry) => ({ ...entry }));
-
-  const floating = value.floating
-    .filter((entry): entry is LayoutConfig["floating"][number] =>
-      !!entry
-      && typeof entry === "object"
-      && typeof entry.instanceId === "string"
-      && typeof entry.x === "number"
-      && typeof entry.y === "number"
-      && typeof entry.width === "number"
-      && typeof entry.height === "number",
-    )
-    .filter((entry) => validInstanceIds.has(entry.instanceId))
-    .map((entry) => ({ ...entry }));
-
-  const layout = {
-    columns: columns.length > 0 ? columns : cloneLayout(fallback).columns,
+  const layout: LayoutConfig = {
+    dockRoot,
     instances,
-    docked,
     floating,
   };
 

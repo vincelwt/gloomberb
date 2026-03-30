@@ -3,12 +3,15 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { BrokerAdapter } from "../types/broker";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
-import type { DataProvider, MarketDataRequestContext, NewsItem, SearchRequestContext } from "../types/data-provider";
+import type { DataProvider, MarketDataRequestContext, NewsItem, SearchRequestContext, SecFilingItem } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { HydrationTarget } from "../state/session-persistence";
+import { debugLog } from "../utils/debug-log";
+
+const providerLog = debugLog.createLogger("provider-router");
 
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
 const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
@@ -21,6 +24,8 @@ const DEFAULT_CACHE_POLICIES: Record<string, CachePolicy> = {
   priceHistoryIntraday: { staleMs: 5 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
   priceHistoryDaily: { staleMs: 24 * 60 * 60_000, expireMs: 30 * 24 * 60 * 60_000 },
   news: { staleMs: 15 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
+  secFilings: { staleMs: 15 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
+  secFilingContent: { staleMs: 30 * 24 * 60 * 60_000, expireMs: 365 * 24 * 60 * 60_000 },
   articleSummary: { staleMs: 30 * 24 * 60 * 60_000, expireMs: 90 * 24 * 60 * 60_000 },
   optionsChain: { staleMs: 5 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
   exchangeRate: { staleMs: 60 * 60_000, expireMs: 7 * 24 * 60 * 60_000 },
@@ -57,6 +62,31 @@ function compactDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizeSearchKeyPart(value?: string): string {
+  return (value ?? "").trim().toUpperCase();
+}
+
+function buildSearchResultKey(item: InstrumentSearchResult): string {
+  return [
+    normalizeSearchKeyPart(item.symbol),
+    normalizeSearchKeyPart(item.exchange),
+    normalizeSearchKeyPart(item.type),
+    normalizeSearchKeyPart(item.primaryExchange),
+    normalizeSearchKeyPart(item.currency),
+  ].join("|");
+}
+
+function getSearchResultRichness(item: InstrumentSearchResult, context?: SearchRequestContext): number {
+  let score = 0;
+  if (item.brokerContract) score += 500;
+  if (item.brokerInstanceId) score += 250;
+  if (item.brokerLabel) score += 100;
+  if (item.name) score += Math.min(80, item.name.length);
+  if (context?.brokerInstanceId && item.brokerInstanceId === context.brokerInstanceId) score += 800;
+  if (context?.brokerId && item.brokerContract?.brokerId === context.brokerId) score += 400;
+  return score;
+}
+
 function buildVariantKey(parts: Array<[string, string | number | undefined | null]>): string {
   return parts
     .filter(([, value]) => value !== undefined && value !== null && String(value).length > 0)
@@ -72,14 +102,52 @@ function hasMeaningfulFundamentals(data: TickerFinancials | null | undefined): b
   return !!data && Object.keys(data.fundamentals ?? {}).length > 0;
 }
 
+function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolean {
+  return !!data && !!(
+    data.profile?.description
+    || data.profile?.sector
+    || data.profile?.industry
+  );
+}
+
+function hasLikelyPriceUnitMismatch(primary: TickerFinancials, fallback: TickerFinancials): boolean {
+  const primaryQuote = primary.quote;
+  const fallbackQuote = fallback.quote;
+  if (!primaryQuote || !fallbackQuote) return false;
+  if (!primaryQuote.currency || !fallbackQuote.currency) return false;
+  if (primaryQuote.currency !== fallbackQuote.currency) return false;
+  if (!Number.isFinite(primaryQuote.price) || !Number.isFinite(fallbackQuote.price)) return false;
+  if (primaryQuote.price <= 0 || fallbackQuote.price <= 0) return false;
+
+  const ratio = primaryQuote.price / fallbackQuote.price;
+  const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
+  return Math.abs(normalizedRatio - 100) / 100 < 0.05;
+}
+
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
-  if (primary && hasMeaningfulFundamentals(primary)) return primary;
+  if (primary && hasMeaningfulFundamentals(primary)) {
+    if (fallback && hasLikelyPriceUnitMismatch(primary, fallback)) {
+      return {
+        ...primary,
+        quote: fallback.quote ?? primary.quote,
+        priceHistory: fallback.priceHistory.length > 0 ? fallback.priceHistory : primary.priceHistory,
+        profile: primary.profile ?? fallback.profile,
+      };
+    }
+    if (!primary.profile && fallback?.profile) {
+      return { ...primary, profile: fallback.profile };
+    }
+    return primary;
+  }
   if (primary && fallback) {
+    const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
     return {
       ...fallback,
       ...primary,
-      quote: primary.quote ?? fallback.quote,
-      priceHistory: primary.priceHistory.length > 0 ? primary.priceHistory : fallback.priceHistory,
+      quote: preferFallbackPriceData ? (fallback.quote ?? primary.quote) : (primary.quote ?? fallback.quote),
+      priceHistory: preferFallbackPriceData
+        ? (fallback.priceHistory.length > 0 ? fallback.priceHistory : primary.priceHistory)
+        : (primary.priceHistory.length > 0 ? primary.priceHistory : fallback.priceHistory),
       fundamentals: fallback.fundamentals ?? primary.fundamentals ?? {},
       annualStatements: fallback.annualStatements.length > 0 ? fallback.annualStatements : primary.annualStatements,
       quarterlyStatements: fallback.quarterlyStatements.length > 0 ? fallback.quarterlyStatements : primary.quarterlyStatements,
@@ -158,6 +226,10 @@ export class ProviderRouter implements DataProvider {
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
     const cached = this.readCachedMergedFinancials(ticker, exchange, context, false);
     if (cached) {
+      if (!hasMeaningfulProfile(cached)) {
+        const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
+        return mergeFinancials(cached, providerResult?.value ?? null) ?? cached;
+      }
       this.scheduleRevalidation(this.makeRevalidationKey("financials", ticker, exchange, context), async () => {
         await this.revalidateFinancials(ticker, exchange, context);
       });
@@ -177,7 +249,7 @@ export class ProviderRouter implements DataProvider {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
@@ -215,14 +287,22 @@ export class ProviderRouter implements DataProvider {
 
   async search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
     const results: InstrumentSearchResult[] = [];
-    const seen = new Set<string>();
+    const resultIndexByKey = new Map<string, number>();
 
     const push = (items: InstrumentSearchResult[]) => {
       for (const item of items) {
-        const key = `${item.symbol}|${item.exchange}|${item.type}|${item.providerId}|${item.brokerInstanceId ?? ""}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        results.push(item);
+        const key = buildSearchResultKey(item);
+        const existingIndex = resultIndexByKey.get(key);
+        if (existingIndex == null) {
+          resultIndexByKey.set(key, results.length);
+          results.push(item);
+          continue;
+        }
+
+        const existing = results[existingIndex]!;
+        if (getSearchResultRichness(item, context) > getSearchResultRichness(existing, context)) {
+          results[existingIndex] = item;
+        }
       }
     };
 
@@ -276,6 +356,45 @@ export class ProviderRouter implements DataProvider {
     return items;
   }
 
+  async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKeys = [
+      buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]),
+      buildVariantKey([["count", count]]),
+      "",
+    ];
+    const cached = this.selectCachedResource<SecFilingItem[]>("sec-filings", entityKey, variantKeys, this.getProviderSourceKeys(), false);
+    if (cached) {
+      this.scheduleRevalidation(this.makeRevalidationKey("sec-filings", ticker, exchange, context, count), async () => {
+        await this.revalidateSecFilings(ticker, count, exchange, context);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderSecFilings(ticker, count, exchange, context);
+    if (!result) {
+      throw new Error(`No SEC filings provider available for ${ticker}`);
+    }
+    return result.value;
+  }
+
+  async getSecFilingContent(filing: SecFilingItem): Promise<string | null> {
+    const entityKey = compactUrl(filing.primaryDocumentUrl ?? filing.filingUrl);
+    const cached = this.selectCachedResource<string | null>("sec-filing-content", entityKey, [""], this.getProviderSourceKeys(), false);
+    if (cached) {
+      this.scheduleRevalidation(`sec-filing-content:${entityKey}`, async () => {
+        await this.revalidateSecFilingContent(filing);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderSecFilingContent(filing);
+    if (!result) {
+      throw new Error("No SEC filing content provider available");
+    }
+    return result.value;
+  }
+
   async getArticleSummary(url: string): Promise<string | null> {
     const entityKey = compactUrl(url);
     const cached = this.selectCachedResource<string>("article-summary", entityKey, [""], this.getProviderSourceKeys(), false);
@@ -301,7 +420,7 @@ export class ProviderRouter implements DataProvider {
       buildVariantKey([["range", range]]),
     ];
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<PricePoint[]>("price-history", entityKey, variantKeys, sourceKeys, false);
@@ -336,7 +455,7 @@ export class ProviderRouter implements DataProvider {
       buildVariantKey([["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
     ];
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<PricePoint[]>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
@@ -362,7 +481,7 @@ export class ProviderRouter implements DataProvider {
       "",
     ];
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<OptionsChain>("options-chain", entityKey, variantKeys, sourceKeys, false);
@@ -496,7 +615,7 @@ export class ProviderRouter implements DataProvider {
   ): TickerFinancials | null {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
-    const brokerSourceKeys = this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate));
+    const brokerSourceKeys = this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate));
     const brokerRecord = brokerSourceKeys.length > 0
       ? this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, brokerSourceKeys, allowExpired)
       : null;
@@ -525,7 +644,11 @@ export class ProviderRouter implements DataProvider {
     );
   }
 
-  private getBrokerCandidates(preferredBrokerInstanceId?: string, preferredBrokerId?: string): BrokerCandidate[] {
+  private getBrokerCandidates(
+    preferredBrokerInstanceId?: string,
+    preferredBrokerId?: string,
+    includeFallbackInstances = true,
+  ): BrokerCandidate[] {
     if (!this.registry) return [];
     const config = this.getConfigFn();
     const candidates: BrokerCandidate[] = [];
@@ -551,6 +674,10 @@ export class ProviderRouter implements DataProvider {
       pushCandidate(preferredInstance);
     }
 
+    if (!includeFallbackInstances && preferredInstance) {
+      return candidates;
+    }
+
     for (const instance of config.brokerInstances) {
       if (instance.id === preferredBrokerInstanceId) continue;
       pushCandidate(instance);
@@ -559,10 +686,14 @@ export class ProviderRouter implements DataProvider {
     return candidates;
   }
 
-  private getBrokerCandidatesForContext(context?: MarketDataRequestContext): BrokerCandidate[] {
+  private getBrokerCandidatesForContext(
+    context?: MarketDataRequestContext,
+    includeFallbackInstances = true,
+  ): BrokerCandidate[] {
     return this.getBrokerCandidates(
       context?.instrument?.brokerInstanceId ?? context?.brokerInstanceId,
       context?.instrument?.brokerId ?? context?.brokerId,
+      includeFallbackInstances,
     );
   }
 
@@ -598,7 +729,7 @@ export class ProviderRouter implements DataProvider {
         if (result != null) return { sourceKey: this.providerSourceKey(provider), value: result };
       } catch (err) {
         if (shouldLogProviderError(err)) {
-          console.error(`[ProviderRouter] ${provider.id} failed:`, err);
+          providerLog.error(`${provider.id} failed: ${err}`);
         }
       }
     }
@@ -612,7 +743,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<TickerFinancials> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getTickerFinancials) continue;
       try {
         const result = await candidate.broker.getTickerFinancials(
@@ -667,7 +798,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<Quote> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getQuote) continue;
       try {
         const result = await candidate.broker.getQuote(
@@ -716,7 +847,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", range]]);
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistory) continue;
       try {
         const result = await candidate.broker.getPriceHistory(
@@ -776,7 +907,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getDetailedPriceHistory) continue;
       try {
         const result = await candidate.broker.getDetailedPriceHistory(
@@ -841,7 +972,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<OptionsChain> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getOptionsChain) continue;
       try {
         const result = await candidate.broker.getOptionsChain(
@@ -887,6 +1018,58 @@ export class ProviderRouter implements DataProvider {
     return result;
   }
 
+  private async fetchProviderSecFilings(
+    ticker: string,
+    count = 15,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<SecFilingItem[]> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]);
+    let lastError: unknown = null;
+
+    for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
+      if (!provider.getSecFilings) continue;
+      try {
+        const value = await provider.getSecFilings(ticker, count, exchange, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("sec-filings", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("secFilings", provider));
+        return { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
+  private async fetchProviderSecFilingContent(filing: SecFilingItem): Promise<SourceResult<string | null> | null> {
+    const entityKey = compactUrl(filing.primaryDocumentUrl ?? filing.filingUrl);
+    let lastError: unknown = null;
+
+    for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
+      if (!provider.getSecFilingContent) continue;
+      try {
+        const value = await provider.getSecFilingContent(filing);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("sec-filing-content", entityKey, "", sourceKey, value, this.resolveProviderPolicy("secFilingContent", provider));
+        return { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+  }
+
   private resolveProviderBySourceKey(sourceKey: string): DataProvider | null {
     for (const provider of [...this.sortedProviders(), this.fallbackProvider]) {
       if (this.providerSourceKey(provider) === sourceKey) return provider;
@@ -896,7 +1079,7 @@ export class ProviderRouter implements DataProvider {
 
   private async revalidateFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
     const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
-    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value);
+    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value) || !hasMeaningfulProfile(brokerResult.value);
     if (needsProvider) {
       await this.fetchProviderFinancials(ticker, exchange, context);
     }
@@ -926,6 +1109,14 @@ export class ProviderRouter implements DataProvider {
       items,
       this.resolveProviderPolicy("news", provider),
     );
+  }
+
+  private async revalidateSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
+    await this.fetchProviderSecFilings(ticker, count, exchange, context);
+  }
+
+  private async revalidateSecFilingContent(filing: SecFilingItem): Promise<void> {
+    await this.fetchProviderSecFilingContent(filing);
   }
 
   private async revalidateArticleSummary(url: string): Promise<void> {

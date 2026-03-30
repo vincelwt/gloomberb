@@ -1,12 +1,36 @@
+const currencyFormatters = new Map<string, Intl.NumberFormat>();
+const numberFormatters = new Map<number, Intl.NumberFormat>();
+
+function getCurrencyFormatter(currency: string): Intl.NumberFormat {
+  let formatter = currencyFormatters.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    currencyFormatters.set(currency, formatter);
+  }
+  return formatter;
+}
+
+function getNumberFormatter(decimals: number): Intl.NumberFormat {
+  let formatter = numberFormatters.get(decimals);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+    numberFormatters.set(decimals, formatter);
+  }
+  return formatter;
+}
+
 /** Format a number as currency (e.g., $1,234.56) */
 export function formatCurrency(value: number | undefined, currency = "USD"): string {
   if (value === undefined || value === null || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return getCurrencyFormatter(currency).format(value);
 }
 
 /** Format a number as percentage (e.g., +1.23%) */
@@ -41,13 +65,16 @@ export function formatCompact(value: number | undefined): string {
   return fmt(abs, 2, "");
 }
 
+/** Format a compact value with an explicit currency code (e.g., 1.5T USD) */
+export function formatCompactCurrency(value: number | undefined, currency = "USD"): string {
+  if (value === undefined || value === null) return "—";
+  return `${formatCompact(value)} ${currency}`;
+}
+
 /** Format a plain number with commas */
 export function formatNumber(value: number | undefined, decimals = 2): string {
   if (value === undefined || value === null) return "—";
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
+  return getNumberFormatter(decimals).format(value);
 }
 
 /** Format a growth rate compactly (e.g., +12%, -5%) */
@@ -81,9 +108,15 @@ export function formatWithDivisor(value: number | undefined, divisor: number): s
 }
 
 /** Pad/truncate a string to a fixed width */
-export function padTo(str: string, width: number, align: "left" | "right" = "left"): string {
+export function padTo(str: string, width: number, align: "left" | "right" | "center" = "left"): string {
   if (str.length > width) return str.slice(0, width);
   if (align === "right") return str.padStart(width);
+  if (align === "center") {
+    const totalPadding = width - str.length;
+    const leftPadding = Math.floor(totalPadding / 2);
+    const rightPadding = totalPadding - leftPadding;
+    return " ".repeat(leftPadding) + str + " ".repeat(rightPadding);
+  }
   return str.padEnd(width);
 }
 

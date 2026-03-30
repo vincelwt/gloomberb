@@ -5,6 +5,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  type SetStateAction,
   type ReactNode,
 } from "react";
 import type { SessionStore } from "../data/session-store";
@@ -20,10 +21,13 @@ import {
   removePaneInstances,
   type LayoutConfig,
 } from "../types/config";
+import { setPaneSetting } from "../pane-settings";
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
+import type { BrokerAccount } from "../types/trading";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
+import { getDockLeafLayouts, getDockedPaneIds } from "../plugins/pane-manager";
 import {
   APP_SESSION_ID,
   APP_SESSION_SCHEMA_VERSION,
@@ -40,6 +44,11 @@ export interface PaneRuntimeState {
   [key: string]: unknown;
 }
 
+export interface LayoutHistoryEntry {
+  past: LayoutConfig[];
+  future: LayoutConfig[];
+}
+
 export type SortDirection = "asc" | "desc";
 
 export interface CollectionSortPreference {
@@ -52,6 +61,7 @@ export interface AppState {
   tickers: Map<string, TickerRecord>;
   financials: Map<string, TickerFinancials>;
   exchangeRates: Map<string, number>;
+  brokerAccounts: Record<string, BrokerAccount[]>;
   activePanel: "left" | "right";
   focusedPaneId: string | null;
   paneState: Record<string, PaneRuntimeState>;
@@ -61,9 +71,12 @@ export interface AppState {
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
+  gridlockTipVisible: boolean;
+  gridlockTipSequence: number;
   inputCaptured: boolean;
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
+  layoutHistory: Record<number, LayoutHistoryEntry>;
 }
 
 export type AppAction =
@@ -79,8 +92,11 @@ export type AppAction =
   | { type: "SET_COMMAND_BAR"; open: boolean; query?: string }
   | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
+  | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
+  | { type: "SHOW_GRIDLOCK_TIP" }
+  | { type: "DISMISS_GRIDLOCK_TIP" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
@@ -88,6 +104,9 @@ export type AppAction =
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
   | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
   | { type: "HYDRATE_EXCHANGE_RATES"; exchangeRates: Map<string, number> }
+  | { type: "PUSH_LAYOUT_HISTORY" }
+  | { type: "UNDO_LAYOUT" }
+  | { type: "REDO_LAYOUT" }
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig }
   | { type: "SWITCH_LAYOUT"; index: number }
   | { type: "NEW_LAYOUT"; name: string }
@@ -113,11 +132,28 @@ function shouldPreserveUnknownCollectionId(collectionId: string | undefined): bo
   return isBrokerPortfolioId(collectionId);
 }
 
+function getConfiguredCollectionId(config: AppConfig, instance: PaneInstanceConfig): string {
+  const candidates = [
+    instance.params?.collectionId,
+    typeof instance.settings?.lockedCollectionId === "string" ? instance.settings.lockedCollectionId : undefined,
+    ...(Array.isArray(instance.settings?.visibleCollectionIds)
+      ? instance.settings.visibleCollectionIds.filter((value): value is string => typeof value === "string")
+      : []),
+  ];
+
+  for (const candidate of candidates) {
+    if (isKnownCollection(config, candidate) || shouldPreserveUnknownCollectionId(candidate)) {
+      return candidate!;
+    }
+  }
+
+  return getDefaultCollectionId(config);
+}
+
 function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceConfig): PaneRuntimeState {
   if (instance.paneId === "portfolio-list") {
-    const candidate = instance.params?.collectionId;
     return {
-      collectionId: isKnownCollection(config, candidate) ? candidate : getDefaultCollectionId(config),
+      collectionId: getConfiguredCollectionId(config, instance),
       cursorSymbol: null,
     };
   }
@@ -142,6 +178,16 @@ function reconcilePaneState(config: AppConfig, previous: Record<string, PaneRunt
     next[instance.instanceId] = paneState;
   }
   return next;
+}
+
+function reconcileBrokerAccounts(
+  config: AppConfig,
+  brokerAccounts: Record<string, BrokerAccount[]>,
+): Record<string, BrokerAccount[]> {
+  const validInstanceIds = new Set(config.brokerInstances.map((instance) => instance.id));
+  return Object.fromEntries(
+    Object.entries(brokerAccounts).filter(([instanceId]) => validInstanceIds.has(instanceId)),
+  );
 }
 
 function resolveTickerFromBinding(
@@ -179,11 +225,11 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
     const paneState = getPaneState(state, paneId);
     const collectionId = typeof paneState.collectionId === "string"
       ? paneState.collectionId
-      : instance.params?.collectionId;
+      : getConfiguredCollectionId(state.config, instance);
     if (isKnownCollection(state.config, collectionId) || shouldPreserveUnknownCollectionId(collectionId)) {
-      return collectionId;
+      return collectionId ?? null;
     }
-    return getDefaultCollectionId(state.config);
+    return getConfiguredCollectionId(state.config, instance);
   }
   if (instance.binding?.kind === "follow") {
     return resolveCollectionForPane(state, instance.binding.sourceInstanceId, seen);
@@ -229,6 +275,63 @@ function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: 
   ));
 }
 
+const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
+
+function getPaneOrder(layout: LayoutConfig): string[] {
+  return [
+    ...getDockedPaneIds(layout),
+    ...layout.floating.map((entry) => entry.instanceId),
+  ];
+}
+
+function getPanelFocusTarget(layout: LayoutConfig, panel: "left" | "right"): string | null {
+  const leaves = getDockLeafLayouts(layout, PANEL_RESOLUTION_BOUNDS);
+  if (leaves.length === 0) return layout.floating[0]?.instanceId ?? null;
+  const sorted = [...leaves].sort((a, b) => (
+    panel === "left"
+      ? a.rect.x - b.rect.x || a.rect.y - b.rect.y
+      : (b.rect.x + b.rect.width) - (a.rect.x + a.rect.width) || a.rect.y - b.rect.y
+  ));
+  return sorted[0]?.instanceId ?? null;
+}
+
+const MAX_LAYOUT_HISTORY = 50;
+
+function cloneHistoryEntry(entry: LayoutHistoryEntry | undefined): LayoutHistoryEntry {
+  return {
+    past: entry?.past.map((layout) => cloneLayout(layout)) ?? [],
+    future: entry?.future.map((layout) => cloneLayout(layout)) ?? [],
+  };
+}
+
+function historyForIndex(layoutHistory: Record<number, LayoutHistoryEntry>, index: number): LayoutHistoryEntry {
+  return cloneHistoryEntry(layoutHistory[index]);
+}
+
+function setHistoryForIndex(
+  layoutHistory: Record<number, LayoutHistoryEntry>,
+  index: number,
+  entry: LayoutHistoryEntry,
+): Record<number, LayoutHistoryEntry> {
+  return {
+    ...layoutHistory,
+    [index]: {
+      past: entry.past.map((layout) => cloneLayout(layout)),
+      future: entry.future.map((layout) => cloneLayout(layout)),
+    },
+  };
+}
+
+function removeHistoryIndex(layoutHistory: Record<number, LayoutHistoryEntry>, removedIndex: number): Record<number, LayoutHistoryEntry> {
+  const next: Record<number, LayoutHistoryEntry> = {};
+  for (const [rawIndex, entry] of Object.entries(layoutHistory)) {
+    const index = Number.parseInt(rawIndex, 10);
+    if (Number.isNaN(index) || index === removedIndex) continue;
+    next[index > removedIndex ? index - 1 : index] = cloneHistoryEntry(entry);
+  }
+  return next;
+}
+
 function withFocusedPane(state: AppState, config: AppConfig): AppState {
   const normalizedLayout = normalizePaneLayout(config.layout);
   const nextConfig = normalizedLayout === config.layout
@@ -239,20 +342,23 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
       layouts: syncLayouts(config.layouts, config.activeLayoutIndex, normalizedLayout),
     };
   const nextPaneState = reconcilePaneState(nextConfig, state.paneState);
-  const paneIds = [
-    ...nextConfig.layout.docked.map((entry) => entry.instanceId),
-    ...nextConfig.layout.floating.map((entry) => entry.instanceId),
-  ];
+  const paneIds = getPaneOrder(nextConfig.layout);
   const focusedPaneId = state.focusedPaneId && paneIds.includes(state.focusedPaneId)
     ? state.focusedPaneId
     : paneIds[0] ?? null;
-  return { ...state, config: nextConfig, paneState: nextPaneState, focusedPaneId };
+  return {
+    ...state,
+    config: nextConfig,
+    paneState: nextPaneState,
+    brokerAccounts: reconcileBrokerAccounts(nextConfig, state.brokerAccounts),
+    focusedPaneId,
+  };
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_CONFIG":
-      return withFocusedPane(state, action.config);
+      return withFocusedPane({ ...state, layoutHistory: {} }, action.config);
 
     case "SET_TICKERS":
       return { ...state, tickers: action.tickers };
@@ -305,12 +411,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, recentTickers: nextRecentTickers(state.recentTickers, action.symbol) };
 
     case "SET_ACTIVE_PANEL": {
-      const columnIndex = action.panel === "left" ? 0 : Math.max(0, state.config.layout.columns.length - 1);
-      const firstPane = state.config.layout.docked.find((entry) => entry.columnIndex === columnIndex);
+      const firstPane = getPanelFocusTarget(state.config.layout, action.panel);
       return {
         ...state,
         activePanel: action.panel,
-        focusedPaneId: firstPane?.instanceId ?? state.focusedPaneId,
+        focusedPaneId: firstPane ?? state.focusedPaneId,
       };
     }
 
@@ -336,11 +441,31 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, refreshing };
     }
 
+    case "SET_BROKER_ACCOUNTS":
+      return {
+        ...state,
+        brokerAccounts: {
+          ...state.brokerAccounts,
+          [action.instanceId]: action.accounts,
+        },
+      };
+
     case "SET_INITIALIZED":
       return { ...state, initialized: true };
 
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };
+
+    case "SHOW_GRIDLOCK_TIP":
+      return {
+        ...state,
+        gridlockTipVisible: true,
+        gridlockTipSequence: state.gridlockTipSequence + 1,
+      };
+
+    case "DISMISS_GRIDLOCK_TIP":
+      if (!state.gridlockTipVisible) return state;
+      return { ...state, gridlockTipVisible: false };
 
     case "SET_THEME":
       applyTheme(action.theme);
@@ -377,6 +502,58 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, exchangeRates };
     }
 
+    case "PUSH_LAYOUT_HISTORY": {
+      const currentIndex = state.config.activeLayoutIndex;
+      const entry = historyForIndex(state.layoutHistory, currentIndex);
+      const snapshot = cloneLayout(state.config.layout);
+      const last = entry.past[entry.past.length - 1];
+      if (last && JSON.stringify(last) === JSON.stringify(snapshot)) {
+        return state;
+      }
+      entry.past = [...entry.past, snapshot].slice(-MAX_LAYOUT_HISTORY);
+      entry.future = [];
+      return {
+        ...state,
+        layoutHistory: setHistoryForIndex(state.layoutHistory, currentIndex, entry),
+      };
+    }
+
+    case "UNDO_LAYOUT": {
+      const currentIndex = state.config.activeLayoutIndex;
+      const entry = historyForIndex(state.layoutHistory, currentIndex);
+      if (entry.past.length === 0) return state;
+      const target = entry.past[entry.past.length - 1]!;
+      entry.past = entry.past.slice(0, -1);
+      entry.future = [cloneLayout(state.config.layout), ...entry.future].slice(0, MAX_LAYOUT_HISTORY);
+      const layouts = syncLayouts(state.config.layouts, currentIndex, target);
+      return withFocusedPane({
+        ...state,
+        layoutHistory: setHistoryForIndex(state.layoutHistory, currentIndex, entry),
+      }, {
+        ...state.config,
+        layout: cloneLayout(target),
+        layouts,
+      });
+    }
+
+    case "REDO_LAYOUT": {
+      const currentIndex = state.config.activeLayoutIndex;
+      const entry = historyForIndex(state.layoutHistory, currentIndex);
+      if (entry.future.length === 0) return state;
+      const target = entry.future[0]!;
+      entry.future = entry.future.slice(1);
+      entry.past = [...entry.past, cloneLayout(state.config.layout)].slice(-MAX_LAYOUT_HISTORY);
+      const layouts = syncLayouts(state.config.layouts, currentIndex, target);
+      return withFocusedPane({
+        ...state,
+        layoutHistory: setHistoryForIndex(state.layoutHistory, currentIndex, entry),
+      }, {
+        ...state.config,
+        layout: cloneLayout(target),
+        layouts,
+      });
+    }
+
     case "UPDATE_LAYOUT": {
       const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, action.layout);
       return withFocusedPane(state, { ...state.config, layout: action.layout, layouts });
@@ -400,7 +577,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         layout: cloneLayout(DEFAULT_LAYOUT),
       };
       const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), newLayout];
-      return withFocusedPane(state, {
+      return withFocusedPane({
+        ...state,
+        layoutHistory: setHistoryForIndex(state.layoutHistory, layouts.length - 1, { past: [], future: [] }),
+      }, {
         ...state.config,
         layout: cloneLayout(newLayout.layout),
         layouts,
@@ -415,7 +595,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ? Math.max(0, state.config.activeLayoutIndex - 1)
         : state.config.activeLayoutIndex;
       const nextLayout = layouts[nextActiveLayoutIndex]!;
-      return withFocusedPane(state, {
+      return withFocusedPane({
+        ...state,
+        layoutHistory: removeHistoryIndex(state.layoutHistory, action.index),
+      }, {
         ...state.config,
         layout: cloneLayout(nextLayout.layout),
         layouts,
@@ -444,7 +627,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         layout: cloneLayout(source.layout),
       };
       const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), duplicate];
-      return withFocusedPane(state, {
+      return withFocusedPane({
+        ...state,
+        layoutHistory: setHistoryForIndex(state.layoutHistory, layouts.length - 1, { past: [], future: [] }),
+      }, {
         ...state.config,
         layout: cloneLayout(duplicate.layout),
         layouts,
@@ -586,9 +772,36 @@ export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string):
   return [value, setValue];
 }
 
+export function usePaneSettingValue<T>(
+  key: string,
+  fallback: T,
+  paneId?: string,
+): [T, (value: SetStateAction<T>) => void] {
+  const { state, dispatch } = useAppState();
+  const scopedPaneId = paneId ?? usePaneInstanceId();
+  const instance = findPaneInstance(state.config.layout, scopedPaneId);
+  const value = (instance?.settings?.[key] as T | undefined) ?? fallback;
+
+  const setValue = (nextValue: SetStateAction<T>) => {
+    const currentValue = (findPaneInstance(state.config.layout, scopedPaneId)?.settings?.[key] as T | undefined) ?? fallback;
+    const resolved = typeof nextValue === "function"
+      ? (nextValue as (previousValue: T) => T)(currentValue)
+      : nextValue;
+    const layout = setPaneSetting(state.config.layout, scopedPaneId, key, resolved);
+    const layouts = state.config.layouts.map((savedLayout, index) => (
+      index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+    ));
+    const nextConfig = { ...state.config, layout, layouts };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    saveConfig(nextConfig).catch(() => {});
+  };
+
+  return [value, setValue];
+}
+
 export function createInitialState(config: AppConfig, sessionSnapshot: AppSessionSnapshot | null = null): AppState {
   const paneState = reconcilePaneState(config, sessionSnapshot?.paneState ?? {});
-  const defaultFocusedPaneId = config.layout.docked[0]?.instanceId ?? config.layout.floating[0]?.instanceId ?? null;
+  const defaultFocusedPaneId = getPaneOrder(config.layout)[0] ?? null;
   const focusedPaneId = sessionSnapshot?.focusedPaneId
     && config.layout.instances.some((instance) => instance.instanceId === sessionSnapshot.focusedPaneId)
     ? sessionSnapshot.focusedPaneId
@@ -598,6 +811,7 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     tickers: new Map(),
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
+    brokerAccounts: {},
     activePanel: sessionSnapshot?.activePanel === "right" ? "right" : "left",
     focusedPaneId,
     paneState,
@@ -607,9 +821,12 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,
+    gridlockTipVisible: false,
+    gridlockTipSequence: 0,
     inputCaptured: false,
     updateAvailable: null,
     updateProgress: null,
+    layoutHistory: {},
   };
 }
 

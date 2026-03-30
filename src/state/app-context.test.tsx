@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createDefaultConfig } from "../types/config";
+import { cloneLayout, createDefaultConfig } from "../types/config";
 import { appReducer, createInitialState } from "./app-context";
 
 describe("appReducer command bar state", () => {
@@ -42,5 +42,91 @@ describe("appReducer command bar state", () => {
 
     expect(next.commandBarOpen).toBe(true);
     expect(next.commandBarQuery).toBe("PL notes");
+  });
+
+  test("re-shows the gridlock tip and refreshes its sequence on every trigger", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+
+    const shown = appReducer(initial, { type: "SHOW_GRIDLOCK_TIP" });
+    expect(shown.gridlockTipVisible).toBe(true);
+    expect(shown.gridlockTipSequence).toBe(1);
+
+    const dismissed = appReducer(shown, { type: "DISMISS_GRIDLOCK_TIP" });
+    expect(dismissed.gridlockTipVisible).toBe(false);
+    expect(dismissed.gridlockTipSequence).toBe(1);
+
+    const repeated = appReducer(dismissed, { type: "SHOW_GRIDLOCK_TIP" });
+    expect(repeated.gridlockTipVisible).toBe(true);
+    expect(repeated.gridlockTipSequence).toBe(2);
+  });
+
+  test("tracks layout undo and redo history", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const changedLayout = cloneLayout(initial.config.layout);
+    if (!changedLayout.dockRoot || changedLayout.dockRoot.kind !== "split") {
+      throw new Error("expected split dock root");
+    }
+    changedLayout.dockRoot.ratio = 0.5;
+
+    const withHistory = appReducer(initial, { type: "PUSH_LAYOUT_HISTORY" });
+    const changed = appReducer(withHistory, { type: "UPDATE_LAYOUT", layout: changedLayout });
+
+    expect(changed.layoutHistory[0]?.past).toHaveLength(1);
+    expect(changed.config.layout.dockRoot && changed.config.layout.dockRoot.kind === "split"
+      ? changed.config.layout.dockRoot.ratio
+      : null).toBe(0.5);
+
+    const undone = appReducer(changed, { type: "UNDO_LAYOUT" });
+    expect(undone.config.layout.dockRoot && undone.config.layout.dockRoot.kind === "split"
+      ? undone.config.layout.dockRoot.ratio
+      : null).toBe(0.4);
+    expect(undone.layoutHistory[0]?.future).toHaveLength(1);
+
+    const redone = appReducer(undone, { type: "REDO_LAYOUT" });
+    expect(redone.config.layout.dockRoot && redone.config.layout.dockRoot.kind === "split"
+      ? redone.config.layout.dockRoot.ratio
+      : null).toBe(0.5);
+    expect(redone.layoutHistory[0]?.past).toHaveLength(1);
+  });
+
+  test("keeps layout history isolated per saved layout", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+
+    const firstLayout = cloneLayout(initial.config.layout);
+    if (!firstLayout.dockRoot || firstLayout.dockRoot.kind !== "split") {
+      throw new Error("expected split dock root");
+    }
+    firstLayout.dockRoot.ratio = 0.45;
+    let state = appReducer(initial, { type: "PUSH_LAYOUT_HISTORY" });
+    state = appReducer(state, { type: "UPDATE_LAYOUT", layout: firstLayout });
+    state = appReducer(state, { type: "NEW_LAYOUT", name: "Research" });
+
+    const noUndoOnFreshLayout = appReducer(state, { type: "UNDO_LAYOUT" });
+    expect(noUndoOnFreshLayout.config.activeLayoutIndex).toBe(1);
+    expect(noUndoOnFreshLayout.config.layout.dockRoot && noUndoOnFreshLayout.config.layout.dockRoot.kind === "split"
+      ? noUndoOnFreshLayout.config.layout.dockRoot.ratio
+      : null).toBe(0.4);
+
+    const secondLayout = cloneLayout(noUndoOnFreshLayout.config.layout);
+    if (!secondLayout.dockRoot || secondLayout.dockRoot.kind !== "split") {
+      throw new Error("expected split dock root");
+    }
+    secondLayout.dockRoot.ratio = 0.55;
+    state = appReducer(noUndoOnFreshLayout, { type: "PUSH_LAYOUT_HISTORY" });
+    state = appReducer(state, { type: "UPDATE_LAYOUT", layout: secondLayout });
+
+    const backToFirst = appReducer(state, { type: "SWITCH_LAYOUT", index: 0 });
+    const firstUndone = appReducer(backToFirst, { type: "UNDO_LAYOUT" });
+    expect(firstUndone.config.activeLayoutIndex).toBe(0);
+    expect(firstUndone.config.layout.dockRoot && firstUndone.config.layout.dockRoot.kind === "split"
+      ? firstUndone.config.layout.dockRoot.ratio
+      : null).toBe(0.4);
+
+    const backToSecond = appReducer(firstUndone, { type: "SWITCH_LAYOUT", index: 1 });
+    const secondUndone = appReducer(backToSecond, { type: "UNDO_LAYOUT" });
+    expect(secondUndone.config.activeLayoutIndex).toBe(1);
+    expect(secondUndone.config.layout.dockRoot && secondUndone.config.layout.dockRoot.kind === "split"
+      ? secondUndone.config.layout.dockRoot.ratio
+      : null).toBe(0.4);
   });
 });

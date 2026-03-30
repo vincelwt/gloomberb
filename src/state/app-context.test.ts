@@ -153,3 +153,63 @@ describe("resolveTickerForPane", () => {
     expect(resolveCollectionForPane(state, "portfolio-list:main")).toBe("main");
   });
 });
+
+describe("broker account cache", () => {
+  test("stores broker accounts by instance id", () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const next = appReducer(state, {
+      type: "SET_BROKER_ACCOUNTS",
+      instanceId: "ibkr-flex",
+      accounts: [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+
+    expect(next.brokerAccounts).toEqual({
+      "ibkr-flex": [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+  });
+
+  test("preserves cached broker accounts across unrelated config updates", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.brokerInstances.push({
+      id: "ibkr-flex",
+      brokerType: "ibkr",
+      label: "Flex",
+      connectionMode: "flex",
+      config: { connectionMode: "flex", flex: { token: "t", queryId: "q" } },
+      enabled: true,
+    });
+    const state = appReducer(createInitialState(config), {
+      type: "SET_BROKER_ACCOUNTS",
+      instanceId: "ibkr-flex",
+      accounts: [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+
+    const next = appReducer(state, { type: "SET_CONFIG", config: { ...config, theme: "amber" } });
+
+    expect(next.brokerAccounts).toEqual(state.brokerAccounts);
+  });
+
+  test("clears cached broker accounts when the broker instance is removed", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.brokerInstances.push({
+      id: "ibkr-flex",
+      brokerType: "ibkr",
+      label: "Flex",
+      connectionMode: "flex",
+      config: { connectionMode: "flex", flex: { token: "t", queryId: "q" } },
+      enabled: true,
+    });
+    const state = appReducer(createInitialState(config), {
+      type: "SET_BROKER_ACCOUNTS",
+      instanceId: "ibkr-flex",
+      accounts: [{ accountId: "DU12345", name: "DU12345", totalCashValue: 10 }],
+    });
+
+    const next = appReducer(state, {
+      type: "SET_CONFIG",
+      config: { ...config, brokerInstances: [] },
+    });
+
+    expect(next.brokerAccounts).toEqual({});
+  });
+});

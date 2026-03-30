@@ -59,6 +59,7 @@ function setupIbkrPlugin(config: AppConfig) {
 
   const ctx = {
     registerPane: () => {},
+    registerPaneTemplate: () => {},
     registerCommand: (command: CommandDef) => { commands.push(command); },
     registerColumn: () => {},
     registerBroker: () => {},
@@ -73,6 +74,26 @@ function setupIbkrPlugin(config: AppConfig) {
     storage: {} as any,
     dataProvider: {} as any,
     tickerRepository: {} as any,
+    log: {
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+    },
+    resume: {
+      getState: () => null,
+      setState: () => {},
+      deleteState: () => {},
+      getPaneState: () => null,
+      setPaneState: () => {},
+      deletePaneState: () => {},
+    },
+    configState: {
+      get: () => null,
+      set: async () => {},
+      delete: async () => {},
+      keys: () => [],
+    },
     createBrokerInstance: async () => { throw new Error("unused"); },
     updateBrokerInstance: async () => {},
     syncBrokerInstance: async () => {},
@@ -82,6 +103,7 @@ function setupIbkrPlugin(config: AppConfig) {
     switchTab: (tabId: string) => { switchedTabs.push(tabId); },
     openCommandBar: () => {},
     showPane: () => {},
+    createPaneFromTemplate: () => {},
     hidePane: () => {},
     focusPane: () => {},
     pinTicker: () => {},

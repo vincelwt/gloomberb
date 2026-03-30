@@ -11,16 +11,16 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
                   AAPL                                                          
                   MSFT                                                          
                                                                                 
+                  Panes                                                         
+                  New Portfolio Pane                                            
+                  New Chat Pane                                                 
+                  Quote Monitor                                                 
+                                                                                
                   Search                                                        
                   Search Ticker                                                 
                                                                                 
                   Portfolio                                                     
                   Add AAPL to Watchlist                                         
-                  Add AAPL to Portfolio                                         
-                                                                                
-                  Create                                                        
-                  New Portfolio                                                 
-                  New Watchlist                                                 
                                                                                 
                                                                                 
                                                                                 
@@ -95,15 +95,43 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
        AAPL                               
        MSFT                               
                                           
+       Panes                              
+       New Portfolio Pane                 
+       New Chat Pane                      
+       Quote Monitor                      
+                                          
        Search                             
-       Search Ticker                      
-                                          
-       Portfolio                          
-       Add AAPL to Watchlist              
-       Add AAPL to Portfolio              
                                           
                                           
                                           
                                           
+"
+`;
+
+exports[`CommandBar groups ticker search sections and keeps exact open matches above loose provider results 1`] = `
+"                                                                                
+                                                                                
+                                                                                
+                  Commands                                esc                   
+                  T appl                                                        
+                                                                                
+                  Open                                                          
+                  AAPL                                                          
+                                                                                
+                  Search Results                                                
+                  APP                                                           
+                  AMAT                                                          
+                  AAOI                                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;

@@ -1,12 +1,21 @@
 import type { ReactNode } from "react";
 import type { TickerRepository } from "../data/ticker-repository";
 import type { PluginEvents } from "../plugins/event-bus";
+import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
-import type { BrokerInstanceConfig, ColumnConfig } from "./config";
+import type {
+  AppConfig,
+  BrokerInstanceConfig,
+  ColumnConfig,
+  LayoutConfig,
+  PaneBinding,
+  PaneInstanceConfig,
+} from "./config";
 import type { DataProvider } from "./data-provider";
 import type { TickerFinancials } from "./financials";
 import type { CachePolicy, PersistedResourceValue } from "./persistence";
 import type { TickerRecord } from "./ticker";
+import type { InstrumentSearchResult } from "./instrument";
 
 export interface GloomSlots {
   "detail:tab": { ticker: TickerRecord; financials: TickerFinancials | null };
@@ -38,6 +47,114 @@ export interface PaneDef {
   defaultWidth?: string;
   defaultFloatingSize?: { width: number; height: number };
   defaultMode?: "docked" | "floating";
+  settings?: PaneSettingsDef | ((context: PaneSettingsContext) => PaneSettingsDef | null);
+}
+
+export interface PaneSettingsContext {
+  config: AppConfig;
+  layout: LayoutConfig;
+  paneId: string;
+  paneType: string;
+  pane: PaneInstanceConfig;
+  settings: Record<string, unknown>;
+  paneState: Record<string, unknown>;
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface PaneSettingOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+interface PaneSettingFieldBase {
+  key: string;
+  label: string;
+  description?: string;
+}
+
+export interface PaneSettingToggleField extends PaneSettingFieldBase {
+  type: "toggle";
+}
+
+export interface PaneSettingTextField extends PaneSettingFieldBase {
+  type: "text";
+  placeholder?: string;
+}
+
+export interface PaneSettingSelectField extends PaneSettingFieldBase {
+  type: "select";
+  options: PaneSettingOption[];
+}
+
+export interface PaneSettingMultiSelectField extends PaneSettingFieldBase {
+  type: "multi-select";
+  options: PaneSettingOption[];
+}
+
+export interface PaneSettingOrderedMultiSelectField extends PaneSettingFieldBase {
+  type: "ordered-multi-select";
+  options: PaneSettingOption[];
+}
+
+export type PaneSettingField =
+  | PaneSettingToggleField
+  | PaneSettingTextField
+  | PaneSettingSelectField
+  | PaneSettingMultiSelectField
+  | PaneSettingOrderedMultiSelectField;
+
+export interface PaneSettingsDef {
+  title?: string;
+  fields: PaneSettingField[];
+}
+
+export interface PaneTemplateContext {
+  config: AppConfig;
+  layout: LayoutConfig;
+  focusedPaneId: string | null;
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface PaneTemplateShortcut {
+  prefix: string;
+  argPlaceholder?: string;
+}
+
+export interface PaneTemplateCreateOptions {
+  arg?: string;
+  values?: Record<string, string>;
+  symbol?: string | null;
+  symbols?: string[] | null;
+  ticker?: TickerRecord | null;
+  searchResult?: InstrumentSearchResult | null;
+}
+
+export interface PaneTemplateInstanceConfig {
+  title?: string;
+  binding?: PaneBinding;
+  params?: Record<string, string>;
+  settings?: Record<string, unknown>;
+  placement?: "default" | "docked" | "floating";
+  relativeToPaneId?: string;
+  relativePosition?: "left" | "right" | "above" | "below";
+}
+
+export interface PaneTemplateDef {
+  id: string;
+  paneId: string;
+  label: string;
+  description: string;
+  keywords?: string[];
+  shortcut?: PaneTemplateShortcut;
+  wizard?: WizardStep[];
+  canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
+  createInstance?: (
+    context: PaneTemplateContext,
+    options?: PaneTemplateCreateOptions,
+  ) => PaneTemplateInstanceConfig | null | Promise<PaneTemplateInstanceConfig | null>;
 }
 
 export interface WizardStep {
@@ -74,11 +191,19 @@ export interface DetailTabProps {
   onCapture: (capturing: boolean) => void;
 }
 
+export interface DetailTabVisibilityContext {
+  ticker: TickerRecord | null;
+  financials: TickerFinancials | null | undefined;
+  hasIbkrGatewayTrading: boolean;
+  hasOptionsChain: boolean;
+}
+
 export interface DetailTabDef {
   id: string;
   name: string;
   order: number;
   component: (props: DetailTabProps) => ReactNode;
+  isVisible?: (context: DetailTabVisibilityContext) => boolean;
 }
 
 export interface KeyboardShortcut {
@@ -144,8 +269,15 @@ export interface PluginConfigState {
   keys(): string[];
 }
 
+export interface PluginPaneSettingsState {
+  get<T = unknown>(paneId: string, key: string): T | null;
+  set(paneId: string, key: string, value: unknown): Promise<void>;
+  delete(paneId: string, key: string): Promise<void>;
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
+  registerPaneTemplate(template: PaneTemplateDef): void;
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
@@ -162,8 +294,10 @@ export interface GloomPluginContext {
   readonly tickerRepository: TickerRepository;
   readonly storage: PluginStorage;
   readonly persistence: PluginPersistence;
+  readonly log: PluginLogger;
   readonly resume: PluginResumeState;
   readonly configState: PluginConfigState;
+  readonly paneSettings: PluginPaneSettingsState;
 
   createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>): Promise<void>;
@@ -175,9 +309,11 @@ export interface GloomPluginContext {
   switchTab(tabId: string, paneId?: string): void;
   openCommandBar(query?: string): void;
   showPane(paneId: string): void;
+  createPaneFromTemplate(templateId: string, options?: PaneTemplateCreateOptions): void;
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  openPaneSettings(paneId?: string): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
   emit<K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]): void;
@@ -199,6 +335,7 @@ export interface GloomPlugin {
   dispose?(): void;
 
   panes?: PaneDef[];
+  paneTemplates?: PaneTemplateDef[];
   broker?: BrokerAdapter;
   dataProvider?: DataProvider;
   slots?: Partial<{

@@ -1,18 +1,21 @@
+<center>
 # Gloomberb
 
-An open-source, extensible portfolio tracker and stock terminal for your command line.
+Extensible financial terminal, for the terminal.
+
+> Why pay for Bloomberg when you can have Gloomberb?
 
 <!-- screenshots go here -->
+</center>
 
 ## Features
 
-- **Track portfolios & watchlists** — manage multiple portfolios and watchlists with customizable, sortable columns
-- **Real-time quotes & fundamentals** — powered by Yahoo Finance with automatic caching
-- **Terminal stock charts** — interactive area, line, candlestick, and OHLC render modes
-- **Multi-currency** — automatic exchange rate conversion
-- **Keyboard-driven** — fast command bar (`Ctrl+P`) and vim-style navigation
-- **Extensible via plugins** — everything is a plugin, including core features
-- **100% local** — all your data stays on your machine. Ticker metadata, market data, chat state, and plugin state are stored in SQLite; notes stay as local markdown files. Nothing is sent anywhere.
+- **Track portfolios & trade**
+- **Real-time quotes & fundamentals**
+- **Beautiful terminal charts**
+- **Keyboard-driven**
+- **Extensible**
+- **100% local**
 
 ## Install
 
@@ -24,43 +27,45 @@ npm install -g gloomberb
 
 Then run `gloomberb` to start.
 
-Your data is stored in `~/gloomberb-data/`. Ticker metadata and cached app state live in SQLite, and per-ticker notes are saved as markdown files next to the database.
-
 ## Plugins
 
-Gloomberb has a plugin architecture where everything — from the portfolio list to broker integrations — is a plugin. Plugins can add tabs, columns, commands, status bar widgets, and more.
+Gloomberb has a plugin architecture where everything, from the portfolio list to broker integrations, is a plugin. 
 
-Plugins and built-in panes share a common TUI component kit for tabs, lists, toggles, buttons, dialogs, loading states, and status feedback. See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface available through `gloomberb/components`.
+Plugins can add tabs, columns, commands, status bar widgets, and more.
 
-### Core & UI plugins
+See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface available through `gloomberb/components`.
 
-| Plugin | Description | Toggleable |
-|--------|-------------|------------|
-| **Portfolio List** | Main ticker list with portfolios & watchlists | No (core) |
-| **Ticker Detail** | Overview, financials, and chart tabs | No (core) |
-| **News** | View latest news for each ticker (via Yahoo Finance) | Yes |
-| **Notes** | Write and save markdown notes per ticker, stored locally | Yes |
-| **Ask AI** | Chat with AI about tickers using local CLI tools | Yes |
-| **Charts** | _WIP_ | — |
+### Core plugins
+
+| Plugin | Description |
+|--------|-------------|
+| **Portfolio List** | Main ticker list with portfolios & watchlists |
+| **Ticker Detail** | Overview, financials, and chart tabs |
+| **News** | View latest news for each ticker (via Yahoo Finance) |
+| **SEC** | View recent SEC filings for supported US equities |
+| **Notes** | Write and save markdown notes, stored locally |
+| **Options** | View US equity options chains |
+| **Ask AI** | Chat with AI about tickers using local CLI tools |
+| **Compare Charts** | Compare the charts of tickers side by side |
+| **X Scanner** | WIP |
+| **Alerts** | WIP |
+| **Scanner** | WIP |
 
 ### Data providers
 
 | Provider | Description |
 |----------|-------------|
-| **Yahoo Finance** | Real-time quotes, fundamentals, and historical data |
-| **Options Data** | Options chain data |
-| **Twitter** | _WIP_ |
+| **Gloomberb Cloud** | Real-time data (recommended, free) |
+| **Yahoo Finance** | Delayed data, rate-limiting |
 
-### Brokers / Portfolio
+### Brokers connectors
 
 | Plugin | Description |
 |--------|-------------|
-| **Manual Entry** | Manually add positions |
-| **IBKR Flex Query** | Import positions from Interactive Brokers |
+| **IBKR** | Import positions from Interactive Brokers (Flex Query or Gateway API) |
+| **Manual Entry** | Manually add positions, saved locally |
 
-Toggleable plugins can be enabled/disabled from the settings screen (`Ctrl+,`).
-
-See **[PLUGINS.md](PLUGINS.md)** for a guide on building your own plugins.
+Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`).
 
 ### Plugin slots
 

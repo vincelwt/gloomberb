@@ -1,14 +1,15 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, useSyncExternalStore } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
-import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin, PaneProps, PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
 import {
   useAppState,
   usePaneCollection,
+  usePaneInstance,
   usePaneInstanceId,
   usePaneStateValue,
   type CollectionSortPreference,
@@ -16,10 +17,14 @@ import {
 import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
-import type { ColumnConfig } from "../../types/config";
-import type { TickerRecord } from "../../types/ticker";
+import { clampQuoteTimestamp, formatQuoteAgeWithSource, getMostRecentQuoteUpdate } from "../../utils/quote-time";
+import { DEFAULT_COLUMNS, type AppConfig, type ColumnConfig } from "../../types/config";
+import type { TickerRecord, Portfolio } from "../../types/ticker";
 import type { TickerFinancials } from "../../types/financials";
+import type { BrokerAccount, BrokerCashBalance } from "../../types/trading";
+import { getBrokerInstance } from "../../utils/broker-instances";
 import { formatOptionTicker } from "../../utils/options";
+import { ibkrGatewayManager } from "../ibkr/gateway-service";
 
 interface ColumnContext {
   activeTab?: string;
@@ -28,6 +33,81 @@ interface ColumnContext {
   now: number;
 }
 
+function getPositionCurrency(positions: TickerRecord["metadata"]["positions"], fallbackCurrency: string): string {
+  return positions.find((position) => position.currency)?.currency || fallbackCurrency;
+}
+type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
+
+interface PortfolioPaneSettings {
+  columnIds: string[];
+  collectionScope: CollectionScope;
+  visibleCollectionIds: string[];
+  hideTabs: boolean;
+  hideHeader: boolean;
+  hideCash: boolean;
+  lockedCollectionId: string;
+}
+
+interface CollectionEntry {
+  id: string;
+  name: string;
+  kind: "portfolio" | "watchlist";
+}
+
+const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
+  ...DEFAULT_COLUMNS,
+  { id: "change", label: "CHG", width: 9, align: "right", format: "currency" },
+  { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
+  { id: "dividend_yield", label: "DIV%", width: 7, align: "right", format: "percent" },
+  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
+  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
+  { id: "cost_basis", label: "COST", width: 10, align: "right", format: "compact" },
+  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
+  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
+  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
+];
+
+const PORTFOLIO_COLUMNS_BY_ID = new Map(PORTFOLIO_COLUMN_DEFS.map((column) => [column.id, column]));
+const DEFAULT_PORTFOLIO_COLUMN_IDS = [
+  ...DEFAULT_COLUMNS.map((column) => column.id),
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+];
+const PORTFOLIO_ONLY_COLUMN_IDS = new Set([
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+]);
+
+const COLLECTION_SCOPE_OPTIONS: PaneSettingOption[] = [
+  {
+    value: "all",
+    label: "All Collections",
+    description: "Show portfolios and watchlists in this pane.",
+  },
+  {
+    value: "portfolios",
+    label: "Portfolios Only",
+    description: "Limit the pane to portfolios.",
+  },
+  {
+    value: "watchlists",
+    label: "Watchlists Only",
+    description: "Limit the pane to watchlists.",
+  },
+  {
+    value: "custom",
+    label: "Custom Selection",
+    description: "Choose exactly which collections this pane should show.",
+  },
+];
 function getColumnValue(
   col: ColumnConfig,
   ticker: TickerRecord,
@@ -38,13 +118,15 @@ function getColumnValue(
   const f = financials?.fundamentals;
   const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
 
-  const toBase = (v: number) =>
-    convertCurrency(v, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
-
   // Helper to get positions relevant to the active portfolio tab
   const tabPositions = ctx.activeTab
     ? ticker.metadata.positions.filter((p) => p.portfolio === ctx.activeTab)
     : ticker.metadata.positions;
+  const positionCurrency = getPositionCurrency(tabPositions, quoteCurrency);
+  const toBaseQuote = (value: number) =>
+    convertCurrency(value, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
+  const toBasePosition = (value: number) =>
+    convertCurrency(value, positionCurrency, ctx.baseCurrency, ctx.exchangeRates);
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
     (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
@@ -74,22 +156,20 @@ function getColumnValue(
     }
     case "price": {
       if (q) {
-        const converted = toBase(q.price);
         return {
-          text: formatCurrency(converted, ctx.baseCurrency),
+          text: formatCurrency(q.price, quoteCurrency),
           color: priceColor(q.change),
         };
       }
       if (isOption && brokerMarkPrice != null) {
-        return { text: formatCurrency(toBase(brokerMarkPrice), ctx.baseCurrency) };
+        return { text: formatCurrency(brokerMarkPrice, positionCurrency) };
       }
       return { text: "—" };
     }
     case "change": {
       if (!q) return { text: "—" };
-      const converted = toBase(q.change);
       return {
-        text: (converted >= 0 ? "+" : "") + converted.toFixed(2),
+        text: (q.change >= 0 ? "+" : "") + q.change.toFixed(2),
         color: priceColor(q.change),
       };
     }
@@ -110,7 +190,7 @@ function getColumnValue(
     }
     case "market_cap": {
       if (!q?.marketCap) return { text: "—" };
-      return { text: formatCompact(toBase(q.marketCap)) };
+      return { text: formatCompact(toBaseQuote(q.marketCap)) };
     }
     case "pe":
       return { text: f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—" };
@@ -136,57 +216,51 @@ function getColumnValue(
     case "avg_cost": {
       if (totalShares === 0) return { text: "—" };
       const avgCost = totalCost / Math.abs(totalShares);
-      return { text: formatCurrency(toBase(avgCost), ctx.baseCurrency) };
+      return { text: formatCurrency(avgCost, positionCurrency) };
     }
     case "cost_basis": {
       if (totalCost === 0) return { text: "—" };
-      return { text: formatCompact(toBase(totalCost)) };
+      return { text: formatCompact(toBasePosition(totalCost)) };
     }
     case "mkt_value": {
       if (q && totalShares !== 0) {
         const mv = Math.abs(totalShares) * q.price;
-        return { text: formatCompact(toBase(mv)) };
+        return { text: formatCompact(toBaseQuote(mv)) };
       }
       if (isOption && brokerMktValue !== 0) {
-        return { text: formatCompact(toBase(brokerMktValue)) };
+        return { text: formatCompact(toBasePosition(brokerMktValue)) };
       }
       return { text: "—" };
     }
     case "pnl": {
       if (q && totalShares !== 0) {
         const mv = Math.abs(totalShares) * q.price;
-        const pnl = toBase(mv - totalCost);
+        const pnl = toBaseQuote(mv) - toBasePosition(totalCost);
         return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
       }
       if (isOption && brokerPnl !== 0) {
-        const pnl = toBase(brokerPnl);
+        const pnl = toBasePosition(brokerPnl);
         return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
       }
       return { text: "—" };
     }
     case "pnl_pct": {
       if (q && totalCost !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
-        const pct = ((mv - totalCost) / totalCost) * 100;
+        const mv = toBaseQuote(Math.abs(totalShares) * q.price);
+        const costBasis = toBasePosition(totalCost);
+        const pct = costBasis !== 0 ? ((mv - costBasis) / costBasis) * 100 : 0;
         return { text: formatPercentRaw(pct), color: priceColor(pct) };
       }
       if (isOption && brokerPnl !== 0 && totalCost !== 0) {
-        const pct = (brokerPnl / totalCost) * 100;
+        const costBasis = toBasePosition(totalCost);
+        const pnl = toBasePosition(brokerPnl);
+        const pct = costBasis !== 0 ? (pnl / costBasis) * 100 : 0;
         return { text: formatPercentRaw(pct), color: priceColor(pct) };
       }
       return { text: "—" };
     }
     case "latency": {
-      if (!q?.lastUpdated) return { text: "—" };
-      const ago = (ctx.now - q.lastUpdated) / 1000;
-      // ◷ = delayed broker data, ◌ = Yahoo fallback, no prefix = live
-      const prefix = q.dataSource === "delayed" ? "◷" : q.dataSource === "yahoo" ? "◌" : "";
-      let age: string;
-      if (ago < 60) age = `${Math.floor(ago)}s`;
-      else if (ago < 3600) age = `${Math.floor(ago / 60)}m`;
-      else if (ago < 86400) age = `${Math.floor(ago / 3600)}h`;
-      else age = `${Math.floor(ago / 86400)}d`;
-      return { text: prefix ? `${prefix}${age}` : age };
+      return { text: formatQuoteAgeWithSource(q, ctx.now) };
     }
     default:
       return { text: "—" };
@@ -203,12 +277,15 @@ function getSortValue(
   const q = financials?.quote;
   const f = financials?.fundamentals;
   const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
-  const toBase = (v: number) =>
-    convertCurrency(v, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
 
   const tabPositions = ctx.activeTab
     ? ticker.metadata.positions.filter((p) => p.portfolio === ctx.activeTab)
     : ticker.metadata.positions;
+  const positionCurrency = getPositionCurrency(tabPositions, quoteCurrency);
+  const toBaseQuote = (value: number) =>
+    convertCurrency(value, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
+  const toBasePosition = (value: number) =>
+    convertCurrency(value, positionCurrency, ctx.baseCurrency, ctx.exchangeRates);
   const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
   const totalCost = tabPositions.reduce(
     (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
@@ -224,18 +301,18 @@ function getSortValue(
     case "ticker":
       return ticker.metadata.ticker;
     case "price":
-      if (q) return toBase(q.price);
-      if (isOption && brokerMarkPrice != null) return toBase(brokerMarkPrice);
+      if (q) return q.price;
+      if (isOption && brokerMarkPrice != null) return brokerMarkPrice;
       return null;
     case "change":
-      return q ? toBase(q.change) : null;
+      return q ? q.change : null;
     case "change_pct": {
       if (q?.marketState === "PRE" && q.preMarketPrice != null) return q.preMarketChangePercent ?? 0;
       if (q?.marketState === "POST" && q.postMarketPrice != null) return q.postMarketChangePercent ?? 0;
       return q?.changePercent ?? null;
     }
     case "market_cap":
-      return q?.marketCap ? toBase(q.marketCap) : null;
+      return q?.marketCap ? toBaseQuote(q.marketCap) : null;
     case "pe":
       return f?.trailingPE ?? null;
     case "forward_pe":
@@ -250,45 +327,233 @@ function getSortValue(
     case "shares":
       return totalShares !== 0 ? totalShares : null;
     case "avg_cost":
-      return totalShares !== 0 ? toBase(totalCost / Math.abs(totalShares)) : null;
+      return totalShares !== 0 ? totalCost / Math.abs(totalShares) : null;
     case "cost_basis":
-      return totalCost !== 0 ? toBase(totalCost) : null;
+      return totalCost !== 0 ? toBasePosition(totalCost) : null;
     case "mkt_value": {
-      if (q && totalShares !== 0) return toBase(Math.abs(totalShares) * q.price);
-      if (isOption && brokerMktValue !== 0) return toBase(brokerMktValue);
+      if (q && totalShares !== 0) return toBaseQuote(Math.abs(totalShares) * q.price);
+      if (isOption && brokerMktValue !== 0) return toBasePosition(brokerMktValue);
       return null;
     }
     case "pnl": {
       if (q && totalShares !== 0) {
         const mv = Math.abs(totalShares) * q.price;
-        return toBase(mv - totalCost);
+        return toBaseQuote(mv) - toBasePosition(totalCost);
       }
-      if (isOption && brokerPnl !== 0) return toBase(brokerPnl);
+      if (isOption && brokerPnl !== 0) return toBasePosition(brokerPnl);
       return null;
     }
     case "pnl_pct": {
       if (q && totalCost !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
-        return ((mv - totalCost) / totalCost) * 100;
+        const mv = toBaseQuote(Math.abs(totalShares) * q.price);
+        const costBasis = toBasePosition(totalCost);
+        return costBasis !== 0 ? ((mv - costBasis) / costBasis) * 100 : null;
       }
-      if (isOption && brokerPnl !== 0 && totalCost !== 0) return (brokerPnl / totalCost) * 100;
+      if (isOption && brokerPnl !== 0 && totalCost !== 0) {
+        const costBasis = toBasePosition(totalCost);
+        const pnl = toBasePosition(brokerPnl);
+        return costBasis !== 0 ? (pnl / costBasis) * 100 : null;
+      }
       return null;
     }
     case "latency":
-      return q?.lastUpdated ?? null;
+      return q?.lastUpdated != null ? ctx.now - (clampQuoteTimestamp(q.lastUpdated, ctx.now) ?? ctx.now) : null;
     default:
       return null;
   }
 }
 
-/** Position-specific columns appended when viewing a portfolio */
-const POSITION_COLUMNS: ColumnConfig[] = [
-  { id: "shares", label: "SHARES", width: 9, align: "right", format: "number" },
-  { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" },
-  { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
-  { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
-  { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
-];
+function isCollectionScope(value: unknown): value is CollectionScope {
+  return value === "all" || value === "portfolios" || value === "watchlists" || value === "custom";
+}
+
+function getPortfolioPaneSettings(settings: Record<string, unknown> | undefined): PortfolioPaneSettings {
+  const columnIds = Array.isArray(settings?.columnIds)
+    ? settings.columnIds.filter((value): value is string => typeof value === "string")
+    : DEFAULT_PORTFOLIO_COLUMN_IDS;
+  const visibleCollectionIds = Array.isArray(settings?.visibleCollectionIds)
+    ? settings.visibleCollectionIds.filter((value): value is string => typeof value === "string")
+    : [];
+
+  return {
+    columnIds: columnIds.length > 0 ? columnIds : DEFAULT_PORTFOLIO_COLUMN_IDS,
+    collectionScope: isCollectionScope(settings?.collectionScope) ? settings.collectionScope : "all",
+    visibleCollectionIds,
+    hideTabs: settings?.hideTabs === true,
+    hideHeader: settings?.hideHeader === true,
+    hideCash: settings?.hideCash === true,
+    lockedCollectionId: typeof settings?.lockedCollectionId === "string" ? settings.lockedCollectionId : "",
+  };
+}
+
+function createPortfolioPaneSettings(overrides: Partial<PortfolioPaneSettings> = {}): PortfolioPaneSettings {
+  return {
+    columnIds: [...(overrides.columnIds ?? DEFAULT_PORTFOLIO_COLUMN_IDS)],
+    collectionScope: overrides.collectionScope ?? "all",
+    visibleCollectionIds: [...(overrides.visibleCollectionIds ?? [])],
+    hideTabs: overrides.hideTabs ?? false,
+    hideHeader: overrides.hideHeader ?? false,
+    hideCash: overrides.hideCash ?? false,
+    lockedCollectionId: overrides.lockedCollectionId ?? "",
+  };
+}
+
+function getCollectionEntries(config: AppConfig): CollectionEntry[] {
+  return [
+    ...config.portfolios.map((portfolio) => ({
+      id: portfolio.id,
+      name: portfolio.name,
+      kind: "portfolio" as const,
+    })),
+    ...config.watchlists.map((watchlist) => ({
+      id: watchlist.id,
+      name: watchlist.name,
+      kind: "watchlist" as const,
+    })),
+  ];
+}
+
+function filterCollectionEntries(entries: CollectionEntry[], settings: PortfolioPaneSettings): CollectionEntry[] {
+  switch (settings.collectionScope) {
+    case "portfolios":
+      return entries.filter((entry) => entry.kind === "portfolio");
+    case "watchlists":
+      return entries.filter((entry) => entry.kind === "watchlist");
+    case "custom": {
+      const selectedIds = new Set(settings.visibleCollectionIds);
+      return entries.filter((entry) => selectedIds.has(entry.id));
+    }
+    default:
+      return entries;
+  }
+}
+
+function resolveScopedCollectionEntries(entries: CollectionEntry[], settings: PortfolioPaneSettings): CollectionEntry[] {
+  const filtered = filterCollectionEntries(entries, settings);
+  if (settings.collectionScope === "custom" && filtered.length === 0 && entries[0]) {
+    return [entries[0]];
+  }
+  return filtered;
+}
+
+function resolveCollectionOptions(entries: CollectionEntry[]): PaneSettingOption[] {
+  return entries.map((entry) => ({
+    value: entry.id,
+    label: entry.name,
+    description: entry.kind === "portfolio" ? "Portfolio" : "Watchlist",
+  }));
+}
+
+function resolveLockedCollectionId(settings: PortfolioPaneSettings, visibleCollections: CollectionEntry[]): string {
+  if (visibleCollections.some((entry) => entry.id === settings.lockedCollectionId)) {
+    return settings.lockedCollectionId;
+  }
+  return visibleCollections[0]?.id ?? "";
+}
+
+function resolveActiveCollectionId(
+  currentCollectionId: string,
+  visibleCollections: CollectionEntry[],
+  settings: PortfolioPaneSettings,
+): string {
+  if (visibleCollections.length === 0) return "";
+  if (settings.hideTabs) {
+    return resolveLockedCollectionId(settings, visibleCollections);
+  }
+  if (visibleCollections.some((entry) => entry.id === currentCollectionId)) {
+    return currentCollectionId;
+  }
+  return resolveLockedCollectionId(settings, visibleCollections);
+}
+
+function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boolean): ColumnConfig[] {
+  const resolved = columnIds
+    .map((columnId) => PORTFOLIO_COLUMNS_BY_ID.get(columnId))
+    .filter((column): column is ColumnConfig => column != null)
+    .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
+
+  if (resolved.length > 0) {
+    return resolved;
+  }
+
+  return DEFAULT_COLUMNS.filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
+}
+
+function buildPortfolioPaneSettingsDef(config: AppConfig, settings: PortfolioPaneSettings): PaneSettingsDef {
+  const collectionEntries = getCollectionEntries(config);
+  const scopedEntries = resolveScopedCollectionEntries(collectionEntries, settings);
+  const allCollectionOptions = resolveCollectionOptions(collectionEntries);
+  const lockedCollectionOptions = resolveCollectionOptions(scopedEntries.length > 0 ? scopedEntries : collectionEntries);
+
+  const fields: PaneSettingsDef["fields"] = [
+    {
+      key: "columnIds",
+      label: "Columns",
+      description: "Choose which columns this pane shows and in what order.",
+      type: "ordered-multi-select",
+      options: PORTFOLIO_COLUMN_DEFS.map((column) => ({
+        value: column.id,
+        label: column.label,
+        description: PORTFOLIO_ONLY_COLUMN_IDS.has(column.id)
+          ? "Visible only when this pane is showing a portfolio."
+          : "Visible for watchlists and portfolios.",
+      })),
+    },
+    {
+      key: "collectionScope",
+      label: "Collections",
+      description: "Control which portfolios or watchlists appear in this pane.",
+      type: "select",
+      options: COLLECTION_SCOPE_OPTIONS,
+    },
+  ];
+
+  if (settings.collectionScope === "custom") {
+    fields.push({
+      key: "visibleCollectionIds",
+      label: "Visible Collections",
+      description: "Pick the exact collections that should appear in this pane.",
+      type: "multi-select",
+      options: allCollectionOptions,
+    });
+  }
+
+  fields.push({
+    key: "hideTabs",
+    label: "Hide Tabs",
+    description: "Hide the collection tab bar and lock this pane to one collection.",
+    type: "toggle",
+  });
+
+  fields.push({
+    key: "hideHeader",
+    label: "Hide Header Bar",
+    description: "Hide the summary bar showing portfolio value, P&L, and account metrics.",
+    type: "toggle",
+  });
+
+  fields.push({
+    key: "hideCash",
+    label: "Hide Cash Positions",
+    description: "Hide the cash & margin drawer at the bottom of the pane.",
+    type: "toggle",
+  });
+
+  if (settings.hideTabs && lockedCollectionOptions.length > 0) {
+    fields.push({
+      key: "lockedCollectionId",
+      label: "Locked Collection",
+      description: "Choose which collection this pane should stay pinned to.",
+      type: "select",
+      options: lockedCollectionOptions,
+    });
+  }
+
+  return {
+    title: "Portfolio Pane Settings",
+    fields,
+  };
+}
 
 const EMPTY_SORT_PREFERENCE: CollectionSortPreference = {
   columnId: null,
@@ -309,17 +574,484 @@ export function resolveCollectionSortPreference(
   return collectionSorts[collectionId] ?? (isPortfolio ? DEFAULT_PORTFOLIO_SORT_PREFERENCE : EMPTY_SORT_PREFERENCE);
 }
 
+export interface PortfolioSummaryTotals {
+  totalMktValue: number;
+  dailyPnl: number;
+  dailyPnlPct: number;
+  totalCostBasis: number;
+  hasPositions: boolean;
+  unrealizedPnl: number;
+  unrealizedPnlPct: number;
+  avgWatchlistChange: number;
+  watchlistCount: number;
+}
+
+export interface PortfolioSummarySegment {
+  id: string;
+  parts: Array<{
+    text: string;
+    tone: "label" | "value" | "muted";
+    color?: string;
+    bold?: boolean;
+  }>;
+  length: number;
+}
+
+export interface PortfolioSummaryAccountState {
+  account: BrokerAccount;
+  sourceLabel: string;
+}
+
+interface ResolvedPortfolioAccountState extends PortfolioSummaryAccountState {
+  sourceKind: "live" | "cached" | "flex";
+  visibleCashBalances: BrokerCashBalance[];
+}
+
+function createSummarySegment(
+  id: string,
+  parts: PortfolioSummarySegment["parts"],
+): PortfolioSummarySegment {
+  return {
+    id,
+    parts,
+    length: parts.reduce((sum, part) => sum + part.text.length, 0) + Math.max(0, parts.length - 1),
+  };
+}
+
+function fitSummarySegments(candidates: PortfolioSummarySegment[], widthBudget: number): PortfolioSummarySegment[] {
+  const fitted: PortfolioSummarySegment[] = [];
+  let used = 0;
+  for (const segment of candidates) {
+    const nextUsed = used + (fitted.length > 0 ? 2 : 0) + segment.length;
+    if (fitted.length > 0 && nextUsed > widthBudget) break;
+    fitted.push(segment);
+    used = nextUsed;
+  }
+  return fitted;
+}
+
+function formatSourceBadge(account: BrokerAccount, liveGateway: boolean): { label: string; kind: "live" | "cached" | "flex" } {
+  if (liveGateway) {
+    return { label: "Live", kind: "live" };
+  }
+  if (account.source === "flex") {
+    return {
+      label: account.updatedAt
+        ? `Flex ${new Date(account.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+        : "Flex",
+      kind: "flex",
+    };
+  }
+  return { label: "Cached", kind: "cached" };
+}
+
+function getVisibleCashBalances(cashBalances: BrokerCashBalance[] | undefined): BrokerCashBalance[] {
+  if (!cashBalances) return [];
+  return cashBalances
+    .filter((balance) => {
+      const quantity = Math.abs(balance.quantity);
+      const baseValue = Math.abs(balance.baseValue ?? 0);
+      return quantity > 1e-9 || baseValue > 1e-9;
+    })
+    .sort((left, right) => {
+      const leftValue = Math.abs(left.baseValue ?? left.quantity);
+      const rightValue = Math.abs(right.baseValue ?? right.quantity);
+      return rightValue - leftValue;
+    });
+}
+
+function findPortfolioAccount(
+  accounts: BrokerAccount[],
+  portfolio: Portfolio,
+): BrokerAccount | undefined {
+  if (accounts.length === 0) return undefined;
+
+  const accountId = portfolio.brokerAccountId?.trim();
+  const portfolioName = portfolio.name.trim();
+  const collectionAccountId = portfolio.id.split(":").pop()?.trim();
+
+  return accounts.find((account) => account.accountId === accountId)
+    ?? accounts.find((account) => account.accountId === portfolioName || account.name === portfolioName)
+    ?? accounts.find((account) => account.accountId === collectionAccountId || account.name === collectionAccountId)
+    ?? (accounts.length === 1 ? accounts[0] : undefined);
+}
+
+function resolvePortfolioAccountState(
+  portfolio: Portfolio | null,
+  state: ReturnType<typeof useAppState>["state"],
+  liveSnapshot: ReturnType<typeof ibkrGatewayManager.getSnapshot>,
+): ResolvedPortfolioAccountState | null {
+  if (!portfolio?.brokerInstanceId) return null;
+
+  const brokerInstance = getBrokerInstance(state.config.brokerInstances, portfolio.brokerInstanceId);
+  const cachedAccounts = state.brokerAccounts[portfolio.brokerInstanceId] ?? [];
+  const cachedAccount = findPortfolioAccount(cachedAccounts, portfolio);
+
+  const liveAccount = brokerInstance?.brokerType === "ibkr"
+    && brokerInstance.connectionMode === "gateway"
+    && liveSnapshot.status.state === "connected"
+    ? findPortfolioAccount(liveSnapshot.accounts, portfolio)
+    : undefined;
+
+  const account = liveAccount ?? cachedAccount;
+  if (!account) return null;
+
+  const source = formatSourceBadge(account, !!liveAccount);
+  return {
+    account,
+    sourceLabel: source.label,
+    sourceKind: source.kind,
+    visibleCashBalances: getVisibleCashBalances(account.cashBalances),
+  };
+}
+
+function calculatePortfolioSummaryTotals(
+  tickers: TickerRecord[],
+  state: ReturnType<typeof useAppState>["state"],
+  isPortfolio: boolean,
+  collectionId: string | null,
+): PortfolioSummaryTotals {
+  const baseCurrency = state.config.baseCurrency;
+  const exchangeRates = state.exchangeRates;
+  let totalMktValue = 0;
+  let totalPrevValue = 0;
+  let totalCostBasis = 0;
+  let hasPositions = false;
+  let watchlistChangeSum = 0;
+  let watchlistCount = 0;
+
+  for (const ticker of tickers) {
+    const fin = state.financials.get(ticker.metadata.ticker);
+    const q = fin?.quote;
+    const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
+
+    if (!isPortfolio) {
+      if (q?.changePercent != null) {
+        watchlistChangeSum += q.changePercent;
+        watchlistCount++;
+      }
+      continue;
+    }
+
+    const tabPositions = collectionId
+      ? ticker.metadata.positions.filter((position) => position.portfolio === collectionId)
+      : ticker.metadata.positions;
+    const positionCurrency = getPositionCurrency(tabPositions, quoteCurrency);
+    const toBaseQuote = (value: number) => convertCurrency(value, quoteCurrency, baseCurrency, exchangeRates);
+    const toBasePosition = (value: number) => convertCurrency(value, positionCurrency, baseCurrency, exchangeRates);
+    const totalShares = tabPositions.reduce((sum, position) => sum + position.shares * (position.side === "short" ? -1 : 1), 0);
+    const totalCost = tabPositions.reduce(
+      (sum, position) => sum + position.shares * position.avgCost * (position.multiplier || 1),
+      0,
+    );
+
+    const isOption = ticker.metadata.assetCategory === "OPT";
+    const brokerMktValue = tabPositions.reduce((sum, position) => sum + (position.marketValue || 0), 0);
+
+    if (q && totalShares !== 0) {
+      hasPositions = true;
+      const marketValue = Math.abs(totalShares) * q.price;
+      totalMktValue += toBaseQuote(marketValue);
+      const prevClose = q.previousClose || (q.price - q.change);
+      totalPrevValue += toBaseQuote(Math.abs(totalShares) * prevClose);
+      totalCostBasis += toBasePosition(totalCost);
+    } else if (isOption && brokerMktValue !== 0) {
+      hasPositions = true;
+      totalMktValue += toBasePosition(brokerMktValue);
+      totalCostBasis += toBasePosition(totalCost);
+      totalPrevValue += toBasePosition(brokerMktValue);
+    }
+  }
+
+  const dailyPnl = totalMktValue - totalPrevValue;
+  const dailyPnlPct = totalPrevValue !== 0 ? (dailyPnl / totalPrevValue) * 100 : 0;
+  const unrealizedPnl = totalMktValue - totalCostBasis;
+  const unrealizedPnlPct = totalCostBasis !== 0 ? (unrealizedPnl / totalCostBasis) * 100 : 0;
+  const avgWatchlistChange = watchlistCount > 0 ? watchlistChangeSum / watchlistCount : 0;
+
+  return {
+    totalMktValue,
+    dailyPnl,
+    dailyPnlPct,
+    totalCostBasis,
+    hasPositions,
+    unrealizedPnl,
+    unrealizedPnlPct,
+    avgWatchlistChange,
+    watchlistCount,
+  };
+}
+
+export function buildPortfolioSummarySegments({
+  totals,
+  accountState,
+  widthBudget,
+  refreshText,
+}: {
+  totals: PortfolioSummaryTotals;
+  accountState: PortfolioSummaryAccountState | null;
+  widthBudget: number;
+  refreshText?: string;
+}): PortfolioSummarySegment[] {
+  const candidates: PortfolioSummarySegment[] = [
+    createSummarySegment("val", [
+      { text: "Val", tone: "label" },
+      { text: formatCompact(totals.totalMktValue), tone: "value", bold: true },
+    ]),
+  ];
+
+  if (accountState) {
+    const { account, sourceLabel } = accountState;
+    if (account.totalCashValue != null) {
+      candidates.push(createSummarySegment("cash", [
+        { text: "Cash", tone: "label" },
+        { text: formatCompact(account.totalCashValue), tone: "value", bold: true },
+      ]));
+    }
+  }
+
+  candidates.push(createSummarySegment("day", [
+    { text: "Day", tone: "label" },
+    { text: `${totals.dailyPnl >= 0 ? "+" : ""}${formatCompact(totals.dailyPnl)}`, tone: "value", color: priceColor(totals.dailyPnl), bold: true },
+    { text: `(${formatPercentRaw(totals.dailyPnlPct)})`, tone: "muted", color: priceColor(totals.dailyPnlPct) },
+  ]));
+  candidates.push(createSummarySegment("pnl", [
+    { text: "P&L", tone: "label" },
+    { text: `${totals.unrealizedPnl >= 0 ? "+" : ""}${formatCompact(totals.unrealizedPnl)}`, tone: "value", color: priceColor(totals.unrealizedPnl), bold: true },
+    { text: `(${formatPercentRaw(totals.unrealizedPnlPct)})`, tone: "muted", color: priceColor(totals.unrealizedPnlPct) },
+  ]));
+
+  if (accountState) {
+    const { account, sourceLabel } = accountState;
+    const brokerSegments = [
+      account.settledCash != null
+        ? createSummarySegment("settled", [
+          { text: "Settled", tone: "label" },
+          { text: formatCompact(account.settledCash), tone: "value", bold: true },
+        ])
+        : null,
+      account.availableFunds != null
+        ? createSummarySegment("avail", [
+          { text: "Avail", tone: "label" },
+          { text: formatCompact(account.availableFunds), tone: "value", bold: true },
+        ])
+        : null,
+      account.excessLiquidity != null
+        ? createSummarySegment("excess", [
+          { text: "Excess", tone: "label" },
+          { text: formatCompact(account.excessLiquidity), tone: "value", bold: true },
+        ])
+        : null,
+      account.buyingPower != null
+        ? createSummarySegment("bp", [
+          { text: "BP", tone: "label" },
+          { text: formatCompact(account.buyingPower), tone: "value", bold: true },
+        ])
+        : null,
+      createSummarySegment("source", [
+        { text: sourceLabel, tone: "muted" },
+      ]),
+    ].filter((segment): segment is PortfolioSummarySegment => segment != null);
+
+    return fitSummarySegments([...candidates, ...brokerSegments], widthBudget);
+  }
+
+  if (refreshText) {
+    candidates.push(createSummarySegment("refresh", [
+      { text: refreshText, tone: "muted" },
+    ]));
+  }
+
+  return fitSummarySegments(candidates, widthBudget);
+}
+
+export function shouldToggleCashMarginDrawer(key: string | undefined, showCashDrawer: boolean): boolean {
+  return key === "c" && showCashDrawer;
+}
+
+export function calculatePortfolioSummaryWidth(totalWidth: number, tabLabels: string[]): number {
+  const desiredWidth = Math.min(totalWidth, Math.min(72, Math.max(24, Math.floor(totalWidth * 0.55))));
+  if (desiredWidth <= 0) return 0;
+
+  const tabRowWidth = tabLabels.reduce((sum, label) => sum + label.length + 4, 0);
+  const availableWidth = Math.max(0, totalWidth - tabRowWidth);
+  if (availableWidth < Math.min(24, totalWidth)) return 0;
+
+  return Math.min(desiredWidth, availableWidth);
+}
+
+function renderSummarySegments(segments: PortfolioSummarySegment[], width: number) {
+  if (segments.length === 0) return null;
+  return (
+    <box flexDirection="row" width={width} justifyContent="flex-start" overflow="hidden">
+      {segments.map((segment, segmentIndex) => (
+        <box key={segment.id} flexDirection="row">
+          {segmentIndex > 0 && <text fg={colors.textDim}>{"  "}</text>}
+          {segment.parts.map((part, partIndex) => (
+            <box key={`${segment.id}:${partIndex}`} flexDirection="row">
+              {partIndex > 0 && <text fg={colors.textDim}>{" "}</text>}
+              <text
+                fg={part.color ?? (part.tone === "label" || part.tone === "muted" ? colors.textDim : colors.text)}
+                attributes={part.bold ? TextAttributes.BOLD : 0}
+              >
+                {part.text}
+              </text>
+            </box>
+          ))}
+        </box>
+      ))}
+    </box>
+  );
+}
+
+function buildDrawerMetricSegments(account: BrokerAccount, widthBudget: number): PortfolioSummarySegment[] {
+  const candidates = [
+    account.totalCashValue != null
+      ? createSummarySegment("cash", [{ text: "Cash", tone: "label" }, { text: formatCompact(account.totalCashValue), tone: "value", bold: true }])
+      : null,
+    account.settledCash != null
+      ? createSummarySegment("settled", [{ text: "Settled", tone: "label" }, { text: formatCompact(account.settledCash), tone: "value", bold: true }])
+      : null,
+    account.netLiquidation != null
+      ? createSummarySegment("netliq", [{ text: "Net Liq", tone: "label" }, { text: formatCompact(account.netLiquidation), tone: "value", bold: true }])
+      : null,
+    account.availableFunds != null
+      ? createSummarySegment("avail", [{ text: "Avail", tone: "label" }, { text: formatCompact(account.availableFunds), tone: "value", bold: true }])
+      : null,
+    account.excessLiquidity != null
+      ? createSummarySegment("excess", [{ text: "Excess", tone: "label" }, { text: formatCompact(account.excessLiquidity), tone: "value", bold: true }])
+      : null,
+    account.buyingPower != null
+      ? createSummarySegment("bp", [{ text: "BP", tone: "label" }, { text: formatCompact(account.buyingPower), tone: "value", bold: true }])
+      : null,
+    account.initMarginReq != null
+      ? createSummarySegment("init", [{ text: "Init", tone: "label" }, { text: formatCompact(account.initMarginReq), tone: "value", bold: true }])
+      : null,
+    account.maintMarginReq != null
+      ? createSummarySegment("maint", [{ text: "Maint", tone: "label" }, { text: formatCompact(account.maintMarginReq), tone: "value", bold: true }])
+      : null,
+  ].filter((segment): segment is PortfolioSummarySegment => segment != null);
+
+  return fitSummarySegments(candidates, widthBudget);
+}
+
+function PortfolioCashMarginDrawer({
+  accountState,
+  expanded,
+  onToggle,
+  width,
+  height,
+}: {
+  accountState: ResolvedPortfolioAccountState;
+  expanded: boolean;
+  onToggle: () => void;
+  width: number;
+  height: number;
+}) {
+  const previewText = `${accountState.visibleCashBalances.length} ccy · Cash ${formatCompact(accountState.account.totalCashValue)} · ${accountState.sourceLabel}`;
+  const drawerHeight = Math.max(1, height);
+
+  if (!expanded) {
+    return (
+      <box
+        width={width}
+        height={drawerHeight}
+        flexDirection="row"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onMouseUp={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggle();
+        }}
+      >
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▸ Cash & Margin"}</text>
+        <box flexGrow={1} />
+        <text fg={colors.textDim}>{padTo(previewText, Math.max(0, width - 17), "right")}</text>
+      </box>
+    );
+  }
+
+  const metricSegments = buildDrawerMetricSegments(accountState.account, width);
+  const currencyRowsHeight = Math.max(1, drawerHeight - 2);
+
+  return (
+    <box flexDirection="column" height={drawerHeight}>
+      <box
+        width={width}
+        height={1}
+        flexDirection="row"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onMouseUp={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggle();
+        }}
+      >
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▾ Cash & Margin"}</text>
+        <box flexGrow={1} />
+        <text fg={colors.textDim}>{accountState.sourceLabel}</text>
+      </box>
+      <box height={1} overflow="hidden">
+        {renderSummarySegments(metricSegments, width)}
+      </box>
+      <scrollbox height={currencyRowsHeight} scrollY focusable={false}>
+        {accountState.visibleCashBalances.length === 0 ? (
+          <text fg={colors.textDim}>No non-zero cash balances.</text>
+        ) : (
+          accountState.visibleCashBalances.map((balance) => (
+            <box key={balance.currency} height={1} flexDirection="row">
+              <text fg={colors.textBright}>{padTo(balance.currency, 4)}</text>
+              <text fg={colors.textDim}>{" qty "}</text>
+              <text fg={colors.text}>{padTo(formatNumber(balance.quantity, 2), 14, "right")}</text>
+              <text fg={colors.textDim}>{"  value "}</text>
+              <text fg={colors.text}>{padTo(balance.baseValue != null ? formatCompact(balance.baseValue) : "—", 10, "right")}</text>
+            </box>
+          ))
+        )}
+      </scrollbox>
+    </box>
+  );
+}
+
+function usePortfolioAccountState(
+  portfolio: Portfolio | null,
+  state: ReturnType<typeof useAppState>["state"],
+): ResolvedPortfolioAccountState | null {
+  const instanceId = portfolio?.brokerInstanceId;
+  const snapshot = useSyncExternalStore(
+    (listener) => ibkrGatewayManager.subscribe(instanceId, listener),
+    () => ibkrGatewayManager.getSnapshot(instanceId),
+  );
+  return useMemo(
+    () => resolvePortfolioAccountState(portfolio, state, snapshot),
+    [portfolio, snapshot, state],
+  );
+}
+
 function PortfolioSummaryBar({
   tickers,
   state,
   isPortfolio,
   collectionId,
+  width,
+  accountState,
 }: {
   tickers: TickerRecord[];
   state: ReturnType<typeof useAppState>["state"];
   isPortfolio: boolean;
   collectionId: string | null;
+  width: number;
+  accountState: ResolvedPortfolioAccountState | null;
 }) {
+  const lastRefreshTimestamp = useMemo(() => getMostRecentQuoteUpdate(
+    tickers.map((ticker) => state.financials.get(ticker.metadata.ticker)?.quote),
+  ), [tickers, state.financials]);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // Track last refresh time — update whenever refreshing set goes from non-empty to empty
@@ -340,74 +1072,14 @@ function PortfolioSummaryBar({
     }
   }, [state.financials.size, lastRefresh]);
 
-  const baseCurrency = state.config.baseCurrency;
-  const exchangeRates = state.exchangeRates;
+  const totals = useMemo(
+    () => calculatePortfolioSummaryTotals(tickers, state, isPortfolio, collectionId),
+    [tickers, state, isPortfolio, collectionId],
+  );
 
-  const totals = useMemo(() => {
-    let totalMktValue = 0;
-    let totalPrevValue = 0;
-    let totalCostBasis = 0;
-    let hasPositions = false;
-    // For watchlists: average daily change %
-    let watchlistChangeSum = 0;
-    let watchlistCount = 0;
-
-    for (const ticker of tickers) {
-      const fin = state.financials.get(ticker.metadata.ticker);
-      const q = fin?.quote;
-      const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
-      const toBase = (v: number) => convertCurrency(v, quoteCurrency, baseCurrency, exchangeRates);
-
-      if (!isPortfolio) {
-        if (q?.changePercent != null) {
-          watchlistChangeSum += q.changePercent;
-          watchlistCount++;
-        }
-        continue;
-      }
-
-      const tabPositions = collectionId
-        ? ticker.metadata.positions.filter((p) => p.portfolio === collectionId)
-        : ticker.metadata.positions;
-      const totalShares = tabPositions.reduce((sum, p) => sum + p.shares * (p.side === "short" ? -1 : 1), 0);
-      const totalCost = tabPositions.reduce(
-        (sum, p) => sum + p.shares * p.avgCost * (p.multiplier || 1),
-        0,
-      );
-
-      const isOption = ticker.metadata.assetCategory === "OPT";
-      const brokerMktValue = tabPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
-
-      if (q && totalShares !== 0) {
-        hasPositions = true;
-        const mv = Math.abs(totalShares) * q.price;
-        totalMktValue += toBase(mv);
-        const prevClose = q.previousClose || (q.price - q.change);
-        totalPrevValue += toBase(Math.abs(totalShares) * prevClose);
-        totalCostBasis += toBase(totalCost);
-      } else if (isOption && brokerMktValue !== 0) {
-        hasPositions = true;
-        totalMktValue += toBase(brokerMktValue);
-        totalCostBasis += toBase(totalCost);
-        totalPrevValue += toBase(brokerMktValue);
-      }
-    }
-
-    const dailyPnl = totalMktValue - totalPrevValue;
-    const dailyPnlPct = totalPrevValue !== 0 ? (dailyPnl / totalPrevValue) * 100 : 0;
-    const unrealizedPnl = totalMktValue - totalCostBasis;
-    const unrealizedPnlPct = totalCostBasis !== 0 ? (unrealizedPnl / totalCostBasis) * 100 : 0;
-    const avgWatchlistChange = watchlistCount > 0 ? watchlistChangeSum / watchlistCount : 0;
-
-    return {
-      totalMktValue, dailyPnl, dailyPnlPct, totalCostBasis, hasPositions,
-      unrealizedPnl, unrealizedPnlPct,
-      avgWatchlistChange, watchlistCount,
-    };
-  }, [tickers, state.financials, collectionId, baseCurrency, exchangeRates, isPortfolio]);
-
-  const refreshText = lastRefresh
-    ? lastRefresh.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+  const refreshTimestamp = lastRefreshTimestamp ?? lastRefresh?.getTime() ?? null;
+  const refreshText = refreshTimestamp != null
+    ? new Date(refreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     : "—";
   const isRefreshing = state.refreshing.size > 0;
 
@@ -415,90 +1087,116 @@ function PortfolioSummaryBar({
   if (!isPortfolio) {
     if (totals.watchlistCount === 0) return null;
     return (
-      <box flexDirection="row" height={1} paddingRight={1}>
+      <box flexDirection="row" height={1} width={width} justifyContent="flex-start" overflow="hidden">
         <text fg={colors.textDim}>{"Avg Day "}</text>
         <text fg={priceColor(totals.avgWatchlistChange)} attributes={TextAttributes.BOLD}>
           {formatPercentRaw(totals.avgWatchlistChange)}
         </text>
-        <text fg={colors.textDim}>{"  " + (isRefreshing ? "Refreshing…" : refreshText)}</text>
+        <text fg={colors.textDim}>{"  " + refreshText}</text>
       </box>
     );
   }
 
-  if (!totals.hasPositions) return null;
+  if (!totals.hasPositions && !accountState) return null;
 
-  return (
-    <box flexDirection="row" height={1} paddingRight={1}>
-      <text fg={colors.textDim}>{"Val "}</text>
-      <text fg={colors.text} attributes={TextAttributes.BOLD}>
-        {formatCompact(totals.totalMktValue)}
-      </text>
-      <text fg={colors.textDim}>{"  Day "}</text>
-      <text fg={priceColor(totals.dailyPnl)} attributes={TextAttributes.BOLD}>
-        {(totals.dailyPnl >= 0 ? "+" : "") + formatCompact(totals.dailyPnl)}
-      </text>
-      <text fg={priceColor(totals.dailyPnlPct)}>
-        {" (" + formatPercentRaw(totals.dailyPnlPct) + ")"}
-      </text>
-      <text fg={colors.textDim}>{"  P&L "}</text>
-      <text fg={priceColor(totals.unrealizedPnl)} attributes={TextAttributes.BOLD}>
-        {(totals.unrealizedPnl >= 0 ? "+" : "") + formatCompact(totals.unrealizedPnl)}
-      </text>
-      <text fg={priceColor(totals.unrealizedPnlPct)}>
-        {" (" + formatPercentRaw(totals.unrealizedPnlPct) + ")"}
-      </text>
-      <text fg={colors.textDim}>{"  " + (isRefreshing ? "Refreshing…" : refreshText)}</text>
-    </box>
-  );
+  const segments = buildPortfolioSummarySegments({
+    totals,
+    accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,
+    widthBudget: width,
+    refreshText: isRefreshing ? "Refreshing…" : refreshText,
+  });
+
+  return <box height={1}>{renderSummarySegments(segments, width)}</box>;
 }
 
-function PortfolioListPane({ focused }: PaneProps) {
+function PortfolioListPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const paneId = usePaneInstanceId();
+  const paneInstance = usePaneInstance();
   const { state } = useAppState();
   const paneCollection = usePaneCollection();
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
   const [cursorSymbol, setCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
   const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
-  const tabs = getAllCollections(state);
-  const tickers = getCollectionTickers(state, currentCollectionId);
+  const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
+  const paneSettings = useMemo(
+    () => getPortfolioPaneSettings(paneInstance?.settings),
+    [paneInstance?.settings],
+  );
+  const collectionEntries = useMemo(
+    () => getCollectionEntries(state.config),
+    [state.config],
+  );
+  const tabs = useMemo(
+    () => resolveScopedCollectionEntries(collectionEntries, paneSettings),
+    [collectionEntries, paneSettings],
+  );
+  const activeCollectionId = resolveActiveCollectionId(currentCollectionId, tabs, paneSettings);
+  const tickers = getCollectionTickers(state, activeCollectionId);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Set<string>>(new Set());
   const prevPrices = useRef<Map<string, number>>(new Map());
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const syncHeaderScroll = useCallback(() => {
+    const body = scrollRef.current;
+    const header = headerScrollRef.current;
+    if (body && header && header.scrollLeft !== body.scrollLeft) {
+      header.scrollLeft = body.scrollLeft;
+    }
+  }, []);
 
-  const currentTabIdx = tabs.findIndex((t) => t.id === currentCollectionId);
-  const isPortfolioTab = getCollectionType(state, currentCollectionId) === "portfolio";
+  const currentTabIdx = tabs.findIndex((tab) => tab.id === activeCollectionId);
+  const isPortfolioTab = getCollectionType(state, activeCollectionId) === "portfolio";
+  const currentPortfolio = isPortfolioTab
+    ? state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
+    : null;
+  const accountState = usePortfolioAccountState(currentPortfolio, state);
+  const showCashDrawer = !paneSettings.hideCash && !!(isPortfolioTab && currentPortfolio?.brokerInstanceId && accountState);
+  const requestedDrawerHeight = showCashDrawer
+    ? (cashDrawerExpanded
+      ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length))
+      : 1)
+    : 0;
+  const summaryWidth = paneSettings.hideTabs || paneSettings.hideHeader
+    ? 0
+    : calculatePortfolioSummaryWidth(width, tabs.map((tab) => tab.name));
+  const showStackedSummary = !paneSettings.hideHeader && (paneSettings.hideTabs || summaryWidth === 0);
+  const headerHeight = paneSettings.hideHeader
+    ? (paneSettings.hideTabs ? 0 : 1)
+    : paneSettings.hideTabs ? 1 : (showStackedSummary ? 2 : 1);
+  const drawerHeight = showCashDrawer
+    ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
+    : 0;
 
-  // Build columns: base config columns + position columns for portfolios
   const cols = useMemo(() => {
-    const baseCols = state.config.columns;
-    if (!isPortfolioTab) return baseCols;
-    // Append position columns that aren't already in base columns
-    const baseIds = new Set(baseCols.map((c) => c.id));
-    const extra = POSITION_COLUMNS.filter((c) => !baseIds.has(c.id));
-    return [...baseCols, ...extra];
-  }, [state.config.columns, isPortfolioTab]);
+    return resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab);
+  }, [isPortfolioTab, paneSettings.columnIds]);
 
   const columnCtx: ColumnContext = {
-    activeTab: isPortfolioTab ? currentCollectionId : undefined,
+    activeTab: isPortfolioTab ? activeCollectionId : undefined,
     baseCurrency: state.config.baseCurrency,
     exchangeRates: state.exchangeRates,
     now,
   };
-  const activeSort = resolveCollectionSortPreference(currentCollectionId, isPortfolioTab, collectionSorts);
+  const activeSort = resolveCollectionSortPreference(activeCollectionId, isPortfolioTab, collectionSorts);
   const sortCol = activeSort.columnId;
   const sortDir = activeSort.direction;
 
   const setSortPreference = useCallback((preference: CollectionSortPreference) => {
-    if (!currentCollectionId) return;
+    if (!activeCollectionId) return;
     setCollectionSorts({
       ...collectionSorts,
-      [currentCollectionId]: preference,
+      [activeCollectionId]: preference,
     });
-  }, [collectionSorts, currentCollectionId, setCollectionSorts]);
+  }, [activeCollectionId, collectionSorts, setCollectionSorts]);
+
+  useEffect(() => {
+    if (activeCollectionId !== currentCollectionId) {
+      setCurrentCollectionId(activeCollectionId);
+    }
+  }, [activeCollectionId, currentCollectionId, setCurrentCollectionId]);
 
   // Sort tickers
   const sortedTickers = useMemo(() => {
@@ -556,16 +1254,18 @@ function PortfolioListPane({ focused }: PaneProps) {
       return;
     }
 
-    if (key === "j" || key === "down") {
+    if (shouldToggleCashMarginDrawer(key, showCashDrawer)) {
+      setCashDrawerExpanded(!cashDrawerExpanded);
+    } else if (key === "j" || key === "down") {
       const next = Math.min(safeSelectedIdx + 1, sortedTickers.length - 1);
       if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.metadata.ticker);
     } else if (key === "k" || key === "up") {
       const next = Math.max(safeSelectedIdx - 1, 0);
       if (sortedTickers[next]) setCursorSymbol(sortedTickers[next]!.metadata.ticker);
-    } else if (key === "h" || key === "left") {
+    } else if (!paneSettings.hideTabs && (key === "h" || key === "left")) {
       const newIdx = Math.max(currentTabIdx - 1, 0);
       if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
-    } else if (key === "l" || key === "right") {
+    } else if (!paneSettings.hideTabs && (key === "l" || key === "right")) {
       const newIdx = Math.min(currentTabIdx + 1, tabs.length - 1);
       if (tabs[newIdx]) setCurrentCollectionId(tabs[newIdx]!.id);
     } else if (isEnter) {
@@ -580,24 +1280,32 @@ function PortfolioListPane({ focused }: PaneProps) {
         registry?.showPaneFn("ticker-detail");
       }
     }
-  }, [focused, registry, safeSelectedIdx, sortedTickers, state.config.layout.instances, paneId, tabs, currentTabIdx, setCurrentCollectionId, setCursorSymbol]);
+  }, [
+    focused,
+    registry,
+    safeSelectedIdx,
+    sortedTickers,
+    state.config.layout.instances,
+    paneId,
+    tabs,
+    currentTabIdx,
+    setCurrentCollectionId,
+    setCursorSymbol,
+    showCashDrawer,
+    cashDrawerExpanded,
+    setCashDrawerExpanded,
+    paneSettings.hideTabs,
+  ]);
 
   useKeyboard(handleKeyboard);
 
-  // Hide header scrollbar and sync horizontal scroll with body
+  // Hide the decorative header scrollbar and keep it aligned when the body scrolls.
   useEffect(() => {
     if (headerScrollRef.current) {
       headerScrollRef.current.horizontalScrollBar.visible = false;
     }
-    const id = setInterval(() => {
-      const body = scrollRef.current;
-      const header = headerScrollRef.current;
-      if (body && header && header.scrollLeft !== body.scrollLeft) {
-        header.scrollLeft = body.scrollLeft;
-      }
-    }, 16);
-    return () => clearInterval(id);
-  }, []);
+    syncHeaderScroll();
+  }, [syncHeaderScroll]);
 
   // Auto-scroll to keep selected row visible
   useEffect(() => {
@@ -616,7 +1324,7 @@ function PortfolioListPane({ focused }: PaneProps) {
     const sb = scrollRef.current;
     if (!sb) return;
     sb.verticalScrollBar.visible = sortedTickers.length > sb.viewport.height;
-  }, [sortedTickers.length]);
+  }, [sortedTickers.length, drawerHeight, cashDrawerExpanded]);
 
   // Tick every 5s to keep latency column fresh
   useEffect(() => {
@@ -656,13 +1364,43 @@ function PortfolioListPane({ focused }: PaneProps) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" height={2} justifyContent="space-between">
-        <TabBar
-          tabs={tabs.map((t) => ({ label: t.name, value: t.id }))}
-          activeValue={currentCollectionId}
-          onSelect={setCurrentCollectionId}
-        />
-        <PortfolioSummaryBar tickers={sortedTickers} state={state} isPortfolio={isPortfolioTab} collectionId={currentCollectionId} />
+      <box flexDirection="column" height={headerHeight}>
+        {!paneSettings.hideTabs && (
+          <box flexDirection="row" height={1}>
+            <box flexShrink={1} overflow="hidden">
+              <TabBar
+                tabs={tabs.map((tab) => ({ label: tab.name, value: tab.id }))}
+                activeValue={activeCollectionId}
+                onSelect={setCurrentCollectionId}
+                compact
+              />
+            </box>
+            {summaryWidth > 0 && (
+              <box width={summaryWidth} flexShrink={0} alignItems="flex-start" justifyContent="center">
+                <PortfolioSummaryBar
+                  tickers={sortedTickers}
+                  state={state}
+                  isPortfolio={isPortfolioTab}
+                  collectionId={activeCollectionId}
+                  width={summaryWidth}
+                  accountState={accountState}
+                />
+              </box>
+            )}
+          </box>
+        )}
+        {showStackedSummary && (
+          <box height={1}>
+            <PortfolioSummaryBar
+              tickers={sortedTickers}
+              state={state}
+              isPortfolio={isPortfolioTab}
+              collectionId={activeCollectionId}
+              width={Math.max(0, width)}
+              accountState={accountState}
+            />
+          </box>
+        )}
       </box>
 
       {/* Fixed column headers — synced horizontally with rows */}
@@ -681,7 +1419,10 @@ function PortfolioListPane({ focused }: PaneProps) {
               <box
                 key={col.id}
                 width={col.width + 1}
-                onMouseDown={() => handleHeaderClick(col.id)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleHeaderClick(col.id);
+                }}
               >
                 <text
                   attributes={TextAttributes.BOLD}
@@ -702,6 +1443,10 @@ function PortfolioListPane({ focused }: PaneProps) {
         scrollX
         scrollY
         focusable={false}
+        onMouseDown={() => queueMicrotask(syncHeaderScroll)}
+        onMouseUp={() => queueMicrotask(syncHeaderScroll)}
+        onMouseDrag={() => queueMicrotask(syncHeaderScroll)}
+        onMouseScroll={() => queueMicrotask(syncHeaderScroll)}
       >
         {sortedTickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
@@ -723,7 +1468,8 @@ function PortfolioListPane({ focused }: PaneProps) {
                 paddingX={1}
                 backgroundColor={rowBg}
                 onMouseMove={() => setHoveredIdx(idx)}
-                onMouseDown={() => {
+                onMouseDown={(event) => {
+                  event.preventDefault();
                   setCursorSymbol(ticker.metadata.ticker);
                 }}
               >
@@ -746,6 +1492,18 @@ function PortfolioListPane({ focused }: PaneProps) {
           })
         )}
       </scrollbox>
+
+      {showCashDrawer && accountState && (
+        <box height={drawerHeight} paddingX={1}>
+          <PortfolioCashMarginDrawer
+            accountState={accountState}
+            expanded={cashDrawerExpanded}
+            onToggle={() => setCashDrawerExpanded(!cashDrawerExpanded)}
+            width={Math.max(0, width - 2)}
+            height={drawerHeight}
+          />
+        </box>
+      )}
     </box>
   );
 }
@@ -763,6 +1521,89 @@ export const portfolioListPlugin: GloomPlugin = {
       component: PortfolioListPane,
       defaultPosition: "left",
       defaultWidth: "40%",
+      settings: (context) => buildPortfolioPaneSettingsDef(
+        context.config,
+        getPortfolioPaneSettings(context.settings),
+      ),
+    },
+  ],
+  paneTemplates: [
+    {
+      id: "new-collection-pane",
+      paneId: "portfolio-list",
+      label: "Collection Pane",
+      description: "Open another pane for the current portfolio or watchlist",
+      keywords: ["portfolio", "watchlist", "collection", "pane", "list"],
+      shortcut: { prefix: "PF" },
+      canCreate: (context) => resolveCollectionPaneId(context) !== null,
+      createInstance: (context) => {
+        const collectionId = resolveCollectionPaneId(context);
+        return collectionId
+          ? {
+            params: { collectionId },
+            settings: createPortfolioPaneSettings({
+              collectionScope: "custom",
+              visibleCollectionIds: [collectionId],
+              hideTabs: true,
+              lockedCollectionId: collectionId,
+            }),
+          }
+          : null;
+      },
+    },
+    {
+      id: "new-portfolio-pane",
+      paneId: "portfolio-list",
+      label: "New Portfolio Pane",
+      description: "Open another portfolio list pane",
+      keywords: ["new", "portfolio", "pane", "list"],
+      canCreate: (context) => context.config.portfolios.length > 0,
+      createInstance: (context) => {
+        const collectionId = context.activeCollectionId && context.config.portfolios.some((portfolio) => portfolio.id === context.activeCollectionId)
+          ? context.activeCollectionId
+          : (context.config.portfolios[0]?.id ?? null);
+        if (!collectionId) return null;
+        return {
+          params: { collectionId },
+          settings: createPortfolioPaneSettings({
+            collectionScope: "portfolios",
+            lockedCollectionId: collectionId,
+          }),
+        };
+      },
+    },
+    {
+      id: "new-watchlist-pane",
+      paneId: "portfolio-list",
+      label: "New Watchlist Pane",
+      description: "Open another watchlist pane",
+      keywords: ["new", "watchlist", "pane", "list"],
+      canCreate: (context) => context.config.watchlists.length > 0,
+      createInstance: (context) => {
+        const collectionId = context.activeCollectionId && context.config.watchlists.some((watchlist) => watchlist.id === context.activeCollectionId)
+          ? context.activeCollectionId
+          : (context.config.watchlists[0]?.id ?? null);
+        if (!collectionId) return null;
+        return {
+          params: { collectionId },
+          settings: createPortfolioPaneSettings({
+            collectionScope: "watchlists",
+            lockedCollectionId: collectionId,
+          }),
+        };
+      },
     },
   ],
 };
+
+function resolveCollectionPaneId(context: PaneTemplateContext): string | null {
+  if (context.activeCollectionId) {
+    const isPortfolio = context.config.portfolios.some((portfolio) => portfolio.id === context.activeCollectionId);
+    const isWatchlist = context.config.watchlists.some((watchlist) => watchlist.id === context.activeCollectionId);
+    if (isPortfolio || isWatchlist) {
+      return context.activeCollectionId;
+    }
+  }
+
+  return context.config.portfolios[0]?.id ?? context.config.watchlists[0]?.id ?? null;
+}

@@ -182,6 +182,36 @@ async function initData() {
   return { config, persistence, store, yahoo, dataDir };
 }
 
+function createBaseConverter(yahoo: YahooFinanceClient, baseCurrency: string) {
+  const rateCache = new Map<string, number>([["USD", 1]]);
+
+  const getRate = async (currency: string): Promise<number> => {
+    const normalizedCurrency = currency.toUpperCase();
+    const cached = rateCache.get(normalizedCurrency);
+    if (cached != null) return cached;
+    try {
+      const rate = await yahoo.getExchangeRate(normalizedCurrency);
+      rateCache.set(normalizedCurrency, rate);
+      return rate;
+    } catch {
+      return 1;
+    }
+  };
+
+  return async (value: number, fromCurrency: string): Promise<number> => {
+    const normalizedFrom = fromCurrency.toUpperCase();
+    const normalizedBase = baseCurrency.toUpperCase();
+    if (normalizedFrom === normalizedBase) return value;
+
+    const [fromRate, baseRate] = await Promise.all([
+      getRate(normalizedFrom),
+      getRate(normalizedBase),
+    ]);
+    if (baseRate === 0) return value;
+    return (value * fromRate) / baseRate;
+  };
+}
+
 // --- Help command ---
 
 function help() {
@@ -205,6 +235,8 @@ Commands:
 async function portfolio(name?: string) {
   const { config, store, yahoo, persistence } = await initData();
   const tickers = await store.loadAllTickers();
+  const baseCurrency = config.baseCurrency;
+  const toBase = createBaseConverter(yahoo, baseCurrency);
 
   if (!name) {
     // List all portfolios and watchlists with ticker counts
@@ -239,7 +271,7 @@ async function portfolio(name?: string) {
   const isPortfolio = !!matchedPortfolio;
   const id = matchedPortfolio?.id ?? matchedWatchlist!.id;
   const displayName = matchedPortfolio?.name ?? matchedWatchlist!.name;
-  const currency = matchedPortfolio?.currency ?? config.baseCurrency;
+  const currency = matchedPortfolio?.currency ?? baseCurrency;
 
   const filtered = tickers.filter((t) =>
     isPortfolio ? t.metadata.portfolios.includes(id) : t.metadata.watchlists.includes(id),
@@ -283,19 +315,29 @@ async function portfolio(name?: string) {
         for (const pos of positions) {
           const shares = pos.shares;
           const avgCost = pos.avgCost;
-          const currentPrice = q?.price ?? 0;
-          const pnl = (currentPrice - avgCost) * shares * (pos.multiplier ?? 1);
-          totalPnl += pnl;
-          const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, currency)}` : formatCurrency(pnl, currency);
+          const multiplier = pos.multiplier ?? 1;
+          const quoteCurrency = q?.currency ?? t.metadata.currency ?? baseCurrency;
+          const positionCurrency = pos.currency ?? quoteCurrency;
+          const currentValueBase = q
+            ? await toBase(Math.abs(shares) * q.price * multiplier, quoteCurrency)
+            : null;
+          const costBasisBase = await toBase(shares * avgCost * multiplier, positionCurrency);
+          const pnl = currentValueBase != null ? currentValueBase - costBasisBase : null;
+          if (pnl != null) totalPnl += pnl;
+          const pnlStr = pnl == null
+            ? "—"
+            : pnl >= 0
+              ? `+${formatCurrency(pnl, baseCurrency)}`
+              : formatCurrency(pnl, baseCurrency);
           console.log(
-            `${t.metadata.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${String(shares).padStart(6)}  ${formatCurrency(avgCost, currency).padStart(10)}  ${pnlStr.padStart(12)}`,
+            `${t.metadata.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${String(shares).padStart(6)}  ${formatCurrency(avgCost, positionCurrency).padStart(10)}  ${pnlStr.padStart(12)}`,
           );
         }
       }
     }
 
     console.log("-".repeat(header.length));
-    const totalStr = totalPnl >= 0 ? `+${formatCurrency(totalPnl, currency)}` : formatCurrency(totalPnl, currency);
+    const totalStr = totalPnl >= 0 ? `+${formatCurrency(totalPnl, baseCurrency)}` : formatCurrency(totalPnl, baseCurrency);
     console.log(`${"".padEnd(46)}Total: ${totalStr.padStart(12)}`);
   } else {
     // Watchlist: simpler view
@@ -306,7 +348,7 @@ async function portfolio(name?: string) {
       const q = quotes.get(t.metadata.ticker);
       const price = q ? formatCurrency(q.price, q.currency) : "—";
       const chg = q ? formatPercentRaw(q.changePercent) : "—";
-      const mcap = q?.marketCap ? formatCompact(q.marketCap) : "—";
+      const mcap = q?.marketCap ? formatCompact(await toBase(q.marketCap, q.currency || t.metadata.currency || baseCurrency)) : "—";
       console.log(`${t.metadata.ticker.padEnd(10)}${price.padStart(10)}  ${chg.padStart(8)}  ${mcap.padStart(6)}`);
     }
   }
@@ -318,6 +360,8 @@ async function portfolio(name?: string) {
 
 async function ticker(symbol: string) {
   const { config, store, yahoo, persistence } = await initData();
+  const baseCurrency = config.baseCurrency;
+  const toBase = createBaseConverter(yahoo, baseCurrency);
 
   // Fetch quote and fundamentals
   const tickerFile = await store.loadTicker(symbol.toUpperCase());
@@ -334,6 +378,7 @@ async function ticker(symbol: string) {
 
   const q = financials.quote;
   const f = financials.fundamentals;
+  const profile = financials.profile;
 
   if (!q) {
     console.error(`No quote data for ${symbol}`);
@@ -350,6 +395,15 @@ async function ticker(symbol: string) {
   if (q.marketState) parts.push(`Market: ${q.marketState}`);
   console.log(parts.join("    "));
 
+  const sector = tickerFile?.metadata.sector ?? profile?.sector;
+  const industry = tickerFile?.metadata.industry ?? profile?.industry;
+  if (sector || industry) {
+    const classification = [];
+    if (sector) classification.push(`Sector: ${sector}`);
+    if (industry) classification.push(`Industry: ${industry}`);
+    console.log(classification.join("    "));
+  }
+
   // Price
   console.log(`\nPrice:     ${formatCurrency(q.price, q.currency)}  (${formatPercentRaw(q.changePercent)})`);
   if (q.high52w != null || q.low52w != null) {
@@ -364,12 +418,19 @@ async function ticker(symbol: string) {
     console.log(`Post-Mkt:  ${formatCurrency(q.postMarketPrice, q.currency)}  (${formatPercentRaw(q.postMarketChangePercent)})`);
   }
 
+  if (profile?.description) {
+    console.log(`\nDescription:\n${profile.description}`);
+  }
+
   // Fundamentals
   if (f) {
     console.log("");
     const rows: [string, string, string, string][] = [];
+    const marketCapText = q.marketCap != null
+      ? `${formatCompact(await toBase(q.marketCap, q.currency))} ${baseCurrency}`
+      : "—";
     if (q.marketCap != null || f.trailingPE != null) {
-      rows.push(["Market Cap", q.marketCap != null ? formatCompact(q.marketCap) : "—", "P/E", f.trailingPE != null ? formatNumber(f.trailingPE) : "—"]);
+      rows.push(["Market Cap", marketCapText, "P/E", f.trailingPE != null ? formatNumber(f.trailingPE) : "—"]);
     }
     if (f.forwardPE != null || f.pegRatio != null) {
       rows.push(["Fwd P/E", f.forwardPE != null ? formatNumber(f.forwardPE) : "—", "PEG", f.pegRatio != null ? formatNumber(f.pegRatio) : "—"]);
@@ -394,11 +455,16 @@ async function ticker(symbol: string) {
     console.log("");
     for (const pos of tickerFile.metadata.positions) {
       const portfolioName = config.portfolios.find((p) => p.id === pos.portfolio)?.name ?? pos.portfolio;
-      const value = q.price * pos.shares * (pos.multiplier ?? 1);
-      const pnl = (q.price - pos.avgCost) * pos.shares * (pos.multiplier ?? 1);
-      const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, q.currency)}` : formatCurrency(pnl, q.currency);
+      const multiplier = pos.multiplier ?? 1;
+      const positionCurrency = pos.currency ?? q.currency;
+      const costBasisBase = await toBase(pos.shares * pos.avgCost * multiplier, positionCurrency);
+      const marketValueBase = await toBase(Math.abs(pos.shares) * q.price * multiplier, q.currency);
+      const pnl = marketValueBase - costBasisBase;
+      const pnlStr = pnl >= 0 ? `+${formatCurrency(pnl, baseCurrency)}` : formatCurrency(pnl, baseCurrency);
       console.log(`Position (${portfolioName}):`);
-      console.log(`  ${pos.shares} shares @ ${formatCurrency(pos.avgCost, q.currency)} = ${formatCurrency(value, q.currency)} (P&L: ${pnlStr})`);
+      console.log(
+        `  ${pos.shares} shares @ ${formatCurrency(pos.avgCost, positionCurrency)} = ${formatCurrency(costBasisBase, baseCurrency)} cost basis (Mkt Value: ${formatCurrency(marketValueBase, baseCurrency)}, P&L: ${pnlStr})`,
+      );
     }
   }
 
