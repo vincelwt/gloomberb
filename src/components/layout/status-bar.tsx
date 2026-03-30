@@ -46,7 +46,9 @@ export function StatusBar() {
     return () => clearTimeout(timer);
   }, [dispatch, state.gridlockTipSequence, state.gridlockTipVisible]);
 
-  const handleGridlockTip = () => {
+  const handleGridlockTip = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (!registry) return;
     const { width, height } = registry.getTermSizeFn();
     registry.updateLayoutFn(gridlockAllPanes(registry.getLayoutFn(), { x: 0, y: 0, width, height }));
@@ -54,7 +56,9 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
-  const dismissGridlockTip = () => {
+  const dismissGridlockTip = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
@@ -79,7 +83,11 @@ export function StatusBar() {
                 fg={fg}
                 bg={bg}
                 onMouseMove={() => setHoveredTab(i)}
-                onMouseDown={() => dispatch({ type: "SWITCH_LAYOUT", index: i })}
+                onMouseDown={(event: any) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  dispatch({ type: "SWITCH_LAYOUT", index: i });
+                }}
               >
                 {` ^${num} `}<span fg={isActive ? colors.headerText : colors.text}>{label}</span>{" "}
               </text>
