@@ -432,9 +432,14 @@ export function Shell({ pluginRegistry }: ShellProps) {
   }, []);
 
   useKeyboard((event) => {
-    if (event.name !== "escape") return;
-    if (!dragRef.current) return;
-    cancelActiveDrag();
+    if (event.name === "escape") {
+      if (!dragRef.current) return;
+      cancelActiveDrag();
+      return;
+    }
+    if (event.name !== "w" || !event.ctrl) return;
+    if (dragRef.current || overlayOpen || state.inputCaptured) return;
+    closeFocusedPane();
   });
 
   const disabledPaneIds = useMemo(() => {
@@ -469,6 +474,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
     dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
     saveConfig({ ...state.config, layout: nextLayout, layouts }).catch(() => {});
   }, [dispatch, state.config]);
+
+  const closeFocusedPane = useCallback(() => {
+    if (!state.focusedPaneId || !isPaneInLayout(visibleLayout, state.focusedPaneId)) return;
+    persistLayout(removePane(visibleLayout, state.focusedPaneId));
+  }, [persistLayout, state.focusedPaneId, visibleLayout]);
 
   const focusPane = useCallback((paneId: string) => {
     dispatch({ type: "FOCUS_PANE", paneId });
@@ -850,6 +860,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
     }
   }, [
     bounds,
+    closeFocusedPane,
     contentHeight,
     dividerPreview,
     dockDividerLayouts,

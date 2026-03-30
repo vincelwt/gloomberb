@@ -214,6 +214,11 @@ export function HelpPane({ focused, width, height, close }: PaneProps) {
               compact={compact}
             />
             <ShortcutRow
+              badges={["Ctrl+W"]}
+              description="Close the focused pane, docked or floating."
+              compact={compact}
+            />
+            <ShortcutRow
               badges={["j", "k"]}
               description="Move through lists in most panes. Arrow keys also work."
               compact={compact}
@@ -250,7 +255,7 @@ export function HelpPane({ focused, width, height, close }: PaneProps) {
       </scrollbox>
 
       <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>Esc closes this window. Drag the header to move it.</text>
+        <text fg={colors.textMuted}>Esc closes this window. Ctrl+W closes the focused pane.</text>
       </box>
     </box>
   );

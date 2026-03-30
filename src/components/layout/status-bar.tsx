@@ -87,7 +87,7 @@ export function StatusBar() {
           })
         ) : (
           <text fg={colors.textDim}>
-            <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>j/k</span> navigate  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
+            <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Ctrl+W</span> close  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
           </text>
         )}
       </box>
