@@ -1138,6 +1138,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const isLayoutMode = modeInfo.kind === "layout";
   const searchModeQuery = activeMatch?.command.id === "search-ticker" ? activeMatch.arg : "";
   const focusedPaneHasSettings = !!state.focusedPaneId && pluginRegistry.hasPaneSettings(state.focusedPaneId);
+  const dismissCommandBar = useCallback(() => {
+    if (isThemeMode) {
+      closeAndRevert();
+      return;
+    }
+    close();
+  }, [close, closeAndRevert, isThemeMode]);
 
   useEffect(() => {
     const isWatchlistTab = state.config.watchlists.some((w) => w.id === activeCollectionId);
@@ -1771,11 +1778,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       if (event.name === "escape" || event.name === "`") {
         event.stopPropagation();
         event.preventDefault();
-        if (isThemeMode) {
-          closeAndRevert();
-        } else {
-          close();
-        }
+        dismissCommandBar();
         return;
       }
 
@@ -1836,7 +1839,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     return () => {
       renderer.keyInput.off("keypress", handleKeyPress);
     };
-  }, [close, closeAndRevert, exactTickerResult, isPluginMode, isThemeMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
+  }, [dismissCommandBar, exactTickerResult, isPluginMode, query, renderer, results, selectedIdx, setCommandBarQuery]);
 
   const barWidth = Math.max(42, Math.min(64, termWidth - 8, Math.floor(termWidth * 0.62)));
   const isNarrow = barWidth < 52;
@@ -1912,120 +1915,137 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   return (
     <box
       position="absolute"
-      top={barTop}
-      left={barLeft}
-      width={barWidth}
-      height={barHeight}
-      flexDirection="column"
-      backgroundColor={paletteBg}
+      top={0}
+      left={0}
+      width={termWidth}
+      height={termHeight}
       zIndex={100}
+      onMouseDown={(event: any) => {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        dismissCommandBar();
+      }}
     >
-      <box height={1} />
+      <box
+        position="absolute"
+        top={barTop}
+        left={barLeft}
+        width={barWidth}
+        height={barHeight}
+        flexDirection="column"
+        backgroundColor={paletteBg}
+        zIndex={101}
+        onMouseDown={(event: any) => {
+          event.stopPropagation?.();
+        }}
+      >
+        <box height={1} />
 
-      <box height={1} paddingX={contentPadding} flexDirection="row">
-        <box flexGrow={1}>
-          <text fg={paletteText}>Commands</text>
+        <box height={1} paddingX={contentPadding} flexDirection="row">
+          <box flexGrow={1}>
+            <text fg={paletteText}>Commands</text>
+          </box>
+          <text fg={paletteSubtleText}>esc</text>
         </box>
-        <text fg={paletteSubtleText}>esc</text>
-      </box>
 
-      <box height={1} paddingX={contentPadding}>
-        <input
-          value={query}
-          onInput={setCommandBarQuery}
-          onChange={setCommandBarQuery}
-          placeholder="Search"
-          focused
-          onSubmit={() => {
-            const selected = exactTickerResult ?? results[selectedIdx];
-            if (selected) selected.action();
-          }}
-          width={queryDisplayWidth}
-          backgroundColor={paletteBg}
-          focusedBackgroundColor={paletteBg}
-          textColor={paletteText}
-          focusedTextColor={paletteText}
-          placeholderColor={paletteSubtleText}
-          cursorColor={colors.textBright}
-        />
-      </box>
+        <box height={1} paddingX={contentPadding}>
+          <input
+            value={query}
+            onInput={setCommandBarQuery}
+            onChange={setCommandBarQuery}
+            placeholder="Search"
+            focused
+            onSubmit={() => {
+              const selected = exactTickerResult ?? results[selectedIdx];
+              if (selected) selected.action();
+            }}
+            width={queryDisplayWidth}
+            backgroundColor={paletteBg}
+            focusedBackgroundColor={paletteBg}
+            textColor={paletteText}
+            focusedTextColor={paletteText}
+            placeholderColor={paletteSubtleText}
+            cursorColor={colors.textBright}
+          />
+        </box>
 
-      <box height={1} />
+        <box height={1} />
 
-      <box flexDirection="column" height={bodyHeight}>
-        {visibleRows.map((row) => {
-          if (row.kind === "filler") {
-            return <box key={row.id} height={1} />;
-          }
+        <box flexDirection="column" height={bodyHeight}>
+          {visibleRows.map((row) => {
+            if (row.kind === "filler") {
+              return <box key={row.id} height={1} />;
+            }
 
-          if (row.kind === "spacer") {
-            return <box key={row.id} height={1} />;
-          }
+            if (row.kind === "spacer") {
+              return <box key={row.id} height={1} />;
+            }
 
-          if (row.kind === "spinner") {
-            return (
-              <box key={row.id} height={1} paddingX={contentPadding}>
-                <Spinner label={row.label} />
-              </box>
-            );
-          }
-
-          if (row.kind === "message") {
-            return (
-              <box key={row.id} height={1} paddingX={contentPadding}>
-                <text fg={row.dim ? paletteSubtleText : paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</text>
-              </box>
-            );
-          }
-
-          if (row.kind === "heading") {
-            return (
-              <box key={row.id} height={1} paddingX={contentPadding}>
-                <text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
-                  {truncateText(row.label, barWidth - contentPadding * 2)}
-                </text>
-              </box>
-            );
-          }
-
-          const isSel = row.globalIdx === selectedIdx;
-          const isHovered = row.globalIdx === hoveredIdx && !isSel;
-          const presentation = getRowPresentation(row.item, isSel, trailingWidth > 0);
-          const label = truncateText(presentation.label, labelWidth);
-          const trailing = truncateText(presentation.trailing, trailingWidth);
-
-          return (
-            <box
-              key={row.item.id}
-              flexDirection="row"
-              height={1}
-              paddingX={contentPadding}
-              backgroundColor={isSel ? paletteSelectedBg : isHovered ? paletteHoverBg : paletteBg}
-              onMouseMove={() => {
-                setHoveredIdx((current) => (current === row.globalIdx ? current : row.globalIdx));
-              }}
-              onMouseDown={() => {
-                setHoveredIdx(row.globalIdx);
-                setSelectedIdx(row.globalIdx);
-                row.item.action();
-              }}
-            >
-              <box width={labelWidth}>
-                <text fg={isSel ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
-                  {label}
-                </text>
-              </box>
-              {trailingWidth > 0 && (
-                <box width={trailingWidth}>
-                  <text fg={isSel ? paletteSelectedText : paletteSubtleText}>{trailing}</text>
+            if (row.kind === "spinner") {
+              return (
+                <box key={row.id} height={1} paddingX={contentPadding}>
+                  <Spinner label={row.label} />
                 </box>
-              )}
-            </box>
-          );
-        })}
-      </box>
+              );
+            }
 
-      <box height={1} />
+            if (row.kind === "message") {
+              return (
+                <box key={row.id} height={1} paddingX={contentPadding}>
+                  <text fg={row.dim ? paletteSubtleText : paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</text>
+                </box>
+              );
+            }
+
+            if (row.kind === "heading") {
+              return (
+                <box key={row.id} height={1} paddingX={contentPadding}>
+                  <text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
+                    {truncateText(row.label, barWidth - contentPadding * 2)}
+                  </text>
+                </box>
+              );
+            }
+
+            const isSel = row.globalIdx === selectedIdx;
+            const isHovered = row.globalIdx === hoveredIdx && !isSel;
+            const presentation = getRowPresentation(row.item, isSel, trailingWidth > 0);
+            const label = truncateText(presentation.label, labelWidth);
+            const trailing = truncateText(presentation.trailing, trailingWidth);
+
+            return (
+              <box
+                key={row.item.id}
+                flexDirection="row"
+                height={1}
+                paddingX={contentPadding}
+                backgroundColor={isSel ? paletteSelectedBg : isHovered ? paletteHoverBg : paletteBg}
+                onMouseMove={() => {
+                  setHoveredIdx((current) => (current === row.globalIdx ? current : row.globalIdx));
+                }}
+                onMouseDown={() => {
+                  setHoveredIdx(row.globalIdx);
+                  setSelectedIdx(row.globalIdx);
+                  row.item.action();
+                }}
+              >
+                <box width={labelWidth}>
+                  <text fg={isSel ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
+                    {label}
+                  </text>
+                </box>
+                {trailingWidth > 0 && (
+                  <box width={trailingWidth}>
+                    <text fg={isSel ? paletteSelectedText : paletteSubtleText}>{trailing}</text>
+                  </box>
+                )}
+              </box>
+            );
+          })}
+        </box>
+
+        <box height={1} />
+      </box>
     </box>
   );
 }

@@ -231,17 +231,21 @@ function CommandBarHarness({
   const pluginRegistry = makePluginRegistry(hasPaneSettings);
   configurePluginRegistry?.(pluginRegistry);
   const [liveState, dispatch] = useReducer(appReducer, state);
+  const currentState = live ? liveState : state;
+  const currentDispatch = live ? dispatch : () => {};
 
   return (
-    <AppContext value={{ state: live ? liveState : state, dispatch: live ? dispatch : () => {} }}>
+    <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
       <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
-        {live && <text>{`theme:${liveState.config.theme}`}</text>}
-        <CommandBar
-          dataProvider={dataProvider}
-          tickerRepository={tickerRepository as any}
-          pluginRegistry={pluginRegistry}
-          quitApp={() => {}}
-        />
+        {live && <text>{`theme:${currentState.config.theme}`}</text>}
+        {currentState.commandBarOpen && (
+          <CommandBar
+            dataProvider={dataProvider}
+            tickerRepository={tickerRepository as any}
+            pluginRegistry={pluginRegistry}
+            quitApp={() => {}}
+          />
+        )}
       </DialogProvider>
     </AppContext>
   );
@@ -328,6 +332,23 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("theme:green");
+  });
+
+  test("closes when clicking outside the command bar", async () => {
+    testSetup = await testRender(<CommandBarHarness query="" live />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(0, 0);
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+
+    expect(testSetup.captureCharFrame()).not.toContain("Commands");
   });
 
   const layoutModeConfig = (config: AppConfig): AppConfig => {

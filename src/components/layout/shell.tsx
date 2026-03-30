@@ -95,6 +95,23 @@ interface ActionMenuState {
   items: Array<{ id: string; label: string; action: () => void }>;
 }
 
+interface FloatingPreviewRect {
+  paneId: string;
+  rect: FloatingRect;
+}
+
+interface NativeFloatingPaneState {
+  paneId: string;
+  rect: FloatingRect;
+  zIndex: number;
+}
+
+interface NativeTransientOccluder {
+  id: string;
+  rect: LayoutBounds;
+  zIndex: number;
+}
+
 type DragMode =
   | {
     type: "divider";
@@ -220,6 +237,67 @@ function resolveHoverOverlay(
     rect: overlayRect,
     cells: makeOverlayCellRects(overlayRect),
   };
+}
+
+export function buildNativeWindowState(
+  dockedPaneIds: readonly string[],
+  floatingPanes: readonly NativeFloatingPaneState[],
+  dragFloatingRect: FloatingPreviewRect | null,
+  overlay: { open: boolean; width: number; contentHeight: number },
+  transientOccluders: readonly NativeTransientOccluder[] = [],
+): { paneLayers: NativePaneLayer[]; occluders: NativeOccluder[] } {
+  const previewedFloatingPanes = floatingPanes.map((pane) => (
+    dragFloatingRect?.paneId === pane.paneId
+      ? { ...pane, rect: dragFloatingRect.rect }
+      : pane
+  ));
+
+  const paneLayers: NativePaneLayer[] = [
+    ...dockedPaneIds.map((paneId) => ({ paneId, zIndex: 0 })),
+    ...previewedFloatingPanes.map((pane) => ({ paneId: pane.paneId, zIndex: pane.zIndex })),
+  ];
+
+  const occluders: NativeOccluder[] = previewedFloatingPanes.map((pane) => ({
+    id: pane.paneId,
+    paneId: pane.paneId,
+    rect: {
+      x: pane.rect.x,
+      y: pane.rect.y + HEADER_HEIGHT,
+      width: pane.rect.width,
+      height: pane.rect.height,
+    },
+    zIndex: pane.zIndex,
+  }));
+
+  for (const occluder of transientOccluders) {
+    occluders.push({
+      id: occluder.id,
+      paneId: null,
+      rect: {
+        x: occluder.rect.x,
+        y: occluder.rect.y + HEADER_HEIGHT,
+        width: occluder.rect.width,
+        height: occluder.rect.height,
+      },
+      zIndex: occluder.zIndex,
+    });
+  }
+
+  if (overlay.open) {
+    occluders.push({
+      id: "overlay:global",
+      paneId: null,
+      rect: {
+        x: 0,
+        y: HEADER_HEIGHT,
+        width: overlay.width,
+        height: overlay.contentHeight,
+      },
+      zIndex: Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  return { paneLayers, occluders };
 }
 
 function makeSnapGuides(width: number, height: number): SnapGuide[] {
@@ -506,56 +584,62 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
   const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
-  const nativePaneLayers = useMemo<NativePaneLayer[]>(() => {
-    const layers: NativePaneLayer[] = dockedPanes.map((pane) => ({
-      paneId: pane.instance.instanceId,
-      zIndex: 0,
-    }));
-    for (const pane of floatingPanes) {
-      layers.push({
-        paneId: pane.instance.instanceId,
-        zIndex: pane.floating?.zIndex ?? 50,
+  const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
+  const activeHoverOverlay = activePaneDrag && dragCursor
+    ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
+    : null;
+  const nativeTransientOccluders = useMemo<NativeTransientOccluder[]>(() => {
+    const occluders: NativeTransientOccluder[] = [];
+
+    if (activeHoverOverlay) {
+      for (const cell of activeHoverOverlay.cells) {
+        occluders.push({
+          id: `drag-hover:${activeHoverOverlay.targetId}:${cell.position}`,
+          rect: cell.rect,
+          zIndex: cell.position === "center" ? 98 : 97,
+        });
+      }
+    }
+
+    if (activePaneDrag
+      && activePaneDrag.mode === "docked"
+      && dragFloatingRect?.paneId === activePaneDrag.paneId
+      && !dockPreview) {
+      occluders.push({
+        id: `drag-preview:${activePaneDrag.paneId}`,
+        rect: dragFloatingRect.rect,
+        zIndex: 95,
       });
     }
-    return layers;
-  }, [dockedPanes, floatingPanes]);
 
-  const nativeOccluders = useMemo<NativeOccluder[]>(() => {
-    const occluders: NativeOccluder[] = floatingPanes.map((pane) => ({
-      id: pane.instance.instanceId,
-      paneId: pane.instance.instanceId,
-      rect: {
-        x: pane.floating!.x,
-        y: pane.floating!.y + HEADER_HEIGHT,
-        width: pane.floating!.width,
-        height: pane.floating!.height,
-      },
-      zIndex: pane.floating?.zIndex ?? 50,
-    }));
-
-    if (overlayOpen) {
+    if (dockPreview) {
       occluders.push({
-        id: "overlay:global",
-        paneId: null,
-        rect: {
-          x: 0,
-          y: HEADER_HEIGHT,
-          width,
-          height: contentHeight,
-        },
-        zIndex: Number.MAX_SAFE_INTEGER,
+        id: `dock-preview:${dockPreview.kind}`,
+        rect: dockPreview.rect,
+        zIndex: 96,
       });
     }
 
     return occluders;
-  }, [contentHeight, floatingPanes, overlayOpen, width]);
+  }, [activeHoverOverlay, activePaneDrag, dockPreview, dragFloatingRect]);
+  const nativeWindowState = useMemo(
+    () => buildNativeWindowState(
+      dockedPanes.map((pane) => pane.instance.instanceId),
+      floatingPanes.map((pane) => ({
+        paneId: pane.instance.instanceId,
+        rect: pane.floating!,
+        zIndex: pane.floating?.zIndex ?? 50,
+      })),
+      dragFloatingRect,
+      { open: overlayOpen, width, contentHeight },
+      nativeTransientOccluders,
+    ),
+    [contentHeight, dockedPanes, dragFloatingRect, floatingPanes, nativeTransientOccluders, overlayOpen, width],
+  );
 
   useEffect(() => {
-    nativeSurfaceManager.setWindowState({
-      paneLayers: nativePaneLayers,
-      occluders: nativeOccluders,
-    });
-  }, [nativeOccluders, nativePaneLayers, nativeSurfaceManager]);
+    nativeSurfaceManager.setWindowState(nativeWindowState);
+  }, [nativeSurfaceManager, nativeWindowState]);
 
   const getPaneTitle = useCallback((pane: ResolvedPane): string => {
     if (pane.instance.paneId === "ticker-detail") {
@@ -606,7 +690,13 @@ export function Shell({ pluginRegistry }: ShellProps) {
     persistLayout(removePane(visibleLayout, paneId));
   }, [persistLayout, visibleLayout]);
 
-  const handleMouse = useCallback((event: { type: string; x: number; y: number; stopPropagation: () => void; preventDefault: () => void }) => {
+  const handleMouse = useCallback((event: {
+    type: string;
+    x: number;
+    y: number;
+    stopPropagation: () => void;
+    preventDefault: () => void;
+  }) => {
     const shellY = event.y - HEADER_HEIGHT;
     if (shellY < 0) return;
 
@@ -878,11 +968,6 @@ export function Shell({ pluginRegistry }: ShellProps) {
     visibleLayout,
     width,
   ]);
-
-  const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
-  const activeHoverOverlay = activePaneDrag && dragCursor
-    ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
-    : null;
 
   return (
     <box flexDirection="row" flexGrow={1} height={contentHeight} onMouse={handleMouse}>

@@ -13,6 +13,7 @@ const TEST_PANE_ID = "portfolio-list:test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
+let harnessState: ReturnType<typeof createInitialState> | null = null;
 
 const PortfolioPane = portfolioListPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -195,6 +196,7 @@ function PortfolioHarness({
   stateMutator?.(initialState);
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
+  harnessState = state;
 
   return (
     <AppContext value={{ state, dispatch }}>
@@ -223,6 +225,7 @@ afterEach(async () => {
     testSetup = undefined;
   }
   harnessDispatch = null;
+  harnessState = null;
   setSharedRegistryForTests(undefined);
   await ibkrGatewayManager.removeInstance("ibkr-live");
 });
@@ -388,6 +391,66 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
     expect(testSetup.captureCharFrame()).toContain("Live");
     expect(testSetup.captureCharFrame()).toContain("▸ Cash & Margin");
+  });
+
+  test("toggles the cash and margin drawer when the header is clicked", async () => {
+    const config = createPortfolioConfig("broker:ibkr-flex:DU12345", [createBrokerInstance("flex")]);
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-flex:DU12345"
+        brokerAccounts={{
+          "ibkr-flex": [{
+            accountId: "DU12345",
+            name: "DU12345",
+            currency: "USD",
+            source: "flex",
+            updatedAt: new Date(2026, 2, 27).getTime(),
+            totalCashValue: -50000,
+            settledCash: -45000,
+            netLiquidation: 125000,
+            cashBalances: [
+              { currency: "USD", quantity: -50000, baseValue: -50000, baseCurrency: "USD" },
+            ],
+          }],
+        }}
+      />,
+      { width: 100, height: 24 },
+    );
+
+    await flushFrame();
+
+    const pressDrawerHeader = async () => {
+      const lines = testSetup!.captureCharFrame().split("\n");
+      const row = lines.findIndex((line) => line.includes("Cash & Margin"));
+      const col = lines[row]?.indexOf("Cash & Margin") ?? -1;
+
+      expect(row).toBeGreaterThanOrEqual(0);
+      expect(col).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await testSetup!.mockMouse.pressDown(col + 1, row);
+        await testSetup!.renderOnce();
+        await testSetup!.renderOnce();
+      });
+
+      return { row, col };
+    };
+
+    const { row, col } = await pressDrawerHeader();
+    expect(harnessState?.paneState[TEST_PANE_ID]).toMatchObject({
+      collectionId: "broker:ibkr-flex:DU12345",
+      cursorSymbol: "AAPL",
+      cashDrawerExpanded: true,
+    });
+
+    await act(async () => {
+      await testSetup!.mockMouse.release(col + 1, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    expect(harnessState?.paneState[TEST_PANE_ID]?.cashDrawerExpanded).toBe(true);
   });
 
   test("stacks the summary below tabs when the tab row is crowded", async () => {

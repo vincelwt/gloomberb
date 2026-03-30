@@ -2,18 +2,29 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
-import { AppContext, createInitialState } from "../../state/app-context";
+import { act, useReducer } from "react";
+import { AppContext, appReducer, createInitialState } from "../../state/app-context";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
-import { Shell } from "./shell";
+import { setSharedRegistryForTests } from "../../plugins/registry";
+import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
+import { StatusBar } from "./status-bar";
+import { Header } from "./header";
+import { buildNativeWindowState, Shell } from "./shell";
+import type { DataProvider } from "../../types/data-provider";
+import type { Quote } from "../../types/financials";
+import type { TickerRecord } from "../../types/ticker";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+let harnessState: ReturnType<typeof createInitialState> | null = null;
 
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
   }
+  harnessState = null;
+  setSharedRegistryForTests(undefined);
 });
 
 function createShellPluginRegistry(): PluginRegistry {
@@ -48,7 +59,267 @@ function createShellPluginRegistry(): PluginRegistry {
   } as unknown as PluginRegistry;
 }
 
+function createBrokerPortfolioRegistry(): PluginRegistry {
+  const pane = portfolioListPlugin.panes?.[0];
+  if (!pane) throw new Error("missing portfolio pane");
+  return {
+    panes: new Map([["portfolio-list", pane]]),
+    paneTemplates: new Map(),
+    commands: new Map(),
+    tickerActions: new Map(),
+    brokers: new Map(),
+    allPlugins: new Map([["portfolio-list", portfolioListPlugin]]),
+    getPluginPaneIds: () => [],
+    getPluginPaneTemplateIds: () => [],
+    hasPaneSettings: () => true,
+    openPaneSettingsFn: () => {},
+    openCommandBarFn: () => {},
+    updateLayoutFn: () => {},
+    hideWidget: () => {},
+    focusPaneFn: () => {},
+    pinTickerFn: () => {},
+    showPaneFn: () => {},
+    getLayoutFn: () => ({ dockRoot: null, instances: [], floating: [] }),
+    getTermSizeFn: () => ({ width: 120, height: 40 }),
+    Slot: () => null,
+  } as unknown as PluginRegistry;
+}
+
+function makeQuote(overrides: Partial<Quote> = {}): Quote {
+  return {
+    symbol: "AAPL",
+    price: 125,
+    bid: 124.95,
+    ask: 125.05,
+    bidSize: 100,
+    askSize: 200,
+    currency: "USD",
+    change: 5,
+    changePercent: 4.17,
+    previousClose: 120,
+    name: "Apple",
+    lastUpdated: Date.now(),
+    marketState: "REGULAR",
+    ...overrides,
+  };
+}
+
+function makeTicker(overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
+  return {
+    metadata: {
+      ticker: "AAPL",
+      exchange: "NASDAQ",
+      currency: "USD",
+      name: "Apple",
+      portfolios: ["broker:ibkr-flex:DU12345"],
+      watchlists: [],
+      positions: [
+        {
+          portfolio: "broker:ibkr-flex:DU12345",
+          shares: 10,
+          avgCost: 100,
+          currency: "USD",
+          broker: "ibkr",
+          brokerInstanceId: "ibkr-flex",
+          brokerAccountId: "DU12345",
+        },
+      ],
+      custom: {},
+      tags: [],
+      ...overrides,
+    },
+  };
+}
+
+function createHeaderDataProvider(): DataProvider {
+  return {
+    id: "test",
+    name: "Test",
+    async getTickerFinancials() {
+      return { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote: makeQuote({ symbol: "SPY", name: "SPY" }) };
+    },
+    async getQuote() {
+      return makeQuote({ symbol: "SPY", name: "SPY" });
+    },
+    async getExchangeRate() {
+      return 1;
+    },
+    async search() {
+      return [];
+    },
+    async getNews() {
+      return [];
+    },
+    async getArticleSummary() {
+      return null;
+    },
+    async getPriceHistory() {
+      return [];
+    },
+  };
+}
+
+function BrokerShellHarness({ pluginRegistry }: { pluginRegistry: PluginRegistry }) {
+  const config = createDefaultConfig("/tmp/gloomberb-shell-broker-test");
+  const portfolioId = "broker:ibkr-flex:DU12345";
+  const layout = {
+    dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+    instances: [{
+      instanceId: "portfolio-list:main",
+      paneId: "portfolio-list",
+      binding: { kind: "none" as const },
+      params: { collectionId: portfolioId },
+    }],
+    floating: [],
+  };
+  const initialState = createInitialState({
+    ...config,
+    brokerInstances: [{
+      id: "ibkr-flex",
+      brokerType: "ibkr",
+      label: "Flex",
+      connectionMode: "flex",
+      config: { connectionMode: "flex", flex: { token: "token", queryId: "query" } },
+      enabled: true,
+    }],
+    portfolios: [
+      ...config.portfolios,
+      {
+        id: portfolioId,
+        name: "Flex DU12345",
+        currency: "USD",
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-flex",
+        brokerAccountId: "DU12345",
+      },
+    ],
+    layout,
+    layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+  });
+
+  initialState.gridlockTipVisible = true;
+  initialState.focusedPaneId = "portfolio-list:main";
+  initialState.paneState["portfolio-list:main"] = {
+    collectionId: portfolioId,
+    cursorSymbol: "AAPL",
+    cashDrawerExpanded: false,
+  };
+  initialState.brokerAccounts = {
+    "ibkr-flex": [{
+      accountId: "DU12345",
+      name: "DU12345",
+      currency: "USD",
+      source: "flex",
+      updatedAt: new Date(2026, 2, 27).getTime(),
+      totalCashValue: -50000,
+      settledCash: -45000,
+      netLiquidation: 125000,
+      cashBalances: [
+        { currency: "USD", quantity: -50000, baseValue: -50000, baseCurrency: "USD" },
+      ],
+    }],
+  };
+  initialState.tickers = new Map([["AAPL", makeTicker()]]);
+  initialState.financials = new Map([["AAPL", { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote: makeQuote() }]]);
+
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  harnessState = state;
+
+  return (
+    <AppContext value={{ state, dispatch }}>
+      <box flexDirection="column">
+        <Header dataProvider={createHeaderDataProvider()} />
+        <Shell pluginRegistry={pluginRegistry} />
+        <StatusBar />
+      </box>
+    </AppContext>
+  );
+}
+
 describe("Shell", () => {
+  test("uses the live floating preview rect for native occluders", () => {
+    const state = buildNativeWindowState(
+      ["portfolio-list:main"],
+      [
+        {
+          paneId: "ticker-detail:main",
+          rect: { x: 8, y: 2, width: 36, height: 12 },
+          zIndex: 75,
+        },
+      ],
+      {
+        paneId: "ticker-detail:main",
+        rect: { x: 20, y: 6, width: 36, height: 12 },
+      },
+      { open: false, width: 120, contentHeight: 40 },
+    );
+
+    expect(state.paneLayers).toEqual([
+      { paneId: "portfolio-list:main", zIndex: 0 },
+      { paneId: "ticker-detail:main", zIndex: 75 },
+    ]);
+    expect(state.occluders).toEqual([
+      {
+        id: "ticker-detail:main",
+        paneId: "ticker-detail:main",
+        rect: { x: 20, y: 7, width: 36, height: 12 },
+        zIndex: 75,
+      },
+    ]);
+  });
+
+  test("ignores docked drag previews when building native occluders", () => {
+    const state = buildNativeWindowState(
+      ["portfolio-list:main"],
+      [
+        {
+          paneId: "ticker-detail:main",
+          rect: { x: 8, y: 2, width: 36, height: 12 },
+          zIndex: 75,
+        },
+      ],
+      {
+        paneId: "portfolio-list:secondary",
+        rect: { x: 20, y: 6, width: 36, height: 12 },
+      },
+      { open: false, width: 120, contentHeight: 40 },
+    );
+
+    expect(state.occluders).toEqual([
+      {
+        id: "ticker-detail:main",
+        paneId: "ticker-detail:main",
+        rect: { x: 8, y: 3, width: 36, height: 12 },
+        zIndex: 75,
+      },
+    ]);
+  });
+
+  test("adds transient drag overlays as global native occluders", () => {
+    const state = buildNativeWindowState(
+      ["portfolio-list:main"],
+      [],
+      null,
+      { open: false, width: 120, contentHeight: 40 },
+      [
+        {
+          id: "dock-preview:snap",
+          rect: { x: 0, y: 0, width: 60, height: 20 },
+          zIndex: 96,
+        },
+      ],
+    );
+
+    expect(state.occluders).toEqual([
+      {
+        id: "dock-preview:snap",
+        paneId: null,
+        rect: { x: 0, y: 1, width: 60, height: 20 },
+        zIndex: 96,
+      },
+    ]);
+  });
+
   test("opens the pane menu when clicking the docked header action area", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-test");
     const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
@@ -77,10 +348,56 @@ describe("Shell", () => {
     );
 
     await testSetup.renderOnce();
-    await testSetup.mockMouse.click(37, 1);
+    await act(async () => {
+      await testSetup!.mockMouse.click(37, 1);
+    });
     await testSetup.renderOnce();
 
     expect(testSetup.captureCharFrame()).toContain("Settings");
+  });
+
+  test("keeps the cash drawer and gridlock tip on distinct click rows in the full app layout", async () => {
+    const pluginRegistry = createBrokerPortfolioRegistry();
+    const layoutUpdates: unknown[] = [];
+    const toasts: string[] = [];
+    pluginRegistry.getLayoutFn = () => harnessState?.config.layout ?? { dockRoot: null, instances: [], floating: [] };
+    pluginRegistry.updateLayoutFn = (layout) => { layoutUpdates.push(layout); };
+    pluginRegistry.showToastFn = (message: string) => { toasts.push(message); };
+    setSharedRegistryForTests(pluginRegistry);
+
+    testSetup = await testRender(
+      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <BrokerShellHarness pluginRegistry={pluginRegistry} />
+      </DialogProvider>,
+      { width: 100, height: 24 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const cashRow = lines.findIndex((line) => line.includes("Cash & Margin"));
+    const cashCol = lines[cashRow]?.indexOf("Cash & Margin") ?? -1;
+    const gridlockRow = lines.findIndex((line) => line.includes("Gridlock All"));
+    const gridlockCol = lines[gridlockRow]?.indexOf("Gridlock All") ?? -1;
+
+    expect(cashRow).toBeGreaterThanOrEqual(0);
+    expect(cashCol).toBeGreaterThanOrEqual(0);
+    expect(gridlockRow).toBeGreaterThanOrEqual(0);
+    expect(gridlockCol).toBeGreaterThanOrEqual(0);
+    expect(gridlockRow).toBeGreaterThan(cashRow);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(gridlockCol + 1, gridlockRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(harnessState?.paneState["portfolio-list:main"]?.cashDrawerExpanded).toBe(false);
+    expect(layoutUpdates.length).toBe(1);
+    expect(toasts).toEqual(["Retiled all panes"]);
   });
 
   test("closes the focused docked pane with Ctrl+W", async () => {
