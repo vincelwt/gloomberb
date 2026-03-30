@@ -1,6 +1,6 @@
 import type { Dispatch } from "react";
 import type { TickerRepository } from "../data/ticker-repository";
-import { findPaneInstance, type AppConfig } from "../types/config";
+import { findPaneInstance, isTickerPaneId, type AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
 import type { BrokerAccount } from "../types/trading";
 import type { TickerMetadata, TickerRecord } from "../types/ticker";
@@ -31,6 +31,7 @@ interface StartupPaneStateSeed {
 interface RefreshPlanEntry {
   ticker: TickerRecord;
   priority: number;
+  mode: "quote" | "financials";
 }
 
 const MAX_BACKGROUND_WARMUP_TICKERS = 0;
@@ -42,6 +43,7 @@ export interface InitializeAppStateArgs {
   sessionSnapshot?: AppSessionSnapshot | null;
   dispatch: Dispatch<AppAction>;
   refreshTicker: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
+  refreshQuote: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
   autoImportBrokerPositions: (tickerMap: Map<string, TickerRecord>) => Promise<void>;
   persistedBrokerAccounts?: Record<string, BrokerAccount[]>;
 }
@@ -116,23 +118,35 @@ function buildRefreshPlan(
   paneStateSeed: Record<string, StartupPaneStateSeed>,
   sessionSnapshot: AppSessionSnapshot | null | undefined,
 ): RefreshPlanEntry[] {
-  const queued = new Set<string>();
-  const plan: RefreshPlanEntry[] = [];
+  const planBySymbol = new Map<string, RefreshPlanEntry>();
 
-  const enqueueSymbol = (symbol: string | null, priority: number) => {
-    if (!symbol || queued.has(symbol)) return;
+  const enqueueSymbol = (symbol: string | null, priority: number, mode: RefreshPlanEntry["mode"]) => {
+    if (!symbol) return;
     const ticker = tickerMap.get(symbol);
     if (!ticker) return;
-    queued.add(symbol);
-    plan.push({ ticker, priority });
+
+    const existing = planBySymbol.get(symbol);
+    if (existing) {
+      existing.priority = Math.min(existing.priority, priority);
+      if (mode === "financials") {
+        existing.mode = "financials";
+      }
+      return;
+    }
+
+    planBySymbol.set(symbol, { ticker, priority, mode });
   };
 
   for (const instanceId of getDockedPaneIds(config.layout)) {
-    enqueueSymbol(resolveSymbolForPane(config, instanceId, paneStateSeed, sessionSnapshot, tickerMap), 0);
+    const instance = findPaneInstance(config.layout, instanceId);
+    const mode = instance && isTickerPaneId(instance.paneId) ? "financials" : "quote";
+    enqueueSymbol(resolveSymbolForPane(config, instanceId, paneStateSeed, sessionSnapshot, tickerMap), 0, mode);
   }
 
   for (const entry of config.layout.floating) {
-    enqueueSymbol(resolveSymbolForPane(config, entry.instanceId, paneStateSeed, sessionSnapshot, tickerMap), 1);
+    const instance = findPaneInstance(config.layout, entry.instanceId);
+    const mode = instance && isTickerPaneId(instance.paneId) ? "financials" : "quote";
+    enqueueSymbol(resolveSymbolForPane(config, entry.instanceId, paneStateSeed, sessionSnapshot, tickerMap), 1, mode);
   }
 
   const workingSetSymbols = new Set<string>();
@@ -146,14 +160,14 @@ function buildRefreshPlan(
   let backgroundWarmups = 0;
   for (const symbol of workingSetSymbols) {
     if (backgroundWarmups >= MAX_BACKGROUND_WARMUP_TICKERS) break;
-    if (queued.has(symbol)) continue;
-    enqueueSymbol(symbol, 2);
-    if (queued.has(symbol)) {
+    const before = planBySymbol.size;
+    enqueueSymbol(symbol, 2, "quote");
+    if (planBySymbol.size > before) {
       backgroundWarmups += 1;
     }
   }
 
-  return plan;
+  return [...planBySymbol.values()].sort((left, right) => left.priority - right.priority);
 }
 
 export async function initializeAppState({
@@ -163,6 +177,7 @@ export async function initializeAppState({
   sessionSnapshot,
   dispatch,
   refreshTicker,
+  refreshQuote,
   autoImportBrokerPositions,
   persistedBrokerAccounts = {},
 }: InitializeAppStateArgs): Promise<void> {
@@ -218,7 +233,11 @@ export async function initializeAppState({
   dispatch({ type: "SET_INITIALIZED" });
 
   for (const entry of buildRefreshPlan(config, tickerMap, paneStateSeed, sessionSnapshot)) {
-    refreshTicker(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
+    if (entry.mode === "financials") {
+      refreshTicker(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
+    } else {
+      refreshQuote(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
+    }
   }
 
   void autoImportBrokerPositions(tickerMap);

@@ -88,7 +88,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     activeLayoutIndex,
     brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
-    disabledPlugins: sanitizeStringArray(saved.disabledPlugins, defaults.disabledPlugins),
+    disabledPlugins: sanitizeDisabledPlugins(saved, defaults.disabledPlugins),
     pluginConfig: sanitizePluginConfig(saved.pluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
@@ -129,7 +129,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     activeLayoutIndex,
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
-    disabledPlugins: sanitizeStringArray(config.disabledPlugins, []),
+    disabledPlugins: sanitizeDisabledPluginList(config.disabledPlugins),
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
@@ -169,6 +169,28 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : fallback;
+}
+
+function sanitizeDisabledPluginList(value: unknown): string[] {
+  const mapped = sanitizeStringArray(value, []).map((pluginId) => (
+    pluginId === "chat" ? "gloomberb-cloud" : pluginId
+  ));
+  return [...new Set(mapped)];
+}
+
+function sanitizeDisabledPlugins(saved: Record<string, unknown>, fallback: string[]): string[] {
+  const disabledPlugins = sanitizeDisabledPluginList(saved.disabledPlugins ?? fallback);
+  const configVersion = typeof saved.configVersion === "number" ? saved.configVersion : 0;
+  const onboardingComplete = saved.onboardingComplete === true;
+  const hasExplicitCloudSetting = disabledPlugins.includes("gloomberb-cloud")
+    || sanitizeStringArray(saved.disabledPlugins, []).includes("chat")
+    || sanitizeStringArray(saved.disabledPlugins, []).includes("gloomberb-cloud");
+
+  if (onboardingComplete && configVersion < 10 && !hasExplicitCloudSetting) {
+    disabledPlugins.push("gloomberb-cloud");
+  }
+
+  return [...new Set(disabledPlugins)];
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

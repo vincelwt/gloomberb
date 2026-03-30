@@ -5,6 +5,7 @@ import type { GloomPlugin, PaneProps, DetailTabDef, PaneSettingsDef } from "../.
 import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
+import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { getCollectionName, getCollectionTickers } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
 import { EmptyState, FieldRow } from "../../components";
@@ -156,6 +157,10 @@ function getQuoteMonitorDisplay(quote: Quote | null | undefined) {
 
 export function QuoteMonitorPane({ focused, width }: PaneProps) {
   const { ticker, financials } = usePaneTicker();
+  useQuoteStreaming(ticker ? [{
+    symbol: ticker.metadata.ticker,
+    exchange: ticker.metadata.exchange,
+  }] : []);
 
   if (!ticker) {
     return (
@@ -315,6 +320,16 @@ function OverviewTab({ width }: { width?: number }) {
           <FieldRow label="FCF" value={f?.freeCashFlow ? formatCompact(f.freeCashFlow) : "—"} />
           <FieldRow label="Op. Margin" value={f?.operatingMargin != null ? formatPercent(f.operatingMargin) : "—"} />
           <FieldRow label="Profit Margin" value={f?.profitMargin != null ? formatPercent(f.profitMargin) : "—"} />
+          {(q?.bid != null || q?.ask != null) && (
+            <>
+              <FieldRow label="Bid" value={q?.bid != null ? formatCurrency(q.bid, q.currency) : "—"} />
+              <FieldRow label="Ask" value={q?.ask != null ? formatCurrency(q.ask, q.currency) : "—"} />
+              <FieldRow
+                label="Spread"
+                value={q?.bid != null && q?.ask != null ? formatCurrency(q.ask - q.bid, q.currency) : "—"}
+              />
+            </>
+          )}
           <FieldRow
             label="52W Range"
             value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w)} - ${formatCurrency(q.high52w)}` : "—"}
@@ -680,6 +695,10 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
   const paneInstance = usePaneInstance();
   const { ticker, financials } = usePaneTicker();
+  useQuoteStreaming(ticker ? [{
+    symbol: ticker.metadata.ticker,
+    exchange: ticker.metadata.exchange,
+  }] : []);
   const { collectionId } = usePaneCollection();
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);

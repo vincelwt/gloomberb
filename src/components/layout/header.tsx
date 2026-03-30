@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { TextAttributes } from "@opentui/core";
 import "opentui-spinner/react";
 import { colors, priceColor } from "../../theme/colors";
+import { useAppActive } from "../../state/app-activity";
 import { useAppState } from "../../state/app-context";
 import { formatPercentRaw } from "../../utils/format";
 import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
@@ -54,9 +55,11 @@ function UpdateStatus() {
 
 export function Header({ dataProvider }: { dataProvider: DataProvider }) {
   const { state } = useAppState();
+  const appActive = useAppActive();
   const [spyQuote, setSpyQuote] = useState<Quote | null>(null);
 
   useEffect(() => {
+    if (!appActive) return;
     let cancelled = false;
     const fetchSpy = async () => {
       try {
@@ -67,7 +70,7 @@ export function Header({ dataProvider }: { dataProvider: DataProvider }) {
     fetchSpy();
     const id = setInterval(fetchSpy, SPY_REFRESH_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [dataProvider]);
+  }, [appActive, dataProvider]);
 
   const spyColor = spyQuote ? priceColor(spyQuote.change) : colors.headerText;
   const spyText = spyQuote

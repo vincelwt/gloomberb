@@ -35,13 +35,13 @@ function createBrokerInstance(connectionMode: "gateway" | "flex", id = `ibkr-${c
   };
 }
 
-function makeTicker(): TickerRecord {
+function makeTicker(symbol = "AAPL", name = "Apple"): TickerRecord {
   return {
     metadata: {
-      ticker: "AAPL",
+      ticker: symbol,
       exchange: "NASDAQ",
       currency: "USD",
-      name: "Apple",
+      name,
       portfolios: ["broker:ibkr-flex:DU12345", "broker:ibkr-live:DU12345"],
       watchlists: [],
       positions: [
@@ -70,10 +70,14 @@ function makeTicker(): TickerRecord {
   };
 }
 
-function makeQuote(): Quote {
+function makeQuote(overrides: Partial<Quote> = {}): Quote {
   return {
     symbol: "AAPL",
     price: 125,
+    bid: 124.95,
+    ask: 125.05,
+    bidSize: 100,
+    askSize: 200,
     currency: "USD",
     change: 5,
     changePercent: 4.17,
@@ -81,6 +85,7 @@ function makeQuote(): Quote {
     name: "Apple",
     lastUpdated: Date.now(),
     marketState: "REGULAR",
+    ...overrides,
   };
 }
 
@@ -117,6 +122,22 @@ function createPortfolioConfig(portfolioId: string, brokerInstances: BrokerInsta
   };
 }
 
+function createPortfolioConfigWithColumns(
+  portfolioId: string,
+  columnIds: string[],
+  brokerInstances: BrokerInstanceConfig[] = [],
+): AppConfig {
+  const config = createPortfolioConfig(portfolioId, brokerInstances);
+  const instance = config.layout.instances.find((entry) => entry.instanceId === TEST_PANE_ID);
+  if (instance) {
+    instance.settings = {
+      ...(instance.settings ?? {}),
+      columnIds,
+    };
+  }
+  return config;
+}
+
 function createPortfolioState(config: AppConfig, collectionId: string, expanded = false) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
@@ -135,14 +156,17 @@ function PortfolioHarness({
   collectionId,
   expanded = false,
   brokerAccounts = {},
+  stateMutator,
 }: {
   config: AppConfig;
   collectionId: string;
   expanded?: boolean;
   brokerAccounts?: ReturnType<typeof createInitialState>["brokerAccounts"];
+  stateMutator?: (state: ReturnType<typeof createInitialState>) => void;
 }) {
   const initialState = createPortfolioState(config, collectionId, expanded);
   initialState.brokerAccounts = brokerAccounts;
+  stateMutator?.(initialState);
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
 
@@ -328,5 +352,102 @@ describe("PortfolioListPane cash and margin UI", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Val 1.3k  Cash -50k");
     expect(frame).toContain("▸ Cash &");
+  });
+
+  test("renders bid ask and spread when those columns are enabled", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-flex:DU12345",
+      ["ticker", "bid", "ask", "spread", "latency"],
+      [createBrokerInstance("flex")],
+    );
+
+    testSetup = await testRender(
+      <PortfolioHarness config={config} collectionId="broker:ibkr-flex:DU12345" />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("BID");
+    expect(frame).toContain("ASK");
+    expect(frame).toContain("SPREAD");
+    expect(frame).toContain("124.95");
+    expect(frame).toContain("125.05");
+    expect(frame).toContain("0.10");
+  });
+
+  test("quote flash keeps the existing row background intact", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-flex:DU12345",
+      ["ticker", "price", "change", "latency"],
+      [createBrokerInstance("flex")],
+    );
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-flex:DU12345"
+        stateMutator={(state) => {
+          state.tickers = new Map([
+            ["AAPL", makeTicker("AAPL", "Apple")],
+            ["MSFT", makeTicker("MSFT", "Microsoft")],
+          ]);
+          state.financials = new Map([
+            ["AAPL", { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote: makeQuote() }],
+            ["MSFT", {
+              annualStatements: [],
+              quarterlyStatements: [],
+              priceHistory: [],
+              quote: makeQuote({
+                symbol: "MSFT",
+                price: 315,
+                bid: 314.95,
+                ask: 315.05,
+                change: 2,
+                changePercent: 0.64,
+                previousClose: 313,
+                name: "Microsoft",
+              }),
+            }],
+          ]);
+          state.paneState[TEST_PANE_ID] = {
+            collectionId: "broker:ibkr-flex:DU12345",
+            cursorSymbol: "MSFT",
+            cashDrawerExpanded: false,
+          };
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    const beforeFrame = testSetup.captureSpans();
+    const beforeLine = beforeFrame.lines.find((line) => line.spans.map((span) => span.text).join("").includes("AAPL"));
+    expect(beforeLine).toBeDefined();
+
+    await act(async () => {
+      harnessDispatch?.({
+        type: "MERGE_QUOTE",
+        symbol: "AAPL",
+        quote: makeQuote({
+          price: 126,
+          bid: 125.95,
+          ask: 126.05,
+          change: 6,
+          changePercent: 5,
+          lastUpdated: Date.now() + 1_000,
+        }),
+      });
+    });
+    await flushFrame();
+
+    const frame = testSetup.captureSpans();
+    const aaplLine = frame.lines.find((line) => line.spans.map((span) => span.text).join("").includes("AAPL"));
+    expect(aaplLine).toBeDefined();
+
+    const beforeBackgrounds = beforeLine!.spans.map((span) => span.bg.toInts().join(","));
+    const afterBackgrounds = aaplLine!.spans.map((span) => span.bg.toInts().join(","));
+    expect(afterBackgrounds).toEqual(beforeBackgrounds);
   });
 });

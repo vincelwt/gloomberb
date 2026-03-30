@@ -23,7 +23,7 @@ import {
 } from "../types/config";
 import { setPaneSetting } from "../pane-settings";
 import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "../types/config";
-import type { TickerFinancials } from "../types/financials";
+import type { Quote, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { BrokerAccount } from "../types/trading";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
@@ -83,6 +83,7 @@ export type AppAction =
   | { type: "UPDATE_TICKER"; ticker: TickerRecord }
   | { type: "REMOVE_TICKER"; symbol: string }
   | { type: "SET_FINANCIALS"; symbol: string; data: TickerFinancials }
+  | { type: "MERGE_QUOTE"; symbol: string; quote: Quote }
   | { type: "HYDRATE_FINANCIALS"; financials: Map<string, TickerFinancials> }
   | { type: "TRACK_TICKER"; symbol: string | null }
   | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right" }
@@ -265,6 +266,12 @@ function nextRecentTickers(current: string[], symbol: string | null): string[] {
   return [symbol, ...current.filter((entry) => entry !== symbol)].slice(0, 50);
 }
 
+function shouldPreserveExistingQuote(current: Quote | undefined, next: Quote): boolean {
+  return current?.dataSource === "live"
+    && current.providerId !== "gloomberb-cloud"
+    && next.providerId === "gloomberb-cloud";
+}
+
 function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: LayoutConfig): SavedLayout[] {
   return layouts.map((savedLayout, index) => (
     index === activeLayoutIndex ? { ...savedLayout, layout: cloneLayout(layout) } : savedLayout
@@ -391,6 +398,26 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_FINANCIALS": {
       const financials = new Map(state.financials);
       financials.set(action.symbol, action.data);
+      return { ...state, financials };
+    }
+
+    case "MERGE_QUOTE": {
+      const current = state.financials.get(action.symbol);
+      if (shouldPreserveExistingQuote(current?.quote, action.quote)) {
+        return state;
+      }
+      const financials = new Map(state.financials);
+      financials.set(action.symbol, {
+        annualStatements: current?.annualStatements ?? [],
+        quarterlyStatements: current?.quarterlyStatements ?? [],
+        priceHistory: current?.priceHistory ?? [],
+        fundamentals: current?.fundamentals,
+        profile: current?.profile,
+        quote: {
+          ...(current?.quote ?? {}),
+          ...action.quote,
+        },
+      });
       return { ...state, financials };
     }
 

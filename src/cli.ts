@@ -5,11 +5,12 @@ import { getPluginsDir } from "./plugins/loader";
 import { getDataDir, loadConfig } from "./data/config-store";
 import { AppPersistence } from "./data/app-persistence";
 import { TickerRepository } from "./data/ticker-repository";
-import { YahooFinanceClient } from "./sources/yahoo-finance";
+import { ProviderRouter } from "./sources/provider-router";
 import { VERSION } from "./version";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber } from "./utils/format";
 import type { AppConfig } from "./types/config";
 import type { TickerRecord } from "./types/ticker";
+import { createBuiltinDataProviders } from "./plugins/builtin/data-providers";
 
 const PLUGINS_DIR = getPluginsDir();
 
@@ -178,8 +179,8 @@ async function initData() {
   const config = await loadConfig(dataDir);
   const persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
   const store = new TickerRepository(persistence.tickers);
-  const yahoo = new YahooFinanceClient();
-  return { config, persistence, store, yahoo, dataDir };
+  const dataProvider = new ProviderRouter(null, createBuiltinDataProviders(config), persistence.resources);
+  return { config, persistence, store, dataProvider, dataDir };
 }
 
 // --- Help command ---
@@ -203,7 +204,7 @@ Commands:
 // --- Portfolio command ---
 
 async function portfolio(name?: string) {
-  const { config, store, yahoo, persistence } = await initData();
+  const { config, store, dataProvider, persistence } = await initData();
   const tickers = await store.loadAllTickers();
 
   if (!name) {
@@ -254,11 +255,11 @@ async function portfolio(name?: string) {
   console.log(`${displayName}${isPortfolio ? ` (${currency})` : ""}\n`);
 
   // Fetch quotes for all tickers
-  const quotes = new Map<string, Awaited<ReturnType<typeof yahoo.getQuote>>>();
+  const quotes = new Map<string, Awaited<ReturnType<typeof dataProvider.getQuote>>>();
   await Promise.all(
     filtered.map(async (t) => {
       try {
-        const q = await yahoo.getQuote(t.metadata.ticker, t.metadata.exchange);
+        const q = await dataProvider.getQuote(t.metadata.ticker, t.metadata.exchange);
         quotes.set(t.metadata.ticker, q);
       } catch { /* skip failed quotes */ }
     }),
@@ -317,7 +318,7 @@ async function portfolio(name?: string) {
 // --- Ticker command ---
 
 async function ticker(symbol: string) {
-  const { config, store, yahoo, persistence } = await initData();
+  const { config, store, dataProvider, persistence } = await initData();
 
   // Fetch quote and fundamentals
   const tickerFile = await store.loadTicker(symbol.toUpperCase());
@@ -325,7 +326,7 @@ async function ticker(symbol: string) {
 
   let financials;
   try {
-    financials = await yahoo.getTickerFinancials(symbol, exchange);
+    financials = await dataProvider.getTickerFinancials(symbol, exchange);
   } catch (err: any) {
     console.error(`Failed to fetch data for ${symbol}: ${err.message}`);
     persistence.close();

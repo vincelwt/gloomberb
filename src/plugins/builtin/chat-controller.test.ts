@@ -146,4 +146,20 @@ describe("ChatController", () => {
     expect(persistence.getState("session", { schemaVersion: 1 })).toBeNull();
     expect(persistence.getResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, { sourceKey: TRANSCRIPT_SOURCE, schemaVersion: 1 })).toBeNull();
   });
+
+  test("pauses verification polling while the app is backgrounded", () => {
+    const controller = new ChatController();
+
+    apiClient.setSessionToken("token-123");
+    (controller as any).user = { id: "u1", username: "vince", emailVerified: false };
+
+    controller.setAppActive(false);
+    (controller as any).syncVerificationPolling();
+    expect((controller as any).verificationPollTimer).toBeNull();
+
+    controller.setAppActive(true);
+    expect((controller as any).verificationPollTimer).not.toBeNull();
+
+    controller.reset(true);
+  });
 });

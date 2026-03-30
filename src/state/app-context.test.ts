@@ -213,3 +213,119 @@ describe("broker account cache", () => {
     expect(next.brokerAccounts).toEqual({});
   });
 });
+
+describe("quote merging", () => {
+  test("does not overwrite live broker quotes with cloud updates", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const initial = createInitialState(config);
+    initial.financials.set("AAPL", {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: [],
+      quote: {
+        symbol: "AAPL",
+        providerId: "ibkr",
+        price: 201,
+        currency: "USD",
+        change: 1,
+        changePercent: 0.5,
+        lastUpdated: Date.now(),
+        dataSource: "live",
+      },
+    });
+
+    const next = appReducer(initial, {
+      type: "MERGE_QUOTE",
+      symbol: "AAPL",
+      quote: {
+        symbol: "AAPL",
+        providerId: "gloomberb-cloud",
+        price: 199,
+        currency: "USD",
+        change: -1,
+        changePercent: -0.5,
+        lastUpdated: Date.now(),
+        dataSource: "live",
+      },
+    });
+
+    expect(next.financials.get("AAPL")?.quote?.price).toBe(201);
+    expect(next.financials.get("AAPL")?.quote?.providerId).toBe("ibkr");
+  });
+
+  test("merges cloud quotes into existing fundamentals without wiping them", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const initial = createInitialState(config);
+    initial.financials.set("AAPL", {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: [],
+      profile: { description: "Apple" },
+      fundamentals: { trailingPE: 30 },
+    });
+
+    const next = appReducer(initial, {
+      type: "MERGE_QUOTE",
+      symbol: "AAPL",
+      quote: {
+        symbol: "AAPL",
+        providerId: "gloomberb-cloud",
+        price: 200,
+        currency: "USD",
+        change: 2,
+        changePercent: 1,
+        lastUpdated: Date.now(),
+        dataSource: "live",
+      },
+    });
+
+    expect(next.financials.get("AAPL")?.profile?.description).toBe("Apple");
+    expect(next.financials.get("AAPL")?.fundamentals?.trailingPE).toBe(30);
+    expect(next.financials.get("AAPL")?.quote?.price).toBe(200);
+  });
+
+  test("preserves existing bid ask when a streaming quote only updates last price", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const initial = createInitialState(config);
+    initial.financials.set("AAPL", {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: [],
+      quote: {
+        symbol: "AAPL",
+        providerId: "gloomberb-cloud",
+        price: 200,
+        currency: "USD",
+        change: 2,
+        changePercent: 1,
+        bid: 199.95,
+        ask: 200.05,
+        bidSize: 10,
+        askSize: 12,
+        lastUpdated: Date.now() - 1000,
+        dataSource: "delayed",
+      },
+    });
+
+    const next = appReducer(initial, {
+      type: "MERGE_QUOTE",
+      symbol: "AAPL",
+      quote: {
+        symbol: "AAPL",
+        providerId: "gloomberb-cloud",
+        price: 201,
+        currency: "USD",
+        change: 3,
+        changePercent: 1.5,
+        lastUpdated: Date.now(),
+        dataSource: "live",
+      },
+    });
+
+    expect(next.financials.get("AAPL")?.quote?.price).toBe(201);
+    expect(next.financials.get("AAPL")?.quote?.bid).toBe(199.95);
+    expect(next.financials.get("AAPL")?.quote?.ask).toBe(200.05);
+    expect(next.financials.get("AAPL")?.quote?.bidSize).toBe(10);
+    expect(next.financials.get("AAPL")?.quote?.askSize).toBe(12);
+  });
+});

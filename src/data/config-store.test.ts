@@ -218,6 +218,63 @@ describe("loadConfig", () => {
     });
   });
 
+  test("migrates disabled chat plugin state to gloomberb-cloud", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
+    tempDirs.push(dataDir);
+
+    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+      configVersion: 9,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
+      watchlists: [{ id: "watchlist", name: "Watchlist" }],
+      columns: [],
+      layout: DEFAULT_LAYOUT,
+      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
+      activeLayoutIndex: 0,
+      brokerInstances: [],
+      plugins: [],
+      disabledPlugins: ["chat"],
+      theme: "amber",
+      chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
+      recentTickers: [],
+      onboardingComplete: true,
+    }), "utf-8");
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toContain("gloomberb-cloud");
+    expect(config.disabledPlugins).not.toContain("chat");
+  });
+
+  test("keeps cloud opt-in for older completed installs", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
+    tempDirs.push(dataDir);
+
+    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+      configVersion: 9,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
+      watchlists: [{ id: "watchlist", name: "Watchlist" }],
+      columns: [],
+      layout: DEFAULT_LAYOUT,
+      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
+      activeLayoutIndex: 0,
+      brokerInstances: [],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
+      recentTickers: [],
+      onboardingComplete: true,
+    }), "utf-8");
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toContain("gloomberb-cloud");
+  });
+
   test("migrates version-6 configs forward without losing saved layouts", async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
     tempDirs.push(dataDir);
@@ -264,7 +321,7 @@ describe("loadConfig", () => {
 
     const config = await loadConfig(dataDir);
 
-    expect(config.configVersion).toBe(9);
+    expect(config.configVersion).toBe(10);
     expect(config.activeLayoutIndex).toBe(1);
     expect(config.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
     expect(getDockedPaneIds(config.layout)).toEqual(["portfolio-list:main"]);
@@ -277,7 +334,7 @@ describe("loadConfig", () => {
       activeLayoutIndex: number;
     };
 
-    expect(persisted.configVersion).toBe(9);
+    expect(persisted.configVersion).toBe(10);
     expect(persisted.activeLayoutIndex).toBe(1);
     expect(persisted.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
     expect(persisted.layouts[1]?.layout.dockRoot).toBeDefined();

@@ -280,6 +280,48 @@ describe("ProviderRouter", () => {
     expect(results[0]?.brokerContract?.localSymbol).toBe("AAPL");
   });
 
+  test("ignores disabled plugin providers when the registry filters them out", async () => {
+    const disabledProvider: DataProvider = {
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      priority: 10,
+      async getTickerFinancials() {
+        throw new Error("disabled provider should not be used");
+      },
+      async getQuote() {
+        throw new Error("disabled provider should not be used");
+      },
+      async getExchangeRate() {
+        throw new Error("disabled provider should not be used");
+      },
+      async search() {
+        throw new Error("disabled provider should not be used");
+      },
+      async getNews() {
+        throw new Error("disabled provider should not be used");
+      },
+      async getArticleSummary() {
+        throw new Error("disabled provider should not be used");
+      },
+      async getPriceHistory() {
+        throw new Error("disabled provider should not be used");
+      },
+    };
+
+    const router = new ProviderRouter(fallbackProvider);
+    router.attachRegistry({
+      brokers: new Map(),
+      dataProviders: new Map([["gloomberb-cloud", disabledProvider]]),
+      getEnabledDataProviders() {
+        return [];
+      },
+    } as any);
+
+    const quote = await router.getQuote("AAPL", "NASDAQ");
+    expect(quote.price).toBe(100);
+    expect(quote.providerId).toBeUndefined();
+  });
+
   test("merges cached broker financials with cached fallback fundamentals", async () => {
     const dbPath = createTempDbPath("cache-merge");
     const persistence = new AppPersistence(dbPath);

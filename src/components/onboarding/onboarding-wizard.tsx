@@ -38,13 +38,20 @@ const LOGO = [
 ];
 
 function getToggleablePlugins(pluginRegistry: PluginRegistry) {
-  const result: { id: string; name: string; description: string }[] = [];
+  const result: Array<{ id: string; name: string; description: string; order: number }> = [];
   for (const [, plugin] of pluginRegistry.allPlugins) {
     if (plugin.toggleable) {
-      result.push({ id: plugin.id, name: plugin.name, description: plugin.description ?? "" });
+      result.push({
+        id: plugin.id,
+        name: plugin.name,
+        description: plugin.description ?? "",
+        order: plugin.order ?? Number.MAX_SAFE_INTEGER,
+      });
     }
   }
-  return result;
+  return result
+    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
+    .map(({ order: _order, ...plugin }) => plugin);
 }
 
 export function OnboardingWizard({ config, pluginRegistry, onComplete }: OnboardingWizardProps) {
@@ -65,7 +72,9 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
   // Plugin state
   const toggleablePlugins = useMemo(() => getToggleablePlugins(pluginRegistry), [pluginRegistry]);
-  const [disabledPlugins, setDisabledPlugins] = useState<string[]>([]);
+  const [disabledPlugins, setDisabledPlugins] = useState<string[]>(() => (
+    config.disabledPlugins.filter((pluginId) => pluginId !== "gloomberb-cloud")
+  ));
   const [pluginIdx, setPluginIdx] = useState(0);
 
   const inputRef = useRef<InputRenderable>(null);

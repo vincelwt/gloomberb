@@ -34,13 +34,13 @@ const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
   // UK
   LSE: ".L", LSEETF: ".L",
   // Germany
-  XETRA: ".DE", IBIS: ".DE", IBIS2: ".DE", FWB: ".F", FWB2: ".DE", GETTEX: ".DE", TGATE: ".DE", SWB: ".SG",
+  XETRA: ".DE", XETR: ".DE", IBIS: ".DE", IBIS2: ".DE", FWB: ".F", FWB2: ".DE", GETTEX: ".DE", TGATE: ".DE", SWB: ".SG",
   // France, Netherlands, Belgium, Portugal (Euronext)
   EURONEXT: ".AS", AEB: ".AS", SBF: ".PA", "ENEXT.BE": ".BR", BVL: ".LS",
   // Italy & Spain
   BVME: ".MI", BM: ".MC",
   // Switzerland
-  EBS: ".SW", SWX: ".SW",
+  SIX: ".SW", EBS: ".SW", SWX: ".SW",
   // Nordics
   SFB: ".ST", Stockholm: ".ST", OMX: ".ST", CPH: ".CO", HEX: ".HE", OSE: ".OL", OMXNO: ".OL", ICEX: ".IC",
   // Central/Eastern Europe
@@ -145,6 +145,16 @@ type QuoteSummaryResponse = {
         sector?: string;
         industry?: string;
       };
+      summaryDetail?: {
+        bid?: { raw?: number } | number | null;
+        ask?: { raw?: number } | number | null;
+        bidSize?: { raw?: number } | number | null;
+        askSize?: { raw?: number } | number | null;
+        previousClose?: { raw?: number } | number | null;
+        open?: { raw?: number } | number | null;
+        dayHigh?: { raw?: number } | number | null;
+        dayLow?: { raw?: number } | number | null;
+      };
     }>;
     error?: { description?: string } | null;
   };
@@ -168,6 +178,25 @@ function normalizeSubUnitCurrency(currency: string): { currency: string; divisor
   const sub = SUB_UNIT_CURRENCIES[currency];
   if (sub) return { currency: sub.main, divisor: sub.divisor };
   return { currency, divisor: 1 };
+}
+
+function financeRawNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value && typeof value === "object") {
+    const raw = (value as { raw?: unknown }).raw;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  }
+  return undefined;
+}
+
+function normalizePositiveMarketValue(value: number | undefined, divisor = 1): number | undefined {
+  if (value == null || !Number.isFinite(value) || value <= 0) return undefined;
+  return value / divisor;
+}
+
+function normalizeMarketValue(value: number | undefined, divisor = 1): number | undefined {
+  if (value == null || !Number.isFinite(value)) return undefined;
+  return value / divisor;
 }
 
 function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
@@ -493,6 +522,41 @@ export class YahooFinanceClient implements DataProvider {
     return normalized.description || normalized.sector || normalized.industry ? normalized : undefined;
   }
 
+  private async fetchQuoteSupplement(
+    symbol: string,
+    currencyDivisor = 1,
+  ): Promise<Pick<Quote, "bid" | "ask" | "bidSize" | "askSize" | "previousClose" | "open" | "high" | "low">> {
+    try {
+      const params = new URLSearchParams({ modules: "summaryDetail" });
+      const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
+      const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`quote supplement ${symbol}`, url);
+      const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail;
+      if (!summaryDetail) return {};
+
+      const bid = normalizePositiveMarketValue(financeRawNumber(summaryDetail.bid), currencyDivisor);
+      const ask = normalizePositiveMarketValue(financeRawNumber(summaryDetail.ask), currencyDivisor);
+      const bidSize = financeRawNumber(summaryDetail.bidSize);
+      const askSize = financeRawNumber(summaryDetail.askSize);
+      const previousClose = normalizeMarketValue(financeRawNumber(summaryDetail.previousClose), currencyDivisor);
+      const open = normalizeMarketValue(financeRawNumber(summaryDetail.open), currencyDivisor);
+      const high = normalizeMarketValue(financeRawNumber(summaryDetail.dayHigh), currencyDivisor);
+      const low = normalizeMarketValue(financeRawNumber(summaryDetail.dayLow), currencyDivisor);
+
+      return {
+        bid,
+        ask,
+        bidSize,
+        askSize,
+        previousClose,
+        open,
+        high,
+        low,
+      };
+    } catch {
+      return {};
+    }
+  }
+
   private parseTimeseries(results: Array<Record<string, any>>) {
     const parsed: Record<string, Array<{ asOfDate: string; periodType?: string; value: number }>> = {};
     for (const result of results) {
@@ -575,6 +639,8 @@ export class YahooFinanceClient implements DataProvider {
       if (meta.fiftyTwoWeekLow != null) meta.fiftyTwoWeekLow /= currencyDivisor;
     }
 
+    const quoteSupplement = await this.fetchQuoteSupplement(symbol, currencyDivisor);
+
     const currentPrice = meta.regularMarketPrice ?? history[history.length - 1]!.close;
     const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
     const change = prev != null ? currentPrice - prev : 0;
@@ -606,6 +672,7 @@ export class YahooFinanceClient implements DataProvider {
       fullExchangeName: meta.fullExchangeName,
       marketState,
       dataSource: "yahoo",
+      ...quoteSupplement,
       ...extHours,
     };
 
@@ -713,6 +780,7 @@ export class YahooFinanceClient implements DataProvider {
           if (meta.fiftyTwoWeekLow != null) meta.fiftyTwoWeekLow /= currencyDivisor;
         }
 
+        const quoteSupplement = await this.fetchQuoteSupplement(symbol, currencyDivisor);
         const latest = history[history.length - 1]!;
         const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
         const price = meta.regularMarketPrice ?? latest.close;
@@ -742,6 +810,7 @@ export class YahooFinanceClient implements DataProvider {
           fullExchangeName: meta.fullExchangeName,
           marketState,
           dataSource: "yahoo",
+          ...quoteSupplement,
           ...extHours,
         };
 

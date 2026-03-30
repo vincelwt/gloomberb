@@ -447,6 +447,18 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   const volumeHeight = showVolume && !compact ? 3 : 0;
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
   const isDetailView = viewState.zoomLevel > 1 && detailHistory != null && detailHistory.length > 0;
+  const historyRenderKey = history.length === 0
+    ? "empty"
+    : [
+      history.length,
+      new Date(history[0]!.date).getTime(),
+      new Date(history[history.length - 1]!.date).getTime(),
+      history[history.length - 1]!.close,
+    ].join(":");
+
+  useEffect(() => {
+    queueMicrotask(() => renderer.requestRender());
+  }, [chartHeight, chartWidth, compact, historyRenderKey, renderer, ticker?.metadata.ticker, viewState.renderMode]);
 
   const chartWindow = useMemo(() => (
     isDetailView
@@ -509,6 +521,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
   useEffect(() => {
     if (!plotRef.current) return;
     const plot = plotRef.current;
+    let mountTimer: ReturnType<typeof setTimeout> | null = null;
 
     const syncPlacement = () => {
       if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !plotRef.current) return;
@@ -522,7 +535,13 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
 
     plot.onLifecyclePass = syncPlacement;
     renderer.registerLifecyclePass(plot);
+    syncPlacement();
+    mountTimer = setTimeout(() => {
+      syncPlacement();
+      renderer.requestRender();
+    }, 0);
     return () => {
+      if (mountTimer) clearTimeout(mountTimer);
       plot.onLifecyclePass = null;
       renderer.unregisterLifecyclePass(plot);
     };
@@ -567,6 +586,7 @@ export function StockChart({ width, height, focused, interactive, compact }: Sto
         ].join(","),
       ),
     });
+    renderer.requestRender();
   }, [
     chartColors.candleDown,
     chartColors.candleUp,

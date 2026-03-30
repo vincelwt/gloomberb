@@ -73,6 +73,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private commandOwners = new Map<string, string>();
   private paneTemplateOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
+  private dataProviderOwners = new Map<string, string>();
   private pluginResumeListeners = new Map<string, Set<() => void>>();
 
   private panesMap = new Map<string, PaneDef>();
@@ -148,6 +149,18 @@ export class PluginRegistry implements PluginRuntimeAccess {
   get shortcuts(): ReadonlyMap<string, KeyboardShortcut> { return this.shortcutsMap; }
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this.tickerActionsMap; }
   get allPlugins(): ReadonlyMap<string, GloomPlugin> { return this.plugins; }
+
+  getDataProviderPluginId(providerId: string): string | undefined {
+    return this.dataProviderOwners.get(providerId);
+  }
+
+  getEnabledDataProviders(): DataProvider[] {
+    const disabledPlugins = new Set(this.getConfigFn().disabledPlugins ?? []);
+    return [...this.dataProvidersMap.values()].filter((provider) => {
+      const ownerId = this.dataProviderOwners.get(provider.id);
+      return !ownerId || !disabledPlugins.has(ownerId);
+    });
+  }
 
   getActiveProvider(): DataProvider | undefined {
     let active: DataProvider | undefined;
@@ -458,7 +471,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
       },
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
       registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
-      registerDataProvider: (provider) => { this.dataProvidersMap.set(provider.id, provider); items.dataProviders.push(provider.id); },
+      registerDataProvider: (provider) => {
+        this.dataProvidersMap.set(provider.id, provider);
+        this.dataProviderOwners.set(provider.id, pluginId);
+        items.dataProviders.push(provider.id);
+      },
       registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, this.wrapDetailTabDef(pluginId, tab)); items.detailTabs.push(tab.id); },
       registerShortcut: (shortcut) => {
         this.shortcutsMap.set(shortcut.id, shortcut);
@@ -541,6 +558,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
     if (plugin.dataProvider) {
       this.dataProvidersMap.set(plugin.dataProvider.id, plugin.dataProvider);
+      this.dataProviderOwners.set(plugin.dataProvider.id, plugin.id);
       items.dataProviders.push(plugin.dataProvider.id);
     }
 
@@ -596,7 +614,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
       }
       for (const columnId of items.columns) this.columnsMap.delete(columnId);
       for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
-      for (const providerId of items.dataProviders) this.dataProvidersMap.delete(providerId);
+      for (const providerId of items.dataProviders) {
+        this.dataProvidersMap.delete(providerId);
+        this.dataProviderOwners.delete(providerId);
+      }
       for (const tabId of items.detailTabs) this.detailTabsMap.delete(tabId);
       for (const shortcutId of items.shortcuts) {
         this.shortcutsMap.delete(shortcutId);
@@ -617,7 +638,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
       }
     }
     if (plugin.broker) this.brokersMap.delete(plugin.broker.id);
-    if (plugin.dataProvider) this.dataProvidersMap.delete(plugin.dataProvider.id);
+    if (plugin.dataProvider) {
+      this.dataProvidersMap.delete(plugin.dataProvider.id);
+      this.dataProviderOwners.delete(plugin.dataProvider.id);
+    }
 
     this.plugins.delete(pluginId);
     this.events.emit("plugin:unregistered", { pluginId });

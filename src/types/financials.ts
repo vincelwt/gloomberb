@@ -2,6 +2,7 @@ export type MarketState = "PRE" | "REGULAR" | "POST" | "PREPRE" | "POSTPOST" | "
 
 export interface Quote {
   symbol: string;
+  providerId?: string;
   price: number;
   currency: string;
   change: number;

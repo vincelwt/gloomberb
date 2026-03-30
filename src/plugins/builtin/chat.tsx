@@ -9,6 +9,7 @@ import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
 import { chatController } from "./chat-controller";
+import { createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 
 function renderMessageContent(
   text: string,
@@ -183,6 +184,17 @@ function ChatContent({ width, height, focused, selectTicker, close }: ChatConten
     );
   }
 
+  if (!user.emailVerified) {
+    return (
+      <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
+        <text fg={colors.positive}>Check your email to unlock Gloomberb Cloud.</text>
+        <text fg={colors.textDim}> </text>
+        <text fg={colors.text}>Near real-time data and chat are free, but require email verification.</text>
+        <text fg={colors.textDim}>Use Ctrl+P and search "Resend Verification Email" if you need another link.</text>
+      </box>
+    );
+  }
+
   const replyBarHeight = replyTo ? 1 : 0;
   const inputAreaHeight = 1 + replyBarHeight;
   const headerHeight = 1;
@@ -324,7 +336,7 @@ function ChatStatusWidget() {
     return unsubscribe;
   }, []);
 
-  if (state.config.disabledPlugins.includes("chat")) return null;
+  if (state.config.disabledPlugins.includes("gloomberb-cloud")) return null;
 
   return (
     <box flexDirection="row" paddingRight={1}>
@@ -332,23 +344,25 @@ function ChatStatusWidget() {
         <text fg={colors.textDim}>
           <span fg={colors.positive}>{username}</span>
           {"  "}
-          <span fg={colors.text}>Shift+C</span> chat
+          <span fg={colors.text}>Shift+C</span> cloud
         </text>
       ) : (
         <text fg={colors.textDim}>
-          <span fg={colors.text}>Shift+C</span> chat
+          <span fg={colors.text}>Shift+C</span> cloud
         </text>
       )}
     </box>
   );
 }
 
-export const chatPlugin: GloomPlugin = {
-  id: "chat",
-  name: "Chat",
+export const gloomberbCloudPlugin: GloomPlugin = {
+  id: "gloomberb-cloud",
+  name: "Gloomberb Cloud",
   version: "1.0.0",
-  description: "Chat with other Gloomberb users",
+  description: "Free near-real-time data + chat. Sign up and verify email.",
   toggleable: true,
+  order: 10,
+  dataProvider: createGloomberbCloudProvider(),
   paneTemplates: [
     {
       id: "new-chat-pane",
@@ -409,7 +423,10 @@ export const chatPlugin: GloomPlugin = {
         if (!values?.email || !values?.password) {
           throw new Error("Email and password are required");
         }
-        await apiClient.signIn(values.email, values.password);
+        const user = await apiClient.signIn(values.email, values.password);
+        if (!user.emailVerified) {
+          await apiClient.sendVerification().catch(() => {});
+        }
         chatController.clearSession();
         await chatController.refreshSession();
         ctx.showWidget("chat");
@@ -445,9 +462,26 @@ export const chatPlugin: GloomPlugin = {
           throw new Error("Passwords do not match");
         }
         await apiClient.signUp(values.email, values.username, values.name, values.password);
+        await apiClient.sendVerification();
         chatController.clearSession();
         await chatController.refreshSession();
         ctx.showWidget("chat");
+      },
+    });
+
+    ctx.registerCommand({
+      id: "auth-resend-verification",
+      label: "Resend Verification Email",
+      description: "Send another Gloomberb Cloud verification email",
+      keywords: ["verify", "verification", "resend", "email"],
+      category: "config",
+      hidden: () => {
+        const user = chatController.getSnapshot().user;
+        return !apiClient.getSessionToken() || !user || user.emailVerified;
+      },
+      execute: async () => {
+        await apiClient.sendVerification();
+        ctx.showToast("Verification email sent.", { type: "success" });
       },
     });
 
@@ -474,3 +508,5 @@ export const chatPlugin: GloomPlugin = {
     });
   },
 };
+
+export const chatPlugin = gloomberbCloudPlugin;

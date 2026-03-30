@@ -9,6 +9,7 @@ import {
   resolveTickerForPane,
   useAppState,
 } from "./state/app-context";
+import { bindAppActivity, useAppActive } from "./state/app-activity";
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
@@ -18,7 +19,6 @@ import { DialogProvider, useDialog, useDialogState } from "@opentui-ui/dialog/re
 import { PluginRegistry } from "./plugins/registry";
 import { AppPersistence } from "./data/app-persistence";
 import { TickerRepository } from "./data/ticker-repository";
-import { YahooFinanceClient } from "./sources/yahoo-finance";
 import { ProviderRouter } from "./sources/provider-router";
 import { colors, applyTheme } from "./theme/colors";
 import {
@@ -55,9 +55,11 @@ import { secPlugin } from "./plugins/builtin/sec";
 import { optionsPlugin } from "./plugins/builtin/options";
 import { notesPlugin } from "./plugins/builtin/notes";
 import { askAiPlugin } from "./plugins/builtin/ask-ai";
-import { chatPlugin } from "./plugins/builtin/chat";
+import { gloomberbCloudPlugin } from "./plugins/builtin/chat";
+import { chatController } from "./plugins/builtin/chat-controller";
 import { debugPlugin } from "./plugins/builtin/debug";
 import { layoutManagerPlugin, setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
+import { yahooPlugin } from "./plugins/builtin/yahoo";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
 import { checkForUpdate, performUpdate } from "./updater";
@@ -93,6 +95,7 @@ import { debugLog } from "./utils/debug-log";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
+const quoteRefreshInFlight: Set<string> = (globalThis as any).__quoteRefreshInFlight ??= new Set<string>();
 const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
 const appLog = debugLog.createLogger("app");
 
@@ -116,6 +119,7 @@ interface AppInnerProps {
 
 function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
+  const appActive = useAppActive();
   const renderer = useRenderer();
   const dialog = useDialog();
   const stateRef = useRef(state);
@@ -341,20 +345,97 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     }
   }, [dataProvider, dispatch, getPreferredPortfolio, pluginRegistry.events, state.config.baseCurrency, state.exchangeRates, state.tickers]);
 
+  const performRefreshQuote = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerRecord | null) => {
+    if (refreshInFlight.has(symbol) || quoteRefreshInFlight.has(symbol)) return;
+    quoteRefreshInFlight.add(symbol);
+    try {
+      const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
+      const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
+      const activePortfolio = getPreferredPortfolio(ticker);
+      const quote = await dataProvider.getQuote(symbol, exchange, {
+        brokerId: instrument?.brokerId ?? activePortfolio?.brokerId,
+        brokerInstanceId: instrument?.brokerInstanceId ?? activePortfolio?.brokerInstanceId,
+        instrument,
+      });
+      dispatch({ type: "MERGE_QUOTE", symbol, quote });
+
+      const currency = quote.currency;
+      if (currency && !state.exchangeRates.has(currency)) {
+        dataProvider.getExchangeRate(currency).then((rate) => {
+          dispatch({ type: "SET_EXCHANGE_RATE", currency, rate });
+        }).catch(() => {});
+      }
+      const base = state.config.baseCurrency;
+      if (!state.exchangeRates.has(base)) {
+        dataProvider.getExchangeRate(base).then((rate) => {
+          dispatch({ type: "SET_EXCHANGE_RATE", currency: base, rate });
+        }).catch(() => {});
+      }
+    } catch {
+      // Silently fail - the list can fall back to stale cache or Yahoo
+    } finally {
+      quoteRefreshInFlight.delete(symbol);
+    }
+  }, [dataProvider, dispatch, getPreferredPortfolio, state.config.baseCurrency, state.exchangeRates, state.tickers]);
+
   const refreshQueueRef = useRef<{
     queue: TickerRefreshQueue;
   }>({
     queue: new TickerRefreshQueue(3),
   });
+  const pendingRefreshesRef = useRef<{
+    financials: Set<string>;
+    quotes: Set<string>;
+  }>({
+    financials: new Set<string>(),
+    quotes: new Set<string>(),
+  });
+
+  useEffect(() => {
+    refreshQueueRef.current.queue.setPaused(!appActive);
+    chatController.setAppActive(appActive);
+    appLog.info("app activity propagated", { active: appActive });
+  }, [appActive]);
 
   const refreshTicker = useCallback((symbol: string, exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
-    if (refreshInFlight.has(symbol)) return;
+    if (refreshInFlight.has(symbol) || pendingRefreshesRef.current.financials.has(symbol)) return;
+    pendingRefreshesRef.current.financials.add(symbol);
     refreshQueueRef.current.queue.enqueue({
-      key: symbol,
+      key: `financials:${symbol}`,
       priority,
-      run: () => performRefreshTicker(symbol, exchange, tickerOverride ?? null),
+      run: async () => {
+        try {
+          await performRefreshTicker(symbol, exchange, tickerOverride ?? null);
+        } finally {
+          pendingRefreshesRef.current.financials.delete(symbol);
+        }
+      },
     });
   }, [performRefreshTicker]);
+
+  const refreshQuote = useCallback((symbol: string, exchange = "", tickerOverride?: TickerRecord | null, priority = 2) => {
+    if (
+      refreshInFlight.has(symbol)
+      || quoteRefreshInFlight.has(symbol)
+      || pendingRefreshesRef.current.financials.has(symbol)
+      || pendingRefreshesRef.current.quotes.has(symbol)
+    ) {
+      return;
+    }
+    pendingRefreshesRef.current.quotes.add(symbol);
+    refreshQueueRef.current.queue.enqueue({
+      key: `quote:${symbol}`,
+      priority,
+      run: async () => {
+        try {
+          if (pendingRefreshesRef.current.financials.has(symbol) || refreshInFlight.has(symbol)) return;
+          await performRefreshQuote(symbol, exchange, tickerOverride ?? null);
+        } finally {
+          pendingRefreshesRef.current.quotes.delete(symbol);
+        }
+      },
+    });
+  }, [performRefreshQuote]);
 
   // Ensure a portfolio exists in config, creating it if needed
   const ensurePortfolio = useCallback(async (
@@ -555,10 +636,10 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
       // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
       // Position data (markPrice, marketValue, unrealizedPnl) is used directly.
       if (options?.refreshImportedTickers !== false && pos.assetCategory !== "OPT") {
-        refreshTicker(pos.ticker, pos.exchange, undefined, 1);
+        refreshQuote(pos.ticker, pos.exchange, undefined, 1);
       }
     }
-  }, [pluginRegistry.brokers, state.config.brokerInstances, state.tickers, tickerRepository, dispatch, refreshTicker, ensurePortfolio, mergeBrokerContracts]);
+  }, [pluginRegistry.brokers, state.config.brokerInstances, state.tickers, tickerRepository, dispatch, refreshQuote, ensurePortfolio, mergeBrokerContracts]);
 
   // Auto-import positions from all configured broker instances
   const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerRecord>) => {
@@ -599,6 +680,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
           sessionSnapshot,
           dispatch,
           refreshTicker,
+          refreshQuote,
           autoImportBrokerPositions,
           persistedBrokerAccounts,
         });
@@ -606,7 +688,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
         // Will show empty state
       }
     })();
-  }, [autoImportBrokerPositions, dataProvider, dispatch, tickerRepository, refreshTicker, sessionSnapshot, state.config, state.initialized]);
+  }, [autoImportBrokerPositions, dataProvider, dispatch, tickerRepository, refreshQuote, refreshTicker, sessionSnapshot, state.config, state.initialized]);
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
 
@@ -1302,6 +1384,8 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
   const [config, setConfig] = useState(initialConfig);
   const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
 
+  useEffect(() => bindAppActivity(renderer), [renderer]);
+
   // Apply saved theme before first render
   if (config.theme) applyTheme(config.theme);
 
@@ -1309,14 +1393,15 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
     const dbPath = join(config.dataDir, ".gloomberb-cache.db");
     const persistence = new AppPersistence(dbPath);
     const tickerRepository = new TickerRepository(persistence.tickers);
-    const fallbackProvider = new YahooFinanceClient();
-    const providerRouter = new ProviderRouter(fallbackProvider, [], persistence.resources);
+    const providerRouter = new ProviderRouter(null, [], persistence.resources);
     const dataProvider: DataProvider = providerRouter;
     const pluginRegistry = new PluginRegistry(renderer, dataProvider, tickerRepository, persistence);
     providerRouter.attachRegistry(pluginRegistry);
     pluginRegistry.getConfigFn = () => config;
     pluginRegistry.getLayoutFn = () => config.layout;
 
+    pluginRegistry.register(yahooPlugin);
+    pluginRegistry.register(gloomberbCloudPlugin);
     pluginRegistry.register(portfolioListPlugin);
     pluginRegistry.register(tickerDetailPlugin);
     pluginRegistry.register(manualEntryPlugin);
@@ -1327,7 +1412,6 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
     pluginRegistry.register(optionsPlugin);
     pluginRegistry.register(notesPlugin);
     pluginRegistry.register(askAiPlugin);
-    pluginRegistry.register(chatPlugin);
     pluginRegistry.register(debugPlugin);
 
     for (const { plugin, error } of externalPlugins) {

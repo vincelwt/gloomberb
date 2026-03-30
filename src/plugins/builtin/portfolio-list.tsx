@@ -6,6 +6,7 @@ import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps, PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
+import { useAppActive } from "../../state/app-activity";
 import {
   useAppState,
   usePaneCollection,
@@ -15,6 +16,7 @@ import {
   type CollectionSortPreference,
 } from "../../state/app-context";
 import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
+import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
 import { clampQuoteTimestamp, formatQuoteAgeWithSource, getMostRecentQuoteUpdate } from "../../utils/quote-time";
@@ -49,8 +51,13 @@ interface CollectionEntry {
   kind: "portfolio" | "watchlist";
 }
 
+type QuoteFlashDirection = "up" | "down" | "flat";
+
 const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
   ...DEFAULT_COLUMNS,
+  { id: "bid", label: "BID", width: 10, align: "right", format: "currency" },
+  { id: "ask", label: "ASK", width: 10, align: "right", format: "currency" },
+  { id: "spread", label: "SPREAD", width: 10, align: "right", format: "currency" },
   { id: "change", label: "CHG", width: 9, align: "right", format: "currency" },
   { id: "ext_hours", label: "EXT%", width: 8, align: "right", format: "percent" },
   { id: "dividend_yield", label: "DIV%", width: 7, align: "right", format: "percent" },
@@ -68,6 +75,19 @@ const PORTFOLIO_ONLY_COLUMN_IDS = new Set([
   "shares",
   "avg_cost",
   "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+]);
+const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
+  "price",
+  "change",
+  "change_pct",
+  "bid",
+  "ask",
+  "spread",
+  "ext_hours",
+  "market_cap",
   "mkt_value",
   "pnl",
   "pnl_pct",
@@ -95,6 +115,20 @@ const COLLECTION_SCOPE_OPTIONS: PaneSettingOption[] = [
     description: "Choose exactly which collections this pane should show.",
   },
 ];
+
+function resolveQuoteFlashColor(
+  direction: QuoteFlashDirection,
+  fallbackColor: string,
+): string {
+  switch (direction) {
+    case "up":
+      return colors.positive;
+    case "down":
+      return colors.negative;
+    default:
+      return fallbackColor === colors.textDim ? colors.text : colors.textBright;
+  }
+}
 
 function getColumnValue(
   col: ColumnConfig,
@@ -161,6 +195,16 @@ function getColumnValue(
         color: priceColor(q.change),
       };
     }
+    case "bid":
+      return { text: q?.bid != null ? formatCurrency(toBase(q.bid), ctx.baseCurrency) : "—" };
+    case "ask":
+      return { text: q?.ask != null ? formatCurrency(toBase(q.ask), ctx.baseCurrency) : "—" };
+    case "spread":
+      return {
+        text: q?.bid != null && q?.ask != null
+          ? formatCurrency(toBase(q.ask - q.bid), ctx.baseCurrency)
+          : "—",
+      };
     case "change_pct": {
       // During pre/post market, show extended-hours change instead
       if (q?.marketState === "PRE" && q.preMarketPrice != null) {
@@ -286,6 +330,12 @@ function getSortValue(
       if (q) return toBase(q.price);
       if (isOption && brokerMarkPrice != null) return toBase(brokerMarkPrice);
       return null;
+    case "bid":
+      return q?.bid != null ? toBase(q.bid) : null;
+    case "ask":
+      return q?.ask != null ? toBase(q.ask) : null;
+    case "spread":
+      return q?.bid != null && q?.ask != null ? toBase(q.ask - q.bid) : null;
     case "change":
       return q ? toBase(q.change) : null;
     case "change_pct": {
@@ -1070,6 +1120,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
+  const appActive = useAppActive();
   const { state } = useAppState();
   const paneCollection = usePaneCollection();
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
@@ -1092,7 +1143,8 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const tickers = getCollectionTickers(state, activeCollectionId);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [flashSymbols, setFlashSymbols] = useState<Set<string>>(new Set());
+  const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
+  const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
   const prevPrices = useRef<Map<string, number>>(new Map());
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
@@ -1183,6 +1235,17 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
 
+  const updateStreamWindow = useCallback(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox) return;
+    const buffer = 3;
+    const start = Math.max(0, scrollBox.scrollTop - buffer);
+    const end = Math.min(sortedTickers.length, scrollBox.scrollTop + scrollBox.viewport.height + buffer);
+    setStreamWindow((current) => (
+      current.start === start && current.end === end ? current : { start, end }
+    ));
+  }, [sortedTickers.length]);
+
   const handleHeaderClick = (colId: string) => {
     if (sortCol === colId) {
       // Toggle direction, or clear if already desc
@@ -1272,36 +1335,39 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     } else if (safeSelectedIdx >= sb.scrollTop + viewportH) {
       sb.scrollTo(safeSelectedIdx - viewportH + 1);
     }
-  }, [safeSelectedIdx]);
+    queueMicrotask(updateStreamWindow);
+  }, [safeSelectedIdx, updateStreamWindow]);
 
   // Hide vertical scrollbar when content fits in viewport
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
     sb.verticalScrollBar.visible = sortedTickers.length > sb.viewport.height;
-  }, [sortedTickers.length, drawerHeight, cashDrawerExpanded]);
+    updateStreamWindow();
+  }, [sortedTickers.length, drawerHeight, cashDrawerExpanded, updateStreamWindow]);
 
-  // Tick every 5s to keep latency column fresh
+  // Tick every second so visible live/delayed quote ages feel responsive.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 5000);
+    if (!appActive) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [appActive]);
 
   // Detect price changes and trigger flash
   useEffect(() => {
-    const changed = new Set<string>();
+    const changed = new Map<string, QuoteFlashDirection>();
     for (const [symbol, fin] of state.financials) {
       const price = fin.quote?.price;
       if (price == null) continue;
       const prev = prevPrices.current.get(symbol);
       if (prev != null && prev !== price) {
-        changed.add(symbol);
+        changed.set(symbol, price > prev ? "up" : price < prev ? "down" : "flat");
       }
       prevPrices.current.set(symbol, price);
     }
     if (changed.size > 0) {
       setFlashSymbols(changed);
-      const tid = setTimeout(() => setFlashSymbols(new Set()), 600);
+      const tid = setTimeout(() => setFlashSymbols(new Map()), 450);
       return () => clearTimeout(tid);
     }
   }, [state.financials]);
@@ -1316,6 +1382,17 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       setCursorSymbol(sortedTickers[0]!.metadata.ticker);
     }
   }, [sortedTickers, cursorSymbol, setCursorSymbol]);
+
+  const streamTargets = useMemo(() => (
+    sortedTickers
+      .slice(streamWindow.start, streamWindow.end)
+      .map((ticker) => ({
+        symbol: ticker.metadata.ticker,
+        exchange: ticker.metadata.exchange,
+      }))
+  ), [sortedTickers, streamWindow.end, streamWindow.start]);
+
+  useQuoteStreaming(streamTargets);
 
   return (
     <box flexDirection="column" flexGrow={1}>
@@ -1399,9 +1476,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
         scrollY
         focusable={false}
         onMouseDown={() => queueMicrotask(syncHeaderScroll)}
-        onMouseUp={() => queueMicrotask(syncHeaderScroll)}
-        onMouseDrag={() => queueMicrotask(syncHeaderScroll)}
-        onMouseScroll={() => queueMicrotask(syncHeaderScroll)}
+        onMouseUp={() => queueMicrotask(() => { syncHeaderScroll(); updateStreamWindow(); })}
+        onMouseDrag={() => queueMicrotask(() => { syncHeaderScroll(); updateStreamWindow(); })}
+        onMouseScroll={() => queueMicrotask(() => { syncHeaderScroll(); updateStreamWindow(); })}
       >
         {sortedTickers.length === 0 ? (
           <box paddingX={1} paddingY={1}>
@@ -1413,7 +1490,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
             const isHovered = idx === hoveredIdx && !isSelected;
             const fin = state.financials.get(ticker.metadata.ticker);
             const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
-            const isFlashing = flashSymbols.has(ticker.metadata.ticker);
+            const flashDirection = flashSymbols.get(ticker.metadata.ticker);
 
             return (
               <box
@@ -1430,12 +1507,15 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
               >
                 {cols.map((col) => {
                   const { text, color } = getColumnValue(col, ticker, fin, columnCtx);
-                  const shouldFlash = isFlashing && col.id !== "ticker" && col.id !== "latency";
+                  const baseFg = color || (isSelected ? colors.selectedText : colors.text);
+                  const shouldFlash = flashDirection != null && FLASHABLE_QUOTE_COLUMN_IDS.has(col.id);
+                  const cellFg = shouldFlash
+                    ? resolveQuoteFlashColor(flashDirection, baseFg)
+                    : baseFg;
                   return (
                     <box key={col.id} width={col.width + 1}>
                       <text
-                        fg={color || (isSelected ? colors.selectedText : colors.text)}
-                        attributes={shouldFlash ? TextAttributes.DIM : 0}
+                        fg={cellFg}
                       >
                         {padTo(text, col.width, col.align)}
                       </text>

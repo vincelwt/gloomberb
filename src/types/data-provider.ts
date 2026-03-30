@@ -37,6 +37,12 @@ export interface SearchRequestContext {
   brokerInstanceId?: string;
 }
 
+export interface QuoteSubscriptionTarget {
+  symbol: string;
+  exchange?: string;
+  context?: MarketDataRequestContext;
+}
+
 export interface DataProvider {
   readonly id: string;
   readonly name: string;
@@ -57,4 +63,8 @@ export interface DataProvider {
   /** Fetch higher-resolution price data for a specific date window (e.g. when zoomed in). */
   getDetailedPriceHistory?(ticker: string, exchange: string, startDate: Date, endDate: Date, barSize: string, context?: MarketDataRequestContext): Promise<PricePoint[]>;
   getOptionsChain?(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain>;
+  subscribeQuotes?(
+    targets: QuoteSubscriptionTarget[],
+    onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
+  ): () => void;
 }

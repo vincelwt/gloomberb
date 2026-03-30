@@ -13,10 +13,12 @@ const TRANSCRIPT_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
   expireMs: 90 * 24 * 60 * 60_000,
 };
+const VERIFICATION_POLL_MS = 5_000;
 
 interface PersistedSessionState {
   sessionToken: string | null;
-  user: { id: string; username: string } | null;
+  websocketToken?: string | null;
+  user: { id: string; username: string; emailVerified: boolean } | null;
 }
 
 interface PersistedChannelState {
@@ -31,7 +33,7 @@ interface PersistedTranscript {
 
 export interface ChatControllerSnapshot {
   loading: boolean;
-  user: { id: string; username: string } | null;
+  user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
   draft: string;
   replyToId: string | null;
@@ -42,15 +44,17 @@ type ChatConnection = { send: (content: string, replyToId?: string) => void; clo
 export class ChatController {
   private persistence: PluginPersistence | null = null;
   private resume: PluginResumeState | null = null;
+  private appActive = true;
   private hydrated = false;
   private sessionChecked = false;
-  private user: { id: string; username: string } | null = null;
+  private user: { id: string; username: string; emailVerified: boolean } | null = null;
   private messages: ChatMessage[] = [];
   private draft = "";
   private replyToId: string | null = null;
   private lastCursor: string | null = null;
   private wsConnection: ChatConnection | null = null;
   private wsConnected = false;
+  private verificationPollTimer: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<(snapshot: ChatControllerSnapshot) => void>();
 
   attachPersistence(persistence: PluginPersistence, resume?: PluginResumeState): void {
@@ -71,7 +75,15 @@ export class ChatController {
     if (session?.sessionToken) {
       apiClient.setSessionToken(session.sessionToken);
     }
-    this.user = session?.user ?? null;
+    if (session?.websocketToken) {
+      apiClient.setWebSocketToken(session.websocketToken);
+    }
+    this.user = session?.user
+      ? {
+        ...session.user,
+        emailVerified: session.user.emailVerified === true,
+      }
+      : null;
     this.sessionChecked = true;
 
     const channel = this.resume?.getState<PersistedChannelState>(CHANNEL_STATE_KEY, {
@@ -89,6 +101,7 @@ export class ChatController {
       allowExpired: true,
     });
     this.messages = transcript?.value.messages ?? [];
+    this.syncVerificationPolling();
   }
 
   subscribe(listener: (snapshot: ChatControllerSnapshot) => void): () => void {
@@ -112,6 +125,7 @@ export class ChatController {
   async refreshSession(): Promise<void> {
     const token = apiClient.getSessionToken();
     if (!token) {
+      this.stopVerificationPolling();
       this.user = null;
       this.sessionChecked = true;
       this.persistSession();
@@ -120,18 +134,28 @@ export class ChatController {
     }
 
     const session = await apiClient.getSession();
-    const nextUser = session ? { id: session.id, username: session.username ?? session.name } : null;
+    const nextUser = session
+      ? { id: session.id, username: session.username ?? session.name, emailVerified: !!session.emailVerified }
+      : null;
     this.user = nextUser;
     this.sessionChecked = true;
     this.persistSession();
     this.emit();
 
-    if (nextUser) {
+    if (nextUser?.emailVerified) {
+      this.stopVerificationPolling();
       this.ensureConnection();
       return;
     }
 
-    this.reset(true);
+    this.syncVerificationPolling();
+    this.wsConnection?.close();
+    this.wsConnection = null;
+    this.wsConnected = false;
+    if (!nextUser) {
+      this.stopVerificationPolling();
+      this.reset(true);
+    }
   }
 
   setDraft(draft: string): void {
@@ -147,12 +171,27 @@ export class ChatController {
   }
 
   clearSession(): void {
+    this.stopVerificationPolling();
+    this.wsConnection?.close();
+    this.wsConnection = null;
+    this.wsConnected = false;
     this.user = null;
     this.sessionChecked = false;
     this.emit();
   }
 
+  setAppActive(appActive: boolean): void {
+    if (this.appActive === appActive) return;
+    this.appActive = appActive;
+    if (!appActive) {
+      this.stopVerificationPolling();
+      return;
+    }
+    this.syncVerificationPolling();
+  }
+
   reset(clearSession = false): void {
+    this.stopVerificationPolling();
     this.wsConnection?.close();
     this.wsConnection = null;
     this.wsConnected = false;
@@ -179,7 +218,7 @@ export class ChatController {
   }
 
   ensureConnection(): void {
-    if (this.wsConnected || !this.user || !apiClient.getSessionToken()) return;
+    if (this.wsConnected || !this.user?.emailVerified || !apiClient.getSessionToken()) return;
     this.wsConnected = true;
 
     apiClient.getMessages("everyone", {
@@ -223,6 +262,23 @@ export class ChatController {
     }
   }
 
+  private syncVerificationPolling(): void {
+    if (!this.appActive || !apiClient.getSessionToken() || !this.user || this.user.emailVerified) {
+      this.stopVerificationPolling();
+      return;
+    }
+    if (this.verificationPollTimer) return;
+    this.verificationPollTimer = setInterval(() => {
+      void this.refreshSession().catch(() => {});
+    }, VERIFICATION_POLL_MS);
+  }
+
+  private stopVerificationPolling(): void {
+    if (!this.verificationPollTimer) return;
+    clearInterval(this.verificationPollTimer);
+    this.verificationPollTimer = null;
+  }
+
   private mergeMessages(messages: ChatMessage[]): void {
     const merged = new Map<string, ChatMessage>();
     for (const message of this.messages) merged.set(message.id, message);
@@ -238,6 +294,7 @@ export class ChatController {
   private persistSession(): void {
     const value = {
       sessionToken: apiClient.getSessionToken(),
+      websocketToken: apiClient.getWebSocketToken(),
       user: this.user,
     } satisfies PersistedSessionState;
     this.resume?.setState(SESSION_STATE_KEY, value, {
