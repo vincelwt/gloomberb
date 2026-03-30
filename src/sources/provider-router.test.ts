@@ -378,6 +378,97 @@ describe("ProviderRouter", () => {
     persistence.close();
   });
 
+  test("prefers fallback price data when broker and provider differ by a 100x unit mismatch", async () => {
+    const router = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 0.245 }],
+          quote: {
+            symbol: "IQE.L",
+            price: 0.245,
+            currency: "GBP",
+            change: -0.021,
+            changePercent: -7.89,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: { revenue: 1000 },
+        };
+      },
+    });
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 24.5 }],
+          quote: {
+            symbol: "IQE",
+            price: 24.5,
+            currency: "GBP",
+            change: -2.1,
+            changePercent: -7.89,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: { netIncome: 200 },
+        };
+      },
+    };
+
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: {},
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    }));
+
+    const merged = await router.getTickerFinancials("IQE", "LSE", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-work",
+    });
+
+    expect(merged.quote?.price).toBe(0.245);
+    expect(merged.priceHistory[0]?.close).toBe(0.245);
+    expect(merged.fundamentals?.netIncome).toBe(200);
+  });
+
   test("preserves fallback profile data when broker already has fundamentals", async () => {
     const router = new ProviderRouter({
       ...fallbackProvider,
@@ -558,6 +649,123 @@ describe("ProviderRouter", () => {
     });
     expect(refreshed.fundamentals?.revenue).toBe(1000);
     expect(refreshed.profile?.description).toBe("Provides enterprise data storage platforms.");
+
+    persistence.close();
+  });
+
+  test("does not reuse another broker instance's financials when a specific instance is requested", async () => {
+    const dbPath = createTempDbPath("instance-scoped-financials");
+    const persistence = new AppPersistence(dbPath);
+    const router = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: {
+            symbol: "IQE.L",
+            price: 0.245,
+            currency: "GBP",
+            change: 0,
+            changePercent: 0,
+            lastUpdated: Date.now(),
+          },
+        };
+      },
+    }, [], persistence.resources);
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      async getTickerFinancials(_ticker, instance) {
+        if (instance.id === "ibkr-flex") {
+          throw new Error("Gateway mode is required for broker market data");
+        }
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: {
+            symbol: "IQE",
+            price: 24.5,
+            currency: "GBP",
+            change: 0,
+            changePercent: 0,
+            lastUpdated: Date.now(),
+          },
+        };
+      },
+    };
+
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [
+        {
+          id: "ibkr-flex",
+          brokerType: "ibkr",
+          label: "Flex",
+          connectionMode: "flex",
+          config: {},
+          enabled: true,
+        },
+        {
+          id: "ibkr-live",
+          brokerType: "ibkr",
+          label: "Live",
+          connectionMode: "gateway",
+          config: {},
+          enabled: true,
+        },
+      ],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    }));
+
+    const live = await router.getTickerFinancials("IQE", "LSE", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-live",
+    });
+    expect(live.quote?.price).toBe(0.245);
+
+    const flex = await router.getTickerFinancials("IQE", "LSE", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-flex",
+    });
+    expect(flex.quote?.price).toBe(0.245);
+
+    const cached = router.getCachedFinancialsForTargets([{
+      symbol: "IQE",
+      exchange: "LSE",
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-flex",
+    }], { allowExpired: true });
+    expect(cached.get("IQE")?.quote?.price).toBe(0.245);
 
     persistence.close();
   });
