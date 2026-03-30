@@ -35,6 +35,7 @@ import type {
 } from "../../types/trading";
 import { debugLog } from "../../utils/debug-log";
 import { parseReportSnapshot, parseFinStatements } from "./fundamental-parser";
+import { getIbkrPriceDivisor, normalizeIbkrPriceValue } from "./price-normalization";
 
 export interface IbkrGatewayConfig {
   host: string;
@@ -479,16 +480,17 @@ export class IbkrGatewayService {
     for (const [accountId, accountPositions] of update.all) {
       for (const position of accountPositions) {
         if (!position.contract.symbol) continue;
+        const priceDivisor = getIbkrPriceDivisor(position.contract);
         positions.push({
           ticker: position.contract.localSymbol || position.contract.symbol,
           exchange: position.contract.primaryExch || position.contract.exchange || "",
           shares: Math.abs(position.pos),
-          avgCost: position.avgCost,
+          avgCost: normalizeIbkrPriceValue(position.avgCost, priceDivisor),
           currency: position.contract.currency || "USD",
           accountId,
           name: position.contract.description || position.contract.localSymbol || position.contract.symbol,
           assetCategory: position.contract.secType,
-          markPrice: position.marketPrice,
+          markPrice: normalizeIbkrPriceValue(position.marketPrice, priceDivisor),
           marketValue: position.marketValue,
           unrealizedPnl: position.unrealizedPNL,
           side: position.pos < 0 ? "short" : "long",
@@ -579,30 +581,34 @@ export class IbkrGatewayService {
     instrument?: BrokerContractRef | null,
   ): Promise<PricePoint[]> {
     return this.dedup(`history:${ticker}:${exchange}:${range}`, async () => {
-    await this.connect(config);
-    const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
-    const params = HISTORY_PARAMS[range];
-    const bars = await this.withMarketDataFallback(
-      config,
-      () => withTimeout(this.api!.getHistoricalData(
-        contract,
-        "",
-        params.duration,
-        params.size,
-        WhatToShow.TRADES,
-        1,
-        1,
-      ), IBKR_DATA_TIMEOUT, "getHistoricalData"),
-    );
+      await this.connect(config);
+      const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+      const params = HISTORY_PARAMS[range];
+      const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
+        .catch(() => undefined);
+      const bars = await this.withMarketDataFallback(
+        config,
+        () => withTimeout(this.api!.getHistoricalData(
+          contract,
+          "",
+          params.duration,
+          params.size,
+          WhatToShow.TRADES,
+          1,
+          1,
+        ), IBKR_DATA_TIMEOUT, "getHistoricalData"),
+      );
+      const details = await detailsPromise;
+      const priceDivisor = getIbkrPriceDivisor(contract, details);
 
-    return bars.map((bar) => ({
-      date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0,
-      volume: bar.volume,
-    }));
+      return bars.map((bar) => ({
+        date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
+        open: normalizeIbkrPriceValue(bar.open, priceDivisor),
+        high: normalizeIbkrPriceValue(bar.high, priceDivisor),
+        low: normalizeIbkrPriceValue(bar.low, priceDivisor),
+        close: normalizeIbkrPriceValue(bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0, priceDivisor) ?? 0,
+        volume: bar.volume,
+      }));
     });
   }
 
@@ -622,6 +628,8 @@ export class IbkrGatewayService {
     return this.dedup(key, async () => {
       await this.connect(config);
       const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+      const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
+        .catch(() => undefined);
 
       // Format endDateTime as "yyyyMMdd HH:mm:ss" for IBKR
       const pad = (n: number) => String(n).padStart(2, "0");
@@ -648,13 +656,15 @@ export class IbkrGatewayService {
           1,
         ), IBKR_DATA_TIMEOUT, "getDetailedHistoricalData"),
       );
+      const details = await detailsPromise;
+      const priceDivisor = getIbkrPriceDivisor(contract, details);
 
       return bars.map((bar) => ({
         date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0,
+        open: normalizeIbkrPriceValue(bar.open, priceDivisor),
+        high: normalizeIbkrPriceValue(bar.high, priceDivisor),
+        low: normalizeIbkrPriceValue(bar.low, priceDivisor),
+        close: normalizeIbkrPriceValue(bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0, priceDivisor) ?? 0,
         volume: bar.volume,
       }));
     });
@@ -1358,15 +1368,22 @@ export class IbkrGatewayService {
   }
 
   private marketDataToQuote(contract: Contract, details: ContractDetails, marketData: ReadonlyMap<number, { value?: number; ingressTm: number }>): Quote {
-    const last = marketData.get(IBApiTickType.LAST)?.value
+    const priceDivisor = getIbkrPriceDivisor(contract, details);
+    const last = normalizeIbkrPriceValue(
+      marketData.get(IBApiTickType.LAST)?.value
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.value
-      ?? marketData.get(IBApiTickType.CLOSE)?.value;
+      ?? marketData.get(IBApiTickType.CLOSE)?.value,
+      priceDivisor,
+    );
     if (last == null || last <= 0) {
       throw new Error(`No valid market data for ${contract.symbol || contract.localSymbol || contract.conId}`);
     }
-    const close = marketData.get(IBApiTickType.CLOSE)?.value
-      ?? marketData.get(IBApiTickType.DELAYED_CLOSE)?.value
-      ?? last;
+    const close = normalizeIbkrPriceValue(
+      marketData.get(IBApiTickType.CLOSE)?.value
+        ?? marketData.get(IBApiTickType.DELAYED_CLOSE)?.value
+        ?? last,
+      priceDivisor,
+    ) ?? last;
     const change = last - close;
     const ingressTm = marketData.get(IBApiTickType.LAST)?.ingressTm
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.ingressTm
@@ -1379,22 +1396,37 @@ export class IbkrGatewayService {
       change,
       changePercent: close ? (change / close) * 100 : 0,
       previousClose: close,
-      high52w: marketData.get(IBApiTickType.HIGH_52_WEEK)?.value,
-      low52w: marketData.get(IBApiTickType.LOW_52_WEEK)?.value,
+      high52w: normalizeIbkrPriceValue(marketData.get(IBApiTickType.HIGH_52_WEEK)?.value, priceDivisor),
+      low52w: normalizeIbkrPriceValue(marketData.get(IBApiTickType.LOW_52_WEEK)?.value, priceDivisor),
       volume: marketData.get(IBApiTickType.VOLUME)?.value,
       name: details.longName || details.marketName || contract.symbol,
       lastUpdated: ingressTm,
       exchangeName: details.validExchanges?.split(",")[0],
       fullExchangeName: details.validExchanges?.split(",")[0],
       marketState: "REGULAR",
-      bid: marketData.get(IBApiTickType.BID)?.value ?? marketData.get(IBApiTickType.DELAYED_BID)?.value,
-      ask: marketData.get(IBApiTickType.ASK)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK)?.value,
+      bid: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.BID)?.value ?? marketData.get(IBApiTickType.DELAYED_BID)?.value,
+        priceDivisor,
+      ),
+      ask: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.ASK)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK)?.value,
+        priceDivisor,
+      ),
       bidSize: marketData.get(IBApiTickType.BID_SIZE)?.value ?? marketData.get(IBApiTickType.DELAYED_BID_SIZE)?.value,
       askSize: marketData.get(IBApiTickType.ASK_SIZE)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK_SIZE)?.value,
-      open: marketData.get(IBApiTickType.OPEN)?.value ?? marketData.get(IBApiTickType.DELAYED_OPEN)?.value,
-      high: marketData.get(IBApiTickType.HIGH)?.value ?? marketData.get(IBApiTickType.DELAYED_HIGH)?.value,
-      low: marketData.get(IBApiTickType.LOW)?.value ?? marketData.get(IBApiTickType.DELAYED_LOW)?.value,
-      mark: marketData.get(IBApiTickType.MARK_PRICE)?.value,
+      open: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.OPEN)?.value ?? marketData.get(IBApiTickType.DELAYED_OPEN)?.value,
+        priceDivisor,
+      ),
+      high: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.HIGH)?.value ?? marketData.get(IBApiTickType.DELAYED_HIGH)?.value,
+        priceDivisor,
+      ),
+      low: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.LOW)?.value ?? marketData.get(IBApiTickType.DELAYED_LOW)?.value,
+        priceDivisor,
+      ),
+      mark: normalizeIbkrPriceValue(marketData.get(IBApiTickType.MARK_PRICE)?.value, priceDivisor),
     };
   }
 
