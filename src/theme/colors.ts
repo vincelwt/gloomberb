@@ -20,7 +20,7 @@ export function applyTheme(id: string): void {
 export type ColorKey = keyof typeof colors;
 
 /** Blend two hex colors by a ratio (0 = color a, 1 = color b) */
-function blendHex(a: string, b: string, ratio: number): string {
+export function blendHex(a: string, b: string, ratio: number): string {
   const parse = (hex: string) => {
     const h = hex.replace("#", "");
     return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)] as const;
@@ -29,6 +29,23 @@ function blendHex(a: string, b: string, ratio: number): string {
   const [br, bg, bb] = parse(b);
   const mix = (x: number, y: number) => Math.round(x + (y - x) * ratio).toString(16).padStart(2, "0");
   return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
+}
+
+const COMPARISON_SERIES_COLORS = [
+  "#5bc0eb",
+  "#f6ae2d",
+  "#f26419",
+  "#6f2dbd",
+  "#00a896",
+  "#ef476f",
+  "#118ab2",
+  "#8ac926",
+  "#ff7f51",
+  "#4361ee",
+] as const;
+
+export function getComparisonSeriesColor(index: number): string {
+  return COMPARISON_SERIES_COLORS[((index % COMPARISON_SERIES_COLORS.length) + COMPARISON_SERIES_COLORS.length) % COMPARISON_SERIES_COLORS.length]!;
 }
 
 function relativeLuminance(hex: string): number {

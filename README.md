@@ -46,7 +46,7 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 | **Notes** | Write and save markdown notes, stored locally |
 | **Options** | View US equity options chains |
 | **Ask AI** | Chat with AI about tickers using local CLI tools |
-| **Compare Charts** | Compare the charts of tickers side by side |
+| **Compare Charts** | Compare multiple ticker charts overlaid on one shared chart |
 | **X Scanner** | WIP |
 | **Alerts** | WIP |
 | **Scanner** | WIP |

@@ -1600,6 +1600,7 @@ export const portfolioListPlugin: GloomPlugin = {
       icon: "P",
       component: PortfolioListPane,
       defaultPosition: "left",
+      defaultMode: "floating",
       defaultWidth: "40%",
       settings: (context) => buildPortfolioPaneSettingsDef(
         context.config,
