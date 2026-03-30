@@ -189,9 +189,34 @@ function fillRect(buf: PixelBuffer, x0: number, y0: number, x1: number, y1: numb
   }
 }
 
-function getX(index: number, pointCount: number, width: number): number {
-  if (pointCount <= 1) return Math.floor(width / 2);
-  return Math.round((index / (pointCount - 1)) * (width - 1));
+function drawWickOutsideBody(
+  buf: PixelBuffer,
+  x: number,
+  highY: number,
+  lowY: number,
+  bodyTop: number,
+  bodyBottom: number,
+  color: string,
+) {
+  if (highY < bodyTop) {
+    drawLine(buf, x, highY, x, bodyTop, color, LAYER_DATA);
+  }
+  if (bodyBottom < lowY) {
+    drawLine(buf, x, bodyBottom, x, lowY, color, LAYER_DATA);
+  }
+}
+
+function getSeriesPosition(
+  index: number,
+  pointCount: number,
+  width: number,
+  startPadding = 0,
+  endPadding = startPadding,
+): number {
+  const start = Math.max(startPadding, 0);
+  const end = Math.max(start, width - 1 - Math.max(endPadding, 0));
+  if (pointCount <= 1) return Math.round((start + end) / 2);
+  return Math.round(start + (index / (pointCount - 1)) * (end - start));
 }
 
 function getScaledY(value: number, min: number, max: number, chartTop: number, chartBottom: number): number {
@@ -218,6 +243,31 @@ function getBarHalfWidth(pointCount: number, bufWidth: number): number {
   return Math.floor(barW / 2);
 }
 
+function getDotX(index: number, pointCount: number, width: number, mode: ChartRenderMode): number {
+  switch (mode) {
+    case "candles": {
+      const pad = getCandleHalfWidth(pointCount, width);
+      return getSeriesPosition(index, pointCount, width, pad, pad);
+    }
+    case "ohlc": {
+      const tickLen = Math.max(getCandleHalfWidth(pointCount, width), 2);
+      const pad = Math.max(tickLen - 1, 0);
+      return getSeriesPosition(index, pointCount, width, pad, pad);
+    }
+    default:
+      return getSeriesPosition(index, pointCount, width);
+  }
+}
+
+function getPointDotX(index: number, pointCount: number, width: number, mode: ChartRenderMode): number {
+  return getDotX(index, pointCount, Math.max(width * 2, 1), mode);
+}
+
+export function getPointTerminalColumn(index: number, pointCount: number, width: number, mode: ChartRenderMode): number {
+  if (width <= 1) return 0;
+  return Math.min(Math.max(Math.floor(getPointDotX(index, pointCount, width, mode) / 2), 0), width - 1);
+}
+
 // ---------------------------------------------------------------------------
 // Chart mode renderers
 // ---------------------------------------------------------------------------
@@ -234,10 +284,10 @@ function drawLineSeries(
   if (points.length === 0) return;
 
   for (let i = 0; i < points.length; i++) {
-    const x = getX(i, points.length, buf.width);
+    const x = getDotX(i, points.length, buf.width, "line");
     const y = getScaledY(points[i]!.close, min, max, chartTop, chartBottom);
     if (i < points.length - 1) {
-      const x1 = getX(i + 1, points.length, buf.width);
+      const x1 = getDotX(i + 1, points.length, buf.width, "line");
       const y1 = getScaledY(points[i + 1]!.close, min, max, chartTop, chartBottom);
       drawLine(buf, x, y, x1, y1, lineColor, LAYER_DATA);
     } else {
@@ -260,13 +310,13 @@ function drawAreaChart(
 
   // Draw fill first (lower layer), then line on top
   for (let i = 0; i < points.length; i++) {
-    const x = getX(i, points.length, buf.width);
+    const x = getDotX(i, points.length, buf.width, "area");
     const y = getScaledY(points[i]!.close, min, max, chartTop, chartBottom);
 
     fillColumn(buf, x, y + 1, chartBottom, fillColor, LAYER_FILL);
 
     if (i < points.length - 1) {
-      const x1 = getX(i + 1, points.length, buf.width);
+      const x1 = getDotX(i + 1, points.length, buf.width, "area");
       const y1 = getScaledY(points[i + 1]!.close, min, max, chartTop, chartBottom);
 
       // Interpolate fill between consecutive points
@@ -298,7 +348,7 @@ function drawCandlestickChart(
 
   for (let i = 0; i < points.length; i++) {
     const point = points[i]!;
-    const x = getX(i, points.length, buf.width);
+    const x = getDotX(i, points.length, buf.width, "candles");
     const highY = getScaledY(point.high, min, max, chartTop, chartBottom);
     const lowY = getScaledY(point.low, min, max, chartTop, chartBottom);
     const openY = getScaledY(point.open, min, max, chartTop, chartBottom);
@@ -307,17 +357,16 @@ function drawCandlestickChart(
     const wickColor = isUp ? palette.wickUp : palette.wickDown;
     const bodyColor = isUp ? palette.candleUp : palette.candleDown;
 
-    // Wick: thin center line
-    drawLine(buf, x, highY, x, lowY, wickColor, LAYER_DATA);
-
     // Body: proportional width
     const bodyTop = Math.min(openY, closeY);
     const bodyBottom = Math.max(openY, closeY);
     if (bodyTop === bodyBottom) {
+      drawLine(buf, x, highY, x, lowY, wickColor, LAYER_DATA);
       const dojiBottom = Math.min(bodyBottom + 1, chartBottom);
       const dojiTop = Math.max(chartTop, dojiBottom - 1);
       fillRect(buf, x - halfW, dojiTop, x + halfW, dojiBottom, bodyColor, LAYER_DATA);
     } else {
+      drawWickOutsideBody(buf, x, highY, lowY, bodyTop, bodyBottom, wickColor);
       fillRect(buf, x - halfW, bodyTop, x + halfW, bodyBottom, bodyColor, LAYER_DATA);
     }
   }
@@ -336,7 +385,7 @@ function drawOhlcChart(
 
   for (let i = 0; i < points.length; i++) {
     const point = points[i]!;
-    const x = getX(i, points.length, buf.width);
+    const x = getDotX(i, points.length, buf.width, "ohlc");
     const highY = getScaledY(point.high, min, max, chartTop, chartBottom);
     const lowY = getScaledY(point.low, min, max, chartTop, chartBottom);
     const openY = getScaledY(point.open, min, max, chartTop, chartBottom);
@@ -370,6 +419,7 @@ export function drawVolumeBars(
   upColor: string,
   downColor: string,
   trendMode: VolumeTrendMode,
+  mode: ChartRenderMode,
 ) {
   const volumes = points.map((point) => point.volume);
   const maxVol = Math.max(...volumes, 1);
@@ -378,7 +428,7 @@ export function drawVolumeBars(
 
   for (let i = 0; i < points.length; i++) {
     const point = points[i]!;
-    const x = getX(i, points.length, buf.width);
+    const x = getDotX(i, points.length, buf.width, mode);
     const barH = Math.round((point.volume / maxVol) * volH);
     if (barH === 0) continue;
 
@@ -618,53 +668,243 @@ export function formatDateShort(date: Date | string | number): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
-function formatDateForSpan(date: Date | string | number, spanDays: number): string {
-  const d = date instanceof Date ? date : new Date(date);
-  if (isNaN(d.getTime())) return "—";
-  if (spanDays <= 365) {
-    return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+const AXIS_MS_SECOND = 1_000;
+const AXIS_MS_MINUTE = 60 * AXIS_MS_SECOND;
+const AXIS_MS_HOUR = 60 * AXIS_MS_MINUTE;
+const AXIS_MS_DAY = 24 * AXIS_MS_HOUR;
+const AXIS_MS_MONTH = 30 * AXIS_MS_DAY;
+const AXIS_MS_YEAR = 365 * AXIS_MS_DAY;
+
+type AxisLabelUnit = "year" | "month" | "day" | "hour" | "minute" | "second" | "millisecond";
+
+function formatClockTime(date: Date, unit: AxisLabelUnit): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+
+  switch (unit) {
+    case "hour":
+    case "minute":
+      return `${hours}:${minutes}`;
+    case "second":
+      return `${hours}:${minutes}:${seconds}`;
+    case "millisecond":
+      return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+    default:
+      return `${hours}:${minutes}`;
   }
-  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function isSameCalendarMonth(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth();
+}
+
+function getMinPositiveGapMs(dates: Date[]): number {
+  let minGapMs = Number.POSITIVE_INFINITY;
+
+  for (let index = 1; index < dates.length; index += 1) {
+    const current = dates[index]!;
+    const previous = dates[index - 1]!;
+    const gapMs = Math.abs(current.getTime() - previous.getTime());
+    if (gapMs > 0 && gapMs < minGapMs) {
+      minGapMs = gapMs;
+    }
+  }
+
+  return Number.isFinite(minGapMs) ? minGapMs : 0;
+}
+
+function resolveAxisLabelUnit(stepMs: number): AxisLabelUnit {
+  if (stepMs >= AXIS_MS_YEAR) return "year";
+  if (stepMs >= AXIS_MS_MONTH) return "month";
+  if (stepMs >= AXIS_MS_DAY) return "day";
+  if (stepMs >= AXIS_MS_HOUR) return "hour";
+  if (stepMs >= AXIS_MS_MINUTE) return "minute";
+  if (stepMs >= AXIS_MS_SECOND) return "second";
+  return "millisecond";
+}
+
+function estimateAxisLabelWidth(unit: AxisLabelUnit, first: Date, last: Date): number {
+  const spansMultipleDays = !isSameCalendarDay(first, last);
+  const spansMultipleYears = first.getFullYear() !== last.getFullYear();
+
+  switch (unit) {
+    case "year":
+      return 4;
+    case "month":
+      return spansMultipleYears ? 8 : 5;
+    case "day":
+      return spansMultipleYears ? 10 : 6;
+    case "hour":
+    case "minute":
+      return spansMultipleDays ? 12 : 8;
+    case "second":
+      return spansMultipleDays ? 17 : 12;
+    case "millisecond":
+      return spansMultipleDays ? 21 : 16;
+  }
+}
+
+function formatTimeAxisLabel(
+  date: Date,
+  previousDate: Date | null,
+  unit: AxisLabelUnit,
+): string {
+  if (isNaN(date.getTime())) return "—";
+
+  switch (unit) {
+    case "year":
+      return `${date.getFullYear()}`;
+    case "month":
+      if (previousDate && previousDate.getFullYear() === date.getFullYear()) {
+        return MONTHS[date.getMonth()]!;
+      }
+      return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+    case "day":
+      if (previousDate && isSameCalendarMonth(previousDate, date)) {
+        return `${date.getDate()}`;
+      }
+      if (previousDate && previousDate.getFullYear() === date.getFullYear()) {
+        return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+      }
+      return `${MONTHS[date.getMonth()]} ${date.getDate()} ${date.getFullYear()}`;
+    case "hour":
+    case "minute":
+    case "second":
+    case "millisecond": {
+      const timeLabel = formatClockTime(date, unit);
+      if (previousDate && isSameCalendarDay(previousDate, date)) {
+        return timeLabel;
+      }
+      if (previousDate && previousDate.getFullYear() === date.getFullYear()) {
+        return `${MONTHS[date.getMonth()]} ${date.getDate()} ${timeLabel}`;
+      }
+      return `${MONTHS[date.getMonth()]} ${date.getDate()} ${date.getFullYear()} ${timeLabel}`;
+    }
+  }
+}
+
+function formatTimeAxisBoundaryLabel(date: Date, unit: AxisLabelUnit, counterpart: Date): string {
+  if (isNaN(date.getTime())) return "—";
+
+  switch (unit) {
+    case "year":
+      return `${date.getFullYear()}`;
+    case "month":
+      return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+    case "day":
+      return counterpart.getFullYear() === date.getFullYear()
+        ? `${MONTHS[date.getMonth()]} ${date.getDate()}`
+        : `${MONTHS[date.getMonth()]} ${date.getDate()} ${date.getFullYear()}`;
+    case "hour":
+    case "minute":
+    case "second":
+    case "millisecond": {
+      const timeLabel = formatClockTime(date, unit);
+      if (isSameCalendarDay(date, counterpart)) {
+        return timeLabel;
+      }
+      if (counterpart.getFullYear() === date.getFullYear()) {
+        return `${MONTHS[date.getMonth()]} ${date.getDate()} ${timeLabel}`;
+      }
+      return `${MONTHS[date.getMonth()]} ${date.getDate()} ${date.getFullYear()} ${timeLabel}`;
+    }
+  }
+}
+
+function resolveAxisLabelStart(pos: number, label: string, width: number): number {
+  return Math.max(Math.min(pos - Math.floor(label.length / 2), width - label.length), 0);
+}
+
+function resolveCenteredAxisLabelStart(label: string, width: number): number {
+  return Math.max(Math.floor((width - label.length) / 2), 0);
+}
+
+function writeAxisLabel(axis: string[], start: number, label: string) {
+  for (let index = 0; index < label.length && start + index < axis.length; index += 1) {
+    axis[start + index] = label[index]!;
+  }
 }
 
 export function buildTimeAxis(dates: Array<Date | string | number>, width: number): string {
-  if (dates.length === 0) return "";
+  if (dates.length === 0 || width <= 0) return "";
 
-  const first = dates[0] instanceof Date ? dates[0]! : new Date(dates[0]!);
-  const lastRaw = dates[dates.length - 1]!;
-  const last = lastRaw instanceof Date ? lastRaw : new Date(lastRaw);
-  const spanMs = last.getTime() - first.getTime();
-  const spanDays = Math.max(spanMs / (1000 * 60 * 60 * 24), 1);
-  const sampleLabel = formatDateForSpan(first, spanDays);
-  const labelWidth = sampleLabel.length + 2;
-  const maxLabels = Math.max(Math.floor(width / labelWidth), 2);
-  const numLabels = Math.min(maxLabels, dates.length);
+  const normalizedDates = dates.map((value) => (value instanceof Date ? value : new Date(value)));
+  const first = normalizedDates[0]!;
+  const last = normalizedDates[normalizedDates.length - 1]!;
+  const rawSpanMs = last.getTime() - first.getTime();
+  const spanMs = Math.max(rawSpanMs, 1);
+  const roughLabelCount = Math.max(Math.floor(width / 10), 2);
+  const minGapMs = getMinPositiveGapMs(normalizedDates);
+  const effectiveStepMs = Math.max(spanMs / Math.max(roughLabelCount - 1, 1), minGapMs || 0);
+  const unit = resolveAxisLabelUnit(effectiveStepMs);
+  const allSameTimestamp = rawSpanMs === 0 && minGapMs === 0;
+  const axis = new Array(width).fill(" ");
+  const minGap = unit === "year" || unit === "month" ? 2 : 1;
+  const idealLabelWidth = estimateAxisLabelWidth(unit, first, last);
+  const targetLabelCount = Math.min(
+    normalizedDates.length,
+    Math.max(Math.floor(width / (idealLabelWidth + minGap)), 2),
+  );
+  const candidateIndices = [...new Set(
+    Array.from({ length: targetLabelCount }, (_, index) => (
+      targetLabelCount === 1
+        ? 0
+        : Math.round((index / (targetLabelCount - 1)) * (normalizedDates.length - 1))
+    )),
+  )];
 
-  const labels: { pos: number; text: string }[] = [];
-  for (let i = 0; i < numLabels; i++) {
-    const frac = numLabels === 1 ? 0 : i / (numLabels - 1);
-    const dateIdx = Math.round(frac * (dates.length - 1));
-    const xPos = Math.round(frac * (width - 1));
-    labels.push({
-      pos: xPos,
-      text: formatDateForSpan(dates[dateIdx]!, spanDays),
-    });
+  const firstLabel = formatTimeAxisBoundaryLabel(first, unit, last);
+  if (allSameTimestamp) {
+    const centeredStart = resolveCenteredAxisLabelStart(firstLabel, width);
+    writeAxisLabel(axis, centeredStart, firstLabel);
+    return axis.join("");
   }
 
-  const axis = new Array(width).fill(" ");
-  for (const label of labels) {
-    const start = Math.max(Math.min(label.pos - Math.floor(label.text.length / 2), width - label.text.length), 0);
-    let overlaps = false;
-    for (let j = start; j < start + label.text.length && j < width; j++) {
-      if (axis[j] !== " ") {
-        overlaps = true;
-        break;
-      }
-    }
-    if (overlaps) continue;
-    for (let j = 0; j < label.text.length && start + j < width; j++) {
-      axis[start + j] = label.text[j]!;
-    }
+  const firstStart = resolveAxisLabelStart(0, firstLabel, width);
+  writeAxisLabel(axis, firstStart, firstLabel);
+  const placedLabels = new Set<string>([firstLabel]);
+
+  let lastPlacedDate = first;
+  let lastEnd = firstStart + firstLabel.length - 1;
+
+  const lastPos = width - 1;
+  const lastLabel = normalizedDates.length === 1
+    ? firstLabel
+    : formatTimeAxisBoundaryLabel(last, unit, first);
+  const lastStart = resolveAxisLabelStart(lastPos, lastLabel, width);
+  const lastFits = normalizedDates.length === 1 || lastStart > lastEnd + minGap;
+
+  for (const index of candidateIndices.slice(1, -1)) {
+    const date = normalizedDates[index]!;
+    if (isNaN(date.getTime())) continue;
+
+    const pos = Math.round((index / (normalizedDates.length - 1)) * (width - 1));
+    const label = formatTimeAxisLabel(date, lastPlacedDate, unit);
+    if (placedLabels.has(label)) continue;
+    const start = resolveAxisLabelStart(pos, label, width);
+    const end = start + label.length - 1;
+
+    if (label === axis.slice(start, end + 1).join("")) continue;
+    if (start <= lastEnd + minGap) continue;
+    if (lastFits && end >= lastStart - minGap) continue;
+
+    writeAxisLabel(axis, start, label);
+    placedLabels.add(label);
+    lastPlacedDate = date;
+    lastEnd = end;
+  }
+
+  if (normalizedDates.length > 1 && lastFits && !placedLabels.has(lastLabel)) {
+    writeAxisLabel(axis, lastStart, lastLabel);
   }
 
   return axis.join("");
@@ -706,6 +946,7 @@ export interface RenderChartOptions {
   showVolume: boolean;
   volumeHeight: number;
   cursorX: number | null;
+  cursorY: number | null;
   mode: ChartRenderMode;
   colors: ResolvedChartPalette;
 }
@@ -724,12 +965,16 @@ export interface ChartScene {
   activeIdx: number;
   activePoint: ProjectedChartPoint;
   priceAtCursor: number;
+  crosshairPrice: number | null;
   dateAtCursor: Date;
   changeAtCursor: number;
   changePctAtCursor: number;
   timeLabels: string;
   cursorX: number | null;
+  cursorY: number | null;
+  cursorColumn: number | null;
   cursorRow: number | null;
+  cursorDotX: number | null;
 }
 
 export interface RenderChartResult {
@@ -738,23 +983,40 @@ export interface RenderChartResult {
   timeLabels: string;
   activePoint: ProjectedChartPoint | null;
   priceAtCursor: number | null;
+  crosshairPrice: number | null;
   dateAtCursor: Date | null;
   changeAtCursor: number | null;
   changePctAtCursor: number | null;
+  cursorColumn: number | null;
   cursorRow: number | null;
   /** Raw pixel buffer for GPU/Kitty rendering path */
   pixelBuffer: PixelBuffer | null;
 }
 
-export function getActivePointIndex(pointCount: number, width: number, cursorX: number | null): number {
+export function getActivePointIndex(
+  pointCount: number,
+  width: number,
+  cursorX: number | null,
+  mode: ChartRenderMode,
+): number {
   if (pointCount <= 0) return 0;
   if (cursorX === null || cursorX < 0 || cursorX >= width) {
     return pointCount - 1;
   }
-  return Math.min(
-    Math.max(Math.round((cursorX / Math.max(width - 1, 1)) * (pointCount - 1)), 0),
-    pointCount - 1,
-  );
+
+  let bestIndex = pointCount - 1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < pointCount; index += 1) {
+    const pointColumn = getPointTerminalColumn(index, pointCount, width, mode);
+    const distance = Math.abs(pointColumn - cursorX);
+    if (distance <= bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  }
+
+  return bestIndex;
 }
 
 export function buildChartScene(
@@ -769,16 +1031,33 @@ export function buildChartScene(
   const max = opts.mode === "candles" || opts.mode === "ohlc"
     ? Math.max(...points.map((point) => point.high))
     : Math.max(...points.map((point) => point.close));
-  const activeIdx = getActivePointIndex(points.length, opts.width, opts.cursorX);
+  const activeIdx = getActivePointIndex(points.length, opts.width, opts.cursorX, opts.mode);
   const activePoint = points[activeIdx]!;
   const range = max - min || 1;
   const chartRows = opts.height - (opts.showVolume ? opts.volumeHeight : 0);
-  const cursorRow = opts.cursorX === null
+  const cursorX = opts.cursorX === null
     ? null
-    : Math.min(
-      Math.max(Math.round((1 - (activePoint.close - min) / range) * Math.max(chartRows - 1, 0)), 0),
-      Math.max(chartRows - 1, 0),
-    );
+    : Math.min(Math.max(opts.cursorX, 0), Math.max(opts.width - 1, 0));
+  const cursorColumn = cursorX === null
+    ? null
+    : Math.round(cursorX);
+  const cursorDotX = cursorX === null
+    ? null
+    : Math.round((cursorX / Math.max(opts.width - 1, 1)) * Math.max(opts.width * 2 - 1, 0));
+  const cursorY = cursorX === null
+    ? null
+    : opts.cursorY !== null
+      ? Math.min(Math.max(opts.cursorY, 0), Math.max(chartRows - 1, 0))
+      : Math.min(
+        Math.max(Math.round((1 - (activePoint.close - min) / range) * Math.max(chartRows - 1, 0)), 0),
+        Math.max(chartRows - 1, 0),
+      );
+  const cursorRow = cursorY === null
+    ? null
+    : Math.round(cursorY);
+  const crosshairPrice = cursorY === null
+    ? null
+    : max - (cursorY / Math.max(chartRows - 1, 1)) * range;
 
   return {
     points,
@@ -794,12 +1073,16 @@ export function buildChartScene(
     activeIdx,
     activePoint,
     priceAtCursor: activePoint.close,
+    crosshairPrice,
     dateAtCursor: activePoint.date,
     changeAtCursor: activePoint.close - points[0]!.close,
     changePctAtCursor: points[0]!.close ? ((activePoint.close - points[0]!.close) / points[0]!.close) * 100 : 0,
     timeLabels: buildTimeAxis(points.map((point) => point.date), opts.width),
-    cursorX: opts.cursorX,
+    cursorX,
+    cursorY,
+    cursorColumn,
     cursorRow,
+    cursorDotX,
   };
 }
 
@@ -815,9 +1098,11 @@ export function renderChart(
       timeLabels: "",
       activePoint: null,
       priceAtCursor: null,
+      crosshairPrice: null,
       dateAtCursor: null,
       changeAtCursor: null,
       changePctAtCursor: null,
+      cursorColumn: null,
       cursorRow: null,
       pixelBuffer: null,
     };
@@ -864,30 +1149,36 @@ export function renderChart(
       palette.volumeUp,
       palette.volumeDown,
       mode === "candles" || mode === "ohlc" ? "openClose" : "previousClose",
+      mode,
     );
   }
 
   // Cursor mapping stays in terminal-column space
-  const { activePoint, priceAtCursor, dateAtCursor, changeAtCursor, changePctAtCursor } = scene;
+  const { activePoint, priceAtCursor, crosshairPrice, dateAtCursor, changeAtCursor, changePctAtCursor } = scene;
 
-  if (opts.cursorX !== null) {
-    // Map terminal column to dot column (center of the cell)
-    const dotX = opts.cursorX * 2;
-    drawCrosshair(buf, dotX, 0, opts.showVolume ? volDotBottom : chartDotBottom, palette.crosshairColor);
+  if (scene.cursorDotX !== null) {
+    drawCrosshair(buf, scene.cursorDotX, 0, opts.showVolume ? volDotBottom : chartDotBottom, palette.crosshairColor);
+  }
+
+  const axisLabelsByRow = new Map<number, string>();
+  for (const line of gridLines) {
+    axisLabelsByRow.set(
+      Math.min(Math.floor(line.y / 4), Math.max(chartTermRows - 1, 0)),
+      formatPrice(line.price),
+    );
   }
 
   return {
     lines: bufferToBrailleLines(buf, palette.bgColor),
-    axisLabels: gridLines.map((line) => ({
-      row: Math.floor(line.y / 4), // 4 dot-rows per terminal row
-      label: formatPrice(line.price),
-    })),
+    axisLabels: [...axisLabelsByRow.entries()].map(([row, label]) => ({ row, label })),
     timeLabels: buildTimeAxis(points.map((point) => point.date), width),
     activePoint,
     priceAtCursor,
+    crosshairPrice,
     dateAtCursor,
     changeAtCursor,
     changePctAtCursor,
+    cursorColumn: scene.cursorColumn,
     cursorRow: scene.cursorRow,
     pixelBuffer: buf,
   };

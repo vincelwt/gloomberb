@@ -24,7 +24,8 @@ export interface ChartViewState {
   timeRange: TimeRange;
   panOffset: number;   // data points shifted left from right edge (0 = most recent)
   zoomLevel: number;   // 1.0 = default, 2.0 = zoomed in 2x
-  cursorX: number | null; // column position of crosshair (null = hidden)
+  cursorX: number | null; // local plot x in cell units; may be fractional with pixel mouse
+  cursorY: number | null; // local plot y in cell units; may be fractional with pixel mouse
   renderMode?: ChartRenderMode;
 }
 

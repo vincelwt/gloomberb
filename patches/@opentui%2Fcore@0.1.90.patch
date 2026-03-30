@@ -1,0 +1,419 @@
+diff --git a/index-e89anq5x.js b/index-e89anq5x.js
+index e3b6cf9..d0645bb 100644
+--- a/index-e89anq5x.js
++++ b/index-e89anq5x.js
+@@ -6328,17 +6328,27 @@ class MouseParser {
+     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+     return buf.toString("latin1");
+   }
+-  parseMouseEvent(data) {
++  projectPixelToCell(pixel, pixelExtent, cellCount) {
++    if (cellCount <= 1) {
++      return 0;
++    }
++    if (!(pixelExtent > 1)) {
++      return Math.max(Math.floor(pixel), 0);
++    }
++    const ratio = Math.max(0, Math.min(pixel / Math.max(pixelExtent - 1, 1), 1));
++    return Math.floor(ratio * Math.max(cellCount - 1, 0));
++  }
++  parseMouseEvent(data, context = void 0) {
+     const str = this.decodeInput(data);
+-    const parsed = this.parseMouseSequenceAt(str, 0);
++    const parsed = this.parseMouseSequenceAt(str, 0, context);
+     return parsed?.event ?? null;
+   }
+-  parseAllMouseEvents(data) {
++  parseAllMouseEvents(data, context = void 0) {
+     const str = this.decodeInput(data);
+     const events = [];
+     let offset = 0;
+     while (offset < str.length) {
+-      const parsed = this.parseMouseSequenceAt(str, offset);
++      const parsed = this.parseMouseSequenceAt(str, offset, context);
+       if (!parsed) {
+         break;
+       }
+@@ -6347,19 +6357,19 @@ class MouseParser {
+     }
+     return events;
+   }
+-  parseMouseSequenceAt(str, offset) {
++  parseMouseSequenceAt(str, offset, context = void 0) {
+     if (!str.startsWith("\x1B[", offset))
+       return null;
+     const introducer = str[offset + 2];
+     if (introducer === "<") {
+-      return this.parseSgrSequence(str, offset);
++      return this.parseSgrSequence(str, offset, context);
+     }
+     if (introducer === "M") {
+       return this.parseBasicSequence(str, offset);
+     }
+     return null;
+   }
+-  parseSgrSequence(str, offset) {
++  parseSgrSequence(str, offset, context = void 0) {
+     let index = offset + 3;
+     const values = [0, 0, 0];
+     let part = 0;
+@@ -6387,7 +6397,7 @@ class MouseParser {
+           if (!hasDigit || part !== 2)
+             return null;
+           return {
+-            event: this.decodeSgrEvent(values[0], values[1], values[2], char),
++            event: this.decodeSgrEvent(values[0], values[1], values[2], char, context),
+             consumed: index - offset + 1
+           };
+         }
+@@ -6408,7 +6418,7 @@ class MouseParser {
+       consumed: 6
+     };
+   }
+-  decodeSgrEvent(rawButtonCode, wireX, wireY, pressRelease) {
++  decodeSgrEvent(rawButtonCode, wireX, wireY, pressRelease, context = void 0) {
+     const button = rawButtonCode & 3;
+     const isScroll = (rawButtonCode & 64) !== 0;
+     const scrollDirection = !isScroll ? undefined : MouseParser.SCROLL_DIRECTIONS[button];
+@@ -6443,11 +6453,26 @@ class MouseParser {
+         this.mouseButtonsPressed.clear();
+       }
+     }
++    const pixelModeRequested = context?.mouseUsesPixels === true;
++    const pixelModeConfirmed = context?.mousePixelsConfirmed === true;
++    const pixelModeDetected = pixelModeRequested && (
++      pixelModeConfirmed ||
++      wireX > (context?.terminalWidth ?? Number.POSITIVE_INFINITY) ||
++      wireY > (context?.terminalHeight ?? Number.POSITIVE_INFINITY)
++    );
++    const pixelX = pixelModeDetected ? Math.max(wireX - 1, 0) : void 0;
++    const pixelY = pixelModeDetected ? Math.max(wireY - 1, 0) : void 0;
+     return {
+       type,
+       button: button === 3 ? 0 : button,
+-      x: wireX - 1,
+-      y: wireY - 1,
++      x: pixelModeDetected && pixelX !== void 0
++        ? this.projectPixelToCell(pixelX, context?.pixelWidth ?? 0, context?.terminalWidth ?? 0)
++        : wireX - 1,
++      y: pixelModeDetected && pixelY !== void 0
++        ? this.projectPixelToCell(pixelY, context?.pixelHeight ?? 0, context?.terminalHeight ?? 0)
++        : wireY - 1,
++      pixelX,
++      pixelY,
+       modifiers,
+       scroll: scrollInfo
+     };
+@@ -6856,7 +6881,13 @@ var DEFAULT_PROTOCOL_CONTEXT = {
+   kittyKeyboardEnabled: false,
+   privateCapabilityRepliesActive: false,
+   pixelResolutionQueryActive: false,
+-  explicitWidthCprActive: false
++  explicitWidthCprActive: false,
++  mouseUsesPixels: false,
++  mousePixelsConfirmed: false,
++  terminalWidth: 0,
++  terminalHeight: 0,
++  pixelWidth: 0,
++  pixelHeight: 0
+ };
+ var RXVT_DOLLAR_CSI_RE = /^\x1b\[\d+\$$/;
+ var SYSTEM_CLOCK = new SystemClock;
+@@ -7149,7 +7180,13 @@ class StdinParser {
+       kittyKeyboardEnabled: options.protocolContext?.kittyKeyboardEnabled ?? false,
+       privateCapabilityRepliesActive: options.protocolContext?.privateCapabilityRepliesActive ?? false,
+       pixelResolutionQueryActive: options.protocolContext?.pixelResolutionQueryActive ?? false,
+-      explicitWidthCprActive: options.protocolContext?.explicitWidthCprActive ?? false
++      explicitWidthCprActive: options.protocolContext?.explicitWidthCprActive ?? false,
++      mouseUsesPixels: options.protocolContext?.mouseUsesPixels ?? false,
++      mousePixelsConfirmed: options.protocolContext?.mousePixelsConfirmed ?? false,
++      terminalWidth: options.protocolContext?.terminalWidth ?? 0,
++      terminalHeight: options.protocolContext?.terminalHeight ?? 0,
++      pixelWidth: options.protocolContext?.pixelWidth ?? 0,
++      pixelHeight: options.protocolContext?.pixelHeight ?? 0
+     };
+   }
+   get bufferCapacity() {
+@@ -7952,11 +7989,14 @@ class StdinParser {
+     });
+   }
+   emitMouse(rawBytes, encoding) {
+-    const event = this.mouseParser.parseMouseEvent(rawBytes);
++    const event = this.mouseParser.parseMouseEvent(rawBytes, this.protocolContext);
+     if (!event) {
+       this.emitOpaqueResponse("unknown", rawBytes);
+       return;
+     }
++    if (event.pixelX !== void 0 && event.pixelY !== void 0 && !this.protocolContext.mousePixelsConfirmed) {
++      this.updateProtocolContext({ mousePixelsConfirmed: true });
++    }
+     this.events.push({
+       type: "mouse",
+       raw: decodeLatin1(rawBytes),
+@@ -17295,6 +17335,8 @@ class MouseEvent {
+   button;
+   x;
+   y;
++  pixelX;
++  pixelY;
+   source;
+   modifiers;
+   scroll;
+@@ -17314,6 +17356,8 @@ class MouseEvent {
+     this.button = attributes.button;
+     this.x = attributes.x;
+     this.y = attributes.y;
++    this.pixelX = attributes.pixelX;
++    this.pixelY = attributes.pixelY;
+     this.modifiers = attributes.modifiers;
+     this.scroll = attributes.scroll;
+     this.source = attributes.source;
+@@ -17479,6 +17523,8 @@ class CliRenderer extends EventEmitter8 {
+   resizeDebounceDelay = 100;
+   enableMouseMovement = false;
+   _useMouse = true;
++  _mouseProtocolSignature = "disabled";
++  _pixelMouseEnabled = false;
+   autoFocus = true;
+   _useAlternateScreen = env.OTUI_USE_ALTERNATE_SCREEN;
+   _suspendedMouseEnabled = false;
+@@ -17507,7 +17553,7 @@ class CliRenderer extends EventEmitter8 {
+     this.handleResize(width, height);
+   }).bind(this);
+   _capabilities = null;
+-  _latestPointer = { x: 0, y: 0 };
++  _latestPointer = { x: 0, y: 0, pixelX: void 0, pixelY: void 0 };
+   _hasPointer = false;
+   _lastPointerModifiers = { shift: false, alt: false, ctrl: false };
+   _currentMousePointerStyle = undefined;
+@@ -17661,7 +17707,13 @@ Captured output:
+         kittyKeyboardEnabled: useKittyForParsing,
+         privateCapabilityRepliesActive: false,
+         pixelResolutionQueryActive: false,
+-        explicitWidthCprActive: false
++        explicitWidthCprActive: false,
++        mouseUsesPixels: false,
++        mousePixelsConfirmed: false,
++        terminalWidth: this._terminalWidth,
++        terminalHeight: this._terminalHeight,
++        pixelWidth: 0,
++        pixelHeight: 0
+       },
+       clock: this.clock
+     });
+@@ -17983,12 +18035,14 @@ Captured output:
+   enableMouse() {
+     this._useMouse = true;
+     this.lib.enableMouse(this.rendererPtr, this.enableMouseMovement);
++    this.syncPixelMouseMode();
+   }
+   disableMouse() {
+     this._useMouse = false;
+     this.setCapturedRenderable(undefined);
+     this.stdinParser?.resetMouseState();
+     this.lib.disableMouse(this.rendererPtr);
++    this.disablePixelMouseMode();
+   }
+   enableKittyKeyboard(flags = 3) {
+     this.lib.enableKittyKeyboard(this.rendererPtr, flags);
+@@ -17998,6 +18052,59 @@ Captured output:
+     this.lib.disableKittyKeyboard(this.rendererPtr);
+     this.updateStdinParserProtocolContext({ kittyKeyboardEnabled: false }, true);
+   }
++  getMouseProtocolTrackingMode() {
++    return this.enableMouseMovement ? "any" : "press";
++  }
++  buildMouseProtocolSequence(pixelEnabled) {
++    const trackingSequence = this.enableMouseMovement
++      ? "\x1B[?1000l\x1B[?1002l\x1B[?1003h"
++      : "\x1B[?1003l\x1B[?1002l\x1B[?1000h";
++    return "\x1B[?1005l\x1B[?1015l\x1B[?1006h" + trackingSequence + (pixelEnabled ? "\x1B[?1016h" : "\x1B[?1016l");
++  }
++  syncPixelMouseMode(force = false) {
++    const nextEnabled = Boolean(this._useMouse);
++    const nextPixelEnabled = Boolean(
++      nextEnabled &&
++      this._terminalWidth > 0 &&
++      this._terminalHeight > 0
++    );
++    const nextSignature = nextEnabled
++      ? `${this.getMouseProtocolTrackingMode()}:${nextPixelEnabled ? "pixel" : "cell"}`
++      : "disabled";
++    if (nextEnabled) {
++      if (force || this._mouseProtocolSignature !== nextSignature) {
++        this.writeOut(this.buildMouseProtocolSequence(nextPixelEnabled));
++      }
++    } else if (force || this._mouseProtocolSignature !== "disabled") {
++      this.writeOut("\x1B[?1016l\x1B[?1006l\x1B[?1005l\x1B[?1015l\x1B[?1003l\x1B[?1002l\x1B[?1000l");
++    }
++    this._mouseProtocolSignature = nextSignature;
++    this._pixelMouseEnabled = nextPixelEnabled;
++    const pixelModeConfirmed = nextPixelEnabled && this._capabilities?.sgr_pixels === true;
++    this.updateStdinParserProtocolContext({
++      mouseUsesPixels: nextPixelEnabled,
++      mousePixelsConfirmed: pixelModeConfirmed,
++      terminalWidth: this._terminalWidth,
++      terminalHeight: this._terminalHeight,
++      pixelWidth: this._resolution?.width ?? 0,
++      pixelHeight: this._resolution?.height ?? 0
++    }, true);
++  }
++  disablePixelMouseMode() {
++    if (this._mouseProtocolSignature !== "disabled") {
++      this.writeOut("\x1B[?1016l\x1B[?1006l\x1B[?1005l\x1B[?1015l\x1B[?1003l\x1B[?1002l\x1B[?1000l");
++    }
++    this._mouseProtocolSignature = "disabled";
++    this._pixelMouseEnabled = false;
++    this.updateStdinParserProtocolContext({
++      mouseUsesPixels: false,
++      mousePixelsConfirmed: false,
++      terminalWidth: this._terminalWidth,
++      terminalHeight: this._terminalHeight,
++      pixelWidth: this._resolution?.width ?? 0,
++      pixelHeight: this._resolution?.height ?? 0
++    }, true);
++  }
+   set useThread(useThread) {
+     this._useThread = useThread;
+     this.lib.setUseThread(this.rendererPtr, useThread);
+@@ -18031,6 +18138,7 @@ Captured output:
+     if (this._useMouse) {
+       this.enableMouse();
+     }
++    this.syncPixelMouseMode();
+     this.queryPixelResolution();
+   }
+   stdinListener = ((chunk) => {
+@@ -18070,6 +18178,7 @@ Captured output:
+     if (isCapabilityResponse(sequence)) {
+       this.lib.processCapabilityResponse(this.rendererPtr, sequence);
+       this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
++      this.syncPixelMouseMode();
+       this.emit("capabilities" /* CAPABILITIES */, this._capabilities);
+       return true;
+     }
+@@ -18079,6 +18188,7 @@ Captured output:
+     if (sequence === "\x1B[I") {
+       if (this.shouldRestoreModesOnNextFocus) {
+         this.lib.restoreTerminalModes(this.rendererPtr);
++        this.syncPixelMouseMode(true);
+         this.shouldRestoreModesOnNextFocus = false;
+       }
+       if (this._terminalFocusState !== true) {
+@@ -18187,6 +18297,7 @@ Captured output:
+         }
+         this.waitingForPixelResolution = false;
+         this.updateStdinParserProtocolContext({ pixelResolutionQueryActive: false }, true);
++        this.syncPixelMouseMode();
+         return true;
+       }
+       return false;
+@@ -18221,9 +18332,15 @@ Captured output:
+         return false;
+       }
+       mouseEvent.y -= this.renderOffset;
++      if (mouseEvent.pixelY !== void 0 && this._resolution) {
++        const cellHeight = this._resolution.height / Math.max(this._terminalHeight, 1);
++        mouseEvent.pixelY = Math.max(mouseEvent.pixelY - this.renderOffset * cellHeight, 0);
++      }
+     }
+     this._latestPointer.x = mouseEvent.x;
+     this._latestPointer.y = mouseEvent.y;
++    this._latestPointer.pixelX = mouseEvent.pixelX;
++    this._latestPointer.pixelY = mouseEvent.pixelY;
+     this._hasPointer = true;
+     this._lastPointerModifiers = mouseEvent.modifiers;
+     if (this._console.visible) {
+@@ -18352,6 +18469,8 @@ Captured output:
+       button: 0,
+       x: this._latestPointer.x,
+       y: this._latestPointer.y,
++      pixelX: this._latestPointer.pixelX,
++      pixelY: this._latestPointer.pixelY,
+       modifiers: this._lastPointerModifiers
+     };
+     if (lastOver && !lastOver.isDestroyed) {
+@@ -18435,6 +18554,7 @@ Captured output:
+     const prevWidth = this._terminalWidth;
+     this._terminalWidth = width;
+     this._terminalHeight = height;
++    this.syncPixelMouseMode();
+     this.queryPixelResolution();
+     this.setCapturedRenderable(undefined);
+     this.stdinParser?.resetMouseState();
+@@ -18712,6 +18832,7 @@ Captured output:
+     }
+     this._isRunning = false;
+     this.waitingForPixelResolution = false;
++    this.disablePixelMouseMode();
+     this.updateStdinParserProtocolContext({
+       privateCapabilityRepliesActive: false,
+       pixelResolutionQueryActive: false,
+diff --git a/lib/parse.mouse.d.ts b/lib/parse.mouse.d.ts
+index c29f953..873035f 100644
+--- a/lib/parse.mouse.d.ts
++++ b/lib/parse.mouse.d.ts
+@@ -3,11 +3,21 @@ export interface ScrollInfo {
+     direction: "up" | "down" | "left" | "right";
+     delta: number;
+ }
++export interface MouseParserContext {
++    mouseUsesPixels?: boolean;
++    mousePixelsConfirmed?: boolean;
++    terminalWidth?: number;
++    terminalHeight?: number;
++    pixelWidth?: number;
++    pixelHeight?: number;
++}
+ export type RawMouseEvent = {
+     type: MouseEventType;
+     button: number;
+     x: number;
+     y: number;
++    pixelX?: number;
++    pixelY?: number;
+     modifiers: {
+         shift: boolean;
+         alt: boolean;
+@@ -20,8 +30,9 @@ export declare class MouseParser {
+     private static readonly SCROLL_DIRECTIONS;
+     reset(): void;
+     private decodeInput;
+-    parseMouseEvent(data: Buffer | Uint8Array): RawMouseEvent | null;
+-    parseAllMouseEvents(data: Buffer | Uint8Array): RawMouseEvent[];
++    private projectPixelToCell;
++    parseMouseEvent(data: Buffer | Uint8Array, context?: MouseParserContext): RawMouseEvent | null;
++    parseAllMouseEvents(data: Buffer | Uint8Array, context?: MouseParserContext): RawMouseEvent[];
+     private parseMouseSequenceAt;
+     private parseSgrSequence;
+     private parseBasicSequence;
+diff --git a/lib/stdin-parser.d.ts b/lib/stdin-parser.d.ts
+index ef37bfd..1a0aa82 100644
+--- a/lib/stdin-parser.d.ts
++++ b/lib/stdin-parser.d.ts
+@@ -27,6 +27,12 @@ export interface StdinParserProtocolContext {
+     privateCapabilityRepliesActive: boolean;
+     pixelResolutionQueryActive: boolean;
+     explicitWidthCprActive: boolean;
++    mouseUsesPixels: boolean;
++    mousePixelsConfirmed: boolean;
++    terminalWidth: number;
++    terminalHeight: number;
++    pixelWidth: number;
++    pixelHeight: number;
+ }
+ export interface StdinParserOptions {
+     timeoutMs?: number;
+diff --git a/renderer.d.ts b/renderer.d.ts
+index e0f1802..9632978 100644
+--- a/renderer.d.ts
++++ b/renderer.d.ts
+@@ -75,6 +75,8 @@ export declare class MouseEvent {
+     readonly button: number;
+     readonly x: number;
+     readonly y: number;
++    readonly pixelX?: number;
++    readonly pixelY?: number;
+     readonly source?: Renderable;
+     readonly modifiers: {
+         shift: boolean;
