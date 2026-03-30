@@ -1,22 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useAppState, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
-import { saveConfig } from "../../data/config-store";
-import { colors, priceColor } from "../../theme/colors";
-import { formatCompact, formatCurrency } from "../../utils/format";
-import { useChartQuery, useResolvedEntryValue } from "../../market-data/hooks";
-import { instrumentFromTicker } from "../../market-data/request-types";
-import { filterByTimeRange, getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useAppState } from "../../state/app-context";
+import { blendHex, colors, getComparisonSeriesColor, priceColor } from "../../theme/colors";
+import type { BrokerContractRef } from "../../types/instrument";
+import type { PricePoint } from "../../types/financials";
+import { formatCurrency, formatPercentRaw } from "../../utils/format";
+import { getSharedDataProvider } from "../../plugins/registry";
 import {
-  buildChartScene,
-  formatDateShort,
-  formatAxisValue,
-  getActivePointIndex,
-  getPointTerminalColumn,
-  renderChart,
-  resolveChartPalette,
-} from "./chart-renderer";
+  applyComparisonZoomAroundAnchor,
+  getMaxComparisonPanOffset,
+  getVisibleComparisonWindow,
+  projectComparisonChartData,
+} from "./comparison-chart-data";
+import {
+  buildComparisonChartScene,
+  formatComparisonAxisValue,
+  renderComparisonChart,
+} from "./comparison-chart-renderer";
 import {
   CELL_CURSOR_SNAP_DISTANCE,
   sameCursorPosition,
@@ -24,17 +25,18 @@ import {
   type ChartCursorMotionKind,
 } from "./cursor-motion";
 import {
-  CHART_RENDER_MODES,
+  COMPARISON_RENDER_MODES,
   TIME_RANGES,
   type ChartAxisMode,
-  type ChartRenderMode,
-  type ChartViewState,
+  type ChartRendererPreference,
+  type ComparisonChartRenderMode,
+  type ComparisonChartViewState,
   type ResolvedChartRenderer,
 } from "./chart-types";
 import {
   computeBitmapSize,
   intersectCellRects,
-  renderNativeChartBase,
+  renderNativeComparisonChartBase,
   renderNativeCrosshairOverlay,
   type CellRect,
   type NativeChartBitmap,
@@ -43,29 +45,37 @@ import {
 import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-support";
 import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
-import type { PricePoint } from "../../types/financials";
+import { formatDateShort } from "./chart-renderer";
 
-const MODE_CHIPS: Record<ChartRenderMode, string> = {
+const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
   line: "L",
-  candles: "C",
-  ohlc: "O",
 };
 
-const MODE_LABELS: Record<ChartRenderMode, string> = {
-  area: "AREA",
-  line: "LINE",
-  candles: "CANDLES",
-  ohlc: "OHLC",
-};
-
-interface StockChartProps {
+interface ComparisonStockChartProps {
+  paneId: string;
   width: number;
   height: number;
   focused: boolean;
-  interactive?: boolean;
-  compact?: boolean;
-  axisMode?: ChartAxisMode;
+  symbols: string[];
+  axisMode: ChartAxisMode;
+  onOpenSymbol: (symbol: string) => void;
+}
+
+interface ComparisonChartSymbolSource {
+  symbol: string;
+  currency: string | undefined;
+  exchange: string;
+  brokerId: string | undefined;
+  brokerInstanceId: string | undefined;
+  instrument: BrokerContractRef | null;
+  priceHistory: PricePoint[];
+}
+
+interface ComparisonStockChartViewProps extends ComparisonStockChartProps {
+  defaultRenderMode: string | undefined;
+  preferredRenderer: ChartRendererPreference;
+  symbolSources: ComparisonChartSymbolSource[];
 }
 
 interface DragState {
@@ -89,7 +99,7 @@ interface ChartMouseEvent {
   };
 }
 
-export interface LocalPlotPointer {
+interface LocalPlotPointer {
   cellX: number;
   cellY: number;
   pixelX: number | null;
@@ -144,10 +154,6 @@ function cancelAnimationFrameSafe(handle: number) {
   clearTimeout(handle);
 }
 
-function coerceChartDate(value: Date | string | number): Date {
-  return value instanceof Date ? value : new Date(value);
-}
-
 function getRendererCellMetrics(renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">) {
   if (!renderer.resolution) return null;
   const cellWidth = renderer.resolution.width / Math.max(renderer.terminalWidth, 1);
@@ -168,7 +174,7 @@ function getRenderablePixelSize(
   };
 }
 
-export function projectCellCursorToLocalPixels(
+function projectCellCursorToLocalPixels(
   cellX: number,
   cellY: number,
   renderable: Pick<RenderableNode, "width" | "height"> | null,
@@ -243,35 +249,7 @@ function buildDisplayCursorState(
   };
 }
 
-export function resolveSelectionDisplayCursorState(
-  cursorX: number | null,
-  cursorY: number | null,
-  fallbackCursorX: number | null,
-  fallbackCursorY: number | null,
-  renderable: BoxRenderable | null,
-  renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
-): DisplayCursorState {
-  const resolvedCursorX = cursorY === null ? (fallbackCursorX ?? cursorX) : cursorX;
-  const resolvedCursorY = cursorY ?? fallbackCursorY;
-  if (resolvedCursorX === null) return EMPTY_DISPLAY_CURSOR;
-  return buildDisplayCursorState(resolvedCursorX, resolvedCursorY, renderable, renderer);
-}
-
-export function resolveAdjacentSelectionCursorX(
-  cursorX: number | null,
-  step: -1 | 1,
-  pointCount: number,
-  width: number,
-  mode: ChartRenderMode,
-): number | null {
-  if (pointCount <= 0 || width <= 0) return null;
-  const anchorX = cursorX ?? (step < 0 ? width - 1 : 0);
-  const currentIndex = getActivePointIndex(pointCount, width, anchorX, mode);
-  const nextIndex = clamp(currentIndex + step, 0, pointCount - 1);
-  return getPointTerminalColumn(nextIndex, pointCount, width, mode);
-}
-
-export function getLocalPlotPointer(
+function getLocalPlotPointer(
   event: ChartMouseEvent,
   renderable: BoxRenderable | null,
   renderer: Pick<CliRenderer, "resolution" | "terminalWidth" | "terminalHeight">,
@@ -395,55 +373,35 @@ function formatAxisCell(label: string | null, width: number): string {
   return label.length >= width ? label.slice(0, width) : label.padStart(width);
 }
 
-function getMaxPanOffset(history: PricePoint[], timeRange: ChartViewState["timeRange"], zoomLevel: number, chartWidth: number): number {
-  const filtered = filterByTimeRange(history, timeRange);
-  const visibleCount = Math.max(Math.floor(chartWidth / zoomLevel), 10);
-  return Math.max(filtered.length - visibleCount, 0);
-}
-
-function applyZoomAroundAnchor(
-  view: ChartViewState,
-  nextZoomLevel: number,
-  anchorRatio: number,
-  history: PricePoint[],
-  chartWidth: number,
-): ChartViewState {
-  const filtered = filterByTimeRange(history, view.timeRange);
-  if (filtered.length === 0) return view;
-
-  const clampedZoom = clamp(nextZoomLevel, 0.5, 10);
-  const currentVisibleCount = Math.max(Math.floor(chartWidth / view.zoomLevel), 10);
-  const nextVisibleCount = Math.max(Math.floor(chartWidth / clampedZoom), 10);
-  const currentPanOffset = clamp(view.panOffset, 0, Math.max(filtered.length - currentVisibleCount, 0));
-  const ratio = clamp(anchorRatio, 0, 1);
-  const anchorIndex = filtered.length - currentPanOffset - currentVisibleCount + ratio * Math.max(currentVisibleCount - 1, 0);
-  const nextStart = Math.round(anchorIndex - ratio * Math.max(nextVisibleCount - 1, 0));
-  const clampedStart = clamp(nextStart, 0, Math.max(filtered.length - nextVisibleCount, 0));
-  const nextPanOffset = filtered.length - nextVisibleCount - clampedStart;
-
-  return {
-    ...view,
-    zoomLevel: clampedZoom,
-    panOffset: clamp(nextPanOffset, 0, Math.max(filtered.length - nextVisibleCount, 0)),
-  };
-}
-
-function buildNativeBitmapKey(
-  pointCount: number,
-  points: PricePoint[],
+function buildComparisonNativeBitmapKey(
+  symbolCount: number,
+  projection: ReturnType<typeof projectComparisonChartData>,
+  selectedSymbol: string | null,
   pixelWidth: number,
   pixelHeight: number,
-  mode: ChartRenderMode,
-  showVolume: boolean,
-  paletteId: string,
+  paletteKey: string,
 ): string {
-  const fingerprint = points
-    .map((point) => {
-      const date = point.date instanceof Date ? point.date.getTime() : new Date(point.date).getTime();
-      return `${date}:${point.open}:${point.high}:${point.low}:${point.close}:${point.volume ?? 0}`;
-    })
-    .join("|");
-  return [pointCount, pixelWidth, pixelHeight, mode, showVolume ? "1" : "0", paletteId, fingerprint].join("::");
+  const fingerprint = projection.series
+    .map((series) => [
+      series.symbol,
+      series.color,
+      series.fillColor,
+      ...series.points.map((point) => {
+        const timestamp = point.date.getTime();
+        return `${timestamp}:${point.value ?? "null"}:${point.rawValue ?? "null"}`;
+      }),
+    ].join("|"))
+    .join("::");
+  return [
+    symbolCount,
+    projection.effectiveMode,
+    projection.effectiveAxisMode,
+    selectedSymbol ?? "",
+    pixelWidth,
+    pixelHeight,
+    paletteKey,
+    fingerprint,
+  ].join("::");
 }
 
 function buildNativeCrosshairBitmapKey(
@@ -461,18 +419,35 @@ function buildNativeCrosshairBitmapKey(
   return [pixelWidth, pixelHeight, chartHeight, chartRows, crosshairColor, cursorKey].join("::");
 }
 
-function resolveSelectionCursorX(
-  cellX: number,
-  pointCount: number,
-  width: number,
-  mode: ChartRenderMode,
-): number | null {
+function getLegendColumns(width: number): number {
+  if (width >= 110) return 3;
+  if (width >= 72) return 2;
+  return 1;
+}
+
+function clipText(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text.padEnd(width);
+  if (width <= 3) return text.slice(0, width);
+  return `${text.slice(0, width - 3)}...`;
+}
+
+function getInitialComparisonMode(mode: string | undefined): ComparisonChartRenderMode {
+  return mode === "line" ? "line" : "area";
+}
+
+function getComparisonPlotColumn(index: number, pointCount: number, width: number): number {
+  if (pointCount <= 1 || width <= 1) return 0;
+  return Math.round((index / (pointCount - 1)) * Math.max(width - 1, 0));
+}
+
+function resolveSelectionCursorX(cellX: number, pointCount: number, width: number): number | null {
   if (pointCount <= 0 || width <= 0) return null;
 
   let bestIndex = pointCount - 1;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (let index = 0; index < pointCount; index += 1) {
-    const pointColumn = getPointTerminalColumn(index, pointCount, width, mode);
+    const pointColumn = getComparisonPlotColumn(index, pointCount, width);
     const distance = Math.abs(pointColumn - cellX);
     if (distance <= bestDistance) {
       bestDistance = distance;
@@ -480,14 +455,13 @@ function resolveSelectionCursorX(
     }
   }
 
-  return getPointTerminalColumn(bestIndex, pointCount, width, mode);
+  return getComparisonPlotColumn(bestIndex, pointCount, width);
 }
 
 function resolveSelectionCursor(
   pointer: LocalPlotPointer,
   pointCount: number,
   width: number,
-  mode: ChartRenderMode,
 ): { cursorX: number | null; cursorY: number | null } {
   if (!pointer.hasPixelPrecision) {
     return {
@@ -497,33 +471,41 @@ function resolveSelectionCursor(
   }
 
   return {
-    cursorX: resolveSelectionCursorX(pointer.cellX, pointCount, width, mode),
+    cursorX: resolveSelectionCursorX(pointer.cellX, pointCount, width),
     cursorY: null,
   };
 }
 
-export function StockChart({ width, height, focused, interactive, compact, axisMode = "price" }: StockChartProps) {
+function ComparisonStockChartView({
+  paneId,
+  width,
+  height,
+  focused,
+  symbols,
+  axisMode,
+  defaultRenderMode,
+  preferredRenderer,
+  symbolSources,
+  onOpenSymbol,
+}: ComparisonStockChartViewProps) {
   const renderer = useRenderer();
-  const { state, dispatch } = useAppState();
-  const paneId = usePaneInstanceId();
-  const { ticker, financials } = usePaneTicker();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
-  const defaultRenderMode = state.config.chartPreferences.defaultRenderMode;
-  const preferredRenderer = state.config.chartPreferences.renderer;
-  const [viewState, setViewState] = useState<ChartViewState>({
-    timeRange: compact ? "1Y" : "5Y",
+  const [viewState, setViewState] = useState<ComparisonChartViewState>({
+    timeRange: "1Y",
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,
     cursorY: null,
-    renderMode: defaultRenderMode,
+    renderMode: getInitialComparisonMode(defaultRenderMode),
+    selectedSymbol: symbols[0] ?? null,
   });
-  const [showVolume, setShowVolume] = useState(!compact);
+  const [remoteHistory, setRemoteHistory] = useState<Record<string, PricePoint[] | null>>({});
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
+  const fetchIdRef = useRef(0);
   const plotRef = useRef<BoxRenderable | null>(null);
-  const nativeBaseSurfaceIdRef = useRef(`chart-surface:${paneId}:${compact ? "compact" : "full"}:base`);
-  const nativeCrosshairSurfaceIdRef = useRef(`chart-surface:${paneId}:${compact ? "compact" : "full"}:crosshair`);
+  const nativeBaseSurfaceIdRef = useRef(`comparison-chart-surface:${paneId}:base`);
+  const nativeCrosshairSurfaceIdRef = useRef(`comparison-chart-surface:${paneId}:crosshair`);
   const dragRef = useRef<DragState | null>(null);
   const lastNativeGeometryRef = useRef<{ rect: CellRect; visibleRect: CellRect | null } | null>(null);
   const lastNativeBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
@@ -532,6 +514,52 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
   const animationFrameRef = useRef<number | null>(null);
+
+  const axisWidth = 11;
+  const axisGap = 1;
+  const headerRows = 1;
+  const controlRows = 1;
+  const timeAxisRows = 1;
+  const helpRows = 1;
+  const legendColumns = getLegendColumns(width);
+  const legendNeededRows = symbols.length > 0 ? Math.ceil(symbols.length / legendColumns) : 0;
+  const legendRows = legendNeededRows > 0
+    ? Math.min(4, Math.max(Math.min(height - (headerRows + controlRows + timeAxisRows + helpRows + 4), legendNeededRows), 1))
+    : 0;
+  const chartWidth = Math.max(width - axisWidth - axisGap, 20);
+  const chartHeight = Math.max(height - headerRows - controlRows - timeAxisRows - helpRows - legendRows, 4);
+  const maxCursorX = chartWidth - 1;
+  const legendItemWidth = Math.max(Math.floor((width - Math.max(legendColumns - 1, 0)) / legendColumns), 20);
+  const chartColors = useMemo(() => ({
+    bgColor: colors.bg,
+    gridColor: blendHex(colors.bg, colors.border, 0.55),
+    crosshairColor: colors.borderFocused,
+  }), [colors.bg, colors.border, colors.borderFocused]);
+
+  const setSelectedSymbol = (symbol: string) => {
+    setViewState((current) => (
+      current.selectedSymbol === symbol
+        ? current
+        : { ...current, selectedSymbol: symbol }
+    ));
+  };
+
+  const symbolMetaKey = useMemo(() => symbolSources.map((source) => {
+    return [
+      source.symbol,
+      source.exchange,
+      source.brokerId ?? "",
+      source.brokerInstanceId ?? "",
+    ].join(":");
+  }).join("|"), [symbolSources]);
+
+  useEffect(() => {
+    if (symbols.includes(viewState.selectedSymbol ?? "")) return;
+    setViewState((current) => ({
+      ...current,
+      selectedSymbol: symbols[0] ?? null,
+    }));
+  }, [symbols, viewState.selectedSymbol]);
 
   const commitDisplayCursor = (next: DisplayCursorState) => {
     displayCursorRef.current = next;
@@ -613,67 +641,35 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     }
   ), [nativeSurfaceManager]);
 
-  const instrumentRef = useMemo(
-    () => instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null),
-    [ticker],
-  );
-  const baseChartEntry = useChartQuery(
-    !compact && instrumentRef
-      ? {
-        instrument: instrumentRef,
-        range: viewState.timeRange,
-        granularity: "daily",
-      }
-      : null,
-  );
-  const rangeHistory = useResolvedEntryValue(baseChartEntry);
-  const axisWidth = compact
-    ? axisMode === "percent" ? 11 : 8
-    : axisMode === "percent" ? 11 : 10;
-  const axisGap = axisWidth > 0 ? 1 : 0;
-  const chartWidth = Math.max(width - axisWidth - axisGap, compact ? 12 : 20);
-  const maxCursorX = chartWidth - 1;
-  const panStep = Math.max(Math.floor(chartWidth / 10), 1);
-  const baseHistory = rangeHistory && rangeHistory.length > 0
-    ? rangeHistory
-    : (financials?.priceHistory ?? []);
-  const detailRequest = useMemo(() => {
-    if (compact || !instrumentRef || baseHistory.length < 2 || viewState.zoomLevel <= 1) return null;
-    const window = getVisibleWindow(baseHistory, viewState, chartWidth);
-    if (window.points.length < 2) return null;
-
-    const startDate = coerceChartDate(window.points[0]!.date as Date | string | number);
-    const endDate = coerceChartDate(window.points[window.points.length - 1]!.date as Date | string | number);
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
-    const spanMs = endDate.getTime() - startDate.getTime();
-    const barSize = resolveBarSize(spanMs);
-    if (!barSize) return null;
-
-    return {
-      instrument: instrumentRef,
-      range: viewState.timeRange,
-      granularity: "detail" as const,
-      startDate,
-      endDate,
-      barSize,
-    };
-  }, [baseHistory, chartWidth, compact, instrumentRef, viewState]);
-  const detailChartEntry = useChartQuery(detailRequest);
-  const detailHistory = useResolvedEntryValue(detailChartEntry);
-
-  const history = (viewState.zoomLevel > 1 && detailHistory) ? detailHistory : baseHistory;
-
   useEffect(() => {
-    if (interactive) {
-      cursorMotionKindRef.current = "discrete";
-      setViewState((current) => (current.cursorX === null ? { ...current, cursorX: chartWidth - 1 } : current));
-    } else {
-      updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-      setViewState((current) => (current.cursorX !== null || current.cursorY !== null
-        ? { ...current, cursorX: null, cursorY: null }
-        : current));
+    const provider = getSharedDataProvider();
+    if (!provider || symbols.length === 0) {
+      setRemoteHistory({});
+      return;
     }
-  }, [interactive, chartWidth]);
+
+    const id = ++fetchIdRef.current;
+    setRemoteHistory({});
+
+    Promise.all(symbolSources.map(async (source) => {
+      try {
+        const points = await provider.getPriceHistory(source.symbol, source.exchange, viewState.timeRange, {
+          brokerId: source.brokerId,
+          brokerInstanceId: source.brokerInstanceId,
+          instrument: source.instrument,
+        });
+        return [source.symbol, points] as const;
+      } catch {
+        return [source.symbol, null] as const;
+      }
+    })).then((entries) => {
+      if (fetchIdRef.current !== id) return;
+      setRemoteHistory(Object.fromEntries(entries));
+    }).catch(() => {
+      if (fetchIdRef.current !== id) return;
+      setRemoteHistory({});
+    });
+  }, [symbolMetaKey, symbolSources, symbols.length, viewState.timeRange]);
 
   useEffect(() => {
     const refreshSupport = () => setKittySupport(getCachedKittySupport(renderer));
@@ -699,203 +695,32 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     };
   }, [preferredRenderer, renderer]);
 
-  const persistDefaultRenderMode = (nextMode: ChartRenderMode) => {
-    if (nextMode === defaultRenderMode) return;
-    const nextConfig = {
-      ...state.config,
-      chartPreferences: {
-        ...state.config.chartPreferences,
-        defaultRenderMode: nextMode,
-      },
+  const series = useMemo(() => symbolSources.map((source, index) => {
+    const history = remoteHistory[source.symbol] && remoteHistory[source.symbol]!.length > 0
+      ? remoteHistory[source.symbol]!
+      : source.priceHistory;
+    const color = getComparisonSeriesColor(index);
+    return {
+      symbol: source.symbol,
+      color,
+      fillColor: blendHex(colors.bg, color, 0.22),
+      currency: source.currency,
+      points: history,
     };
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
-    saveConfig(nextConfig).catch(() => {});
-  };
+  }), [colors.bg, remoteHistory, symbolSources]);
 
-  const setRange = (range: ChartViewState["timeRange"]) => {
-    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-    setViewState((current) => ({
-      ...current,
-      timeRange: range,
-      panOffset: 0,
-      zoomLevel: 1,
-      cursorX: null,
-      cursorY: null,
-    }));
-  };
-
-  const setRenderMode = (mode: ChartRenderMode) => {
-    persistDefaultRenderMode(mode);
-    setViewState((current) => ({ ...current, renderMode: mode }));
-  };
-
-  const headerRows = compact ? 0 : 3;
-  const helpRow = compact ? 0 : 1;
-  const timeAxisRow = 1;
-  const volumeHeight = showVolume && !compact ? 3 : 0;
-  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
-  const isDetailView = viewState.zoomLevel > 1 && detailHistory != null && detailHistory.length > 0;
-  const historyRenderKey = history.length === 0
-    ? "empty"
-    : [
-      history.length,
-      new Date(history[0]!.date).getTime(),
-      new Date(history[history.length - 1]!.date).getTime(),
-      history[history.length - 1]!.close,
-    ].join(":");
-
-  useEffect(() => {
-    queueMicrotask(() => renderer.requestRender());
-  }, [chartHeight, chartWidth, compact, historyRenderKey, renderer, ticker?.metadata.ticker, viewState.renderMode]);
-
-  const chartWindow = useMemo(() => (
-    isDetailView
-      ? { points: history, startIdx: 0, endIdx: history.length }
-      : getVisibleWindow(history, viewState, chartWidth)
-  ), [chartWidth, history, isDetailView, viewState.panOffset, viewState.timeRange, viewState.zoomLevel]);
+  const visibleWindow = useMemo(() => (
+    getVisibleComparisonWindow(series, viewState, chartWidth)
+  ), [chartWidth, series, viewState]);
 
   const projection = useMemo(() => (
-    projectChartData(chartWindow.points, chartWidth, viewState.renderMode, !!compact)
-  ), [chartWindow.points, chartWidth, compact, viewState.renderMode]);
-
-  useKeyboard((event) => {
-    if (!focused || compact) return;
-
-    switch (event.name) {
-      case "=":
-        setViewState((current) => ({ ...current, zoomLevel: Math.min(current.zoomLevel * 1.5, 10) }));
-        return;
-      case "-":
-        setViewState((current) => ({ ...current, zoomLevel: Math.max(current.zoomLevel / 1.5, 0.5) }));
-        return;
-      case "0":
-        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-        setViewState((current) => ({ ...current, panOffset: 0, zoomLevel: 1, cursorX: null, cursorY: null }));
-        return;
-      case "v":
-        setShowVolume((value) => !value);
-        return;
-      case "a":
-        setViewState((current) => ({ ...current, panOffset: current.panOffset + panStep }));
-        return;
-      case "d":
-        setViewState((current) => ({ ...current, panOffset: Math.max(current.panOffset - panStep, 0) }));
-        return;
-      case "m":
-        setViewState((current) => {
-          const activeMode = current.renderMode ?? "area";
-          const index = CHART_RENDER_MODES.indexOf(activeMode);
-          const nextMode = CHART_RENDER_MODES[(index + 1) % CHART_RENDER_MODES.length]!;
-          persistDefaultRenderMode(nextMode);
-          return { ...current, renderMode: nextMode };
-        });
-        return;
-    }
-
-    if (event.name >= "1" && event.name <= "7") {
-      const index = parseInt(event.name) - 1;
-      if (index < TIME_RANGES.length) setRange(TIME_RANGES[index]!);
-      return;
-    }
-
-    if (!interactive) return;
-
-    switch (event.name) {
-      case "left":
-        if (event.shift) {
-          setViewState((current) => ({ ...current, panOffset: current.panOffset + panStep }));
-        } else {
-          cursorMotionKindRef.current = "discrete";
-          setViewState((current) => {
-            const pointCount = projection.points.length;
-            const currentIndex = pointCount <= 0
-              ? -1
-              : getActivePointIndex(
-                pointCount,
-                chartWidth,
-                current.cursorX ?? maxCursorX,
-                projection.effectiveMode,
-              );
-            const nextCursor = resolveAdjacentSelectionCursorX(
-              current.cursorX,
-              -1,
-              pointCount,
-              chartWidth,
-              projection.effectiveMode,
-            );
-            const maxPan = getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth);
-            if (currentIndex <= 0) {
-              return {
-                ...current,
-                cursorX: nextCursor,
-                cursorY: null,
-                panOffset: clamp(current.panOffset + 1, 0, maxPan),
-              };
-            }
-            return { ...current, cursorX: nextCursor, cursorY: null };
-          });
-        }
-        return;
-      case "right":
-        if (event.shift) {
-          setViewState((current) => ({ ...current, panOffset: Math.max(current.panOffset - panStep, 0) }));
-        } else {
-          cursorMotionKindRef.current = "discrete";
-          setViewState((current) => {
-            const pointCount = projection.points.length;
-            const currentIndex = pointCount <= 0
-              ? -1
-              : getActivePointIndex(
-                pointCount,
-                chartWidth,
-                current.cursorX ?? 0,
-                projection.effectiveMode,
-              );
-            const nextCursor = resolveAdjacentSelectionCursorX(
-              current.cursorX,
-              1,
-              pointCount,
-              chartWidth,
-              projection.effectiveMode,
-            );
-            if (currentIndex >= pointCount - 1) {
-              return {
-                ...current,
-                cursorX: nextCursor,
-                cursorY: null,
-                panOffset: Math.max(current.panOffset - 1, 0),
-              };
-            }
-            return { ...current, cursorX: nextCursor, cursorY: null };
-          });
-        }
-        return;
-    }
-  });
-
-  const chartColors = useMemo(() => {
-    const rawChange = chartWindow.points.length >= 2
-      ? chartWindow.points[chartWindow.points.length - 1]!.close - chartWindow.points[0]!.close
-      : 0;
-    const trend = rawChange < 0 ? "negative" : rawChange > 0 ? "positive" : "neutral";
-    return resolveChartPalette({
-      bg: colors.bg,
-      border: colors.border,
-      borderFocused: colors.borderFocused,
-      text: colors.text,
-      textDim: colors.textDim,
-      positive: colors.positive,
-      negative: colors.negative,
-    }, trend);
-  }, [chartWindow.points]);
-  const chartCurrency = financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
+    projectComparisonChartData(series, chartWidth, viewState, axisMode)
+  ), [axisMode, chartWidth, series, viewState]);
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;
-  const selectionCursorX = interactive ? cursorX : null;
-  const selectionCursorY = interactive ? cursorY : null;
-  const displayCursorX = interactive && displayCursor.cellX !== null ? clamp(displayCursor.cellX, 0, chartWidth - 1) : null;
-  const displayCursorY = interactive && displayCursor.cellY !== null ? clamp(displayCursor.cellY, 0, chartHeight - 1) : null;
+  const displayCursorX = displayCursor.cellX !== null ? clamp(displayCursor.cellX, 0, chartWidth - 1) : null;
+  const displayCursorY = displayCursor.cellY !== null ? clamp(displayCursor.cellY, 0, chartHeight - 1) : null;
 
   const commitSelectionCursor = (next: { cursorX: number | null; cursorY: number | null }) => {
     setViewState((current) => (
@@ -904,21 +729,6 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         : { ...current, cursorX: next.cursorX, cursorY: next.cursorY }
     ));
   };
-
-  const selectionScene = useMemo(() => buildChartScene(projection.points, {
-    width: chartWidth,
-    height: chartHeight,
-    showVolume: showVolume && !compact,
-    volumeHeight,
-    cursorX: selectionCursorX,
-    cursorY: selectionCursorY,
-    mode: projection.effectiveMode,
-    axisMode,
-    colors: chartColors,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, volumeHeight]);
-  const snappedSelectionCursorX = selectionScene
-    ? getPointTerminalColumn(selectionScene.activeIdx, projection.points.length, chartWidth, projection.effectiveMode)
-    : null;
 
   useEffect(() => {
     const remapCursor = (cursor: DisplayCursorState) => buildDisplayCursorState(
@@ -937,101 +747,72 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   useEffect(() => {
     if (cursorMotionKindRef.current === "pixel") return;
     updateDisplayCursorTarget(
-      resolveSelectionDisplayCursorState(
-        selectionCursorX,
-        selectionCursorY,
-        cursorMotionKindRef.current === "discrete" ? snappedSelectionCursorX : null,
-        selectionScene?.cursorY ?? null,
-        plotRef.current,
-        renderer,
-      ),
+      buildDisplayCursorState(cursorX, cursorY, plotRef.current, renderer),
       cursorMotionKindRef.current,
     );
-  }, [renderer, selectionCursorX, selectionCursorY, selectionScene?.cursorY, snappedSelectionCursorX]);
-
-  const nativeBaseScene = useMemo(() => buildChartScene(projection.points, {
-    width: chartWidth,
-    height: chartHeight,
-    showVolume: showVolume && !compact,
-    volumeHeight,
-    cursorX: null,
-    cursorY: null,
-    mode: projection.effectiveMode,
-    axisMode,
-    colors: chartColors,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }, [cursorX, cursorY, renderer]);
 
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
 
-  const staticResult = useMemo(() => renderChart(projection.points, {
+  const staticScene = useMemo(() => buildComparisonChartScene(projection, {
     width: chartWidth,
     height: chartHeight,
-    showVolume: showVolume && !compact,
-    volumeHeight,
     cursorX: null,
     cursorY: null,
-    mode: projection.effectiveMode,
-    axisMode,
-    currency: chartCurrency,
+    selectedSymbol: viewState.selectedSymbol,
     colors: chartColors,
-  }), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  }), [chartColors, chartHeight, chartWidth, projection, viewState.selectedSymbol]);
+
+  const staticResult = useMemo(() => renderComparisonChart(projection, {
+    width: chartWidth,
+    height: chartHeight,
+    cursorX: null,
+    cursorY: null,
+    selectedSymbol: viewState.selectedSymbol,
+    colors: chartColors,
+  }), [chartColors, chartHeight, chartWidth, projection, viewState.selectedSymbol]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty"
       ? null
-      : renderChart(projection.points, {
+      : renderComparisonChart(projection, {
         width: chartWidth,
         height: chartHeight,
-        showVolume: showVolume && !compact,
-        volumeHeight,
         cursorX: displayCursorX,
         cursorY: displayCursorY,
-        mode: projection.effectiveMode,
-        axisMode,
-        currency: chartCurrency,
+        selectedSymbol: viewState.selectedSymbol,
         colors: chartColors,
       })
-  ), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, viewState.selectedSymbol]);
 
   const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
-
-  const kittyCursorRow = effectiveRenderer === "kitty" && displayCursorY !== null && nativeBaseScene
-    ? Math.round(clamp(displayCursorY, 0, Math.max(nativeBaseScene.chartRows - 1, 0)))
-    : null;
-  const kittyCrosshairPrice = effectiveRenderer === "kitty" && displayCursorY !== null && nativeBaseScene
-    ? nativeBaseScene.max
-      - (clamp(displayCursorY, 0, Math.max(nativeBaseScene.chartRows - 1, 0)) / Math.max(nativeBaseScene.chartRows - 1, 1))
-      * (nativeBaseScene.max - nativeBaseScene.min)
-    : null;
-  const cursorRow = effectiveRenderer === "kitty" ? kittyCursorRow : result.cursorRow;
-  const crosshairPrice = effectiveRenderer === "kitty" ? kittyCrosshairPrice : result.crosshairPrice;
+  const liveScene = useMemo(() => (
+    effectiveRenderer === "kitty"
+      ? staticScene
+      : buildComparisonChartScene(projection, {
+        width: chartWidth,
+        height: chartHeight,
+        cursorX: displayCursorX,
+        cursorY: displayCursorY,
+        selectedSymbol: viewState.selectedSymbol,
+        colors: chartColors,
+      })
+  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, staticScene, viewState.selectedSymbol]);
 
   const nativeCrosshair = useMemo<NativeCrosshairOverlay | null>(() => {
-    if (!interactive || displayCursor.cellX === null || displayCursor.cellY === null) return null;
+    if (displayCursor.cellX === null || displayCursor.cellY === null) return null;
     return {
       width: chartWidth,
       height: chartHeight,
-      chartRows: chartHeight - (showVolume && !compact ? volumeHeight : 0),
+      chartRows: chartHeight,
       pixelX: displayCursor.pixelX,
       pixelY: displayCursor.pixelY,
       colors: {
         crosshairColor: chartColors.crosshairColor,
       },
     };
-  }, [
-    chartColors.crosshairColor,
-    chartHeight,
-    chartWidth,
-    compact,
-    displayCursor.cellX,
-    displayCursor.cellY,
-    displayCursor.pixelX,
-    displayCursor.pixelY,
-    interactive,
-    showVolume,
-    volumeHeight,
-  ]);
+  }, [chartColors.crosshairColor, chartHeight, chartWidth, displayCursor]);
   const blankPlotLines = useMemo(() => buildBlankPlotLines(chartWidth, chartHeight), [chartHeight, chartWidth]);
 
   useEffect(() => {
@@ -1093,7 +874,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   }, [effectiveRenderer, nativeSurfaceManager, paneId, renderer, rendererState.nativeReady]);
 
   useEffect(() => {
-    if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !renderer.resolution || !plotRef.current || !nativeBaseScene) {
+    if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !renderer.resolution || !plotRef.current || !staticScene) {
       lastNativeBaseBitmapRef.current = null;
       nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
       return;
@@ -1108,27 +889,18 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     }
 
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
-    const bitmapKey = buildNativeBitmapKey(
-      projection.points.length,
-      projection.points,
+    const bitmapKey = buildComparisonNativeBitmapKey(
+      symbols.length,
+      projection,
+      viewState.selectedSymbol,
       bitmapSize.pixelWidth,
       bitmapSize.pixelHeight,
-      projection.effectiveMode,
-      showVolume && !compact,
-      [
-        chartColors.lineColor,
-        chartColors.fillColor,
-        chartColors.gridColor,
-        chartColors.volumeUp,
-        chartColors.volumeDown,
-        chartColors.candleUp,
-        chartColors.candleDown,
-      ].join(","),
+      [chartColors.bgColor, chartColors.gridColor, chartColors.crosshairColor].join(","),
     );
     const cachedBitmap = lastNativeBaseBitmapRef.current?.key === bitmapKey
       ? lastNativeBaseBitmapRef.current.bitmap
       : null;
-    const bitmap = cachedBitmap ?? renderNativeChartBase(nativeBaseScene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
+    const bitmap = cachedBitmap ?? renderNativeComparisonChartBase(staticScene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
     if (!cachedBitmap) {
       lastNativeBaseBitmapRef.current = { key: bitmapKey, bitmap };
     }
@@ -1141,25 +913,22 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
       bitmap,
       bitmapKey,
     });
-    renderer.requestRender();
+    if (!cachedBitmap) {
+      renderer.requestRender();
+    }
   }, [
-    chartColors.candleDown,
-    chartColors.candleUp,
-    chartColors.fillColor,
+    chartColors.bgColor,
+    chartColors.crosshairColor,
     chartColors.gridColor,
-    chartColors.lineColor,
-    chartColors.volumeDown,
-    chartColors.volumeUp,
-    compact,
     effectiveRenderer,
-    nativeBaseScene,
     nativeSurfaceManager,
     paneId,
-    projection.effectiveMode,
-    projection.points,
+    projection,
     renderer,
     rendererState.nativeReady,
-    showVolume,
+    staticScene,
+    symbols.length,
+    viewState.selectedSymbol,
   ]);
 
   useEffect(() => {
@@ -1235,35 +1004,126 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     rendererState.nativeReady,
   ]);
 
-  if (history.length === 0) {
-    return <text fg={colors.textDim}>No price history available.</text>;
-  }
+  useKeyboard((event) => {
+    if (!focused || symbols.length === 0) return;
 
-  const firstPrice = chartWindow.points[0]?.close ?? 0;
-  const lastPrice = chartWindow.points[chartWindow.points.length - 1]?.close ?? 0;
-  const change = lastPrice - firstPrice;
-  const changePct = firstPrice ? (change / firstPrice) * 100 : 0;
-  const requestedMode = projection.requestedMode;
-  const showOhlcSummary = projection.effectiveMode === "candles" || projection.effectiveMode === "ohlc";
-  const hasSelectionCursor = selectionCursorX !== null;
-  const hasDisplayCursor = displayCursorX !== null && displayCursorY !== null;
-  const displayPrice = hasSelectionCursor ? (selectionScene?.priceAtCursor ?? lastPrice) : lastPrice;
-  const displayChange = hasSelectionCursor ? (selectionScene?.changeAtCursor ?? change) : change;
-  const displayChangePct = hasSelectionCursor ? (selectionScene?.changePctAtCursor ?? changePct) : changePct;
-  const displayDate = hasSelectionCursor || showOhlcSummary
-    ? (selectionScene?.dateAtCursor ? formatDateShort(selectionScene.dateAtCursor) : null)
-    : null;
-  const activePoint = showOhlcSummary ? (selectionScene?.activePoint ?? null) : null;
-  const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
-  const cursorAxisLabel = hasDisplayCursor && cursorRow !== null && crosshairPrice !== null
-    ? formatAxisValue(crosshairPrice, axisMode, projection.points[0]?.close ?? 0, chartCurrency)
-    : null;
+    switch (event.name) {
+      case "=":
+        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel * 1.5, 0.5, series, chartWidth));
+        return;
+      case "-":
+        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel / 1.5, 0.5, series, chartWidth));
+        return;
+      case "0":
+        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+        setViewState((current) => ({
+          ...current,
+          panOffset: 0,
+          zoomLevel: 1,
+          cursorX: null,
+          cursorY: null,
+        }));
+        return;
+      case "a":
+        setViewState((current) => ({
+          ...current,
+          panOffset: clamp(current.panOffset + Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth)),
+        }));
+        return;
+      case "d":
+        setViewState((current) => ({
+          ...current,
+          panOffset: clamp(current.panOffset - Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth)),
+        }));
+        return;
+      case "m":
+        setViewState((current) => ({
+          ...current,
+          renderMode: current.renderMode === "line" ? "area" : "line",
+        }));
+        return;
+      case "h":
+        cursorMotionKindRef.current = "discrete";
+        setViewState((current) => ({
+          ...current,
+          cursorX: current.cursorX === null ? maxCursorX : Math.max(current.cursorX - 1, 0),
+        }));
+        return;
+      case "l":
+        cursorMotionKindRef.current = "discrete";
+        setViewState((current) => ({
+          ...current,
+          cursorX: current.cursorX === null ? 0 : Math.min(current.cursorX + 1, maxCursorX),
+        }));
+        return;
+      case "escape":
+        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+        setViewState((current) => ({ ...current, cursorX: null, cursorY: null }));
+        return;
+      case "enter":
+      case "return":
+        if (viewState.selectedSymbol) onOpenSymbol(viewState.selectedSymbol);
+        return;
+      case "left":
+        setViewState((current) => {
+          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
+          return {
+            ...current,
+            selectedSymbol: symbols[Math.max(currentIndex - 1, 0)] ?? current.selectedSymbol,
+          };
+        });
+        return;
+      case "right":
+        setViewState((current) => {
+          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
+          return {
+            ...current,
+            selectedSymbol: symbols[Math.min(currentIndex + 1, symbols.length - 1)] ?? current.selectedSymbol,
+          };
+        });
+        return;
+      case "up":
+      case "k":
+        setViewState((current) => {
+          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
+          return {
+            ...current,
+            selectedSymbol: symbols[Math.max(currentIndex - legendColumns, 0)] ?? current.selectedSymbol,
+          };
+        });
+        return;
+      case "down":
+      case "j":
+        setViewState((current) => {
+          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
+          return {
+            ...current,
+            selectedSymbol: symbols[Math.min(currentIndex + legendColumns, symbols.length - 1)] ?? current.selectedSymbol,
+          };
+        });
+        return;
+    }
+
+    if (event.name >= "1" && event.name <= "7") {
+      const index = parseInt(event.name, 10) - 1;
+      if (index < TIME_RANGES.length) {
+        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+        setViewState((current) => ({
+          ...current,
+          timeRange: TIME_RANGES[index]!,
+          panOffset: 0,
+          zoomLevel: 1,
+          cursorX: null,
+          cursorY: null,
+        }));
+      }
+    }
+  });
 
   const handlePlotMove = (event: ChartMouseEvent) => {
-    if (!interactive || compact) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
-    const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
+    const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
     updateDisplayCursorTarget(
       buildDisplayCursorState(
         localPointer.cellX,
@@ -1279,10 +1139,9 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   };
 
   const handlePlotDown = (event: ChartMouseEvent) => {
-    if (!interactive || compact) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
-    const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
+    const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
     updateDisplayCursorTarget(
       buildDisplayCursorState(
         localPointer.cellX,
@@ -1302,10 +1161,9 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   };
 
   const handlePlotDrag = (event: ChartMouseEvent) => {
-    if (!interactive || compact) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (localPointer) {
-      const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
+      const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
       updateDisplayCursorTarget(
         buildDisplayCursorState(
           localPointer.cellX,
@@ -1321,20 +1179,17 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     }
     if (!dragRef.current) return;
 
-    const filtered = filterByTimeRange(baseHistory, viewState.timeRange);
-    const visibleCount = Math.max(Math.floor(chartWidth / viewState.zoomLevel), 10);
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
-    const pointDelta = Math.round((deltaCells / Math.max(chartWidth, 1)) * visibleCount);
+    const pointDelta = Math.round((deltaCells / Math.max(chartWidth, 1)) * Math.max(visibleWindow.dates.length, 1));
     const nextPan = clamp(
       dragRef.current.startPanOffset - pointDelta,
       0,
-      Math.max(filtered.length - visibleCount, 0),
+      Math.max(visibleWindow.totalDates - visibleWindow.dates.length, 0),
     );
     setViewState((current) => ({ ...current, panOffset: nextPan }));
   };
 
   const handlePlotScroll = (event: ChartMouseEvent) => {
-    if (!interactive || compact) return;
     const direction = event.scroll?.direction;
     if (!direction) return;
 
@@ -1342,7 +1197,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     const anchorRatio = localPointer ? localPointer.cellX / Math.max(chartWidth - 1, 1) : 0.5;
 
     if (localPointer) {
-      const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
+      const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
       updateDisplayCursorTarget(
         buildDisplayCursorState(
           localPointer.cellX,
@@ -1362,7 +1217,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
       const nextPan = clamp(
         viewState.panOffset + shiftDirection * Math.max(Math.round(chartWidth * 0.08), 1),
         0,
-        getMaxPanOffset(baseHistory, viewState.timeRange, viewState.zoomLevel, chartWidth),
+        getMaxComparisonPanOffset(series, viewState.timeRange, viewState.zoomLevel, chartWidth),
       );
       setViewState((current) => ({ ...current, panOffset: nextPan }));
       return;
@@ -1370,10 +1225,10 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
 
     switch (direction) {
       case "up":
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.18, anchorRatio, baseHistory, chartWidth));
+        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel * 1.18, anchorRatio, series, chartWidth));
         return;
       case "down":
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel / 1.18, anchorRatio, baseHistory, chartWidth));
+        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel / 1.18, anchorRatio, series, chartWidth));
         return;
       case "left":
         setViewState((current) => ({
@@ -1381,7 +1236,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
           panOffset: clamp(
             current.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
             0,
-            getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth),
+            getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth),
           ),
         }));
         return;
@@ -1391,12 +1246,37 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
           panOffset: clamp(
             current.panOffset - Math.max(Math.round(chartWidth * 0.08), 1),
             0,
-            getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth),
+            getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth),
           ),
         }));
         return;
     }
   };
+
+  if (symbols.length === 0) {
+    return <text fg={colors.textDim}>No comparison tickers configured.</text>;
+  }
+
+  if (series.every((entry) => entry.points.length === 0)) {
+    return <text fg={colors.textDim}>No chart data yet.</text>;
+  }
+
+  const selectedSeries = result.selectedSeries ?? staticResult.selectedSeries;
+  const selectedPoint = result.selectedPoint ?? staticResult.selectedPoint;
+  const selectedRawValue = selectedPoint?.rawValue ?? selectedSeries?.latestRawValue ?? null;
+  const selectedBaseValue = selectedSeries?.baseValue ?? null;
+  const selectedChange = selectedRawValue !== null && selectedBaseValue !== null
+    ? selectedRawValue - selectedBaseValue
+    : null;
+  const selectedChangePct = selectedChange !== null && selectedBaseValue
+    ? (selectedChange / selectedBaseValue) * 100
+    : null;
+  const selectedCurrency = selectedSeries?.currency ?? "USD";
+  const displayDate = result.activeDate ?? staticResult.activeDate;
+  const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
+  const cursorAxisLabel = result.cursorRow !== null && result.crosshairValue !== null
+    ? formatComparisonAxisValue(result.crosshairValue, projection.effectiveAxisMode)
+    : null;
 
   const plotContent = effectiveRenderer === "kitty"
     ? blankPlotLines.map((line, index) => (
@@ -1413,15 +1293,15 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
       height={chartHeight}
       flexDirection="column"
       backgroundColor={chartColors.bgColor}
-      onMouseMove={compact ? undefined : handlePlotMove}
-      onMouseDown={compact ? undefined : handlePlotDown}
-      onMouseUp={compact ? undefined : () => { dragRef.current = null; }}
-      onMouseDrag={compact ? undefined : handlePlotDrag}
-      onMouseDragEnd={compact ? undefined : () => { dragRef.current = null; }}
-      onMouseOut={compact ? undefined : () => {
+      onMouseMove={handlePlotMove}
+      onMouseDown={handlePlotDown}
+      onMouseUp={() => { dragRef.current = null; }}
+      onMouseDrag={handlePlotDrag}
+      onMouseDragEnd={() => { dragRef.current = null; }}
+      onMouseOut={() => {
         dragRef.current = null;
       }}
-      onMouseScroll={compact ? undefined : handlePlotScroll}
+      onMouseScroll={handlePlotScroll}
     >
       {plotContent}
     </box>
@@ -1430,7 +1310,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   const axisBox = (
     <box width={axisWidth} height={chartHeight} flexDirection="column">
       {Array.from({ length: chartHeight }, (_, row) => {
-        const isCursorRow = cursorAxisLabel !== null && cursorRow === row;
+        const isCursorRow = cursorAxisLabel !== null && result.cursorRow === row;
         const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
         return (
           <text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
@@ -1441,42 +1321,25 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     </box>
   );
 
-  if (compact) {
-    return (
-      <box flexDirection="column">
-        <box flexDirection="row" height={chartHeight} gap={axisGap}>
-          {plotBox}
-          {axisBox}
-        </box>
-        <box height={1}>
-          <text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</text>
-        </box>
-      </box>
-    );
-  }
+  const legendRowsData = Array.from({ length: Math.ceil(symbols.length / legendColumns) }, (_, rowIndex) => (
+    symbols.slice(rowIndex * legendColumns, rowIndex * legendColumns + legendColumns)
+  ));
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {ticker?.metadata.ticker ?? ""} - {viewState.timeRange}
+          {viewState.selectedSymbol ?? "Compare"} - {viewState.timeRange}
         </text>
-        <text fg={priceColor(displayChange)}>
-          {formatCurrency(displayPrice, chartCurrency)}
+        <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
+          {selectedRawValue !== null ? formatCurrency(selectedRawValue, selectedCurrency) : "—"}
         </text>
-        <text fg={priceColor(displayChange)}>
-          {displayChange >= 0 ? "+" : ""}{displayChange.toFixed(2)} ({displayChangePct >= 0 ? "+" : ""}{displayChangePct.toFixed(2)}%)
+        <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
+          {selectedChange !== null && selectedChangePct !== null
+            ? `${selectedChange >= 0 ? "+" : ""}${selectedChange.toFixed(2)} (${formatPercentRaw(selectedChangePct)})`
+            : "Waiting for data"}
         </text>
-        {displayDate && <text fg={colors.textDim}>{displayDate}</text>}
-        {showOhlcSummary && activePoint && (
-          <>
-            <text fg={colors.textDim}>O {formatCurrency(activePoint.open, chartCurrency)}</text>
-            <text fg={colors.textDim}>H {formatCurrency(activePoint.high, chartCurrency)}</text>
-            <text fg={colors.textDim}>L {formatCurrency(activePoint.low, chartCurrency)}</text>
-            <text fg={colors.textDim}>C {formatCurrency(activePoint.close, chartCurrency)}</text>
-            <text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</text>
-          </>
-        )}
+        {displayDate && <text fg={colors.textDim}>{formatDateShort(displayDate)}</text>}
       </box>
 
       <box flexDirection="row" height={1}>
@@ -1484,9 +1347,19 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
           {TIME_RANGES.map((range, index) => (
             <text
               key={range}
-              fg={viewState.timeRange === range ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
+              fg={viewState.timeRange === range ? colors.textBright : colors.textDim}
               attributes={viewState.timeRange === range ? TextAttributes.BOLD : 0}
-              onMouseDown={() => setRange(range)}
+              onMouseDown={() => {
+                updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+                setViewState((current) => ({
+                  ...current,
+                  timeRange: range,
+                  panOffset: 0,
+                  zoomLevel: 1,
+                  cursorX: null,
+                  cursorY: null,
+                }));
+              }}
             >
               {`${index + 1}:${range}`}
             </text>
@@ -1496,36 +1369,24 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
           )}
         </box>
         <box flexGrow={1} />
-        {chartWidth >= 72 ? (
-          <box flexDirection="row" gap={1}>
-            {CHART_RENDER_MODES.map((mode) => (
-              <text
-                key={mode}
-                fg={requestedMode === mode ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
-                attributes={requestedMode === mode ? TextAttributes.BOLD : 0}
-                onMouseDown={() => setRenderMode(mode)}
-              >
-                {MODE_CHIPS[mode]}
-              </text>
-            ))}
-            {projection.fallbackMode && (
-              <text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</text>
-            )}
-            {rendererState.nativeUnavailable && (
-              <text fg={colors.textDim}>native unavailable</text>
-            )}
-          </box>
-        ) : (
-          <box flexDirection="row" gap={1}>
-            <text fg={colors.textDim}>mode:{MODE_LABELS[requestedMode]}</text>
-            {projection.fallbackMode && (
-              <text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</text>
-            )}
-            {rendererState.nativeUnavailable && (
-              <text fg={colors.textDim}>native unavailable</text>
-            )}
-          </box>
-        )}
+        <box flexDirection="row" gap={1}>
+          {COMPARISON_RENDER_MODES.map((mode) => (
+            <text
+              key={mode}
+              fg={viewState.renderMode === mode ? colors.textBright : colors.textDim}
+              attributes={viewState.renderMode === mode ? TextAttributes.BOLD : 0}
+              onMouseDown={() => setViewState((current) => ({ ...current, renderMode: mode }))}
+            >
+              {MODE_CHIPS[mode]}
+            </text>
+          ))}
+          {projection.warning && (
+            <text fg={colors.textDim}>{projection.warning}</text>
+          )}
+          {rendererState.nativeUnavailable && (
+            <text fg={colors.textDim}>native unavailable</text>
+          )}
+        </box>
       </box>
 
       <box flexDirection="row" height={chartHeight} gap={axisGap}>
@@ -1534,16 +1395,87 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
       </box>
 
       <box height={1}>
-        <text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</text>
+        <text fg={colors.textDim}>{result.timeLabels || staticResult.timeLabels}</text>
       </box>
+
+      {legendRows > 0 && (
+        <scrollbox height={legendRows} scrollY>
+          <box flexDirection="column">
+            {legendRowsData.map((legendRow, rowIndex) => (
+              <box key={`legend-row:${rowIndex}`} flexDirection="row" gap={1}>
+                {legendRow.map((symbol) => {
+                  const item = projection.series.find((entry) => entry.symbol === symbol) ?? null;
+                  const isSelected = viewState.selectedSymbol === symbol;
+                  const latestRaw = item?.latestRawValue ?? null;
+                  const latestChange = latestRaw !== null && item?.baseValue != null ? latestRaw - item.baseValue : null;
+                  const latestChangePct = latestChange !== null && item?.baseValue
+                    ? (latestChange / item.baseValue) * 100
+                    : null;
+                  const currency = item?.currency ?? "USD";
+                  const summary = latestRaw !== null && latestChangePct !== null
+                    ? `${symbol} ${formatCurrency(latestRaw, currency)} ${formatPercentRaw(latestChangePct)}`
+                    : `${symbol} waiting`;
+
+                  return (
+                    <box
+                      key={symbol}
+                      width={legendItemWidth}
+                      backgroundColor={isSelected ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel}
+                      onMouseMove={() => setSelectedSymbol(symbol)}
+                      onMouseDown={() => {
+                        setSelectedSymbol(symbol);
+                        onOpenSymbol(symbol);
+                      }}
+                    >
+                      <text fg={item?.color ?? colors.textDim} attributes={isSelected ? TextAttributes.BOLD : 0}>
+                        {clipText(`${isSelected ? ">" : " "} ${summary}`, legendItemWidth)}
+                      </text>
+                    </box>
+                  );
+                })}
+              </box>
+            ))}
+          </box>
+        </scrollbox>
+      )}
 
       <box height={1}>
         <text fg={colors.textMuted}>
-          {interactive
-            ? "mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  ←→ cursor  ⇧←→ pan  m mode  1-7 range  v vol  Esc exit"
-            : "Enter crosshair  click chart to focus  a/d pan  +/- zoom  m mode  1-7 range  v volume  0 reset"}
+          mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  h/l cursor  arrows legend  Enter open  1-7 range  m mode  0 reset
         </text>
       </box>
     </box>
+  );
+}
+
+const MemoizedComparisonStockChartView = memo(ComparisonStockChartView);
+
+export function ComparisonStockChart(props: ComparisonStockChartProps) {
+  const { state } = useAppState();
+  const symbolsKey = props.symbols.join("|");
+  const stableSymbols = useMemo(() => props.symbols, [symbolsKey]);
+  const symbolSources = useMemo<ComparisonChartSymbolSource[]>(() => stableSymbols.map((symbol) => {
+    const ticker = state.tickers.get(symbol) ?? null;
+    const financials = state.financials.get(symbol) ?? null;
+    const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
+    return {
+      symbol,
+      currency: financials?.quote?.currency ?? ticker?.metadata.currency,
+      exchange: ticker?.metadata.exchange ?? "",
+      brokerId: instrument?.brokerId,
+      brokerInstanceId: instrument?.brokerInstanceId,
+      instrument,
+      priceHistory: financials?.priceHistory ?? [],
+    };
+  }), [stableSymbols, state.financials, state.tickers]);
+
+  return (
+    <MemoizedComparisonStockChartView
+      {...props}
+      symbols={stableSymbols}
+      defaultRenderMode={state.config.chartPreferences.defaultRenderMode}
+      preferredRenderer={state.config.chartPreferences.renderer}
+      symbolSources={symbolSources}
+    />
   );
 }

@@ -1,5 +1,5 @@
 diff --git a/index-e89anq5x.js b/index-e89anq5x.js
-index e3b6cf9..d0645bb 100644
+index e3b6cf9..14a46d7 100644
 --- a/index-e89anq5x.js
 +++ b/index-e89anq5x.js
 @@ -6328,17 +6328,27 @@ class MouseParser {
@@ -11,11 +11,11 @@ index e3b6cf9..d0645bb 100644
 +    if (cellCount <= 1) {
 +      return 0;
 +    }
-+    if (!(pixelExtent > 1)) {
++    if (!(pixelExtent > 0)) {
 +      return Math.max(Math.floor(pixel), 0);
 +    }
-+    const ratio = Math.max(0, Math.min(pixel / Math.max(pixelExtent - 1, 1), 1));
-+    return Math.floor(ratio * Math.max(cellCount - 1, 0));
++    const projected = Math.floor(Math.max(pixel, 0) * cellCount / pixelExtent);
++    return Math.max(0, Math.min(projected, cellCount - 1));
 +  }
 +  parseMouseEvent(data, context = void 0) {
      const str = this.decodeInput(data);
@@ -216,7 +216,7 @@ index e3b6cf9..d0645bb 100644
    }
    enableKittyKeyboard(flags = 3) {
      this.lib.enableKittyKeyboard(this.rendererPtr, flags);
-@@ -17998,6 +18052,59 @@ Captured output:
+@@ -17998,6 +18052,64 @@ Captured output:
      this.lib.disableKittyKeyboard(this.rendererPtr);
      this.updateStdinParserProtocolContext({ kittyKeyboardEnabled: false }, true);
    }
@@ -231,8 +231,14 @@ index e3b6cf9..d0645bb 100644
 +  }
 +  syncPixelMouseMode(force = false) {
 +    const nextEnabled = Boolean(this._useMouse);
++    const pixelMouseDisabled = typeof process !== "undefined" && process?.env?.GLOOMBERB_DISABLE_PIXEL_MOUSE === "1";
++    const hasPixelCapability = this._capabilities?.sgr_pixels === true;
++    const hasPixelResolution = (this._resolution?.width ?? 0) > 0 && (this._resolution?.height ?? 0) > 0;
 +    const nextPixelEnabled = Boolean(
 +      nextEnabled &&
++      !pixelMouseDisabled &&
++      hasPixelCapability &&
++      hasPixelResolution &&
 +      this._terminalWidth > 0 &&
 +      this._terminalHeight > 0
 +    );
@@ -248,10 +254,9 @@ index e3b6cf9..d0645bb 100644
 +    }
 +    this._mouseProtocolSignature = nextSignature;
 +    this._pixelMouseEnabled = nextPixelEnabled;
-+    const pixelModeConfirmed = nextPixelEnabled && this._capabilities?.sgr_pixels === true;
 +    this.updateStdinParserProtocolContext({
 +      mouseUsesPixels: nextPixelEnabled,
-+      mousePixelsConfirmed: pixelModeConfirmed,
++      mousePixelsConfirmed: nextPixelEnabled,
 +      terminalWidth: this._terminalWidth,
 +      terminalHeight: this._terminalHeight,
 +      pixelWidth: this._resolution?.width ?? 0,
@@ -276,7 +281,7 @@ index e3b6cf9..d0645bb 100644
    set useThread(useThread) {
      this._useThread = useThread;
      this.lib.setUseThread(this.rendererPtr, useThread);
-@@ -18031,6 +18138,7 @@ Captured output:
+@@ -18031,6 +18143,7 @@ Captured output:
      if (this._useMouse) {
        this.enableMouse();
      }
@@ -284,7 +289,7 @@ index e3b6cf9..d0645bb 100644
      this.queryPixelResolution();
    }
    stdinListener = ((chunk) => {
-@@ -18070,6 +18178,7 @@ Captured output:
+@@ -18070,6 +18183,7 @@ Captured output:
      if (isCapabilityResponse(sequence)) {
        this.lib.processCapabilityResponse(this.rendererPtr, sequence);
        this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
@@ -292,7 +297,7 @@ index e3b6cf9..d0645bb 100644
        this.emit("capabilities" /* CAPABILITIES */, this._capabilities);
        return true;
      }
-@@ -18079,6 +18188,7 @@ Captured output:
+@@ -18079,6 +18193,7 @@ Captured output:
      if (sequence === "\x1B[I") {
        if (this.shouldRestoreModesOnNextFocus) {
          this.lib.restoreTerminalModes(this.rendererPtr);
@@ -300,7 +305,7 @@ index e3b6cf9..d0645bb 100644
          this.shouldRestoreModesOnNextFocus = false;
        }
        if (this._terminalFocusState !== true) {
-@@ -18187,6 +18297,7 @@ Captured output:
+@@ -18187,6 +18302,7 @@ Captured output:
          }
          this.waitingForPixelResolution = false;
          this.updateStdinParserProtocolContext({ pixelResolutionQueryActive: false }, true);
@@ -308,7 +313,7 @@ index e3b6cf9..d0645bb 100644
          return true;
        }
        return false;
-@@ -18221,9 +18332,15 @@ Captured output:
+@@ -18221,9 +18337,15 @@ Captured output:
          return false;
        }
        mouseEvent.y -= this.renderOffset;
@@ -324,7 +329,7 @@ index e3b6cf9..d0645bb 100644
      this._hasPointer = true;
      this._lastPointerModifiers = mouseEvent.modifiers;
      if (this._console.visible) {
-@@ -18352,6 +18469,8 @@ Captured output:
+@@ -18352,6 +18474,8 @@ Captured output:
        button: 0,
        x: this._latestPointer.x,
        y: this._latestPointer.y,
@@ -333,7 +338,7 @@ index e3b6cf9..d0645bb 100644
        modifiers: this._lastPointerModifiers
      };
      if (lastOver && !lastOver.isDestroyed) {
-@@ -18435,6 +18554,7 @@ Captured output:
+@@ -18435,6 +18559,7 @@ Captured output:
      const prevWidth = this._terminalWidth;
      this._terminalWidth = width;
      this._terminalHeight = height;
@@ -341,7 +346,7 @@ index e3b6cf9..d0645bb 100644
      this.queryPixelResolution();
      this.setCapturedRenderable(undefined);
      this.stdinParser?.resetMouseState();
-@@ -18712,6 +18832,7 @@ Captured output:
+@@ -18712,6 +18837,7 @@ Captured output:
      }
      this._isRunning = false;
      this.waitingForPixelResolution = false;
@@ -349,71 +354,3 @@ index e3b6cf9..d0645bb 100644
      this.updateStdinParserProtocolContext({
        privateCapabilityRepliesActive: false,
        pixelResolutionQueryActive: false,
-diff --git a/lib/parse.mouse.d.ts b/lib/parse.mouse.d.ts
-index c29f953..873035f 100644
---- a/lib/parse.mouse.d.ts
-+++ b/lib/parse.mouse.d.ts
-@@ -3,11 +3,21 @@ export interface ScrollInfo {
-     direction: "up" | "down" | "left" | "right";
-     delta: number;
- }
-+export interface MouseParserContext {
-+    mouseUsesPixels?: boolean;
-+    mousePixelsConfirmed?: boolean;
-+    terminalWidth?: number;
-+    terminalHeight?: number;
-+    pixelWidth?: number;
-+    pixelHeight?: number;
-+}
- export type RawMouseEvent = {
-     type: MouseEventType;
-     button: number;
-     x: number;
-     y: number;
-+    pixelX?: number;
-+    pixelY?: number;
-     modifiers: {
-         shift: boolean;
-         alt: boolean;
-@@ -20,8 +30,9 @@ export declare class MouseParser {
-     private static readonly SCROLL_DIRECTIONS;
-     reset(): void;
-     private decodeInput;
--    parseMouseEvent(data: Buffer | Uint8Array): RawMouseEvent | null;
--    parseAllMouseEvents(data: Buffer | Uint8Array): RawMouseEvent[];
-+    private projectPixelToCell;
-+    parseMouseEvent(data: Buffer | Uint8Array, context?: MouseParserContext): RawMouseEvent | null;
-+    parseAllMouseEvents(data: Buffer | Uint8Array, context?: MouseParserContext): RawMouseEvent[];
-     private parseMouseSequenceAt;
-     private parseSgrSequence;
-     private parseBasicSequence;
-diff --git a/lib/stdin-parser.d.ts b/lib/stdin-parser.d.ts
-index ef37bfd..1a0aa82 100644
---- a/lib/stdin-parser.d.ts
-+++ b/lib/stdin-parser.d.ts
-@@ -27,6 +27,12 @@ export interface StdinParserProtocolContext {
-     privateCapabilityRepliesActive: boolean;
-     pixelResolutionQueryActive: boolean;
-     explicitWidthCprActive: boolean;
-+    mouseUsesPixels: boolean;
-+    mousePixelsConfirmed: boolean;
-+    terminalWidth: number;
-+    terminalHeight: number;
-+    pixelWidth: number;
-+    pixelHeight: number;
- }
- export interface StdinParserOptions {
-     timeoutMs?: number;
-diff --git a/renderer.d.ts b/renderer.d.ts
-index e0f1802..9632978 100644
---- a/renderer.d.ts
-+++ b/renderer.d.ts
-@@ -75,6 +75,8 @@ export declare class MouseEvent {
-     readonly button: number;
-     readonly x: number;
-     readonly y: number;
-+    readonly pixelX?: number;
-+    readonly pixelY?: number;
-     readonly source?: Renderable;
-     readonly modifiers: {
-         shift: boolean;

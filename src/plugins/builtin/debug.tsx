@@ -209,7 +209,21 @@ function DebugPane({ focused, width, height, close }: PaneProps) {
       </box>
 
       {/* Log entries */}
-      <box height={visibleCount} flexDirection="column">
+      <box
+        height={visibleCount}
+        flexDirection="column"
+        onMouseScroll={(event: any) => {
+          const dir = event.scroll?.direction;
+          if (!dir) return;
+          if (dir === "up" || dir === "down") {
+            setAutoScroll(false);
+            setSelectedIdx((prev) => {
+              const next = dir === "up" ? prev - 3 : prev + 3;
+              return Math.max(0, Math.min(next, entries.length - 1));
+            });
+          }
+        }}
+      >
         {visibleEntries.length === 0 && (
           <box alignItems="center" justifyContent="center" flexGrow={1}>
             <text fg={colors.textDim}>No log entries{filterLevel || filterSource ? " matching filter" : ""}</text>

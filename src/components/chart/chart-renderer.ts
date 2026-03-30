@@ -1,6 +1,7 @@
 import { RGBA } from "@opentui/core";
 import type { ChartAxisMode, ChartColors, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
 import type { ProjectedChartPoint } from "./chart-data";
+import { formatCurrency } from "../../utils/format";
 
 // ---------------------------------------------------------------------------
 // Styled output types (unchanged public API)
@@ -649,9 +650,7 @@ export function bufferToStyledLines(buf: PixelBuffer, bgColor: string): StyledCo
 // ---------------------------------------------------------------------------
 
 export function formatPrice(value: number): string {
-  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-  if (Math.abs(value) >= 1e3 && Math.abs(value) < 1e5) return `$${(value / 1e3).toFixed(1)}K`;
-  return `$${value.toFixed(2)}`;
+  return formatPriceWithCurrency(value);
 }
 
 function formatPercentAxisValue(value: number): string {
@@ -661,11 +660,39 @@ function formatPercentAxisValue(value: number): string {
   return `${prefix}${value.toFixed(decimals)}%`;
 }
 
-export function formatAxisValue(value: number, axisMode: ChartAxisMode, basePrice: number): string {
+const currencySymbols = new Map<string, string>();
+
+function getCurrencySymbol(currency: string): string {
+  const cached = currencySymbols.get(currency);
+  if (cached) return cached;
+
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    currencyDisplay: "symbol",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  const symbol = formatter.formatToParts(0).find((part) => part.type === "currency")?.value ?? currency;
+  currencySymbols.set(currency, symbol);
+  return symbol;
+}
+
+export function formatPriceWithCurrency(value: number, currency = "USD"): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const symbol = getCurrencySymbol(currency);
+
+  if (abs >= 1e6) return `${sign}${symbol}${(abs / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3 && abs < 1e5) return `${sign}${symbol}${(abs / 1e3).toFixed(1)}K`;
+  return formatCurrency(value, currency);
+}
+
+export function formatAxisValue(value: number, axisMode: ChartAxisMode, basePrice: number, currency = "USD"): string {
   if (axisMode === "percent" && basePrice !== 0) {
     return formatPercentAxisValue(((value - basePrice) / basePrice) * 100);
   }
-  return formatPrice(value);
+  return formatPriceWithCurrency(value, currency);
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -963,6 +990,7 @@ export interface RenderChartOptions {
   cursorY: number | null;
   mode: ChartRenderMode;
   axisMode?: ChartAxisMode;
+  currency?: string;
   colors: ResolvedChartPalette;
 }
 
@@ -1125,6 +1153,7 @@ export function renderChart(
 
   const { width, colors: palette, mode } = opts;
   const axisMode = opts.axisMode ?? "price";
+  const currency = opts.currency ?? "USD";
 
   // Braille resolution: 2 dot-columns per terminal column, 4 dot-rows per terminal row
   const dotWidth = width * 2;
@@ -1180,7 +1209,7 @@ export function renderChart(
   for (const line of gridLines) {
     axisLabelsByRow.set(
       Math.min(Math.floor(line.y / 4), Math.max(chartTermRows - 1, 0)),
-      formatAxisValue(line.price, axisMode, points[0]!.close),
+      formatAxisValue(line.price, axisMode, points[0]!.close, currency),
     );
   }
 

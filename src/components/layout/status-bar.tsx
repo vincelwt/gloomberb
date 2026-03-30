@@ -44,7 +44,9 @@ export function StatusBar() {
     return () => clearTimeout(timer);
   }, [dispatch, state.gridlockTipSequence, state.gridlockTipVisible]);
 
-  const handleGridlockTip = () => {
+  const handleGridlockTip = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (!registry) return;
     const { width, height } = registry.getTermSizeFn();
     registry.updateLayoutFn(gridlockAllPanes(registry.getLayoutFn(), { x: 0, y: 0, width, height }));
@@ -52,7 +54,9 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
-  const dismissGridlockTip = () => {
+  const dismissGridlockTip = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
@@ -77,7 +81,11 @@ export function StatusBar() {
                 fg={fg}
                 bg={bg}
                 onMouseMove={() => setHoveredTab(i)}
-                onMouseDown={() => dispatch({ type: "SWITCH_LAYOUT", index: i })}
+                onMouseDown={(event: any) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  dispatch({ type: "SWITCH_LAYOUT", index: i });
+                }}
               >
                 {` ^${num} `}<span fg={isActive ? colors.headerText : colors.text}>{label}</span>{" "}
               </text>
@@ -85,7 +93,7 @@ export function StatusBar() {
           })
         ) : (
           <text fg={colors.textDim}>
-            <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>j/k</span> navigate  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
+            <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Ctrl+W</span> close  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
           </text>
         )}
       </box>

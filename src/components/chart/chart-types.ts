@@ -5,11 +5,13 @@ export type ChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartAxisMode = "price" | "percent";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
 export type ResolvedChartRenderer = "kitty" | "braille";
+export type ComparisonChartRenderMode = "area" | "line";
 
 export const TIME_RANGES: TimeRange[] = ["1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc"];
 export const CHART_AXIS_MODES: ChartAxisMode[] = ["price", "percent"];
 export const CHART_RENDERER_PREFERENCES: ChartRendererPreference[] = ["auto", "kitty", "braille"];
+export const COMPARISON_RENDER_MODES: ComparisonChartRenderMode[] = ["area", "line"];
 
 /** Number of trading days for each time range */
 export const RANGE_DAYS: Record<TimeRange, number> = {
@@ -59,4 +61,22 @@ export interface VisibleWindow {
   points: PricePoint[];
   startIdx: number;
   endIdx: number;
+}
+
+export interface ComparisonChartSeries {
+  symbol: string;
+  color: string;
+  fillColor: string;
+  currency?: string;
+  points: PricePoint[];
+}
+
+export interface ComparisonChartViewState {
+  timeRange: TimeRange;
+  panOffset: number;
+  zoomLevel: number;
+  cursorX: number | null;
+  cursorY: number | null;
+  renderMode?: ComparisonChartRenderMode;
+  selectedSymbol: string | null;
 }

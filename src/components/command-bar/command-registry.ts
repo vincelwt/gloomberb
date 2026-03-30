@@ -32,6 +32,14 @@ export const commands: Command[] = [
     category: "Search",
     execute: () => {}, // handled specially by command bar
   },
+  {
+    id: "help",
+    prefix: "HELP",
+    label: "Help",
+    description: "Open the help window",
+    category: "Navigation",
+    execute: () => {}, // handled specially by command bar
+  },
 
   // Watchlist/Portfolio management
   {

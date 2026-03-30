@@ -1031,14 +1031,15 @@ function PortfolioCashMarginDrawer({
         width={width}
         height={drawerHeight}
         flexDirection="row"
+        backgroundColor={colors.bg}
         onMouseDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
+          onToggle();
         }}
         onMouseUp={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          onToggle();
         }}
       >
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▸ Cash & Margin"}</text>
@@ -1057,14 +1058,15 @@ function PortfolioCashMarginDrawer({
         width={width}
         height={1}
         flexDirection="row"
+        backgroundColor={colors.bg}
         onMouseDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
+          onToggle();
         }}
         onMouseUp={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          onToggle();
         }}
       >
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▾ Cash & Margin"}</text>
@@ -1734,6 +1736,7 @@ export const portfolioListPlugin: GloomPlugin = {
       icon: "P",
       component: PortfolioListPane,
       defaultPosition: "left",
+      defaultMode: "floating",
       defaultWidth: "40%",
       settings: (context) => buildPortfolioPaneSettingsDef(
         context.config,
