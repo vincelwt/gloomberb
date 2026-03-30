@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps, DetailTabDef, PaneSettingsDef } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -558,7 +558,20 @@ function formatFinancialCell(value: string, growth: number | undefined): { value
   };
 }
 
-export function FinancialsTab({ focused }: { focused: boolean }) {
+function formatFinancialHeader(date: string): string {
+  const label = date === "TTM" ? "TTM" : date.slice(0, 7);
+  return padTo(label, FINANCIAL_COL_W, "center");
+}
+
+export function FinancialsTab({
+  focused,
+  headerScrollId,
+  bodyScrollId,
+}: {
+  focused: boolean;
+  headerScrollId?: string;
+  bodyScrollId?: string;
+}) {
   const { financials } = usePaneTicker();
   const hasAnnualStatements = (financials?.annualStatements.length ?? 0) > 0;
   const hasQuarterlyStatements = (financials?.quarterlyStatements.length ?? 0) > 0;
@@ -566,6 +579,16 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
     hasAnnualStatements ? "annual" : "quarterly",
   );
   const [subTabIdx, setSubTabIdx] = useState(0);
+  const bodyScrollRef = useRef<ScrollBoxRenderable>(null);
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+
+  const syncHeaderScroll = useCallback(() => {
+    const body = bodyScrollRef.current;
+    const header = headerScrollRef.current;
+    if (body && header && header.scrollLeft !== body.scrollLeft) {
+      header.scrollLeft = body.scrollLeft;
+    }
+  }, []);
 
   useKeyboard((event) => {
     if (!focused) return;
@@ -599,6 +622,7 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
 
   const ttm = isAnnual ? computeTTM(financials.quarterlyStatements) : null;
   const displayStmts = ttm ? [ttm, ...rawStmts] : rawStmts;
+  const tableWidth = FINANCIAL_LABEL_W + (displayStmts.length * FINANCIAL_COL_W);
 
   // Build previous-period lookup for growth rates
   const allStmts = isAnnual ? financials.annualStatements : financials.quarterlyStatements;
@@ -621,9 +645,26 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
     prevMap.set("TTM", prevTtm);
   }
 
+  useEffect(() => {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.horizontalScrollBar.visible = false;
+    }
+    syncHeaderScroll();
+  }, [displayStmts.length, isAnnual, subTabIdx, syncHeaderScroll]);
+
+  useEffect(() => {
+    const body = bodyScrollRef.current;
+    if (!body) return;
+    const hasVerticalOverflow = body.scrollHeight > body.viewport.height;
+    body.verticalScrollBar.visible = hasVerticalOverflow;
+    if (!hasVerticalOverflow && body.scrollTop !== 0) {
+      body.scrollTo({ x: body.scrollLeft, y: 0 });
+    }
+  }, [displayStmts.length, isAnnual, subTabIdx, subTab.metrics.length]);
+
   return (
-    <scrollbox flexGrow={1} scrollY>
-      <box flexDirection="column" paddingX={2} paddingBottom={1}>
+    <box flexDirection="column" flexGrow={1} paddingX={2} paddingBottom={1}>
+      <box flexDirection="column">
         {/* Sub-tab selector + period toggle */}
         <box flexDirection="row" height={1}>
           {FINANCIAL_SUB_TABS.map((tab, i) => (
@@ -646,55 +687,81 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
             <text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
           </box>
         </box>
-        <box height={1} />
+      </box>
+      <box height={1} />
 
-        {/* Column headers */}
-        <box flexDirection="row" height={1}>
-          <box width={FINANCIAL_LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
+      <scrollbox
+        id={headerScrollId}
+        ref={headerScrollRef}
+        height={1}
+        scrollX
+        focusable={false}
+      >
+        <box flexDirection="row" width={tableWidth} height={1}>
+          <box width={FINANCIAL_LABEL_W}>
+            <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+              {isAnnual ? "Annual" : "Quarterly"}
+            </text>
+          </box>
           {displayStmts.map((s) => (
             <box key={s.date} width={FINANCIAL_COL_W}>
               <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.textBright : colors.textDim}>
-                {s.date === "TTM" ? "TTM" : s.date.slice(0, 7)}
+                {formatFinancialHeader(s.date)}
               </text>
             </box>
           ))}
         </box>
-        <box height={1} />
+      </scrollbox>
+      <box height={1} />
 
-        {/* Metric rows */}
-        {subTab.metrics.map(({ label, key, format }, idx) => {
-          const isEps = format === "eps";
-          const allVals = displayStmts.map((s) => s[key] as number | undefined);
-          const { suffix, divisor } = isEps ? { suffix: "", divisor: 1 } : pickUnit(allVals);
-          const unitLabel = suffix ? `${label} (${suffix})` : label;
+      <scrollbox
+        id={bodyScrollId}
+        ref={bodyScrollRef}
+        flexGrow={1}
+        scrollX
+        scrollY
+        focusable={false}
+        onMouseDown={() => queueMicrotask(syncHeaderScroll)}
+        onMouseUp={() => queueMicrotask(syncHeaderScroll)}
+        onMouseDrag={() => queueMicrotask(syncHeaderScroll)}
+        onMouseScroll={() => queueMicrotask(syncHeaderScroll)}
+      >
+        <box flexDirection="column" width={tableWidth} paddingBottom={1}>
+          {/* Metric rows */}
+          {subTab.metrics.map(({ label, key, format }, idx) => {
+            const isEps = format === "eps";
+            const allVals = displayStmts.map((s) => s[key] as number | undefined);
+            const { suffix, divisor } = isEps ? { suffix: "", divisor: 1 } : pickUnit(allVals);
+            const unitLabel = suffix ? `${label} (${suffix})` : label;
 
-          return (
-            <box key={key} flexDirection="column">
-              {idx > 0 && idx % 4 === 0 && <box height={1} />}
-              <box flexDirection="row" height={1}>
-                <box width={FINANCIAL_LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
-                {displayStmts.map((s) => {
-                  const val = s[key] as number | undefined;
-                  const prev = prevMap.get(s.date);
-                  const prevVal = prev ? (prev[key] as number | undefined) : undefined;
-                  const growth = computeGrowth(val, prevVal);
-                  const formatted = val != null
-                    ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
-                    : "—";
-                  const cell = formatFinancialCell(formatted, growth);
-                  return (
-                    <box key={s.date} width={FINANCIAL_COL_W} flexDirection="row">
-                      <text fg={colors.text}>{cell.valueText}</text>
-                      <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
-                    </box>
-                  );
-                })}
+            return (
+              <box key={key} flexDirection="column" width={tableWidth}>
+                {idx > 0 && idx % 4 === 0 && <box height={1} width={tableWidth} />}
+                <box flexDirection="row" width={tableWidth} height={1}>
+                  <box width={FINANCIAL_LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
+                  {displayStmts.map((s) => {
+                    const val = s[key] as number | undefined;
+                    const prev = prevMap.get(s.date);
+                    const prevVal = prev ? (prev[key] as number | undefined) : undefined;
+                    const growth = computeGrowth(val, prevVal);
+                    const formatted = val != null
+                      ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
+                      : "—";
+                    const cell = formatFinancialCell(formatted, growth);
+                    return (
+                      <box key={s.date} width={FINANCIAL_COL_W} flexDirection="row">
+                        <text fg={colors.text}>{cell.valueText}</text>
+                        <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
+                      </box>
+                    );
+                  })}
+                </box>
               </box>
-            </box>
-          );
-        })}
-      </box>
-    </scrollbox>
+            );
+          })}
+        </box>
+      </scrollbox>
+    </box>
   );
 }
 
