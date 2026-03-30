@@ -103,6 +103,8 @@ import {
 import { setPaneSettings, updatePaneInstance } from "./pane-settings";
 import { debugLog } from "./utils/debug-log";
 import { formatTickerListInput, parseTickerListInput } from "./utils/ticker-list";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
+import { instrumentFromTicker } from "./market-data/request-types";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -125,10 +127,11 @@ interface AppInnerProps {
   pluginRegistry: PluginRegistry;
   tickerRepository: TickerRepository;
   dataProvider: DataProvider;
+  marketData: MarketDataCoordinator;
   sessionSnapshot?: AppSessionSnapshot | null;
 }
 
-function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnapshot = null }: AppInnerProps) {
+function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const appActive = useAppActive();
   const renderer = useRenderer();
@@ -403,68 +406,51 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
     try {
       const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
-      const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
-      const activePortfolio = getPreferredPortfolio(ticker);
-      const data = await dataProvider.getTickerFinancials(symbol, exchange, {
-        brokerId: instrument?.brokerId ?? activePortfolio?.brokerId,
-        brokerInstanceId: instrument?.brokerInstanceId ?? activePortfolio?.brokerInstanceId,
-        instrument,
-      });
-      dispatch({ type: "SET_FINANCIALS", symbol, data });
-      pluginRegistry.events.emit("ticker:refreshed", { symbol, financials: data });
+      const instrument = instrumentFromTicker(ticker, symbol);
+      if (!instrument) return;
+      const entry = await marketData.loadSnapshot(instrument);
+      const data = entry.data ?? entry.lastGoodData;
+      if (data) {
+        pluginRegistry.events.emit("ticker:refreshed", { symbol, financials: data });
+      }
 
-      const currency = data.quote?.currency;
-      if (currency && !state.exchangeRates.has(currency)) {
-        dataProvider.getExchangeRate(currency).then((rate) => {
-          dispatch({ type: "SET_EXCHANGE_RATE", currency, rate });
-        }).catch(() => {});
+      const currency = data?.quote?.currency;
+      if (currency) {
+        void marketData.loadFxRate(currency).catch(() => {});
       }
       const base = state.config.baseCurrency;
-      if (!state.exchangeRates.has(base)) {
-        dataProvider.getExchangeRate(base).then((rate) => {
-          dispatch({ type: "SET_EXCHANGE_RATE", currency: base, rate });
-        }).catch(() => {});
-      }
+      void marketData.loadFxRate(base).catch(() => {});
     } catch {
       // Silently fail - will show "—" for missing data
     } finally {
       refreshInFlight.delete(symbol);
       dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
     }
-  }, [dataProvider, dispatch, getPreferredPortfolio, pluginRegistry.events, state.config.baseCurrency, state.exchangeRates, state.tickers]);
+  }, [dispatch, marketData, pluginRegistry.events, state.config.baseCurrency, state.tickers]);
 
   const performRefreshQuote = useCallback(async (symbol: string, exchange = "", tickerOverride?: TickerRecord | null) => {
     if (refreshInFlight.has(symbol) || quoteRefreshInFlight.has(symbol)) return;
     quoteRefreshInFlight.add(symbol);
     try {
       const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
-      const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
-      const activePortfolio = getPreferredPortfolio(ticker);
-      const quote = await dataProvider.getQuote(symbol, exchange, {
-        brokerId: instrument?.brokerId ?? activePortfolio?.brokerId,
-        brokerInstanceId: instrument?.brokerInstanceId ?? activePortfolio?.brokerInstanceId,
-        instrument,
-      });
-      dispatch({ type: "MERGE_QUOTE", symbol, quote });
+      const instrument = instrumentFromTicker(ticker, symbol);
+      if (!instrument) return;
+      const entry = await marketData.loadQuote(instrument);
+      const quote = entry.data ?? entry.lastGoodData;
+      if (!quote) return;
 
       const currency = quote.currency;
-      if (currency && !state.exchangeRates.has(currency)) {
-        dataProvider.getExchangeRate(currency).then((rate) => {
-          dispatch({ type: "SET_EXCHANGE_RATE", currency, rate });
-        }).catch(() => {});
+      if (currency) {
+        void marketData.loadFxRate(currency).catch(() => {});
       }
       const base = state.config.baseCurrency;
-      if (!state.exchangeRates.has(base)) {
-        dataProvider.getExchangeRate(base).then((rate) => {
-          dispatch({ type: "SET_EXCHANGE_RATE", currency: base, rate });
-        }).catch(() => {});
-      }
+      void marketData.loadFxRate(base).catch(() => {});
     } catch {
       // Silently fail - the list can fall back to stale cache or Yahoo
     } finally {
       quoteRefreshInFlight.delete(symbol);
     }
-  }, [dataProvider, dispatch, getPreferredPortfolio, state.config.baseCurrency, state.exchangeRates, state.tickers]);
+  }, [marketData, state.config.baseCurrency, state.tickers]);
 
   const refreshQueueRef = useRef<{
     queue: TickerRefreshQueue;
@@ -784,12 +770,16 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
     if (!focusedTickerSymbol) return;
     const ticker = state.tickers.get(focusedTickerSymbol);
     if (!ticker) return;
-    refreshTicker(ticker.metadata.ticker, ticker.metadata.exchange, ticker, 0);
-  }, [focusedTickerSymbol, state.tickers, refreshTicker]);
+    marketData.prefetchTicker(instrumentFromTicker(ticker, ticker.metadata.ticker));
+  }, [focusedTickerSymbol, marketData, state.tickers]);
 
   // Wire up plugin registry data accessors
   pluginRegistry.getTickerFn = (symbol) => state.tickers.get(symbol) ?? null;
-  pluginRegistry.getDataFn = (symbol) => state.financials.get(symbol) ?? null;
+  pluginRegistry.getDataFn = (symbol) => {
+    const ticker = state.tickers.get(symbol) ?? null;
+    const instrument = instrumentFromTicker(ticker, symbol);
+    return instrument ? marketData.getLegacyFinancialsSync(instrument) : null;
+  };
   pluginRegistry.getConfigFn = () => state.config;
   pluginRegistry.getPaneRuntimeStateFn = (paneId) => state.paneState[paneId] ?? null;
   pluginRegistry.updatePaneRuntimeStateFn = (paneId, patch) => {
@@ -1496,7 +1486,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, sessionSnaps
 
   return (
     <box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
-      <Header dataProvider={dataProvider} />
+      <Header />
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
       {state.commandBarOpen && (
@@ -1533,6 +1523,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
     const tickerRepository = new TickerRepository(persistence.tickers);
     const providerRouter = new ProviderRouter(null, [], persistence.resources);
     const dataProvider: DataProvider = providerRouter;
+    const marketData = new MarketDataCoordinator(dataProvider);
     const pluginRegistry = new PluginRegistry(renderer, dataProvider, tickerRepository, persistence);
     providerRouter.attachRegistry(pluginRegistry);
     pluginRegistry.getConfigFn = () => config;
@@ -1562,12 +1553,18 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
       tickerRepository,
       providerRouter,
       dataProvider,
+      marketData,
       pluginRegistry,
     };
   }, [config.dataDir, externalPlugins, renderer]);
 
+  if (services.marketData !== null) {
+    setSharedMarketDataCoordinator(services.marketData);
+  }
+
   useEffect(() => {
     return () => {
+      setSharedMarketDataCoordinator(null);
       services.persistence.close();
     };
   }, [services]);
@@ -1602,6 +1599,7 @@ export function App({ config: initialConfig, renderer, externalPlugins = [] }: A
           pluginRegistry={services.pluginRegistry}
           tickerRepository={services.tickerRepository}
           dataProvider={services.dataProvider}
+          marketData={services.marketData}
           sessionSnapshot={sessionSnapshot}
         />
       </DialogProvider>

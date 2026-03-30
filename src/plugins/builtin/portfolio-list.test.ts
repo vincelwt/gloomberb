@@ -4,6 +4,7 @@ import type { BrokerAccount } from "../../types/trading";
 import {
   buildPortfolioSummarySegments,
   calculatePortfolioSummaryWidth,
+  resolvePortfolioPriceValue,
   resolveCollectionSortPreference,
   shouldToggleCashMarginDrawer,
   type PortfolioSummaryTotals,
@@ -110,5 +111,11 @@ describe("buildPortfolioSummarySegments", () => {
 
   test("uses leftover row width for the broker summary when tabs leave room", () => {
     expect(calculatePortfolioSummaryWidth(100, ["Main", "coldstart"])).toBe(55);
+  });
+
+  test("shows broker mark price for stocks when no quote is available", () => {
+    expect(resolvePortfolioPriceValue(null, 382.5, "USD", "USD")).toEqual({
+      text: "$382.50",
+    });
   });
 });

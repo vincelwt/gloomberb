@@ -9,6 +9,7 @@ import {
   PaneInstanceProvider,
   type AppAction,
 } from "../../state/app-context";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import {
   cloneLayout,
   createDefaultConfig,
@@ -20,7 +21,7 @@ import type { TickerFinancials } from "../../types/financials";
 import type { DetailTabDef } from "../../types/plugin";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../registry";
-import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
+import { setSharedRegistryForTests } from "../registry";
 import { resetOptionsAvailabilityCache } from "./options-availability";
 import { FinancialsTab, tickerDetailPlugin } from "./ticker-detail";
 import { isUsEquityTicker } from "../../utils/sec";
@@ -29,6 +30,7 @@ const TEST_PANE_ID = "ticker-detail:test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
+let sharedCoordinator: MarketDataCoordinator | null = null;
 
 const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -129,6 +131,11 @@ function createProvider(hasOptions: boolean): DataProvider {
       puts: [],
     }),
   };
+}
+
+function setOptionsProvider(provider: DataProvider | undefined): void {
+  sharedCoordinator = provider ? new MarketDataCoordinator(provider) : null;
+  setSharedMarketDataCoordinator(sharedCoordinator);
 }
 
 function makeRegistry(): PluginRegistry {
@@ -250,7 +257,7 @@ afterEach(() => {
   harnessDispatch = null;
   resetOptionsAvailabilityCache();
   setSharedRegistryForTests(undefined);
-  setSharedDataProviderForTests(undefined);
+  setOptionsProvider(undefined);
 });
 
 describe("FinancialsTab", () => {
@@ -345,7 +352,7 @@ describe("FinancialsTab", () => {
 describe("TickerDetailPane", () => {
   test("shows only applicable tabs when no gateway, statements, or options are available", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -370,7 +377,7 @@ describe("TickerDetailPane", () => {
 
   test("shows Financials when statement data exists", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -390,7 +397,7 @@ describe("TickerDetailPane", () => {
 
   test("shows Trade when an IBKR gateway profile exists", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -408,7 +415,7 @@ describe("TickerDetailPane", () => {
 
   test("shows Options after the preflight confirms a chain exists", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(true));
+    setOptionsProvider(createProvider(true));
 
     testSetup = await testRender(
       <DetailHarness
@@ -428,7 +435,7 @@ describe("TickerDetailPane", () => {
 
   test("shows SEC for US equities", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -446,7 +453,7 @@ describe("TickerDetailPane", () => {
 
   test("hides SEC for non-US equities", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -468,7 +475,7 @@ describe("TickerDetailPane", () => {
 
   test("renders the company description in Overview when profile data is available", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -491,7 +498,7 @@ describe("TickerDetailPane", () => {
 
   test("keeps quote prices native while converting market cap and position totals to base currency", async () => {
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness
@@ -546,7 +553,7 @@ describe("TickerDetailPane", () => {
     const gatewayConfig = createDetailConfig("AAPL", [createGatewayInstance()]);
     const noGatewayConfig = createDetailConfig("AAPL");
     setSharedRegistryForTests(makeRegistry());
-    setSharedDataProviderForTests(createProvider(false));
+    setOptionsProvider(createProvider(false));
 
     testSetup = await testRender(
       <DetailHarness

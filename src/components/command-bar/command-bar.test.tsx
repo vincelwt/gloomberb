@@ -141,7 +141,9 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     getPluginPaneIds: () => [],
     getPluginPaneTemplateIds: () => [],
     hasPaneSettings,
+    events: { emit: () => {} },
     hideWidget: () => {},
+    pinTickerFn: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
     createPaneFromTemplateFn: () => {},
@@ -308,6 +310,90 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("theme:green");
+  });
+
+  test("pressing enter respects the highlighted search result", async () => {
+    const pinned: string[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="T appl"
+        dataProvider={makeDataProvider(async () => [
+          { providerId: "yahoo", symbol: "IVSX", name: "Invsivx Holdings", exchange: "NYSE", type: "ETF" },
+          { providerId: "yahoo", symbol: "AAPL", name: "Apple Inc", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "AMAT", name: "Applied Materials", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "AAOI", name: "Applied Optoelectronics", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "APP", name: "AppLovin Corp", exchange: "NASDAQ", type: "EQUITY" },
+        ])}
+        configurePluginRegistry={(pluginRegistry) => {
+          pluginRegistry.pinTickerFn = (symbol) => {
+            pinned.push(symbol);
+          };
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await Bun.sleep(300);
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(pinned).toEqual(["APP"]);
+  });
+
+  test("moves through long result lists with the mouse wheel", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="NP scratch"
+        configurePluginRegistry={(pluginRegistry) => {
+          for (let index = 0; index < 20; index++) {
+            const suffix = String(index).padStart(2, "0");
+            pluginRegistry.paneTemplates.set(`scratch-${suffix}`, {
+              id: `scratch-${suffix}`,
+              paneId: "chat",
+              label: `Scratch Pane ${suffix}`,
+              description: `Open scratch pane ${suffix}`,
+            });
+          }
+        }}
+      />,
+      { width: 100, height: 18 },
+    );
+
+    await testSetup.renderOnce();
+
+    const initialFrame = testSetup.captureCharFrame();
+    expect(initialFrame).toContain("Scratch Pane 00");
+    expect(initialFrame).not.toContain("Scratch Pane 12");
+
+    const rows = initialFrame.split("\n");
+    const scrollRow = rows.findIndex((line) => line.includes("Scratch Pane 00"));
+    const scrollCol = rows[scrollRow]?.indexOf("Scratch Pane 00") ?? -1;
+
+    expect(scrollRow).toBeGreaterThanOrEqual(0);
+    expect(scrollCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      for (let index = 0; index < 12; index++) {
+        await testSetup!.mockMouse.scroll(scrollCol + 1, scrollRow, "down");
+        await testSetup!.renderOnce();
+      }
+    });
+
+    const scrolledFrame = testSetup.captureCharFrame();
+    expect(scrolledFrame).not.toContain("Scratch Pane 00");
+    expect(scrolledFrame).toContain("Scratch Pane 12");
   });
 
   const layoutModeConfig = (config: AppConfig): AppConfig => {

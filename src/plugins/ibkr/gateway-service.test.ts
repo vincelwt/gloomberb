@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { summarizeBrokerAccount } from "./gateway-service";
+import { SecType, type ContractDetails, type TickByTickAllLast } from "@stoqey/ib";
+import { applyTickByTickAllLastToQuote, applyTickByTickBidAskToQuote, summarizeBrokerAccount } from "./gateway-service";
 
 function makeTags(input: Record<string, Record<string, string>>) {
   return new Map(
@@ -106,5 +107,84 @@ describe("summarizeBrokerAccount", () => {
       maintMarginReq: undefined,
       cashBalances: undefined,
     });
+  });
+});
+
+describe("tick-by-tick quote updates", () => {
+  const contract = {
+    symbol: "AAPL",
+    secType: SecType.STK,
+    currency: "USD",
+  };
+  const details: ContractDetails = {
+    contract: contract as any,
+    validExchanges: "NASDAQ,SMART",
+    longName: "Apple Inc.",
+  } as ContractDetails;
+
+  test("applies trade ticks to the latest quote", () => {
+    const current = {
+      symbol: "AAPL",
+      providerId: "ibkr" as const,
+      price: 249,
+      currency: "USD",
+      change: 1,
+      changePercent: 0.4,
+      previousClose: 248,
+      name: "Apple Inc.",
+      lastUpdated: 1000,
+      dataSource: "live" as const,
+    };
+    const tick: TickByTickAllLast = {
+      time: 1_700_000_000,
+      price: 250.5,
+      size: 100,
+      tickType: 1,
+      tickAttribLast: {},
+      exchange: "NASDAQ",
+      specialConditions: "",
+      contract: contract as any,
+    };
+
+    const next = applyTickByTickAllLastToQuote(current, contract as any, details, tick, 1, "live");
+
+    expect(next?.price).toBe(250.5);
+    expect(next?.change).toBe(2.5);
+    expect(next?.changePercent).toBeCloseTo((2.5 / 248) * 100, 10);
+    expect(next?.lastUpdated).toBe(1_700_000_000_000);
+  });
+
+  test("applies bid/ask ticks without disturbing the current trade price", () => {
+    const current = {
+      symbol: "AAPL",
+      providerId: "ibkr" as const,
+      price: 249,
+      currency: "USD",
+      change: 1,
+      changePercent: 0.4,
+      previousClose: 248,
+      bid: 248.8,
+      ask: 249.1,
+      bidSize: 10,
+      askSize: 12,
+      name: "Apple Inc.",
+      lastUpdated: 1000,
+      dataSource: "live" as const,
+    };
+
+    const next = applyTickByTickBidAskToQuote(current, {
+      time: 1_700_000_100,
+      bidPrice: 248.9,
+      askPrice: 249.05,
+      bidSize: 14,
+      askSize: 18,
+    }, 1);
+
+    expect(next?.price).toBe(249);
+    expect(next?.bid).toBe(248.9);
+    expect(next?.ask).toBe(249.05);
+    expect(next?.bidSize).toBe(14);
+    expect(next?.askSize).toBe(18);
+    expect(next?.lastUpdated).toBe(1_700_000_100_000);
   });
 });

@@ -4,7 +4,7 @@ import { testRender } from "@opentui/react/test-utils";
 import type { DataProvider } from "../../types/data-provider";
 import type { OptionsChain } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
-import { setSharedDataProviderForTests } from "../registry";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import {
   fetchOptionsAvailability,
   readOptionsAvailability,
@@ -15,6 +15,7 @@ import { resolveOptionsTarget } from "../../utils/options";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setHarnessTicker: ((ticker: TickerRecord | null) => void) | null = null;
+let sharedCoordinator: MarketDataCoordinator | null = null;
 
 function makeTicker(symbol: string, assetCategory = "STK"): TickerRecord {
   return {
@@ -89,7 +90,8 @@ afterEach(() => {
   }
   setHarnessTicker = null;
   resetOptionsAvailabilityCache();
-  setSharedDataProviderForTests(undefined);
+  sharedCoordinator = null;
+  setSharedMarketDataCoordinator(null);
 });
 
 describe("options availability", () => {
@@ -129,9 +131,10 @@ describe("options availability", () => {
   test("ignores stale async results when the selected ticker changes", async () => {
     const aapl = createDeferred<OptionsChain>();
     const tsla = createDeferred<OptionsChain>();
-    setSharedDataProviderForTests(createProvider(async (symbol) => (
+    sharedCoordinator = new MarketDataCoordinator(createProvider(async (symbol) => (
       symbol === "AAPL" ? aapl.promise : tsla.promise
     )));
+    setSharedMarketDataCoordinator(sharedCoordinator);
 
     testSetup = await testRender(<AvailabilityHarness initialTicker={makeTicker("AAPL")} />, {
       width: 40,

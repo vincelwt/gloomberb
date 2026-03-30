@@ -4,10 +4,10 @@ import "opentui-spinner/react";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppActive } from "../../state/app-activity";
 import { useAppState } from "../../state/app-context";
+import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
 import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
-import type { DataProvider } from "../../types/data-provider";
-import type { Quote } from "../../types/financials";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 
@@ -53,24 +53,23 @@ function UpdateStatus() {
   return null;
 }
 
-export function Header({ dataProvider }: { dataProvider: DataProvider }) {
+export function Header() {
   const { state } = useAppState();
   const appActive = useAppActive();
-  const [spyQuote, setSpyQuote] = useState<Quote | null>(null);
+  const spyQuoteEntry = useQuoteEntry("SPY", null);
+  const spyQuote = useResolvedEntryValue(spyQuoteEntry);
 
   useEffect(() => {
     if (!appActive) return;
-    let cancelled = false;
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator) return;
     const fetchSpy = async () => {
-      try {
-        const quote = await dataProvider.getQuote("SPY");
-        if (!cancelled) setSpyQuote(quote);
-      } catch {}
+      await coordinator.loadQuote({ symbol: "SPY" }).catch(() => {});
     };
     fetchSpy();
     const id = setInterval(fetchSpy, SPY_REFRESH_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [appActive, dataProvider]);
+    return () => { clearInterval(id); };
+  }, [appActive]);
 
   const spyColor = spyQuote ? priceColor(spyQuote.change) : colors.headerText;
   const spyText = spyQuote

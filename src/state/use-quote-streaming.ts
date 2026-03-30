@@ -1,9 +1,8 @@
 import { useEffect } from "react";
-import { getSharedDataProvider } from "../plugins/registry";
 import { useAppActive } from "./app-activity";
-import { useAppState } from "./app-context";
 import type { QuoteSubscriptionTarget } from "../types/data-provider";
 import { debugLog } from "../utils/debug-log";
+import { getSharedMarketDataCoordinator } from "../market-data/coordinator";
 
 const quoteStreamLog = debugLog.createLogger("quote-stream");
 
@@ -17,16 +16,30 @@ function normalizeTarget(target: QuoteSubscriptionTarget): QuoteSubscriptionTarg
   };
 }
 
+export function buildQuoteStreamSubscriptionKey(target: QuoteSubscriptionTarget): string {
+  const contractKey = target.context?.instrument?.conId
+    ?? target.context?.instrument?.localSymbol
+    ?? target.context?.instrument?.symbol
+    ?? "";
+  return [
+    target.symbol,
+    target.exchange ?? "",
+    target.context?.brokerId ?? "",
+    target.context?.brokerInstanceId ?? "",
+    contractKey,
+    target.route ?? "auto",
+  ].join("|");
+}
+
 export function useQuoteStreaming(targets: QuoteSubscriptionTarget[]): void {
-  const { dispatch } = useAppState();
   const appActive = useAppActive();
-  const provider = getSharedDataProvider();
+  const coordinator = getSharedMarketDataCoordinator();
 
   const normalizedEntries = new Map<string, QuoteSubscriptionTarget>();
   for (const target of targets) {
     const normalized = normalizeTarget(target);
     if (!normalized) continue;
-    const key = normalized.exchange ? `${normalized.symbol}:${normalized.exchange}` : normalized.symbol;
+    const key = buildQuoteStreamSubscriptionKey(normalized);
     normalizedEntries.set(key, normalized);
   }
   const sortedEntries = [...normalizedEntries.entries()].sort(([left], [right]) => left.localeCompare(right));
@@ -40,26 +53,28 @@ export function useQuoteStreaming(targets: QuoteSubscriptionTarget[]): void {
       }
       return;
     }
-    if (!provider?.subscribeQuotes || normalizedTargets.length === 0) return;
+    if (!coordinator || normalizedTargets.length === 0) return;
     quoteStreamLog.info("subscribe", {
-      providerId: provider.id,
+      providerId: "market-data",
       count: normalizedTargets.length,
       targets: subscriptionKey,
     });
-    const unsubscribe = provider.subscribeQuotes(normalizedTargets, (target, quote) => {
-      dispatch({
-        type: "MERGE_QUOTE",
+    const unsubscribe = coordinator.subscribeQuotes(normalizedTargets.map((target) => ({
+      instrument: {
         symbol: target.symbol,
-        quote,
-      });
-    });
+        exchange: target.exchange,
+        brokerId: target.context?.brokerId,
+        brokerInstanceId: target.context?.brokerInstanceId,
+        instrument: target.context?.instrument ?? null,
+      },
+    })));
     return () => {
       quoteStreamLog.info("unsubscribe", {
-        providerId: provider.id,
+        providerId: "market-data",
         count: normalizedTargets.length,
         targets: subscriptionKey,
       });
       unsubscribe?.();
     };
-  }, [appActive, dispatch, normalizedTargets, provider, subscriptionKey]);
+  }, [appActive, coordinator, subscriptionKey]);
 }

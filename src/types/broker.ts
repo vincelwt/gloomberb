@@ -1,6 +1,7 @@
 import type { Quote, TickerFinancials, PricePoint, OptionsChain } from "./financials";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { BrokerInstanceConfig } from "./config";
+import type { QuoteSubscriptionTarget } from "./data-provider";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
 import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "./trading";
 import type { CachePolicyMap } from "./persistence";
@@ -79,6 +80,11 @@ export interface BrokerAdapter {
   /** Fetch higher-resolution price data for a specific date window (e.g. when zoomed in). */
   getDetailedPriceHistory?(ticker: string, instance: BrokerInstanceConfig, exchange: string, startDate: Date, endDate: Date, barSize: string, instrument?: BrokerContractRef | null): Promise<PricePoint[]>;
   getOptionsChain?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, expirationDate?: number, instrument?: BrokerContractRef | null): Promise<OptionsChain>;
+  subscribeQuotes?(
+    instance: BrokerInstanceConfig,
+    targets: QuoteSubscriptionTarget[],
+    onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
+  ): () => void;
   listOpenOrders?(instance: BrokerInstanceConfig): Promise<BrokerOrder[]>;
   listExecutions?(instance: BrokerInstanceConfig): Promise<BrokerExecution[]>;
   previewOrder?(instance: BrokerInstanceConfig, request: BrokerOrderRequest): Promise<BrokerOrderPreview>;

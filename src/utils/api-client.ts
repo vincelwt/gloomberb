@@ -51,11 +51,31 @@ export interface CloudPricePointPayload {
   volume?: number;
 }
 
-export interface CloudTickerFinancialsPayload extends Omit<TickerFinancials, "priceHistory"> {
-  quote?: CloudQuotePayload;
-  profile?: CloudCompanyProfile;
-  fundamentals?: CloudFundamentals;
-  priceHistory: CloudPricePointPayload[];
+export type CloudMarketStatus =
+  | "success"
+  | "partial"
+  | "empty"
+  | "unsupported"
+  | "retryable_error"
+  | "fatal_error";
+
+export interface CloudMarketResponse<T> {
+  status: CloudMarketStatus;
+  data: T | null;
+  reasonCode?: string;
+  asOf?: string;
+  staleAt?: string;
+  providerMeta?: {
+    upstream?: string;
+    normalizedSymbol?: string;
+    normalizedExchange?: string;
+    latencyMs?: number;
+    range?: string;
+    granularity?: string;
+    timezone?: string;
+    currency?: string;
+    barCount?: number;
+  };
 }
 
 export interface CloudVerificationResponse {
@@ -198,8 +218,12 @@ class GloomApiClient {
     return this.baseUrl.replace(/^https?/, wsProtocol);
   }
 
+  private getSocketAuthToken(): string | null {
+    return this.websocketToken || this.sessionToken;
+  }
+
   private shouldKeepSocketOpen(): boolean {
-    return !!this.websocketToken
+    return !!this.getSocketAuthToken()
       && !!this.currentUser?.emailVerified
       && (this.channelListeners.size > 0 || this.quoteTargets.size > 0);
   }
@@ -207,9 +231,12 @@ class GloomApiClient {
   private ensureSocket(): void {
     if (!this.shouldKeepSocketOpen() || this.ws || this.reconnectTimer) return;
 
-    const url = `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(this.websocketToken ?? "")}`;
+    const socketToken = this.getSocketAuthToken();
+    if (!socketToken) return;
+    const url = `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`;
     cloudApiLog.info("open websocket", {
-      hasToken: !!this.websocketToken,
+      hasToken: !!socketToken,
+      tokenSource: this.websocketToken ? "websocket" : "session",
       quoteTargets: this.quoteTargets.size,
       channelTargets: this.channelListeners.size,
     });
@@ -546,19 +573,36 @@ class GloomApiClient {
       q: query,
       limit: String(limit),
     });
-    return this.request<InstrumentSearchResult[]>(`/market/search?${params.toString()}`);
+    const response = await this.request<CloudMarketResponse<InstrumentSearchResult[]>>(`/market/search?${params.toString()}`);
+    return response.data ?? [];
   }
 
-  async getCloudQuote(symbol: string, exchange?: string): Promise<CloudQuotePayload> {
+  async getCloudQuote(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudQuotePayload>> {
     const params = new URLSearchParams({ symbol });
     if (exchange) params.set("exchange", exchange);
-    return this.request<CloudQuotePayload>(`/market/quote?${params.toString()}`);
+    return this.request<CloudMarketResponse<CloudQuotePayload>>(`/market/quote?${params.toString()}`);
   }
 
-  async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudTickerFinancialsPayload> {
+  async getCloudProfile(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCompanyProfile>> {
     const params = new URLSearchParams({ symbol });
     if (exchange) params.set("exchange", exchange);
-    return this.request<CloudTickerFinancialsPayload>(`/market/financials?${params.toString()}`);
+    return this.request<CloudMarketResponse<CloudCompanyProfile>>(`/market/profile?${params.toString()}`);
+  }
+
+  async getCloudFundamentals(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudFundamentals>> {
+    const params = new URLSearchParams({ symbol });
+    if (exchange) params.set("exchange", exchange);
+    return this.request<CloudMarketResponse<CloudFundamentals>>(`/market/fundamentals?${params.toString()}`);
+  }
+
+  async getCloudStatements(
+    symbol: string,
+    exchange?: string,
+    period: "annual" | "quarterly" | "both" = "both",
+  ): Promise<CloudMarketResponse<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>> {
+    const params = new URLSearchParams({ symbol, period });
+    if (exchange) params.set("exchange", exchange);
+    return this.request<CloudMarketResponse<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>>(`/market/statements?${params.toString()}`);
   }
 
   async getCloudHistory(
@@ -571,20 +615,19 @@ class GloomApiClient {
       endDate?: string;
       rangeKey?: string;
     } = {},
-  ): Promise<CloudPricePointPayload[]> {
+  ): Promise<CloudMarketResponse<CloudPricePointPayload[]>> {
     const search = new URLSearchParams({ symbol, exchange });
     if (params.interval) search.set("interval", params.interval);
     if (params.outputsize != null) search.set("outputsize", String(params.outputsize));
     if (params.startDate) search.set("startDate", params.startDate);
     if (params.endDate) search.set("endDate", params.endDate);
     if (params.rangeKey) search.set("rangeKey", params.rangeKey);
-    return this.request<CloudPricePointPayload[]>(`/market/history?${search.toString()}`);
+    return this.request<CloudMarketResponse<CloudPricePointPayload[]>>(`/market/history?${search.toString()}`);
   }
 
-  async getCloudExchangeRate(fromCurrency: string): Promise<number> {
+  async getCloudExchangeRate(fromCurrency: string): Promise<CloudMarketResponse<{ rate: number }>> {
     const params = new URLSearchParams({ fromCurrency });
-    const result = await this.request<{ rate: number }>(`/market/exchange-rate?${params.toString()}`);
-    return result.rate;
+    return this.request<CloudMarketResponse<{ rate: number }>>(`/market/exchange-rate?${params.toString()}`);
   }
 }
 

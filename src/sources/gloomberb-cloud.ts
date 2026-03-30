@@ -4,9 +4,11 @@ import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types
 import type { InstrumentSearchResult } from "../types/instrument";
 import {
   apiClient,
+  type CloudCompanyProfile,
+  type CloudFundamentals,
+  type CloudMarketResponse,
   type CloudPricePointPayload,
   type CloudQuotePayload,
-  type CloudTickerFinancialsPayload,
 } from "../utils/api-client";
 import { createProviderMiss } from "./provider-errors";
 
@@ -52,15 +54,10 @@ function mapPricePoint(point: CloudPricePointPayload): PricePoint {
   };
 }
 
-function mapFinancials(financials: CloudTickerFinancialsPayload): TickerFinancials {
-  return {
-    quote: financials.quote ? mapQuote(financials.quote) : undefined,
-    fundamentals: financials.fundamentals,
-    profile: financials.profile,
-    annualStatements: financials.annualStatements ?? [],
-    quarterlyStatements: financials.quarterlyStatements ?? [],
-    priceHistory: (financials.priceHistory ?? []).map(mapPricePoint),
-  };
+function quoteTargetKey(symbol: string, exchange?: string): string {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const normalizedExchange = (exchange ?? "").trim().toUpperCase();
+  return normalizedExchange ? `${normalizedSymbol}:${normalizedExchange}` : normalizedSymbol;
 }
 
 function toCloudInterval(interval: string): string {
@@ -135,6 +132,30 @@ async function requireVerifiedSession(): Promise<void> {
   }
 }
 
+function isEmptyCloudStatus(status: CloudMarketResponse<unknown>["status"]): boolean {
+  return status === "empty" || status === "unsupported";
+}
+
+function unwrapRequiredCloudResponse<T>(response: CloudMarketResponse<T>, message: string): T {
+  if ((response.status === "success" || response.status === "partial") && response.data != null) {
+    return response.data;
+  }
+  if (isEmptyCloudStatus(response.status)) {
+    throw createProviderMiss(response.reasonCode ?? message);
+  }
+  throw new Error(response.reasonCode ?? message);
+}
+
+function unwrapOptionalCloudResponse<T>(response: CloudMarketResponse<T>): T | null {
+  if ((response.status === "success" || response.status === "partial") && response.data != null) {
+    return response.data;
+  }
+  if (isEmptyCloudStatus(response.status)) {
+    return null;
+  }
+  throw new Error(response.reasonCode ?? "Cloud data request failed");
+}
+
 export class GloomberbCloudProvider implements DataProvider {
   readonly id = providerId;
   readonly name = "Gloomberb Cloud";
@@ -146,23 +167,43 @@ export class GloomberbCloudProvider implements DataProvider {
 
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
     await requireVerifiedSession();
-    return withCloudFallback(
-      async () => mapFinancials(await apiClient.getCloudFinancials(ticker, exchange)),
-      `Cloud financials are unavailable for ${ticker}`,
-    );
+    return withCloudFallback(async () => {
+      const [quoteResponse, profileResponse, fundamentalsResponse, statementsResponse] = await Promise.all([
+        apiClient.getCloudQuote(ticker, exchange),
+        apiClient.getCloudProfile(ticker, exchange),
+        apiClient.getCloudFundamentals(ticker, exchange),
+        apiClient.getCloudStatements(ticker, exchange, "both"),
+      ]);
+      const quote = mapQuote(unwrapRequiredCloudResponse(quoteResponse, `Cloud quote is unavailable for ${ticker}`));
+      const profile = unwrapOptionalCloudResponse(profileResponse) as CloudCompanyProfile | null;
+      const fundamentals = unwrapOptionalCloudResponse(fundamentalsResponse) as CloudFundamentals | null;
+      const statements = unwrapOptionalCloudResponse(statementsResponse);
+      return {
+        quote,
+        profile: profile ?? undefined,
+        fundamentals: fundamentals ?? undefined,
+        annualStatements: statements?.annualStatements ?? [],
+        quarterlyStatements: statements?.quarterlyStatements ?? [],
+        priceHistory: [],
+      };
+    }, `Cloud financials are unavailable for ${ticker}`);
   }
 
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
     await requireVerifiedSession();
     return withCloudFallback(
-      async () => mapQuote(await apiClient.getCloudQuote(ticker, exchange)),
+      async () => mapQuote(unwrapRequiredCloudResponse(
+        await apiClient.getCloudQuote(ticker, exchange),
+        `Cloud quotes are unavailable for ${ticker}`,
+      )),
       `Cloud quotes are unavailable for ${ticker}`,
     );
   }
 
   async getExchangeRate(fromCurrency: string): Promise<number> {
     await requireVerifiedSession();
-    return apiClient.getCloudExchangeRate(fromCurrency);
+    const response = await apiClient.getCloudExchangeRate(fromCurrency);
+    return unwrapRequiredCloudResponse(response, `Cloud exchange rate is unavailable for ${fromCurrency}`).rate;
   }
 
   async search(query: string, _context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
@@ -192,11 +233,11 @@ export class GloomberbCloudProvider implements DataProvider {
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
     await requireVerifiedSession();
     const request = toHistoryRequest(range);
-    const points = await withCloudFallback(
+    const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, request),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    return points.map(mapPricePoint);
+    return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`).map(mapPricePoint);
   }
 
   async getDetailedPriceHistory(
@@ -210,7 +251,7 @@ export class GloomberbCloudProvider implements DataProvider {
     await requireVerifiedSession();
     const interval = toCloudInterval(barSize);
     const includeTime = /(min|h)$/i.test(interval);
-    const points = await withCloudFallback(
+    const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, {
         interval,
         startDate: formatCloudDateTime(startDate, includeTime),
@@ -218,7 +259,7 @@ export class GloomberbCloudProvider implements DataProvider {
       }),
       `Cloud detailed chart history is unavailable for ${ticker}`,
     );
-    return points.map(mapPricePoint);
+    return unwrapRequiredCloudResponse(response, `Cloud detailed chart history is unavailable for ${ticker}`).map(mapPricePoint);
   }
 
   async getOptionsChain(_ticker: string, _exchange?: string, _expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
@@ -230,13 +271,29 @@ export class GloomberbCloudProvider implements DataProvider {
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
     void apiClient.ensureVerifiedSession().catch(() => {});
+    const targetMap = new Map<string, QuoteSubscriptionTarget[]>();
+    for (const target of targets) {
+      const key = quoteTargetKey(target.symbol, target.exchange);
+      const matches = targetMap.get(key) ?? [];
+      matches.push(target);
+      targetMap.set(key, matches);
+    }
+
     return apiClient.subscribeQuotes(
       targets.map((target) => ({
         symbol: target.symbol,
         exchange: target.exchange,
       })),
       (target, quote) => {
-        onQuote(target, mapQuote(quote));
+        const key = quoteTargetKey(target.symbol, target.exchange);
+        const matches = targetMap.get(key) ?? [{
+          symbol: target.symbol,
+          exchange: target.exchange,
+        }];
+        const mappedQuote = mapQuote(quote);
+        for (const match of matches) {
+          onQuote(match, mappedQuote);
+        }
       },
     );
   }

@@ -5,7 +5,7 @@ import { join } from "path";
 import { AppPersistence } from "../data/app-persistence";
 import { ProviderRouter } from "./provider-router";
 import type { BrokerAdapter } from "../types/broker";
-import type { DataProvider } from "../types/data-provider";
+import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
 import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
 
 const originalConsoleError = console.error;
@@ -322,6 +322,218 @@ describe("ProviderRouter", () => {
     expect(quote.providerId).toBeUndefined();
   });
 
+  test("prefers provider quote streams when one is available", () => {
+    const brokerTargets: QuoteSubscriptionTarget[] = [];
+    const providerTargets: QuoteSubscriptionTarget[] = [];
+    let brokerUnsubscribed = 0;
+    let providerUnsubscribed = 0;
+
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      subscribeQuotes(_instance, targets, onQuote) {
+        brokerTargets.push(...targets);
+        onQuote(targets[0]!, {
+          symbol: "AAPL",
+          price: 123.45,
+          currency: "USD",
+          change: 1,
+          changePercent: 0.8,
+          lastUpdated: Date.now(),
+        });
+        return () => {
+          brokerUnsubscribed += 1;
+        };
+      },
+    };
+    const streamingProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      subscribeQuotes(targets, onQuote) {
+        providerTargets.push(...targets);
+        onQuote(targets[0]!, {
+          symbol: "MSFT",
+          price: 456.78,
+          currency: "USD",
+          change: 2,
+          changePercent: 0.4,
+          lastUpdated: Date.now(),
+        });
+        return () => {
+          providerUnsubscribed += 1;
+        };
+      },
+    };
+
+    const router = new ProviderRouter(fallbackProvider, [streamingProvider]);
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: {},
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    }));
+
+    const seenSymbols: string[] = [];
+    const unsubscribe = router.subscribeQuotes([
+      {
+        symbol: "AAPL",
+        exchange: "NASDAQ",
+        context: {
+          brokerId: "ibkr",
+          brokerInstanceId: "ibkr-work",
+        },
+      },
+      {
+        symbol: "MSFT",
+        exchange: "NASDAQ",
+      },
+    ], (target) => {
+      seenSymbols.push(target.symbol);
+    });
+
+    expect(brokerTargets).toEqual([]);
+    expect(providerTargets).toEqual([
+      {
+        symbol: "AAPL",
+        exchange: "NASDAQ",
+        context: {
+          brokerId: "ibkr",
+          brokerInstanceId: "ibkr-work",
+        },
+      },
+      {
+        symbol: "MSFT",
+        exchange: "NASDAQ",
+      },
+    ]);
+    expect(seenSymbols).toEqual(["AAPL"]);
+
+    unsubscribe();
+    expect(brokerUnsubscribed).toBe(0);
+    expect(providerUnsubscribed).toBe(1);
+  });
+
+  test("can force broker-linked targets onto provider streaming", () => {
+    const brokerTargets: QuoteSubscriptionTarget[] = [];
+    const providerTargets: QuoteSubscriptionTarget[] = [];
+
+    const broker: BrokerAdapter = {
+      id: "ibkr",
+      name: "IBKR",
+      configSchema: [],
+      async validate() {
+        return true;
+      },
+      async importPositions() {
+        return [];
+      },
+      subscribeQuotes(_instance, targets) {
+        brokerTargets.push(...targets);
+        return () => {};
+      },
+    };
+    const streamingProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      subscribeQuotes(targets) {
+        providerTargets.push(...targets);
+        return () => {};
+      },
+    };
+
+    const router = new ProviderRouter(fallbackProvider, [streamingProvider]);
+    router.attachRegistry({
+      brokers: new Map([["ibkr", broker]]),
+      dataProviders: new Map(),
+    } as any);
+    router.setConfigAccessor(() => ({
+      dataDir: "",
+      configVersion: CURRENT_CONFIG_VERSION,
+      baseCurrency: "USD",
+      refreshIntervalMinutes: 30,
+      portfolios: [],
+      watchlists: [],
+      columns: [],
+      layout: cloneLayout(DEFAULT_LAYOUT),
+      layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+      activeLayoutIndex: 0,
+      brokerInstances: [{
+        id: "ibkr-work",
+        brokerType: "ibkr",
+        label: "Work",
+        connectionMode: "gateway",
+        config: {},
+        enabled: true,
+      }],
+      plugins: [],
+      disabledPlugins: [],
+      theme: "amber",
+      chartPreferences: {
+        defaultRenderMode: "area",
+        renderer: "auto",
+      },
+      recentTickers: [],
+    }));
+
+    const unsubscribe = router.subscribeQuotes([{
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      route: "provider",
+      context: {
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-work",
+      },
+    }], () => {});
+
+    expect(brokerTargets).toEqual([]);
+    expect(providerTargets).toEqual([{
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      route: "provider",
+      context: {
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-work",
+      },
+    }]);
+
+    unsubscribe();
+  });
+
   test("merges cached broker financials with cached fallback fundamentals", async () => {
     const dbPath = createTempDbPath("cache-merge");
     const persistence = new AppPersistence(dbPath);
@@ -589,6 +801,67 @@ describe("ProviderRouter", () => {
     expect(merged.profile?.sector).toBe("Technology");
   });
 
+  test("backfills quote and fundamental fields from fallback providers", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: {
+            symbol: "AAPL",
+            price: 125,
+            currency: "USD",
+            change: 2,
+            changePercent: 1.6,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: {
+            trailingPE: 25,
+          },
+        };
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
+          quote: {
+            symbol: "AAPL",
+            price: 124,
+            currency: "USD",
+            change: 1,
+            changePercent: 0.8,
+            marketCap: 2_000_000_000,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: {
+            forwardPE: 22,
+          },
+        };
+      },
+    };
+
+    const router = new ProviderRouter(yahooProvider, [cloudProvider]);
+    const merged = await router.getTickerFinancials("AAPL", "NASDAQ");
+
+    expect(merged.quote?.price).toBe(125);
+    expect(merged.quote?.marketCap).toBe(2_000_000_000);
+    expect(merged.fundamentals?.trailingPE).toBe(25);
+    expect(merged.fundamentals?.forwardPE).toBe(22);
+    expect(merged.priceHistory[0]?.close).toBe(124);
+  });
+
   test("refreshes missing profile data even when cached financials exist", async () => {
     const dbPath = createTempDbPath("cache-profile-refresh");
     const persistence = new AppPersistence(dbPath);
@@ -831,5 +1104,71 @@ describe("ProviderRouter", () => {
 
     expect(history).toEqual([]);
     expect(logged).toHaveLength(0);
+  });
+
+  test("falls back to later providers when the preferred chart source is empty", async () => {
+    const dbPath = createTempDbPath("chart-fallback");
+    const persistence = new AppPersistence(dbPath);
+
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getPriceHistory() {
+        return [];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getPriceHistory() {
+        return [{ date: new Date("2026-03-28T00:00:00Z"), close: 101 }];
+      },
+    };
+
+    const seedRouter = new ProviderRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const seeded = await seedRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
+    expect(seeded[0]?.close).toBe(101);
+
+    const cachedRouter = new ProviderRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const cached = await cachedRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
+    expect(cached[0]?.close).toBe(101);
+
+    persistence.close();
+  });
+
+  test("falls back to later providers when detailed chart history is empty", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getDetailedPriceHistory() {
+        return [];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getDetailedPriceHistory() {
+        return [{ date: new Date("2026-03-28T10:00:00Z"), close: 102 }];
+      },
+    };
+
+    const router = new ProviderRouter(yahooProvider, [cloudProvider]);
+    const history = await router.getDetailedPriceHistory(
+      "AAPL",
+      "NASDAQ",
+      new Date("2026-03-28T09:30:00Z"),
+      new Date("2026-03-28T16:00:00Z"),
+      "15m",
+    );
+
+    expect(history[0]?.close).toBe(102);
   });
 });

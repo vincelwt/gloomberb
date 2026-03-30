@@ -22,9 +22,7 @@ export function StatusBar() {
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
   if (!state.statusBarVisible) return null;
 
-  // Get market state and exchange from the focused ticker context or first available.
-  const anyFin = focusedFinancials ?? state.financials.values().next().value ?? null;
-  const q = anyFin?.quote;
+  const q = focusedFinancials?.quote;
   const mktState = q?.marketState;
   const exchName = q ? exchangeShortName(q.exchangeName, q.fullExchangeName) : "";
 

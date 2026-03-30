@@ -4,7 +4,8 @@ import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import type { NewsItem } from "../../types/data-provider";
-import { getSharedDataProvider } from "../../plugins/registry";
+import { useArticleSummary, useNewsQuery, useResolvedEntryValue } from "../../market-data/hooks";
+import { instrumentFromTicker } from "../../market-data/request-types";
 import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
 import { DetailFeedView, type DetailFeedItem } from "../../components/detail-feed-view";
@@ -14,8 +15,6 @@ const ARTICLE_SUMMARY_CACHE_POLICY = {
   expireMs: 90 * 24 * 60 * 60_000,
 };
 const NEWS_ITEM_LIMIT = 50;
-
-let _persistence: import("../../types/plugin").PluginPersistence | null = null;
 
 function getFeedItems(
   news: NewsItem[],
@@ -53,91 +52,41 @@ function getFeedItems(
 
 function NewsTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
-  const [loadingSummary, setLoadingSummary] = useState(false);
   const summaryFetchRef = useRef(0);
+  const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
+  const newsEntry = useNewsQuery(instrument ? { instrument, count: NEWS_ITEM_LIMIT } : null);
+  const news = useResolvedEntryValue(newsEntry) ?? [];
+  const loading = newsEntry?.phase === "loading" || (newsEntry?.phase === "refreshing" && news.length === 0);
+  const error = newsEntry?.phase === "error" ? newsEntry.error?.message ?? "Failed to load news" : null;
 
   useEffect(() => {
-    const provider = getSharedDataProvider();
-    let cancelled = false;
-
     summaryFetchRef.current += 1;
     setSummaryCache(new Map());
-    setLoadingSummary(false);
     setHoveredIdx(null);
-
-    if (!ticker || !provider) {
-      setNews([]);
-      setLoading(false);
-      setError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setLoading(true);
-    setError(null);
-    provider.getNews(ticker.metadata.ticker, NEWS_ITEM_LIMIT).then((items) => {
-      if (!cancelled) setNews(items);
-    }).catch((err) => {
-      if (!cancelled) setError(err?.message ?? "Failed to load news");
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
   }, [ticker?.metadata.ticker]);
 
   const selected = news[selectedIdx];
   const cachedSelectedSummary = selected ? summaryCache.get(selected.url) : undefined;
-  useEffect(() => {
-    const provider = getSharedDataProvider();
-    if (!selected || !provider) {
-      setLoadingSummary(false);
-      return;
-    }
-    if (selected.summary) {
-      setSummaryCache((prev) => prev.has(selected.url) ? prev : new Map(prev).set(selected.url, selected.summary!));
-      setLoadingSummary(false);
-      return;
-    }
-    if (cachedSelectedSummary) {
-      setLoadingSummary(false);
-      return;
-    }
-    const cached = _persistence?.getResource<string>("article-summary", selected.url, {
-      sourceKey: "provider",
-      schemaVersion: 1,
-      allowExpired: true,
-    });
-    if (cached?.value) {
-      setSummaryCache((prev) => new Map(prev).set(selected.url, cached.value));
-      setLoadingSummary(false);
-      return;
-    }
+  const articleSummaryEntry = useArticleSummary(
+    selected && !selected.summary && !cachedSelectedSummary ? selected.url : null,
+  );
+  const selectedSummary = useResolvedEntryValue(articleSummaryEntry);
+  const loadingSummary = articleSummaryEntry?.phase === "loading" || articleSummaryEntry?.phase === "refreshing";
 
-    const requestId = ++summaryFetchRef.current;
-    setLoadingSummary(true);
-    provider.getArticleSummary(selected.url).then((summary) => {
-      if (requestId !== summaryFetchRef.current || !summary) return;
-      setSummaryCache((prev) => new Map(prev).set(selected.url, summary));
-      _persistence?.setResource("article-summary", selected.url, summary, {
-        sourceKey: "provider",
-        schemaVersion: 1,
-        cachePolicy: ARTICLE_SUMMARY_CACHE_POLICY,
-      });
-    }).catch(() => {}).finally(() => {
-      if (requestId === summaryFetchRef.current) setLoadingSummary(false);
-    });
-  }, [cachedSelectedSummary, selected?.summary, selected?.url]);
+  useEffect(() => {
+    if (!selected?.summary) return;
+    const summary = selected.summary;
+    setSummaryCache((prev) => prev.has(selected.url) ? prev : new Map(prev).set(selected.url, summary));
+  }, [selected?.summary, selected?.url]);
+
+  useEffect(() => {
+    if (!selected?.url || !selectedSummary) return;
+    setSummaryCache((prev) => new Map(prev).set(selected.url, selectedSummary));
+  }, [selected?.url, selectedSummary]);
 
   useKeyboard((event) => {
     if (!focused || news.length === 0) return;
@@ -184,7 +133,6 @@ export const newsPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
-    _persistence = ctx.persistence;
     ctx.registerDetailTab({
       id: "news",
       name: "News",

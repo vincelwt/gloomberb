@@ -6,6 +6,7 @@ import { spawn, type Subprocess } from "bun";
 import { execSync } from "child_process";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { useAppState, usePaneTicker } from "../../state/app-context";
+import { useFxRatesMap } from "../../market-data/hooks";
 import { usePluginState } from "../../plugins/plugin-runtime";
 import { colors } from "../../theme/colors";
 import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent } from "../../utils/format";
@@ -180,6 +181,15 @@ interface PersistedConversation {
 export function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) {
   const { state } = useAppState();
   const { ticker, financials } = usePaneTicker();
+  const exchangeRates = useFxRatesMap([
+    state.config.baseCurrency,
+    ticker?.metadata.currency,
+    financials?.quote?.currency,
+    ...(ticker?.metadata.positions.map((position) => position.currency) ?? []),
+  ]);
+  const effectiveExchangeRates = exchangeRates.size > 1 || state.exchangeRates.size === 0
+    ? exchangeRates
+    : state.exchangeRates;
   const [providers] = useState(() => detectProviders());
   const defaultProviderIdx = (() => {
     const idx = providers.findIndex((p) => p.available);
@@ -265,7 +275,7 @@ export function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
     // Build the full prompt with context
-    const context = buildContext(ticker, financials, state.config.baseCurrency, state.exchangeRates);
+    const context = buildContext(ticker, financials, state.config.baseCurrency, effectiveExchangeRates);
     const fullPrompt = `You are a financial analyst assistant. Here is the current financial data for the company being discussed:\n\n${context}\n\nUser question: ${text}`;
 
     try {
@@ -316,7 +326,7 @@ export function AskAiTab({ width, height, focused, onCapture }: DetailTabProps) 
     } finally {
       procRef.current = null;
     }
-  }, [ticker, financials, currentProvider, state.config.baseCurrency, state.exchangeRates]);
+  }, [ticker, financials, currentProvider, effectiveExchangeRates, state.config.baseCurrency]);
 
   const handleKeyboard = useCallback((event: { name: string }) => {
     if (!focused) return;

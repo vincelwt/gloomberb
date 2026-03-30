@@ -328,4 +328,42 @@ describe("quote merging", () => {
     expect(next.financials.get("AAPL")?.quote?.bidSize).toBe(10);
     expect(next.financials.get("AAPL")?.quote?.askSize).toBe(12);
   });
+
+  test("ignores same-currency quotes that differ by a likely 100x unit mismatch", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const initial = createInitialState(config);
+    initial.financials.set("IQE", {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: [],
+      quote: {
+        symbol: "IQE.L",
+        price: 0.245,
+        currency: "GBP",
+        change: -0.021,
+        changePercent: -7.89,
+        lastUpdated: Date.now() - 1000,
+        dataSource: "yahoo",
+      },
+    });
+
+    const next = appReducer(initial, {
+      type: "MERGE_QUOTE",
+      symbol: "IQE",
+      quote: {
+        symbol: "IQE",
+        providerId: "gloomberb-cloud",
+        price: 24.5,
+        currency: "GBP",
+        change: -2.1,
+        changePercent: -7.89,
+        lastUpdated: Date.now(),
+        dataSource: "live",
+      },
+    });
+
+    expect(next.financials.get("IQE")?.quote?.price).toBe(0.245);
+    expect(next.financials.get("IQE")?.quote?.symbol).toBe("IQE.L");
+    expect(next.financials.get("IQE")?.quote?.dataSource).toBe("yahoo");
+  });
 });

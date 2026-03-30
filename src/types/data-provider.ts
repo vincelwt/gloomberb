@@ -41,6 +41,7 @@ export interface QuoteSubscriptionTarget {
   symbol: string;
   exchange?: string;
   context?: MarketDataRequestContext;
+  route?: "auto" | "provider" | "broker";
 }
 
 export interface DataProvider {

@@ -15,6 +15,8 @@ import {
   usePaneInstanceId,
   usePaneTicker,
 } from "../../state/app-context";
+import { resolveLegacyFinancialsForInstrument } from "../../market-data/coordinator";
+import { instrumentFromTicker } from "../../market-data/request-types";
 import { PriceSelectorDialog } from "../../components";
 import { Button } from "../../components/ui/button";
 import { colors, hoverBg, priceColor } from "../../theme/colors";
@@ -42,6 +44,7 @@ import {
   getTradingPaneState,
   getTradeTicketState,
   loadOrderIntoDraft,
+  normalizeContract,
   prefillTradeFromTicker,
   removeBrokerInstanceFromTradingState,
   setTradeTicketBusy,
@@ -339,6 +342,14 @@ const ibkrBroker: BrokerAdapter = {
       throw new Error("Gateway mode is required for broker history");
     }
     return ibkrGatewayManager.getService(instance.id).getDetailedPriceHistory(ticker, normalized.gateway, exchange, startDate, endDate, barSize, instrument);
+  },
+
+  subscribeQuotes(instance, targets, onQuote) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    if (normalized.connectionMode !== "gateway") {
+      return () => {};
+    }
+    return ibkrGatewayManager.getService(instance.id).subscribeQuotes(normalized.gateway, targets, onQuote);
   },
 
   async listOpenOrders(instance) {
@@ -1721,6 +1732,11 @@ function TradingPane({ focused, width, height }: PaneProps) {
   const orderPanelWidth = Math.max(36, Math.floor(width * 0.6));
   const listPanelWidth = Math.max(24, width - orderPanelWidth - 1);
   const listHeight = Math.max(4, height - 6);
+  const getOrderQuote = useCallback((symbol: string): Quote | null => {
+    const ticker = state.tickers.get(symbol) ?? null;
+    const instrument = instrumentFromTicker(ticker, symbol);
+    return instrument ? resolveLegacyFinancialsForInstrument(instrument)?.quote ?? null : null;
+  }, [state.tickers]);
 
   return (
     <box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -1779,7 +1795,7 @@ function TradingPane({ focused, width, height }: PaneProps) {
               gatewaySnapshot.openOrders.map((order, index) => {
                 const selected = index === tradeState.selectedOpenOrderIndex;
                 const orderSymbol = order.contract.symbol;
-                const orderQuote = state.financials.get(orderSymbol)?.quote;
+                const orderQuote = getOrderQuote(orderSymbol);
                 const bidStr = orderQuote?.bid != null ? orderQuote.bid.toFixed(2) : "---";
                 const askStr = orderQuote?.ask != null ? orderQuote.ask.toFixed(2) : "---";
                 const orderPrice = order.limitPrice != null ? order.limitPrice.toFixed(2) : order.stopPrice != null ? order.stopPrice.toFixed(2) : "MKT";

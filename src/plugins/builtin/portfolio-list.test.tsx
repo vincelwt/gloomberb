@@ -3,8 +3,10 @@ import { act, useReducer } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider, type AppAction } from "../../state/app-context";
 import { cloneLayout, createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../../types/config";
+import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { setSharedRegistryForTests } from "../registry";
 import { ibkrGatewayManager } from "../ibkr/gateway-service";
 import { portfolioListPlugin } from "./portfolio-list";
@@ -13,6 +15,7 @@ const TEST_PANE_ID = "portfolio-list:test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
+let sharedCoordinator: MarketDataCoordinator | null = null;
 
 const PortfolioPane = portfolioListPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -223,6 +226,8 @@ afterEach(async () => {
     testSetup = undefined;
   }
   harnessDispatch = null;
+  sharedCoordinator = null;
+  setSharedMarketDataCoordinator(null);
   setSharedRegistryForTests(undefined);
   await ibkrGatewayManager.removeInstance("ibkr-live");
 });
@@ -444,6 +449,269 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("124.95");
     expect(frame).toContain("125.05");
     expect(frame).toContain("0.10");
+  });
+
+  test("warms full financials for visible rows when only quote data is loaded", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-flex:DU12345",
+      ["ticker", "market_cap", "pe", "forward_pe"],
+      [createBrokerInstance("flex")],
+    );
+    let calls = 0;
+    let resolveFinancials!: (value: {
+      annualStatements: [];
+      quarterlyStatements: [];
+      priceHistory: Array<{ date: Date; close: number }>;
+      quote: Quote;
+      fundamentals: { trailingPE: number; forwardPE: number };
+    }) => void;
+    const financialsPromise = new Promise<{
+      annualStatements: [];
+      quarterlyStatements: [];
+      priceHistory: Array<{ date: Date; close: number }>;
+      quote: Quote;
+      fundamentals: { trailingPE: number; forwardPE: number };
+    }>((resolve) => {
+      resolveFinancials = resolve;
+    });
+    const provider: DataProvider = {
+      id: "test-provider",
+      name: "Test Provider",
+      async getTickerFinancials(symbol) {
+        calls += 1;
+        return financialsPromise;
+      },
+      async getQuote() {
+        return makeQuote();
+      },
+      async getExchangeRate() {
+        return 1;
+      },
+      async search() {
+        return [];
+      },
+      async getNews() {
+        return [];
+      },
+      async getArticleSummary() {
+        return null;
+      },
+      async getPriceHistory() {
+        return [];
+      },
+      subscribeQuotes() {
+        return () => {};
+      },
+    };
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+
+    testSetup = await testRender(
+      <PortfolioHarness config={config} collectionId="broker:ibkr-flex:DU12345" />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      resolveFinancials({
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
+        quote: makeQuote({
+          symbol: "AAPL",
+          marketCap: 2_000_000_000,
+        }),
+        fundamentals: {
+          trailingPE: 25,
+          forwardPE: 22,
+        },
+      });
+      await Promise.resolve();
+    });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(calls).toBeGreaterThan(0);
+    expect(frame).toContain("2B");
+    expect(frame).toContain("25.0");
+    expect(frame).toContain("22.0");
+  });
+
+  test("updates a non-selected broker-linked row from streamed quotes", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-live:DU12345",
+      ["ticker", "price", "change_pct", "latency"],
+      [createBrokerInstance("gateway", "ibkr-live")],
+    );
+    let streamed: ((target: { symbol: string; exchange?: string; context?: unknown }, quote: Quote) => void) | null = null;
+    const provider: DataProvider = {
+      id: "test-provider",
+      name: "Test Provider",
+      async getTickerFinancials(symbol) {
+        if (symbol === "AAPL") {
+          return {
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+            quote: makeQuote({
+              symbol: "AAPL",
+              price: 125,
+              change: 5,
+              changePercent: 4.17,
+              marketState: "PRE",
+              preMarketPrice: 125,
+              preMarketChange: 5,
+              preMarketChangePercent: 4.17,
+            }),
+          };
+        }
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: makeQuote({
+            symbol: "MSFT",
+            price: 315,
+            change: 2,
+            changePercent: 0.64,
+            previousClose: 313,
+            name: "Microsoft",
+          }),
+        };
+      },
+      async getQuote(symbol) {
+        return symbol === "AAPL"
+          ? makeQuote({
+            symbol: "AAPL",
+            price: 125,
+            change: 5,
+            changePercent: 4.17,
+            marketState: "PRE",
+            preMarketPrice: 125,
+            preMarketChange: 5,
+            preMarketChangePercent: 4.17,
+          })
+          : makeQuote({
+            symbol: "MSFT",
+            price: 315,
+            change: 2,
+            changePercent: 0.64,
+            previousClose: 313,
+            name: "Microsoft",
+          });
+      },
+      async getExchangeRate() {
+        return 1;
+      },
+      async search() {
+        return [];
+      },
+      async getNews() {
+        return [];
+      },
+      async getArticleSummary() {
+        return null;
+      },
+      async getPriceHistory() {
+        return [];
+      },
+      subscribeQuotes(_targets, onQuote) {
+        streamed = onQuote as typeof streamed;
+        return () => {};
+      },
+    };
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-live:DU12345"
+        stateMutator={(state) => {
+          state.tickers = new Map([
+            ["AAPL", makeTicker({
+              ticker: "AAPL",
+              name: "Apple",
+              broker_contracts: [{
+                brokerId: "ibkr",
+                brokerInstanceId: "ibkr-live",
+                symbol: "AAPL",
+                localSymbol: "AAPL",
+                exchange: "SMART",
+                primaryExchange: "NASDAQ",
+                conId: 265598,
+              }],
+            })],
+            ["MSFT", makeTicker({
+              ticker: "MSFT",
+              name: "Microsoft",
+              broker_contracts: [{
+                brokerId: "ibkr",
+                brokerInstanceId: "ibkr-live",
+                symbol: "MSFT",
+                localSymbol: "MSFT",
+                exchange: "SMART",
+                primaryExchange: "NASDAQ",
+                conId: 272093,
+              }],
+            })],
+          ]);
+          state.financials = new Map();
+          state.paneState[TEST_PANE_ID] = {
+            collectionId: "broker:ibkr-live:DU12345",
+            cursorSymbol: "MSFT",
+            cashDrawerExpanded: false,
+          };
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await flushFrame();
+
+    await act(async () => {
+      streamed?.(
+        {
+          symbol: "AAPL",
+          exchange: "NASDAQ",
+          context: {
+            brokerId: "ibkr",
+            brokerInstanceId: "ibkr-live",
+            instrument: {
+              brokerId: "ibkr",
+              brokerInstanceId: "ibkr-live",
+              symbol: "AAPL",
+              localSymbol: "AAPL",
+              exchange: "SMART",
+              primaryExchange: "NASDAQ",
+              conId: 265598,
+            },
+          },
+        },
+        makeQuote({
+          symbol: "AAPL",
+          price: 126.5,
+          change: 6.5,
+          changePercent: 5.41,
+          marketState: "PRE",
+          preMarketPrice: 126.5,
+          preMarketChange: 6.5,
+          preMarketChangePercent: 5.41,
+          lastUpdated: Date.now() + 1_000,
+        }),
+      );
+      await Promise.resolve();
+    });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("AAPL");
+    expect(frame).toContain("126.50");
+    expect(frame).toContain("+5.41%");
   });
 
   test("quote flash keeps the existing row background intact", async () => {

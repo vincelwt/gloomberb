@@ -1,5 +1,4 @@
 import { findPaneInstance, type AppConfig } from "../types/config";
-import type { TickerFinancials } from "../types/financials";
 import type { BrokerContractRef } from "../types/instrument";
 import type { TickerRecord } from "../types/ticker";
 import { getDockedPaneIds } from "../plugins/pane-manager";
@@ -34,8 +33,6 @@ interface SessionStateInput {
   statusBarVisible: boolean;
   recentTickers: string[];
   tickers: Map<string, TickerRecord>;
-  financials: Map<string, TickerFinancials>;
-  exchangeRates: Map<string, number>;
 }
 
 function normalizeHydrationTarget(target: HydrationTarget): HydrationTarget {
@@ -87,10 +84,6 @@ export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSna
     hydrationTargets.push(target);
   };
 
-  for (const symbol of state.financials.keys()) {
-    pushTarget(state.tickers.get(symbol));
-  }
-
   for (const symbol of state.recentTickers) {
     pushTarget(state.tickers.get(symbol));
   }
@@ -120,7 +113,7 @@ export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSna
       ...state.config.layout.floating.map((entry) => entry.instanceId),
     ],
     hydrationTargets,
-    exchangeCurrencies: [...state.exchangeRates.keys()],
+    exchangeCurrencies: [],
     savedAt: Date.now(),
   };
 }

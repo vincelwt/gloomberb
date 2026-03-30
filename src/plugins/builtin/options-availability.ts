@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSharedDataProvider } from "../../plugins/registry";
+import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import type { ResolvedOptionsTarget } from "../../utils/options";
@@ -54,12 +54,12 @@ export function resetOptionsAvailabilityCache(): void {
 
 export async function fetchOptionsAvailability(
   target: ResolvedOptionsTarget,
-  provider: DataProvider | undefined = getSharedDataProvider(),
+  provider?: DataProvider,
 ): Promise<boolean> {
   const cached = readOptionsAvailability(target);
   if (cached != null) return cached;
 
-  if (!provider?.getOptionsChain || !target.effectiveTicker) {
+  if (!target.effectiveTicker) {
     setOptionsAvailability(target, false);
     return false;
   }
@@ -67,24 +67,52 @@ export async function fetchOptionsAvailability(
   const existing = optionsAvailabilityInFlight.get(target.cacheKey);
   if (existing) return existing;
 
-  const request = provider.getOptionsChain(
-    target.effectiveTicker,
-    target.effectiveExchange,
-    undefined,
-    getRequestContext(target),
-  ).then((chain) => {
-    const available = chain.expirationDates.length > 0;
-    setOptionsAvailability(target, available);
-    return available;
-  }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error ?? "");
-    if (!EXPECTED_OPTIONS_MISS.test(message)) {
+  const request = (async () => {
+    try {
+      if (provider?.getOptionsChain) {
+        const chain = await provider.getOptionsChain(
+          target.effectiveTicker,
+          target.effectiveExchange,
+          undefined,
+          getRequestContext(target),
+        );
+        const available = chain.expirationDates.length > 0;
+        setOptionsAvailability(target, available);
+        return available;
+      }
+
+      const coordinator = getSharedMarketDataCoordinator();
+      if (!coordinator) {
+        setOptionsAvailability(target, false);
+        return false;
+      }
+      const entry = await coordinator.loadOptions({
+        instrument: {
+          symbol: target.effectiveTicker,
+          exchange: target.effectiveExchange,
+          brokerId: target.instrument?.brokerId,
+          brokerInstanceId: target.instrument?.brokerInstanceId,
+          instrument: target.instrument,
+        },
+      });
+      const chain = entry.data ?? entry.lastGoodData;
+      if (!chain) {
+        setOptionsAvailability(target, false);
+        return false;
+      }
+      const available = chain.expirationDates.length > 0;
+      setOptionsAvailability(target, available);
+      return available;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "");
+      if (!EXPECTED_OPTIONS_MISS.test(message)) {
+        setOptionsAvailability(target, false);
+        return false;
+      }
       setOptionsAvailability(target, false);
       return false;
     }
-    setOptionsAvailability(target, false);
-    return false;
-  }).finally(() => {
+  })().finally(() => {
     optionsAvailabilityInFlight.delete(target.cacheKey);
   });
 

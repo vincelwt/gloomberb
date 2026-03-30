@@ -133,49 +133,41 @@ function hasLikelyPriceUnitMismatch(primary: TickerFinancials, fallback: TickerF
   return Math.abs(normalizedRatio - 100) / 100 < 0.05;
 }
 
-function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
-  const mergedProfile = {
-    ...(fallback?.profile ?? {}),
-    ...(primary?.profile ?? {}),
-  };
+function mergeDefinedObject<T extends object>(preferred: T | null | undefined, fallback: T | null | undefined): T | undefined {
+  const mergedEntries: Array<[string, unknown]> = [];
 
-  if (primary && hasMeaningfulFundamentals(primary)) {
-    if (fallback && hasLikelyPriceUnitMismatch(primary, fallback)) {
-      return {
-        ...primary,
-        quote: fallback.quote ?? primary.quote,
-        priceHistory: fallback.priceHistory.length > 0 ? fallback.priceHistory : primary.priceHistory,
-        profile: Object.keys(mergedProfile).length > 0 ? mergedProfile : undefined,
-      };
+  for (const source of [fallback, preferred]) {
+    if (!source) continue;
+    for (const [key, value] of Object.entries(source)) {
+      if (value !== undefined) {
+        mergedEntries.push([key, value]);
+      }
     }
-    if (fallback) {
-      return {
-        ...primary,
-        profile: Object.keys(mergedProfile).length > 0 ? mergedProfile : undefined,
-      };
-    }
-    return primary;
   }
-  if (primary && fallback) {
-    const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
-    const mergedFundamentals = {
-      ...(fallback.fundamentals ?? {}),
-      ...(primary.fundamentals ?? {}),
-    };
-    return {
-      ...fallback,
-      ...primary,
-      quote: preferFallbackPriceData ? (fallback.quote ?? primary.quote) : (primary.quote ?? fallback.quote),
-      profile: Object.keys(mergedProfile).length > 0 ? mergedProfile : undefined,
-      fundamentals: Object.keys(mergedFundamentals).length > 0 ? mergedFundamentals : undefined,
-      priceHistory: preferFallbackPriceData
-        ? (fallback.priceHistory.length > 0 ? fallback.priceHistory : primary.priceHistory)
-        : (primary.priceHistory.length > 0 ? primary.priceHistory : fallback.priceHistory),
-      annualStatements: primary.annualStatements.length > 0 ? primary.annualStatements : fallback.annualStatements,
-      quarterlyStatements: primary.quarterlyStatements.length > 0 ? primary.quarterlyStatements : fallback.quarterlyStatements,
-    };
+
+  if (mergedEntries.length === 0) return undefined;
+  return Object.fromEntries(mergedEntries) as T;
+}
+
+function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
+  if (!primary || !fallback) {
+    return primary ?? fallback;
   }
-  return primary ?? fallback;
+
+  const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
+  const dominant = preferFallbackPriceData ? fallback : primary;
+  const secondary = preferFallbackPriceData ? primary : fallback;
+
+  return {
+    ...fallback,
+    ...primary,
+    quote: mergeDefinedObject(dominant.quote, secondary.quote),
+    profile: mergeDefinedObject(primary.profile, fallback.profile),
+    fundamentals: mergeDefinedObject(primary.fundamentals, fallback.fundamentals),
+    priceHistory: dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory,
+    annualStatements: primary.annualStatements.length > 0 ? primary.annualStatements : fallback.annualStatements,
+    quarterlyStatements: primary.quarterlyStatements.length > 0 ? primary.quarterlyStatements : fallback.quarterlyStatements,
+  };
 }
 
 interface BrokerCandidate {
@@ -464,7 +456,7 @@ export class ProviderRouter implements DataProvider {
       ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
-    const cached = this.selectCachedResource<PricePoint[]>("price-history", entityKey, variantKeys, sourceKeys, false);
+    const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
     if (cached) {
       this.scheduleRevalidation(this.makeRevalidationKey("price-history", ticker, exchange, context, range), async () => {
         await this.revalidatePriceHistory(ticker, exchange, range, context);
@@ -499,7 +491,7 @@ export class ProviderRouter implements DataProvider {
       ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
-    const cached = this.selectCachedResource<PricePoint[]>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
+    const cached = this.selectCachedArrayResource<PricePoint>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
     if (cached) {
       this.scheduleRevalidation(this.makeRevalidationKey("detailed-price-history", ticker, exchange, context, `${compactDate(startDate)}:${compactDate(endDate)}:${barSize}`), async () => {
         await this.revalidateDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
@@ -620,14 +612,14 @@ export class ProviderRouter implements DataProvider {
     );
   }
 
-  private selectCachedResource<T>(
+  private listCachedResources<T>(
     kind: string,
     entityKey: string,
     variantKeys: string[],
     sourceKeys: string[],
     allowExpired: boolean,
-  ): CachedResourceRecord<T> | null {
-    if (!this.resources) return null;
+  ): CachedResourceRecord<T>[] {
+    if (!this.resources) return [];
     const records = this.resources.list<T>({
       namespace: MARKET_NAMESPACE,
       kind,
@@ -637,7 +629,7 @@ export class ProviderRouter implements DataProvider {
       sourceKeys,
       allowExpired,
     });
-    if (records.length === 0) return null;
+    if (records.length === 0) return [];
 
     const sourceRank = new Map(sourceKeys.map((sourceKey, index) => [sourceKey, index]));
     const variantRank = new Map(variantKeys.map((variantKey, index) => [variantKey, index]));
@@ -649,7 +641,28 @@ export class ProviderRouter implements DataProvider {
       const variantDelta = (variantRank.get(a.variantKey ?? "") ?? Number.MAX_SAFE_INTEGER) - (variantRank.get(b.variantKey ?? "") ?? Number.MAX_SAFE_INTEGER);
       if (variantDelta !== 0) return variantDelta;
       return b.fetchedAt - a.fetchedAt;
-    })[0] ?? null;
+    });
+  }
+
+  private selectCachedResource<T>(
+    kind: string,
+    entityKey: string,
+    variantKeys: string[],
+    sourceKeys: string[],
+    allowExpired: boolean,
+  ): CachedResourceRecord<T> | null {
+    return this.listCachedResources(kind, entityKey, variantKeys, sourceKeys, allowExpired)[0] ?? null;
+  }
+
+  private selectCachedArrayResource<T>(
+    kind: string,
+    entityKey: string,
+    variantKeys: string[],
+    sourceKeys: string[],
+    allowExpired: boolean,
+  ): CachedResourceRecord<T[]> | null {
+    const records = this.listCachedResources<T[]>(kind, entityKey, variantKeys, sourceKeys, allowExpired);
+    return records.find((record) => record.value.length > 0) ?? records[0] ?? null;
   }
 
   private readCachedMergedFinancials(
@@ -740,6 +753,18 @@ export class ProviderRouter implements DataProvider {
       context?.instrument?.brokerId ?? context?.brokerId,
       includeFallbackInstances,
     );
+  }
+
+  private getStreamingBrokerCandidate(target: QuoteSubscriptionTarget): BrokerCandidate | null {
+    const hasBrokerContext = !!(
+      target.context?.brokerId
+      || target.context?.brokerInstanceId
+      || target.context?.instrument?.brokerId
+      || target.context?.instrument?.brokerInstanceId
+    );
+    if (!hasBrokerContext) return null;
+    return this.getBrokerCandidatesForContext(target.context, false)
+      .find((candidate) => typeof candidate.broker.subscribeQuotes === "function") ?? null;
   }
 
   private annotateSearchResults(items: InstrumentSearchResult[], candidate: BrokerCandidate): InstrumentSearchResult[] {
@@ -950,20 +975,32 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", range]]);
-    const result = await this.firstProvider((provider) => provider.getPriceHistory(ticker, exchange, range, context));
-    if (!result) return null;
-    const provider = this.resolveProviderBySourceKey(result.sourceKey);
-    if (provider) {
-      this.cacheResource(
-        "price-history",
-        entityKey,
-        variantKey,
-        result.sourceKey,
-        result.value,
-        this.resolveProviderPolicy(isIntradayRange(range) ? "priceHistoryIntraday" : "priceHistoryDaily", provider),
-      );
+    let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      try {
+        const value = await provider.getPriceHistory(ticker, exchange, range, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource(
+          "price-history",
+          entityKey,
+          variantKey,
+          sourceKey,
+          value,
+          this.resolveProviderPolicy(isIntradayRange(range) ? "priceHistoryIntraday" : "priceHistoryDaily", provider),
+        );
+        if (value.length > 0) {
+          return { sourceKey, value };
+        }
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
     }
-    return result;
+
+    return firstEmptyResult;
   }
 
   private async fetchBrokerDetailedPriceHistory(
@@ -1014,23 +1051,33 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
-    const result = await this.firstProvider(async (provider) => {
-      if (!provider.getDetailedPriceHistory) return null;
-      return provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
-    });
-    if (!result) return null;
-    const provider = this.resolveProviderBySourceKey(result.sourceKey);
-    if (provider) {
-      this.cacheResource(
-        "detailed-price-history",
-        entityKey,
-        variantKey,
-        result.sourceKey,
-        result.value,
-        this.resolveProviderPolicy("priceHistoryIntraday", provider),
-      );
+    let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getDetailedPriceHistory) continue;
+      try {
+        const value = await provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource(
+          "detailed-price-history",
+          entityKey,
+          variantKey,
+          sourceKey,
+          value,
+          this.resolveProviderPolicy("priceHistoryIntraday", provider),
+        );
+        if (value.length > 0) {
+          return { sourceKey, value };
+        }
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
     }
-    return result;
+
+    return firstEmptyResult;
   }
 
   private async fetchBrokerOptionsChain(
@@ -1204,7 +1251,7 @@ export class ProviderRouter implements DataProvider {
 
   private async revalidatePriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<void> {
     const brokerHistory = await withBrokerTimeout(this.fetchBrokerPriceHistory(ticker, exchange, range, context));
-    if (!brokerHistory) {
+    if (!brokerHistory || brokerHistory.value.length === 0) {
       await this.fetchProviderPriceHistory(ticker, exchange, range, context);
     }
   }
@@ -1218,7 +1265,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<void> {
     const brokerHistory = await withBrokerTimeout(this.fetchBrokerDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
-    if (!brokerHistory) {
+    if (!brokerHistory || brokerHistory.value.length === 0) {
       await this.fetchProviderDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
     }
   }
@@ -1239,17 +1286,69 @@ export class ProviderRouter implements DataProvider {
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    for (const provider of this.providersInPriorityOrder()) {
-      if (!provider.subscribeQuotes) continue;
-      providerLog.info("Delegating quote stream", {
-        providerId: provider.id,
+    const streamingProvider = this.providersInPriorityOrder().find((provider) => typeof provider.subscribeQuotes === "function") ?? null;
+    const brokerGroups = new Map<string, { candidate: BrokerCandidate; targets: QuoteSubscriptionTarget[] }>();
+    const providerTargets: QuoteSubscriptionTarget[] = [];
+    const addBrokerTarget = (brokerCandidate: BrokerCandidate, target: QuoteSubscriptionTarget) => {
+      const key = this.brokerSourceKey(brokerCandidate);
+      const group = brokerGroups.get(key) ?? { candidate: brokerCandidate, targets: [] };
+      group.targets.push(target);
+      brokerGroups.set(key, group);
+    };
+
+    for (const target of targets) {
+      if (target.route === "provider") {
+        const brokerCandidate = this.getStreamingBrokerCandidate(target);
+        if (streamingProvider) {
+          providerTargets.push(target);
+        } else if (brokerCandidate) {
+          addBrokerTarget(brokerCandidate, target);
+        }
+        continue;
+      }
+      const brokerCandidate = this.getStreamingBrokerCandidate(target);
+      if (target.route === "broker" && brokerCandidate) {
+        addBrokerTarget(brokerCandidate, target);
+        continue;
+      }
+      if (!brokerCandidate || streamingProvider) {
+        providerTargets.push(target);
+        continue;
+      }
+
+      addBrokerTarget(brokerCandidate, target);
+    }
+
+    const unsubscribers: Array<() => void> = [];
+
+    for (const { candidate, targets: brokerTargets } of brokerGroups.values()) {
+      providerLog.info("Delegating broker quote stream", {
+        brokerId: candidate.brokerId,
+        brokerInstanceId: candidate.brokerInstanceId,
+        targetCount: brokerTargets.length,
+      });
+      unsubscribers.push(candidate.broker.subscribeQuotes!(candidate.instance, brokerTargets, onQuote));
+    }
+
+    if (providerTargets.length > 0 && streamingProvider?.subscribeQuotes) {
+      providerLog.info("Delegating provider quote stream", {
+        providerId: streamingProvider.id,
+        targetCount: providerTargets.length,
+      });
+      unsubscribers.push(streamingProvider.subscribeQuotes(providerTargets, onQuote));
+    }
+
+    if (unsubscribers.length === 0) {
+      providerLog.warn("No provider supports quote streaming", {
         targetCount: targets.length,
       });
-      return provider.subscribeQuotes(targets, onQuote);
+      return () => {};
     }
-    providerLog.warn("No provider supports quote streaming", {
-      targetCount: targets.length,
-    });
-    return () => {};
+
+    return () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
   }
 }

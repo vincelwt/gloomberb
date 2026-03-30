@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { SecFilingItem } from "../../types/data-provider";
-import { getSharedDataProvider } from "../../plugins/registry";
+import { useResolvedEntryValue, useSecFilingContent, useSecFilingsQuery } from "../../market-data/hooks";
+import { instrumentFromTicker } from "../../market-data/request-types";
 import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
@@ -152,75 +153,47 @@ function toFeedItems(
 
 function SecTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
-  const [filings, setFilings] = useState<SecFilingItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [contentCache, setContentCache] = useState<Map<string, string | null>>(new Map());
-  const [loadingContent, setLoadingContent] = useState(false);
   const contentFetchRef = useRef(0);
   const eligibleTicker = isUsEquityTicker(ticker);
+  const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
+  const filingsEntry = useSecFilingsQuery(
+    instrument && eligibleTicker
+      ? { instrument, count: SEC_FILING_LIMIT }
+      : null,
+  );
+  const filings = useResolvedEntryValue(filingsEntry) ?? [];
+  const loading = filingsEntry?.phase === "loading" || (filingsEntry?.phase === "refreshing" && filings.length === 0);
+  const error = filingsEntry?.phase === "error" ? filingsEntry.error?.message ?? "Failed to load SEC filings" : null;
 
   useEffect(() => {
-    const provider = getSharedDataProvider();
-    let cancelled = false;
-
     setHoveredIdx(null);
     setContentCache(new Map());
     contentFetchRef.current += 1;
-    setLoadingContent(false);
-
-    if (!ticker || !eligibleTicker || !provider?.getSecFilings) {
-      setFilings([]);
-      setLoading(false);
-      setError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setLoading(true);
-    setError(null);
-    provider.getSecFilings(ticker.metadata.ticker, SEC_FILING_LIMIT, ticker.metadata.exchange).then((items) => {
-      if (!cancelled) setFilings(items);
-    }).catch((err) => {
-      if (!cancelled) setError(err?.message ?? "Failed to load SEC filings");
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
   }, [eligibleTicker, ticker?.metadata.exchange, ticker?.metadata.ticker]);
 
   const selected = filings[selectedIdx];
   const cachedSelectedContent = selected ? contentCache.get(selected.accessionNumber) : undefined;
-  useEffect(() => {
-    const provider = getSharedDataProvider();
-    if (!selected || !provider?.getSecFilingContent) {
-      setLoadingContent(false);
-      return;
-    }
-    if (cachedSelectedContent !== undefined) {
-      setLoadingContent(false);
-      return;
-    }
+  const filingContentEntry = useSecFilingContent(
+    selected && cachedSelectedContent === undefined ? selected : null,
+  );
+  const filingContent = useResolvedEntryValue(filingContentEntry);
+  const loadingContent = filingContentEntry?.phase === "loading" || filingContentEntry?.phase === "refreshing";
 
-    const requestId = ++contentFetchRef.current;
-    setLoadingContent(true);
-    provider.getSecFilingContent(selected).then((content) => {
-      if (requestId !== contentFetchRef.current) return;
-      setContentCache((prev) => new Map(prev).set(selected.accessionNumber, content));
-    }).catch(() => {
-      if (requestId !== contentFetchRef.current) return;
+  useEffect(() => {
+    if (!selected) return;
+    if (cachedSelectedContent !== undefined) return;
+    if (filingContentEntry?.phase === "error") {
       setContentCache((prev) => new Map(prev).set(selected.accessionNumber, null));
-    }).finally(() => {
-      if (requestId === contentFetchRef.current) setLoadingContent(false);
-    });
-  }, [cachedSelectedContent, selected]);
+      return;
+    }
+    if (filingContent !== null) {
+      setContentCache((prev) => new Map(prev).set(selected.accessionNumber, filingContent));
+    }
+  }, [cachedSelectedContent, filingContent, filingContentEntry?.phase, selected]);
 
   useKeyboard((event) => {
     if (!focused || filings.length === 0) return;
@@ -239,7 +212,6 @@ function SecTab({ width, height, focused }: DetailTabProps) {
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view SEC filings.</text>;
   if (!eligibleTicker) return renderNotice("SEC filings are only shown for US equities.", width);
-  if (!getSharedDataProvider()?.getSecFilings) return renderNotice("SEC filings data is not available.", width);
   if (loading && filings.length === 0) return <Spinner label="Loading SEC filings..." />;
   if (error) return renderNotice(`Error: ${error}`, width);
   if (filings.length === 0) return renderNotice(`No recent SEC filings for ${ticker.metadata.ticker}.`, width);

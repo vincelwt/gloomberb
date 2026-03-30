@@ -18,7 +18,7 @@ const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
   // China
   SSE: ".SS", SHG: ".SS", SZSE: ".SZ", SHE: ".SZ",
   // Taiwan
-  TWSE: ".TW", TPE: ".TW",
+  TWSE: ".TW", TPE: ".TW", TPEX: ".TWO",
   // Korea
   KRX: ".KS", KSE: ".KS", KOSDAQ: ".KQ",
   // Singapore
@@ -34,7 +34,7 @@ const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
   // UK
   LSE: ".L", LSEETF: ".L",
   // Germany
-  XETRA: ".DE", XETR: ".DE", IBIS: ".DE", IBIS2: ".DE", FWB: ".F", FWB2: ".DE", GETTEX: ".DE", TGATE: ".DE", SWB: ".SG",
+  XETRA: ".DE", XETR: ".DE", IBIS: ".DE", IBIS2: ".DE", FWB: ".F", FWB2: ".F", GETTEX: ".DE", TGATE: ".DE", SWB: ".SG",
   // France, Netherlands, Belgium, Portugal (Euronext)
   EURONEXT: ".AS", AEB: ".AS", SBF: ".PA", "ENEXT.BE": ".BR", BVL: ".LS",
   // Italy & Spain
@@ -59,7 +59,8 @@ const EXCHANGE_FALLBACKS: Record<string, string[]> = {
   // TSE is ambiguous: Toronto (.TO) vs Tokyo (.T) — try both
   TSE: [".TO", ".T"],
   KRX: [".KS", ".KQ"], KSE: [".KS", ".KQ"],
-  TWSE: [".TW", ".TWO"], TPE: [".TW", ".TWO"],
+  TWSE: [".TW", ".TWO"], TPE: [".TW", ".TWO"], TPEX: [".TWO", ".TW"],
+  FWB2: [".F", ".DE"],
   EURONEXT: [".AS", ".PA", ".BR"], AEB: [".AS", ".PA", ".BR"], SBF: [".PA", ".AS", ".BR"],
 };
 

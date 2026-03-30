@@ -5,7 +5,8 @@ import { useAppState, usePaneInstanceId, usePaneTicker } from "../../state/app-c
 import { saveConfig } from "../../data/config-store";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
-import { getSharedDataProvider } from "../../plugins/registry";
+import { useChartQuery, useResolvedEntryValue } from "../../market-data/hooks";
+import { instrumentFromTicker } from "../../market-data/request-types";
 import { filterByTimeRange, getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
 import {
   buildChartScene,
@@ -489,13 +490,8 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     renderMode: defaultRenderMode,
   });
   const [showVolume, setShowVolume] = useState(!compact);
-  const [rangeHistory, setRangeHistory] = useState<PricePoint[] | null>(null);
-  const [detailHistory, setDetailHistory] = useState<PricePoint[] | null>(null);
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
-  const fetchIdRef = useRef(0);
-  const detailFetchIdRef = useRef(0);
-  const detailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const plotRef = useRef<BoxRenderable | null>(null);
   const nativeBaseSurfaceIdRef = useRef(`chart-surface:${paneId}:${compact ? "compact" : "full"}:base`);
   const nativeCrosshairSurfaceIdRef = useRef(`chart-surface:${paneId}:${compact ? "compact" : "full"}:crosshair`);
@@ -588,32 +584,20 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     }
   ), [nativeSurfaceManager]);
 
-  useEffect(() => {
-    const provider = getSharedDataProvider();
-    if (!provider || !ticker || compact) return;
-    const id = ++fetchIdRef.current;
-    setRangeHistory(null);
-    setDetailHistory(null);
-    const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
-    provider
-      .getPriceHistory(ticker.metadata.ticker, ticker.metadata.exchange || "", viewState.timeRange, {
-        brokerId: instrument?.brokerId,
-        brokerInstanceId: instrument?.brokerInstanceId,
-        instrument,
-      })
-      .then((points) => {
-        if (id === fetchIdRef.current) setRangeHistory(points);
-      })
-      .catch(() => {
-        if (id === fetchIdRef.current) setRangeHistory(null);
-      });
-  }, [ticker?.metadata.ticker, viewState.timeRange, compact]);
-
-  const baseHistory = rangeHistory ?? financials?.priceHistory ?? [];
-  const baseHistoryStartMs = baseHistory[0] ? new Date(baseHistory[0].date).getTime() : null;
-  const baseHistoryEndMs = baseHistory.length > 0
-    ? new Date(baseHistory[baseHistory.length - 1]!.date).getTime()
-    : null;
+  const instrumentRef = useMemo(
+    () => instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null),
+    [ticker],
+  );
+  const baseChartEntry = useChartQuery(
+    !compact && instrumentRef
+      ? {
+        instrument: instrumentRef,
+        range: viewState.timeRange,
+        granularity: "daily",
+      }
+      : null,
+  );
+  const rangeHistory = useResolvedEntryValue(baseChartEntry);
   const axisWidth = compact
     ? axisMode === "percent" ? 11 : 8
     : axisMode === "percent" ? 11 : 10;
@@ -621,78 +605,32 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   const chartWidth = Math.max(width - axisWidth - axisGap, compact ? 12 : 20);
   const maxCursorX = chartWidth - 1;
   const panStep = Math.max(Math.floor(chartWidth / 10), 1);
+  const baseHistory = rangeHistory && rangeHistory.length > 0
+    ? rangeHistory
+    : (financials?.priceHistory ?? []);
+  const detailRequest = useMemo(() => {
+    if (compact || !instrumentRef || baseHistory.length < 2 || viewState.zoomLevel <= 1) return null;
+    const window = getVisibleWindow(baseHistory, viewState, chartWidth);
+    if (window.points.length < 2) return null;
 
-  useEffect(() => {
-    if (compact || !ticker || baseHistory.length < 2 || viewState.zoomLevel <= 1) {
-      setDetailHistory(null);
-      return;
-    }
+    const startDate = coerceChartDate(window.points[0]!.date as Date | string | number);
+    const endDate = coerceChartDate(window.points[window.points.length - 1]!.date as Date | string | number);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+    const spanMs = endDate.getTime() - startDate.getTime();
+    const barSize = resolveBarSize(spanMs);
+    if (!barSize) return null;
 
-    if (detailDebounceRef.current) clearTimeout(detailDebounceRef.current);
-    detailDebounceRef.current = setTimeout(() => {
-      const window = getVisibleWindow(baseHistory, viewState, chartWidth);
-      if (window.points.length < 2) {
-        setDetailHistory(null);
-        return;
-      }
-
-      const startDate = coerceChartDate(window.points[0]!.date as Date | string | number);
-      const endDate = coerceChartDate(window.points[window.points.length - 1]!.date as Date | string | number);
-      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-        setDetailHistory(null);
-        return;
-      }
-      const spanMs = endDate.getTime() - startDate.getTime();
-      const barSize = resolveBarSize(spanMs);
-      if (!barSize) {
-        setDetailHistory(null);
-        return;
-      }
-
-      const provider = getSharedDataProvider();
-      if (!provider?.getDetailedPriceHistory) {
-        setDetailHistory(null);
-        return;
-      }
-
-      const id = ++detailFetchIdRef.current;
-      const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
-      provider
-        .getDetailedPriceHistory(
-          ticker.metadata.ticker,
-          ticker.metadata.exchange || "",
-          startDate,
-          endDate,
-          barSize,
-          {
-            brokerId: instrument?.brokerId,
-            brokerInstanceId: instrument?.brokerInstanceId,
-            instrument,
-          },
-        )
-        .then((points) => {
-          if (id === detailFetchIdRef.current && points && points.length > 0) {
-            setDetailHistory(points);
-          }
-        })
-        .catch(() => {
-          if (id === detailFetchIdRef.current) setDetailHistory(null);
-        });
-    }, 300);
-
-    return () => {
-      if (detailDebounceRef.current) clearTimeout(detailDebounceRef.current);
+    return {
+      instrument: instrumentRef,
+      range: viewState.timeRange,
+      granularity: "detail" as const,
+      startDate,
+      endDate,
+      barSize,
     };
-  }, [
-    baseHistory.length,
-    baseHistoryEndMs,
-    baseHistoryStartMs,
-    chartWidth,
-    compact,
-    ticker,
-    viewState.panOffset,
-    viewState.zoomLevel,
-  ]);
+  }, [baseHistory, chartWidth, compact, instrumentRef, viewState]);
+  const detailChartEntry = useChartQuery(detailRequest);
+  const detailHistory = useResolvedEntryValue(detailChartEntry);
 
   const history = (viewState.zoomLevel > 1 && detailHistory) ? detailHistory : baseHistory;
 

@@ -62,7 +62,7 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-function normalizeContract(ticker: TickerRecord): BrokerContractRef {
+export function normalizeContract(ticker: TickerRecord): BrokerContractRef {
   const brokerContract = ticker.metadata.broker_contracts?.find((contract) => contract.brokerId === "ibkr")
     ?? ticker.metadata.broker_contracts?.[0];
   if (brokerContract) return brokerContract;

@@ -4,7 +4,6 @@ import { findPaneInstance, isTickerPaneId, type AppConfig } from "../types/confi
 import type { DataProvider } from "../types/data-provider";
 import type { BrokerAccount } from "../types/trading";
 import type { TickerMetadata, TickerRecord } from "../types/ticker";
-import { ProviderRouter } from "../sources/provider-router";
 import type { AppAction, PaneRuntimeState } from "./app-context";
 import type { AppSessionSnapshot } from "./session-persistence";
 import { getDockedPaneIds } from "../plugins/pane-manager";
@@ -208,21 +207,6 @@ export async function initializeAppState({
 
   for (const [instanceId, accounts] of Object.entries(persistedBrokerAccounts)) {
     dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
-  }
-
-  if (dataProvider instanceof ProviderRouter) {
-    const cachedFinancials = dataProvider.getCachedFinancialsForTargets(sessionSnapshot?.hydrationTargets ?? [], {
-      allowExpired: true,
-    });
-    if (cachedFinancials.size > 0) {
-      dispatch({ type: "HYDRATE_FINANCIALS", financials: cachedFinancials });
-    }
-    const cachedExchangeRates = dataProvider.getCachedExchangeRates(sessionSnapshot?.exchangeCurrencies ?? [], {
-      allowExpired: true,
-    });
-    if (cachedExchangeRates.size > 0) {
-      dispatch({ type: "HYDRATE_EXCHANGE_RATES", exchangeRates: cachedExchangeRates });
-    }
   }
 
   const paneStateSeed = buildPaneStateSeed(config, tickers, tickerMap, sessionSnapshot);

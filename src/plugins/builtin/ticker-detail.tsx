@@ -4,6 +4,8 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps, DetailTabDef, PaneSettingsDef } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
+import { useFxRatesMap } from "../../market-data/hooks";
+import { quoteSubscriptionTargetFromTicker } from "../../market-data/request-types";
 import { useAppState, usePaneCollection, usePaneInstance, usePaneStateValue, usePaneTicker } from "../../state/app-context";
 import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { getCollectionName, getCollectionTickers } from "../../state/selectors";
@@ -11,7 +13,7 @@ import { colors, priceColor } from "../../theme/colors";
 import { EmptyState, FieldRow } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
-import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
+import { exchangeShortName, getActiveQuoteDisplay, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { normalizeTickerInput } from "../../utils/ticker-search";
 import { StockChart } from "../../components/chart/stock-chart";
 import type { ChartAxisMode } from "../../components/chart/chart-types";
@@ -67,13 +69,13 @@ function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneS
         key: "hideTabs",
         label: "Hide Tabs",
         description: "Hide the detail tabs and lock this pane to one view.",
-        type: "toggle",
+        type: "toggle" as const,
       },
       ...(settings.hideTabs ? [{
         key: "lockedTabId",
         label: "Locked Tab",
         description: "Choose which tab this pane should stay pinned to when tabs are hidden.",
-        type: "select",
+        type: "select" as const,
         options: tabs.map((tab) => ({
           value: tab.id,
           label: tab.name,
@@ -83,7 +85,7 @@ function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneS
         key: "chartAxisMode",
         label: "Chart Y-Axis",
         description: "Show chart values as raw prices or percent change from the first visible point.",
-        type: "select",
+        type: "select" as const,
         options: [
           { value: "price", label: "Price" },
           { value: "percent", label: "Percent" },
@@ -143,37 +145,13 @@ export function buildVisibleDetailTabs(
 }
 
 function getQuoteMonitorDisplay(quote: Quote | null | undefined) {
-  if (!quote) return null;
-
-  if (quote.marketState === "PRE" && quote.preMarketPrice != null) {
-    return {
-      price: quote.preMarketPrice,
-      change: quote.preMarketChange ?? 0,
-      changePercent: quote.preMarketChangePercent ?? 0,
-    };
-  }
-
-  if (quote.marketState === "POST" && quote.postMarketPrice != null) {
-    return {
-      price: quote.postMarketPrice,
-      change: quote.postMarketChange ?? 0,
-      changePercent: quote.postMarketChangePercent ?? 0,
-    };
-  }
-
-  return {
-    price: quote.price,
-    change: quote.change,
-    changePercent: quote.changePercent,
-  };
+  return getActiveQuoteDisplay(quote);
 }
 
 export function QuoteMonitorPane({ focused, width }: PaneProps) {
   const { ticker, financials } = usePaneTicker();
-  useQuoteStreaming(ticker ? [{
-    symbol: ticker.metadata.ticker,
-    exchange: ticker.metadata.exchange,
-  }] : []);
+  const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
+  useQuoteStreaming(streamingTarget ? [streamingTarget] : []);
 
   if (!ticker) {
     return (
@@ -249,10 +227,18 @@ function OverviewTab({ width }: { width?: number }) {
   const f = financials?.fundamentals;
   const profile = financials?.profile;
   const baseCurrency = state.config.baseCurrency;
-  const exchangeRates = state.exchangeRates;
+  const exchangeRates = useFxRatesMap([
+    baseCurrency,
+    ticker.metadata.currency,
+    q?.currency,
+    ...ticker.metadata.positions.map((position) => position.currency),
+  ]);
+  const effectiveExchangeRates = exchangeRates.size > 1 || state.exchangeRates.size === 0
+    ? exchangeRates
+    : state.exchangeRates;
   const quoteCurrency = q?.currency ?? ticker.metadata.currency ?? baseCurrency;
   const toBase = (value: number, fromCurrency: string) =>
-    convertCurrency(value, fromCurrency, baseCurrency, exchangeRates);
+    convertCurrency(value, fromCurrency, baseCurrency, effectiveExchangeRates);
   const sector = ticker.metadata.sector ?? profile?.sector;
   const industry = ticker.metadata.industry ?? profile?.industry;
   const description = profile?.description?.trim();
@@ -296,7 +282,7 @@ function OverviewTab({ width }: { width?: number }) {
                 {q.change >= 0 ? "+" : ""}{q.change.toFixed(2)} ({formatPercentRaw(q.changePercent)})
               </text>
             </box>
-            {q.marketState === "PRE" && q.preMarketPrice != null && (
+            {(q.marketState === "PRE" || q.marketState === "PREPRE") && q.preMarketPrice != null && (
               <box flexDirection="row" gap={2}>
                 <text fg={colors.textDim}>Pre-Market:</text>
                 <text fg={priceColor(q.preMarketChange ?? 0)}>
@@ -307,7 +293,7 @@ function OverviewTab({ width }: { width?: number }) {
                 </text>
               </box>
             )}
-            {q.marketState === "POST" && q.postMarketPrice != null && (
+            {(q.marketState === "POST" || q.marketState === "POSTPOST") && q.postMarketPrice != null && (
               <box flexDirection="row" gap={2}>
                 <text fg={colors.textDim}>After-Hours:</text>
                 <text fg={priceColor(q.postMarketChange ?? 0)}>
@@ -812,10 +798,8 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
   const { state, dispatch } = useAppState();
   const paneInstance = usePaneInstance();
   const { ticker, financials } = usePaneTicker();
-  useQuoteStreaming(ticker ? [{
-    symbol: ticker.metadata.ticker,
-    exchange: ticker.metadata.exchange,
-  }] : []);
+  const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
+  useQuoteStreaming(streamingTarget ? [streamingTarget] : []);
   const { collectionId } = usePaneCollection();
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);

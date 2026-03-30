@@ -6,6 +6,9 @@ import { EmptyState } from "../../components";
 import { TabBar } from "../../components/tab-bar";
 import type { GloomPlugin, PaneProps, PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../types/plugin";
 import { getSharedRegistry } from "../../plugins/registry";
+import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { useFxRatesMap, useTickerFinancialsMap } from "../../market-data/hooks";
+import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../market-data/request-types";
 import { useAppActive } from "../../state/app-activity";
 import {
   useAppState,
@@ -19,6 +22,7 @@ import { getAllCollections, getCollectionTickers, getCollectionType } from "../.
 import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
 import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
+import { getActiveQuoteDisplay } from "../../utils/market-status";
 import { clampQuoteTimestamp, formatQuoteAgeWithSource, getMostRecentQuoteUpdate } from "../../utils/quote-time";
 import { DEFAULT_COLUMNS, type AppConfig, type ColumnConfig } from "../../types/config";
 import type { TickerRecord, Portfolio } from "../../types/ticker";
@@ -105,7 +109,7 @@ const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "pnl",
   "pnl_pct",
 ]);
-
+const VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS = 5 * 60_000;
 const COLLECTION_SCOPE_OPTIONS: PaneSettingOption[] = [
   {
     value: "all",
@@ -142,6 +146,40 @@ function resolveQuoteFlashColor(
       return fallbackColor === colors.textDim ? colors.text : colors.textBright;
   }
 }
+
+function needsVisibleFinancialWarmup(ticker: TickerRecord, financials: TickerFinancials | undefined): boolean {
+  if (ticker.metadata.assetCategory === "OPT") return false;
+  if (!financials) return true;
+  if (Object.keys(financials.fundamentals ?? {}).length === 0) return true;
+  return financials.priceHistory.length === 0;
+}
+
+function selectStreamTickers(
+  tickers: TickerRecord[],
+  _visibleRange: { start: number; end: number },
+  _cursorSymbol: string | null,
+): TickerRecord[] {
+  return tickers;
+}
+
+export function resolvePortfolioPriceValue(
+  activeQuote: ReturnType<typeof getActiveQuoteDisplay>,
+  brokerMarkPrice: number | undefined,
+  quoteCurrency: string,
+  positionCurrency: string,
+): { text: string; color?: string } {
+  if (activeQuote) {
+    return {
+      text: formatCurrency(activeQuote.price, quoteCurrency),
+      color: priceColor(activeQuote.change),
+    };
+  }
+  if (brokerMarkPrice != null) {
+    return { text: formatCurrency(brokerMarkPrice, positionCurrency) };
+  }
+  return { text: "—" };
+}
+
 function getColumnValue(
   col: ColumnConfig,
   ticker: TickerRecord,
@@ -149,6 +187,7 @@ function getColumnValue(
   ctx: ColumnContext,
 ): { text: string; color?: string } {
   const q = financials?.quote;
+  const activeQuote = getActiveQuoteDisplay(q);
   const f = financials?.fundamentals;
   const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
 
@@ -167,7 +206,7 @@ function getColumnValue(
     0,
   );
 
-  // For options without Yahoo quotes, use broker-provided position data
+  // Fall back to the imported broker mark when a live quote is unavailable.
   const isOption = ticker.metadata.assetCategory === "OPT";
   const brokerMktValue = tabPositions.reduce(
     (sum, p) => sum + (p.marketValue || 0),
@@ -189,22 +228,18 @@ function getColumnValue(
       return { text: `${statusDot} ${displayName}` };
     }
     case "price": {
-      if (q) {
-        return {
-          text: formatCurrency(q.price, quoteCurrency),
-          color: priceColor(q.change),
-        };
-      }
-      if (isOption && brokerMarkPrice != null) {
-        return { text: formatCurrency(brokerMarkPrice, positionCurrency) };
-      }
-      return { text: "—" };
+      return resolvePortfolioPriceValue(
+        activeQuote,
+        brokerMarkPrice,
+        quoteCurrency,
+        positionCurrency,
+      );
     }
     case "change": {
-      if (!q) return { text: "—" };
+      if (!activeQuote) return { text: "—" };
       return {
-        text: (q.change >= 0 ? "+" : "") + q.change.toFixed(2),
-        color: priceColor(q.change),
+        text: (activeQuote.change >= 0 ? "+" : "") + activeQuote.change.toFixed(2),
+        color: priceColor(activeQuote.change),
       };
     }
     case "bid":
@@ -218,19 +253,9 @@ function getColumnValue(
           : "—",
       };
     case "change_pct": {
-      // During pre/post market, show extended-hours change instead
-      if (q?.marketState === "PRE" && q.preMarketPrice != null) {
-        const chg = q.preMarketChangePercent ?? 0;
-        return { text: formatPercentRaw(chg), color: priceColor(chg) };
-      }
-      if (q?.marketState === "POST" && q.postMarketPrice != null) {
-        const chg = q.postMarketChangePercent ?? 0;
-        return { text: formatPercentRaw(chg), color: priceColor(chg) };
-      }
-      return {
-        text: q ? formatPercentRaw(q.changePercent) : "—",
-        color: q ? priceColor(q.changePercent) : undefined,
-      };
+      return activeQuote
+        ? { text: formatPercentRaw(activeQuote.changePercent), color: priceColor(activeQuote.changePercent) }
+        : { text: q ? formatPercentRaw(q.changePercent) : "—", color: q ? priceColor(q.changePercent) : undefined };
     }
     case "market_cap": {
       if (!q?.marketCap) return { text: "—" };
@@ -245,12 +270,12 @@ function getColumnValue(
         text: f?.dividendYield != null ? (f.dividendYield * 100).toFixed(2) + "%" : "—",
       };
     case "ext_hours": {
-      if (q?.marketState === "PRE" && q.preMarketPrice != null) {
-        const chg = q.preMarketChangePercent ?? 0;
+      if ((q?.marketState === "PRE" || q?.marketState === "PREPRE") && q.preMarketPrice != null) {
+        const chg = activeQuote?.changePercent ?? q.preMarketChangePercent ?? 0;
         return { text: formatPercentRaw(chg), color: priceColor(chg) };
       }
-      if (q?.marketState === "POST" && q.postMarketPrice != null) {
-        const chg = q.postMarketChangePercent ?? 0;
+      if ((q?.marketState === "POST" || q?.marketState === "POSTPOST") && q.postMarketPrice != null) {
+        const chg = activeQuote?.changePercent ?? q.postMarketChangePercent ?? 0;
         return { text: formatPercentRaw(chg), color: priceColor(chg) };
       }
       return { text: "—" };
@@ -267,8 +292,8 @@ function getColumnValue(
       return { text: formatCompact(toBasePosition(totalCost)) };
     }
     case "mkt_value": {
-      if (q && totalShares !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
+      if (activeQuote && totalShares !== 0) {
+        const mv = Math.abs(totalShares) * activeQuote.price;
         return { text: formatCompact(toBaseQuote(mv)) };
       }
       if (isOption && brokerMktValue !== 0) {
@@ -277,8 +302,8 @@ function getColumnValue(
       return { text: "—" };
     }
     case "pnl": {
-      if (q && totalShares !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
+      if (activeQuote && totalShares !== 0) {
+        const mv = Math.abs(totalShares) * activeQuote.price;
         const pnl = toBaseQuote(mv) - toBasePosition(totalCost);
         return { text: (pnl >= 0 ? "+" : "") + formatCompact(pnl), color: priceColor(pnl) };
       }
@@ -289,8 +314,8 @@ function getColumnValue(
       return { text: "—" };
     }
     case "pnl_pct": {
-      if (q && totalCost !== 0) {
-        const mv = toBaseQuote(Math.abs(totalShares) * q.price);
+      if (activeQuote && totalCost !== 0) {
+        const mv = toBaseQuote(Math.abs(totalShares) * activeQuote.price);
         const costBasis = toBasePosition(totalCost);
         const pct = costBasis !== 0 ? ((mv - costBasis) / costBasis) * 100 : 0;
         return { text: formatPercentRaw(pct), color: priceColor(pct) };
@@ -319,6 +344,7 @@ function getSortValue(
   ctx: ColumnContext,
 ): number | string | null {
   const q = financials?.quote;
+  const activeQuote = getActiveQuoteDisplay(q);
   const f = financials?.fundamentals;
   const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
 
@@ -345,7 +371,7 @@ function getSortValue(
     case "ticker":
       return ticker.metadata.ticker;
     case "price":
-      if (q) return q.price;
+      if (activeQuote) return activeQuote.price;
       if (isOption && brokerMarkPrice != null) return brokerMarkPrice;
       return null;
     case "bid":
@@ -355,12 +381,9 @@ function getSortValue(
     case "spread":
       return q?.bid != null && q?.ask != null ? q.ask - q.bid : null;
     case "change":
-      return q ? q.change : null;
-    case "change_pct": {
-      if (q?.marketState === "PRE" && q.preMarketPrice != null) return q.preMarketChangePercent ?? 0;
-      if (q?.marketState === "POST" && q.postMarketPrice != null) return q.postMarketChangePercent ?? 0;
-      return q?.changePercent ?? null;
-    }
+      return activeQuote ? activeQuote.change : null;
+    case "change_pct":
+      return activeQuote?.changePercent ?? null;
     case "market_cap":
       return q?.marketCap ? toBaseQuote(q.marketCap) : null;
     case "pe":
@@ -370,8 +393,8 @@ function getSortValue(
     case "dividend_yield":
       return f?.dividendYield ?? null;
     case "ext_hours": {
-      if (q?.marketState === "PRE" && q.preMarketPrice != null) return q.preMarketChangePercent ?? 0;
-      if (q?.marketState === "POST" && q.postMarketPrice != null) return q.postMarketChangePercent ?? 0;
+      if ((q?.marketState === "PRE" || q?.marketState === "PREPRE") && q.preMarketPrice != null) return activeQuote?.changePercent ?? q.preMarketChangePercent ?? 0;
+      if ((q?.marketState === "POST" || q?.marketState === "POSTPOST") && q.postMarketPrice != null) return activeQuote?.changePercent ?? q.postMarketChangePercent ?? 0;
       return null;
     }
     case "shares":
@@ -381,21 +404,21 @@ function getSortValue(
     case "cost_basis":
       return totalCost !== 0 ? toBasePosition(totalCost) : null;
     case "mkt_value": {
-      if (q && totalShares !== 0) return toBaseQuote(Math.abs(totalShares) * q.price);
+      if (activeQuote && totalShares !== 0) return toBaseQuote(Math.abs(totalShares) * activeQuote.price);
       if (isOption && brokerMktValue !== 0) return toBasePosition(brokerMktValue);
       return null;
     }
     case "pnl": {
-      if (q && totalShares !== 0) {
-        const mv = Math.abs(totalShares) * q.price;
+      if (activeQuote && totalShares !== 0) {
+        const mv = Math.abs(totalShares) * activeQuote.price;
         return toBaseQuote(mv) - toBasePosition(totalCost);
       }
       if (isOption && brokerPnl !== 0) return toBasePosition(brokerPnl);
       return null;
     }
     case "pnl_pct": {
-      if (q && totalCost !== 0) {
-        const mv = toBaseQuote(Math.abs(totalShares) * q.price);
+      if (activeQuote && totalCost !== 0) {
+        const mv = toBaseQuote(Math.abs(totalShares) * activeQuote.price);
         const costBasis = toBasePosition(totalCost);
         return costBasis !== 0 ? ((mv - costBasis) / costBasis) * 100 : null;
       }
@@ -757,12 +780,12 @@ function resolvePortfolioAccountState(
 
 function calculatePortfolioSummaryTotals(
   tickers: TickerRecord[],
-  state: ReturnType<typeof useAppState>["state"],
+  financialsMap: Map<string, TickerFinancials>,
+  baseCurrency: string,
+  exchangeRates: Map<string, number>,
   isPortfolio: boolean,
   collectionId: string | null,
 ): PortfolioSummaryTotals {
-  const baseCurrency = state.config.baseCurrency;
-  const exchangeRates = state.exchangeRates;
   let totalMktValue = 0;
   let totalPrevValue = 0;
   let totalCostBasis = 0;
@@ -771,8 +794,9 @@ function calculatePortfolioSummaryTotals(
   let watchlistCount = 0;
 
   for (const ticker of tickers) {
-    const fin = state.financials.get(ticker.metadata.ticker);
+    const fin = financialsMap.get(ticker.metadata.ticker);
     const q = fin?.quote;
+    const activeQuote = getActiveQuoteDisplay(q);
     const quoteCurrency = q?.currency || ticker.metadata.currency || "USD";
 
     if (!isPortfolio) {
@@ -798,11 +822,11 @@ function calculatePortfolioSummaryTotals(
     const isOption = ticker.metadata.assetCategory === "OPT";
     const brokerMktValue = tabPositions.reduce((sum, position) => sum + (position.marketValue || 0), 0);
 
-    if (q && totalShares !== 0) {
+    if (q && activeQuote && totalShares !== 0) {
       hasPositions = true;
-      const marketValue = Math.abs(totalShares) * q.price;
+      const marketValue = Math.abs(totalShares) * activeQuote.price;
       totalMktValue += toBaseQuote(marketValue);
-      const prevClose = q.previousClose || (q.price - q.change);
+      const prevClose = q.previousClose || (activeQuote.price - activeQuote.change);
       totalPrevValue += toBaseQuote(Math.abs(totalShares) * prevClose);
       totalCostBasis += toBasePosition(totalCost);
     } else if (isOption && brokerMktValue !== 0) {
@@ -1086,6 +1110,7 @@ function usePortfolioAccountState(
 
 function PortfolioSummaryBar({
   tickers,
+  financialsMap,
   state,
   isPortfolio,
   collectionId,
@@ -1093,6 +1118,7 @@ function PortfolioSummaryBar({
   accountState,
 }: {
   tickers: TickerRecord[];
+  financialsMap: Map<string, TickerFinancials>;
   state: ReturnType<typeof useAppState>["state"];
   isPortfolio: boolean;
   collectionId: string | null;
@@ -1100,8 +1126,8 @@ function PortfolioSummaryBar({
   accountState: ResolvedPortfolioAccountState | null;
 }) {
   const lastRefreshTimestamp = useMemo(() => getMostRecentQuoteUpdate(
-    tickers.map((ticker) => state.financials.get(ticker.metadata.ticker)?.quote),
-  ), [tickers, state.financials]);
+    tickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
+  ), [financialsMap, tickers]);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // Track last refresh time — update whenever refreshing set goes from non-empty to empty
@@ -1117,14 +1143,26 @@ function PortfolioSummaryBar({
 
   // Also set initial refresh time when financials first appear
   useEffect(() => {
-    if (state.financials.size > 0 && !lastRefresh) {
+    if (financialsMap.size > 0 && !lastRefresh) {
       setLastRefresh(new Date());
     }
-  }, [state.financials.size, lastRefresh]);
+  }, [financialsMap.size, lastRefresh]);
+
+  const exchangeRates = useFxRatesMap([
+    state.config.baseCurrency,
+    ...tickers.map((ticker) => ticker.metadata.currency),
+    ...tickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote?.currency),
+    ...tickers.flatMap((ticker) => ticker.metadata.positions.map((position) => position.currency)),
+    ...(accountState?.visibleCashBalances.map((balance) => balance.currency) ?? []),
+    ...(accountState?.visibleCashBalances.map((balance) => balance.baseCurrency) ?? []),
+  ]);
+  const effectiveExchangeRates = exchangeRates.size > 1 || state.exchangeRates.size === 0
+    ? exchangeRates
+    : state.exchangeRates;
 
   const totals = useMemo(
-    () => calculatePortfolioSummaryTotals(tickers, state, isPortfolio, collectionId),
-    [tickers, state, isPortfolio, collectionId],
+    () => calculatePortfolioSummaryTotals(tickers, financialsMap, state.config.baseCurrency, effectiveExchangeRates, isPortfolio, collectionId),
+    [tickers, financialsMap, state.config.baseCurrency, effectiveExchangeRates, isPortfolio, collectionId],
   );
 
   const refreshTimestamp = lastRefreshTimestamp ?? lastRefresh?.getTime() ?? null;
@@ -1164,7 +1202,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
-  const { state } = useAppState();
+  const { state, dispatch } = useAppState();
   const paneCollection = usePaneCollection();
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
   const [cursorSymbol, setCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
@@ -1184,11 +1222,23 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   );
   const activeCollectionId = resolveActiveCollectionId(currentCollectionId, tabs, paneSettings);
   const tickers = getCollectionTickers(state, activeCollectionId);
+  const marketFinancialsMap = useTickerFinancialsMap(tickers);
+  const sharedCoordinator = getSharedMarketDataCoordinator();
+  const financialsMap = useMemo(() => {
+    const merged = sharedCoordinator ? new Map<string, TickerFinancials>() : new Map(state.financials);
+    for (const [symbol, financials] of marketFinancialsMap) {
+      merged.set(symbol, financials);
+    }
+    return merged;
+  }, [marketFinancialsMap, sharedCoordinator, state.financials]);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
   const prevPrices = useRef<Map<string, number>>(new Map());
+  const mountedRef = useRef(true);
+  const financialWarmupInFlight = useRef(new Set<string>());
+  const financialWarmupAttempts = useRef(new Map<string, number>());
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const syncHeaderScroll = useCallback(() => {
@@ -1226,10 +1276,40 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     return resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab);
   }, [isPortfolioTab, paneSettings.columnIds]);
 
+  const exchangeRates = useFxRatesMap(useMemo(() => {
+    const currencies = new Set<string>([state.config.baseCurrency]);
+    for (const ticker of tickers) {
+      if (ticker.metadata.currency) {
+        currencies.add(ticker.metadata.currency);
+      }
+      for (const position of ticker.metadata.positions) {
+        if (position.currency) {
+          currencies.add(position.currency);
+        }
+      }
+      const financials = financialsMap.get(ticker.metadata.ticker);
+      if (financials?.quote?.currency) {
+        currencies.add(financials.quote.currency);
+      }
+    }
+    for (const balance of accountState?.visibleCashBalances ?? []) {
+      if (balance.currency) {
+        currencies.add(balance.currency);
+      }
+      if (balance.baseCurrency) {
+        currencies.add(balance.baseCurrency);
+      }
+    }
+    return [...currencies];
+  }, [accountState?.visibleCashBalances, financialsMap, state.config.baseCurrency, tickers]));
+  const effectiveExchangeRates = exchangeRates.size > 1 || state.exchangeRates.size === 0
+    ? exchangeRates
+    : state.exchangeRates;
+
   const columnCtx: ColumnContext = {
     activeTab: isPortfolioTab ? activeCollectionId : undefined,
     baseCurrency: state.config.baseCurrency,
-    exchangeRates: state.exchangeRates,
+    exchangeRates: effectiveExchangeRates,
     now,
   };
   const activeSort = resolveCollectionSortPreference(activeCollectionId, isPortfolioTab, collectionSorts);
@@ -1257,8 +1337,8 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     if (!colConfig) return tickers;
 
     return [...tickers].sort((a, b) => {
-      const finA = state.financials.get(a.metadata.ticker);
-      const finB = state.financials.get(b.metadata.ticker);
+      const finA = financialsMap.get(a.metadata.ticker);
+      const finB = financialsMap.get(b.metadata.ticker);
       const valA = getSortValue(colConfig, a, finA, columnCtx);
       const valB = getSortValue(colConfig, b, finB, columnCtx);
 
@@ -1275,7 +1355,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [tickers, sortCol, sortDir, state.financials, cols, columnCtx]);
+  }, [tickers, sortCol, sortDir, financialsMap, cols, columnCtx]);
 
   const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
@@ -1362,6 +1442,12 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   useKeyboard(handleKeyboard);
 
+  useEffect(() => (
+    () => {
+      mountedRef.current = false;
+    }
+  ), []);
+
   // Hide the decorative header scrollbar and keep it aligned when the body scrolls.
   useEffect(() => {
     if (headerScrollRef.current) {
@@ -1401,8 +1487,8 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
   // Detect price changes and trigger flash
   useEffect(() => {
     const changed = new Map<string, QuoteFlashDirection>();
-    for (const [symbol, fin] of state.financials) {
-      const price = fin.quote?.price;
+    for (const [symbol, fin] of financialsMap) {
+      const price = getActiveQuoteDisplay(fin.quote)?.price ?? fin.quote?.price;
       if (price == null) continue;
       const prev = prevPrices.current.get(symbol);
       if (prev != null && prev !== price) {
@@ -1415,7 +1501,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       const tid = setTimeout(() => setFlashSymbols(new Map()), 450);
       return () => clearTimeout(tid);
     }
-  }, [state.financials]);
+  }, [financialsMap]);
 
   useEffect(() => {
     if (sortedTickers.length === 0) {
@@ -1428,14 +1514,60 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [sortedTickers, cursorSymbol, setCursorSymbol]);
 
+  const streamTickers = useMemo(
+    () => selectStreamTickers(sortedTickers, streamWindow, cursorSymbol),
+    [cursorSymbol, sortedTickers, streamWindow],
+  );
   const streamTargets = useMemo(() => (
-    sortedTickers
-      .slice(streamWindow.start, streamWindow.end)
-      .map((ticker) => ({
-        symbol: ticker.metadata.ticker,
-        exchange: ticker.metadata.exchange,
-      }))
-  ), [sortedTickers, streamWindow.end, streamWindow.start]);
+    streamTickers
+      .map((ticker) => quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker, "provider"))
+      .filter((target): target is NonNullable<typeof target> => target != null)
+  ), [streamTickers]);
+  const visibleFinancialTickers = useMemo(
+    () => sortedTickers.slice(streamWindow.start, streamWindow.end),
+    [sortedTickers, streamWindow.end, streamWindow.start],
+  );
+
+  useEffect(() => {
+    if (!appActive) return;
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator) return;
+
+    const nowTs = Date.now();
+    const queue = visibleFinancialTickers.filter((ticker) => {
+      const key = `${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
+      if (financialWarmupInFlight.current.has(key)) return false;
+      if (nowTs - (financialWarmupAttempts.current.get(key) ?? 0) < VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS) return false;
+      return needsVisibleFinancialWarmup(ticker, financialsMap.get(ticker.metadata.ticker));
+    });
+    if (queue.length === 0) return;
+
+    const runNext = async () => {
+      const next = queue.shift();
+      if (!next) return;
+
+      const key = `${next.metadata.ticker}:${next.metadata.exchange ?? ""}`;
+      const instrument = instrumentFromTicker(next, next.metadata.ticker);
+      financialWarmupInFlight.current.add(key);
+      financialWarmupAttempts.current.set(key, nowTs);
+      try {
+        if (instrument) {
+          await coordinator.loadSnapshot(instrument);
+        }
+      } catch {
+        // Best-effort warmup for visible rows.
+      } finally {
+        financialWarmupInFlight.current.delete(key);
+      }
+
+      if (mountedRef.current) {
+        await runNext();
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(3, queue.length) }, () => runNext());
+    void Promise.all(workers);
+  }, [appActive, dispatch, financialsMap, visibleFinancialTickers]);
 
   useQuoteStreaming(streamTargets);
 
@@ -1456,6 +1588,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
               <box width={summaryWidth} flexShrink={0} alignItems="flex-start" justifyContent="center">
                 <PortfolioSummaryBar
                   tickers={sortedTickers}
+                  financialsMap={financialsMap}
                   state={state}
                   isPortfolio={isPortfolioTab}
                   collectionId={activeCollectionId}
@@ -1470,6 +1603,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
           <box height={1}>
             <PortfolioSummaryBar
               tickers={sortedTickers}
+              financialsMap={financialsMap}
               state={state}
               isPortfolio={isPortfolioTab}
               collectionId={activeCollectionId}
@@ -1533,7 +1667,7 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
           sortedTickers.map((ticker, idx) => {
             const isSelected = ticker.metadata.ticker === cursorSymbol;
             const isHovered = idx === hoveredIdx && !isSelected;
-            const fin = state.financials.get(ticker.metadata.ticker);
+            const fin = financialsMap.get(ticker.metadata.ticker);
             const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
             const flashDirection = flashSymbols.get(ticker.metadata.ticker);
 
@@ -1626,7 +1760,7 @@ export const portfolioListPlugin: GloomPlugin = {
               visibleCollectionIds: [collectionId],
               hideTabs: true,
               lockedCollectionId: collectionId,
-            }),
+            }) as unknown as Record<string, unknown>,
           }
           : null;
       },
@@ -1648,7 +1782,7 @@ export const portfolioListPlugin: GloomPlugin = {
           settings: createPortfolioPaneSettings({
             collectionScope: "portfolios",
             lockedCollectionId: collectionId,
-          }),
+          }) as unknown as Record<string, unknown>,
         };
       },
     },
@@ -1669,7 +1803,7 @@ export const portfolioListPlugin: GloomPlugin = {
           settings: createPortfolioPaneSettings({
             collectionScope: "watchlists",
             lockedCollectionId: collectionId,
-          }),
+          }) as unknown as Record<string, unknown>,
         };
       },
     },

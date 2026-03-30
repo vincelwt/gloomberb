@@ -14,8 +14,10 @@ import {
   type Contract,
   type ContractDescription,
   type ContractDetails,
+  type MarketDataUpdate,
   type Order,
   type OrderState,
+  type TickByTickAllLast,
 } from "@stoqey/ib";
 import { mkdir, open, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
@@ -23,6 +25,7 @@ import { join } from "path";
 import { firstValueFrom, filter, take, timeout } from "rxjs";
 import type { TimeRange } from "../../components/chart/chart-types";
 import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
+import type { QuoteSubscriptionTarget } from "../../types/data-provider";
 import type { Fundamentals, FinancialStatement, Quote, PricePoint, TickerFinancials } from "../../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";
 import type {
@@ -68,6 +71,15 @@ interface ClaimedClientLock {
   clientId: number;
   requestedClientId: number;
   path: string;
+}
+
+type QuoteStreamListener = (target: QuoteSubscriptionTarget, quote: Quote) => void;
+
+interface ActiveQuoteStream {
+  target: QuoteSubscriptionTarget;
+  listeners: Map<QuoteStreamListener, QuoteSubscriptionTarget>;
+  stop: () => void;
+  lastQuote?: Quote;
 }
 
 const DEFAULT_SNAPSHOT: IbkrSnapshot = {
@@ -228,6 +240,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 const IBKR_DATA_TIMEOUT = 8_000;
+const IBKR_QUOTE_STREAM_TICKS = "165,221,233";
 
 const HISTORY_PARAMS: Record<TimeRange, { duration: string; size: BarSizeSetting }> = {
   "1W": { duration: "7 D", size: BarSizeSetting.HOURS_ONE },
@@ -249,6 +262,116 @@ const GENERIC_BAR_SIZE_MAP: Record<string, BarSizeSetting> = {
   "1d": BarSizeSetting.DAYS_ONE,
   "1w": BarSizeSetting.WEEKS_ONE,
 };
+
+function normalizeQuoteStreamTarget(target: QuoteSubscriptionTarget): QuoteSubscriptionTarget | null {
+  const symbol = target.symbol.trim().toUpperCase();
+  if (!symbol) return null;
+  return {
+    ...target,
+    symbol,
+    exchange: (target.exchange ?? "").trim().toUpperCase(),
+  };
+}
+
+function buildQuoteStreamKey(target: QuoteSubscriptionTarget): string {
+  const contractKey = target.context?.instrument?.conId
+    ?? target.context?.instrument?.localSymbol
+    ?? target.context?.instrument?.symbol
+    ?? "";
+  return [target.symbol, target.exchange ?? "", contractKey].join("|");
+}
+
+function hasDelayedMarketData(
+  marketData: ReadonlyMap<number, { value?: number; ingressTm: number }>,
+): boolean {
+  return [
+    IBApiTickType.DELAYED_BID,
+    IBApiTickType.DELAYED_ASK,
+    IBApiTickType.DELAYED_LAST,
+    IBApiTickType.DELAYED_BID_SIZE,
+    IBApiTickType.DELAYED_ASK_SIZE,
+    IBApiTickType.DELAYED_LAST_SIZE,
+    IBApiTickType.DELAYED_HIGH,
+    IBApiTickType.DELAYED_LOW,
+    IBApiTickType.DELAYED_VOLUME,
+    IBApiTickType.DELAYED_CLOSE,
+    IBApiTickType.DELAYED_OPEN,
+    IBApiTickType.DELAYED_LAST_TIMESTAMP,
+  ].some((tickType) => marketData.has(tickType));
+}
+
+interface TickByTickBidAskUpdate {
+  time: number;
+  bidPrice: number;
+  askPrice: number;
+  bidSize: number;
+  askSize: number;
+}
+
+export function applyTickByTickAllLastToQuote(
+  current: Quote | undefined,
+  contract: Contract,
+  details: ContractDetails,
+  tick: TickByTickAllLast,
+  priceDivisor: number,
+  dataSource: Quote["dataSource"],
+): Quote | null {
+  const nextPrice = normalizeIbkrPriceValue(tick.price, priceDivisor);
+  if (nextPrice == null || nextPrice <= 0) return null;
+
+  const previousClose = current?.previousClose ?? current?.price ?? nextPrice;
+  const change = nextPrice - previousClose;
+  return {
+    symbol: current?.symbol ?? contract.localSymbol ?? contract.symbol ?? "",
+    providerId: "ibkr",
+    price: nextPrice,
+    currency: current?.currency ?? contract.currency ?? "USD",
+    change,
+    changePercent: previousClose ? (change / previousClose) * 100 : 0,
+    previousClose,
+    high52w: current?.high52w,
+    low52w: current?.low52w,
+    volume: current?.volume,
+    name: current?.name ?? details.longName ?? details.marketName ?? contract.symbol,
+    lastUpdated: tick.time ? tick.time * 1000 : Date.now(),
+    exchangeName: current?.exchangeName ?? details.validExchanges?.split(",")[0],
+    fullExchangeName: current?.fullExchangeName ?? details.validExchanges?.split(",")[0],
+    marketState: current?.marketState ?? "REGULAR",
+    preMarketPrice: current?.preMarketPrice,
+    preMarketChange: current?.preMarketChange,
+    preMarketChangePercent: current?.preMarketChangePercent,
+    postMarketPrice: current?.postMarketPrice,
+    postMarketChange: current?.postMarketChange,
+    postMarketChangePercent: current?.postMarketChangePercent,
+    bid: current?.bid,
+    ask: current?.ask,
+    bidSize: current?.bidSize,
+    askSize: current?.askSize,
+    open: current?.open,
+    high: current?.high,
+    low: current?.low,
+    mark: current?.mark,
+    dataSource,
+  };
+}
+
+export function applyTickByTickBidAskToQuote(
+  current: Quote | undefined,
+  update: TickByTickBidAskUpdate,
+  priceDivisor: number,
+): Quote | null {
+  if (!current) return null;
+  const bid = normalizeIbkrPriceValue(update.bidPrice, priceDivisor);
+  const ask = normalizeIbkrPriceValue(update.askPrice, priceDivisor);
+  return {
+    ...current,
+    bid: bid ?? current.bid,
+    ask: ask ?? current.ask,
+    bidSize: Number.isFinite(update.bidSize) && update.bidSize >= 0 ? update.bidSize : current.bidSize,
+    askSize: Number.isFinite(update.askSize) && update.askSize >= 0 ? update.askSize : current.askSize,
+    lastUpdated: update.time ? update.time * 1000 : current.lastUpdated,
+  };
+}
 
 function marketDataTypeFromConfig(config?: IbkrGatewayConfig): MarketDataType {
   switch (config?.marketDataType) {
@@ -384,6 +507,8 @@ export class IbkrGatewayService {
   private readonly clientLockOwner = `${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
   private claimedClientLock: ClaimedClientLock | null = null;
   private connectionNote?: string;
+  private readonly quoteStreams = new Map<string, ActiveQuoteStream>();
+  private readonly quoteStreamStarts = new Map<string, Promise<void>>();
 
   constructor(private readonly instanceId?: string) {}
 
@@ -427,6 +552,7 @@ export class IbkrGatewayService {
   }
 
   async disconnect(): Promise<void> {
+    this.teardownQuoteStreams();
     this.api?.disconnect();
     this.api = null;
     this.configKey = null;
@@ -517,9 +643,65 @@ export class IbkrGatewayService {
         () => withTimeout(this.api!.getMarketDataSnapshot(contract, "", false), IBKR_DATA_TIMEOUT, "getMarketDataSnapshot"),
       );
       const quote = this.marketDataToQuote(contract, details, marketData);
-      quote.dataSource = this.activeMarketDataType === MarketDataType.REALTIME ? "live" : "delayed";
+      quote.dataSource = hasDelayedMarketData(marketData) || this.activeMarketDataType !== MarketDataType.REALTIME
+        ? "delayed"
+        : "live";
       return quote;
     });
+  }
+
+  subscribeQuotes(
+    config: IbkrGatewayConfig,
+    targets: QuoteSubscriptionTarget[],
+    onQuote: QuoteStreamListener,
+  ): () => void {
+    const uniqueTargets = [...new Map(
+      targets
+        .map((target) => normalizeQuoteStreamTarget(target))
+        .filter((target): target is QuoteSubscriptionTarget => target != null)
+        .map((target) => [buildQuoteStreamKey(target), target] as const),
+    ).values()];
+
+    for (const target of uniqueTargets) {
+      const key = buildQuoteStreamKey(target);
+      const stream = this.quoteStreams.get(key) ?? {
+        target,
+        listeners: new Map<QuoteStreamListener, QuoteSubscriptionTarget>(),
+        stop: () => {},
+      };
+      stream.target = target;
+      stream.listeners.set(onQuote, target);
+      this.quoteStreams.set(key, stream);
+
+      if (!this.quoteStreamStarts.has(key) && stream.listeners.size === 1) {
+        const startPromise = this.ensureQuoteStream(key, target, config)
+          .catch((error) => {
+            gatewayLog.warn("Quote stream setup failed", {
+              instanceId: this.instanceId,
+              symbol: target.symbol,
+              exchange: target.exchange ?? "",
+              error: error instanceof Error ? error.message : String(error ?? ""),
+            });
+          })
+          .finally(() => {
+            this.quoteStreamStarts.delete(key);
+          });
+        this.quoteStreamStarts.set(key, startPromise);
+      }
+    }
+
+    return () => {
+      for (const target of uniqueTargets) {
+        const key = buildQuoteStreamKey(target);
+        const stream = this.quoteStreams.get(key);
+        if (!stream) continue;
+        stream.listeners.delete(onQuote);
+        if (stream.listeners.size === 0) {
+          stream.stop();
+          this.quoteStreams.delete(key);
+        }
+      }
+    };
   }
 
   async getTickerFinancials(
@@ -1127,6 +1309,219 @@ export class IbkrGatewayService {
     for (const listener of this.listeners) listener();
   }
 
+  private teardownQuoteStreams(): void {
+    for (const stream of this.quoteStreams.values()) {
+      stream.stop();
+    }
+    this.quoteStreams.clear();
+    this.quoteStreamStarts.clear();
+  }
+
+  private async ensureQuoteStream(
+    key: string,
+    target: QuoteSubscriptionTarget,
+    config: IbkrGatewayConfig,
+  ): Promise<void> {
+    await this.connect(config);
+    const contract = await withTimeout(
+      this.resolveContract(target.symbol, target.exchange ?? "", target.context?.instrument ?? null),
+      IBKR_DATA_TIMEOUT,
+      "resolveContract",
+    );
+    const details = await withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails");
+    const priceDivisor = getIbkrPriceDivisor(contract, details);
+    const stream = this.quoteStreams.get(key);
+    if (!stream || stream.listeners.size === 0) {
+      this.quoteStreams.delete(key);
+      return;
+    }
+
+    const seededQuote = await this.loadSeedQuote(contract, details, config).catch(() => null);
+    if (seededQuote) {
+      stream.lastQuote = seededQuote;
+      for (const [listener, listenerTarget] of stream.listeners.entries()) {
+        listener(listenerTarget, seededQuote);
+      }
+    }
+
+    const subscription = this.api!.getMarketData(contract, IBKR_QUOTE_STREAM_TICKS, false, false).subscribe({
+      next: (update) => this.emitQuoteStreamUpdate(key, contract, details, update),
+      error: (error) => {
+        gatewayLog.warn("Quote stream error", {
+          instanceId: this.instanceId,
+          symbol: target.symbol,
+          exchange: target.exchange ?? "",
+          error: error instanceof Error ? error.message : String(error ?? ""),
+        });
+      },
+    });
+    const tradeSubscription = this.api!.getTickByTickAllLastDataUpdates(contract, 0, false).subscribe({
+      next: (tick) => this.emitTickByTickAllLastUpdate(key, contract, details, tick, priceDivisor),
+      error: (error) => {
+        gatewayLog.warn("Tick-by-tick trade stream error", {
+          instanceId: this.instanceId,
+          symbol: target.symbol,
+          exchange: target.exchange ?? "",
+          error: error instanceof Error ? error.message : String(error ?? ""),
+        });
+      },
+    });
+    const bidAskStop = this.startTickByTickBidAskStream(
+      contract,
+      (update) => this.emitTickByTickBidAskUpdate(key, priceDivisor, update),
+      (error) => {
+        gatewayLog.warn("Tick-by-tick bid/ask stream error", {
+          instanceId: this.instanceId,
+          symbol: target.symbol,
+          exchange: target.exchange ?? "",
+          error,
+        });
+      },
+    );
+
+    const liveStream = this.quoteStreams.get(key);
+    if (!liveStream || liveStream.listeners.size === 0) {
+      subscription.unsubscribe();
+      tradeSubscription.unsubscribe();
+      bidAskStop();
+      this.quoteStreams.delete(key);
+      return;
+    }
+    liveStream.stop = () => {
+      subscription.unsubscribe();
+      tradeSubscription.unsubscribe();
+      bidAskStop();
+    };
+  }
+
+  private emitQuoteStreamUpdate(
+    key: string,
+    contract: Contract,
+    details: ContractDetails,
+    update: MarketDataUpdate,
+  ): void {
+    const stream = this.quoteStreams.get(key);
+    if (!stream || stream.listeners.size === 0) return;
+
+    try {
+      const quote = this.marketDataToQuote(contract, details, update.all);
+      quote.providerId = "ibkr";
+      quote.dataSource = hasDelayedMarketData(update.all) || this.activeMarketDataType !== MarketDataType.REALTIME
+        ? "delayed"
+        : "live";
+      stream.lastQuote = quote;
+      for (const [listener, listenerTarget] of stream.listeners.entries()) {
+        listener(listenerTarget, quote);
+      }
+    } catch {
+      // Ignore partial tick snapshots until IBKR has sent a usable quote.
+    }
+  }
+
+  private emitTickByTickAllLastUpdate(
+    key: string,
+    contract: Contract,
+    details: ContractDetails,
+    tick: TickByTickAllLast,
+    priceDivisor: number,
+  ): void {
+    const stream = this.quoteStreams.get(key);
+    if (!stream || stream.listeners.size === 0) return;
+
+    const nextQuote = applyTickByTickAllLastToQuote(
+      stream.lastQuote,
+      contract,
+      details,
+      tick,
+      priceDivisor,
+      stream.lastQuote?.dataSource ?? (this.activeMarketDataType === MarketDataType.REALTIME ? "live" : "delayed"),
+    );
+    if (!nextQuote) return;
+    stream.lastQuote = nextQuote;
+    for (const [listener, listenerTarget] of stream.listeners.entries()) {
+      listener(listenerTarget, nextQuote);
+    }
+  }
+
+  private emitTickByTickBidAskUpdate(
+    key: string,
+    priceDivisor: number,
+    update: TickByTickBidAskUpdate,
+  ): void {
+    const stream = this.quoteStreams.get(key);
+    if (!stream || stream.listeners.size === 0) return;
+    const nextQuote = applyTickByTickBidAskToQuote(stream.lastQuote, update, priceDivisor);
+    if (!nextQuote) return;
+    stream.lastQuote = nextQuote;
+    for (const [listener, listenerTarget] of stream.listeners.entries()) {
+      listener(listenerTarget, nextQuote);
+    }
+  }
+
+  private async loadSeedQuote(
+    contract: Contract,
+    details: ContractDetails,
+    config: IbkrGatewayConfig,
+  ): Promise<Quote | null> {
+    try {
+      const marketData = await this.withMarketDataFallback(
+        config,
+        () => withTimeout(this.api!.getMarketDataSnapshot(contract, "", false), IBKR_DATA_TIMEOUT, "getMarketDataSnapshot"),
+      );
+      const quote = this.marketDataToQuote(contract, details, marketData);
+      quote.providerId = "ibkr";
+      quote.dataSource = hasDelayedMarketData(marketData) || this.activeMarketDataType !== MarketDataType.REALTIME
+        ? "delayed"
+        : "live";
+      return quote;
+    } catch {
+      return null;
+    }
+  }
+
+  private startTickByTickBidAskStream(
+    contract: Contract,
+    onUpdate: (update: TickByTickBidAskUpdate) => void,
+    onError: (message: string) => void,
+  ): () => void {
+    const rawApi = this.getRawApi();
+    const reqId = (this.api as any)?.nextReqId;
+    if (typeof reqId !== "number" || !Number.isFinite(reqId)) {
+      onError("No request id available for tick-by-tick bid/ask stream");
+      return () => {};
+    }
+
+    const handleBidAsk = (
+      incomingReqId: number,
+      time: number,
+      bidPrice: number,
+      askPrice: number,
+      bidSize: number,
+      askSize: number,
+    ) => {
+      if (incomingReqId !== reqId) return;
+      onUpdate({ time, bidPrice, askPrice, bidSize, askSize });
+    };
+    const handleError = (error: Error, code: number, incomingReqId: number) => {
+      if (incomingReqId !== reqId) return;
+      onError(error?.message || `IBKR error ${code}`);
+    };
+
+    rawApi.on(EventName.tickByTickBidAsk, handleBidAsk);
+    rawApi.on(EventName.error, handleError);
+    rawApi.reqTickByTickData(reqId, contract, "BidAsk", 0, false);
+
+    return () => {
+      rawApi.off(EventName.tickByTickBidAsk, handleBidAsk);
+      rawApi.off(EventName.error, handleError);
+      try {
+        rawApi.cancelTickByTickData(reqId);
+      } catch {
+        // ignore shutdown races
+      }
+    };
+  }
+
   private async withMarketDataFallback<T>(
     config: IbkrGatewayConfig,
     operation: () => Promise<T>,
@@ -1369,9 +1764,11 @@ export class IbkrGatewayService {
 
   private marketDataToQuote(contract: Contract, details: ContractDetails, marketData: ReadonlyMap<number, { value?: number; ingressTm: number }>): Quote {
     const priceDivisor = getIbkrPriceDivisor(contract, details);
+    const mark = normalizeIbkrPriceValue(marketData.get(IBApiTickType.MARK_PRICE)?.value, priceDivisor);
     const last = normalizeIbkrPriceValue(
       marketData.get(IBApiTickType.LAST)?.value
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.value
+      ?? marketData.get(IBApiTickType.MARK_PRICE)?.value
       ?? marketData.get(IBApiTickType.CLOSE)?.value,
       priceDivisor,
     );
@@ -1387,6 +1784,7 @@ export class IbkrGatewayService {
     const change = last - close;
     const ingressTm = marketData.get(IBApiTickType.LAST)?.ingressTm
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.ingressTm
+      ?? marketData.get(IBApiTickType.MARK_PRICE)?.ingressTm
       ?? Date.now();
 
     return {
@@ -1398,7 +1796,7 @@ export class IbkrGatewayService {
       previousClose: close,
       high52w: normalizeIbkrPriceValue(marketData.get(IBApiTickType.HIGH_52_WEEK)?.value, priceDivisor),
       low52w: normalizeIbkrPriceValue(marketData.get(IBApiTickType.LOW_52_WEEK)?.value, priceDivisor),
-      volume: marketData.get(IBApiTickType.VOLUME)?.value,
+      volume: marketData.get(IBApiTickType.VOLUME)?.value ?? marketData.get(IBApiTickType.DELAYED_VOLUME)?.value,
       name: details.longName || details.marketName || contract.symbol,
       lastUpdated: ingressTm,
       exchangeName: details.validExchanges?.split(",")[0],
@@ -1426,7 +1824,7 @@ export class IbkrGatewayService {
         marketData.get(IBApiTickType.LOW)?.value ?? marketData.get(IBApiTickType.DELAYED_LOW)?.value,
         priceDivisor,
       ),
-      mark: normalizeIbkrPriceValue(marketData.get(IBApiTickType.MARK_PRICE)?.value, priceDivisor),
+      mark,
     };
   }
 

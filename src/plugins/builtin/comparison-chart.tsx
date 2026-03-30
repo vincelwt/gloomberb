@@ -1,11 +1,13 @@
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../../components";
 import { filterByTimeRange, projectChartData } from "../../components/chart/chart-data";
 import { renderChart, resolveChartPalette } from "../../components/chart/chart-renderer";
 import type { ChartAxisMode } from "../../components/chart/chart-types";
-import { getSharedDataProvider, getSharedRegistry } from "../../plugins/registry";
+import { getSharedRegistry } from "../../plugins/registry";
+import { useChartQuery, useResolvedEntryValue, useTickerFinancials } from "../../market-data/hooks";
+import { instrumentFromTicker } from "../../market-data/request-types";
 import { useAppState } from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import type { PricePoint, Quote } from "../../types/financials";
@@ -139,35 +141,18 @@ function ComparisonChartCard({
 }) {
   const { state } = useAppState();
   const ticker = state.tickers.get(symbol) ?? null;
-  const financials = state.financials.get(symbol) ?? null;
-  const [remoteHistory, setRemoteHistory] = useState<PricePoint[] | null>(null);
-  const fetchIdRef = useRef(0);
-
-  useEffect(() => {
-    const provider = getSharedDataProvider();
-    setRemoteHistory(null);
-    if (!provider) return;
-
-    const id = ++fetchIdRef.current;
-    const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
-    provider.getPriceHistory(symbol, ticker?.metadata.exchange || "", "1Y", {
-      brokerId: instrument?.brokerId,
-      brokerInstanceId: instrument?.brokerInstanceId,
-      instrument,
-    }).then((points) => {
-      if (fetchIdRef.current === id) {
-        setRemoteHistory(points);
+  const financials = useTickerFinancials(symbol, ticker);
+  const chartEntry = useChartQuery(
+    ticker
+      ? {
+        instrument: instrumentFromTicker(ticker, symbol)!,
+        range: "1Y",
+        granularity: "daily",
       }
-    }).catch(() => {
-      if (fetchIdRef.current === id) {
-        setRemoteHistory(null);
-      }
-    });
-  }, [symbol, ticker?.metadata.broker_contracts, ticker?.metadata.exchange]);
-
-  const history = remoteHistory && remoteHistory.length > 0
-    ? remoteHistory
-    : (financials?.priceHistory ?? []);
+      : null,
+  );
+  const remoteHistory = useResolvedEntryValue(chartEntry);
+  const history = remoteHistory && remoteHistory.length > 0 ? remoteHistory : (financials?.priceHistory ?? []);
   const windowedHistory = useMemo(() => filterByTimeRange(history, "1Y"), [history]);
   const displayQuote = getDisplayQuote(financials?.quote, windowedHistory);
   const axisWidth = axisMode === "percent" ? 11 : 10;
@@ -199,6 +184,7 @@ function ComparisonChartCard({
       showVolume: false,
       volumeHeight: 0,
       cursorX: null,
+      cursorY: null,
       mode: projection.effectiveMode,
       axisMode,
       colors: chartColors,

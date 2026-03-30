@@ -28,6 +28,7 @@ import type { TickerRecord } from "../types/ticker";
 import type { BrokerAccount } from "../types/trading";
 import type { ReleaseInfo, UpdateProgress } from "../updater";
 import { getDockLeafLayouts, getDockedPaneIds } from "../plugins/pane-manager";
+import { useTickerFinancials } from "../market-data/hooks";
 import {
   APP_SESSION_ID,
   APP_SESSION_SCHEMA_VERSION,
@@ -131,6 +132,17 @@ function isKnownCollection(config: AppConfig, collectionId: string | undefined):
 
 function shouldPreserveUnknownCollectionId(collectionId: string | undefined): boolean {
   return isBrokerPortfolioId(collectionId);
+}
+
+function hasLikelyPriceUnitMismatch(current: Quote | undefined, next: Quote): boolean {
+  if (!current?.currency || !next.currency) return false;
+  if (current.currency !== next.currency) return false;
+  if (!Number.isFinite(current.price) || !Number.isFinite(next.price)) return false;
+  if (current.price <= 0 || next.price <= 0) return false;
+
+  const ratio = current.price / next.price;
+  const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
+  return Math.abs(normalizedRatio - 100) / 100 < 0.05;
 }
 
 function getConfiguredCollectionId(config: AppConfig, instance: PaneInstanceConfig): string {
@@ -407,7 +419,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "MERGE_QUOTE": {
       const current = state.financials.get(action.symbol);
-      if (shouldPreserveExistingQuote(current?.quote, action.quote)) {
+      if (
+        shouldPreserveExistingQuote(current?.quote, action.quote)
+        || hasLikelyPriceUnitMismatch(current?.quote, action.quote)
+      ) {
         return state;
       }
       const financials = new Map(state.financials);
@@ -748,15 +763,22 @@ export function usePaneInstance(): PaneInstanceConfig | null {
 export function usePaneTicker(paneId?: string) {
   const { state } = useAppState();
   const scopedPaneId = paneId ?? useContext(PaneContext) ?? state.focusedPaneId;
+  const symbol = useMemo(() => (
+    scopedPaneId ? resolveTickerForPane(state, scopedPaneId) : null
+  ), [state, scopedPaneId]);
+  const ticker = useMemo(() => (
+    symbol ? state.tickers.get(symbol) ?? null : null
+  ), [state.tickers, symbol]);
+  const marketFinancials = useTickerFinancials(symbol, ticker);
+
   return useMemo(() => {
     if (!scopedPaneId) return { symbol: null, ticker: null, financials: null };
-    const symbol = resolveTickerForPane(state, scopedPaneId);
     return {
       symbol,
-      ticker: symbol ? state.tickers.get(symbol) ?? null : null,
-      financials: symbol ? state.financials.get(symbol) ?? null : null,
+      ticker,
+      financials: marketFinancials ?? (symbol ? state.financials.get(symbol) ?? null : null),
     };
-  }, [state, scopedPaneId]);
+  }, [marketFinancials, scopedPaneId, state.financials, symbol, ticker]);
 }
 
 export function useSelectedTicker(paneId?: string) {
@@ -765,14 +787,16 @@ export function useSelectedTicker(paneId?: string) {
 
 export function useFocusedTicker() {
   const { state } = useAppState();
+  const symbol = useMemo(() => getFocusedTickerSymbol(state), [state]);
+  const ticker = useMemo(() => (symbol ? state.tickers.get(symbol) ?? null : null), [state.tickers, symbol]);
+  const marketFinancials = useTickerFinancials(symbol, ticker);
   return useMemo(() => {
-    const symbol = getFocusedTickerSymbol(state);
     return {
       symbol,
-      ticker: symbol ? state.tickers.get(symbol) ?? null : null,
-      financials: symbol ? state.financials.get(symbol) ?? null : null,
+      ticker,
+      financials: marketFinancials ?? (symbol ? state.financials.get(symbol) ?? null : null),
     };
-  }, [state]);
+  }, [marketFinancials, state.financials, symbol, ticker]);
 }
 
 export function usePaneCollection(paneId?: string) {
