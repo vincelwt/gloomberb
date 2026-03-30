@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { bucketOhlcSeries, projectChartData, resolveRenderMode } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
-import { buildTimeAxis, renderChart, resolveChartPalette } from "./chart-renderer";
+import { buildTimeAxis, formatAxisValue, renderChart, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode } from "./chart-types";
 
@@ -89,6 +89,11 @@ describe("resolveRenderMode", () => {
 });
 
 describe("renderChart", () => {
+  test("formats price axes with the instrument currency", () => {
+    expect(formatAxisValue(21_970, "price", 0, "JPY")).toBe("¥22.0K");
+    expect(formatAxisValue(12_340, "price", 0, "HKD")).toBe("HK$12.3K");
+  });
+
   test("eases coarse cursor motion quickly and settles without overshooting", () => {
     let current: { x: number | null; y: number | null } = { x: 2, y: 1 };
     const target = { x: 6, y: 4 };
@@ -345,6 +350,25 @@ describe("renderChart", () => {
       { row: 3, label: "-9.09%" },
       { row: 4, label: "-18.2%" },
     ]);
+  });
+
+  test("uses the supplied currency for rendered price-axis labels", () => {
+    const projection = projectChartData(chartFixture, 12, "line", false);
+    const result = renderChart(projection.points, {
+      width: 12,
+      height: 5,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: projection.effectiveMode,
+      axisMode: "price",
+      currency: "JPY",
+      colors: palette,
+    });
+
+    expect(result.axisLabels.some((entry) => entry.label.includes("¥"))).toBe(true);
+    expect(result.axisLabels.every((entry) => !entry.label.includes("$"))).toBe(true);
   });
 
   test("accepts serialized string dates from cached chart data", () => {
