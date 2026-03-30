@@ -993,6 +993,7 @@ export const tickerDetailPlugin: GloomPlugin = {
       icon: "D",
       component: TickerDetailPane,
       defaultPosition: "right",
+      defaultMode: "floating",
       settings: (context) => buildTickerDetailSettingsDef(getTickerDetailPaneSettings(context.settings)),
     },
     {
