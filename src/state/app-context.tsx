@@ -71,6 +71,8 @@ export interface AppState {
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
+  gridlockTipVisible: boolean;
+  gridlockTipSequence: number;
   inputCaptured: boolean;
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
@@ -94,6 +96,8 @@ export type AppAction =
   | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
+  | { type: "SHOW_GRIDLOCK_TIP" }
+  | { type: "DISMISS_GRIDLOCK_TIP" }
   | { type: "SET_THEME"; theme: string }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
@@ -479,6 +483,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "TOGGLE_STATUS_BAR":
       return { ...state, statusBarVisible: !state.statusBarVisible };
 
+    case "SHOW_GRIDLOCK_TIP":
+      return {
+        ...state,
+        gridlockTipVisible: true,
+        gridlockTipSequence: state.gridlockTipSequence + 1,
+      };
+
+    case "DISMISS_GRIDLOCK_TIP":
+      if (!state.gridlockTipVisible) return state;
+      return { ...state, gridlockTipVisible: false };
+
     case "SET_THEME":
       applyTheme(action.theme);
       return { ...state, config: { ...state.config, theme: action.theme } };
@@ -833,6 +848,8 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,
+    gridlockTipVisible: false,
+    gridlockTipSequence: 0,
     inputCaptured: false,
     updateAvailable: null,
     updateProgress: null,

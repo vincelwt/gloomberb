@@ -17,6 +17,9 @@ import {
   type Order,
   type OrderState,
 } from "@stoqey/ib";
+import { mkdir, open, readFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 import { firstValueFrom, filter, take, timeout } from "rxjs";
 import type { TimeRange } from "../../components/chart/chart-types";
 import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
@@ -30,7 +33,9 @@ import type {
   BrokerOrderPreview,
   BrokerOrderRequest,
 } from "../../types/trading";
+import { debugLog } from "../../utils/debug-log";
 import { parseReportSnapshot, parseFinStatements } from "./fundamental-parser";
+import { getIbkrPriceDivisor, normalizeIbkrPriceValue } from "./price-normalization";
 
 export interface IbkrGatewayConfig {
   host: string;
@@ -47,12 +52,34 @@ export interface IbkrSnapshot {
   lastError?: string;
 }
 
+interface ClientLockMetadata {
+  pid: number;
+  ownerToken: string;
+  requestedClientId: number;
+  clientId: number;
+  host: string;
+  port: number;
+  instanceId?: string;
+  cwd: string;
+  timestamp: number;
+}
+
+interface ClaimedClientLock {
+  clientId: number;
+  requestedClientId: number;
+  path: string;
+}
+
 const DEFAULT_SNAPSHOT: IbkrSnapshot = {
   status: { state: "disconnected", updatedAt: Date.now() },
   accounts: [],
   openOrders: [],
   executions: [],
 };
+
+const gatewayLog = debugLog.createLogger("ibkr-gateway");
+const IBKR_CLIENT_LOCK_DIR = join(tmpdir(), "gloomberb-ibkr-client-locks");
+const IBKR_CLIENT_ID_SEARCH_SPAN = 64;
 
 type AccountSummaryValueMap = ReadonlyMap<string, { value: string }>;
 type AccountSummaryTags = ReadonlyMap<string, AccountSummaryValueMap>;
@@ -282,6 +309,62 @@ function getIbErrorMessage(error: any): string | undefined {
   return undefined;
 }
 
+function isClientIdInUseError(code: number | undefined, message: string | undefined): boolean {
+  if (code === 326) return true;
+  const text = (message || "").toLowerCase();
+  return text.includes("client id is already in use")
+    || text.includes("clientid is already in use")
+    || text.includes("client id already in use");
+}
+
+function buildClientLockPath(config: IbkrGatewayConfig, clientId: number): string {
+  const host = (config.host || "localhost").replace(/[^a-z0-9_.-]+/gi, "_");
+  return join(IBKR_CLIENT_LOCK_DIR, `${host}-${config.port}-${clientId}.lock`);
+}
+
+function isProcessAlive(pid: number | undefined): boolean {
+  if (!pid || !Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readClientLock(path: string): Promise<ClientLockMetadata | null> {
+  try {
+    const raw = await readFile(path, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<ClientLockMetadata>;
+    if (
+      typeof parsed.pid !== "number"
+      || typeof parsed.ownerToken !== "string"
+      || typeof parsed.clientId !== "number"
+      || typeof parsed.requestedClientId !== "number"
+    ) {
+      return null;
+    }
+    return {
+      pid: parsed.pid,
+      ownerToken: parsed.ownerToken,
+      clientId: parsed.clientId,
+      requestedClientId: parsed.requestedClientId,
+      host: typeof parsed.host === "string" ? parsed.host : "",
+      port: typeof parsed.port === "number" ? parsed.port : 0,
+      instanceId: typeof parsed.instanceId === "string" ? parsed.instanceId : undefined,
+      cwd: typeof parsed.cwd === "string" ? parsed.cwd : "",
+      timestamp: typeof parsed.timestamp === "number" ? parsed.timestamp : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildConnectionNote(requestedClientId: number, actualClientId: number): string | undefined {
+  if (requestedClientId === actualClientId) return undefined;
+  return `Using client ID ${actualClientId} because ${requestedClientId} is already in use.`;
+}
+
 function isRetryableErrorCode(code: number): boolean {
   return ![200, 201, 202, 321, 354].includes(code);
 }
@@ -298,6 +381,9 @@ export class IbkrGatewayService {
   private autoMarketData = true;
   /** Dedup in-flight requests: reuse pending promises for the same key. */
   private pendingRequests = new Map<string, Promise<any>>();
+  private readonly clientLockOwner = `${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
+  private claimedClientLock: ClaimedClientLock | null = null;
+  private connectionNote?: string;
 
   constructor(private readonly instanceId?: string) {}
 
@@ -332,7 +418,7 @@ export class IbkrGatewayService {
       return this.connecting;
     }
 
-    this.connecting = this.connectInternal(config, nextKey);
+    this.connecting = this.connectWithClientFallback(config, nextKey);
     try {
       await this.connecting;
     } finally {
@@ -346,6 +432,8 @@ export class IbkrGatewayService {
     this.configKey = null;
     this.autoMarketData = true;
     this.activeMarketDataType = MarketDataType.REALTIME;
+    this.connectionNote = undefined;
+    await this.releaseClientLock();
     this.updateSnapshot({
       ...this.snapshot,
       status: { state: "disconnected", updatedAt: Date.now() },
@@ -392,16 +480,17 @@ export class IbkrGatewayService {
     for (const [accountId, accountPositions] of update.all) {
       for (const position of accountPositions) {
         if (!position.contract.symbol) continue;
+        const priceDivisor = getIbkrPriceDivisor(position.contract);
         positions.push({
           ticker: position.contract.localSymbol || position.contract.symbol,
           exchange: position.contract.primaryExch || position.contract.exchange || "",
           shares: Math.abs(position.pos),
-          avgCost: position.avgCost,
+          avgCost: normalizeIbkrPriceValue(position.avgCost, priceDivisor),
           currency: position.contract.currency || "USD",
           accountId,
           name: position.contract.description || position.contract.localSymbol || position.contract.symbol,
           assetCategory: position.contract.secType,
-          markPrice: position.marketPrice,
+          markPrice: normalizeIbkrPriceValue(position.marketPrice, priceDivisor),
           marketValue: position.marketValue,
           unrealizedPnl: position.unrealizedPNL,
           side: position.pos < 0 ? "short" : "long",
@@ -492,30 +581,34 @@ export class IbkrGatewayService {
     instrument?: BrokerContractRef | null,
   ): Promise<PricePoint[]> {
     return this.dedup(`history:${ticker}:${exchange}:${range}`, async () => {
-    await this.connect(config);
-    const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
-    const params = HISTORY_PARAMS[range];
-    const bars = await this.withMarketDataFallback(
-      config,
-      () => withTimeout(this.api!.getHistoricalData(
-        contract,
-        "",
-        params.duration,
-        params.size,
-        WhatToShow.TRADES,
-        1,
-        1,
-      ), IBKR_DATA_TIMEOUT, "getHistoricalData"),
-    );
+      await this.connect(config);
+      const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+      const params = HISTORY_PARAMS[range];
+      const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
+        .catch(() => undefined);
+      const bars = await this.withMarketDataFallback(
+        config,
+        () => withTimeout(this.api!.getHistoricalData(
+          contract,
+          "",
+          params.duration,
+          params.size,
+          WhatToShow.TRADES,
+          1,
+          1,
+        ), IBKR_DATA_TIMEOUT, "getHistoricalData"),
+      );
+      const details = await detailsPromise;
+      const priceDivisor = getIbkrPriceDivisor(contract, details);
 
-    return bars.map((bar) => ({
-      date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0,
-      volume: bar.volume,
-    }));
+      return bars.map((bar) => ({
+        date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
+        open: normalizeIbkrPriceValue(bar.open, priceDivisor),
+        high: normalizeIbkrPriceValue(bar.high, priceDivisor),
+        low: normalizeIbkrPriceValue(bar.low, priceDivisor),
+        close: normalizeIbkrPriceValue(bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0, priceDivisor) ?? 0,
+        volume: bar.volume,
+      }));
     });
   }
 
@@ -535,6 +628,8 @@ export class IbkrGatewayService {
     return this.dedup(key, async () => {
       await this.connect(config);
       const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+      const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
+        .catch(() => undefined);
 
       // Format endDateTime as "yyyyMMdd HH:mm:ss" for IBKR
       const pad = (n: number) => String(n).padStart(2, "0");
@@ -561,13 +656,15 @@ export class IbkrGatewayService {
           1,
         ), IBKR_DATA_TIMEOUT, "getDetailedHistoricalData"),
       );
+      const details = await detailsPromise;
+      const priceDivisor = getIbkrPriceDivisor(contract, details);
 
       return bars.map((bar) => ({
         date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0,
+        open: normalizeIbkrPriceValue(bar.open, priceDivisor),
+        high: normalizeIbkrPriceValue(bar.high, priceDivisor),
+        low: normalizeIbkrPriceValue(bar.low, priceDivisor),
+        close: normalizeIbkrPriceValue(bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0, priceDivisor) ?? 0,
         volume: bar.volume,
       }));
     });
@@ -778,14 +875,55 @@ export class IbkrGatewayService {
     await this.listOpenOrders(config);
   }
 
-  private async connectInternal(config: IbkrGatewayConfig, configKey: string): Promise<void> {
+  private async connectWithClientFallback(config: IbkrGatewayConfig, configKey: string): Promise<void> {
+    const candidates = this.getClientIdCandidates(config.clientId);
+    let lastConflict: Error | null = null;
+
+    for (const clientId of candidates) {
+      const claimed = await this.tryClaimClientLock(config, clientId, config.clientId);
+      if (!claimed) continue;
+
+      try {
+        await this.connectInternal(
+          { ...config, clientId },
+          configKey,
+          buildConnectionNote(config.clientId, clientId),
+        );
+        return;
+      } catch (error: any) {
+        const code = getIbErrorCode(error);
+        const message = getIbErrorMessage(error) || error?.message || String(error || "");
+        await this.disconnect();
+        if (!isClientIdInUseError(code, message)) {
+          throw error;
+        }
+        lastConflict = new Error(message || `IBKR client ID ${clientId} is already in use.`);
+      }
+    }
+
+    throw lastConflict ?? new Error(
+      `No IBKR client IDs are available near ${config.clientId}. Close other sessions or choose a different client ID.`,
+    );
+  }
+
+  private async connectInternal(
+    config: IbkrGatewayConfig,
+    configKey: string,
+    connectionNote?: string,
+  ): Promise<void> {
     if (this.api && this.configKey !== configKey) {
       await this.disconnect();
     }
 
+    this.connectionNote = connectionNote;
     this.updateSnapshot({
       ...this.snapshot,
-      status: { state: "connecting", updatedAt: Date.now(), mode: "gateway" },
+      status: {
+        state: "connecting",
+        updatedAt: Date.now(),
+        mode: "gateway",
+        message: this.connectionNote,
+      },
       lastError: undefined,
     });
 
@@ -798,12 +936,39 @@ export class IbkrGatewayService {
       this.bindConnectionEvents(this.api);
     }
 
+    let unsubscribeConflict = () => {};
+    const conflictPromise = new Promise<never>((_, reject) => {
+      const subscription = this.api!.error.subscribe((err) => {
+        const code = getIbErrorCode(err);
+        const message = getIbErrorMessage(err);
+        if (!isClientIdInUseError(code, message)) return;
+        subscription.unsubscribe();
+        reject(new Error(message || `IBKR client ID ${config.clientId} is already in use.`));
+      });
+      unsubscribeConflict = () => subscription.unsubscribe();
+    });
+
     this.api.connect(config.clientId);
-    await firstValueFrom(this.api.connectionState.pipe(
-      filter((state) => state === ConnectionState.Connected),
-      take(1),
-      timeout(10_000),
-    ));
+    try {
+      await Promise.race([
+        firstValueFrom(this.api.connectionState.pipe(
+          filter((state) => state === ConnectionState.Connected),
+          take(1),
+          timeout(10_000),
+        )),
+        conflictPromise,
+      ]);
+    } finally {
+      unsubscribeConflict();
+    }
+
+    gatewayLog.info("Connected to IBKR gateway", {
+      instanceId: this.instanceId,
+      requestedClientId: this.claimedClientLock?.requestedClientId ?? config.clientId,
+      actualClientId: config.clientId,
+      host: config.host,
+      port: config.port,
+    });
     this.autoMarketData = (config.marketDataType ?? "auto") === "auto";
     this.activeMarketDataType = marketDataTypeFromConfig(config);
     this.api.setMarketDataType(this.activeMarketDataType);
@@ -815,7 +980,12 @@ export class IbkrGatewayService {
     ]);
     this.updateSnapshot({
       ...this.snapshot,
-      status: { state: "connected", updatedAt: Date.now(), mode: "gateway" },
+      status: {
+        state: "connected",
+        updatedAt: Date.now(),
+        mode: "gateway",
+        message: this.connectionNote,
+      },
     });
   }
 
@@ -824,12 +994,22 @@ export class IbkrGatewayService {
       if (state === ConnectionState.Connected) {
         this.updateSnapshot({
           ...this.snapshot,
-          status: { state: "connected", updatedAt: Date.now(), mode: "gateway" },
+          status: {
+            state: "connected",
+            updatedAt: Date.now(),
+            mode: "gateway",
+            message: this.connectionNote,
+          },
         });
       } else if (state === ConnectionState.Connecting) {
         this.updateSnapshot({
           ...this.snapshot,
-          status: { state: "connecting", updatedAt: Date.now(), mode: "gateway" },
+          status: {
+            state: "connecting",
+            updatedAt: Date.now(),
+            mode: "gateway",
+            message: this.connectionNote,
+          },
         });
       } else {
         this.updateSnapshot({
@@ -869,6 +1049,77 @@ export class IbkrGatewayService {
         lastError: message,
       });
     });
+  }
+
+  private getClientIdCandidates(requestedClientId: number): number[] {
+    const preferred = this.claimedClientLock?.clientId;
+    const candidates = new Set<number>();
+    if (preferred && Number.isFinite(preferred) && preferred > 0) {
+      candidates.add(preferred);
+    }
+    for (let offset = 0; offset < IBKR_CLIENT_ID_SEARCH_SPAN; offset += 1) {
+      candidates.add(requestedClientId + offset);
+    }
+    return [...candidates];
+  }
+
+  private async tryClaimClientLock(
+    config: IbkrGatewayConfig,
+    clientId: number,
+    requestedClientId: number,
+  ): Promise<boolean> {
+    const path = buildClientLockPath(config, clientId);
+    const existing = this.claimedClientLock;
+    if (
+      existing
+      && existing.clientId === clientId
+      && existing.requestedClientId === requestedClientId
+    ) {
+      return true;
+    }
+
+    await mkdir(IBKR_CLIENT_LOCK_DIR, { recursive: true });
+    const metadata: ClientLockMetadata = {
+      pid: process.pid,
+      ownerToken: this.clientLockOwner,
+      requestedClientId,
+      clientId,
+      host: config.host,
+      port: config.port,
+      instanceId: this.instanceId,
+      cwd: process.cwd(),
+      timestamp: Date.now(),
+    };
+
+    try {
+      const handle = await open(path, "wx");
+      await handle.writeFile(JSON.stringify(metadata), "utf-8");
+      await handle.close();
+      await this.releaseClientLock();
+      this.claimedClientLock = { clientId, requestedClientId, path };
+      return true;
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+
+    const lock = await readClientLock(path);
+    if (!lock || !isProcessAlive(lock.pid)) {
+      await rm(path, { force: true }).catch(() => {});
+      return this.tryClaimClientLock(config, clientId, requestedClientId);
+    }
+    if (lock.ownerToken === this.clientLockOwner) {
+      await this.releaseClientLock();
+      this.claimedClientLock = { clientId, requestedClientId, path };
+      return true;
+    }
+    return false;
+  }
+
+  private async releaseClientLock(): Promise<void> {
+    const lock = this.claimedClientLock;
+    this.claimedClientLock = null;
+    if (!lock) return;
+    await rm(lock.path, { force: true }).catch(() => {});
   }
 
   private updateSnapshot(snapshot: IbkrSnapshot): void {
@@ -1117,15 +1368,22 @@ export class IbkrGatewayService {
   }
 
   private marketDataToQuote(contract: Contract, details: ContractDetails, marketData: ReadonlyMap<number, { value?: number; ingressTm: number }>): Quote {
-    const last = marketData.get(IBApiTickType.LAST)?.value
+    const priceDivisor = getIbkrPriceDivisor(contract, details);
+    const last = normalizeIbkrPriceValue(
+      marketData.get(IBApiTickType.LAST)?.value
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.value
-      ?? marketData.get(IBApiTickType.CLOSE)?.value;
+      ?? marketData.get(IBApiTickType.CLOSE)?.value,
+      priceDivisor,
+    );
     if (last == null || last <= 0) {
       throw new Error(`No valid market data for ${contract.symbol || contract.localSymbol || contract.conId}`);
     }
-    const close = marketData.get(IBApiTickType.CLOSE)?.value
-      ?? marketData.get(IBApiTickType.DELAYED_CLOSE)?.value
-      ?? last;
+    const close = normalizeIbkrPriceValue(
+      marketData.get(IBApiTickType.CLOSE)?.value
+        ?? marketData.get(IBApiTickType.DELAYED_CLOSE)?.value
+        ?? last,
+      priceDivisor,
+    ) ?? last;
     const change = last - close;
     const ingressTm = marketData.get(IBApiTickType.LAST)?.ingressTm
       ?? marketData.get(IBApiTickType.DELAYED_LAST)?.ingressTm
@@ -1138,22 +1396,37 @@ export class IbkrGatewayService {
       change,
       changePercent: close ? (change / close) * 100 : 0,
       previousClose: close,
-      high52w: marketData.get(IBApiTickType.HIGH_52_WEEK)?.value,
-      low52w: marketData.get(IBApiTickType.LOW_52_WEEK)?.value,
+      high52w: normalizeIbkrPriceValue(marketData.get(IBApiTickType.HIGH_52_WEEK)?.value, priceDivisor),
+      low52w: normalizeIbkrPriceValue(marketData.get(IBApiTickType.LOW_52_WEEK)?.value, priceDivisor),
       volume: marketData.get(IBApiTickType.VOLUME)?.value,
       name: details.longName || details.marketName || contract.symbol,
       lastUpdated: ingressTm,
       exchangeName: details.validExchanges?.split(",")[0],
       fullExchangeName: details.validExchanges?.split(",")[0],
       marketState: "REGULAR",
-      bid: marketData.get(IBApiTickType.BID)?.value ?? marketData.get(IBApiTickType.DELAYED_BID)?.value,
-      ask: marketData.get(IBApiTickType.ASK)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK)?.value,
+      bid: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.BID)?.value ?? marketData.get(IBApiTickType.DELAYED_BID)?.value,
+        priceDivisor,
+      ),
+      ask: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.ASK)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK)?.value,
+        priceDivisor,
+      ),
       bidSize: marketData.get(IBApiTickType.BID_SIZE)?.value ?? marketData.get(IBApiTickType.DELAYED_BID_SIZE)?.value,
       askSize: marketData.get(IBApiTickType.ASK_SIZE)?.value ?? marketData.get(IBApiTickType.DELAYED_ASK_SIZE)?.value,
-      open: marketData.get(IBApiTickType.OPEN)?.value ?? marketData.get(IBApiTickType.DELAYED_OPEN)?.value,
-      high: marketData.get(IBApiTickType.HIGH)?.value ?? marketData.get(IBApiTickType.DELAYED_HIGH)?.value,
-      low: marketData.get(IBApiTickType.LOW)?.value ?? marketData.get(IBApiTickType.DELAYED_LOW)?.value,
-      mark: marketData.get(IBApiTickType.MARK_PRICE)?.value,
+      open: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.OPEN)?.value ?? marketData.get(IBApiTickType.DELAYED_OPEN)?.value,
+        priceDivisor,
+      ),
+      high: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.HIGH)?.value ?? marketData.get(IBApiTickType.DELAYED_HIGH)?.value,
+        priceDivisor,
+      ),
+      low: normalizeIbkrPriceValue(
+        marketData.get(IBApiTickType.LOW)?.value ?? marketData.get(IBApiTickType.DELAYED_LOW)?.value,
+        priceDivisor,
+      ),
+      mark: normalizeIbkrPriceValue(marketData.get(IBApiTickType.MARK_PRICE)?.value, priceDivisor),
     };
   }
 

@@ -119,22 +119,58 @@ function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolea
   );
 }
 
+function hasLikelyPriceUnitMismatch(primary: TickerFinancials, fallback: TickerFinancials): boolean {
+  const primaryQuote = primary.quote;
+  const fallbackQuote = fallback.quote;
+  if (!primaryQuote || !fallbackQuote) return false;
+  if (!primaryQuote.currency || !fallbackQuote.currency) return false;
+  if (primaryQuote.currency !== fallbackQuote.currency) return false;
+  if (!Number.isFinite(primaryQuote.price) || !Number.isFinite(fallbackQuote.price)) return false;
+  if (primaryQuote.price <= 0 || fallbackQuote.price <= 0) return false;
+
+  const ratio = primaryQuote.price / fallbackQuote.price;
+  const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
+  return Math.abs(normalizedRatio - 100) / 100 < 0.05;
+}
+
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
+  const mergedProfile = {
+    ...(fallback?.profile ?? {}),
+    ...(primary?.profile ?? {}),
+  };
+
+  if (primary && hasMeaningfulFundamentals(primary)) {
+    if (fallback && hasLikelyPriceUnitMismatch(primary, fallback)) {
+      return {
+        ...primary,
+        quote: fallback.quote ?? primary.quote,
+        priceHistory: fallback.priceHistory.length > 0 ? fallback.priceHistory : primary.priceHistory,
+        profile: Object.keys(mergedProfile).length > 0 ? mergedProfile : undefined,
+      };
+    }
+    if (fallback) {
+      return {
+        ...primary,
+        profile: Object.keys(mergedProfile).length > 0 ? mergedProfile : undefined,
+      };
+    }
+    return primary;
+  }
   if (primary && fallback) {
-    const mergedProfile = {
-      ...(fallback.profile ?? {}),
-      ...(primary.profile ?? {}),
-    };
+    const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
     const mergedFundamentals = {
       ...(fallback.fundamentals ?? {}),
       ...(primary.fundamentals ?? {}),
     };
     return {
+      ...fallback,
       ...primary,
-      quote: primary.quote ?? fallback.quote,
+      quote: preferFallbackPriceData ? (fallback.quote ?? primary.quote) : (primary.quote ?? fallback.quote),
       profile: Object.keys(mergedProfile).length > 0 ? mergedProfile : undefined,
       fundamentals: Object.keys(mergedFundamentals).length > 0 ? mergedFundamentals : undefined,
-      priceHistory: primary.priceHistory.length > 0 ? primary.priceHistory : fallback.priceHistory,
+      priceHistory: preferFallbackPriceData
+        ? (fallback.priceHistory.length > 0 ? fallback.priceHistory : primary.priceHistory)
+        : (primary.priceHistory.length > 0 ? primary.priceHistory : fallback.priceHistory),
       annualStatements: primary.annualStatements.length > 0 ? primary.annualStatements : fallback.annualStatements,
       quarterlyStatements: primary.quarterlyStatements.length > 0 ? primary.quarterlyStatements : fallback.quarterlyStatements,
     };
@@ -241,7 +277,7 @@ export class ProviderRouter implements DataProvider {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
@@ -425,7 +461,7 @@ export class ProviderRouter implements DataProvider {
       buildVariantKey([["range", range]]),
     ];
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<PricePoint[]>("price-history", entityKey, variantKeys, sourceKeys, false);
@@ -460,7 +496,7 @@ export class ProviderRouter implements DataProvider {
       buildVariantKey([["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
     ];
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<PricePoint[]>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
@@ -486,7 +522,7 @@ export class ProviderRouter implements DataProvider {
       "",
     ];
     const sourceKeys = [
-      ...this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<OptionsChain>("options-chain", entityKey, variantKeys, sourceKeys, false);
@@ -624,7 +660,7 @@ export class ProviderRouter implements DataProvider {
   ): TickerFinancials | null {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
-    const brokerSourceKeys = this.getBrokerCandidatesForContext(context).map((candidate) => this.brokerSourceKey(candidate));
+    const brokerSourceKeys = this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate));
     const brokerRecord = brokerSourceKeys.length > 0
       ? this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, brokerSourceKeys, allowExpired)
       : null;
@@ -653,7 +689,11 @@ export class ProviderRouter implements DataProvider {
     );
   }
 
-  private getBrokerCandidates(preferredBrokerInstanceId?: string, preferredBrokerId?: string): BrokerCandidate[] {
+  private getBrokerCandidates(
+    preferredBrokerInstanceId?: string,
+    preferredBrokerId?: string,
+    includeFallbackInstances = true,
+  ): BrokerCandidate[] {
     if (!this.registry) return [];
     const config = this.getConfigFn();
     const candidates: BrokerCandidate[] = [];
@@ -679,6 +719,10 @@ export class ProviderRouter implements DataProvider {
       pushCandidate(preferredInstance);
     }
 
+    if (!includeFallbackInstances && preferredInstance) {
+      return candidates;
+    }
+
     for (const instance of config.brokerInstances) {
       if (instance.id === preferredBrokerInstanceId) continue;
       pushCandidate(instance);
@@ -687,10 +731,14 @@ export class ProviderRouter implements DataProvider {
     return candidates;
   }
 
-  private getBrokerCandidatesForContext(context?: MarketDataRequestContext): BrokerCandidate[] {
+  private getBrokerCandidatesForContext(
+    context?: MarketDataRequestContext,
+    includeFallbackInstances = true,
+  ): BrokerCandidate[] {
     return this.getBrokerCandidates(
       context?.instrument?.brokerInstanceId ?? context?.brokerInstanceId,
       context?.instrument?.brokerId ?? context?.brokerId,
+      includeFallbackInstances,
     );
   }
 
@@ -751,7 +799,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<TickerFinancials> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getTickerFinancials) continue;
       try {
         const result = await candidate.broker.getTickerFinancials(
@@ -819,7 +867,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<Quote> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getQuote) continue;
       try {
         const result = await candidate.broker.getQuote(
@@ -868,7 +916,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", range]]);
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistory) continue;
       try {
         const result = await candidate.broker.getPriceHistory(
@@ -928,7 +976,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getDetailedPriceHistory) continue;
       try {
         const result = await candidate.broker.getDetailedPriceHistory(
@@ -993,7 +1041,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<SourceResult<OptionsChain> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
-    for (const candidate of this.getBrokerCandidatesForContext(context)) {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getOptionsChain) continue;
       try {
         const result = await candidate.broker.getOptionsChain(

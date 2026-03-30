@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { bucketOhlcSeries, projectChartData, resolveRenderMode } from "./chart-data";
-import { renderChart, resolveChartPalette } from "./chart-renderer";
+import { stepCursorTowards } from "./cursor-motion";
+import { buildTimeAxis, renderChart, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode } from "./chart-types";
 
@@ -88,6 +89,74 @@ describe("resolveRenderMode", () => {
 });
 
 describe("renderChart", () => {
+  test("eases coarse cursor motion quickly and settles without overshooting", () => {
+    let current: { x: number | null; y: number | null } = { x: 2, y: 1 };
+    const target = { x: 6, y: 4 };
+
+    const firstStep = stepCursorTowards(current, target);
+    expect(firstStep.settled).toBe(false);
+    expect(firstStep.next.x!).toBeGreaterThan(current.x!);
+    expect(firstStep.next.x!).toBeLessThan(target.x);
+    expect(firstStep.next.y!).toBeGreaterThan(current.y!);
+    expect(firstStep.next.y!).toBeLessThan(target.y);
+
+    current = firstStep.next;
+    for (let iteration = 0; iteration < 8; iteration += 1) {
+      const nextStep = stepCursorTowards(current, target);
+      current = nextStep.next;
+      if (nextStep.settled) break;
+    }
+
+    expect(current).toEqual(target);
+  });
+
+  test("snaps directly when the coarse cursor has no active position", () => {
+    expect(stepCursorTowards({ x: null, y: null }, { x: 8, y: 3 })).toEqual({
+      next: { x: 8, y: 3 },
+      settled: true,
+    });
+  });
+
+  test("compresses dense short-range x-axis labels without repeating the month on every tick", () => {
+    const dates = Array.from({ length: 31 }, (_, index) => new Date(2026, 0, index + 1));
+
+    expect(buildTimeAxis(dates, 72)).toBe(
+      "Jan 1  4         8     11     14       18     21     24        28 Jan 31",
+    );
+  });
+
+  test("uses times instead of repeating the same calendar date for intraday ranges", () => {
+    const dates = Array.from({ length: 13 }, (_, index) => new Date(2026, 0, 5, 9, 30 + index * 30));
+
+    expect(buildTimeAxis(dates, 72)).toBe(
+      "09:30     10:30 11:00       12:00      13:00       14:00 14:30     15:30",
+    );
+  });
+
+  test("shows second precision when the visible window reaches second-level data", () => {
+    const dates = Array.from({ length: 6 }, (_, index) => new Date(2026, 0, 5, 9, 30, index * 10));
+
+    expect(buildTimeAxis(dates, 60)).toBe(
+      "09:30:00            09:30:20   09:30:30             09:30:50",
+    );
+  });
+
+  test("collapses identical timestamps into a single centered label", () => {
+    const dates = Array.from({ length: 20 }, () => new Date(2026, 2, 29, 9, 0, 0, 0));
+
+    expect(buildTimeAxis(dates, 96)).toBe(
+      "                                          09:00:00.000                                          ",
+    );
+  });
+
+  test("coarsens to month and year labels for longer spans", () => {
+    const monthlyDates = Array.from({ length: 12 }, (_, index) => new Date(2025, index, 1));
+    const yearlyDates = Array.from({ length: 6 }, (_, index) => new Date(2020 + index, 0, 1));
+
+    expect(buildTimeAxis(monthlyDates, 48)).toBe("Jan 2025        May          Aug        Dec 2025");
+    expect(buildTimeAxis(yearlyDates, 48)).toBe("2020   2021      2022     2023      2024    2025");
+  });
+
   test("maps active bucket metadata across all render modes", () => {
     const cases: Array<{ mode: ChartRenderMode; width: number; cursorX: number }> = [
       { mode: "area", width: 12, cursorX: 4 },
@@ -104,6 +173,7 @@ describe("renderChart", () => {
         showVolume: false,
         volumeHeight: 0,
         cursorX: testCase.cursorX,
+        cursorY: null,
         mode: projection.effectiveMode,
         colors: palette,
       });
@@ -111,6 +181,49 @@ describe("renderChart", () => {
       expect(result.activePoint?.date.toISOString()).toBe("2024-01-03T00:00:00.000Z");
       expect(result.activePoint?.close).toBe(12);
     }
+  });
+
+  test("keeps the visual cursor free-running on both axes", () => {
+    const cases: Array<{ mode: ChartRenderMode; width: number; height: number; cursorX: number; cursorY: number }> = [
+      { mode: "area", width: 12, height: 6, cursorX: 5, cursorY: 4 },
+      { mode: "candles", width: 40, height: 6, cursorX: 13, cursorY: 3 },
+      { mode: "ohlc", width: 28, height: 6, cursorX: 9, cursorY: 1 },
+    ];
+
+    for (const testCase of cases) {
+      const projection = projectChartData(chartFixture, testCase.width, testCase.mode, false);
+      const result = renderChart(projection.points, {
+        width: testCase.width,
+        height: testCase.height,
+        showVolume: false,
+        volumeHeight: 0,
+        cursorX: testCase.cursorX,
+        cursorY: testCase.cursorY,
+        mode: projection.effectiveMode,
+        colors: palette,
+      });
+
+      expect(result.cursorColumn).toBe(testCase.cursorX);
+      expect(result.cursorRow).toBe(testCase.cursorY);
+    }
+  });
+
+  test("uses fractional cursor rows for crosshair price readout", () => {
+    const projection = projectChartData(chartFixture, 12, "line", false);
+    const result = renderChart(projection.points, {
+      width: 12,
+      height: 6,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: 5.25,
+      cursorY: 2.5,
+      mode: projection.effectiveMode,
+      colors: palette,
+    });
+
+    expect(result.cursorColumn).toBe(5);
+    expect(result.cursorRow).toBe(3);
+    expect(result.crosshairPrice).toBeCloseTo(10.5, 5);
   });
 
   test("renders stable terminal shapes for each chart mode", () => {
@@ -146,28 +259,28 @@ describe("renderChart", () => {
         width: 40,
         height: 6,
         lines: [
-          "⠁  ⠁  ⠁  ⠁  ⠁⡇ ⠁  ⠁  ⠁  ⠁ ⢠⠁  ⠁  ⠁  ⠁  ⠁",
-          "⡆         ⢰⣶⣶⣷⣶⣶        ⣶⣶⣾⣶⣶⡆          ",
-          "⣷⣶⣶⠁  ⠁  ⠁⠘⠛⠛⡟⠛⠛  ⠁  ⠁  ⣿⣿⣿⣿⣿⡇⠁  ⠁  ⠁  ⢰",
-          "⡿⠿⠿⡀  ⡀  ⡀  ⡀⠇ ⡀  ⡀  ⡀  ⣿⣿⣿⣿⣿⡇⡀  ⡀  ⡀⣿⣿⣿",
-          "⠇                       ⠿⠿⢿⠿⠿⠇       ⠿⠿⢿",
-          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡀ ⢸⡀  ⡀  ⡀  ⡀  ⠘",
+          "⠁  ⠁  ⠁  ⠁  ⠁ ⡇⠁  ⠁  ⠁  ⠁⢠ ⠁  ⠁  ⠁  ⠁  ⠁",
+          "  ⢰        ⢰⣶⣶⣷⣶⣶      ⣶⣶⣾⣶⣶⡆           ",
+          "⣶⣶⣾⣶⣶⡆⠁  ⠁ ⠘⠛⠛⡟⠛⠛ ⠁  ⠁ ⣿⣿⣿⣿⣿⡇ ⠁  ⠁  ⠁⡆ ⠁",
+          "⠿⠿⢿⠿⠿⠇⡀  ⡀  ⡀ ⠇⡀  ⡀  ⡀ ⣿⣿⣿⣿⣿⡇ ⡀  ⡀⢸⣿⣿⣿⣿⣿",
+          "  ⠸                    ⠿⠿⢿⠿⠿⠇     ⠸⠿⠿⡿⠿⠿",
+          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡀⢸ ⡀  ⡀  ⡀  ⡀⠃ ⡀",
         ],
-        timeLabels: "Jan 2      Jan 3        Jan 4      Jan 5",
+        timeLabels: "Jan 2        3            4        Jan 5",
       },
       {
         mode: "ohlc",
         width: 28,
         height: 6,
         lines: [
-          "⠁  ⠁  ⠁  ⡇  ⠁  ⠁  ⢠  ⠁  ⠁  ⠁",
-          "⡆        ⡗⠒      ⠒⢺         ",
-          "⡗⠒ ⠁  ⠁⠐⠒⡇  ⠁  ⠁  ⢸  ⠁  ⠁  ⢰",
-          "⡇  ⡀  ⡀  ⠇  ⡀  ⡀  ⢸  ⡀  ⡀  ⢸",
-          "⠇                 ⢸⠤⠄     ⠤⢼",
-          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⢸  ⡀  ⡀  ⠘",
+          "⠁  ⠁  ⠁  ⢸  ⠁  ⠁  ⡄  ⠁  ⠁  ⠁",
+          " ⢰       ⢸⠒⠂    ⠐⠒⡇         ",
+          "⠁⢸⠒⠂  ⠁ ⠒⢺  ⠁  ⠁  ⡇  ⠁  ⠁ ⡆⠁",
+          "⠤⢼ ⡀  ⡀  ⠸  ⡀  ⡀  ⡇  ⡀  ⡀ ⡏⠉",
+          " ⠸                ⡧⠤    ⠠⠤⡇ ",
+          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡇  ⡀  ⡀ ⠃⡀",
         ],
-        timeLabels: "Jan 2  Jan 3    Jan 4  Jan 5",
+        timeLabels: "Jan 2    3        4    Jan 5",
       },
     ];
 
@@ -179,6 +292,7 @@ describe("renderChart", () => {
         showVolume: false,
         volumeHeight: 0,
         cursorX: null,
+        cursorY: null,
         mode: projection.effectiveMode,
         colors: palette,
       });
@@ -196,6 +310,7 @@ describe("renderChart", () => {
       showVolume: false,
       volumeHeight: 0,
       cursorX: null,
+      cursorY: null,
       mode: projection.effectiveMode,
       colors: palette,
     });
@@ -208,6 +323,27 @@ describe("renderChart", () => {
       "⣿⣿⣿⣿⣿⠘⡄    ⡠",
       "⣿⣿⣿⣿⣿⣿⠱⡀ ⢠⠊⣿",
       "⣿⣿⣿⣿⣿⣿⣿⢣⠔⠁⣿⣿",
+    ]);
+  });
+
+  test("formats y-axis labels as percent change when requested", () => {
+    const projection = projectChartData(chartFixture, 12, "line", false);
+    const result = renderChart(projection.points, {
+      width: 12,
+      height: 5,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      mode: projection.effectiveMode,
+      axisMode: "percent",
+      colors: palette,
+    });
+
+    expect(result.axisLabels).toEqual([
+      { row: 0, label: "+9.09%" },
+      { row: 1, label: "0.00%" },
+      { row: 3, label: "-9.09%" },
+      { row: 4, label: "-18.2%" },
     ]);
   });
 
@@ -224,6 +360,7 @@ describe("renderChart", () => {
       showVolume: false,
       volumeHeight: 0,
       cursorX: null,
+      cursorY: null,
       mode: projection.effectiveMode,
       colors: palette,
     });

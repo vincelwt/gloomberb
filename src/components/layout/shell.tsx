@@ -63,6 +63,13 @@ type SnapGuidePosition =
   | "bottom-left"
   | "bottom-right";
 
+function isCornerSnapPosition(position: SnapGuidePosition): boolean {
+  return position === "top-left"
+    || position === "top-right"
+    || position === "bottom-left"
+    || position === "bottom-right";
+}
+
 interface SnapGuide {
   position: SnapGuidePosition;
   triggerRect: LayoutBounds;
@@ -817,6 +824,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
         } else if (dockPreview?.kind === "snap") {
           persistLayout(floatAtRect(visibleLayout, drag.paneId, dockPreview.rect));
           focusPane(drag.paneId);
+          if (isCornerSnapPosition(dockPreview.position)) {
+            dispatch({ type: "SHOW_GRIDLOCK_TIP" });
+          }
           setDockPreview(null);
           setDragCursor(null);
           setDragFloatingRect(null);

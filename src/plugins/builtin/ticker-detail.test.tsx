@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, type ReactElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import {
   AppContext,
   appReducer,
@@ -100,7 +101,11 @@ function createFinancialsTabHarness() {
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId="ticker-detail:main">
-        <FinancialsTab focused />
+        <FinancialsTab
+          focused
+          headerScrollId="financials-header-scroll"
+          bodyScrollId="financials-body-scroll"
+        />
       </PaneInstanceProvider>
     </AppContext>
   );
@@ -175,12 +180,16 @@ function createDetailState(
   ticker: TickerRecord,
   financials: TickerFinancials | null,
   activeTabId = "overview",
+  exchangeRates?: Map<string, number>,
 ) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
   state.tickers = new Map([[ticker.metadata.ticker, ticker]]);
   state.financials = financials ? new Map([[ticker.metadata.ticker, financials]]) : new Map();
   state.paneState[TEST_PANE_ID] = { activeTabId };
+  if (exchangeRates) {
+    state.exchangeRates = exchangeRates;
+  }
   return state;
 }
 
@@ -189,13 +198,19 @@ function DetailHarness({
   ticker,
   financials,
   activeTabId = "overview",
+  exchangeRates,
+  width = 90,
+  height = 24,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials | null;
   activeTabId?: string;
+  exchangeRates?: Map<string, number>;
+  width?: number;
+  height?: number;
 }) {
-  const initialState = createDetailState(config, ticker, financials, activeTabId);
+  const initialState = createDetailState(config, ticker, financials, activeTabId, exchangeRates);
   const [state, dispatch] = useReducer(appReducer, initialState);
   harnessDispatch = dispatch;
 
@@ -207,8 +222,8 @@ function DetailHarness({
           paneId={TEST_PANE_ID}
           paneType="ticker-detail"
           focused
-          width={90}
-          height={24}
+          width={width}
+          height={height}
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -219,6 +234,12 @@ async function flushFrame() {
   await act(async () => {
     await testSetup!.renderOnce();
   });
+}
+
+function getFinancialsScroll(id: string): ScrollBoxRenderable {
+  const renderable = testSetup!.renderer.root.findDescendantById(id) as ScrollBoxRenderable | undefined;
+  expect(renderable).toBeDefined();
+  return renderable!;
 }
 
 afterEach(() => {
@@ -253,6 +274,71 @@ describe("FinancialsTab", () => {
     expect(operatingIncomeLine!.indexOf("-3.92")).toBe(revenueLine!.indexOf("25.88"));
     expect(operatingIncomeLine!.indexOf("-2.40")).toBe(revenueLine!.indexOf("27.62"));
     expect(operatingIncomeLine!.indexOf("—")).toBe(revenueLine!.lastIndexOf("—"));
+  });
+
+  test("centers the annual headers over the value columns", async () => {
+    testSetup = await testRender(createFinancialsTabHarness(), {
+      width: 140,
+      height: 20,
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    const headerLine = frame.split("\n").find((line) => line.includes("2025-12"));
+    const revenueLine = frame.split("\n").find((line) => line.includes("Revenue (B)"));
+
+    expect(headerLine).toBeDefined();
+    expect(revenueLine).toBeDefined();
+
+    expect(headerLine!.indexOf("2025-12")).toBe(revenueLine!.indexOf("28.88") - 1);
+    expect(headerLine!.indexOf("2024-12")).toBe(revenueLine!.indexOf("25.88") - 1);
+    expect(headerLine!.indexOf("2023-12")).toBe(revenueLine!.indexOf("27.62") - 1);
+  });
+
+  test("allows the financial statements table to scroll horizontally", async () => {
+    testSetup = await testRender(createFinancialsTabHarness(), {
+      width: 56,
+      height: 18,
+    });
+
+    await flushFrame();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("TTM");
+    expect(frame).not.toContain("2021-12");
+    expect(frame).not.toContain("43.49");
+
+    const headerScroll = getFinancialsScroll("financials-header-scroll");
+    const bodyScroll = getFinancialsScroll("financials-body-scroll");
+    expect(bodyScroll.scrollWidth).toBeGreaterThan(bodyScroll.viewport.width);
+
+    await act(async () => {
+      bodyScroll.scrollTo({ x: bodyScroll.scrollWidth, y: 0 });
+      headerScroll.scrollTo({ x: bodyScroll.scrollLeft, y: 0 });
+      await Promise.resolve();
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("2021-12");
+    expect(frame).toContain("43.49");
+  });
+
+  test("hides the vertical scrollbar when the statements fit in view", async () => {
+    testSetup = await testRender(createFinancialsTabHarness(), {
+      width: 140,
+      height: 24,
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    const bodyScroll = getFinancialsScroll("financials-body-scroll");
+    expect(bodyScroll.scrollHeight).toBeLessThanOrEqual(bodyScroll.viewport.height);
+    expect(bodyScroll.verticalScrollBar.visible).toBe(false);
   });
 });
 
@@ -401,6 +487,59 @@ describe("TickerDetailPane", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Description");
     expect(frame).toContain("Builds widgets for industrial customers.");
+  });
+
+  test("keeps quote prices native while converting market cap and position totals to base currency", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setSharedDataProviderForTests(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("SAP")}
+        ticker={makeTicker("SAP", "SAP SE", {
+          exchange: "XETRA",
+          currency: "EUR",
+          positions: [{
+            portfolio: "main",
+            shares: 10,
+            avgCost: 100,
+            currency: "EUR",
+            broker: "manual",
+            markPrice: 125,
+            marketValue: 1250,
+            unrealizedPnl: 250,
+          }],
+        })}
+        financials={makeFinancials({
+          quote: {
+            symbol: "SAP",
+            price: 125,
+            currency: "EUR",
+            change: 5,
+            changePercent: 4.17,
+            marketCap: 2_000_000_000,
+            previousClose: 120,
+            name: "SAP SE",
+            lastUpdated: Date.now(),
+            marketState: "REGULAR",
+          },
+        })}
+        exchangeRates={new Map([["USD", 1], ["EUR", 1.1]])}
+        height={32}
+      />,
+      { width: 90, height: 32 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("€125.00");
+    expect(frame).toContain("2.2B USD");
+    expect(frame).toContain("@ €100.00");
+    expect(frame).toContain("= $1,100.00");
+    expect(frame).toContain("P&L: +$275.00");
+    expect(frame).toContain("Mark: €125.00");
+    expect(frame).toContain("Mkt Value: $1,375.00");
   });
 
   test("falls back to Overview when a hidden active tab becomes unavailable", async () => {

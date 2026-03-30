@@ -46,6 +46,51 @@ function compareRects(a: CellRect, b: CellRect): number {
   return a.width - b.width;
 }
 
+function sameRect(a: CellRect | null, b: CellRect | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+function samePaneLayer(a: NativePaneLayer, b: NativePaneLayer): boolean {
+  return a.paneId === b.paneId && a.zIndex === b.zIndex;
+}
+
+function sameOccluder(a: NativeOccluder, b: NativeOccluder): boolean {
+  return a.id === b.id
+    && (a.paneId ?? null) === (b.paneId ?? null)
+    && a.zIndex === b.zIndex
+    && sameRect(a.rect, b.rect);
+}
+
+function sameWindowState(a: NativeWindowState, b: NativeWindowState): boolean {
+  if (a.paneLayers.length !== b.paneLayers.length || a.occluders.length !== b.occluders.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.paneLayers.length; index += 1) {
+    if (!samePaneLayer(a.paneLayers[index]!, b.paneLayers[index]!)) {
+      return false;
+    }
+  }
+
+  for (let index = 0; index < a.occluders.length; index += 1) {
+    if (!sameOccluder(a.occluders[index]!, b.occluders[index]!)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function sameSnapshot(a: NativeSurfaceSnapshot, b: NativeSurfaceSnapshot): boolean {
+  return a.id === b.id
+    && a.paneId === b.paneId
+    && a.bitmapKey === b.bitmapKey
+    && sameRect(a.rect, b.rect)
+    && sameRect(a.visibleRect, b.visibleRect);
+}
+
 export function computeSurfaceVisibleFragments(
   rect: CellRect,
   visibleRect: CellRect | null,
@@ -72,6 +117,9 @@ export class NativeSurfaceManager {
   constructor(private readonly renderer: CliRenderer) {}
 
   setWindowState(windowState: NativeWindowState) {
+    if (sameWindowState(this.windowState, windowState)) {
+      return;
+    }
     this.windowState = {
       paneLayers: [...windowState.paneLayers],
       occluders: [...windowState.occluders],
@@ -82,6 +130,9 @@ export class NativeSurfaceManager {
   upsertSurface(snapshot: NativeSurfaceSnapshot) {
     const existing = this.surfaces.get(snapshot.id);
     if (existing) {
+      if (sameSnapshot(existing.snapshot, snapshot)) {
+        return;
+      }
       existing.snapshot = snapshot;
       this.syncSurface(existing);
       return;
@@ -98,6 +149,11 @@ export class NativeSurfaceManager {
   updateSurfaceGeometry(id: string, geometry: Pick<NativeSurfaceSnapshot, "paneId" | "rect" | "visibleRect">) {
     const entry = this.surfaces.get(id);
     if (!entry) return;
+    if (entry.snapshot.paneId === geometry.paneId
+      && sameRect(entry.snapshot.rect, geometry.rect)
+      && sameRect(entry.snapshot.visibleRect, geometry.visibleRect)) {
+      return;
+    }
     entry.snapshot = {
       ...entry.snapshot,
       ...geometry,

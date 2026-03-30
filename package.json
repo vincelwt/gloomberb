@@ -15,7 +15,6 @@
     "dev": "bun run --watch src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
-    "poc:framebuffer-chart": "bun run src/poc/framebuffer-chart.tsx",
     "test": "bun test",
     "postinstall": "node install.mjs"
   },
@@ -48,5 +47,8 @@
     "opentui-spinner": "^0.0.6",
     "react": "^19.2.4",
     "yahoo-finance2": "^3.13.2"
+  },
+  "patchedDependencies": {
+    "@opentui/core@0.1.90": "patches/@opentui%2Fcore@0.1.90.patch"
   }
 }

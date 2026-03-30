@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps, DetailTabDef, PaneSettingsDef } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -10,10 +10,11 @@ import { getCollectionName, getCollectionTickers } from "../../state/selectors";
 import { colors, priceColor } from "../../theme/colors";
 import { EmptyState, FieldRow } from "../../components";
 import { TabBar } from "../../components/tab-bar";
-import { formatCurrency, formatCompact, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
+import { convertCurrency, formatCurrency, formatCompact, formatCompactCurrency, formatPercent, formatPercentRaw, formatNumber, formatGrowthShort, pickUnit, formatWithDivisor, padTo } from "../../utils/format";
 import { exchangeShortName, marketStateLabel, marketStateColor } from "../../utils/market-status";
 import { normalizeTickerInput } from "../../utils/ticker-search";
 import { StockChart } from "../../components/chart/stock-chart";
+import type { ChartAxisMode } from "../../components/chart/chart-types";
 import type { TickerFinancials } from "../../types/financials";
 import { getConfiguredIbkrGatewayInstances } from "../ibkr/instance-selection";
 import { useOptionsAvailability } from "./options-availability";
@@ -25,12 +26,14 @@ const CORE_CHART_TAB = { id: "chart", name: "Chart", order: 30 };
 interface TickerDetailPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
+  chartAxisMode: ChartAxisMode;
 }
 
 function getTickerDetailPaneSettings(settings: Record<string, unknown> | undefined): TickerDetailPaneSettings {
   return {
     hideTabs: settings?.hideTabs === true,
     lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
+    chartAxisMode: settings?.chartAxisMode === "percent" ? "percent" : "price",
   };
 }
 
@@ -76,6 +79,16 @@ function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings): PaneS
           label: tab.name,
         })),
       }] : []),
+      {
+        key: "chartAxisMode",
+        label: "Chart Y-Axis",
+        description: "Show chart values as raw prices or percent change from the first visible point.",
+        type: "select",
+        options: [
+          { value: "price", label: "Price" },
+          { value: "percent", label: "Percent" },
+        ],
+      },
     ],
   };
 }
@@ -227,6 +240,7 @@ export function QuoteMonitorPane({ focused, width }: PaneProps) {
 }
 
 function OverviewTab({ width }: { width?: number }) {
+  const { state } = useAppState();
   const { ticker, financials } = usePaneTicker();
   const { width: termWidth } = useTerminalDimensions();
   if (!ticker) return <EmptyState title="No ticker selected." />;
@@ -234,6 +248,11 @@ function OverviewTab({ width }: { width?: number }) {
   const q = financials?.quote;
   const f = financials?.fundamentals;
   const profile = financials?.profile;
+  const baseCurrency = state.config.baseCurrency;
+  const exchangeRates = state.exchangeRates;
+  const quoteCurrency = q?.currency ?? ticker.metadata.currency ?? baseCurrency;
+  const toBase = (value: number, fromCurrency: string) =>
+    convertCurrency(value, fromCurrency, baseCurrency, exchangeRates);
   const sector = ticker.metadata.sector ?? profile?.sector;
   const industry = ticker.metadata.industry ?? profile?.industry;
   const description = profile?.description?.trim();
@@ -309,11 +328,14 @@ function OverviewTab({ width }: { width?: number }) {
 
         {/* Key metrics */}
         <box flexDirection="column">
-          <FieldRow label="Market Cap" value={q?.marketCap ? formatCompact(q.marketCap) : "—"} />
+          <FieldRow
+            label="Market Cap"
+            value={q?.marketCap ? formatCompactCurrency(toBase(q.marketCap, quoteCurrency), baseCurrency) : "—"}
+          />
           <FieldRow label="P/E (TTM)" value={f?.trailingPE ? formatNumber(f.trailingPE, 1) : "—"} />
           <FieldRow label="Forward P/E" value={f?.forwardPE ? formatNumber(f.forwardPE, 1) : "—"} />
           <FieldRow label="PEG Ratio" value={f?.pegRatio ? formatNumber(f.pegRatio, 2) : "—"} />
-          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps) : "—"} />
+          <FieldRow label="EPS" value={f?.eps ? formatCurrency(f.eps, quoteCurrency) : "—"} />
           <FieldRow label="Div Yield" value={f?.dividendYield != null ? formatPercent(f.dividendYield) : "—"} />
           <FieldRow label="Revenue" value={f?.revenue ? formatCompact(f.revenue) : "—"} />
           <FieldRow label="Net Income" value={f?.netIncome ? formatCompact(f.netIncome) : "—"} />
@@ -332,7 +354,7 @@ function OverviewTab({ width }: { width?: number }) {
           )}
           <FieldRow
             label="52W Range"
-            value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w)} - ${formatCurrency(q.high52w)}` : "—"}
+            value={q?.low52w && q?.high52w ? `${formatCurrency(q.low52w, quoteCurrency)} - ${formatCurrency(q.high52w, quoteCurrency)}` : "—"}
           />
           <FieldRow
             label="1Y Return"
@@ -382,8 +404,22 @@ function OverviewTab({ width }: { width?: number }) {
             </box>
             {ticker.metadata.positions.map((pos, i) => {
               const costBasis = pos.shares * pos.avgCost * (pos.multiplier || 1);
-              const pnlText = pos.unrealizedPnl != null
-                ? `  P&L: ${pos.unrealizedPnl >= 0 ? "+" : ""}${formatCurrency(pos.unrealizedPnl, pos.currency)}`
+              const positionCurrency = pos.currency || quoteCurrency;
+              const costBasisBase = toBase(costBasis, positionCurrency);
+              const marketValueBase = pos.marketValue != null
+                ? toBase(pos.marketValue, positionCurrency)
+                : pos.markPrice != null
+                  ? toBase(Math.abs(pos.shares) * pos.markPrice * (pos.multiplier || 1), positionCurrency)
+                  : q
+                    ? toBase(Math.abs(pos.shares) * q.price * (pos.multiplier || 1), quoteCurrency)
+                    : null;
+              const pnlValue = pos.unrealizedPnl != null
+                ? toBase(pos.unrealizedPnl, positionCurrency)
+                : marketValueBase != null
+                  ? marketValueBase - costBasisBase
+                  : null;
+              const pnlText = pnlValue != null
+                ? `  P&L: ${pnlValue >= 0 ? "+" : ""}${formatCurrency(pnlValue, baseCurrency)}`
                 : "";
               return (
                 <box key={i} flexDirection="column">
@@ -394,18 +430,18 @@ function OverviewTab({ width }: { width?: number }) {
                   </box>
                   <box flexDirection="row" height={1}>
                     <text fg={colors.text}>
-                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, pos.currency)}
-                      {" = "}{formatCurrency(costBasis, pos.currency)}
+                      {pos.shares} {pos.multiplier && pos.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(pos.avgCost, positionCurrency)}
+                      {" = "}{formatCurrency(costBasisBase, baseCurrency)}
                     </text>
                     {pnlText && (
-                      <text fg={priceColor(pos.unrealizedPnl!)}>{pnlText}</text>
+                      <text fg={priceColor(pnlValue ?? 0)}>{pnlText}</text>
                     )}
                   </box>
                   {pos.markPrice != null && (
                     <box flexDirection="row" height={1}>
-                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, pos.currency)}</text>
-                      {pos.marketValue != null && (
-                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(pos.marketValue, pos.currency)}</text>
+                      <text fg={colors.textDim}>Mark: {formatCurrency(pos.markPrice, positionCurrency)}</text>
+                      {marketValueBase != null && (
+                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(marketValueBase, baseCurrency)}</text>
                       )}
                     </box>
                   )}
@@ -537,7 +573,20 @@ function formatFinancialCell(value: string, growth: number | undefined): { value
   };
 }
 
-export function FinancialsTab({ focused }: { focused: boolean }) {
+function formatFinancialHeader(date: string): string {
+  const label = date === "TTM" ? "TTM" : date.slice(0, 7);
+  return padTo(label, FINANCIAL_COL_W, "center");
+}
+
+export function FinancialsTab({
+  focused,
+  headerScrollId,
+  bodyScrollId,
+}: {
+  focused: boolean;
+  headerScrollId?: string;
+  bodyScrollId?: string;
+}) {
   const { financials } = usePaneTicker();
   const hasAnnualStatements = (financials?.annualStatements.length ?? 0) > 0;
   const hasQuarterlyStatements = (financials?.quarterlyStatements.length ?? 0) > 0;
@@ -545,6 +594,16 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
     hasAnnualStatements ? "annual" : "quarterly",
   );
   const [subTabIdx, setSubTabIdx] = useState(0);
+  const bodyScrollRef = useRef<ScrollBoxRenderable>(null);
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+
+  const syncHeaderScroll = useCallback(() => {
+    const body = bodyScrollRef.current;
+    const header = headerScrollRef.current;
+    if (body && header && header.scrollLeft !== body.scrollLeft) {
+      header.scrollLeft = body.scrollLeft;
+    }
+  }, []);
 
   useKeyboard((event) => {
     if (!focused) return;
@@ -578,6 +637,7 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
 
   const ttm = isAnnual ? computeTTM(financials.quarterlyStatements) : null;
   const displayStmts = ttm ? [ttm, ...rawStmts] : rawStmts;
+  const tableWidth = FINANCIAL_LABEL_W + (displayStmts.length * FINANCIAL_COL_W);
 
   // Build previous-period lookup for growth rates
   const allStmts = isAnnual ? financials.annualStatements : financials.quarterlyStatements;
@@ -600,9 +660,26 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
     prevMap.set("TTM", prevTtm);
   }
 
+  useEffect(() => {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.horizontalScrollBar.visible = false;
+    }
+    syncHeaderScroll();
+  }, [displayStmts.length, isAnnual, subTabIdx, syncHeaderScroll]);
+
+  useEffect(() => {
+    const body = bodyScrollRef.current;
+    if (!body) return;
+    const hasVerticalOverflow = body.scrollHeight > body.viewport.height;
+    body.verticalScrollBar.visible = hasVerticalOverflow;
+    if (!hasVerticalOverflow && body.scrollTop !== 0) {
+      body.scrollTo({ x: body.scrollLeft, y: 0 });
+    }
+  }, [displayStmts.length, isAnnual, subTabIdx, subTab.metrics.length]);
+
   return (
-    <scrollbox flexGrow={1} scrollY>
-      <box flexDirection="column" paddingX={2} paddingBottom={1}>
+    <box flexDirection="column" flexGrow={1} paddingX={2} paddingBottom={1}>
+      <box flexDirection="column">
         {/* Sub-tab selector + period toggle */}
         <box flexDirection="row" height={1}>
           {FINANCIAL_SUB_TABS.map((tab, i) => (
@@ -625,59 +702,99 @@ export function FinancialsTab({ focused }: { focused: boolean }) {
             <text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
           </box>
         </box>
-        <box height={1} />
+      </box>
+      <box height={1} />
 
-        {/* Column headers */}
-        <box flexDirection="row" height={1}>
-          <box width={FINANCIAL_LABEL_W}><text attributes={TextAttributes.BOLD} fg={colors.textDim}>{isAnnual ? "Annual" : "Quarterly"}</text></box>
+      <scrollbox
+        id={headerScrollId}
+        ref={headerScrollRef}
+        height={1}
+        scrollX
+        focusable={false}
+      >
+        <box flexDirection="row" width={tableWidth} height={1}>
+          <box width={FINANCIAL_LABEL_W}>
+            <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+              {isAnnual ? "Annual" : "Quarterly"}
+            </text>
+          </box>
           {displayStmts.map((s) => (
             <box key={s.date} width={FINANCIAL_COL_W}>
               <text attributes={TextAttributes.BOLD} fg={s.date === "TTM" ? colors.textBright : colors.textDim}>
-                {s.date === "TTM" ? "TTM" : s.date.slice(0, 7)}
+                {formatFinancialHeader(s.date)}
               </text>
             </box>
           ))}
         </box>
-        <box height={1} />
+      </scrollbox>
+      <box height={1} />
 
-        {/* Metric rows */}
-        {subTab.metrics.map(({ label, key, format }, idx) => {
-          const isEps = format === "eps";
-          const allVals = displayStmts.map((s) => s[key] as number | undefined);
-          const { suffix, divisor } = isEps ? { suffix: "", divisor: 1 } : pickUnit(allVals);
-          const unitLabel = suffix ? `${label} (${suffix})` : label;
+      <scrollbox
+        id={bodyScrollId}
+        ref={bodyScrollRef}
+        flexGrow={1}
+        scrollX
+        scrollY
+        focusable={false}
+        onMouseDown={() => queueMicrotask(syncHeaderScroll)}
+        onMouseUp={() => queueMicrotask(syncHeaderScroll)}
+        onMouseDrag={() => queueMicrotask(syncHeaderScroll)}
+        onMouseScroll={() => queueMicrotask(syncHeaderScroll)}
+      >
+        <box flexDirection="column" width={tableWidth} paddingBottom={1}>
+          {/* Metric rows */}
+          {subTab.metrics.map(({ label, key, format }, idx) => {
+            const isEps = format === "eps";
+            const allVals = displayStmts.map((s) => s[key] as number | undefined);
+            const { suffix, divisor } = isEps ? { suffix: "", divisor: 1 } : pickUnit(allVals);
+            const unitLabel = suffix ? `${label} (${suffix})` : label;
 
-          return (
-            <box key={key} flexDirection="column">
-              {idx > 0 && idx % 4 === 0 && <box height={1} />}
-              <box flexDirection="row" height={1}>
-                <box width={FINANCIAL_LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
-                {displayStmts.map((s) => {
-                  const val = s[key] as number | undefined;
-                  const prev = prevMap.get(s.date);
-                  const prevVal = prev ? (prev[key] as number | undefined) : undefined;
-                  const growth = computeGrowth(val, prevVal);
-                  const formatted = val != null
-                    ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
-                    : "—";
-                  const cell = formatFinancialCell(formatted, growth);
-                  return (
-                    <box key={s.date} width={FINANCIAL_COL_W} flexDirection="row">
-                      <text fg={colors.text}>{cell.valueText}</text>
-                      <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
-                    </box>
-                  );
-                })}
+            return (
+              <box key={key} flexDirection="column" width={tableWidth}>
+                {idx > 0 && idx % 4 === 0 && <box height={1} width={tableWidth} />}
+                <box flexDirection="row" width={tableWidth} height={1}>
+                  <box width={FINANCIAL_LABEL_W}><text fg={colors.textDim}>{unitLabel}</text></box>
+                  {displayStmts.map((s) => {
+                    const val = s[key] as number | undefined;
+                    const prev = prevMap.get(s.date);
+                    const prevVal = prev ? (prev[key] as number | undefined) : undefined;
+                    const growth = computeGrowth(val, prevVal);
+                    const formatted = val != null
+                      ? isEps ? formatNumber(val, 2) : formatWithDivisor(val, divisor)
+                      : "—";
+                    const cell = formatFinancialCell(formatted, growth);
+                    return (
+                      <box key={s.date} width={FINANCIAL_COL_W} flexDirection="row">
+                        <text fg={colors.text}>{cell.valueText}</text>
+                        <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
+                      </box>
+                    );
+                  })}
+                </box>
               </box>
-            </box>
-          );
-        })}
-      </box>
-    </scrollbox>
+            );
+          })}
+        </box>
+      </scrollbox>
+    </box>
   );
 }
 
-function ChartTab({ width, height, focused, interactive, onActivate }: { width?: number; height?: number; focused: boolean; interactive: boolean; onActivate?: () => void }) {
+function ChartTab({
+  width,
+  height,
+  focused,
+  interactive,
+  axisMode,
+  onActivate,
+}: {
+  width?: number;
+  height?: number;
+  focused: boolean;
+  interactive: boolean;
+  axisMode: ChartAxisMode;
+  onActivate?: () => void;
+}) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
@@ -685,7 +802,7 @@ function ChartTab({ width, height, focused, interactive, onActivate }: { width?:
 
   return (
     <box flexDirection="column" paddingX={1} flexGrow={1} onMouseDown={() => { if (!interactive && onActivate) onActivate(); }}>
-      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} />
+      <StockChart width={chartWidth} height={chartHeight} focused={focused} interactive={interactive} axisMode={axisMode} />
     </box>
   );
 }
@@ -840,7 +957,16 @@ function TickerDetailPane({ focused, width, height }: PaneProps) {
 
       {resolvedTabId === "overview" && <OverviewTab width={width} />}
       {resolvedTabId === "financials" && <FinancialsTab focused={focused} />}
-      {resolvedTabId === "chart" && <ChartTab width={width} height={height} focused={focused} interactive={chartInteractive} onActivate={() => setChartInteractiveEager(true)} />}
+      {resolvedTabId === "chart" && (
+        <ChartTab
+          width={width}
+          height={height}
+          focused={focused}
+          interactive={chartInteractive}
+          axisMode={paneSettings.chartAxisMode}
+          onActivate={() => setChartInteractiveEager(true)}
+        />
+      )}
 
       {/* Dynamic plugin tabs */}
       {activePluginTab && (

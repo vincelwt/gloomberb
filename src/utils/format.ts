@@ -65,6 +65,12 @@ export function formatCompact(value: number | undefined): string {
   return fmt(abs, 2, "");
 }
 
+/** Format a compact value with an explicit currency code (e.g., 1.5T USD) */
+export function formatCompactCurrency(value: number | undefined, currency = "USD"): string {
+  if (value === undefined || value === null) return "—";
+  return `${formatCompact(value)} ${currency}`;
+}
+
 /** Format a plain number with commas */
 export function formatNumber(value: number | undefined, decimals = 2): string {
   if (value === undefined || value === null) return "—";

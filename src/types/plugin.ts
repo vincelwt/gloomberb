@@ -125,7 +125,9 @@ export interface PaneTemplateShortcut {
 
 export interface PaneTemplateCreateOptions {
   arg?: string;
+  values?: Record<string, string>;
   symbol?: string | null;
+  symbols?: string[] | null;
   ticker?: TickerRecord | null;
   searchResult?: InstrumentSearchResult | null;
 }
@@ -147,6 +149,7 @@ export interface PaneTemplateDef {
   description: string;
   keywords?: string[];
   shortcut?: PaneTemplateShortcut;
+  wizard?: WizardStep[];
   canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
   createInstance?: (
     context: PaneTemplateContext,

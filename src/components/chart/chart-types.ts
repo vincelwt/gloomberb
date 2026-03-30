@@ -2,11 +2,13 @@ import type { PricePoint } from "../../types/financials";
 
 export type TimeRange = "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
 export type ChartRenderMode = "area" | "line" | "candles" | "ohlc";
+export type ChartAxisMode = "price" | "percent";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
 export type ResolvedChartRenderer = "kitty" | "braille";
 
 export const TIME_RANGES: TimeRange[] = ["1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc"];
+export const CHART_AXIS_MODES: ChartAxisMode[] = ["price", "percent"];
 export const CHART_RENDERER_PREFERENCES: ChartRendererPreference[] = ["auto", "kitty", "braille"];
 
 /** Number of trading days for each time range */
@@ -24,7 +26,8 @@ export interface ChartViewState {
   timeRange: TimeRange;
   panOffset: number;   // data points shifted left from right edge (0 = most recent)
   zoomLevel: number;   // 1.0 = default, 2.0 = zoomed in 2x
-  cursorX: number | null; // column position of crosshair (null = hidden)
+  cursorX: number | null; // local plot x in cell units; may be fractional with pixel mouse
+  cursorY: number | null; // local plot y in cell units; may be fractional with pixel mouse
   renderMode?: ChartRenderMode;
 }
 
