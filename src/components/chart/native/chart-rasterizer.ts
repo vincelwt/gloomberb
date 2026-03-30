@@ -29,6 +29,17 @@ export interface NativeChartBitmap {
   pixels: Uint8Array;
 }
 
+export interface NativeCrosshairOverlay {
+  width: number;
+  height: number;
+  chartRows: number;
+  pixelX: number | null;
+  pixelY: number | null;
+  colors: {
+    crosshairColor: string;
+  };
+}
+
 export interface NativePlacement {
   column: number;
   row: number;
@@ -84,6 +95,16 @@ function blendPixel(
   data[index + 1] = Math.round((color.g * alpha + data[index + 1]! * dstFactor) / outAlpha);
   data[index + 2] = Math.round((color.b * alpha + data[index + 2]! * dstFactor) / outAlpha);
   data[index + 3] = Math.round(outAlpha * 255);
+}
+
+function fillBackground(data: Uint8Array, width: number, height: number, color: RgbaColor) {
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    data[offset] = color.r;
+    data[offset + 1] = color.g;
+    data[offset + 2] = color.b;
+    data[offset + 3] = color.a;
+  }
 }
 
 function drawLine(
@@ -162,6 +183,25 @@ function drawCircle(
         blendPixel(data, width, height, px, py, color, coverage);
       }
     }
+  }
+}
+
+function drawWickOutsideBody(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  x: number,
+  highY: number,
+  lowY: number,
+  bodyTop: number,
+  bodyBottom: number,
+  color: RgbaColor,
+) {
+  if (highY < bodyTop) {
+    drawLine(data, width, height, x, highY, x, bodyTop, color, 1.2);
+  }
+  if (bodyBottom < lowY) {
+    drawLine(data, width, height, x, bodyBottom, x, lowY, color, 1.2);
   }
 }
 
@@ -282,10 +322,15 @@ function drawCandles(
   const spacing = width / Math.max(scene.points.length, 1);
   const bodyWidth = clamp(spacing * 0.58, 2, Math.max(spacing - 1, 2));
   const tickLength = clamp(spacing * 0.34, 2, Math.max(spacing * 0.48, 2));
+  const horizontalPad = mode === "ohlc"
+    ? Math.ceil(Math.max(tickLength - 1, 0))
+    : Math.ceil(bodyWidth / 2);
+  const plotLeft = horizontalPad;
+  const plotRight = Math.max(width - 1 - horizontalPad, plotLeft);
 
   for (let index = 0; index < scene.points.length; index++) {
     const point = scene.points[index]!;
-    const x = projectX(index, scene.points.length, 0, width - 1);
+    const x = projectX(index, scene.points.length, plotLeft, plotRight);
     const highY = projectY(point.high, scene.min, scene.max, top, bottom);
     const lowY = projectY(point.low, scene.min, scene.max, top, bottom);
     const openY = projectY(point.open, scene.min, scene.max, top, bottom);
@@ -293,11 +338,10 @@ function drawCandles(
     const isUp = point.close >= point.open;
 
     const wickColor = parseHex(isUp ? scene.colors.wickUp : scene.colors.wickDown, 0.92);
-    const bodyColor = parseHex(isUp ? scene.colors.candleUp : scene.colors.candleDown, 0.95);
-
-    drawLine(data, width, height, x, highY, x, lowY, wickColor, 1.2);
+    const bodyColor = parseHex(isUp ? scene.colors.candleUp : scene.colors.candleDown, 1);
 
     if (mode === "ohlc") {
+      drawLine(data, width, height, x, highY, x, lowY, wickColor, 1.2);
       drawLine(data, width, height, x - tickLength, openY, x, openY, bodyColor, 1.4);
       drawLine(data, width, height, x, closeY, x + tickLength, closeY, bodyColor, 1.4);
       continue;
@@ -306,9 +350,11 @@ function drawCandles(
     const bodyTop = Math.min(openY, closeY);
     const bodyBottom = Math.max(openY, closeY);
     if (Math.abs(bodyBottom - bodyTop) < 1.25) {
+      drawLine(data, width, height, x, highY, x, lowY, wickColor, 1.2);
       drawLine(data, width, height, x - bodyWidth / 2, bodyTop, x + bodyWidth / 2, bodyTop, bodyColor, 1.5);
     } else {
-      fillRect(data, width, height, x - bodyWidth / 2, bodyTop, x + bodyWidth / 2, bodyBottom, bodyColor, 0.92);
+      drawWickOutsideBody(data, width, height, x, highY, lowY, bodyTop, bodyBottom, wickColor);
+      fillRect(data, width, height, x - bodyWidth / 2, bodyTop, x + bodyWidth / 2, bodyBottom, bodyColor, 1);
     }
   }
 }
@@ -342,12 +388,39 @@ function drawVolume(
   }
 }
 
-export function renderNativeChart(scene: ChartScene, pixelWidth: number, pixelHeight: number): NativeChartBitmap {
+function drawCrosshairOverlay(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  overlay: NativeCrosshairOverlay,
+  plotTop: number,
+  plotBottom: number,
+) {
+  if (overlay.pixelX === null || overlay.pixelY === null) return;
+
+  const x = clamp(overlay.pixelX, 0, Math.max(width - 1, 0));
+  const y = clamp(overlay.pixelY, plotTop, plotBottom);
+
+  const lineColor = parseHex(overlay.colors.crosshairColor, 0.78);
+  const focusColor = parseHex(overlay.colors.crosshairColor, 0.32);
+  drawLine(data, width, height, x, 0, x, height - 1, lineColor, 1.05);
+  drawLine(data, width, height, 0, y, width - 1, y, lineColor, 1.05);
+  drawCircle(data, width, height, x, y, 2.1, focusColor);
+}
+
+function getOverlayPlotBottom(overlay: NativeCrosshairOverlay, pixelHeight: number): number {
+  if (pixelHeight <= 1 || overlay.height <= 0) return Math.max(pixelHeight - 1, 0);
+  const plotHeight = Math.max(Math.round((overlay.chartRows / Math.max(overlay.height, 1)) * pixelHeight), 1);
+  return Math.max(Math.min(plotHeight - 1, pixelHeight - 1), 0);
+}
+
+export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pixelHeight: number): NativeChartBitmap {
   const pixels = new Uint8Array(pixelWidth * pixelHeight * 4);
   if (scene.points.length === 0 || pixelWidth <= 0 || pixelHeight <= 0) {
     return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
   }
 
+  fillBackground(pixels, pixelWidth, pixelHeight, parseHex(scene.colors.bgColor, 1));
   const layout = getChartPixelLayout(scene, pixelWidth, pixelHeight);
   drawPriceGrid(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
 
@@ -366,6 +439,21 @@ export function renderNativeChart(scene: ChartScene, pixelWidth: number, pixelHe
 
   drawVolume(pixels, pixelWidth, pixelHeight, scene, layout.volumeTop, layout.volumeBottom);
 
+  return { width: pixelWidth, height: pixelHeight, pixels };
+}
+
+export function renderNativeCrosshairOverlay(
+  overlay: NativeCrosshairOverlay,
+  pixelWidth: number,
+  pixelHeight: number,
+): NativeChartBitmap {
+  const pixels = new Uint8Array(Math.max(pixelWidth, 1) * Math.max(pixelHeight, 1) * 4);
+  if (pixelWidth <= 0 || pixelHeight <= 0) {
+    return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
+  }
+
+  const plotBottom = getOverlayPlotBottom(overlay, pixelHeight);
+  drawCrosshairOverlay(pixels, pixelWidth, pixelHeight, overlay, 0, plotBottom);
   return { width: pixelWidth, height: pixelHeight, pixels };
 }
 

@@ -45,6 +45,7 @@ async function main() {
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
     backgroundColor: "#000000",
+    enableMouseMovement: true,
   });
 
   // Render app
