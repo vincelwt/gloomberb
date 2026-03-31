@@ -16,7 +16,6 @@ import {
   getDockLeafLayouts,
   getRememberedFloatingRect,
   isPaneInLayout,
-  movePaneRelative,
   removePane,
   resizeSplitAtPath,
   resolveDocked,
@@ -440,10 +439,6 @@ function menuForPane(
         focusPane(pane.instance.instanceId);
       },
     });
-    baseActions.push({ id: "move-left", label: "Move Left", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "left")) });
-    baseActions.push({ id: "move-right", label: "Move Right", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "right")) });
-    baseActions.push({ id: "move-up", label: "Move Up", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "above")) });
-    baseActions.push({ id: "move-down", label: "Move Down", action: () => persistLayout(movePaneRelative(layout, pane.instance.instanceId, "below")) });
   }
 
   baseActions.push({

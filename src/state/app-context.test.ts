@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { appReducer, createInitialState, resolveCollectionForPane, resolveTickerForPane } from "./app-context";
-import { createDefaultConfig, createPaneInstance } from "../types/config";
+import { cloneLayout, createDefaultConfig, createPaneInstance } from "../types/config";
 import type { AppSessionSnapshot } from "./session-persistence";
 import { buildBrokerPortfolioId } from "../utils/broker-instances";
 
@@ -365,5 +365,42 @@ describe("quote merging", () => {
     expect(next.financials.get("IQE")?.quote?.price).toBe(0.245);
     expect(next.financials.get("IQE")?.quote?.symbol).toBe("IQE.L");
     expect(next.financials.get("IQE")?.quote?.dataSource).toBe("yahoo");
+  });
+});
+
+describe("layout focus fallback", () => {
+  test("focuses the highest remaining floating pane when the focused floating pane closes", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const backgroundPane = createPaneInstance("chat", {
+      instanceId: "chat:background",
+      binding: { kind: "none" },
+    });
+    const topPane = createPaneInstance("help", {
+      instanceId: "help:top",
+      binding: { kind: "none" },
+    });
+    const layout = {
+      ...cloneLayout(config.layout),
+      instances: [...config.layout.instances, backgroundPane, topPane],
+      floating: [
+        { instanceId: "chat:background", x: 4, y: 2, width: 36, height: 10, zIndex: 70 },
+        { instanceId: "help:top", x: 12, y: 4, width: 36, height: 10, zIndex: 95 },
+      ],
+    };
+    const state = createInitialState({
+      ...config,
+      layout,
+      layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+    });
+    state.focusedPaneId = "help:top";
+
+    const nextLayout = {
+      ...cloneLayout(layout),
+      instances: layout.instances.filter((instance) => instance.instanceId !== "help:top"),
+      floating: layout.floating.filter((entry) => entry.instanceId !== "help:top"),
+    };
+    const next = appReducer(state, { type: "UPDATE_LAYOUT", layout: nextLayout });
+
+    expect(next.focusedPaneId).toBe("chat:background");
   });
 });

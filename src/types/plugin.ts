@@ -121,6 +121,7 @@ export interface PaneTemplateContext {
 export interface PaneTemplateShortcut {
   prefix: string;
   argPlaceholder?: string;
+  argKind?: "text" | "ticker" | "ticker-list";
 }
 
 export interface PaneTemplateCreateOptions {
@@ -177,7 +178,23 @@ export interface CommandDef {
   category: "navigation" | "data" | "portfolio" | "config";
   description?: string;
   wizard?: WizardStep[];
+  confirm?: CommandConfirmDef | ((context: CommandConfirmContext) => CommandConfirmDef | null);
   hidden?: () => boolean;
+}
+
+export interface CommandConfirmContext {
+  config: AppConfig;
+  layout: LayoutConfig;
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface CommandConfirmDef {
+  title: string;
+  body: string[];
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: "default" | "danger";
 }
 
 export interface CustomColumnDef extends ColumnConfig {

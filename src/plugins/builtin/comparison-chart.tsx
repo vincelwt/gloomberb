@@ -138,7 +138,7 @@ export const comparisonChartPlugin: GloomPlugin = {
       label: "Comparison Chart",
       description: "Compare up to 10 ticker charts overlaid on one chart.",
       keywords: ["compare", "comparison", "chart", "multi", "ticker"],
-      shortcut: { prefix: "CMP", argPlaceholder: "tickers" },
+      shortcut: { prefix: "CMP", argPlaceholder: "tickers", argKind: "ticker-list" },
       wizard: [
         {
           key: "tickers",

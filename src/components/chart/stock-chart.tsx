@@ -16,6 +16,7 @@ import {
   getPointTerminalColumn,
   renderChart,
   resolveChartPalette,
+  type StyledContent,
 } from "./chart-renderer";
 import {
   CELL_CURSOR_SNAP_DISTANCE,
@@ -43,6 +44,7 @@ import {
 import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-support";
 import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
+import { syncCachedNativeSurface } from "./native/surface-sync";
 import type { PricePoint } from "../../types/financials";
 
 const MODE_CHIPS: Record<ChartRenderMode, string> = {
@@ -1065,16 +1067,23 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         return;
       }
       lastNativeGeometryRef.current = { rect, visibleRect };
-      nativeSurfaceManager.updateSurfaceGeometry(nativeBaseSurfaceIdRef.current, {
+      const geometry = {
         paneId,
         rect,
         visibleRect,
-      });
-      nativeSurfaceManager.updateSurfaceGeometry(nativeCrosshairSurfaceIdRef.current, {
-        paneId,
-        rect,
-        visibleRect,
-      });
+      };
+      syncCachedNativeSurface(
+        nativeSurfaceManager,
+        nativeBaseSurfaceIdRef.current,
+        geometry,
+        lastNativeBaseBitmapRef.current,
+      );
+      syncCachedNativeSurface(
+        nativeSurfaceManager,
+        nativeCrosshairSurfaceIdRef.current,
+        geometry,
+        lastNativeCrosshairBitmapRef.current,
+      );
     };
 
     plot.onLifecyclePass = syncPlacement;
@@ -1101,12 +1110,6 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
 
     const plotRect = extractCellRect(plotRef.current);
     const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
-    if (!visibleRect) {
-      lastNativeBaseBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
-      return;
-    }
-
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapKey = buildNativeBitmapKey(
       projection.points.length,
@@ -1131,6 +1134,11 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     const bitmap = cachedBitmap ?? renderNativeChartBase(nativeBaseScene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
     if (!cachedBitmap) {
       lastNativeBaseBitmapRef.current = { key: bitmapKey, bitmap };
+    }
+
+    if (!visibleRect) {
+      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
+      return;
     }
 
     nativeSurfaceManager.upsertSurface({
@@ -1171,12 +1179,6 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
 
     const plotRect = extractCellRect(plotRef.current);
     const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
-    if (!visibleRect) {
-      lastNativeCrosshairBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
-      return;
-    }
-
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
     const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
     const overlayPixelX = scaleLocalPixelCoordinate(
@@ -1216,6 +1218,11 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     const bitmap = cachedBitmap ?? renderNativeCrosshairOverlay(overlay, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
     if (!cachedBitmap) {
       lastNativeCrosshairBitmapRef.current = { key: bitmapKey, bitmap };
+    }
+
+    if (!visibleRect) {
+      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+      return;
     }
 
     nativeSurfaceManager.upsertSurface({
@@ -1398,13 +1405,12 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     }
   };
 
-  const plotContent = effectiveRenderer === "kitty"
-    ? blankPlotLines.map((line, index) => (
-      <text key={index}>{line}</text>
-    ))
-    : result.lines.map((line, index) => (
-      <text key={index} content={line as any} />
-    ));
+  const plotLines: Array<string | StyledContent> = effectiveRenderer === "kitty"
+    ? blankPlotLines
+    : result.lines;
+  const plotContent = plotLines.map((line, index) => (
+    <text key={index} content={line} />
+  ));
 
   const plotBox = (
     <box
