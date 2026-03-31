@@ -77,6 +77,13 @@ export function formatNumber(value: number | undefined, decimals = 2): string {
   return getNumberFormatter(decimals).format(value);
 }
 
+/** Format a price with commas, trimming unnecessary trailing zeros (e.g., 3,565.00 -> 3,565) */
+export function formatPrice(value: number | undefined): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  const formatted = getNumberFormatter(2).format(value);
+  return formatted.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+}
+
 /** Format a growth rate compactly (e.g., +12%, -5%) */
 export function formatGrowthShort(value: number): string {
   const pct = value * 100;

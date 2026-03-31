@@ -21,7 +21,7 @@ import {
 import { getAllCollections, getCollectionTickers, getCollectionType } from "../../state/selectors";
 import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { colors, priceColor, hoverBg } from "../../theme/colors";
-import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, padTo, convertCurrency } from "../../utils/format";
+import { formatCurrency, formatPercentRaw, formatCompact, formatNumber, formatPrice, padTo, convertCurrency } from "../../utils/format";
 import { getActiveQuoteDisplay } from "../../utils/market-status";
 import { clampQuoteTimestamp, formatQuoteAgeWithSource, getMostRecentQuoteUpdate } from "../../utils/quote-time";
 import { DEFAULT_COLUMNS, type AppConfig, type ColumnConfig } from "../../types/config";
@@ -170,12 +170,12 @@ export function resolvePortfolioPriceValue(
 ): { text: string; color?: string } {
   if (activeQuote) {
     return {
-      text: formatCurrency(activeQuote.price, quoteCurrency),
+      text: formatPrice(activeQuote.price),
       color: priceColor(activeQuote.change),
     };
   }
   if (brokerMarkPrice != null) {
-    return { text: formatCurrency(brokerMarkPrice, positionCurrency) };
+    return { text: formatPrice(brokerMarkPrice) };
   }
   return { text: "—" };
 }
@@ -243,9 +243,9 @@ function getColumnValue(
       };
     }
     case "bid":
-      return { text: q?.bid != null ? formatCurrency(q.bid, quoteCurrency) : "—" };
+      return { text: q?.bid != null ? formatPrice(q.bid) : "—" };
     case "ask":
-      return { text: q?.ask != null ? formatCurrency(q.ask, quoteCurrency) : "—" };
+      return { text: q?.ask != null ? formatPrice(q.ask) : "—" };
     case "spread":
       return {
         text: q?.bid != null && q?.ask != null
