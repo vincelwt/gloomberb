@@ -100,6 +100,12 @@ interface FloatingPreviewRect {
   rect: FloatingRect;
 }
 
+interface DividerPreviewState {
+  pathKey: string;
+  rect: LayoutBounds;
+  ratio: number;
+}
+
 interface NativeFloatingPaneState {
   paneId: string;
   rect: FloatingRect;
@@ -245,6 +251,7 @@ export function buildNativeWindowState(
   dragFloatingRect: FloatingPreviewRect | null,
   overlay: { open: boolean; width: number; contentHeight: number },
   transientOccluders: readonly NativeTransientOccluder[] = [],
+  dockDividers: readonly DockDividerLayout[] = [],
 ): { paneLayers: NativePaneLayer[]; occluders: NativeOccluder[] } {
   const previewedFloatingPanes = floatingPanes.map((pane) => (
     dragFloatingRect?.paneId === pane.paneId
@@ -268,6 +275,21 @@ export function buildNativeWindowState(
     },
     zIndex: pane.zIndex,
   }));
+
+  for (const divider of dockDividers) {
+    occluders.push({
+      id: `dock-divider:${divider.path.length > 0 ? divider.path.join(".") : "root"}`,
+      paneId: null,
+      rect: {
+        x: divider.rect.x,
+        y: divider.rect.y + HEADER_HEIGHT,
+        width: divider.rect.width,
+        height: divider.rect.height,
+      },
+      // Dividers sit above docked native panes but below floating windows.
+      zIndex: 1,
+    });
+  }
 
   for (const occluder of transientOccluders) {
     occluders.push({
@@ -298,6 +320,18 @@ export function buildNativeWindowState(
   }
 
   return { paneLayers, occluders };
+}
+
+export function resolveNativeDockDividers(
+  dockDividers: readonly DockDividerLayout[],
+  dividerPreview: DividerPreviewState | null,
+): DockDividerLayout[] {
+  if (!dividerPreview) return [...dockDividers];
+  return dockDividers.map((divider) => (
+    divider.path.join(".") === dividerPreview.pathKey
+      ? { ...divider, rect: dividerPreview.rect, ratio: dividerPreview.ratio }
+      : divider
+  ));
 }
 
 function makeSnapGuides(width: number, height: number): SnapGuide[] {
@@ -498,7 +532,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const dragRef = useRef<DragMode | null>(null);
   const [dragFloatingRect, setDragFloatingRect] = useState<{ paneId: string; rect: FloatingRect } | null>(null);
   const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(null);
-  const [dividerPreview, setDividerPreview] = useState<{ pathKey: string; rect: LayoutBounds; ratio: number } | null>(null);
+  const [dividerPreview, setDividerPreview] = useState<DividerPreviewState | null>(null);
   const [dockPreview, setDockPreview] = useState<DragPreview | null>(null);
 
   const cancelActiveDrag = useCallback(() => {
@@ -622,6 +656,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
     return occluders;
   }, [activeHoverOverlay, activePaneDrag, dockPreview, dragFloatingRect]);
+  const nativeDockDividers = useMemo(
+    () => resolveNativeDockDividers(dockDividerLayouts, dividerPreview),
+    [dividerPreview, dockDividerLayouts],
+  );
   const nativeWindowState = useMemo(
     () => buildNativeWindowState(
       dockedPanes.map((pane) => pane.instance.instanceId),
@@ -633,8 +671,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
       dragFloatingRect,
       { open: overlayOpen, width, contentHeight },
       nativeTransientOccluders,
+      nativeDockDividers,
     ),
-    [contentHeight, dockedPanes, dragFloatingRect, floatingPanes, nativeTransientOccluders, overlayOpen, width],
+    [contentHeight, dockedPanes, dragFloatingRect, floatingPanes, nativeDockDividers, nativeTransientOccluders, overlayOpen, width],
   );
 
   useEffect(() => {
@@ -1055,6 +1094,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
             top={rect.y}
             width={rect.width}
             height={rect.height}
+            zIndex={active ? 2 : 1}
             backgroundColor={active ? colors.borderFocused : colors.border}
           />
         );
