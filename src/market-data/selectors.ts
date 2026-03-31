@@ -2,6 +2,7 @@ import type { MarketDataRequestContext } from "../types/data-provider";
 import type { Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest, ChartRequest } from "./request-types";
 import type { QueryEntry } from "./result-types";
+import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { normalizePriceHistory } from "../utils/price-history";
 
 export function buildInstrumentKey(instrument: InstrumentRef): string {
@@ -91,14 +92,7 @@ export function hasLikelyPriceUnitMismatch(
   left: Quote | null | undefined,
   right: Quote | null | undefined,
 ): boolean {
-  if (!left?.currency || !right?.currency) return false;
-  if (left.currency !== right.currency) return false;
-  if (!Number.isFinite(left.price) || !Number.isFinite(right.price)) return false;
-  if (left.price <= 0 || right.price <= 0) return false;
-
-  const ratio = left.price / right.price;
-  const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
-  return Math.abs(normalizedRatio - 100) / 100 < 0.05;
+  return hasLikelyQuoteUnitMismatch(left, right);
 }
 
 function mergeDefinedQuoteFields(

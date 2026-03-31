@@ -862,6 +862,97 @@ describe("ProviderRouter", () => {
     expect(merged.priceHistory[0]?.close).toBe(124);
   });
 
+  test("merges cached financial snapshots across multiple providers", async () => {
+    const dbPath = createTempDbPath("cached-provider-financial-merge");
+    const persistence = new AppPersistence(dbPath);
+
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: {
+            symbol: "AAPL",
+            price: 125,
+            currency: "USD",
+            change: 2,
+            changePercent: 1.6,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: {
+            trailingPE: 25,
+          },
+          profile: {
+            sector: "Technology",
+          },
+        };
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
+          quote: {
+            symbol: "AAPL",
+            price: 124,
+            currency: "USD",
+            change: 1,
+            changePercent: 0.8,
+            marketCap: 2_000_000_000,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: {
+            forwardPE: 22,
+          },
+        };
+      },
+    };
+
+    const seedRouter = new ProviderRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const seeded = await seedRouter.getTickerFinancials("AAPL", "NASDAQ");
+    expect(seeded.quote?.marketCap).toBe(2_000_000_000);
+
+    let cloudCalls = 0;
+    let yahooCalls = 0;
+    const cachedRouter = new ProviderRouter({
+      ...yahooProvider,
+      async getTickerFinancials() {
+        yahooCalls += 1;
+        throw new Error("expected cached yahoo financials");
+      },
+    }, [{
+      ...cloudProvider,
+      async getTickerFinancials() {
+        cloudCalls += 1;
+        throw new Error("expected cached cloud financials");
+      },
+    }], persistence.resources);
+
+    const cached = await cachedRouter.getTickerFinancials("AAPL", "NASDAQ");
+
+    expect(cloudCalls).toBe(0);
+    expect(yahooCalls).toBe(0);
+    expect(cached.quote?.price).toBe(125);
+    expect(cached.quote?.marketCap).toBe(2_000_000_000);
+    expect(cached.fundamentals?.trailingPE).toBe(25);
+    expect(cached.fundamentals?.forwardPE).toBe(22);
+    expect(cached.profile?.sector).toBe("Technology");
+    expect(cached.priceHistory[0]?.close).toBe(124);
+
+    persistence.close();
+  });
+
   test("refreshes missing profile data even when cached financials exist", async () => {
     const dbPath = createTempDbPath("cache-profile-refresh");
     const persistence = new AppPersistence(dbPath);
@@ -1081,6 +1172,111 @@ describe("ProviderRouter", () => {
       brokerInstanceId: "ibkr-flex",
     }], { allowExpired: true });
     expect(cached.get("IQE")?.quote?.price).toBe(0.245);
+
+    persistence.close();
+  });
+
+  test("returns merged cached provider financials on cold start when sub-unit quotes exist", async () => {
+    const dbPath = createTempDbPath("cached-sub-unit-financials");
+    const persistence = new AppPersistence(dbPath);
+    const now = Date.now();
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "contract:14075064",
+        variantKey: "exchange=LSE",
+        sourceKey: "provider:gloomberb-cloud",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "IQE",
+          price: 23.1,
+          currency: "GBp",
+          change: -1.4,
+          changePercent: -5.71,
+          previousClose: 24.5,
+          lastUpdated: now,
+          dataSource: "delayed",
+        },
+        profile: {
+          description: "Cloud profile",
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
+        fetchedAt: now,
+      },
+    );
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "contract:14075064",
+        variantKey: "exchange=LSE",
+        sourceKey: "provider:yahoo",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "IQE.L",
+          price: 0.231,
+          currency: "GBP",
+          change: -0.014,
+          changePercent: -5.71,
+          previousClose: 0.245,
+          lastUpdated: now,
+          dataSource: "yahoo",
+        },
+        fundamentals: {
+          revenue: 1000,
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
+        fetchedAt: now,
+      },
+    );
+
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 200,
+      async getTickerFinancials() {
+        throw new Error("should not fetch yahoo financials");
+      },
+    };
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        throw new Error("should not fetch cloud financials");
+      },
+    };
+    const router = new ProviderRouter(yahooProvider, [cloudProvider], persistence.resources);
+
+    const financials = await router.getTickerFinancials("IQE", "LSE", {
+      instrument: {
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-personal",
+        conId: 14075064,
+        symbol: "IQE",
+      },
+    });
+
+    expect(financials.quote?.price).toBe(0.231);
+    expect(financials.quote?.currency).toBe("GBP");
+    expect(financials.fundamentals?.revenue).toBe(1000);
+    expect(financials.profile?.description).toBe("Cloud profile");
 
     persistence.close();
   });

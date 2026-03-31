@@ -4,6 +4,7 @@ import type { BrokerAdapter } from "../types/broker";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
 import type {
+  CachedFinancialsTarget,
   DataProvider,
   MarketDataRequestContext,
   NewsItem,
@@ -15,7 +16,7 @@ import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
 import type { TimeRange } from "../components/chart/chart-types";
-import type { HydrationTarget } from "../state/session-persistence";
+import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { debugLog } from "../utils/debug-log";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { isProviderMiss } from "./provider-errors";
@@ -121,17 +122,7 @@ function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolea
 }
 
 function hasLikelyPriceUnitMismatch(primary: TickerFinancials, fallback: TickerFinancials): boolean {
-  const primaryQuote = primary.quote;
-  const fallbackQuote = fallback.quote;
-  if (!primaryQuote || !fallbackQuote) return false;
-  if (!primaryQuote.currency || !fallbackQuote.currency) return false;
-  if (primaryQuote.currency !== fallbackQuote.currency) return false;
-  if (!Number.isFinite(primaryQuote.price) || !Number.isFinite(fallbackQuote.price)) return false;
-  if (primaryQuote.price <= 0 || fallbackQuote.price <= 0) return false;
-
-  const ratio = primaryQuote.price / fallbackQuote.price;
-  const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
-  return Math.abs(normalizedRatio - 100) / 100 < 0.05;
+  return hasLikelyQuoteUnitMismatch(primary.quote, fallback.quote);
 }
 
 function mergeDefinedObject<T extends object>(preferred: T | null | undefined, fallback: T | null | undefined): T | undefined {
@@ -172,9 +163,27 @@ function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinan
   };
 }
 
+function mergeCachedFinancialRecords(records: CachedResourceRecord<TickerFinancials>[]): {
+  value: TickerFinancials | null;
+  stale: boolean;
+} {
+  const seenSources = new Set<string>();
+  let merged: TickerFinancials | null = null;
+  let stale = false;
+
+  for (const record of records) {
+    if (seenSources.has(record.sourceKey)) continue;
+    seenSources.add(record.sourceKey);
+    merged = mergeFinancials(merged, record.value);
+    stale = stale || record.stale;
+  }
+
+  return { value: merged, stale };
+}
+
 interface CachedFinancialsSelection {
   brokerRecord: CachedResourceRecord<TickerFinancials> | null;
-  providerRecord: CachedResourceRecord<TickerFinancials> | null;
+  providerValue: TickerFinancials | null;
   value: TickerFinancials | null;
   stale: boolean;
 }
@@ -230,7 +239,7 @@ export class ProviderRouter implements DataProvider {
     return false;
   }
 
-  getCachedFinancialsForTargets(targets: HydrationTarget[], options: { allowExpired?: boolean } = {}): Map<string, TickerFinancials> {
+  getCachedFinancialsForTargets(targets: CachedFinancialsTarget[], options: { allowExpired?: boolean } = {}): Map<string, TickerFinancials> {
     const results = new Map<string, TickerFinancials>();
     for (const target of targets) {
       const cached = this.readCachedMergedFinancials(target.symbol, target.exchange, {
@@ -270,7 +279,7 @@ export class ProviderRouter implements DataProvider {
       const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
       return mergeFinancials(
         brokerResult?.value ?? cached.brokerRecord?.value ?? null,
-        providerResult?.value ?? cached.providerRecord?.value ?? null,
+        providerResult?.value ?? cached.providerValue ?? null,
       ) ?? cached.value;
     }
 
@@ -706,12 +715,20 @@ export class ProviderRouter implements DataProvider {
     const brokerRecord = brokerSourceKeys.length > 0
       ? this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, brokerSourceKeys, allowExpired)
       : null;
-    const providerRecord = this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, this.getProviderSourceKeys(), allowExpired);
+    const providerSelection = mergeCachedFinancialRecords(
+      this.listCachedResources<TickerFinancials>(
+        "financials",
+        entityKey,
+        variantKeys,
+        this.getProviderSourceKeys(),
+        allowExpired,
+      ),
+    );
     return {
       brokerRecord,
-      providerRecord,
-      value: mergeFinancials(brokerRecord?.value ?? null, providerRecord?.value ?? null),
-      stale: (brokerRecord?.stale ?? false) || (providerRecord?.stale ?? false),
+      providerValue: providerSelection.value,
+      value: mergeFinancials(brokerRecord?.value ?? null, providerSelection.value),
+      stale: (brokerRecord?.stale ?? false) || providerSelection.stale,
     };
   }
 

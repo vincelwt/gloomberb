@@ -36,6 +36,7 @@ import type { PaneTemplateContext, PaneTemplateCreateOptions, PaneTemplateInstan
 import type { PaneSettingField } from "./types/plugin";
 import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
+import type { TickerFinancials } from "./types/financials";
 import type { BrokerContractRef } from "./types/instrument";
 import type { BrokerAccount } from "./types/trading";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
@@ -512,6 +513,15 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     });
   }, [performRefreshQuote]);
 
+  const primeCachedFinancials = useCallback((entries: Array<{ ticker: TickerRecord; financials: TickerFinancials }>) => {
+    const primeEntries = entries.flatMap(({ ticker, financials }) => {
+      const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+      return instrument ? [{ instrument, financials }] : [];
+    });
+    if (primeEntries.length === 0) return;
+    marketData.primeCachedFinancials(primeEntries);
+  }, [marketData]);
+
   // Ensure a portfolio exists in config, creating it if needed
   const ensurePortfolio = useCallback(async (
     portfolioId: string,
@@ -754,6 +764,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
           dataProvider,
           sessionSnapshot,
           dispatch,
+          primeCachedFinancials,
           refreshTicker,
           refreshQuote,
           autoImportBrokerPositions,
@@ -763,7 +774,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
         // Will show empty state
       }
     })();
-  }, [autoImportBrokerPositions, dataProvider, dispatch, tickerRepository, refreshQuote, refreshTicker, sessionSnapshot, state.config, state.initialized]);
+  }, [autoImportBrokerPositions, dataProvider, dispatch, primeCachedFinancials, tickerRepository, refreshQuote, refreshTicker, sessionSnapshot, state.config, state.initialized]);
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
 
