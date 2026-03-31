@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { Button } from "./button";
+import { TextField } from "./fields";
 import { ListView } from "./list-view";
 import { ProgressBar } from "./loading";
 import { Notice } from "./status";
@@ -109,5 +110,25 @@ describe("shared UI kit", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Row 9");
     expect(frame).not.toContain("Row 1");
+  });
+
+  test("masks password text fields", async () => {
+    testSetup = await testRender(
+      <TextField
+        type="password"
+        value="secret"
+        placeholder="Password"
+        focused
+        width={12}
+        onChange={() => {}}
+      />,
+      { width: 16, height: 3 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("******");
+    expect(frame).not.toContain("secret");
   });
 });

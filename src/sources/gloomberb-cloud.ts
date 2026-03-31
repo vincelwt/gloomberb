@@ -10,6 +10,7 @@ import {
   type CloudPricePointPayload,
   type CloudQuotePayload,
 } from "../utils/api-client";
+import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
 import { createProviderMiss } from "./provider-errors";
 
 const providerId = "gloomberb-cloud" as const;
@@ -37,19 +38,36 @@ async function withCloudFallback<T>(load: () => Promise<T>, message: string): Pr
 }
 
 function mapQuote(quote: CloudQuotePayload): Quote {
+  const { currency, divisor } = resolveCurrencyUnit(quote.currency);
   return {
     ...quote,
+    currency: currency || quote.currency,
+    price: normalizePriceValueByDivisor(quote.price, divisor) ?? quote.price,
+    change: normalizePriceValueByDivisor(quote.change, divisor) ?? quote.change,
+    previousClose: normalizePriceValueByDivisor(quote.previousClose, divisor),
+    high52w: normalizePriceValueByDivisor(quote.high52w, divisor),
+    low52w: normalizePriceValueByDivisor(quote.low52w, divisor),
+    bid: normalizePriceValueByDivisor(quote.bid, divisor),
+    ask: normalizePriceValueByDivisor(quote.ask, divisor),
+    open: normalizePriceValueByDivisor(quote.open, divisor),
+    high: normalizePriceValueByDivisor(quote.high, divisor),
+    low: normalizePriceValueByDivisor(quote.low, divisor),
+    mark: normalizePriceValueByDivisor(quote.mark, divisor),
+    preMarketPrice: normalizePriceValueByDivisor(quote.preMarketPrice, divisor),
+    preMarketChange: normalizePriceValueByDivisor(quote.preMarketChange, divisor),
+    postMarketPrice: normalizePriceValueByDivisor(quote.postMarketPrice, divisor),
+    postMarketChange: normalizePriceValueByDivisor(quote.postMarketChange, divisor),
     providerId,
   };
 }
 
-function mapPricePoint(point: CloudPricePointPayload): PricePoint {
+function mapPricePoint(point: CloudPricePointPayload, divisor = 1): PricePoint {
   return {
     date: new Date(point.date),
-    open: point.open,
-    high: point.high,
-    low: point.low,
-    close: point.close,
+    open: normalizePriceValueByDivisor(point.open, divisor),
+    high: normalizePriceValueByDivisor(point.high, divisor),
+    low: normalizePriceValueByDivisor(point.low, divisor),
+    close: normalizePriceValueByDivisor(point.close, divisor) ?? point.close,
     volume: point.volume,
   };
 }
@@ -237,7 +255,9 @@ export class GloomberbCloudProvider implements DataProvider {
       () => apiClient.getCloudHistory(ticker, exchange, request),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`).map(mapPricePoint);
+    const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);
+    return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
+      .map((point) => mapPricePoint(point, divisor));
   }
 
   async getDetailedPriceHistory(
@@ -259,7 +279,9 @@ export class GloomberbCloudProvider implements DataProvider {
       }),
       `Cloud detailed chart history is unavailable for ${ticker}`,
     );
-    return unwrapRequiredCloudResponse(response, `Cloud detailed chart history is unavailable for ${ticker}`).map(mapPricePoint);
+    const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);
+    return unwrapRequiredCloudResponse(response, `Cloud detailed chart history is unavailable for ${ticker}`)
+      .map((point) => mapPricePoint(point, divisor));
   }
 
   async getOptionsChain(_ticker: string, _exchange?: string, _expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {

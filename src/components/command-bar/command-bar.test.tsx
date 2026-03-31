@@ -547,6 +547,7 @@ describe("CommandBar", () => {
       testSetup!.mockInput.pressEnter();
       await Bun.sleep(0);
       await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
     });
 
     expect(pinned).toEqual(["MSFT"]);
@@ -1220,5 +1221,94 @@ describe("CommandBar", () => {
     expect(appRow).toBeGreaterThanOrEqual(0);
     expect(aaplRow).toBeLessThan(appRow);
     expect(frame).toMatchSnapshot();
+  });
+
+  test("renders form-layout wizard fields together on one screen", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="auth login"
+        live
+        configurePluginRegistry={(pluginRegistry) => {
+          pluginRegistry.commands.set("auth-login", {
+            id: "auth-login",
+            label: "Auth Login",
+            description: "Log in to your account",
+            keywords: ["login", "auth"],
+            category: "config",
+            wizardLayout: "form",
+            wizard: [
+              { key: "email", label: "Email", type: "text", placeholder: "email@example.com" },
+              { key: "password", label: "Password", type: "password", placeholder: "Your password" },
+            ],
+            execute: async () => {},
+          } as any);
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await clickFrameText("Auth Login");
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Back");
+    expect(frame).toContain("Email");
+    expect(frame).toContain("Password");
+    expect(frame).toContain("Your password");
+  });
+
+  test("submits single-field form-layout wizards", async () => {
+    const submitted: Array<Record<string, string> | undefined> = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="workspace"
+        live
+        configurePluginRegistry={(pluginRegistry) => {
+          pluginRegistry.commands.set("new-workspace", {
+            id: "new-workspace",
+            label: "Workspace",
+            description: "Create a workspace",
+            keywords: ["workspace"],
+            category: "config",
+            wizardLayout: "form",
+            wizard: [
+              { key: "name", label: "Name", type: "text", placeholder: "Research" },
+            ],
+            execute: async (values) => {
+              submitted.push(values);
+            },
+          } as any);
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("Research");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(submitted).toEqual([{ name: "Research" }]);
   });
 });

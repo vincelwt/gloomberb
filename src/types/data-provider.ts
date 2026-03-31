@@ -32,6 +32,14 @@ export interface MarketDataRequestContext {
   cacheMode?: "default" | "refresh";
 }
 
+export interface CachedFinancialsTarget {
+  symbol: string;
+  exchange?: string;
+  brokerId?: string;
+  brokerInstanceId?: string;
+  instrument?: BrokerContractRef | null;
+}
+
 export interface SearchRequestContext {
   preferBroker?: boolean;
   brokerId?: string;
@@ -52,6 +60,7 @@ export interface DataProvider {
   readonly cachePolicy?: CachePolicyMap;
 
   canProvide?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<boolean> | boolean;
+  getCachedFinancialsForTargets?(targets: CachedFinancialsTarget[], options?: { allowExpired?: boolean }): Map<string, TickerFinancials>;
   getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials>;
   getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote>;
   getExchangeRate(fromCurrency: string): Promise<number>;

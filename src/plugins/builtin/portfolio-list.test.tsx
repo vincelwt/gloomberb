@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { act, useReducer } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import { AppPersistence } from "../../data/app-persistence";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider, type AppAction } from "../../state/app-context";
+import { ProviderRouter } from "../../sources/provider-router";
 import { cloneLayout, createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
@@ -17,6 +22,7 @@ let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 let harnessState: ReturnType<typeof createInitialState> | null = null;
+const tempPaths: string[] = [];
 
 const PortfolioPane = portfolioListPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -37,6 +43,12 @@ function createBrokerInstance(connectionMode: "gateway" | "flex", id = `ibkr-${c
       : { connectionMode, flex: { token: "token", queryId: "query" } },
     enabled: true,
   };
+}
+
+function createTempDbPath(name: string): string {
+  const path = join(tmpdir(), `gloomberb-portfolio-list-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  tempPaths.push(path);
+  return path;
 }
 
 function makeTicker(overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
@@ -233,6 +245,9 @@ afterEach(async () => {
   harnessState = null;
   setSharedRegistryForTests(undefined);
   await ibkrGatewayManager.removeInstance("ibkr-live");
+  for (const path of tempPaths.splice(0)) {
+    if (existsSync(path)) rmSync(path, { force: true });
+  }
 });
 
 describe("PortfolioListPane cash and margin UI", () => {
@@ -725,6 +740,174 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("2B");
     expect(frame).toContain("25.0");
     expect(frame).toContain("22.0");
+  });
+
+  test("shows cached market cap on reopen for broker-linked rows", async () => {
+    const dbPath = createTempDbPath("cached-reopen-market-cap");
+    const persistence = new AppPersistence(dbPath);
+    const instrument = {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-live",
+      symbol: "AAPL",
+      localSymbol: "AAPL",
+      exchange: "SMART",
+      primaryExchange: "NASDAQ",
+      conId: 265598,
+    };
+    const cloudProvider: DataProvider = {
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: makeQuote({
+            symbol: "AAPL",
+            price: 125,
+            marketCap: undefined,
+          }),
+          fundamentals: {
+            trailingPE: 25,
+          },
+          profile: {
+            sector: "Technology",
+          },
+        };
+      },
+      async getQuote() {
+        return makeQuote({
+          symbol: "AAPL",
+          price: 125,
+        });
+      },
+      async getExchangeRate() {
+        return 1;
+      },
+      async search() {
+        return [];
+      },
+      async getNews() {
+        return [];
+      },
+      async getArticleSummary() {
+        return null;
+      },
+      async getPriceHistory() {
+        return [];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...cloudProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
+          quote: makeQuote({
+            symbol: "AAPL",
+            price: 124,
+            marketCap: 2_000_000_000,
+          }),
+          fundamentals: {
+            forwardPE: 22,
+          },
+          profile: {
+            sector: "Technology",
+          },
+        };
+      },
+    };
+
+    const seedRouter = new ProviderRouter(yahooProvider, [cloudProvider], persistence.resources);
+    await seedRouter.getTickerFinancials("AAPL", "NASDAQ", {
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-live",
+      instrument,
+    });
+
+    let liveCalls = 0;
+    const cachedRouter = new ProviderRouter({
+      ...yahooProvider,
+      async getTickerFinancials() {
+        liveCalls += 1;
+        throw new Error("expected cached yahoo snapshot");
+      },
+    }, [{
+      ...cloudProvider,
+      async getTickerFinancials() {
+        liveCalls += 1;
+        throw new Error("expected cached cloud snapshot");
+      },
+    }], persistence.resources);
+    sharedCoordinator = new MarketDataCoordinator(cachedRouter);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    const cachedFinancials = cachedRouter.getCachedFinancialsForTargets([{
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      brokerId: "ibkr",
+      brokerInstanceId: "ibkr-live",
+      instrument,
+    }]);
+    sharedCoordinator.primeCachedFinancials([{
+      instrument: {
+        symbol: "AAPL",
+        exchange: "NASDAQ",
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-live",
+        instrument,
+      },
+      financials: cachedFinancials.get("AAPL")!,
+    }]);
+
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-live:DU12345",
+      ["ticker", "market_cap", "pe", "forward_pe"],
+      [createBrokerInstance("gateway", "ibkr-live")],
+    );
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-live:DU12345"
+        stateMutator={(state) => {
+          state.tickers = new Map([["AAPL", makeTicker({
+            portfolios: ["broker:ibkr-live:DU12345"],
+            positions: [{
+              portfolio: "broker:ibkr-live:DU12345",
+              shares: 10,
+              avgCost: 100,
+              currency: "USD",
+              broker: "ibkr",
+              brokerInstanceId: "ibkr-live",
+              brokerAccountId: "DU12345",
+            }],
+            broker_contracts: [instrument],
+          })]]);
+          state.financials = new Map();
+          state.paneState[TEST_PANE_ID] = {
+            collectionId: "broker:ibkr-live:DU12345",
+            cursorSymbol: "AAPL",
+            cashDrawerExpanded: false,
+          };
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(liveCalls).toBe(0);
+    expect(frame).toContain("2B");
+    expect(frame).toContain("25.0");
+    expect(frame).toContain("22.0");
+
+    persistence.close();
   });
 
   test("updates a non-selected broker-linked row from streamed quotes", async () => {

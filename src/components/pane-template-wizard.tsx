@@ -57,6 +57,7 @@ export function PaneTemplateInputStep({
           inputRef={inputRef}
           value={value}
           placeholder={step.placeholder || ""}
+          type={step.type === "password" ? "password" : "text"}
           focused
           onChange={setValue}
           onSubmit={(submittedValue) => {

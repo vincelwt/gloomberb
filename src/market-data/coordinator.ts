@@ -182,6 +182,72 @@ export class MarketDataCoordinator {
     );
   }
 
+  primeCachedFinancials(entries: Array<{ instrument: InstrumentRef; financials: TickerFinancials }>): void {
+    for (const { instrument, financials } of entries) {
+      const normalized = normalizeTickerFinancialsPriceHistory(financials);
+      const source = normalized.quote?.providerId ?? this.dataProvider.id;
+      const snapshotKey = buildSnapshotKey(instrument);
+      const quoteKey = buildQuoteKey(instrument);
+      const profileKey = buildProfileKey(instrument);
+      const fundamentalsKey = buildFundamentalsKey(instrument);
+      const statementsKey = buildStatementsKey(instrument);
+
+      if (this.snapshotStore.get(snapshotKey).phase === "idle") {
+        this.snapshotStore.set(
+          snapshotKey,
+          readyEntry(this.snapshotStore.get(snapshotKey), normalized, source, [], { keepLastGoodOnEmpty: true }),
+        );
+      }
+      if (normalized.quote && this.quoteStore.get(quoteKey).phase === "idle") {
+        this.quoteStore.set(
+          quoteKey,
+          readyEntry(this.quoteStore.get(quoteKey), normalized.quote, normalized.quote.providerId ?? source, []),
+        );
+      }
+      if (this.profileStore.get(profileKey).phase === "idle") {
+        this.profileStore.set(
+          profileKey,
+          readyEntry(this.profileStore.get(profileKey), normalized.profile ?? null, source, [], { keepLastGoodOnEmpty: true }),
+        );
+      }
+      if (this.fundamentalsStore.get(fundamentalsKey).phase === "idle") {
+        this.fundamentalsStore.set(
+          fundamentalsKey,
+          readyEntry(this.fundamentalsStore.get(fundamentalsKey), normalized.fundamentals ?? null, source, [], { keepLastGoodOnEmpty: true }),
+        );
+      }
+      if (this.statementsStore.get(statementsKey).phase === "idle") {
+        this.statementsStore.set(
+          statementsKey,
+          readyEntry(
+            this.statementsStore.get(statementsKey),
+            {
+              annualStatements: normalized.annualStatements ?? [],
+              quarterlyStatements: normalized.quarterlyStatements ?? [],
+            },
+            source,
+            [],
+            { keepLastGoodOnEmpty: true },
+          ),
+        );
+      }
+      if (normalized.priceHistory.length > 0) {
+        const chartRequest: ChartRequest = {
+          instrument,
+          range: "5Y",
+          granularity: "daily",
+        };
+        const chartKey = buildChartKey(chartRequest);
+        if (this.chartStore.get(chartKey).phase === "idle") {
+          this.chartStore.set(
+            chartKey,
+            readyEntry(this.chartStore.get(chartKey), normalized.priceHistory, source, [], { keepLastGoodOnEmpty: true }),
+          );
+        }
+      }
+    }
+  }
+
   prefetchTicker(instrument: InstrumentRef | null | undefined): void {
     if (!instrument) return;
     void this.loadSnapshot(instrument);

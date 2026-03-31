@@ -290,4 +290,84 @@ describe("MarketDataCoordinator", () => {
     expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(24.5);
     expect(coordinator.getLegacyFinancialsSync(instrument)?.quote?.price).toBe(0.245);
   });
+
+  it("hydrates legacy financials synchronously from primed cached data", () => {
+    const coordinator = new MarketDataCoordinator(createProvider());
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    coordinator.primeCachedFinancials([{
+      instrument,
+      financials: {
+        quote: {
+          symbol: "AAPL",
+          price: 246.63,
+          currency: "USD",
+          change: -2.17,
+          changePercent: -0.87,
+          marketCap: 3_640_775_908_600,
+          lastUpdated: 1_700_000_000_000,
+        },
+        fundamentals: {
+          trailingPE: 31.4,
+          forwardPE: 27.8,
+        },
+        profile: {
+          sector: "Technology",
+        },
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 248.8 }],
+      },
+    }]);
+
+    const financials = coordinator.getLegacyFinancialsSync(instrument);
+    expect(financials?.quote?.marketCap).toBe(3_640_775_908_600);
+    expect(financials?.fundamentals?.trailingPE).toBe(31.4);
+    expect(financials?.priceHistory[0]?.close).toBe(248.8);
+  });
+
+  it("merges live quote data with primed cached financials during resume", async () => {
+    const provider = createProvider({
+      getQuote: async () => ({
+        symbol: "AAPL",
+        price: 246.63,
+        currency: "USD",
+        change: -2.17,
+        changePercent: -0.87,
+        lastUpdated: 1_700_000_001_000,
+      }),
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    coordinator.primeCachedFinancials([{
+      instrument,
+      financials: {
+        quote: {
+          symbol: "AAPL",
+          price: 248.8,
+          currency: "USD",
+          change: 0,
+          changePercent: 0,
+          marketCap: 3_640_775_908_600,
+          lastUpdated: 1_700_000_000_000,
+        },
+        fundamentals: {
+          trailingPE: 31.4,
+        },
+        profile: {
+          sector: "Technology",
+        },
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+      },
+    }]);
+    await coordinator.loadQuote(instrument);
+
+    const financials = coordinator.getLegacyFinancialsSync(instrument);
+    expect(financials?.quote?.price).toBe(246.63);
+    expect(financials?.quote?.marketCap).toBe(3_640_775_908_600);
+    expect(financials?.fundamentals?.trailingPE).toBe(31.4);
+  });
 });

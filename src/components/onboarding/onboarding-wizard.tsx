@@ -11,6 +11,7 @@ import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField }
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
+import { TextField } from "../ui";
 
 interface OnboardingWizardProps {
   config: AppConfig;
@@ -36,6 +37,8 @@ const LOGO = [
   "\u258C \u258C\u2590 \u258C \u258C\u258C \u258C\u258C\u2590 \u258C\u258C \u258C\u259B\u2580 \u258C  \u258C \u258C",
   "\u259D\u2580  \u2598\u259D\u2580 \u259D\u2580 \u2598\u259D \u2598\u2580\u2580 \u259D\u2580\u2598\u2598  \u2580\u2580 ",
 ];
+
+const PASSWORD_MASK_CHAR = "*";
 
 function getToggleablePlugins(pluginRegistry: PluginRegistry) {
   const result: Array<{ id: string; name: string; description: string; order: number }> = [];
@@ -660,14 +663,15 @@ function PortfolioStep({
         </box>
         <box height={1}>
           {editing ? (
-            <input
-              ref={inputRef}
+            <TextField
+              inputRef={inputRef}
+              value={portfolioName}
               placeholder="Main Portfolio"
               focused
+              backgroundColor={colors.panel}
               textColor={colors.text}
               placeholderColor={colors.textDim}
-              backgroundColor={colors.panel}
-              onChange={(val) => onNameChange(val)}
+              onChange={onNameChange}
               onSubmit={() => {}}
             />
           ) : (
@@ -714,7 +718,7 @@ function PortfolioStep({
         if (!isActive && val) {
           const selectedLabel = field.type === "select"
             ? field.options?.find((option) => option.value === val)?.label ?? val
-            : val;
+            : field.type === "password" ? PASSWORD_MASK_CHAR.repeat(val.length) : val;
           return (
             <box key={field.key} height={1}>
               <text fg={colors.positive}>{"\u2713 "}</text>
@@ -737,20 +741,22 @@ function PortfolioStep({
               </box>
               <box height={1}>
                 {field.type !== "select" && (editing ? (
-                  <input
-                    ref={inputRef}
+                  <TextField
+                    inputRef={inputRef}
+                    value={val}
+                    type={field.type === "password" ? "password" : "text"}
                     placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
                     focused
+                    backgroundColor={colors.panel}
                     textColor={colors.text}
                     placeholderColor={colors.textDim}
-                    backgroundColor={colors.panel}
-                    onChange={(val) => onBrokerFieldChange(selectedBrokerId, field.key, val)}
+                    onChange={(nextValue) => onBrokerFieldChange(selectedBrokerId, field.key, nextValue)}
                     onSubmit={() => {}}
                   />
                 ) : (
                   <text fg={effectiveValue ? colors.positive : colors.textMuted}>
                     {effectiveValue
-                      ? `\u2713 ${field.label}: ${effectiveValue}`
+                      ? `\u2713 ${field.label}: ${field.type === "password" ? PASSWORD_MASK_CHAR.repeat(effectiveValue.length) : effectiveValue}`
                       : "Press enter to type..."}
                   </text>
                 ))}

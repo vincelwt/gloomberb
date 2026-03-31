@@ -12,6 +12,7 @@ import type { SessionStore } from "../data/session-store";
 import { saveConfig } from "../data/config-store";
 import { applyTheme } from "../theme/colors";
 import { isBrokerPortfolioId } from "../utils/broker-instances";
+import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import {
   cloneLayout,
   DEFAULT_LAYOUT,
@@ -135,14 +136,7 @@ function shouldPreserveUnknownCollectionId(collectionId: string | undefined): bo
 }
 
 function hasLikelyPriceUnitMismatch(current: Quote | undefined, next: Quote): boolean {
-  if (!current?.currency || !next.currency) return false;
-  if (current.currency !== next.currency) return false;
-  if (!Number.isFinite(current.price) || !Number.isFinite(next.price)) return false;
-  if (current.price <= 0 || next.price <= 0) return false;
-
-  const ratio = current.price / next.price;
-  const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
-  return Math.abs(normalizedRatio - 100) / 100 < 0.05;
+  return hasLikelyQuoteUnitMismatch(current, next);
 }
 
 function getConfiguredCollectionId(config: AppConfig, instance: PaneInstanceConfig): string {

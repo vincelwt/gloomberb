@@ -15,11 +15,13 @@ const verifiedUser: AuthUser = {
 
 const originalEnsureVerifiedSession = apiClient.ensureVerifiedSession.bind(apiClient);
 const originalGetCloudHistory = apiClient.getCloudHistory.bind(apiClient);
+const originalGetCloudQuote = apiClient.getCloudQuote.bind(apiClient);
 const originalSubscribeQuotes = apiClient.subscribeQuotes.bind(apiClient);
 
 afterEach(() => {
   apiClient.ensureVerifiedSession = originalEnsureVerifiedSession;
   apiClient.getCloudHistory = originalGetCloudHistory;
+  apiClient.getCloudQuote = originalGetCloudQuote;
   apiClient.subscribeQuotes = originalSubscribeQuotes;
 });
 
@@ -89,17 +91,69 @@ describe("GloomberbCloudProvider", () => {
     });
   });
 
+  test("normalizes sub-unit cloud quotes to their main currency", async () => {
+    apiClient.ensureVerifiedSession = async () => verifiedUser;
+    apiClient.getCloudQuote = async () => ({
+      status: "success",
+      data: {
+        symbol: "IQE",
+        providerId: "gloomberb-cloud",
+        price: 23.1,
+        currency: "GBp",
+        change: -1.4,
+        changePercent: -5.71,
+        previousClose: 24.5,
+        lastUpdated: Date.now(),
+        dataSource: "delayed",
+      },
+    });
+
+    const provider = new GloomberbCloudProvider();
+    const quote = await provider.getQuote("IQE", "LSE");
+
+    expect(quote.currency).toBe("GBP");
+    expect(quote.price).toBeCloseTo(0.231, 8);
+    expect(quote.change).toBeCloseTo(-0.014, 8);
+    expect(quote.previousClose).toBeCloseTo(0.245, 8);
+  });
+
+  test("normalizes sub-unit cloud history using the response currency metadata", async () => {
+    apiClient.ensureVerifiedSession = async () => verifiedUser;
+    apiClient.getCloudHistory = async () => ({
+      status: "success",
+      providerMeta: {
+        currency: "GBp",
+      },
+      data: [{
+        date: "2026-03-27 10:15:00",
+        open: 22.55,
+        high: 23.4,
+        low: 22.1,
+        close: 23.1,
+      }],
+    });
+
+    const provider = new GloomberbCloudProvider();
+    const history = await provider.getPriceHistory("IQE", "LSE", "1Y");
+
+    expect(history[0]?.open).toBeCloseTo(0.2255, 8);
+    expect(history[0]?.high).toBeCloseTo(0.234, 8);
+    expect(history[0]?.low).toBeCloseTo(0.221, 8);
+    expect(history[0]?.close).toBeCloseTo(0.231, 8);
+  });
+
   test("preserves original target context when streaming quotes", () => {
     let unsubscribeCalled = false;
+    const seenQuotes: Array<{ price: number; currency: string }> = [];
     apiClient.subscribeQuotes = (_targets, onQuote) => {
       onQuote(
         { symbol: "AAPL", exchange: "NASDAQ" },
         {
           symbol: "AAPL",
           providerId: "gloomberb-cloud",
-          price: 200,
-          currency: "USD",
-          change: 1,
+          price: 23.1,
+          currency: "GBp",
+          change: -1.4,
           changePercent: 0.5,
           lastUpdated: Date.now(),
           dataSource: "live",
@@ -119,16 +173,24 @@ describe("GloomberbCloudProvider", () => {
         brokerId: "ibkr",
         brokerInstanceId: "ibkr-live",
       },
-    }], (target) => {
+    }], (target, quote) => {
       seenTargets.push({
         brokerId: target.context?.brokerId,
         brokerInstanceId: target.context?.brokerInstanceId,
+      });
+      seenQuotes.push({
+        price: quote.price,
+        currency: quote.currency,
       });
     });
 
     expect(seenTargets).toEqual([{
       brokerId: "ibkr",
       brokerInstanceId: "ibkr-live",
+    }]);
+    expect(seenQuotes).toEqual([{
+      price: 0.231,
+      currency: "GBP",
     }]);
 
     unsubscribe();

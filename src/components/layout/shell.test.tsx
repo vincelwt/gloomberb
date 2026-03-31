@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { act, useReducer } from "react";
@@ -10,7 +9,7 @@ import { setSharedRegistryForTests } from "../../plugins/registry";
 import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
 import { StatusBar } from "./status-bar";
 import { Header } from "./header";
-import { buildNativeWindowState, Shell } from "./shell";
+import { buildNativeWindowState, resolveNativeDockDividers, Shell } from "./shell";
 import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
@@ -316,6 +315,65 @@ describe("Shell", () => {
         paneId: null,
         rect: { x: 0, y: 1, width: 60, height: 20 },
         zIndex: 96,
+      },
+    ]);
+  });
+
+  test("adds dock dividers as global native occluders", () => {
+    const state = buildNativeWindowState(
+      ["left:main", "right:main"],
+      [],
+      null,
+      { open: false, width: 120, contentHeight: 40 },
+      [],
+      [{
+        path: [],
+        axis: "horizontal",
+        bounds: { x: 0, y: 0, width: 120, height: 40 },
+        ratio: 0.5,
+        rect: { x: 59, y: 0, width: 1, height: 40 },
+      }],
+    );
+
+    expect(state.occluders).toEqual([
+      {
+        id: "dock-divider:root",
+        paneId: null,
+        rect: { x: 59, y: 1, width: 1, height: 40 },
+        zIndex: 1,
+      },
+    ]);
+  });
+
+  test("uses the live divider preview rect for dock divider occluders", () => {
+    const state = buildNativeWindowState(
+      ["left:main", "right:main"],
+      [],
+      null,
+      { open: false, width: 120, contentHeight: 40 },
+      [],
+      resolveNativeDockDividers(
+        [{
+          path: [],
+          axis: "horizontal",
+          bounds: { x: 0, y: 0, width: 120, height: 40 },
+          ratio: 0.5,
+          rect: { x: 59, y: 0, width: 1, height: 40 },
+        }],
+        {
+          pathKey: "",
+          rect: { x: 71, y: 0, width: 1, height: 40 },
+          ratio: 0.6,
+        },
+      ),
+    );
+
+    expect(state.occluders).toEqual([
+      {
+        id: "dock-divider:root",
+        paneId: null,
+        rect: { x: 71, y: 1, width: 1, height: 40 },
+        zIndex: 1,
       },
     ]);
   });

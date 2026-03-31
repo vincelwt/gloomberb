@@ -120,6 +120,29 @@ describe("ChatController", () => {
     expect(snapshot.messages.map((entry) => entry.id)).toEqual(["m1"]);
   });
 
+  test("hydrates a cached verified user into the api client for offline use", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+
+    controller.attachPersistence(persistence);
+
+    expect(apiClient.getCurrentUser()).toMatchObject({
+      id: "u1",
+      username: "vince",
+      emailVerified: true,
+    });
+    await expect(apiClient.ensureVerifiedSession()).resolves.toMatchObject({
+      id: "u1",
+      username: "vince",
+      emailVerified: true,
+    });
+  });
+
   test("reset clears persisted chat state and session token", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();

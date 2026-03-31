@@ -179,6 +179,7 @@ export interface CommandDef {
   description?: string;
   wizard?: WizardStep[];
   confirm?: CommandConfirmDef | ((context: CommandConfirmContext) => CommandConfirmDef | null);
+  wizardLayout?: "steps" | "form";
   hidden?: () => boolean;
 }
 
