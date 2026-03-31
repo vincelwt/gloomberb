@@ -1,14 +1,16 @@
-<center>
-# Gloomberb
+<div align="center">
 
-Extensible financial terminal, for the terminal.
+# 📉 Gloomberb
+
+**Extensible financial terminal, for the terminal.**
 
 > Why pay for Bloomberg when you can have Gloomberb?
 
-<!-- screenshots go here -->
-</center>
+<img src="https://gloomberb.com/landing-terminal.png" alt="Gloomberb terminal screenshot" width="720" />
 
-## Features
+</div>
+
+## ✨ Features
 
 - **Track portfolios & trade**
 - **Real-time quotes & fundamentals**
@@ -17,7 +19,7 @@ Extensible financial terminal, for the terminal.
 - **Extensible**
 - **100% local**
 
-## Install
+## 🚀 Install
 
 ```bash
 bun install -g gloomberb
@@ -27,7 +29,7 @@ npm install -g gloomberb
 
 Then run `gloomberb` to start.
 
-## Plugins
+## 🧩 Plugins
 
 Gloomberb has a plugin architecture where everything, from the portfolio list to broker integrations, is a plugin. 
 
@@ -78,7 +80,7 @@ Plugins extend the UI through defined slots:
 - `config:section` — settings page sections
 - `data:post-refresh` / `data:enricher` — hook into the data lifecycle
 
-## Keyboard Shortcuts
+## ⌨️ Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|

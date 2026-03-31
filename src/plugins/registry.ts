@@ -21,7 +21,6 @@ import type {
   PaneTemplateCreateOptions,
   PaneTemplateDef,
   PluginPaneSettingsState,
-  PluginStorage,
   PluginResumeState,
   TickerAction,
 } from "../types/plugin";
@@ -29,7 +28,7 @@ import type { TickerRecord } from "../types/ticker";
 import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
 import { createPaneInstance } from "../types/config";
-import { createPluginPersistence, createPluginStorage } from "./plugin-persistence";
+import { createPluginPersistence } from "./plugin-persistence";
 import { debugLog } from "../utils/debug-log";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "./plugin-runtime";
 import {
@@ -401,7 +400,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
     const pluginNamespace = `plugin:${pluginId}`;
 
-    const storage: PluginStorage = createPluginStorage(this.persistence.pluginState, pluginId);
     const persistence = createPluginPersistence(this.persistence.pluginState, this.persistence.resources, pluginNamespace, pluginId);
     const log = debugLog.createLogger(pluginId);
     const resume: PluginResumeState = {
@@ -492,7 +490,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
       dataProvider: this.dataProvider,
       tickerRepository: this.tickerRepository,
-      storage,
       persistence,
       log,
       resume,
@@ -628,21 +625,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
       for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
       for (const dispose of items.eventDisposers) dispose();
       this.pluginItems.delete(pluginId);
-    }
-
-    if (plugin.panes) {
-      for (const pane of plugin.panes) this.panesMap.delete(pane.id);
-    }
-    if (plugin.paneTemplates) {
-      for (const template of plugin.paneTemplates) {
-        this.paneTemplatesMap.delete(template.id);
-        this.paneTemplateOwners.delete(template.id);
-      }
-    }
-    if (plugin.broker) this.brokersMap.delete(plugin.broker.id);
-    if (plugin.dataProvider) {
-      this.dataProvidersMap.delete(plugin.dataProvider.id);
-      this.dataProviderOwners.delete(plugin.dataProvider.id);
     }
 
     this.plugins.delete(pluginId);

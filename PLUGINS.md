@@ -68,6 +68,7 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerCommand(cmd)` | Add a command to the command bar |
 | `ctx.registerColumn(col)` | Add a custom column to the ticker list |
 | `ctx.registerPane(pane)` | Add a full pane (left/right/bottom) |
+| `ctx.registerPaneTemplate(template)` | Add a reusable pane template (see [Pane templates](#pane-templates)) |
 | `ctx.registerBroker(broker)` | Add a broker integration |
 | `ctx.registerDataProvider(provider)` | Add a data source |
 | `ctx.registerShortcut(shortcut)` | Add a global keyboard shortcut |
@@ -82,6 +83,7 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.getConfig()` | Current app config |
 | `ctx.dataProvider` | The active data provider instance |
 | `ctx.tickerRepository` | The ticker metadata persistence store |
+| `ctx.log` | Scoped logger for debug output |
 
 ### Plugin storage
 
@@ -101,6 +103,7 @@ For richer cached data, use the explicit persistence API. State stores versioned
 ```typescript
 ctx.persistence.setState("draft", { text: "hello" }, { schemaVersion: 1 });
 const draft = ctx.persistence.getState<{ text: string }>("draft", { schemaVersion: 1 });
+ctx.persistence.deleteState("draft");
 
 ctx.persistence.setResource("summary", "AAPL", "cached summary", {
   sourceKey: "provider",
@@ -113,16 +116,65 @@ const summary = ctx.persistence.getResource<string>("summary", "AAPL", {
   schemaVersion: 1,
   allowExpired: true,
 });
+
+ctx.persistence.deleteResource("summary", "AAPL", { sourceKey: "provider" });
+```
+
+### Resume state (session-only)
+
+Transient state that is cleared on app restart. Useful for ephemeral UI state you don't want to persist:
+
+```typescript
+ctx.resume.setState("scroll-pos", 42);
+ctx.resume.getState<number>("scroll-pos"); // 42 (gone after restart)
+ctx.resume.deleteState("scroll-pos");
+
+// Per-pane session state
+ctx.resume.setPaneState("my-pane:main", "expanded", true);
+ctx.resume.getPaneState<boolean>("my-pane:main", "expanded");
+ctx.resume.deletePaneState("my-pane:main", "expanded");
+```
+
+### Config state (persistent)
+
+Persistent configuration scoped to your plugin. Unlike `storage`, values are part of the app config system:
+
+```typescript
+const apiKey = ctx.configState.get<string>("apiKey");
+await ctx.configState.set("apiKey", "sk-...");
+await ctx.configState.delete("apiKey");
+ctx.configState.keys(); // ["apiKey"]
 ```
 
 ### Navigation
 
 ```typescript
-ctx.selectTicker("AAPL");          // Select ticker + focus right panel
-ctx.switchPanel("left");           // Switch active panel
-ctx.switchTab("chart");            // Switch detail tab by id
-ctx.openCommandBar();              // Open the command bar
-ctx.openPaneSettings();            // Open settings for the focused pane
+ctx.selectTicker("AAPL");              // Select ticker + focus right panel
+ctx.selectTicker("AAPL", "my-pane:1"); // Select in a specific pane
+ctx.switchPanel("left");               // Switch active panel
+ctx.switchTab("chart");                // Switch detail tab by id
+ctx.switchTab("chart", "detail:1");    // Switch tab in a specific pane
+ctx.openCommandBar();                  // Open the command bar
+ctx.openCommandBar("export");          // Open with a pre-filled query
+ctx.openPaneSettings();                // Open settings for the focused pane
+ctx.openPaneSettings("my-pane:1");     // Open settings for a specific pane
+ctx.showPane("my-pane");               // Show a hidden pane
+ctx.hidePane("my-pane");               // Hide a pane
+ctx.focusPane("my-pane");              // Move focus to a pane
+ctx.pinTicker("AAPL");                 // Pin a ticker to its own detail pane
+ctx.pinTicker("AAPL", { floating: true, paneType: "ticker-detail" });
+ctx.createPaneFromTemplate("quote-monitor-new", { symbol: "AAPL" });
+```
+
+### Broker management
+
+Plugins that register brokers can manage broker instances programmatically:
+
+```typescript
+const instance = await ctx.createBrokerInstance("ibkr", "My IBKR", { token: "..." });
+await ctx.updateBrokerInstance(instance.id, { token: "new-token" });
+await ctx.syncBrokerInstance(instance.id);  // Trigger position import
+await ctx.removeBrokerInstance(instance.id);
 ```
 
 ### Pane settings
@@ -163,6 +215,15 @@ ctx.registerPane({
 });
 ```
 
+Settings can also be dynamic — pass a function instead of an object to compute fields based on current state:
+
+```typescript
+settings: (context) => ({
+  title: `Settings for ${context.paneId}`,
+  fields: [/* fields based on context.config, context.settings, etc. */],
+}),
+```
+
 Available field types:
 - `toggle`
 - `text`
@@ -191,7 +252,7 @@ function MyPane() {
 
 ### Events
 
-Subscribe to app events:
+Subscribe to and emit app events:
 
 ```typescript
 ctx.on("ticker:selected", ({ symbol, previous }) => {
@@ -201,6 +262,9 @@ ctx.on("ticker:selected", ({ symbol, previous }) => {
 ctx.on("ticker:refreshed", ({ symbol, financials }) => {
   // React to new data
 });
+
+// Plugins can also emit events
+ctx.emit("ticker:selected", { symbol: "AAPL", previous: null });
 ```
 
 Available events: `ticker:selected`, `ticker:refreshed`, `ticker:added`, `ticker:removed`, `config:changed`, `plugin:registered`, `plugin:unregistered`.
@@ -221,10 +285,10 @@ Panes with `defaultMode: "floating"` open as draggable/resizable floating window
 ctx.registerPane({
   id: "my-pane",
   name: "My Pane",
-  component: ({ width, height, focused, close }) => (
-    <Box flexDirection="column" width={width} height={height}>
-      <Text>Hello from pane!</Text>
-    </Box>
+  component: ({ paneId, paneType, width, height, focused, close }) => (
+    <box flexDirection="column" width={width} height={height}>
+      <text>Hello from pane!</text>
+    </box>
   ),
   defaultPosition: "right",
   defaultMode: "floating",
@@ -234,6 +298,55 @@ ctx.registerPane({
 // Show/hide as floating window programmatically
 ctx.showWidget("my-pane");
 ctx.hideWidget("my-pane");
+```
+
+### Pane templates
+
+Pane templates let users create new pane instances from the command bar. This is useful when a plugin supports multiple independent instances (e.g., multiple chart panes for different tickers):
+
+```typescript
+ctx.registerPaneTemplate({
+  id: "my-chart-new",
+  paneId: "my-chart",       // references a registered pane
+  label: "New Chart",
+  description: "Open a new chart pane",
+  keywords: ["chart", "new"],
+
+  // Optional: command-bar shortcut prefix (e.g., typing "/chart AAPL")
+  shortcut: {
+    prefix: "/chart",
+    argPlaceholder: "ticker",
+    argKind: "ticker",
+  },
+
+  // Optional: wizard steps shown before creating the pane
+  wizard: [
+    { key: "interval", label: "Interval", type: "select", options: [
+      { label: "1D", value: "1d" },
+      { label: "1W", value: "1w" },
+    ]},
+  ],
+
+  // Optional: control when the template is available
+  canCreate(context, options) {
+    return !!options?.symbol;
+  },
+
+  // Configure the new pane instance
+  createInstance(context, options) {
+    return {
+      title: options?.symbol ?? "Chart",
+      settings: { symbol: options?.symbol },
+      binding: options?.symbol ? { type: "ticker", ticker: options.symbol } : undefined,
+    };
+  },
+});
+```
+
+Create pane instances programmatically:
+
+```typescript
+ctx.createPaneFromTemplate("my-chart-new", { symbol: "AAPL" });
 ```
 
 ## Reusable components
@@ -248,8 +361,10 @@ import {
   ListView,
   ToggleList,
   Button,
+  IconButton,
   Checkbox,
   Switch,
+  RadioGroup,
   SegmentedControl,
   TextField,
   SearchField,
@@ -262,10 +377,28 @@ import {
   DialogFrame,
   Spinner,
   ProgressBar,
+  SkeletonRow,
+  LoadingBlock,
+  PriceSelectorDialog,
   colors,
+  priceColor,
+  hoverBg,
 } from "gloomberb/components";
-import { useAppState, usePaneSettingValue, usePaneTicker, useSelectedTicker } from "gloomberb/components";
-import { formatCurrency, formatCompact, padTo } from "gloomberb/components";
+import {
+  useAppState,
+  useFocusedTicker,
+  usePaneSettingValue,
+  usePaneTicker,
+  useSelectedTicker,
+} from "gloomberb/components";
+import {
+  formatCurrency,
+  formatCompact,
+  formatPercent,
+  formatPercentRaw,
+  formatNumber,
+  padTo,
+} from "gloomberb/components";
 ```
 
 Available components:
@@ -279,10 +412,76 @@ Available components:
 - `StatusBadge`, `Notice`, `EmptyState` — status and empty/loading feedback
 - `Section`, `FieldRow`, `DialogFrame` — shared framing/layout helpers
 - `Spinner`, `ProgressBar`, `SkeletonRow`, `LoadingBlock` — loading states
+- `PriceSelectorDialog` — ticker price picker dialog
 - `colors` — theme color palette
+- `priceColor(change)` — returns green/red/neutral color for a price change
+- `hoverBg` — standard hover background color
 - `useAppState()` — access full app state
 - `usePaneTicker()` — get the ticker bound to the current pane
+- `useFocusedTicker()` — get the currently focused ticker
 - `useSelectedTicker()` — alias for `usePaneTicker()`
+- `formatCurrency`, `formatCompact`, `formatPercent`, `formatPercentRaw`, `formatNumber`, `padTo` — number formatting utilities
+
+### Plugin runtime hooks
+
+These hooks are available inside pane and tab components rendered by a plugin. They provide reactive access to the plugin's storage layers:
+
+```typescript
+import { usePluginPaneState, usePluginState, usePluginConfigState } from "gloomberb/plugins/plugin-runtime";
+
+// Per-pane transient state (scoped to the current pane instance)
+const [expanded, setExpanded] = usePluginPaneState("expanded", false);
+
+// Persistent plugin state (survives restarts)
+const [cache, setCache] = usePluginState("cache", null, { schemaVersion: 1 });
+
+// Plugin config state (persistent, part of app config)
+const [apiKey, setApiKey] = usePluginConfigState("apiKey", "");
+```
+
+## Pane props
+
+Pane components receive these props:
+
+```typescript
+interface PaneProps {
+  paneId: string;    // unique instance id (e.g., "my-pane:main")
+  paneType: string;  // pane definition id (e.g., "my-pane")
+  focused: boolean;
+  width: number;
+  height: number;
+  close?: () => void;  // present for closeable panes
+}
+```
+
+## Detail tab props
+
+Tab components receive these props:
+
+```typescript
+interface DetailTabProps {
+  width: number;
+  height: number;
+  focused: boolean;
+  onCapture(capturing: boolean): void;
+}
+```
+
+Call `onCapture(true)` when your tab needs exclusive keyboard input (e.g., a text editor or chat input) and `onCapture(false)` when done, so global shortcuts keep working.
+
+Detail tabs can control their visibility based on the current ticker:
+
+```typescript
+ctx.registerDetailTab({
+  id: "options",
+  name: "Options",
+  order: 50,
+  component: OptionsTab,
+  isVisible({ ticker, financials, hasOptionsChain }) {
+    return hasOptionsChain;
+  },
+});
+```
 
 ## Example: adding a detail tab
 
@@ -366,11 +565,48 @@ ctx.registerCommand({
   category: "data",
   wizard: [
     { key: "price", label: "Alert price", type: "text" },
-    { key: "direction", label: "Direction", type: "select", options: ["above", "below"] },
+    { key: "direction", label: "Direction", type: "select", options: [
+      { label: "Above", value: "above" },
+      { label: "Below", value: "below" },
+    ]},
   ],
+  wizardLayout: "form",  // "steps" (default) or "form" (all fields at once)
   async execute(values) {
     // values.price, values.direction
   },
+});
+```
+
+Wizard step types: `text`, `password`, `number`, `select`, `info`. Steps can use `dependsOn` to conditionally appear based on a previous step's value.
+
+Commands can require confirmation before executing:
+
+```typescript
+ctx.registerCommand({
+  id: "delete-all",
+  label: "Delete All Notes",
+  keywords: ["delete", "notes"],
+  category: "data",
+  confirm: {
+    title: "Delete all notes?",
+    body: ["This cannot be undone."],
+    confirmLabel: "Delete",
+    tone: "danger",
+  },
+  async execute() { /* ... */ },
+});
+```
+
+Commands can be conditionally hidden:
+
+```typescript
+ctx.registerCommand({
+  id: "admin-tool",
+  label: "Admin Tool",
+  keywords: ["admin"],
+  category: "config",
+  hidden: () => !ctx.getConfig().debugMode,
+  async execute() { /* ... */ },
 });
 ```
 
@@ -416,7 +652,9 @@ setup(ctx) {
     id: "open-in-browser",
     label: "Open in Yahoo Finance",
     keywords: ["open", "yahoo", "browser"],
-    execute(ticker) {
+    // Optional: only show for certain tickers
+    filter: (ticker) => ticker.metadata.exchange === "US",
+    execute(ticker, financials) {
       // open URL...
     },
   });
@@ -456,21 +694,6 @@ Available slots:
 | `config:section` | `{}` | Section in settings |
 | `data:post-refresh` | `{ ticker, financials }` | After data refresh |
 | `data:enricher` | `{ ticker }` | Enrich ticker data |
-
-## Detail tab props
-
-Tab components receive these props:
-
-```typescript
-interface DetailTabProps {
-  width: number;
-  height: number;
-  focused: boolean;
-  onCapture(capturing: boolean): void;
-}
-```
-
-Call `onCapture(true)` when your tab needs exclusive keyboard input (e.g., a text editor or chat input) and `onCapture(false)` when done, so global shortcuts keep working.
 
 ## Tips
 

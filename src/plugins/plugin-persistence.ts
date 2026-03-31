@@ -1,19 +1,6 @@
 import type { PluginStateStore } from "../data/plugin-state-store";
 import type { ResourceStore } from "../data/resource-store";
-import type { PluginPersistence, PluginStorage } from "../types/plugin";
-
-export function createPluginStorage(pluginState: PluginStateStore, pluginId: string): PluginStorage {
-  return {
-    get: <T,>(key: string): T | null => pluginState.get<T>(pluginId, key)?.value ?? null,
-    set: (key: string, value: unknown) => {
-      pluginState.set(pluginId, key, value);
-    },
-    delete: (key: string) => {
-      pluginState.delete(pluginId, key);
-    },
-    keys: () => pluginState.keys(pluginId),
-  };
-}
+import type { PluginPersistence } from "../types/plugin";
 
 export function createPluginPersistence(
   pluginState: PluginStateStore,

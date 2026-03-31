@@ -241,13 +241,6 @@ export interface TickerAction {
   execute: (ticker: TickerRecord, financials: TickerFinancials | null) => void | Promise<void>;
 }
 
-export interface PluginStorage {
-  get<T = unknown>(key: string): T | null;
-  set(key: string, value: unknown): void;
-  delete(key: string): void;
-  keys(): string[];
-}
-
 export interface PluginPersistence {
   getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null;
   setState(key: string, value: unknown, options?: { schemaVersion?: number }): void;
@@ -310,7 +303,6 @@ export interface GloomPluginContext {
 
   readonly dataProvider: DataProvider;
   readonly tickerRepository: TickerRepository;
-  readonly storage: PluginStorage;
   readonly persistence: PluginPersistence;
   readonly log: PluginLogger;
   readonly resume: PluginResumeState;
