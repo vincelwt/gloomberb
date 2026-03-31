@@ -1,3 +1,4 @@
+import { blendForContrast, blendHex, higherContrast } from "./color-utils";
 import { getTheme, DEFAULT_THEME, type Theme } from "./themes";
 
 // Mutable colors object — properties are updated in-place when the theme changes.
@@ -19,17 +20,7 @@ export function applyTheme(id: string): void {
 
 export type ColorKey = keyof typeof colors;
 
-/** Blend two hex colors by a ratio (0 = color a, 1 = color b) */
-export function blendHex(a: string, b: string, ratio: number): string {
-  const parse = (hex: string) => {
-    const h = hex.replace("#", "");
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)] as const;
-  };
-  const [ar, ag, ab] = parse(a);
-  const [br, bg, bb] = parse(b);
-  const mix = (x: number, y: number) => Math.round(x + (y - x) * ratio).toString(16).padStart(2, "0");
-  return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
-}
+export { blendHex } from "./color-utils";
 
 const COMPARISON_SERIES_COLORS = [
   "#5bc0eb",
@@ -46,44 +37,6 @@ const COMPARISON_SERIES_COLORS = [
 
 export function getComparisonSeriesColor(index: number): string {
   return COMPARISON_SERIES_COLORS[((index % COMPARISON_SERIES_COLORS.length) + COMPARISON_SERIES_COLORS.length) % COMPARISON_SERIES_COLORS.length]!;
-}
-
-function relativeLuminance(hex: string): number {
-  const h = hex.replace("#", "");
-  const toLinear = (value: string) => {
-    const normalized = parseInt(value, 16) / 255;
-    return normalized <= 0.03928
-      ? normalized / 12.92
-      : Math.pow((normalized + 0.055) / 1.055, 2.4);
-  };
-  const r = toLinear(h.slice(0, 2));
-  const g = toLinear(h.slice(2, 4));
-  const b = toLinear(h.slice(4, 6));
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrastRatio(a: string, b: string): number {
-  const lighter = Math.max(relativeLuminance(a), relativeLuminance(b));
-  const darker = Math.min(relativeLuminance(a), relativeLuminance(b));
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-function blendForContrast(base: string, against: string, fallback: string, minContrast: number): string {
-  const steps = [0, 0.08, 0.14, 0.2, 0.28, 0.36, 0.48, 0.62, 0.78, 1] as const;
-  let candidate = base;
-
-  for (const ratio of steps) {
-    candidate = ratio === 0 ? base : blendHex(base, fallback, ratio);
-    if (contrastRatio(candidate, against) >= minContrast) {
-      return candidate;
-    }
-  }
-
-  return candidate;
-}
-
-function higherContrast(a: string, b: string, against: string): string {
-  return contrastRatio(a, against) >= contrastRatio(b, against) ? a : b;
 }
 
 /** Returns a hover background color derived from bg and selected */
@@ -156,9 +109,15 @@ export function floatingPaneTitleBg(focused: boolean): string {
 }
 
 /** Title text color for panes */
-export function paneTitleText(focused: boolean): string {
-  if (focused) return colors.textBright;
-  return colors.textDim;
+export function paneTitleText(focused: boolean, floating = false): string {
+  const background = floating ? floatingPaneTitleBg(focused) : paneTitleBg(focused);
+  const preferred = focused
+    ? higherContrast(colors.textBright, colors.headerText, background)
+    : colors.textDim;
+  const fallback = focused
+    ? higherContrast(colors.text, "#f2f2f2", background)
+    : higherContrast(colors.text, colors.textBright, background);
+  return blendForContrast(preferred, background, fallback, focused ? 5.2 : 4.5);
 }
 
 /** Returns green for positive, red for negative, neutral for zero */

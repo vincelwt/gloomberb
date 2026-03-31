@@ -1,3 +1,5 @@
+import { blendForContrast, blendForContrastOnSurfaces, blendHex, contrastRatio, higherContrast } from "./color-utils";
+
 export interface Theme {
   name: string;
   description: string;
@@ -26,7 +28,79 @@ export interface Theme {
   commandBorder: string;
 }
 
-export const themes: Record<string, Theme> = {
+function highestMinimumContrast(surfaces: readonly string[], candidates: readonly string[]): string {
+  return candidates.reduce((best, candidate) => {
+    const bestScore = Math.min(...surfaces.map((surface) => contrastRatio(best, surface)));
+    const candidateScore = Math.min(...surfaces.map((surface) => contrastRatio(candidate, surface)));
+    return candidateScore > bestScore ? candidate : best;
+  });
+}
+
+function normalizeTheme(theme: Theme): Theme {
+  const bodySurfaces = [theme.bg, theme.panel] as const;
+  const text = blendForContrastOnSurfaces(
+    theme.text,
+    bodySurfaces,
+    highestMinimumContrast(bodySurfaces, [theme.textBright, theme.headerText, "#f2f2f2"]),
+    4.5,
+  );
+  const textDim = blendForContrastOnSurfaces(
+    theme.textDim,
+    bodySurfaces,
+    highestMinimumContrast(bodySurfaces, [text, theme.textBright, "#d0d7de"]),
+    4.5,
+  );
+  const textMuted = blendForContrastOnSurfaces(
+    theme.textMuted,
+    bodySurfaces,
+    highestMinimumContrast(bodySurfaces, [textDim, text, "#c0c7d1"]),
+    3.6,
+  );
+  const positive = blendForContrastOnSurfaces(
+    theme.positive,
+    bodySurfaces,
+    blendHex(theme.positive, theme.textBright, 0.5),
+    3.6,
+  );
+  const negative = blendForContrastOnSurfaces(
+    theme.negative,
+    bodySurfaces,
+    blendHex(theme.negative, theme.textBright, 0.45),
+    3.6,
+  );
+  const neutral = blendForContrastOnSurfaces(
+    theme.neutral,
+    bodySurfaces,
+    highestMinimumContrast(bodySurfaces, [textDim, text, "#c0c7d1"]),
+    3.6,
+  );
+  const headerText = blendForContrast(
+    theme.headerText,
+    theme.header,
+    higherContrast(text, theme.textBright, theme.header),
+    4.5,
+  );
+  const selectedText = blendForContrast(
+    theme.selectedText,
+    theme.selected,
+    higherContrast(text, theme.textBright, theme.selected),
+    4.5,
+  );
+
+  return {
+    ...theme,
+    text,
+    textDim,
+    textMuted,
+    positive,
+    negative,
+    neutral,
+    headerText,
+    selectedText,
+  };
+}
+
+const rawThemes: Record<string, Theme> = {
   amber: {
     name: "Amber",
     description: "Classic amber-on-black terminal",
@@ -401,6 +475,10 @@ export const themes: Record<string, Theme> = {
     commandBorder: "#ff6600",
   },
 };
+
+export const themes: Record<string, Theme> = Object.fromEntries(
+  Object.entries(rawThemes).map(([id, theme]) => [id, normalizeTheme(theme)]),
+) as Record<string, Theme>;
 
 export const DEFAULT_THEME = "amber";
 

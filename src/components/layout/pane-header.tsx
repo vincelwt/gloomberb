@@ -36,7 +36,7 @@ export function PaneHeader({
 
   return (
     <box height={PANE_HEADER_HEIGHT} width={width} backgroundColor={backgroundColor} flexDirection="row">
-      <text fg={paneTitleText(focused)} selectable={false}>
+      <text fg={paneTitleText(focused, floating)} selectable={false}>
         {`${PANE_HEADER_GRIP}${clippedTitle}${padding}${actionText}${closeText}`}
       </text>
     </box>
