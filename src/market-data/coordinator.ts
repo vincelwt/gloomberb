@@ -8,7 +8,7 @@ import {
   buildArticleSummaryKey,
   buildChartKey,
   buildFxKey,
-  buildLegacyFinancials,
+  buildTickerFinancialsSnapshot,
   buildNewsKey,
   buildOptionsKey,
   buildProfileKey,
@@ -26,6 +26,14 @@ import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "..
 
 const EMPTY_MESSAGE = "No data available";
 const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
+
+function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
+  return {
+    instrument,
+    range: "5Y",
+    granularity: "daily",
+  };
+}
 
 function classifyError(error: unknown): { reasonCode: ProviderReasonCode; message: string } {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -169,16 +177,11 @@ export class MarketDataCoordinator {
     return this.fxStore.get(buildFxKey(currency));
   }
 
-  getLegacyFinancialsSync(instrument: InstrumentRef): TickerFinancials | null {
-    const baseChartRequest: ChartRequest = {
-      instrument,
-      range: "5Y",
-      granularity: "daily",
-    };
-    return buildLegacyFinancials(
+  getTickerFinancialsSync(instrument: InstrumentRef): TickerFinancials | null {
+    return buildTickerFinancialsSnapshot(
       this.getSnapshotEntry(instrument),
       this.getQuoteEntry(instrument),
-      this.getChartEntry(baseChartRequest),
+      this.getChartEntry(createBaselineChartRequest(instrument)),
     );
   }
 
@@ -232,11 +235,7 @@ export class MarketDataCoordinator {
         );
       }
       if (normalized.priceHistory.length > 0) {
-        const chartRequest: ChartRequest = {
-          instrument,
-          range: "5Y",
-          granularity: "daily",
-        };
+        const chartRequest = createBaselineChartRequest(instrument);
         const chartKey = buildChartKey(chartRequest);
         if (this.chartStore.get(chartKey).phase === "idle") {
           this.chartStore.set(
@@ -251,11 +250,7 @@ export class MarketDataCoordinator {
   prefetchTicker(instrument: InstrumentRef | null | undefined): void {
     if (!instrument) return;
     void this.loadSnapshot(instrument);
-    void this.loadChart({
-      instrument,
-      range: "5Y",
-      granularity: "daily",
-    });
+    void this.loadChart(createBaselineChartRequest(instrument));
   }
 
   private runSingleFlight<T>(key: string, task: () => Promise<T>): Promise<T> {
@@ -311,9 +306,10 @@ export class MarketDataCoordinator {
           ),
         );
         if ((data.priceHistory ?? []).length > 0) {
+          const chartRequest = createBaselineChartRequest(instrument);
           this.chartStore.set(
-            buildChartKey({ instrument, range: "5Y", granularity: "daily" }),
-            readyEntry(this.getChartEntry({ instrument, range: "5Y", granularity: "daily" }), data.priceHistory, source, attempts, { keepLastGoodOnEmpty: true }),
+            buildChartKey(chartRequest),
+            readyEntry(this.getChartEntry(chartRequest), data.priceHistory, source, attempts, { keepLastGoodOnEmpty: true }),
           );
         }
         traceMarketData("snapshot:ready", {
@@ -574,9 +570,9 @@ export function getSharedMarketDataCoordinator(): MarketDataCoordinator | null {
   return sharedCoordinator;
 }
 
-export function resolveLegacyFinancialsForInstrument(instrument: InstrumentRef | null | undefined): TickerFinancials | null {
+export function resolveTickerFinancialsForInstrument(instrument: InstrumentRef | null | undefined): TickerFinancials | null {
   if (!instrument || !sharedCoordinator) return null;
-  return sharedCoordinator.getLegacyFinancialsSync(instrument);
+  return sharedCoordinator.getTickerFinancialsSync(instrument);
 }
 
 export function resolveEntryValue<T>(entry: QueryEntry<T>): T | null {

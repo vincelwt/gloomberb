@@ -40,7 +40,7 @@ export function useTickerInstrument(symbol: string | null | undefined, ticker: T
 export function useTickerFinancials(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): TickerFinancials | null {
   const instrument = useTickerInstrument(symbol, ticker);
   const financials = useCoordinatorSelector(
-    (coordinator) => (instrument ? coordinator.getLegacyFinancialsSync(instrument) : null),
+    (coordinator) => (instrument ? coordinator.getTickerFinancialsSync(instrument) : null),
     null,
   );
 
@@ -59,7 +59,7 @@ export function useTickerFinancialsMap(tickers: TickerRecord[]): Map<string, Tic
     for (const ticker of tickers) {
       const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
       if (!instrument) continue;
-      const financials = coordinator.getLegacyFinancialsSync(instrument);
+      const financials = coordinator.getTickerFinancialsSync(instrument);
       if (financials) {
         result.set(ticker.metadata.ticker, financials);
       }

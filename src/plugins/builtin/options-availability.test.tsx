@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import type { DataProvider } from "../../types/data-provider";
 import type { OptionsChain } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { createTestDataProvider } from "../../test-support/data-provider";
 import {
   fetchOptionsAvailability,
   readOptionsAvailability,
@@ -37,18 +38,9 @@ function makeTicker(symbol: string, assetCategory = "STK"): TickerRecord {
 function createProvider(
   getOptionsChain: NonNullable<DataProvider["getOptionsChain"]>,
 ): DataProvider {
-  return {
-    id: "test-provider",
-    name: "Test Provider",
-    getTickerFinancials: async () => { throw new Error("unused"); },
-    getQuote: async () => { throw new Error("unused"); },
-    getExchangeRate: async () => 1,
-    search: async () => [],
-    getNews: async () => [],
-    getArticleSummary: async () => null,
-    getPriceHistory: async () => [],
+  return createTestDataProvider({
     getOptionsChain,
-  };
+  });
 }
 
 function createChain(underlyingSymbol: string, expirationDates: number[]): OptionsChain {
@@ -91,6 +83,11 @@ afterEach(() => {
   setHarnessTicker = null;
   resetOptionsAvailabilityCache();
   sharedCoordinator = null;
+  setSharedMarketDataCoordinator(null);
+});
+
+beforeEach(() => {
+  resetOptionsAvailabilityCache();
   setSharedMarketDataCoordinator(null);
 });
 

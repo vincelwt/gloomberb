@@ -1,20 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
 import { createInitialState } from "../../state/app-context";
+import { createTestDataProvider } from "../../test-support/data-provider";
 import { createPaneTemplateOrThrow } from "./workflow-ops";
 
 function makeDataProvider() {
-  return {
-    id: "test",
-    name: "Test Provider",
-    getTickerFinancials: async () => { throw new Error("unused"); },
-    getQuote: async () => { throw new Error("unused"); },
-    getExchangeRate: async () => 1,
-    search: async () => [],
-    getNews: async () => [],
-    getArticleSummary: async () => null,
-    getPriceHistory: async () => [],
-  };
+  return createTestDataProvider({ id: "test" });
 }
 
 function makeTickerRepository() {

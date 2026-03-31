@@ -3,11 +3,11 @@ import { MarketDataCoordinator } from "./coordinator";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
 import type { InstrumentSearchResult } from "../types/instrument";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
+import { createTestDataProvider } from "../test-support/data-provider";
 
 function createProvider(overrides: Partial<DataProvider> = {}): DataProvider {
-  return {
+  return createTestDataProvider({
     id: "test-provider",
-    name: "Test Provider",
     getTickerFinancials: async () => ({
       quote: {
         symbol: "AAPL",
@@ -31,17 +31,13 @@ function createProvider(overrides: Partial<DataProvider> = {}): DataProvider {
       changePercent: 1,
       lastUpdated: Date.now(),
     } satisfies Quote),
-    getExchangeRate: async () => 1,
     search: async () => [] satisfies InstrumentSearchResult[],
-    getNews: async () => [],
-    getArticleSummary: async () => null,
-    getPriceHistory: async () => [],
     ...overrides,
-  };
+  });
 }
 
 describe("MarketDataCoordinator", () => {
-  it("builds a legacy financial snapshot from the centralized stores", async () => {
+  it("builds a ticker snapshot from the centralized stores", async () => {
     const provider = createProvider({
       getTickerFinancials: async () => ({
         quote: {
@@ -66,8 +62,8 @@ describe("MarketDataCoordinator", () => {
     await coordinator.loadSnapshot(instrument);
 
     expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(189.12);
-    expect(coordinator.getLegacyFinancialsSync(instrument)?.fundamentals?.trailingPE).toBe(28.1);
-    expect(coordinator.getLegacyFinancialsSync(instrument)?.profile?.industry).toBe("Consumer Electronics");
+    expect(coordinator.getTickerFinancialsSync(instrument)?.fundamentals?.trailingPE).toBe(28.1);
+    expect(coordinator.getTickerFinancialsSync(instrument)?.profile?.industry).toBe("Consumer Electronics");
   });
 
   it("keeps last good chart data when a refresh returns empty", async () => {
@@ -199,7 +195,7 @@ describe("MarketDataCoordinator", () => {
       },
     );
 
-    const quote = coordinator.getLegacyFinancialsSync(instrument)?.quote;
+    const quote = coordinator.getTickerFinancialsSync(instrument)?.quote;
     expect(quote?.marketState).toBe("PRE");
     expect(quote?.preMarketPrice).toBe(103.5);
     expect(quote?.preMarketChange).toBe(2.5);
@@ -240,8 +236,8 @@ describe("MarketDataCoordinator", () => {
     await coordinator.loadQuote(instrument);
 
     expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(24.5);
-    expect(coordinator.getLegacyFinancialsSync(instrument)?.quote?.price).toBe(0.245);
-    expect(coordinator.getLegacyFinancialsSync(instrument)?.quote?.symbol).toBe("IQE.L");
+    expect(coordinator.getTickerFinancialsSync(instrument)?.quote?.price).toBe(0.245);
+    expect(coordinator.getTickerFinancialsSync(instrument)?.quote?.symbol).toBe("IQE.L");
   });
 
   it("keeps the snapshot quote when a streaming update is off by a likely 100x unit mismatch", async () => {
@@ -288,10 +284,10 @@ describe("MarketDataCoordinator", () => {
     );
 
     expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(24.5);
-    expect(coordinator.getLegacyFinancialsSync(instrument)?.quote?.price).toBe(0.245);
+    expect(coordinator.getTickerFinancialsSync(instrument)?.quote?.price).toBe(0.245);
   });
 
-  it("hydrates legacy financials synchronously from primed cached data", () => {
+  it("hydrates ticker financials synchronously from primed cached data", () => {
     const coordinator = new MarketDataCoordinator(createProvider());
     const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
 
@@ -320,7 +316,7 @@ describe("MarketDataCoordinator", () => {
       },
     }]);
 
-    const financials = coordinator.getLegacyFinancialsSync(instrument);
+    const financials = coordinator.getTickerFinancialsSync(instrument);
     expect(financials?.quote?.marketCap).toBe(3_640_775_908_600);
     expect(financials?.fundamentals?.trailingPE).toBe(31.4);
     expect(financials?.priceHistory[0]?.close).toBe(248.8);
@@ -365,7 +361,7 @@ describe("MarketDataCoordinator", () => {
     }]);
     await coordinator.loadQuote(instrument);
 
-    const financials = coordinator.getLegacyFinancialsSync(instrument);
+    const financials = coordinator.getTickerFinancialsSync(instrument);
     expect(financials?.quote?.price).toBe(246.63);
     expect(financials?.quote?.marketCap).toBe(3_640_775_908_600);
     expect(financials?.fundamentals?.trailingPE).toBe(31.4);

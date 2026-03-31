@@ -10,6 +10,7 @@ import {
   type AppAction,
 } from "../../state/app-context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { createTestDataProvider } from "../../test-support/data-provider";
 import {
   cloneLayout,
   createDefaultConfig,
@@ -114,23 +115,15 @@ function createFinancialsTabHarness() {
 }
 
 function createProvider(hasOptions: boolean): DataProvider {
-  return {
-    id: "test-provider",
-    name: "Test Provider",
-    getTickerFinancials: async () => { throw new Error("unused"); },
-    getQuote: async () => { throw new Error("unused"); },
-    getExchangeRate: async () => 1,
-    search: async () => [],
-    getNews: async () => [],
-    getArticleSummary: async () => null,
-    getPriceHistory: async () => [],
+  return createTestDataProvider({
+    getExchangeRate: async (currency) => (currency === "EUR" ? 1.1 : 1),
     getOptionsChain: async (ticker) => ({
       underlyingSymbol: ticker,
       expirationDates: hasOptions ? [1_717_113_600] : [],
       calls: [],
       puts: [],
     }),
-  };
+  });
 }
 
 function setOptionsProvider(provider: DataProvider | undefined): void {

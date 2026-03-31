@@ -4,6 +4,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { CommandBar } from "./command-bar";
 import { AppContext, type AppState, appReducer, createInitialState } from "../../state/app-context";
+import { createTestDataProvider } from "../../test-support/data-provider";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
@@ -62,17 +63,10 @@ function makeTicker(symbol: string, name: string): TickerRecord {
 }
 
 function makeDataProvider(searchImpl: DataProvider["search"] = async () => []): DataProvider {
-  return {
+  return createTestDataProvider({
     id: "test",
-    name: "Test Provider",
-    getTickerFinancials: async () => { throw new Error("unused"); },
-    getQuote: async () => { throw new Error("unused"); },
-    getExchangeRate: async () => 1,
     search: searchImpl,
-    getNews: async () => [],
-    getArticleSummary: async () => null,
-    getPriceHistory: async () => [],
-  };
+  });
 }
 
 function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () => false): PluginRegistry {

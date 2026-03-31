@@ -143,7 +143,7 @@ function projectExtendedHoursQuote(
   };
 }
 
-export function buildLegacyFinancials(
+export function buildTickerFinancialsSnapshot(
   snapshotEntry: QueryEntry<TickerFinancials>,
   quoteEntry?: QueryEntry<TickerFinancials["quote"]>,
   chartEntry?: QueryEntry<TickerFinancials["priceHistory"]>,

@@ -744,7 +744,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   pluginRegistry.getDataFn = (symbol) => {
     const ticker = state.tickers.get(symbol) ?? null;
     const instrument = instrumentFromTicker(ticker, symbol);
-    return instrument ? marketData.getLegacyFinancialsSync(instrument) : null;
+    return instrument ? marketData.getTickerFinancialsSync(instrument) : null;
   };
   pluginRegistry.getConfigFn = () => state.config;
   pluginRegistry.getPaneRuntimeStateFn = (paneId) => state.paneState[paneId] ?? null;

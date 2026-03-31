@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { loadConfig, sanitizeLayout, saveConfig } from "./config-store";
-import { DEFAULT_LAYOUT, findPaneInstance } from "../types/config";
+import { CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT, findPaneInstance } from "../types/config";
 import { getDockedPaneIds } from "../plugins/pane-manager";
 
 const tempDirs: string[] = [];
@@ -12,10 +12,46 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
+async function createTempConfigDir(): Promise<string> {
+  const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
+  tempDirs.push(dataDir);
+  return dataDir;
+}
+
+function createSavedConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    configVersion: CURRENT_CONFIG_VERSION,
+    baseCurrency: "USD",
+    refreshIntervalMinutes: 30,
+    portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
+    watchlists: [{ id: "watchlist", name: "Watchlist" }],
+    layout: DEFAULT_LAYOUT,
+    layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
+    activeLayoutIndex: 0,
+    brokerInstances: [],
+    plugins: [],
+    disabledPlugins: [],
+    theme: "amber",
+    chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
+    recentTickers: [],
+    ...overrides,
+  };
+}
+
+async function writeConfigJson(dataDir: string, config: Record<string, unknown>): Promise<void> {
+  await writeFile(join(dataDir, "config.json"), JSON.stringify(config), "utf-8");
+}
+
 describe("sanitizeLayout", () => {
   test("rewrites unbound ticker-detail panes to follow the first portfolio pane", () => {
     const layout = sanitizeLayout({
-      columns: [{ width: "50%" }, { width: "50%" }],
+      dockRoot: {
+        kind: "split",
+        axis: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "portfolio-list:main" },
+        second: { kind: "pane", instanceId: "ticker-detail:main" },
+      },
       instances: [
         {
           instanceId: "portfolio-list:main",
@@ -29,10 +65,6 @@ describe("sanitizeLayout", () => {
           binding: { kind: "none" },
         },
       ],
-      docked: [
-        { instanceId: "portfolio-list:main", columnIndex: 0 },
-        { instanceId: "ticker-detail:main", columnIndex: 1 },
-      ],
       floating: [],
     }, DEFAULT_LAYOUT);
 
@@ -45,7 +77,7 @@ describe("sanitizeLayout", () => {
 
   test("removes follow panes whose source pane is missing", () => {
     const layout = sanitizeLayout({
-      columns: [{ width: "100%" }],
+      dockRoot: { kind: "pane", instanceId: "ticker-detail:main" },
       instances: [
         {
           instanceId: "ticker-detail:main",
@@ -53,7 +85,6 @@ describe("sanitizeLayout", () => {
           binding: { kind: "follow", sourceInstanceId: "portfolio-list:missing" },
         },
       ],
-      docked: [{ instanceId: "ticker-detail:main", columnIndex: 0 }],
       floating: [],
     }, DEFAULT_LAYOUT);
 
@@ -62,9 +93,15 @@ describe("sanitizeLayout", () => {
     expect(layout.dockRoot).toBeNull();
   });
 
-  test("migrates legacy columns into a split tree and clamps floating placement memory", () => {
+  test("clamps floating placement memory and drops invalid docked placement hints", () => {
     const layout = sanitizeLayout({
-      columns: [{ width: "100%" }],
+      dockRoot: {
+        kind: "split",
+        axis: "vertical",
+        ratio: 0.55,
+        first: { kind: "pane", instanceId: "portfolio-list:main" },
+        second: { kind: "pane", instanceId: "ticker-detail:main" },
+      },
       instances: [
         {
           instanceId: "portfolio-list:main",
@@ -97,10 +134,6 @@ describe("sanitizeLayout", () => {
           },
         },
       ],
-      docked: [
-        { instanceId: "portfolio-list:main", columnIndex: 0, height: "130%" },
-        { instanceId: "ticker-detail:main", columnIndex: 0, height: "55%" },
-      ],
       floating: [],
     }, DEFAULT_LAYOUT);
 
@@ -116,29 +149,33 @@ describe("sanitizeLayout", () => {
       },
     });
   });
+
+  test("falls back to the default layout when given an obsolete column layout", () => {
+    const layout = sanitizeLayout({
+      columns: [{ width: "100%" }],
+      instances: [
+        {
+          instanceId: "portfolio-list:main",
+          paneId: "portfolio-list",
+          binding: { kind: "none" },
+        },
+      ],
+      docked: [{ instanceId: "portfolio-list:main", columnIndex: 0 }],
+      floating: [],
+    }, DEFAULT_LAYOUT);
+
+    expect(layout).toEqual(DEFAULT_LAYOUT);
+  });
 });
 
 describe("loadConfig", () => {
   test("fills in missing chart preferences for older configs", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
-    tempDirs.push(dataDir);
-
-    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 5,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-      watchlists: [{ id: "watchlist", name: "Watchlist" }],
-      columns: [],
-      layout: DEFAULT_LAYOUT,
-      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
-      activeLayoutIndex: 0,
-      brokerInstances: [],
-      plugins: [],
-      disabledPlugins: [],
-      theme: "amber",
       recentTickers: [],
-    }), "utf-8");
+      chartPreferences: undefined,
+    }));
 
     const config = await loadConfig(dataDir);
 
@@ -149,29 +186,14 @@ describe("loadConfig", () => {
   });
 
   test("sanitizes invalid chart renderer values back to auto", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
-    tempDirs.push(dataDir);
-
-    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 7,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-      watchlists: [{ id: "watchlist", name: "Watchlist" }],
-      columns: [],
-      layout: DEFAULT_LAYOUT,
-      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
-      activeLayoutIndex: 0,
-      brokerInstances: [],
-      plugins: [],
-      disabledPlugins: [],
-      theme: "amber",
       chartPreferences: {
         defaultRenderMode: "line",
         renderer: "nope",
       },
-      recentTickers: [],
-    }), "utf-8");
+    }));
 
     const config = await loadConfig(dataDir);
 
@@ -183,31 +205,16 @@ describe("loadConfig", () => {
   });
 
   test("preserves plugin config state from disk", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
-    tempDirs.push(dataDir);
-
-    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 7,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-      watchlists: [{ id: "watchlist", name: "Watchlist" }],
-      columns: [],
-      layout: DEFAULT_LAYOUT,
-      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
-      activeLayoutIndex: 0,
-      brokerInstances: [],
-      plugins: [],
-      disabledPlugins: [],
       pluginConfig: {
         news: {
           displayMode: "expanded",
         },
       },
-      theme: "amber",
       chartPreferences: { defaultRenderMode: "line" },
-      recentTickers: [],
-    }), "utf-8");
+    }));
 
     const config = await loadConfig(dataDir);
 
@@ -218,114 +225,48 @@ describe("loadConfig", () => {
     });
   });
 
-  test("migrates disabled chat plugin state to gloomberb-cloud", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
-    tempDirs.push(dataDir);
-
-    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+  test("preserves disabled plugin ids without migration rewrites", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 9,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-      watchlists: [{ id: "watchlist", name: "Watchlist" }],
-      columns: [],
-      layout: DEFAULT_LAYOUT,
-      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
-      activeLayoutIndex: 0,
-      brokerInstances: [],
-      plugins: [],
-      disabledPlugins: ["chat"],
-      theme: "amber",
-      chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
-      recentTickers: [],
-      onboardingComplete: true,
-    }), "utf-8");
+      disabledPlugins: ["chat", "news", "chat"],
+    }));
 
     const config = await loadConfig(dataDir);
 
-    expect(config.disabledPlugins).toContain("gloomberb-cloud");
-    expect(config.disabledPlugins).not.toContain("chat");
+    expect(config.disabledPlugins).toEqual(["chat", "news"]);
   });
 
-  test("keeps cloud opt-in for older completed installs", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
-    tempDirs.push(dataDir);
-
-    await writeFile(join(dataDir, "config.json"), JSON.stringify({
-      configVersion: 9,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-      watchlists: [{ id: "watchlist", name: "Watchlist" }],
-      columns: [],
-      layout: DEFAULT_LAYOUT,
-      layouts: [{ name: "Default", layout: DEFAULT_LAYOUT }],
-      activeLayoutIndex: 0,
-      brokerInstances: [],
-      plugins: [],
-      disabledPlugins: [],
-      theme: "amber",
-      chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
-      recentTickers: [],
-      onboardingComplete: true,
-    }), "utf-8");
-
-    const config = await loadConfig(dataDir);
-
-    expect(config.disabledPlugins).toContain("gloomberb-cloud");
-  });
-
-  test("migrates version-6 configs forward without losing saved layouts", async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), "gloomberb-config-"));
-    tempDirs.push(dataDir);
-
-    const researchLayout = {
+  test("falls back to the default layout when persisted layouts use the obsolete column shape", async () => {
+    const dataDir = await createTempConfigDir();
+    const obsoleteLayout = {
       columns: [{ width: "100%" }],
       instances: [
         {
           instanceId: "portfolio-list:main",
           paneId: "portfolio-list",
           binding: { kind: "none" },
-          params: { collectionId: "main" },
-        },
-        {
-          instanceId: "ticker-detail:main",
-          paneId: "ticker-detail",
-          binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
         },
       ],
       docked: [{ instanceId: "portfolio-list:main", columnIndex: 0 }],
-      floating: [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 36, height: 12 }],
+      floating: [],
     };
 
-    await writeFile(join(dataDir, "config.json"), JSON.stringify({
+    await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 6,
-      baseCurrency: "USD",
-      refreshIntervalMinutes: 30,
-      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-      watchlists: [{ id: "watchlist", name: "Watchlist" }],
-      columns: [],
-      layout: DEFAULT_LAYOUT,
       layouts: [
         { name: "Default", layout: DEFAULT_LAYOUT },
-        { name: "Research", layout: researchLayout },
+        { name: "Research", layout: obsoleteLayout },
       ],
       activeLayoutIndex: 1,
-      brokerInstances: [],
-      plugins: [],
-      disabledPlugins: [],
-      theme: "amber",
-      chartPreferences: { defaultRenderMode: "area" },
-      recentTickers: [],
-    }), "utf-8");
+    }));
 
     const config = await loadConfig(dataDir);
 
-    expect(config.configVersion).toBe(10);
+    expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(config.activeLayoutIndex).toBe(1);
     expect(config.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
-    expect(getDockedPaneIds(config.layout)).toEqual(["portfolio-list:main"]);
-    expect(config.layout.floating).toHaveLength(1);
+    expect(config.layout).toEqual(DEFAULT_LAYOUT);
 
     await saveConfig(config);
     const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
@@ -334,10 +275,8 @@ describe("loadConfig", () => {
       activeLayoutIndex: number;
     };
 
-    expect(persisted.configVersion).toBe(10);
+    expect(persisted.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(persisted.activeLayoutIndex).toBe(1);
-    expect(persisted.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
-    expect(persisted.layouts[1]?.layout.dockRoot).toBeDefined();
-    expect(persisted.layouts[1]?.layout.docked).toBeUndefined();
+    expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT);
   });
 });

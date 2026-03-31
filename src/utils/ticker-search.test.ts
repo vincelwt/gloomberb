@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { DataProvider } from "../types/data-provider";
 import type { InstrumentSearchResult } from "../types/instrument";
 import type { TickerRecord } from "../types/ticker";
+import { createTestDataProvider } from "../test-support/data-provider";
 import {
   createLocalTickerSearchCandidates,
   findExactTickerSearchMatch,
@@ -38,17 +39,10 @@ function makeSearchResult(symbol: string, name = symbol): InstrumentSearchResult
 }
 
 function makeDataProvider(results: InstrumentSearchResult[]): DataProvider {
-  return {
+  return createTestDataProvider({
     id: "test",
-    name: "Test Provider",
-    getTickerFinancials: async () => { throw new Error("unused"); },
-    getQuote: async () => { throw new Error("unused"); },
-    getExchangeRate: async () => 1,
     search: async () => results,
-    getNews: async () => [],
-    getArticleSummary: async () => null,
-    getPriceHistory: async () => [],
-  };
+  });
 }
 
 describe("ticker-search utilities", () => {

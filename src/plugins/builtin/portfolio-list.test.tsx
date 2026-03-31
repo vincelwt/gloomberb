@@ -109,14 +109,13 @@ function makeQuote(overrides: Partial<Quote> = {}): Quote {
 function createPortfolioConfig(portfolioId: string, brokerInstances: BrokerInstanceConfig[] = []): AppConfig {
   const config = createDefaultConfig("/tmp/gloomberb-portfolio-list");
   const layout = {
-    columns: [{ width: "100%" }],
+    dockRoot: { kind: "pane" as const, instanceId: TEST_PANE_ID },
     instances: [{
       instanceId: TEST_PANE_ID,
       paneId: "portfolio-list",
       binding: { kind: "none" as const },
       params: { collectionId: portfolioId },
     }],
-    docked: [{ instanceId: TEST_PANE_ID, columnIndex: 0 }],
     floating: [],
   };
 
@@ -319,7 +318,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("€125.00");
+    expect(frame).toMatch(/AAPL\s+125\s+\+4\.17%/);
     expect(frame).toContain("€100.00");
     expect(frame).toContain("1.4k");
     expect(frame).toContain("+275");
@@ -1083,7 +1082,7 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("AAPL");
-    expect(frame).toContain("126.50");
+    expect(frame).toContain("126.5");
     expect(frame).toContain("+5.41%");
   });
 

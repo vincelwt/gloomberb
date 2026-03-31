@@ -33,6 +33,7 @@ interface SessionStateInput {
   statusBarVisible: boolean;
   recentTickers: string[];
   tickers: Map<string, TickerRecord>;
+  exchangeRates: Map<string, number>;
 }
 
 function normalizeHydrationTarget(target: HydrationTarget): HydrationTarget {
@@ -74,6 +75,11 @@ function targetFromTicker(ticker: TickerRecord): HydrationTarget {
 export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSnapshot {
   const seen = new Set<string>();
   const hydrationTargets: HydrationTarget[] = [];
+  const exchangeCurrencies = [...new Set(
+    [...state.exchangeRates.keys()]
+      .map((currency) => currency.trim().toUpperCase())
+      .filter(Boolean),
+  )];
 
   const pushTarget = (ticker: TickerRecord | null | undefined) => {
     if (!ticker) return;
@@ -113,7 +119,7 @@ export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSna
       ...state.config.layout.floating.map((entry) => entry.instanceId),
     ],
     hydrationTargets,
-    exchangeCurrencies: [],
+    exchangeCurrencies,
     savedAt: Date.now(),
   };
 }
@@ -145,7 +151,11 @@ export function reconcileAppSessionSnapshot(
     statusBarVisible: snapshot.statusBarVisible !== false,
     openPaneIds,
     hydrationTargets,
-    exchangeCurrencies: [...new Set((snapshot.exchangeCurrencies ?? []).filter(Boolean))],
+    exchangeCurrencies: [...new Set(
+      (snapshot.exchangeCurrencies ?? [])
+        .map((currency) => currency.trim().toUpperCase())
+        .filter(Boolean),
+    )],
     savedAt: typeof snapshot.savedAt === "number" ? snapshot.savedAt : Date.now(),
   };
 }
