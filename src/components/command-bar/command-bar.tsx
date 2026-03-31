@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { createRef, useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import { Spinner } from "../spinner";
@@ -150,6 +150,7 @@ function InputStepContent({ resolve, step }: PromptContext<string> & { step: Wiz
           inputRef={inputRef}
           value={value}
           placeholder={step.placeholder || ""}
+          type={step.type === "password" ? "password" : "text"}
           focused
           onChange={setValue}
           onSubmit={(submittedValue) => {
@@ -157,6 +158,99 @@ function InputStepContent({ resolve, step }: PromptContext<string> & { step: Wiz
             if (submitted) resolve(submitted);
           }}
         />
+      </box>
+    </DialogFrame>
+  );
+}
+
+function FormStepContent({
+  resolve,
+  dialogId,
+  title,
+  steps,
+  initialValues,
+}: PromptContext<Record<string, string> | null> & {
+  title: string;
+  steps: WizardStep[];
+  initialValues: Record<string, string>;
+}) {
+  const inputRefs = useMemo(() => steps.map(() => createRef<InputRenderable>()), [steps]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(
+    steps.map((step) => [step.key, initialValues[step.key] ?? ""]),
+  ));
+
+  useEffect(() => {
+    inputRefs[activeIndex]?.current?.focus();
+  }, [activeIndex, inputRefs]);
+
+  const focusField = useCallback((nextIndex: number) => {
+    setActiveIndex(Math.max(0, Math.min(steps.length - 1, nextIndex)));
+  }, [steps.length]);
+
+  const submitForm = useCallback((overrides?: Record<string, string>) => {
+    const nextValues = overrides ? { ...values, ...overrides } : values;
+    const submittedValues: Record<string, string> = {};
+    for (const step of steps) {
+      submittedValues[step.key] = nextValues[step.key]?.trim() || step.defaultValue || "";
+    }
+    resolve(submittedValues);
+  }, [resolve, steps, values]);
+
+  useDialogKeyboard((event) => {
+    if (event.name === "escape") {
+      event.stopPropagation();
+      resolve(null);
+      return;
+    }
+    if (event.shift && event.name === "tab") {
+      event.stopPropagation();
+      focusField(activeIndex - 1);
+      return;
+    }
+    if (event.name === "tab" || event.name === "down") {
+      event.stopPropagation();
+      focusField(activeIndex + 1);
+      return;
+    }
+    if (event.name === "up") {
+      event.stopPropagation();
+      focusField(activeIndex - 1);
+    }
+  }, dialogId);
+
+  return (
+    <DialogFrame title={title} footer="Enter advances · ↑↓ move · Esc cancels">
+      <box flexDirection="column">
+        {steps.map((step, index) => (
+          <box key={step.key} flexDirection="column">
+            {index > 0 && <box height={1} />}
+            <TextField
+              inputRef={inputRefs[index]}
+              label={step.label}
+              value={values[step.key] ?? ""}
+              placeholder={step.placeholder || ""}
+              type={step.type === "password" ? "password" : "text"}
+              focused={index === activeIndex}
+              onMouseDown={() => setActiveIndex(index)}
+              onChange={(nextValue) => setValues((current) => ({ ...current, [step.key]: nextValue }))}
+              onSubmit={(submittedValue) => {
+                const nextValues = { ...values, [step.key]: submittedValue };
+                setValues(nextValues);
+                if (index === steps.length - 1) {
+                  submitForm({ [step.key]: submittedValue });
+                  return;
+                }
+                focusField(index + 1);
+              }}
+            />
+            {step.body?.map((line, lineIndex) => (
+              <box key={`${step.key}:${lineIndex}`} height={1}>
+                <text fg={colors.textDim}>{line || " "}</text>
+              </box>
+            ))}
+          </box>
+        ))}
       </box>
     </DialogFrame>
   );
@@ -299,6 +393,10 @@ function ResultContent({ dismiss, dialogId, message, isError }: AlertContext & {
       <text fg={colors.textMuted}>Press Enter to close</text>
     </box>
   );
+}
+
+function isInputWizardStep(step: WizardStep): boolean {
+  return step.type !== "info" && step.type !== "select";
 }
 
 export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, quitApp }: CommandBarProps) {
@@ -886,12 +984,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     dispatch({ type: "FOCUS_PANE", paneId: duplicate.instanceId });
   }, [dispatch, persistLayoutChange, pluginRegistry]);
 
-  // Run a wizard command through sequential dialogs
+  // Run a wizard command through dialogs, optionally grouping plain inputs into one form.
   const runWizard = useCallback(async (cmd: CommandDef) => {
     const steps = cmd.wizard!;
     const values: Record<string, string> = {};
 
-    for (const step of steps) {
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index]!;
       if (step.dependsOn && values[step.dependsOn.key] !== step.dependsOn.value) {
         continue;
       }
@@ -930,6 +1029,26 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         await dialog.alert({
           content: (ctx) => <InfoStepContent {...ctx} step={step} />,
         });
+        continue;
+      }
+
+      if (cmd.wizardLayout === "form" && isInputWizardStep(step) && !step.dependsOn) {
+        const formSteps = [step];
+        while (index + 1 < steps.length) {
+          const nextStep = steps[index + 1]!;
+          if (!isInputWizardStep(nextStep) || nextStep.dependsOn) {
+            break;
+          }
+          formSteps.push(nextStep);
+          index += 1;
+        }
+
+        const formResult = await dialog.prompt<Record<string, string> | null>({
+          content: (ctx) => <FormStepContent {...ctx} title={cmd.label} steps={formSteps} initialValues={values} />,
+        });
+
+        if (formResult === undefined || formResult === null) return;
+        Object.assign(values, formResult);
         continue;
       }
 

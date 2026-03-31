@@ -5,9 +5,9 @@ import { AppContext, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
-import type { ChatMessage } from "../../utils/api-client";
+import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
-import { ChatContent } from "./chat";
+import { ChatContent, ChatStatusWidget, gloomberbCloudPlugin } from "./chat";
 import { ChatController } from "./chat-controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
@@ -97,12 +97,20 @@ function makeMessage(index: number): ChatMessage {
   };
 }
 
-function createController(messages: ChatMessage[] = []) {
+function createController(options: {
+  messages?: ChatMessage[];
+  sessionToken?: string | null;
+  user?: { id: string; username: string; emailVerified: boolean } | null;
+} = {}) {
+  const messages = options.messages ?? [];
   const persistence = new MemoryPersistence();
   const controller = new ChatController();
+  const user = Object.prototype.hasOwnProperty.call(options, "user")
+    ? options.user ?? null
+    : { id: "u0", username: "vince", emailVerified: true };
   persistence.setState("session", {
-    sessionToken: null,
-    user: { id: "u0", username: "vince", emailVerified: true },
+    sessionToken: options.sessionToken ?? null,
+    user,
   }, { schemaVersion: 1 });
   persistence.setState("channel:everyone", {
     draft: "",
@@ -156,6 +164,7 @@ async function flushFrame() {
 afterEach(async () => {
   setSharedRegistryForTests(undefined);
   setSharedDataProviderForTests(undefined);
+  apiClient.setSessionToken(null);
 
   if (testSetup) {
     await act(async () => {
@@ -203,14 +212,16 @@ describe("ChatContent", () => {
   });
 
   test("auto-scrolls to newly appended messages while following the latest transcript", async () => {
-    const controller = createController([
-      makeMessage(1),
-      makeMessage(2),
-      makeMessage(3),
-      makeMessage(4),
-      makeMessage(5),
-      makeMessage(6),
-    ]);
+    const controller = createController({
+      messages: [
+        makeMessage(1),
+        makeMessage(2),
+        makeMessage(3),
+        makeMessage(4),
+        makeMessage(5),
+        makeMessage(6),
+      ],
+    });
 
     await act(async () => {
       testSetup = await testRender(createHarness(controller, { width: 60, height: 12 }), {
@@ -238,14 +249,16 @@ describe("ChatContent", () => {
   });
 
   test("renders ticker badges and opens a floating detail pane on click", async () => {
-    const controller = createController([{
-      id: "m1",
-      channelId: "everyone",
-      content: "Watching $TSLA today",
-      replyToId: null,
-      createdAt: "2026-03-28T00:00:00.000Z",
-      user: { id: "u1", username: "vince", displayName: "Vince" },
-    }]);
+    const controller = createController({
+      messages: [{
+        id: "m1",
+        channelId: "everyone",
+        content: "Watching $TSLA today",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u1", username: "vince", displayName: "Vince" },
+      }],
+    });
     const opened: string[] = [];
 
     setSharedRegistryForTests({
@@ -308,5 +321,85 @@ describe("ChatContent", () => {
     });
 
     expect(opened).toEqual(["TSLA"]);
+  });
+
+  test("shows a saved-login message instead of logged out when a session token is cached", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: null,
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Saved login found.");
+    expect(frame).toContain("Reconnect to refresh");
+    expect(frame).not.toContain("Not logged in.");
+  });
+
+  test("shows a logged-in icon in the cloud status widget for cached sessions", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: null,
+    });
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <ChatStatusWidget controller={controller} />
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("@");
+    expect(frame).toContain("Shift+C");
+    expect(frame).not.toContain("vince");
+  });
+
+  test("auth commands use a single-form layout and signup no longer prompts for display name", () => {
+    const registeredCommands: Array<{ id: string; wizardLayout?: string; wizard?: Array<{ key: string }> }> = [];
+
+    gloomberbCloudPlugin.setup({
+      persistence: new MemoryPersistence(),
+      resume: {
+        getState: () => null,
+        setState: () => {},
+        deleteState: () => {},
+      },
+      registerPane: () => {},
+      registerShortcut: () => {},
+      registerCommand: (command: { id: string; wizardLayout?: string; wizard?: Array<{ key: string }> }) => {
+        registeredCommands.push(command);
+      },
+      showWidget: () => {},
+      hideWidget: () => {},
+      showToast: () => {},
+    } as any);
+
+    const loginCommand = registeredCommands.find((command) => command.id === "auth-login");
+    const signupCommand = registeredCommands.find((command) => command.id === "auth-signup");
+
+    expect(loginCommand?.wizardLayout).toBe("form");
+    expect(signupCommand?.wizardLayout).toBe("form");
+    expect(signupCommand?.wizard?.map((step) => step.key)).toEqual([
+      "email",
+      "username",
+      "password",
+      "confirmPassword",
+      "_validate",
+    ]);
   });
 });

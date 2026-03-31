@@ -177,6 +177,7 @@ export interface CommandDef {
   category: "navigation" | "data" | "portfolio" | "config";
   description?: string;
   wizard?: WizardStep[];
+  wizardLayout?: "steps" | "form";
   hidden?: () => boolean;
 }
 

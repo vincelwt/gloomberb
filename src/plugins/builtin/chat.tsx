@@ -23,6 +23,10 @@ interface ChatContentProps {
   >;
 }
 
+interface ChatStatusWidgetProps {
+  controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
+}
+
 function estimateWrappedLineCount(text: string, width: number) {
   const safeWidth = Math.max(width, 1);
   return text.split("\n").reduce((total, line) => (
@@ -59,6 +63,7 @@ export function ChatContent({
   const { dispatch } = useAppState();
   const initialSnapshot = controller.getSnapshot();
   const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
+  const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [user, setUser] = useState<{ id: string; username: string; emailVerified: boolean } | null>(initialSnapshot.user);
   const [loading, setLoading] = useState(initialSnapshot.loading);
   const [inputFocused, setInputFocused] = useState(false);
@@ -76,6 +81,7 @@ export function ChatContent({
   useEffect(() => {
     const unsubscribe = controller.subscribe((snapshot) => {
       setMessages(snapshot.messages);
+      setHasSavedSession(snapshot.hasSavedSession);
       setUser(snapshot.user);
       setLoading(snapshot.loading);
       setInputValue(snapshot.draft);
@@ -237,13 +243,24 @@ export function ChatContent({
     );
   }
 
-  if (!user) {
+  if (!user && !hasSavedSession) {
     return (
       <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
         <text fg={colors.textDim}>Not logged in.</text>
         <text fg={colors.textDim}> </text>
         <text fg={colors.text}>Press Ctrl+P and search "Login" or "Sign Up"</text>
         <text fg={colors.textDim}>to start chatting.</text>
+      </box>
+    );
+  }
+
+  if (!user && hasSavedSession) {
+    return (
+      <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
+        <text fg={colors.positive}>Saved login found.</text>
+        <text fg={colors.textDim}> </text>
+        <text fg={colors.text}>Reconnect to refresh your Gloomberb Cloud session.</text>
+        <text fg={colors.textDim}>Your cached transcript is still available locally.</text>
       </box>
     );
   }
@@ -380,26 +397,35 @@ export function ChatPane({ focused, width, height, close }: PaneProps) {
   );
 }
 
-function ChatStatusWidget() {
+export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
   const { state } = useAppState();
-  const [username, setUsername] = useState<string | null>(chatController.getSnapshot().user?.username ?? null);
+  const initialSnapshot = controller.getSnapshot();
+  const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
+  const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
 
   useEffect(() => {
-    const unsubscribe = chatController.subscribe((snapshot) => {
+    const unsubscribe = controller.subscribe((snapshot) => {
       setUsername(snapshot.user?.username ?? null);
+      setHasSavedSession(snapshot.hasSavedSession);
     });
-    void chatController.refreshSession().catch(() => {});
+    void controller.refreshSession().catch(() => {});
     return unsubscribe;
-  }, []);
+  }, [controller]);
 
   if (state.config.disabledPlugins.includes("gloomberb-cloud")) return null;
 
   return (
     <box flexDirection="row" paddingRight={1}>
-      {username ? (
+      {username || hasSavedSession ? (
         <text fg={colors.textDim}>
-          <span fg={colors.positive}>{username}</span>
-          {"  "}
+          <span fg={colors.positive}>@</span>
+          {username ? (
+            <>
+              {" "}
+              <span fg={colors.positive}>{username}</span>
+              {"  "}
+            </>
+          ) : "  "}
           <span fg={colors.text}>Shift+C</span> cloud
         </text>
       ) : (
@@ -469,6 +495,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       description: "Log in to your Gloomberb account",
       keywords: ["login", "sign in", "auth", "account"],
       category: "config",
+      wizardLayout: "form",
       hidden: () => !!apiClient.getSessionToken(),
       wizard: [
         { key: "email", label: "Email", type: "text", placeholder: "email@example.com" },
@@ -495,6 +522,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       description: "Create a Gloomberb account",
       keywords: ["signup", "register", "create account"],
       category: "config",
+      wizardLayout: "form",
       hidden: () => !!apiClient.getSessionToken(),
       wizard: [
         { key: "email", label: "Email", type: "text", placeholder: "email@example.com" },
@@ -505,19 +533,18 @@ export const gloomberbCloudPlugin: GloomPlugin = {
           placeholder: "3-30 chars, starts with letter",
           body: ["Choose a username (3-30 characters, starts with a letter, alphanumeric and underscore only)"],
         },
-        { key: "name", label: "Display Name", type: "text", placeholder: "Your name" },
         { key: "password", label: "Password", type: "password", placeholder: "Min 8 characters" },
         { key: "confirmPassword", label: "Confirm Password", type: "password", placeholder: "Re-enter password" },
         { key: "_validate", label: "Creating account...", type: "info", body: ["Registering with Gloomberb...", "Account created! Welcome to Gloomberb."] },
       ],
       execute: async (values) => {
-        if (!values?.email || !values?.username || !values?.name || !values?.password) {
+        if (!values?.email || !values?.username || !values?.password) {
           throw new Error("All fields are required");
         }
         if (values.password !== values.confirmPassword) {
           throw new Error("Passwords do not match");
         }
-        await apiClient.signUp(values.email, values.username, values.name, values.password);
+        await apiClient.signUp(values.email, values.username, values.username, values.password);
         await apiClient.sendVerification();
         chatController.clearSession();
         await chatController.refreshSession();

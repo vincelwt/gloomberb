@@ -1,5 +1,5 @@
 import type { PluginPersistence, PluginResumeState } from "../../types/plugin";
-import { apiClient, type ChatMessage } from "../../utils/api-client";
+import { apiClient, type ChatMessage, type PersistedAuthUser } from "../../utils/api-client";
 
 const SESSION_STATE_KEY = "session";
 const CHANNEL_STATE_KEY = "channel:everyone";
@@ -18,7 +18,7 @@ const VERIFICATION_POLL_MS = 5_000;
 interface PersistedSessionState {
   sessionToken: string | null;
   websocketToken?: string | null;
-  user: { id: string; username: string; emailVerified: boolean } | null;
+  user: PersistedAuthUser | null;
 }
 
 interface PersistedChannelState {
@@ -33,6 +33,7 @@ interface PersistedTranscript {
 
 export interface ChatControllerSnapshot {
   loading: boolean;
+  hasSavedSession: boolean;
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
   draft: string;
@@ -72,15 +73,13 @@ export class ChatController {
     }) ?? this.persistence.getState<PersistedSessionState>(SESSION_STATE_KEY, {
       schemaVersion: SESSION_SCHEMA_VERSION,
     });
-    if (session?.sessionToken) {
-      apiClient.setSessionToken(session.sessionToken);
-    }
-    if (session?.websocketToken) {
-      apiClient.setWebSocketToken(session.websocketToken);
-    }
+    apiClient.setSessionToken(session?.sessionToken ?? null);
+    apiClient.setWebSocketToken(session?.websocketToken ?? null);
+    apiClient.restoreCachedUser(session?.user ?? null);
     this.user = session?.user
       ? {
-        ...session.user,
+        id: session.user.id,
+        username: session.user.username ?? session.user.name ?? "account",
         emailVerified: session.user.emailVerified === true,
       }
       : null;
@@ -115,6 +114,7 @@ export class ChatController {
   getSnapshot(): ChatControllerSnapshot {
     return {
       loading: !this.sessionChecked,
+      hasSavedSession: !!apiClient.getSessionToken(),
       user: this.user,
       messages: [...this.messages],
       draft: this.draft,

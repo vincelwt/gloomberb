@@ -33,6 +33,8 @@ export interface AuthUser {
   updatedAt: string;
 }
 
+export type PersistedAuthUser = Pick<AuthUser, "id" | "emailVerified"> & Partial<AuthUser>;
+
 export interface CloudQuotePayload extends Quote {
   providerId: "gloomberb-cloud";
   dataSource: "live" | "delayed";
@@ -157,6 +159,25 @@ class GloomApiClient {
 
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
+  }
+
+  restoreCachedUser(user: PersistedAuthUser | null): void {
+    if (!this.sessionToken || !user?.id) {
+      this.setCurrentUser(null);
+      return;
+    }
+    this.setCurrentUser({
+      id: user.id,
+      name: typeof user.name === "string" && user.name.length > 0
+        ? user.name
+        : user.username ?? "User",
+      email: typeof user.email === "string" ? user.email : "",
+      username: typeof user.username === "string" ? user.username : null,
+      emailVerified: user.emailVerified === true,
+      image: typeof user.image === "string" ? user.image : null,
+      createdAt: typeof user.createdAt === "string" ? user.createdAt : "",
+      updatedAt: typeof user.updatedAt === "string" ? user.updatedAt : "",
+    });
   }
 
   isVerified(): boolean {
