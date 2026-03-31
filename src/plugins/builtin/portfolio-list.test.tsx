@@ -311,6 +311,123 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).not.toContain("$137.50");
   });
 
+  test("shows broker market value and pnl before snapshot warmup", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const config = createPortfolioConfigWithColumns(
+      portfolioId,
+      ["ticker", "price", "mkt_value", "pnl", "pnl_pct"],
+      [createBrokerInstance("flex")],
+    );
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId={portfolioId}
+        stateMutator={(state) => {
+          state.tickers = new Map([["AAPL", makeTicker({
+            portfolios: [portfolioId],
+            positions: [{
+              portfolio: portfolioId,
+              shares: 10,
+              avgCost: 100,
+              currency: "USD",
+              broker: "ibkr",
+              brokerInstanceId: "ibkr-flex",
+              brokerAccountId: "DU12345",
+              markPrice: 125,
+              marketValue: 1250,
+              unrealizedPnl: 250,
+            }],
+          })]]);
+          state.financials = new Map();
+          state.paneState[TEST_PANE_ID] = {
+            collectionId: portfolioId,
+            cursorSymbol: "AAPL",
+            cashDrawerExpanded: false,
+          };
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Val 1.3k");
+    expect(frame).toContain("125");
+    expect(frame).toContain("+250");
+    expect(frame).toContain("25.00%");
+  });
+
+  test("keeps option avg cost on premium scale and multiplies quoted value by contract size", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const optionTicker = "SPY  260619C00500000";
+    const config = createPortfolioConfigWithColumns(
+      portfolioId,
+      ["ticker", "price", "avg_cost", "cost_basis", "mkt_value", "pnl"],
+      [createBrokerInstance("flex")],
+    );
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId={portfolioId}
+        stateMutator={(state) => {
+          state.tickers = new Map([[
+            optionTicker,
+            makeTicker({
+              ticker: optionTicker,
+              name: "SPY Jun19'26 500 Call",
+              assetCategory: "OPT",
+              portfolios: [portfolioId],
+              positions: [{
+                portfolio: portfolioId,
+                shares: 2,
+                avgCost: 4.25,
+                currency: "USD",
+                broker: "ibkr",
+                brokerInstanceId: "ibkr-flex",
+                brokerAccountId: "DU12345",
+                multiplier: 100,
+              }],
+            }),
+          ]]);
+          state.financials = new Map([[
+            optionTicker,
+            {
+              annualStatements: [],
+              quarterlyStatements: [],
+              priceHistory: [],
+              quote: makeQuote({
+                symbol: optionTicker,
+                price: 5,
+                change: 0.5,
+                changePercent: 11.11,
+                previousClose: 4.5,
+                name: "SPY Jun19'26 500 Call",
+              }),
+            },
+          ]]);
+          state.paneState[TEST_PANE_ID] = {
+            collectionId: portfolioId,
+            cursorSymbol: optionTicker,
+            cashDrawerExpanded: false,
+          };
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("$4.25");
+    expect(frame).toContain("5");
+    expect(frame).toContain("850");
+    expect(frame).toContain("1k");
+    expect(frame).toContain("+150");
+  });
+
   test("shows flex cash summary and hides unavailable margin metrics", async () => {
     const config = createPortfolioConfig("broker:ibkr-flex:DU12345", [createBrokerInstance("flex")]);
     testSetup = await testRender(
