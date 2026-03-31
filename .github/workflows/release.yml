@@ -51,11 +51,10 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create GitHub release
+      - name: Upload assets to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
 
       - uses: actions/setup-node@v4
         with:
