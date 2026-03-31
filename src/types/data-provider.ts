@@ -29,6 +29,7 @@ export interface MarketDataRequestContext {
   brokerId?: string;
   brokerInstanceId?: string;
   instrument?: BrokerContractRef | null;
+  cacheMode?: "default" | "refresh";
 }
 
 export interface SearchRequestContext {

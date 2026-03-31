@@ -409,7 +409,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
       const instrument = instrumentFromTicker(ticker, symbol);
       if (!instrument) return;
-      const entry = await marketData.loadSnapshot(instrument);
+      const entry = await marketData.loadSnapshot(instrument, { forceRefresh: true });
       const data = entry.data ?? entry.lastGoodData;
       if (data) {
         pluginRegistry.events.emit("ticker:refreshed", { symbol, financials: data });
@@ -436,7 +436,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       const ticker = tickerOverride ?? state.tickers.get(symbol) ?? null;
       const instrument = instrumentFromTicker(ticker, symbol);
       if (!instrument) return;
-      const entry = await marketData.loadQuote(instrument);
+      const entry = await marketData.loadQuote(instrument, { forceRefresh: true });
       const quote = entry.data ?? entry.lastGoodData;
       if (!quote) return;
 

@@ -22,6 +22,7 @@ import {
   toMarketDataContext,
 } from "./selectors";
 import { traceMarketData } from "./trace";
+import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 
 const EMPTY_MESSAGE = "No data available";
 const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
@@ -203,18 +204,25 @@ export class MarketDataCoordinator {
     return promise;
   }
 
-  async loadSnapshot(instrument: InstrumentRef): Promise<QueryEntry<TickerFinancials>> {
+  async loadSnapshot(
+    instrument: InstrumentRef,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QueryEntry<TickerFinancials>> {
     const key = buildSnapshotKey(instrument);
-    return this.runSingleFlight(key, async () => {
+    const flightKey = options.forceRefresh ? `${key}|refresh` : key;
+    return this.runSingleFlight(flightKey, async () => {
       this.snapshotStore.update(key, loadingEntry);
       const startedAt = Date.now();
       traceMarketData("snapshot:start", { key, symbol: instrument.symbol, exchange: instrument.exchange ?? "" });
       try {
-        const data = await this.dataProvider.getTickerFinancials(
+        const data = normalizeTickerFinancialsPriceHistory(await this.dataProvider.getTickerFinancials(
           instrument.symbol,
           instrument.exchange ?? "",
-          toMarketDataContext(instrument),
-        );
+          {
+            ...toMarketDataContext(instrument),
+            cacheMode: options.forceRefresh ? "refresh" : "default",
+          },
+        ));
         const source = data.quote?.providerId ?? this.dataProvider.id;
         const attempts = [createAttempt(source, startedAt, data ? "success" : "empty")];
         const entry = this.snapshotStore.update(key, (current) => readyEntry(current, data, source, attempts, { keepLastGoodOnEmpty: true }));
@@ -259,16 +267,23 @@ export class MarketDataCoordinator {
     });
   }
 
-  async loadQuote(instrument: InstrumentRef): Promise<QueryEntry<Quote>> {
+  async loadQuote(
+    instrument: InstrumentRef,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QueryEntry<Quote>> {
     const key = buildQuoteKey(instrument);
-    return this.runSingleFlight(key, async () => {
+    const flightKey = options.forceRefresh ? `${key}|refresh` : key;
+    return this.runSingleFlight(flightKey, async () => {
       this.quoteStore.update(key, loadingEntry);
       const startedAt = Date.now();
       try {
         const quote = await this.dataProvider.getQuote(
           instrument.symbol,
           instrument.exchange ?? "",
-          toMarketDataContext(instrument),
+          {
+            ...toMarketDataContext(instrument),
+            cacheMode: options.forceRefresh ? "refresh" : "default",
+          },
         );
         const source = quote.providerId ?? this.dataProvider.id;
         const attempts = [createAttempt(source, startedAt, "success")];
@@ -281,27 +296,39 @@ export class MarketDataCoordinator {
     });
   }
 
-  async loadChart(request: ChartRequest): Promise<QueryEntry<PricePoint[]>> {
+  async loadChart(
+    request: ChartRequest,
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QueryEntry<PricePoint[]>> {
     const key = buildChartKey(request);
-    return this.runSingleFlight(key, async () => {
+    const flightKey = options.forceRefresh ? `${key}|refresh` : key;
+    return this.runSingleFlight(flightKey, async () => {
       this.chartStore.update(key, loadingEntry);
       const startedAt = Date.now();
       try {
-        const data = request.granularity === "detail" && request.startDate && request.endDate && request.barSize && this.dataProvider.getDetailedPriceHistory
-          ? await this.dataProvider.getDetailedPriceHistory(
-            request.instrument.symbol,
-            request.instrument.exchange ?? "",
-            request.startDate,
-            request.endDate,
-            request.barSize,
-            toMarketDataContext(request.instrument),
-          )
-          : await this.dataProvider.getPriceHistory(
-            request.instrument.symbol,
-            request.instrument.exchange ?? "",
-            request.range,
-            toMarketDataContext(request.instrument),
-          );
+        const data = normalizePriceHistory(
+          request.granularity === "detail" && request.startDate && request.endDate && request.barSize && this.dataProvider.getDetailedPriceHistory
+            ? await this.dataProvider.getDetailedPriceHistory(
+              request.instrument.symbol,
+              request.instrument.exchange ?? "",
+              request.startDate,
+              request.endDate,
+              request.barSize,
+              {
+                ...toMarketDataContext(request.instrument),
+                cacheMode: options.forceRefresh ? "refresh" : "default",
+              },
+            )
+            : await this.dataProvider.getPriceHistory(
+              request.instrument.symbol,
+              request.instrument.exchange ?? "",
+              request.range,
+              {
+                ...toMarketDataContext(request.instrument),
+                cacheMode: options.forceRefresh ? "refresh" : "default",
+              },
+            ),
+        );
         const status = data.length > 0 ? "success" : "empty";
         const attempts = [createAttempt(this.dataProvider.id, startedAt, status, data.length === 0 ? "NO_DATA" : undefined)];
         return this.chartStore.update(key, (current) => readyEntry(current, data.length > 0 ? data : null, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));

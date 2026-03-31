@@ -96,6 +96,26 @@ describe("MarketDataCoordinator", () => {
     expect(second.lastGoodData?.length).toBe(2);
   });
 
+  it("normalizes descending chart history before storing it", async () => {
+    const provider = createProvider({
+      getPriceHistory: async () => [
+        { date: new Date("2024-01-03"), close: 103 },
+        { date: new Date("2024-01-01"), close: 101 },
+        { date: new Date("2024-01-02"), close: 102 },
+      ],
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const request = {
+      instrument: { symbol: "AAPL", exchange: "NASDAQ" },
+      range: "1Y" as const,
+      granularity: "daily" as const,
+    };
+
+    const entry = await coordinator.loadChart(request);
+
+    expect(entry.data?.map((point) => point.close)).toEqual([101, 102, 103]);
+  });
+
   it("updates the quote store from streaming events", () => {
     let streamed: ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null = null;
     const provider = createProvider({

@@ -1140,6 +1140,112 @@ describe("ProviderRouter", () => {
     persistence.close();
   });
 
+  test("sorts reversed chart history into chronological order", async () => {
+    const router = new ProviderRouter({
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      async getPriceHistory() {
+        return [
+          { date: new Date("2026-03-29T00:00:00Z"), close: 103 },
+          { date: new Date("2026-03-27T00:00:00Z"), close: 101 },
+          { date: new Date("2026-03-28T00:00:00Z"), close: 102 },
+        ];
+      },
+    });
+
+    const history = await router.getPriceHistory("AAPL", "NASDAQ", "1Y");
+
+    expect(history.map((point) => point.close)).toEqual([101, 102, 103]);
+  });
+
+  test("bypasses cached financials on explicit refresh requests", async () => {
+    const dbPath = createTempDbPath("forced-financial-refresh");
+    const persistence = new AppPersistence(dbPath);
+
+    const seedRouter = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-27T00:00:00Z"), close: 101 }],
+          quote: {
+            symbol: "AAPL",
+            price: 101,
+            currency: "USD",
+            change: 1,
+            changePercent: 1,
+            lastUpdated: Date.now(),
+          },
+        };
+      },
+    }, [], persistence.resources);
+    await seedRouter.getTickerFinancials("AAPL", "NASDAQ");
+
+    let providerCalls = 0;
+    const refreshRouter = new ProviderRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        providerCalls += 1;
+        return {
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 202 }],
+          quote: {
+            symbol: "AAPL",
+            price: 202,
+            currency: "USD",
+            change: 2,
+            changePercent: 1,
+            lastUpdated: Date.now(),
+          },
+        };
+      },
+    }, [], persistence.resources);
+
+    const refreshed = await refreshRouter.getTickerFinancials("AAPL", "NASDAQ", { cacheMode: "refresh" });
+
+    expect(providerCalls).toBe(1);
+    expect(refreshed.quote?.price).toBe(202);
+    expect(refreshed.priceHistory[0]?.close).toBe(202);
+
+    persistence.close();
+  });
+
+  test("refreshes stale cached chart history before falling back to cache", async () => {
+    const dbPath = createTempDbPath("stale-chart-refresh");
+    const persistence = new AppPersistence(dbPath);
+
+    const seedRouter = new ProviderRouter({
+      ...fallbackProvider,
+      async getPriceHistory() {
+        return [{ date: new Date("2026-03-27T00:00:00Z"), close: 101 }];
+      },
+    }, [], persistence.resources);
+    await seedRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
+
+    persistence.database.connection
+      .query("UPDATE resource_cache SET stale_at = ? WHERE namespace = ? AND kind = ? AND entity_key = ?")
+      .run(Date.now() - 1, "market", "price-history", "AAPL");
+
+    let providerCalls = 0;
+    const refreshRouter = new ProviderRouter({
+      ...fallbackProvider,
+      async getPriceHistory() {
+        providerCalls += 1;
+        return [{ date: new Date("2026-03-28T00:00:00Z"), close: 202 }];
+      },
+    }, [], persistence.resources);
+
+    const history = await refreshRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
+
+    expect(providerCalls).toBe(1);
+    expect(history[0]?.close).toBe(202);
+
+    persistence.close();
+  });
+
   test("falls back to later providers when detailed chart history is empty", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,

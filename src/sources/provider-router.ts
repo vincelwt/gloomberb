@@ -17,6 +17,7 @@ import type { CachePolicy, CachePolicyMap } from "../types/persistence";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { HydrationTarget } from "../state/session-persistence";
 import { debugLog } from "../utils/debug-log";
+import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { isProviderMiss } from "./provider-errors";
 
 const providerLog = debugLog.createLogger("provider-router");
@@ -151,7 +152,8 @@ function mergeDefinedObject<T extends object>(preferred: T | null | undefined, f
 
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
   if (!primary || !fallback) {
-    return primary ?? fallback;
+    const single = primary ?? fallback;
+    return single ? normalizeTickerFinancialsPriceHistory(single) : null;
   }
 
   const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
@@ -164,10 +166,17 @@ function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinan
     quote: mergeDefinedObject(dominant.quote, secondary.quote),
     profile: mergeDefinedObject(primary.profile, fallback.profile),
     fundamentals: mergeDefinedObject(primary.fundamentals, fallback.fundamentals),
-    priceHistory: dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory,
+    priceHistory: normalizePriceHistory(dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory),
     annualStatements: primary.annualStatements.length > 0 ? primary.annualStatements : fallback.annualStatements,
     quarterlyStatements: primary.quarterlyStatements.length > 0 ? primary.quarterlyStatements : fallback.quarterlyStatements,
   };
+}
+
+interface CachedFinancialsSelection {
+  brokerRecord: CachedResourceRecord<TickerFinancials> | null;
+  providerRecord: CachedResourceRecord<TickerFinancials> | null;
+  value: TickerFinancials | null;
+  stale: boolean;
 }
 
 interface BrokerCandidate {
@@ -244,16 +253,25 @@ export class ProviderRouter implements DataProvider {
   }
 
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    const cached = this.readCachedMergedFinancials(ticker, exchange, context, false);
-    if (cached) {
-      if (!hasMeaningfulProfile(cached)) {
-        const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
-        return mergeFinancials(cached, providerResult?.value ?? null) ?? cached;
+    const cached = this.readCachedMergedFinancialsSelection(ticker, exchange, context, false);
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached.value && !forceRefresh) {
+      if (!cached.stale && hasMeaningfulProfile(cached.value)) {
+        return cached.value;
       }
-      this.scheduleRevalidation(this.makeRevalidationKey("financials", ticker, exchange, context), async () => {
-        await this.revalidateFinancials(ticker, exchange, context);
-      });
-      return cached;
+      if (!hasMeaningfulProfile(cached.value) && !cached.stale) {
+        const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
+        return mergeFinancials(cached.value, providerResult?.value ?? null) ?? cached.value;
+      }
+    }
+
+    if (cached.value) {
+      const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
+      const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
+      return mergeFinancials(
+        brokerResult?.value ?? cached.brokerRecord?.value ?? null,
+        providerResult?.value ?? cached.providerRecord?.value ?? null,
+      ) ?? cached.value;
     }
 
     const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
@@ -273,10 +291,8 @@ export class ProviderRouter implements DataProvider {
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
-    if (cached) {
-      this.scheduleRevalidation(this.makeRevalidationKey("quote", ticker, exchange, context), async () => {
-        await this.revalidateQuote(ticker, exchange, context);
-      });
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached && !forceRefresh && !cached.stale) {
       return cached.value;
     }
 
@@ -284,10 +300,11 @@ export class ProviderRouter implements DataProvider {
     if (brokerQuote) return brokerQuote.value;
 
     const providerQuote = await this.fetchProviderQuote(ticker, exchange, context);
-    if (!providerQuote) {
-      throw new Error(`No quote provider available for ${ticker}`);
+    if (providerQuote) {
+      return providerQuote.value;
     }
-    return providerQuote.value;
+    if (cached) return cached.value;
+    throw new Error(`No quote provider available for ${ticker}`);
   }
 
   async getExchangeRate(fromCurrency: string): Promise<number> {
@@ -457,10 +474,8 @@ export class ProviderRouter implements DataProvider {
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
-    if (cached) {
-      this.scheduleRevalidation(this.makeRevalidationKey("price-history", ticker, exchange, context, range), async () => {
-        await this.revalidatePriceHistory(ticker, exchange, range, context);
-      });
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached && !forceRefresh && !cached.stale) {
       return cached.value;
     }
 
@@ -468,6 +483,10 @@ export class ProviderRouter implements DataProvider {
     if (brokerHistory && brokerHistory.value.length > 0) return brokerHistory.value;
 
     const providerHistory = await this.fetchProviderPriceHistory(ticker, exchange, range, context);
+    if (providerHistory && providerHistory.value.length > 0) {
+      return providerHistory.value;
+    }
+    if (cached) return cached.value;
     if (!providerHistory) {
       throw new Error(`No history provider available for ${ticker}`);
     }
@@ -492,10 +511,8 @@ export class ProviderRouter implements DataProvider {
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
-    if (cached) {
-      this.scheduleRevalidation(this.makeRevalidationKey("detailed-price-history", ticker, exchange, context, `${compactDate(startDate)}:${compactDate(endDate)}:${barSize}`), async () => {
-        await this.revalidateDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
-      });
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached && !forceRefresh && !cached.stale) {
       return cached.value;
     }
 
@@ -503,7 +520,10 @@ export class ProviderRouter implements DataProvider {
     if (brokerResult && brokerResult.value.length > 0) return brokerResult.value;
 
     const providerResult = await this.fetchProviderDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
-    return providerResult?.value ?? [];
+    if (providerResult && providerResult.value.length > 0) {
+      return providerResult.value;
+    }
+    return cached?.value ?? providerResult?.value ?? [];
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
@@ -671,6 +691,15 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
     allowExpired = false,
   ): TickerFinancials | null {
+    return this.readCachedMergedFinancialsSelection(ticker, exchange, context, allowExpired).value;
+  }
+
+  private readCachedMergedFinancialsSelection(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+    allowExpired = false,
+  ): CachedFinancialsSelection {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
     const brokerSourceKeys = this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate));
@@ -678,7 +707,12 @@ export class ProviderRouter implements DataProvider {
       ? this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, brokerSourceKeys, allowExpired)
       : null;
     const providerRecord = this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, this.getProviderSourceKeys(), allowExpired);
-    return mergeFinancials(brokerRecord?.value ?? null, providerRecord?.value ?? null);
+    return {
+      brokerRecord,
+      providerRecord,
+      value: mergeFinancials(brokerRecord?.value ?? null, providerRecord?.value ?? null),
+      stale: (brokerRecord?.stale ?? false) || (providerRecord?.stale ?? false),
+    };
   }
 
   private readCachedExchangeRate(currency: string, allowExpired = false): number | null {
@@ -827,12 +861,12 @@ export class ProviderRouter implements DataProvider {
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getTickerFinancials) continue;
       try {
-        const result = await candidate.broker.getTickerFinancials(
+        const result = normalizeTickerFinancialsPriceHistory(await candidate.broker.getTickerFinancials(
           ticker,
           candidate.instance,
           exchange,
           context?.instrument ?? null,
-        );
+        ));
         this.cacheResource(
           "financials",
           entityKey,
@@ -861,7 +895,7 @@ export class ProviderRouter implements DataProvider {
 
     for (const provider of this.providersInPriorityOrder()) {
       try {
-        const value = await provider.getTickerFinancials(ticker, exchange, context);
+        const value = normalizeTickerFinancialsPriceHistory(await provider.getTickerFinancials(ticker, exchange, context));
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "financials",
@@ -944,13 +978,13 @@ export class ProviderRouter implements DataProvider {
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistory) continue;
       try {
-        const result = await candidate.broker.getPriceHistory(
+        const result = normalizePriceHistory(await candidate.broker.getPriceHistory(
           ticker,
           candidate.instance,
           exchange,
           range,
           context?.instrument ?? null,
-        );
+        ));
         this.cacheResource(
           "price-history",
           entityKey,
@@ -979,7 +1013,7 @@ export class ProviderRouter implements DataProvider {
 
     for (const provider of this.providersInPriorityOrder()) {
       try {
-        const value = await provider.getPriceHistory(ticker, exchange, range, context);
+        const value = normalizePriceHistory(await provider.getPriceHistory(ticker, exchange, range, context));
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "price-history",
@@ -1016,7 +1050,7 @@ export class ProviderRouter implements DataProvider {
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getDetailedPriceHistory) continue;
       try {
-        const result = await candidate.broker.getDetailedPriceHistory(
+        const result = normalizePriceHistory(await candidate.broker.getDetailedPriceHistory(
           ticker,
           candidate.instance,
           exchange,
@@ -1024,7 +1058,7 @@ export class ProviderRouter implements DataProvider {
           endDate,
           barSize,
           context?.instrument ?? null,
-        );
+        ));
         this.cacheResource(
           "detailed-price-history",
           entityKey,
@@ -1056,7 +1090,7 @@ export class ProviderRouter implements DataProvider {
     for (const provider of this.providersInPriorityOrder()) {
       if (!provider.getDetailedPriceHistory) continue;
       try {
-        const value = await provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
+        const value = normalizePriceHistory(await provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "detailed-price-history",

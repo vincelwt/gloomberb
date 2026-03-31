@@ -2,6 +2,7 @@ import type { MarketDataRequestContext } from "../types/data-provider";
 import type { Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest, ChartRequest } from "./request-types";
 import type { QueryEntry } from "./result-types";
+import { normalizePriceHistory } from "../utils/price-history";
 
 export function buildInstrumentKey(instrument: InstrumentRef): string {
   const contractKey = instrument.instrument?.conId
@@ -166,6 +167,6 @@ export function buildLegacyFinancials(
     profile: snapshot?.profile,
     annualStatements: snapshot?.annualStatements ?? [],
     quarterlyStatements: snapshot?.quarterlyStatements ?? [],
-    priceHistory: priceHistory ?? snapshot?.priceHistory ?? [],
+    priceHistory: normalizePriceHistory(priceHistory ?? snapshot?.priceHistory ?? []),
   };
 }
