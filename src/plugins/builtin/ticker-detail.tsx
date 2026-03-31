@@ -1014,7 +1014,7 @@ export const tickerDetailPlugin: GloomPlugin = {
       label: "Quote Monitor",
       description: "Open a compact quote monitor for the selected ticker",
       keywords: ["quote", "monitor", "price", "ticker", "pane"],
-      shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
+      shortcut: { prefix: "QQ", argPlaceholder: "ticker", argKind: "ticker" },
       canCreate: (context, options) => (options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg)) !== null,
       createInstance: (context, options) => {
         const ticker = options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg);

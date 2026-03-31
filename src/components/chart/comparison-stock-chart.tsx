@@ -45,7 +45,8 @@ import {
 import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-support";
 import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
-import { formatDateShort } from "./chart-renderer";
+import { syncCachedNativeSurface } from "./native/surface-sync";
+import { formatDateShort, type StyledContent } from "./chart-renderer";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -846,16 +847,23 @@ function ComparisonStockChartView({
         return;
       }
       lastNativeGeometryRef.current = { rect, visibleRect };
-      nativeSurfaceManager.updateSurfaceGeometry(nativeBaseSurfaceIdRef.current, {
+      const geometry = {
         paneId,
         rect,
         visibleRect,
-      });
-      nativeSurfaceManager.updateSurfaceGeometry(nativeCrosshairSurfaceIdRef.current, {
-        paneId,
-        rect,
-        visibleRect,
-      });
+      };
+      syncCachedNativeSurface(
+        nativeSurfaceManager,
+        nativeBaseSurfaceIdRef.current,
+        geometry,
+        lastNativeBaseBitmapRef.current,
+      );
+      syncCachedNativeSurface(
+        nativeSurfaceManager,
+        nativeCrosshairSurfaceIdRef.current,
+        geometry,
+        lastNativeCrosshairBitmapRef.current,
+      );
     };
 
     plot.onLifecyclePass = syncPlacement;
@@ -882,12 +890,6 @@ function ComparisonStockChartView({
 
     const plotRect = extractCellRect(plotRef.current);
     const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
-    if (!visibleRect) {
-      lastNativeBaseBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
-      return;
-    }
-
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapKey = buildComparisonNativeBitmapKey(
       symbols.length,
@@ -903,6 +905,11 @@ function ComparisonStockChartView({
     const bitmap = cachedBitmap ?? renderNativeComparisonChartBase(staticScene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
     if (!cachedBitmap) {
       lastNativeBaseBitmapRef.current = { key: bitmapKey, bitmap };
+    }
+
+    if (!visibleRect) {
+      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
+      return;
     }
 
     nativeSurfaceManager.upsertSurface({
@@ -940,12 +947,6 @@ function ComparisonStockChartView({
 
     const plotRect = extractCellRect(plotRef.current);
     const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
-    if (!visibleRect) {
-      lastNativeCrosshairBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
-      return;
-    }
-
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
     const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
     const overlayPixelX = scaleLocalPixelCoordinate(
@@ -985,6 +986,11 @@ function ComparisonStockChartView({
     const bitmap = cachedBitmap ?? renderNativeCrosshairOverlay(overlay, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
     if (!cachedBitmap) {
       lastNativeCrosshairBitmapRef.current = { key: bitmapKey, bitmap };
+    }
+
+    if (!visibleRect) {
+      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+      return;
     }
 
     nativeSurfaceManager.upsertSurface({
@@ -1278,13 +1284,12 @@ function ComparisonStockChartView({
     ? formatComparisonAxisValue(result.crosshairValue, projection.effectiveAxisMode)
     : null;
 
-  const plotContent = effectiveRenderer === "kitty"
-    ? blankPlotLines.map((line, index) => (
-      <text key={index}>{line}</text>
-    ))
-    : result.lines.map((line, index) => (
-      <text key={index} content={line as any} />
-    ));
+  const plotLines: Array<string | StyledContent> = effectiveRenderer === "kitty"
+    ? blankPlotLines
+    : result.lines;
+  const plotContent = plotLines.map((line, index) => (
+    <text key={index} content={line} />
+  ));
 
   const plotBox = (
     <box

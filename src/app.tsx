@@ -32,7 +32,7 @@ import {
   type PaneBinding,
   type PaneInstanceConfig,
 } from "./types/config";
-import type { PaneTemplateContext, PaneTemplateCreateOptions, PaneTemplateInstanceConfig, WizardStep } from "./types/plugin";
+import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig, WizardStep } from "./types/plugin";
 import type { PaneSettingField } from "./types/plugin";
 import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
@@ -59,11 +59,7 @@ import { askAiPlugin } from "./plugins/builtin/ask-ai";
 import { gloomberbCloudPlugin } from "./plugins/builtin/chat";
 import { chatController } from "./plugins/builtin/chat-controller";
 import { helpPlugin } from "./plugins/builtin/help";
-import {
-  buildComparisonChartPaneTitle,
-  COMPARISON_CHART_PANE_ID,
-  comparisonChartPlugin,
-} from "./plugins/builtin/comparison-chart";
+import { comparisonChartPlugin } from "./plugins/builtin/comparison-chart";
 import { debugPlugin } from "./plugins/builtin/debug";
 import { layoutManagerPlugin, setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
 import { yahooPlugin } from "./plugins/builtin/yahoo";
@@ -102,9 +98,11 @@ import {
   PaneTemplateInputStep,
   PaneTemplateSelectStep,
 } from "./components/pane-template-wizard";
-import { setPaneSettings, updatePaneInstance } from "./pane-settings";
+import {
+  applyPaneSettingFieldValue as applyPaneSettingFieldValueShared,
+  createPaneTemplateOrThrow,
+} from "./components/command-bar/workflow-ops";
 import { debugLog } from "./utils/debug-log";
-import { formatTickerListInput, parseTickerListInput } from "./utils/ticker-list";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
 
@@ -142,8 +140,8 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   stateRef.current = state;
   const focusedCollectionId = getFocusedCollectionId(state);
 
-  const resolvePrimaryPaneInstanceId = useCallback((paneId: string): string | null => {
-    const instances = state.config.layout.instances.filter((instance) => instance.paneId === paneId);
+  const resolvePrimaryPaneInstanceId = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
+    const instances = layout.instances.filter((instance) => instance.paneId === paneId);
     if (instances.length === 0) return null;
     if (isTickerPaneId(paneId)) {
       return instances.find((instance) =>
@@ -153,13 +151,13 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
         ?? null;
     }
     return instances[0]?.instanceId ?? null;
-  }, [state.config.layout.instances]);
+  }, [state.config.layout]);
 
-  const resolvePaneTarget = useCallback((paneId: string): string | null => {
-    const byInstance = state.config.layout.instances.find((instance) => instance.instanceId === paneId);
+  const resolvePaneTarget = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
+    const byInstance = layout.instances.find((instance) => instance.instanceId === paneId);
     if (byInstance) return byInstance.instanceId;
-    return resolvePrimaryPaneInstanceId(paneId);
-  }, [resolvePrimaryPaneInstanceId, state.config.layout.instances]);
+    return resolvePrimaryPaneInstanceId(paneId, layout);
+  }, [resolvePrimaryPaneInstanceId, state.config.layout]);
 
   const getPreferredPortfolio = useCallback((ticker: TickerRecord | null) => {
     const focusedPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === focusedCollectionId);
@@ -205,50 +203,6 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
     return values;
   }, [dialog]);
-
-  const resolveTickerListInput = useCallback(async (rawInput: string, collectionId: string | null): Promise<string[]> => {
-    const tokens = parseTickerListInput(rawInput);
-    const currentState = stateRef.current;
-    const activePortfolio = currentState.config.portfolios.find((portfolio) => portfolio.id === collectionId);
-    const symbols: string[] = [];
-    const seen = new Set<string>();
-
-    for (const token of tokens) {
-      const resolvedTicker = await resolveTickerSearch({
-        query: token,
-        activeTicker: null,
-        tickers: currentState.tickers,
-        dataProvider,
-        searchContext: {
-          preferBroker: true,
-          brokerId: activePortfolio?.brokerId,
-          brokerInstanceId: activePortfolio?.brokerInstanceId,
-        },
-      });
-
-      if (!resolvedTicker) {
-        throw new Error(`No ticker match found for "${token}".`);
-      }
-
-      const symbol = resolvedTicker.kind === "local"
-        ? resolvedTicker.ticker.metadata.ticker
-        : resolvedTicker.symbol;
-
-      if (resolvedTicker.kind === "provider") {
-        const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolvedTicker.result);
-        dispatch({ type: "UPDATE_TICKER", ticker });
-        if (created) {
-          pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
-        }
-      }
-
-      if (seen.has(symbol)) continue;
-      seen.add(symbol);
-      symbols.push(symbol);
-    }
-
-    return symbols;
-  }, [dataProvider, dispatch, pluginRegistry.events, tickerRepository]);
 
   const resolveCollectionSourcePaneId = useCallback((preferredPaneId?: string | null) => {
     const tryResolve = (candidate: string | null | undefined): string | null => {
@@ -966,24 +920,28 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     dispatch({ type: "UPDATE_LAYOUT", layout: normalizedLayout });
     saveConfig({ ...currentState.config, layout: normalizedLayout, layouts }).catch(() => {});
   };
-  const resolvePanelForPane = (paneId: string): "left" | "right" => {
-    const instanceId = resolvePaneTarget(paneId);
+  const resolvePanelForPane = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): "left" | "right" => {
+    const instanceId = resolvePaneTarget(paneId, layout);
     if (!instanceId) return "right";
-    const instance = findPaneInstance(state.config.layout, instanceId);
+    const instance = findPaneInstance(layout, instanceId);
     const paneDef = instance ? pluginRegistry.panes.get(instance.paneId) : pluginRegistry.panes.get(paneId);
-    const floating = state.config.layout.floating.find((entry) => entry.instanceId === instanceId);
+    const floating = layout.floating.find((entry) => entry.instanceId === instanceId);
     if (floating) {
       return paneDef?.defaultPosition ?? "right";
     }
 
-    const rect = getLeafRect(state.config.layout, instanceId, PANEL_RESOLUTION_BOUNDS);
+    const rect = getLeafRect(layout, instanceId, PANEL_RESOLUTION_BOUNDS);
     if (!rect) {
       return paneDef?.defaultPosition ?? "right";
     }
 
     const midpoint = PANEL_RESOLUTION_BOUNDS.width / 2;
     return rect.x + (rect.width / 2) <= midpoint ? "left" : "right";
-  };
+  }, [pluginRegistry.panes, resolvePaneTarget, state.config.layout]);
+  const activatePane = useCallback((paneId: string, layout: LayoutConfig = state.config.layout) => {
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(paneId, layout) });
+    dispatch({ type: "FOCUS_PANE", paneId });
+  }, [dispatch, resolvePanelForPane, state.config.layout]);
   const placePaneInstance = useCallback((
     instance: PaneInstanceConfig,
     paneDef: NonNullable<ReturnType<typeof pluginRegistry.panes.get>>,
@@ -1031,13 +989,12 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     }
 
     persistLayout(nextLayout);
-    dispatch({ type: "FOCUS_PANE", paneId: instance.instanceId });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instance.instanceId) });
+    activatePane(instance.instanceId, nextLayout);
   }, [
+    activatePane,
     dispatch,
     pluginRegistry,
     persistLayout,
-    resolvePanelForPane,
     resolvePaneTarget,
     state.config.layout,
     state.focusedPaneId,
@@ -1057,8 +1014,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       if (ensured.layout !== state.config.layout) {
         persistLayout(ensured.layout);
       }
-      dispatch({ type: "FOCUS_PANE", paneId: ensured.instance.instanceId });
-      dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(ensured.instance.instanceId) });
+      activatePane(ensured.instance.instanceId, ensured.layout);
       return;
     }
 
@@ -1083,19 +1039,6 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     const template = pluginRegistry.paneTemplates.get(templateId);
     if (!template) return;
 
-    const pluginId = pluginRegistry.getPaneTemplatePluginId(templateId);
-    if (pluginId && state.config.disabledPlugins.includes(pluginId)) {
-      pluginRegistry.showToastFn("Enable this plugin before creating its pane.", { type: "info" });
-      return;
-    }
-
-    const baseContext: PaneTemplateContext = {
-      config: state.config,
-      layout: state.config.layout,
-      focusedPaneId: state.focusedPaneId,
-      activeTicker: getFocusedTickerSymbol(state),
-      activeCollectionId: getFocusedCollectionId(state),
-    };
     let resolvedOptions = options;
     if (template.wizard && template.wizard.length > 0 && !options?.arg && !options?.values) {
       const values = await runPaneTemplateWizard(template.wizard);
@@ -1107,107 +1050,29 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       };
     }
 
-    if (template.shortcut?.argPlaceholder === "ticker") {
-      const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === baseContext.activeCollectionId);
-      const resolvedTicker = await resolveTickerSearch({
-        query: resolvedOptions?.arg,
-        activeTicker: baseContext.activeTicker,
-        tickers: state.tickers,
+    try {
+      await createPaneTemplateOrThrow(templateId, resolvedOptions, {
         dataProvider,
-        searchContext: {
-          preferBroker: true,
-          brokerId: activePortfolio?.brokerId,
-          brokerInstanceId: activePortfolio?.brokerInstanceId,
-        },
+        tickerRepository,
+        pluginRegistry,
+        dispatch,
+        getState: () => stateRef.current,
+        buildPaneInstance,
+        placePaneInstance,
       });
-      if (!resolvedTicker) {
-        pluginRegistry.showToastFn(`No ticker match found for "${resolvedOptions?.arg ?? ""}".`, { type: "info" });
-        return;
-      }
-
-      if (resolvedTicker.kind === "local") {
-        resolvedOptions = {
-          ...resolvedOptions,
-          symbol: resolvedTicker.ticker.metadata.ticker,
-          ticker: resolvedTicker.ticker,
-          searchResult: null,
-        };
-      } else {
-        const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolvedTicker.result);
-        dispatch({ type: "UPDATE_TICKER", ticker });
-        if (created) {
-          pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
-        }
-        resolvedOptions = {
-          ...resolvedOptions,
-          symbol: ticker.metadata.ticker,
-          ticker,
-          searchResult: resolvedTicker.result,
-        };
-      }
-    } else if (template.shortcut?.argPlaceholder === "tickers") {
-      const rawInput = resolvedOptions?.arg ?? resolvedOptions?.values?.tickers ?? "";
-      try {
-        const symbols = await resolveTickerListInput(rawInput, baseContext.activeCollectionId);
-        resolvedOptions = {
-          ...resolvedOptions,
-          arg: rawInput,
-          symbols,
-        };
-      } catch (error) {
-        pluginRegistry.showToastFn(error instanceof Error ? error.message : "Could not resolve those tickers.", { type: "info" });
-        return;
-      }
+    } catch (error) {
+      pluginRegistry.showToastFn(
+        error instanceof Error ? error.message : `Could not create ${template.label.toLowerCase()}.`,
+        { type: "info" },
+      );
     }
-
-    const context: PaneTemplateContext = {
-      ...baseContext,
-      activeTicker: resolvedOptions?.symbol ?? baseContext.activeTicker,
-    };
-    if (template.canCreate) {
-      try {
-        if (!template.canCreate(context, resolvedOptions)) {
-          pluginRegistry.showToastFn(`Can't create ${template.label.toLowerCase()} right now.`, { type: "info" });
-          return;
-        }
-      } catch (error) {
-        appLog.error("Pane template canCreate failed during creation", {
-          templateId: template.id,
-          pluginId: pluginRegistry.getPaneTemplatePluginId(template.id),
-          options: resolvedOptions,
-          error: summarizeError(error),
-        });
-        pluginRegistry.showToastFn(`Can't create ${template.label.toLowerCase()} right now.`, { type: "info" });
-        return;
-      }
-    }
-
-    const spec = await template.createInstance?.(context, resolvedOptions) ?? {};
-    if (spec === null) return;
-
-    const paneDef = pluginRegistry.panes.get(template.paneId);
-    if (!paneDef) return;
-    const instance = buildPaneInstance(template.paneId, {
-      title: spec.title,
-      binding: spec.binding,
-      params: spec.params,
-      settings: spec.settings,
-    });
-    if (!instance) {
-      pluginRegistry.showToastFn("Open a matching ticker or collection context first.", { type: "info" });
-      return;
-    }
-
-    placePaneInstance(instance, paneDef, spec);
   }, [
     buildPaneInstance,
     dataProvider,
     dispatch,
     placePaneInstance,
     pluginRegistry,
-    resolveTickerListInput,
     runPaneTemplateWizard,
-    state,
     tickerRepository,
   ]);
 
@@ -1219,89 +1084,14 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
     let shouldPushHistory = true;
     const applyFieldValue = async (targetId: string, field: PaneSettingField, value: unknown) => {
-      const descriptor = pluginRegistry.resolvePaneSettings(targetId);
-      if (!descriptor) return;
-
-      const currentState = stateRef.current;
-
-      if (descriptor.pane.paneId === "quote-monitor" && field.key === "symbol") {
-        const rawQuery = typeof value === "string" ? value.trim() : "";
-        const resolvedTicker = await resolveTickerSearch({
-          query: rawQuery,
-          activeTicker: null,
-          tickers: currentState.tickers,
-          dataProvider,
-        });
-        if (!resolvedTicker) {
-          throw new Error(`No ticker match found for "${rawQuery}".`);
-        }
-
-        const symbol = resolvedTicker.kind === "local"
-          ? resolvedTicker.ticker.metadata.ticker
-          : resolvedTicker.symbol;
-
-        if (resolvedTicker.kind === "provider") {
-          const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolvedTicker.result);
-          dispatch({ type: "UPDATE_TICKER", ticker });
-          if (created) {
-            pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
-          }
-        }
-
-        const nextLayout = updatePaneInstance(currentState.config.layout, targetId, (instance) => ({
-          ...instance,
-          title: symbol,
-          binding: { kind: "fixed", symbol },
-          settings: {
-            ...(instance.settings ?? {}),
-            symbol,
-          },
-        }));
-        persistLayout(nextLayout, { pushHistory: shouldPushHistory });
-        shouldPushHistory = false;
-        return;
-      }
-
-      if (descriptor.pane.paneId === COMPARISON_CHART_PANE_ID && field.key === "symbolsText") {
-        const rawInput = typeof value === "string" ? value : "";
-        const symbols = await resolveTickerListInput(rawInput, descriptor.context.activeCollectionId);
-        const nextLayout = updatePaneInstance(currentState.config.layout, targetId, (instance) => ({
-          ...instance,
-          title: buildComparisonChartPaneTitle(symbols),
-          settings: {
-            ...(instance.settings ?? {}),
-            symbols,
-            symbolsText: formatTickerListInput(symbols),
-          },
-        }));
-        persistLayout(nextLayout, { pushHistory: shouldPushHistory });
-        shouldPushHistory = false;
-        return;
-      }
-
-      const nextSettings = {
-        ...descriptor.context.settings,
-        [field.key]: value,
-      };
-
-      if (descriptor.pane.paneId === "portfolio-list" && field.key === "hideTabs" && value === true) {
-        const lockedCollectionId = typeof descriptor.context.paneState.collectionId === "string"
-          ? descriptor.context.paneState.collectionId
-          : descriptor.context.activeCollectionId;
-        if (lockedCollectionId) {
-          nextSettings.lockedCollectionId = lockedCollectionId;
-        }
-      }
-
-      if (descriptor.pane.paneId === "ticker-detail" && field.key === "hideTabs" && value === true) {
-        const lockedTabId = typeof descriptor.context.paneState.activeTabId === "string"
-          ? descriptor.context.paneState.activeTabId
-          : "overview";
-        nextSettings.lockedTabId = lockedTabId;
-      }
-
-      const nextLayout = setPaneSettings(currentState.config.layout, targetId, nextSettings);
-      persistLayout(nextLayout, { pushHistory: shouldPushHistory });
+      await applyPaneSettingFieldValueShared(targetId, field, value, {
+        dataProvider,
+        tickerRepository,
+        pluginRegistry,
+        dispatch,
+        getState: () => stateRef.current,
+        persistLayout,
+      }, { pushHistory: shouldPushHistory });
       shouldPushHistory = false;
     };
 
@@ -1321,7 +1111,28 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   pluginRegistry.updateLayoutFn = (layout) => persistLayout(layout);
   pluginRegistry.openPaneSettingsFn = (paneId) => { void openPaneSettings(paneId); };
   pluginRegistry.showPaneFn = (paneId) => showPane(paneId);
+  pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+    await createPaneTemplateOrThrow(templateId, options, {
+      dataProvider,
+      tickerRepository,
+      pluginRegistry,
+      dispatch,
+      getState: () => stateRef.current,
+      buildPaneInstance,
+      placePaneInstance,
+    });
+  };
   pluginRegistry.createPaneFromTemplateFn = (templateId, options) => { void createPaneFromTemplate(templateId, options); };
+  pluginRegistry.applyPaneSettingValueFn = async (paneId, field, value) => {
+    await applyPaneSettingFieldValueShared(paneId, field, value, {
+      dataProvider,
+      tickerRepository,
+      pluginRegistry,
+      dispatch,
+      getState: () => stateRef.current,
+      persistLayout,
+    });
+  };
   pluginRegistry.hidePaneFn = (paneId) => {
     const instanceId = resolvePaneTarget(paneId);
     if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) return;
@@ -1341,8 +1152,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     if (layout !== state.config.layout) {
       persistLayout(layout, { pushHistory: false });
     }
-    dispatch({ type: "FOCUS_PANE", paneId: instanceId });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instanceId) });
+    activatePane(instanceId, layout);
   };
   pluginRegistry.pinTickerFn = (symbol, options) => {
     const paneType = options?.paneType ?? "ticker-detail";
@@ -1368,8 +1178,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
         },
       );
     persistLayout(nextLayout);
-    dispatch({ type: "FOCUS_PANE", paneId: instance.instanceId });
-    dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(instance.instanceId) });
+    activatePane(instance.instanceId, nextLayout);
   };
 
   setLayoutManagerDispatch(dispatch, () => ({

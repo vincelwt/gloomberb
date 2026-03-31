@@ -297,6 +297,42 @@ function getPaneOrder(layout: LayoutConfig): string[] {
   ];
 }
 
+function getTopFloatingPaneId(layout: LayoutConfig): string | null {
+  let topInstanceId: string | null = null;
+  let topZIndex = Number.NEGATIVE_INFINITY;
+  let topOrder = -1;
+
+  layout.floating.forEach((entry, index) => {
+    const zIndex = entry.zIndex ?? 50;
+    if (zIndex > topZIndex || (zIndex === topZIndex && index > topOrder)) {
+      topInstanceId = entry.instanceId;
+      topZIndex = zIndex;
+      topOrder = index;
+    }
+  });
+
+  return topInstanceId;
+}
+
+function resolveFocusedPaneId(
+  previousLayout: LayoutConfig,
+  nextLayout: LayoutConfig,
+  focusedPaneId: string | null,
+): string | null {
+  const paneOrder = getPaneOrder(nextLayout);
+  if (paneOrder.length === 0) return null;
+  if (focusedPaneId && paneOrder.includes(focusedPaneId)) {
+    return focusedPaneId;
+  }
+  const previouslyFloating = focusedPaneId
+    ? previousLayout.floating.some((entry) => entry.instanceId === focusedPaneId)
+    : false;
+  if (previouslyFloating) {
+    return getTopFloatingPaneId(nextLayout) ?? paneOrder[0] ?? null;
+  }
+  return paneOrder[0] ?? null;
+}
+
 function getPanelFocusTarget(layout: LayoutConfig, panel: "left" | "right"): string | null {
   const leaves = getDockLeafLayouts(layout, PANEL_RESOLUTION_BOUNDS);
   if (leaves.length === 0) return layout.floating[0]?.instanceId ?? null;
@@ -355,10 +391,7 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
       layouts: syncLayouts(config.layouts, config.activeLayoutIndex, normalizedLayout),
     };
   const nextPaneState = reconcilePaneState(nextConfig, state.paneState);
-  const paneIds = getPaneOrder(nextConfig.layout);
-  const focusedPaneId = state.focusedPaneId && paneIds.includes(state.focusedPaneId)
-    ? state.focusedPaneId
-    : paneIds[0] ?? null;
+  const focusedPaneId = resolveFocusedPaneId(state.config.layout, nextConfig.layout, state.focusedPaneId);
   return {
     ...state,
     config: nextConfig,

@@ -167,6 +167,20 @@ export const layoutManagerPlugin: GloomPlugin = {
       description: "Delete the current layout preset",
       keywords: ["delete", "remove", "layout", "preset"],
       category: "config",
+      confirm: () => {
+        const registry = getSharedRegistry();
+        if (!registry) return null;
+        const config = registry.getConfigFn();
+        const layout = config.layouts[config.activeLayoutIndex];
+        if (!layout) return null;
+        return {
+          title: "Delete Layout",
+          body: [`Delete layout "${layout.name}"? This cannot be undone.`],
+          confirmLabel: "Delete Layout",
+          cancelLabel: "Back",
+          tone: "danger",
+        };
+      },
       execute: async () => {
         const registry = getSharedRegistry();
         if (!registry) return;

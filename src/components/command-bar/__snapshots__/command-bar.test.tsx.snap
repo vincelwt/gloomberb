@@ -3,24 +3,24 @@
 exports[`CommandBar renders the default layout with opencode-style chrome 1`] = `
 "                                                                                
                                                                                 
+                Commands                                     esc                
+                Search                                                          
                                                                                 
-                  Commands                                esc                   
-                  Search                                                        
+                Tickers                                                         
+                AAPL                                    NASDAQ                  
+                MSFT                                    NASDAQ                  
                                                                                 
-                  Tickers                                                       
-                  AAPL                                                          
-                  MSFT                                                          
+                Panes                                                           
+                New Portfolio Pane                      PF                      
+                New Chat Pane                           CHAT                    
+                Quote Monitor                           QQ                      
                                                                                 
-                  Panes                                                         
-                  New Portfolio Pane                                            
-                  New Chat Pane                                                 
-                  Quote Monitor                                                 
+                Search                                                          
+                Search Ticker                           T                       
                                                                                 
-                  Search                                                        
-                  Search Ticker                                                 
+                Navigation                                                      
+                Help                                    HELP                    
                                                                                 
-                  Navigation                                                    
-                  Help                                                          
                                                                                 
                                                                                 
                                                                                 
@@ -28,27 +28,27 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
 "
 `;
 
-exports[`CommandBar renders theme mode with the query line visible 1`] = `
+exports[`CommandBar renders theme prefix results in the root query 1`] = `
 "                                                                                
                                                                                 
+                Commands                                     esc                
+                TH                                                              
                                                                                 
-                  Commands                                esc                   
-                  TH                                                            
-                                                                                
-                  Themes                                                        
-                  Amber                                                         
-                  Green Phosphor                                                
-                  Cyan                                                          
-                  Red Phosphor                                                  
-                  Blue Phosphor                                                 
-                  Purple Phosphor                                               
-                  Hot Pink                                                      
-                  White Phosphor                                                
-                  Tokyo Night                                                   
-                  Solarized Dark                                                
-                  Dracula                                                       
-                  Nord                                                          
-                  Monokai                                                       
+                Themes                                                          
+                Amber                                   current                 
+                Green Phosphor                                                  
+                Cyan                                                            
+                Red Phosphor                                                    
+                Blue Phosphor                                                   
+                Purple Phosphor                                                 
+                Hot Pink                                                        
+                White Phosphor                                                  
+                Tokyo Night                                                     
+                Solarized Dark                                                  
+                Dracula                                                         
+                Nord                                                            
+                Monokai                                                         
+                Catppuccin Mocha                                                
                                                                                 
                                                                                 
                                                                                 
@@ -59,13 +59,13 @@ exports[`CommandBar renders theme mode with the query line visible 1`] = `
 exports[`CommandBar renders plugin toggle state 1`] = `
 "                                                                                
                                                                                 
+                Commands                                     esc                
+                PL                                                              
                                                                                 
-                  Commands                                esc                   
-                  PL                                                            
+                Plugins                                                         
+                News                                    on                      
+                Notes                                   off                     
                                                                                 
-                  Plugins                                                       
-                  News                                                          
-                  Notes                                                         
                                                                                 
                                                                                 
                                                                                 
@@ -87,20 +87,20 @@ exports[`CommandBar renders plugin toggle state 1`] = `
 exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
 "                                          
                                           
-                                          
        Commands                         es
        Search                             
                                           
        Tickers                            
-       AAPL                               
-       MSFT                               
+       AAPL                        NASDAQ 
+       MSFT                        NASDAQ 
                                           
        Panes                              
-       New Portfolio Pane                 
-       New Chat Pane                      
-       Quote Monitor                      
+       New Portfolio Pane          PF     
+       New Chat Pane               CHAT   
+       Quote Monitor               QQ     
                                           
        Search                             
+       Search Ticker               T      
                                           
                                           
                                           
@@ -111,17 +111,17 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
 exports[`CommandBar groups ticker search sections and keeps exact open matches above loose provider results 1`] = `
 "                                                                                
                                                                                 
+                Commands                                     esc                
+                T appl                                                          
+                Shortcut: Open APPL                                             
+                Open                                                            
+                AAPL                                    NASDAQ                  
                                                                                 
-                  Commands                                esc                   
-                  T appl                                                        
+                Search Results                                                  
+                APP                                     NASDAQ                  
+                AMAT                                    NASDAQ                  
+                AAOI                                    NASDAQ                  
                                                                                 
-                  Open                                                          
-                  AAPL                                                          
-                                                                                
-                  Search Results                                                
-                  APP                                                           
-                  AMAT                                                          
-                  AAOI                                                          
                                                                                 
                                                                                 
                                                                                 

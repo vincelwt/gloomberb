@@ -108,6 +108,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   openPaneSettingsFn: ((paneId?: string) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
   createPaneFromTemplateFn: ((templateId: string, options?: PaneTemplateCreateOptions) => void) = () => {};
+  createPaneFromTemplateAsyncFn: ((templateId: string, options?: PaneTemplateCreateOptions) => Promise<void>) = async () => {};
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
@@ -119,6 +120,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   showToastFn: ((message: string, options?: { duration?: number; type?: "info" | "success" | "error" }) => void) = () => {};
   getPaneRuntimeStateFn: ((paneId: string) => PaneRuntimeState | null) = () => null;
   updatePaneRuntimeStateFn: ((paneId: string, patch: Partial<PaneRuntimeState>) => void) = () => {};
+  applyPaneSettingValueFn: ((paneId: string, field: import("../types/plugin").PaneSettingField, value: unknown) => Promise<void>) = async () => {};
   getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = () => null;
   setPluginConfigValueFn: ((pluginId: string, key: string, value: unknown) => Promise<void>) = async () => {};
   deletePluginConfigValueFn: ((pluginId: string, key: string) => Promise<void>) = async () => {};
