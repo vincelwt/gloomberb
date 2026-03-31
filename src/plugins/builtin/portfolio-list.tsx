@@ -867,21 +867,25 @@ export function buildPortfolioSummarySegments({
   widthBudget: number;
   refreshText?: string;
 }): PortfolioSummarySegment[] {
-  const candidates: PortfolioSummarySegment[] = [
-    createSummarySegment("val", [
-      { text: "Val", tone: "label" },
-      { text: formatCompact(totals.totalMktValue), tone: "value", bold: true },
-    ]),
-  ];
+  const candidates: PortfolioSummarySegment[] = [];
 
-  if (accountState) {
-    const { account, sourceLabel } = accountState;
-    if (account.totalCashValue != null) {
-      candidates.push(createSummarySegment("cash", [
-        { text: "Cash", tone: "label" },
-        { text: formatCompact(account.totalCashValue), tone: "value", bold: true },
-      ]));
-    }
+  if (accountState?.account.netLiquidation != null) {
+    candidates.push(createSummarySegment("netliq", [
+      { text: "Net Liq", tone: "label" },
+      { text: formatCompact(accountState.account.netLiquidation), tone: "value", bold: true },
+    ]));
+  }
+
+  candidates.push(createSummarySegment("val", [
+    { text: "Val", tone: "label" },
+    { text: formatCompact(totals.totalMktValue), tone: "value", bold: true },
+  ]));
+
+  if (accountState?.account.totalCashValue != null) {
+    candidates.push(createSummarySegment("cash", [
+      { text: "Cash", tone: "label" },
+      { text: formatCompact(accountState.account.totalCashValue), tone: "value", bold: true },
+    ]));
   }
 
   candidates.push(createSummarySegment("day", [
@@ -941,17 +945,6 @@ export function buildPortfolioSummarySegments({
 
 export function shouldToggleCashMarginDrawer(key: string | undefined, showCashDrawer: boolean): boolean {
   return key === "c" && showCashDrawer;
-}
-
-export function calculatePortfolioSummaryWidth(totalWidth: number, tabLabels: string[]): number {
-  const desiredWidth = Math.min(totalWidth, Math.min(72, Math.max(24, Math.floor(totalWidth * 0.55))));
-  if (desiredWidth <= 0) return 0;
-
-  const tabRowWidth = tabLabels.reduce((sum, label) => sum + label.length + 4, 0);
-  const availableWidth = Math.max(0, totalWidth - tabRowWidth);
-  if (availableWidth < Math.min(24, totalWidth)) return 0;
-
-  return Math.min(desiredWidth, availableWidth);
 }
 
 function renderSummarySegments(segments: PortfolioSummarySegment[], width: number) {
@@ -1263,13 +1256,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
       ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length))
       : 1)
     : 0;
-  const summaryWidth = paneSettings.hideTabs || paneSettings.hideHeader
-    ? 0
-    : calculatePortfolioSummaryWidth(width, tabs.map((tab) => tab.name));
-  const showStackedSummary = !paneSettings.hideHeader && (paneSettings.hideTabs || summaryWidth === 0);
   const headerHeight = paneSettings.hideHeader
     ? (paneSettings.hideTabs ? 0 : 1)
-    : paneSettings.hideTabs ? 1 : (showStackedSummary ? 2 : 1);
+    : paneSettings.hideTabs ? 1 : 2;
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
@@ -1586,22 +1575,9 @@ function PortfolioListPane({ focused, width, height }: PaneProps) {
                 compact
               />
             </box>
-            {summaryWidth > 0 && (
-              <box width={summaryWidth} flexShrink={0} alignItems="flex-start" justifyContent="center">
-                <PortfolioSummaryBar
-                  tickers={sortedTickers}
-                  financialsMap={financialsMap}
-                  state={state}
-                  isPortfolio={isPortfolioTab}
-                  collectionId={activeCollectionId}
-                  width={summaryWidth}
-                  accountState={accountState}
-                />
-              </box>
-            )}
           </box>
         )}
-        {showStackedSummary && (
+        {!paneSettings.hideHeader && (
           <box height={1}>
             <PortfolioSummaryBar
               tickers={sortedTickers}

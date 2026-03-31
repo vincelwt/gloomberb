@@ -458,7 +458,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(harnessState?.paneState[TEST_PANE_ID]?.cashDrawerExpanded).toBe(true);
   });
 
-  test("stacks the summary below tabs when the tab row is crowded", async () => {
+  test("renders the summary on its own row below the tabs", async () => {
     const config = {
       ...createPortfolioConfig("broker:ibkr-flex:DU12345", [createBrokerInstance("flex")]),
       watchlists: [
@@ -487,14 +487,18 @@ describe("PortfolioListPane cash and margin UI", () => {
           }],
         }}
       />,
-      { width: 70, height: 24 },
+      { width: 100, height: 24 },
     );
 
     await flushFrame();
 
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Val 1.3k  Cash -50k");
-    expect(frame).toContain("▸ Cash &");
+    const lines = testSetup.captureCharFrame().split("\n");
+    const tabsRow = lines.findIndex((line) => line.includes("Main Portfolio"));
+    const summaryRow = lines.findIndex((line) => line.includes("Net Liq 125k  Val 1.3k  Cash -50k"));
+
+    expect(tabsRow).toBeGreaterThanOrEqual(0);
+    expect(summaryRow).toBeGreaterThan(tabsRow);
+    expect(lines[summaryRow + 1]).toContain("TICKER");
   });
 
   test("renders bid ask and spread when those columns are enabled", async () => {

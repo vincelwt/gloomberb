@@ -3,7 +3,6 @@ import type { CollectionSortPreference } from "../../state/app-context";
 import type { BrokerAccount } from "../../types/trading";
 import {
   buildPortfolioSummarySegments,
-  calculatePortfolioSummaryWidth,
   resolvePortfolioPriceValue,
   resolveCollectionSortPreference,
   shouldToggleCashMarginDrawer,
@@ -54,6 +53,7 @@ describe("buildPortfolioSummarySegments", () => {
   const account: BrokerAccount = {
     accountId: "DU12345",
     name: "DU12345",
+    netLiquidation: 125000,
     totalCashValue: -50000,
     settledCash: -45000,
     availableFunds: 12000,
@@ -61,14 +61,14 @@ describe("buildPortfolioSummarySegments", () => {
     buyingPower: 24000,
   };
 
-  test("keeps value and cash at narrow widths for broker portfolios", () => {
+  test("prioritizes net liquidation at narrow widths for broker portfolios", () => {
     const segments = buildPortfolioSummarySegments({
       totals,
       accountState: { account, sourceLabel: "Live" },
       widthBudget: 24,
     });
 
-    expect(segments.map((segment) => segment.id)).toEqual(["val", "cash"]);
+    expect(segments.map((segment) => segment.id)).toEqual(["netliq", "val"]);
   });
 
   test("drops low-priority broker segments before required ones", () => {
@@ -79,13 +79,13 @@ describe("buildPortfolioSummarySegments", () => {
     });
 
     expect(segments.map((segment) => segment.id)).toEqual([
+      "netliq",
       "val",
       "cash",
       "day",
       "pnl",
       "settled",
       "avail",
-      "excess",
     ]);
   });
 
@@ -93,7 +93,7 @@ describe("buildPortfolioSummarySegments", () => {
     const segments = buildPortfolioSummarySegments({
       totals,
       accountState: { account, sourceLabel: "Live" },
-      widthBudget: 110,
+      widthBudget: 130,
     });
 
     expect(segments.map((segment) => segment.id)).toContain("source");
@@ -103,14 +103,6 @@ describe("buildPortfolioSummarySegments", () => {
     expect(shouldToggleCashMarginDrawer("c", true)).toBe(true);
     expect(shouldToggleCashMarginDrawer("c", false)).toBe(false);
     expect(shouldToggleCashMarginDrawer("j", true)).toBe(false);
-  });
-
-  test("hides the broker summary when tabs need the row width", () => {
-    expect(calculatePortfolioSummaryWidth(70, ["Main", "coldstart", "Interactive Brokers Paper"])).toBe(0);
-  });
-
-  test("uses leftover row width for the broker summary when tabs leave room", () => {
-    expect(calculatePortfolioSummaryWidth(100, ["Main", "coldstart"])).toBe(55);
   });
 
   test("shows broker mark price for stocks when no quote is available", () => {
