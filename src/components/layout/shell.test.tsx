@@ -9,7 +9,7 @@ import { setSharedRegistryForTests } from "../../plugins/registry";
 import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
 import { StatusBar } from "./status-bar";
 import { Header } from "./header";
-import { buildNativeWindowState, resolveNativeDockDividers, Shell } from "./shell";
+import { buildNativeWindowState, finalizePaneDragRelease, resolveNativeDockDividers, Shell } from "./shell";
 import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
@@ -456,6 +456,29 @@ describe("Shell", () => {
     expect(harnessState?.paneState["portfolio-list:main"]?.cashDrawerExpanded).toBe(false);
     expect(layoutUpdates.length).toBe(1);
     expect(toasts).toEqual(["Retiled all panes"]);
+  });
+
+  test("shows the gridlock tip after snapping a pane to a half screen", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-snap-test");
+    const snapLayout = cloneLayout(config.layout);
+    snapLayout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    snapLayout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 36, height: 12, zIndex: 75 }];
+
+    const result = finalizePaneDragRelease(
+      snapLayout,
+      "ticker-detail:main",
+      { x: 8, y: 2, width: 36, height: 12 },
+      { kind: "snap", position: "left", rect: { x: 0, y: 0, width: 50, height: 22 } },
+    );
+
+    expect(result.shouldShowGridlockTip).toBe(true);
+    expect(result.nextLayout.floating[0]).toEqual(expect.objectContaining({
+      instanceId: "ticker-detail:main",
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 22,
+    }));
   });
 
   test("closes the focused docked pane with Ctrl+W", async () => {
