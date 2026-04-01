@@ -39,35 +39,84 @@ function getAssetName(): string {
   return `gloomberb-${os}-${arch}`;
 }
 
-function resolveExecPath(): string {
+function normalizePath(value: string): string {
+  return value.replace(/\\/g, "/").toLowerCase();
+}
+
+function tryRealpath(value: string): string {
+  if (!value) return value;
   try {
-    return realpathSync.native(process.execPath);
+    return realpathSync.native(value);
   } catch {
-    return process.execPath;
+    return value;
   }
 }
 
-export function detectUpdateAction(execPath = resolveExecPath()): UpdateAction {
-  const normalizedPath = execPath.replace(/\\/g, "/").toLowerCase();
-  const execName = basename(normalizedPath);
+function resolveEntrypointPath(argv = process.argv): string {
+  return tryRealpath(argv[1] ?? "");
+}
 
-  if (execName === "bun") {
-    return { kind: "manual", command: "bun install -g gloomberb@latest" };
+function isSourceEntrypoint(entrypoint: string): boolean {
+  const sourceEntrypointPattern = /\.(c|m)?jsx?$/;
+  const tsEntrypointPattern = /\.(c|m)?tsx?$/;
+  return sourceEntrypointPattern.test(entrypoint) || tsEntrypointPattern.test(entrypoint);
+}
+
+export function resolveSelfUpdateTargetPath(
+  execPath = process.execPath,
+  argv = process.argv,
+): string | null {
+  const resolvedExecPath = tryRealpath(execPath);
+  const normalizedExecPath = normalizePath(resolvedExecPath);
+  const execBase = basename(normalizedExecPath);
+  const runtimeExecutables = new Set(["bun", "bunx", "node", "nodejs", "npm", "npx", "pnpm", "yarn"]);
+  if (runtimeExecutables.has(execBase)) return null;
+  if (normalizedExecPath.includes("/.bun/bin/")) return null;
+
+  const entrypoint = normalizePath(resolveEntrypointPath(argv));
+  if (isSourceEntrypoint(entrypoint)) return null;
+
+  return resolvedExecPath;
+}
+
+export function detectUpdateAction(
+  execPath = process.execPath,
+  argv = process.argv,
+): UpdateAction | null {
+  if (resolveSelfUpdateTargetPath(execPath, argv)) {
+    return { kind: "self" };
   }
-  if (execName === "node") {
-    return { kind: "manual", command: "npm install -g gloomberb@latest" };
-  }
+
+  const normalizedExecPath = normalizePath(tryRealpath(execPath));
+  const execBase = basename(normalizedExecPath);
+  const entrypoint = normalizePath(resolveEntrypointPath(argv));
+
+  if (!entrypoint || isSourceEntrypoint(entrypoint)) return null;
+
   if (
-    normalizedPath.includes("/install/global/")
-    || normalizedPath.includes("/install/cache/")
-    || normalizedPath.includes("/.bun/")
+    execBase === "bun"
+    || execBase === "bunx"
+    || normalizedExecPath.includes("/.bun/bin/")
+    || entrypoint.includes("/.bun/install/")
+    || entrypoint.includes("/install/global/")
   ) {
     return { kind: "manual", command: "bun install -g gloomberb@latest" };
   }
-  if (normalizedPath.includes("/lib/node_modules/") || normalizedPath.includes("/node_modules/")) {
+
+  if (
+    execBase === "node"
+    || execBase === "nodejs"
+    || execBase === "npm"
+    || execBase === "npx"
+    || execBase === "pnpm"
+    || execBase === "yarn"
+    || entrypoint.includes("/lib/node_modules/")
+    || entrypoint.includes("/node_modules/")
+  ) {
     return { kind: "manual", command: "npm install -g gloomberb@latest" };
   }
-  return { kind: "self" };
+
+  return null;
 }
 
 export function canSelfUpdate(release: Pick<ReleaseInfo, "updateAction"> | null | undefined): boolean {
@@ -77,6 +126,9 @@ export function canSelfUpdate(release: Pick<ReleaseInfo, "updateAction"> | null 
 export async function checkForUpdate(
   currentVersion: string,
 ): Promise<ReleaseInfo | null> {
+  const updateAction = detectUpdateAction();
+  if (!updateAction) return null;
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -107,7 +159,7 @@ export async function checkForUpdate(
       tagName: data.tag_name,
       downloadUrl: asset.browser_download_url,
       publishedAt: data.published_at,
-      updateAction: detectUpdateAction(),
+      updateAction,
     };
   } catch {
     return null;
@@ -126,7 +178,15 @@ export async function performUpdate(
     return;
   }
 
-  const execPath = resolveExecPath();
+  const execPath = resolveSelfUpdateTargetPath();
+  if (!execPath) {
+    onProgress({
+      phase: "error",
+      error: "Self-update is unavailable when running from source or via Bun/Node. Relaunch the packaged gloomberb binary to update.",
+    });
+    return;
+  }
+
   const updatePath = execPath + ".update";
   const oldPath = execPath + ".old";
 

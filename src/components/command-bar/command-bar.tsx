@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { TextAttributes, type InputRenderable } from "@opentui/core";
+import { TextAttributes, type InputRenderable, type TextareaRenderable } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Spinner } from "../spinner";
 import { Button, NumberField, TextField } from "../ui";
@@ -159,9 +159,9 @@ type WorkflowStringValues = Record<string, string>;
 const commandBarLog = debugLog.createLogger("command-bar");
 
 function getInputRef(
-  store: Record<string, RefObject<InputRenderable | null>>,
+  store: Record<string, RefObject<InputRenderable | TextareaRenderable | null>>,
   fieldId: string,
-): RefObject<InputRenderable | null> {
+): RefObject<InputRenderable | TextareaRenderable | null> {
   if (!store[fieldId]) {
     store[fieldId] = { current: null };
   }
@@ -170,6 +170,38 @@ function getInputRef(
 
 function orderListResults(results: ResultItem[]): ResultItem[] {
   return buildSections(results).flatMap((section) => section.items);
+}
+
+function getVisibleMultiSelectPickerOptions(
+  route: Extract<CommandBarRoute, { kind: "picker" }>,
+): CommandBarPickerOption[] {
+  if (route.pickerId !== "field-multi-select") {
+    return route.query
+      ? fuzzyFilter(route.options, route.query, (option) => `${option.label} ${option.detail || ""} ${option.description || ""}`)
+      : route.options;
+  }
+
+  const selectedValues = coerceFieldValues(route.payload?.selectedValues as CommandBarFieldValue | undefined);
+  const optionById = new Map(route.options.map((option) => [option.id, option]));
+  const knownSelectedValues = selectedValues.filter((value) => optionById.has(value));
+  const filteredOptions = route.query
+    ? fuzzyFilter(route.options, route.query, (option) => `${option.label} ${option.detail || ""} ${option.description || ""}`)
+    : route.options;
+
+  return filteredOptions.map((option) => {
+    const order = knownSelectedValues.indexOf(option.id);
+    const orderDescription = String(route.payload?.fieldType ?? "") === "ordered-multi-select" && order >= 0
+      ? `Order ${order + 1} of ${knownSelectedValues.length}.`
+      : "";
+    const description = [option.description || option.detail, orderDescription]
+      .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+      .join(" ");
+    return {
+      ...option,
+      detail: description,
+      description,
+    };
+  });
 }
 
 export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, quitApp }: CommandBarProps) {
@@ -196,12 +228,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const rootSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rootSearchRequestIdRef = useRef(0);
   const rootLastSearchedQueryRef = useRef<string | null>(null);
+  const tickerSearchCacheRef = useRef<Map<string, TickerSearchCandidate[]>>(new Map());
   const skipTickerSearchDebounceRef = useRef(false);
   const lastMainBrowseRef = useRef<CommandBarMainSnapshot>({ query: "", selectedIdx: 0 });
   const previousRootSelectionContextRef = useRef<{ query: string; mode: string } | null>(null);
   const previousRootModeRef = useRef(rootModeInfo.kind);
   const rootThemeBaseIdRef = useRef<string | null>(null);
-  const workflowInputRefs = useRef<Record<string, RefObject<InputRenderable | null>>>({});
+  const workflowInputRefs = useRef<Record<string, RefObject<InputRenderable | TextareaRenderable | null>>>({});
   const visibleListStateRef = useRef<ListScreenState | null>(null);
   const currentRoute = routeStack[routeStack.length - 1] ?? null;
   const currentRouteRef = useRef<CommandBarRoute | null>(currentRoute);
@@ -1099,7 +1132,37 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     }
   }, []);
 
+  function readWorkflowTextareaValue(fieldId: string, fallback = ""): string {
+    const ref = getInputRef(workflowInputRefs.current, fieldId).current;
+    const nextValue = (ref as TextareaRenderable | null)?.editBuffer?.getText?.();
+    return typeof nextValue === "string" ? nextValue : fallback;
+  }
+
+  function getWorkflowFieldStringValue(
+    field: CommandBarWorkflowField,
+    value: CommandBarFieldValue | undefined,
+  ): string {
+    return field.type === "textarea"
+      ? readWorkflowTextareaValue(field.id, coerceFieldString(value))
+      : coerceFieldString(value);
+  }
+
+  function syncWorkflowTextareaField(fieldId: string, fallback = ""): string {
+    const nextValue = readWorkflowTextareaValue(fieldId, fallback);
+    updateWorkflowValue(fieldId, nextValue);
+    return nextValue;
+  }
+
+  function syncActiveWorkflowTextarea(route: CommandBarWorkflowRoute | null): void {
+    if (route?.kind !== "workflow") return;
+    const visibleFields = getVisibleWorkflowFields(route.fields, route.values);
+    const activeField = visibleFields.find((field) => field.id === route.activeFieldId) ?? visibleFields[0];
+    if (activeField?.type !== "textarea") return;
+    syncWorkflowTextareaField(activeField.id, coerceFieldString(route.values[activeField.id]));
+  }
+
   const submitWorkflowRoute = useCallback(async (route: CommandBarWorkflowRoute) => {
+    syncActiveWorkflowTextarea(route);
     const visibleFields = getVisibleWorkflowFields(route.fields, route.values);
     for (const field of visibleFields) {
       if (!field.required) continue;
@@ -1114,7 +1177,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         }
         continue;
       }
-      if (!coerceFieldString(value).trim()) {
+      if (!getWorkflowFieldStringValue(field, value).trim()) {
         updateTopRoute((current) => current.kind === "workflow"
           ? { ...current, error: `${field.label} is required.` }
           : current);
@@ -1179,7 +1242,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
             } else if (field.type === "multi-select" || field.type === "ordered-multi-select") {
               values[field.id] = coerceFieldValues(route.values[field.id]).join(",");
             } else {
-              values[field.id] = coerceFieldString(route.values[field.id]);
+              values[field.id] = getWorkflowFieldStringValue(field, route.values[field.id]);
             }
           }
           await command.execute(values);
@@ -1199,7 +1262,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
             } else if (field.type === "multi-select" || field.type === "ordered-multi-select") {
               values[field.id] = coerceFieldValues(route.values[field.id]).join(",");
             } else {
-              values[field.id] = coerceFieldString(route.values[field.id]);
+              values[field.id] = getWorkflowFieldStringValue(field, route.values[field.id]);
             }
           }
           const createOptions: PaneTemplateCreateOptions = {
@@ -1257,8 +1320,10 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     createWatchlist,
     dispatch,
     extractBrokerWorkflowValues,
+    getWorkflowFieldStringValue,
     pluginRegistry,
     state.config.activeLayoutIndex,
+    syncActiveWorkflowTextarea,
     updateTopRoute,
   ]);
 
@@ -1290,7 +1355,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
   const shouldOpenTemplateConfig = useCallback((template: PaneTemplateDef, arg?: string): boolean => {
     if (template.wizard && template.wizard.length > 0) {
-      return !arg?.trim();
+      if (!arg?.trim()) {
+        return true;
+      }
+      const argPlaceholder = template.shortcut?.argPlaceholder;
+      return template.wizard.some((step) => step.type === "textarea" || step.key !== argPlaceholder);
     }
     if (template.shortcut?.argPlaceholder === "ticker" || template.shortcut?.argPlaceholder === "tickers") {
       return !arg?.trim();
@@ -1407,7 +1476,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       return;
     }
 
-    if (!trimmedArg && shouldOpenTemplateConfig(template, trimmedArg)) {
+    if (shouldOpenTemplateConfig(template, trimmedArg)) {
       openPaneTemplateWorkflow(template, { arg: trimmedArg });
       return;
     }
@@ -1457,6 +1526,53 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       action: () => openTickerDetail(candidate.result!),
     };
   }, [closeAll, focusTicker, openTickerDetail]);
+
+  const buildTickerSearchResultItems = useCallback((candidates: TickerSearchCandidate[], query: string): ResultItem[] => (
+    candidates.length > 0
+      ? candidates.map((candidate) => mapTickerSearchCandidateToResultItem(candidate))
+      : [{
+        id: "no-results",
+        label: `No matches for "${query}"`,
+        detail: "Try a symbol, company name, exchange, or asset type",
+        category: "Search",
+        kind: "info",
+        action: () => {},
+      }]
+  ), [mapTickerSearchCandidateToResultItem]);
+
+  const buildTickerSearchCacheKey = useCallback((
+    query: string,
+    brokerId?: string | null,
+    brokerInstanceId?: string | null,
+  ) => [query.trim().toUpperCase(), brokerId || "", brokerInstanceId || ""].join("|"), []);
+
+  const readTickerSearchCache = useCallback((
+    query: string,
+    brokerId?: string | null,
+    brokerInstanceId?: string | null,
+  ): TickerSearchCandidate[] | null => {
+    const key = buildTickerSearchCacheKey(query, brokerId, brokerInstanceId);
+    return tickerSearchCacheRef.current.get(key) ?? null;
+  }, [buildTickerSearchCacheKey]);
+
+  const writeTickerSearchCache = useCallback((
+    query: string,
+    candidates: TickerSearchCandidate[],
+    brokerId?: string | null,
+    brokerInstanceId?: string | null,
+  ) => {
+    const key = buildTickerSearchCacheKey(query, brokerId, brokerInstanceId);
+    tickerSearchCacheRef.current.set(key, candidates);
+    while (tickerSearchCacheRef.current.size > 24) {
+      const oldestKey = tickerSearchCacheRef.current.keys().next().value;
+      if (!oldestKey) break;
+      tickerSearchCacheRef.current.delete(oldestKey);
+    }
+  }, [buildTickerSearchCacheKey]);
+
+  useEffect(() => {
+    tickerSearchCacheRef.current.clear();
+  }, [state.tickers]);
 
   const localTickerSearchResultItems = useCallback((query?: string, options?: {
     category?: string;
@@ -1959,7 +2075,14 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
     setTickerSearchPending(true);
     const localItems = localTickerSearchResultItems(searchQuery, { limit: 6 });
-    setTickerSearchResults(localItems);
+    const cachedCandidates = readTickerSearchCache(
+      searchQuery,
+      activePortfolio?.brokerId,
+      activePortfolio?.brokerInstanceId,
+    );
+    setTickerSearchResults(cachedCandidates
+      ? buildTickerSearchResultItems(cachedCandidates, searchQuery)
+      : localItems);
     const requestId = ++searchRequestIdRef.current;
     const searchDelay = skipTickerSearchDebounceRef.current ? 0 : 200;
     skipTickerSearchDebounceRef.current = false;
@@ -1978,16 +2101,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           },
         });
         if (requestId !== searchRequestIdRef.current) return;
-        const items = combined.map((candidate) => mapTickerSearchCandidateToResultItem(candidate));
-        const nextItems: ResultItem[] = items.length > 0 ? items : [{
-          id: "no-results",
-          label: `No matches for "${searchQuery}"`,
-          detail: "Try a symbol, company name, or exchange variant",
-          category: "Search",
-          kind: "info",
-          action: () => {},
-        }];
-        setTickerSearchResults(nextItems);
+        writeTickerSearchCache(
+          searchQuery,
+          combined,
+          activePortfolio?.brokerId,
+          activePortfolio?.brokerInstanceId,
+        );
+        setTickerSearchResults(buildTickerSearchResultItems(combined, searchQuery));
       } catch {
         if (requestId !== searchRequestIdRef.current) return;
         const nextItems: ResultItem[] = [{
@@ -2013,9 +2133,12 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     activePortfolio?.brokerId,
     activePortfolio?.brokerInstanceId,
     dataProvider,
+    buildTickerSearchResultItems,
     localTickerSearchResultItems,
     mapTickerSearchCandidateToResultItem,
+    readTickerSearchCache,
     tickerSearchRouteQuery,
+    writeTickerSearchCache,
   ]);
 
   const rootResultModel = useMemo(() => {
@@ -2645,13 +2768,18 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
     rootLastSearchedQueryRef.current = searchQuery;
     setRootSearching(true);
-    setRootProviderResults(null);
-    setRootProviderResultsQuery(null);
+    const activeSearchPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
+    const cachedCandidates = readTickerSearchCache(
+      searchQuery,
+      activeSearchPortfolio?.brokerId,
+      activeSearchPortfolio?.brokerInstanceId,
+    );
+    setRootProviderResults(cachedCandidates ? buildTickerSearchResultItems(cachedCandidates, searchQuery) : null);
+    setRootProviderResultsQuery(cachedCandidates ? searchQuery : null);
 
     const requestId = ++rootSearchRequestIdRef.current;
     rootSearchTimerRef.current = setTimeout(async () => {
       try {
-        const activeSearchPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
         const combined = await searchTickerCandidates({
           query: searchQuery,
           tickers: state.tickers,
@@ -2663,17 +2791,13 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           },
         });
         if (requestId !== rootSearchRequestIdRef.current) return;
-        const nextItems: ResultItem[] = combined.length > 0
-          ? combined.map((candidate) => mapTickerSearchCandidateToResultItem(candidate))
-          : [{
-            id: "no-results",
-            label: `No matches for "${searchQuery}"`,
-            detail: "Try a symbol, company name, or exchange variant",
-            category: "Search",
-            kind: "info",
-            action: () => {},
-          }];
-        setRootProviderResults(nextItems);
+        writeTickerSearchCache(
+          searchQuery,
+          combined,
+          activeSearchPortfolio?.brokerId,
+          activeSearchPortfolio?.brokerInstanceId,
+        );
+        setRootProviderResults(buildTickerSearchResultItems(combined, searchQuery));
         setRootProviderResultsQuery(searchQuery);
       } catch {
         if (requestId !== rootSearchRequestIdRef.current) return;
@@ -2698,12 +2822,14 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     };
   }, [
     activeCollectionId,
+    buildTickerSearchResultItems,
     currentRoute,
     dataProvider,
-    mapTickerSearchCandidateToResultItem,
+    readTickerSearchCache,
     rootTickerSearchArg,
     state.config.portfolios,
     state.tickers,
+    writeTickerSearchCache,
   ]);
 
   const rootResults = useMemo(() => {
@@ -3368,34 +3494,24 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     }
 
     if (currentRoute.kind === "picker") {
-      const filtered = currentRoute.query
-        ? fuzzyFilter(
-          currentRoute.options.map((option) => ({
-            id: option.id,
-            label: option.label,
-            detail: option.detail || "",
-            category: "Options",
-            kind: "action" as const,
-            disabled: option.disabled,
-            action: () => {},
-          })),
-          currentRoute.query,
-          (item) => `${item.label} ${item.detail}`,
-        )
-        : currentRoute.options.map((option) => ({
-          id: option.id,
-          label: option.label,
-          detail: option.detail || "",
-          category: "Options",
-          kind: "action" as const,
-          disabled: option.disabled,
-          action: () => {},
-        }));
+      const filteredOptions = getVisibleMultiSelectPickerOptions(currentRoute);
+      const filtered = filteredOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+        detail: option.detail || "",
+        category: "Options",
+        kind: "action" as const,
+        disabled: option.disabled,
+        action: () => {},
+      }));
+      const selectedIdx = filtered.length === 0
+        ? 0
+        : Math.max(0, Math.min(currentRoute.selectedIdx, filtered.length - 1));
       return {
         kind: "picker",
         title: currentRoute.title,
         query: currentRoute.query,
-        selectedIdx: currentRoute.selectedIdx,
+        selectedIdx,
         hoveredIdx: currentRoute.hoveredIdx,
         results: orderListResults(filtered),
         searching: false,
@@ -3605,6 +3721,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
 
   const moveWorkflowFocus = useCallback((delta: number) => {
     if (currentRoute?.kind !== "workflow") return;
+    syncActiveWorkflowTextarea(currentRoute);
     const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
     if (visibleFields.length === 0) return;
     const currentIndex = Math.max(0, visibleFields.findIndex((field) => field.id === currentRoute.activeFieldId));
@@ -3612,9 +3729,10 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     updateTopRoute((route) => route.kind === "workflow"
       ? { ...route, activeFieldId: visibleFields[nextIndex]?.id ?? route.activeFieldId }
       : route);
-  }, [currentRoute, updateTopRoute]);
+  }, [currentRoute, syncActiveWorkflowTextarea, updateTopRoute]);
 
   const openWorkflowFieldPicker = useCallback((route: CommandBarWorkflowRoute, field: CommandBarWorkflowField) => {
+    syncActiveWorkflowTextarea(route);
     if (field.type === "toggle") {
       updateWorkflowValue(field.id, !coerceFieldBoolean(route.values[field.id]));
       return;
@@ -3663,7 +3781,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         },
       });
     }
-  }, [openPickerRoute, updateWorkflowValue]);
+  }, [openPickerRoute, syncActiveWorkflowTextarea, updateWorkflowValue]);
 
   const activateListSelection = useCallback((options?: { secondary?: boolean; item?: ResultItem }) => {
     const listState = visibleListStateRef.current;
@@ -3857,19 +3975,27 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     updateTopRoute((route) => {
       if (route.kind !== "picker" || route.pickerId !== "field-multi-select") return route;
       const selectedValues = coerceFieldValues(route.payload?.selectedValues as CommandBarFieldValue | undefined);
-      return {
+      const nextSelectedValues = toggleSelectedValue(selectedValues, optionId);
+      const nextRoute = {
         ...route,
         payload: {
           ...route.payload,
-          selectedValues: toggleSelectedValue(selectedValues, optionId),
+          selectedValues: nextSelectedValues,
         },
+      };
+      const nextOptions = getVisibleMultiSelectPickerOptions(nextRoute);
+      const nextSelectedIdx = nextOptions.findIndex((option) => option.id === optionId);
+      return {
+        ...nextRoute,
+        selectedIdx: nextSelectedIdx >= 0 ? nextSelectedIdx : 0,
       };
     });
   }, [currentRoute, updateTopRoute]);
 
   const handleMultiSelectMove = useCallback((direction: "up" | "down") => {
     if (currentRoute?.kind !== "picker" || currentRoute.pickerId !== "field-multi-select") return;
-    const selectedItem = currentRoute.options[currentRoute.selectedIdx];
+    const visibleOptions = getVisibleMultiSelectPickerOptions(currentRoute);
+    const selectedItem = visibleOptions[currentRoute.selectedIdx];
     if (!selectedItem) return;
 
     updateTopRoute((route) => {
@@ -3887,12 +4013,19 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         })),
       };
       const selectedValues = coerceFieldValues(route.payload?.selectedValues as CommandBarFieldValue | undefined);
-      return {
+      const nextSelectedValues = moveSelectedValue(workflowField, selectedValues, selectedItem.id, direction);
+      const nextRoute = {
         ...route,
         payload: {
           ...route.payload,
-          selectedValues: moveSelectedValue(workflowField, selectedValues, selectedItem.id, direction),
+          selectedValues: nextSelectedValues,
         },
+      };
+      const nextOptions = getVisibleMultiSelectPickerOptions(nextRoute);
+      const nextSelectedIdx = nextOptions.findIndex((option) => option.id === selectedItem.id);
+      return {
+        ...nextRoute,
+        selectedIdx: nextSelectedIdx >= 0 ? nextSelectedIdx : route.selectedIdx,
       };
     });
   }, [currentRoute, updateTopRoute]);
@@ -3978,11 +4111,23 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
       if (currentRoute?.kind === "workflow") {
         const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
         const activeField = visibleFields.find((field) => field.id === currentRoute.activeFieldId) ?? visibleFields[0];
+        const activeTextarea = activeField?.type === "textarea";
 
         if (event.name === "tab") {
           event.stopPropagation();
           event.preventDefault();
           moveWorkflowFocus(event.shift ? -1 : 1);
+          return;
+        }
+
+        if (activeTextarea && event.ctrl && event.name === "s") {
+          event.stopPropagation();
+          event.preventDefault();
+          void submitWorkflowRoute(currentRoute);
+          return;
+        }
+
+        if (activeTextarea && (event.name === "up" || event.name === "down" || (event.ctrl && (event.name === "p" || event.name === "n")))) {
           return;
         }
 
@@ -4201,6 +4346,12 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const visibleListState = routeListState && (routeListState.kind === "root" || routeListState.kind === "mode" || routeListState.kind === "picker" || routeListState.kind === "pane-settings")
     ? routeListState
     : null;
+  const showCustomMultiSelectPicker = currentRoute?.kind === "picker" && currentRoute.pickerId === "field-multi-select";
+  const bodySlotKey = showCustomMultiSelectPicker
+    ? "picker:field-multi-select"
+    : currentRoute?.kind === "picker"
+      ? `picker:${currentRoute.pickerId}`
+      : currentRoute?.kind ?? "root";
 
   const renderListBody = () => {
     if (!visibleListState) return null;
@@ -4356,6 +4507,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
               backgroundColor={active ? colors.panel : paletteBg}
               onMouseDown={(event: any) => {
                 event.stopPropagation?.();
+                syncActiveWorkflowTextarea(currentRoute);
                 updateTopRoute((route) => route.kind === "workflow"
                   ? { ...route, activeFieldId: field.id, error: null }
                   : route);
@@ -4372,7 +4524,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
               {isWorkflowTextField(field) ? (
                 field.type === "number" ? (
                   <NumberField
-                    inputRef={getInputRef(workflowInputRefs.current, field.id)}
+                    inputRef={getInputRef(workflowInputRefs.current, field.id) as RefObject<InputRenderable | null>}
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
@@ -4386,9 +4538,46 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
                       }
                     }}
                   />
+                ) : field.type === "textarea" ? (
+                  <box
+                    minHeight={6}
+                    height={6}
+                    border
+                    borderColor={active ? paletteSelectedBg : paletteBg}
+                    backgroundColor={active ? colors.panel : paletteBg}
+                  >
+                    {active ? (
+                      <textarea
+                        key={field.id}
+                        ref={getInputRef(workflowInputRefs.current, field.id) as RefObject<TextareaRenderable | null>}
+                        initialValue={coerceFieldString(value)}
+                        placeholder={field.placeholder || ""}
+                        focused={!currentRoute.pending}
+                        textColor={paletteText}
+                        placeholderColor={paletteSubtleText}
+                        backgroundColor={colors.panel}
+                        flexGrow={1}
+                      />
+                    ) : (
+                      <box flexDirection="column" paddingX={1} paddingY={0}>
+                        {(() => {
+                          const preview = coerceFieldString(value).trim();
+                          const lines = (preview || field.placeholder || "Unset")
+                            .split("\n")
+                            .flatMap((line) => line.match(new RegExp(`.{1,${Math.max(1, barWidth - contentPadding * 2 - 8)}}`, "g")) ?? [""])
+                            .slice(0, 4);
+                          return lines.map((line, index) => (
+                            <box key={`${field.id}:preview:${index}`} height={1}>
+                              <text fg={preview ? paletteText : paletteSubtleText}>{line || " "}</text>
+                            </box>
+                          ));
+                        })()}
+                      </box>
+                    )}
+                  </box>
                 ) : (
                   <TextField
-                    inputRef={getInputRef(workflowInputRefs.current, field.id)}
+                    inputRef={getInputRef(workflowInputRefs.current, field.id) as RefObject<InputRenderable | null>}
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
@@ -4419,7 +4608,14 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
               )}
               {field.description && (
                 <box height={1}>
-                  <text fg={paletteSubtleText}>{truncateText(field.description, barWidth - contentPadding * 2)}</text>
+                  <text fg={paletteSubtleText}>
+                    {truncateText(
+                      field.type === "textarea" && active
+                        ? `${field.description} Ctrl+S submits.`
+                        : field.description,
+                      barWidth - contentPadding * 2,
+                    )}
+                  </text>
                 </box>
               )}
             </box>
@@ -4436,9 +4632,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           </box>
         )}
         <box flexGrow={1} />
-        <box flexDirection="row" gap={1}>
+        <box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
           <Button label={currentRoute.submitLabel} variant="primary" onPress={() => { void submitWorkflowRoute(currentRoute); }} disabled={currentRoute.pending} />
-          <Button label={currentRoute.cancelLabel || "Back"} variant="ghost" onPress={popRoute} disabled={currentRoute.pending} />
+          {!visibleFields.some((field) => field.type === "textarea") ? (
+            <Button label={currentRoute.cancelLabel || "Back"} variant="ghost" onPress={popRoute} disabled={currentRoute.pending} />
+          ) : null}
         </box>
       </box>
     );
@@ -4481,17 +4679,24 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
   const renderMultiSelectBody = () => {
     if (currentRoute?.kind !== "picker" || currentRoute.pickerId !== "field-multi-select") return null;
     const selectedValues = coerceFieldValues(currentRoute.payload?.selectedValues as CommandBarFieldValue | undefined);
-    const items = currentRoute.options.map((option) => ({
+    const options = getVisibleMultiSelectPickerOptions(currentRoute);
+    const items = options.map((option) => ({
       id: option.id,
       label: option.label,
       enabled: selectedValues.includes(option.id),
-      description: option.description,
+      description: option.description || option.detail,
     }));
+    const selectedIdx = items.length === 0
+      ? 0
+      : Math.max(0, Math.min(currentRoute.selectedIdx, items.length - 1));
     return (
       <box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
         <ToggleList
           items={items}
-          selectedIdx={currentRoute.selectedIdx}
+          selectedIdx={selectedIdx}
+          flexGrow={1}
+          scrollable
+          showSelectedDescription={false}
           onSelect={(index) => {
             updateTopRoute((route) => route.kind === "picker"
               ? { ...route, selectedIdx: index, hoveredIdx: null }
@@ -4500,7 +4705,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           onToggle={(id) => handleMultiSelectToggle(id)}
           bgColor={paletteBg}
         />
-        <box flexGrow={1} />
         <box flexDirection="row" gap={1}>
           <Button label="Done" variant="primary" onPress={commitMultiSelectPicker} />
           <Button label="Back" variant="ghost" onPress={popRoute} />
@@ -4562,58 +4766,60 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
           <text fg={paletteSubtleText}>esc</text>
         </box>
 
-        {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
-          <>
-            <box height={1} paddingX={contentPadding}>
-              <box width={queryDisplayWidth} height={1} position="relative">
-                <input
-                  value={visibleListState.query}
-                  onInput={setActiveListQuery}
-                  onChange={setActiveListQuery}
-                  placeholder={visibleListState.kind === "root" ? "Search" : "Filter"}
-                  focused
-                  width={queryDisplayWidth}
-                  backgroundColor={paletteBg}
-                  focusedBackgroundColor={paletteBg}
-                  textColor={paletteText}
-                  focusedTextColor={paletteText}
-                  placeholderColor={paletteSubtleText}
-                  cursorColor={colors.textBright}
-                />
-                {visibleListState.kind === "root" && rootGhostSuffix && (
-                  <box
-                    position="absolute"
-                    top={0}
-                    left={Math.max(0, Math.min(rootQuery.length, queryDisplayWidth - 1))}
-                    width={Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1))}
-                    height={1}
-                  >
-                    <text fg={paletteSubtleText}>
-                      {truncateText(
-                        rootGhostSuffix,
-                        Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1)),
-                      )}
-                    </text>
-                  </box>
-                )}
+        <box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={paletteBg}>
+          {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
+            <>
+              <box height={1} paddingX={contentPadding}>
+                <box width={queryDisplayWidth} height={1} position="relative">
+                  <input
+                    value={visibleListState.query}
+                    onInput={setActiveListQuery}
+                    onChange={setActiveListQuery}
+                    placeholder={visibleListState.kind === "root" ? "Search" : "Filter"}
+                    focused
+                    width={queryDisplayWidth}
+                    backgroundColor={paletteBg}
+                    focusedBackgroundColor={paletteBg}
+                    textColor={paletteText}
+                    focusedTextColor={paletteText}
+                    placeholderColor={paletteSubtleText}
+                    cursorColor={colors.textBright}
+                  />
+                  {visibleListState.kind === "root" && rootGhostSuffix && (
+                    <box
+                      position="absolute"
+                      top={0}
+                      left={Math.max(0, Math.min(rootQuery.length, queryDisplayWidth - 1))}
+                      width={Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1))}
+                      height={1}
+                    >
+                      <text fg={paletteSubtleText}>
+                        {truncateText(
+                          rootGhostSuffix,
+                          Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1)),
+                        )}
+                      </text>
+                    </box>
+                  )}
+                </box>
               </box>
-            </box>
-            <box height={1} paddingX={contentPadding}>
-              {visibleListState.kind === "root" && rootShortcutFeedback
-                ? (
-                  <text fg={paletteSubtleText}>
-                    {truncateText(rootShortcutFeedback, barWidth - contentPadding * 2)}
-                  </text>
-                )
-                : null}
-            </box>
-          </>
-        )}
+              <box height={1} paddingX={contentPadding}>
+                {visibleListState.kind === "root" && rootShortcutFeedback
+                  ? (
+                    <text fg={paletteSubtleText}>
+                      {truncateText(rootShortcutFeedback, barWidth - contentPadding * 2)}
+                    </text>
+                  )
+                  : null}
+              </box>
+            </>
+          )}
 
-        {visibleListState && renderListBody()}
-        {currentRoute?.kind === "workflow" && renderWorkflowBody()}
-        {currentRoute?.kind === "confirm" && renderConfirmBody()}
-        {currentRoute?.kind === "picker" && currentRoute.pickerId === "field-multi-select" && renderMultiSelectBody()}
+          {visibleListState && !showCustomMultiSelectPicker && renderListBody()}
+          {currentRoute?.kind === "workflow" && renderWorkflowBody()}
+          {currentRoute?.kind === "confirm" && renderConfirmBody()}
+          {showCustomMultiSelectPicker && renderMultiSelectBody()}
+        </box>
 
         <box flexGrow={1} />
       </box>

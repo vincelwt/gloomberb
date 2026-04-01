@@ -88,6 +88,10 @@ export function summarizeWorkflowFieldValue(
       const next = coerceFieldString(value).trim();
       return next.length > 0 ? next : "Unset";
     }
+    case "textarea": {
+      const next = coerceFieldString(value).replace(/\s+/g, " ").trim();
+      return next.length > 0 ? next : "Unset";
+    }
     case "select": {
       const selected = coerceFieldString(value);
       return selected ? fieldOptionLabel(field, selected) : "Choose…";
@@ -191,6 +195,8 @@ export function normalizeWizardFields(steps: WizardStep[]): {
       ? "password"
       : step.type === "number"
         ? "number"
+        : step.type === "textarea"
+          ? "textarea"
         : step.type === "select"
           ? "select"
           : "text";
@@ -257,7 +263,10 @@ export function getFirstVisibleFieldId(
 }
 
 export function isWorkflowTextField(field: CommandBarWorkflowField | undefined): boolean {
-  return field?.type === "text" || field?.type === "password" || field?.type === "number";
+  return field?.type === "text"
+    || field?.type === "password"
+    || field?.type === "number"
+    || field?.type === "textarea";
 }
 
 export function buildGeneratedTemplateField(

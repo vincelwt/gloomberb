@@ -516,7 +516,8 @@ describe("CommandBar", () => {
 
     await testSetup.renderOnce();
     const frame = await waitForFrameToContain("AAOI");
-    expect(frame).toContain("Open");
+    expect(frame).toContain("Saved");
+    expect(frame).toContain("Other Listings");
     expect(frame).toContain("APP");
     expect(frame).toContain("AAOI");
   });
@@ -1026,6 +1027,136 @@ describe("CommandBar", () => {
     expect(frame).toContain("AAPL,");
   });
 
+  test("AI <prompt> opens the inline workflow and prefills the textarea prompt", async () => {
+    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="AI quality compounders"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.panes as Map<string, any>).set("ai-screener", {
+          id: "ai-screener",
+          name: "AI Screener",
+          component: () => null,
+          defaultPosition: "right",
+          defaultMode: "floating",
+        });
+        (pluginRegistry.paneTemplates as Map<string, any>).set("new-ai-screener-pane", {
+          id: "new-ai-screener-pane",
+          paneId: "ai-screener",
+          label: "AI Screener",
+          description: "Create a prompt-driven screener pane.",
+          shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+          wizard: [
+            {
+              key: "providerId",
+              label: "AI Provider",
+              type: "select",
+              defaultValue: "claude",
+              options: [{ label: "Claude", value: "claude" }],
+            },
+            {
+              key: "prompt",
+              label: "Screener Prompt",
+              type: "textarea",
+            },
+          ],
+        });
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("AI Screener");
+    expect(frame).toContain("AI Provider");
+    expect(frame).toContain("quality compounders");
+    expect(created).toEqual([]);
+  });
+
+  test("submits typed AI screener prompts from the textarea field", async () => {
+    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="AI"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.panes as Map<string, any>).set("ai-screener", {
+          id: "ai-screener",
+          name: "AI Screener",
+          component: () => null,
+          defaultPosition: "right",
+          defaultMode: "floating",
+        });
+        (pluginRegistry.paneTemplates as Map<string, any>).set("new-ai-screener-pane", {
+          id: "new-ai-screener-pane",
+          paneId: "ai-screener",
+          label: "AI Screener",
+          description: "Create a prompt-driven screener pane.",
+          shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+          wizard: [
+            {
+              key: "providerId",
+              label: "AI Provider",
+              type: "select",
+              defaultValue: "claude",
+              options: [{ label: "Claude", value: "claude" }],
+            },
+            {
+              key: "prompt",
+              label: "Screener Prompt",
+              type: "textarea",
+            },
+          ],
+        });
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("humanoid robot suppliers");
+      await testSetup!.renderOnce();
+    });
+    await clickFrameText("Create Pane");
+    await act(async () => {
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{
+      templateId: "new-ai-screener-pane",
+      options: {
+        arg: "humanoid robot suppliers",
+        values: {
+          providerId: "claude",
+          prompt: "humanoid robot suppliers",
+        },
+      },
+    }]);
+  });
+
   test("edits pane settings inline inside the command bar", async () => {
     const appliedValues: Array<{ paneId: string; key: string; value: unknown }> = [];
 
@@ -1118,6 +1249,77 @@ describe("CommandBar", () => {
     }]);
   });
 
+  test("renders pane-setting multi-select pickers only once inside the command bar", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="PS"
+      configureState={(state) => ({
+        ...state,
+        focusedPaneId: "quote-monitor:main",
+      })}
+      hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.resolvePaneSettings = () => ({
+          paneId: "quote-monitor:main",
+          pane: {
+            instanceId: "quote-monitor:main",
+            paneId: "quote-monitor",
+            title: "Quote Monitor",
+            settings: {},
+          },
+          paneDef: pluginRegistry.panes.get("quote-monitor")!,
+          settingsDef: {
+            title: "Quote Monitor Settings",
+            fields: [{
+              key: "columns",
+              label: "Columns",
+              type: "ordered-multi-select",
+              description: "Visible columns",
+              options: [
+                { value: "volume", label: "AAA", description: "Volume column" },
+                { value: "spread", label: "BBB", description: "Spread column" },
+                { value: "beta", label: "CCC", description: "Beta column" },
+              ],
+            }],
+          },
+          context: {
+            config: createDefaultConfig("/tmp/gloomberb-test"),
+            layout: cloneLayout(createDefaultConfig("/tmp/gloomberb-test").layout),
+            paneId: "quote-monitor:main",
+            paneType: "quote-monitor",
+            pane: {
+              instanceId: "quote-monitor:main",
+              paneId: "quote-monitor",
+              title: "Quote Monitor",
+              settings: {},
+            },
+            settings: {
+              columns: ["volume", "spread"],
+            },
+            paneState: {},
+            activeTicker: "AAPL",
+            activeCollectionId: "main",
+          },
+        }) as any;
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await clickFrameText("Columns");
+
+    const frame = await waitForFrameToContain("Done");
+    expect(frame).toContain("Columns");
+    expect(frame).toContain("Done");
+    expect(frame).not.toContain("Options");
+  });
+
   test("matches the IBKR trading shortcut when a gateway profile exists", async () => {
     testSetup = await testRender(<CommandBarHarness
       query="IBKR"
@@ -1185,7 +1387,7 @@ describe("CommandBar", () => {
     expect(frame).not.toContain("Broken Pane");
   });
 
-  test("groups ticker search sections and keeps exact open matches above loose provider results", async () => {
+  test("groups ticker search sections and keeps saved matches above looser provider results", async () => {
     testSetup = await testRender(
       <CommandBarHarness
         query="T appl"
@@ -1205,12 +1407,12 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     const rows = frame.split("\n");
-    const openHeadings = frame.split("\n").filter((line) => line.trim() === "Open");
-    const searchResultsHeadings = frame.split("\n").filter((line) => line.trim() === "Search Results");
+    const savedHeadings = frame.split("\n").filter((line) => line.trim() === "Saved");
+    const otherListingsHeadings = frame.split("\n").filter((line) => line.trim() === "Other Listings");
     const aaplRow = rows.findIndex((line) => line.trimStart().startsWith("AAPL") && line.includes("NASDAQ"));
     const appRow = rows.findIndex((line) => line.trimStart().startsWith("APP") && line.includes("NASDAQ"));
-    expect(openHeadings).toHaveLength(1);
-    expect(searchResultsHeadings).toHaveLength(1);
+    expect(savedHeadings).toHaveLength(1);
+    expect(otherListingsHeadings).toHaveLength(1);
     expect(aaplRow).toBeGreaterThanOrEqual(0);
     expect(appRow).toBeGreaterThanOrEqual(0);
     expect(aaplRow).toBeLessThan(appRow);

@@ -62,13 +62,6 @@ type SnapGuidePosition =
   | "bottom-left"
   | "bottom-right";
 
-function isCornerSnapPosition(position: SnapGuidePosition): boolean {
-  return position === "top-left"
-    || position === "top-right"
-    || position === "bottom-left"
-    || position === "bottom-right";
-}
-
 interface SnapGuide {
   position: SnapGuidePosition;
   triggerRect: LayoutBounds;
@@ -115,6 +108,11 @@ interface NativeTransientOccluder {
   id: string;
   rect: LayoutBounds;
   zIndex: number;
+}
+
+interface PaneDragReleaseResult {
+  nextLayout: LayoutConfig;
+  shouldShowGridlockTip: boolean;
 }
 
 type DragMode =
@@ -331,6 +329,32 @@ export function resolveNativeDockDividers(
       ? { ...divider, rect: dividerPreview.rect, ratio: dividerPreview.ratio }
       : divider
   ));
+}
+
+export function finalizePaneDragRelease(
+  layout: LayoutConfig,
+  paneId: string,
+  previewRect: FloatingRect,
+  dockPreview: DragPreview | null,
+): PaneDragReleaseResult {
+  if (dockPreview?.kind === "dock") {
+    return {
+      nextLayout: applyDrop(layout, paneId, dockPreview.target),
+      shouldShowGridlockTip: false,
+    };
+  }
+
+  if (dockPreview?.kind === "snap") {
+    return {
+      nextLayout: floatAtRect(layout, paneId, dockPreview.rect),
+      shouldShowGridlockTip: true,
+    };
+  }
+
+  return {
+    nextLayout: floatAtRect(layout, paneId, previewRect),
+    shouldShowGridlockTip: false,
+  };
 }
 
 function makeSnapGuides(width: number, height: number): SnapGuide[] {
@@ -949,24 +973,13 @@ export function Shell({ pluginRegistry }: ShellProps) {
           setDockPreview(null);
           setDragCursor(null);
           setDragFloatingRect(null);
-        } else if (dockPreview?.kind === "dock") {
-          persistLayout(applyDrop(visibleLayout, drag.paneId, dockPreview.target));
+        } else {
+          const releaseResult = finalizePaneDragRelease(visibleLayout, drag.paneId, previewRect, dockPreview);
+          persistLayout(releaseResult.nextLayout);
           focusPane(drag.paneId);
-          setDockPreview(null);
-          setDragCursor(null);
-          setDragFloatingRect(null);
-        } else if (dockPreview?.kind === "snap") {
-          persistLayout(floatAtRect(visibleLayout, drag.paneId, dockPreview.rect));
-          focusPane(drag.paneId);
-          if (isCornerSnapPosition(dockPreview.position)) {
+          if (releaseResult.shouldShowGridlockTip) {
             dispatch({ type: "SHOW_GRIDLOCK_TIP" });
           }
-          setDockPreview(null);
-          setDragCursor(null);
-          setDragFloatingRect(null);
-        } else {
-          persistLayout(floatAtRect(visibleLayout, drag.paneId, previewRect));
-          focusPane(drag.paneId);
           setDockPreview(null);
           setDragCursor(null);
           setDragFloatingRect(null);

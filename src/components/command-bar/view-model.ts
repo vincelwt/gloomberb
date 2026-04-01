@@ -175,6 +175,10 @@ export function truncateText(text: string, width: number): string {
 
 function getCategoryPriority(category: string): number {
   const normalized = category.trim().toLowerCase();
+  if (normalized === "saved") return -40;
+  if (normalized === "primary listing") return -30;
+  if (normalized === "other listings") return -20;
+  if (normalized === "funds & derivatives") return -10;
   if (normalized.includes("danger")) return 900;
   if (normalized.includes("debug")) return 910;
   return 0;

@@ -32,6 +32,10 @@ curl -fsSL gloomberb.com/install | bash
 
 Then run `gloomberb` to start.
 
+When developing from source, launch with a real Bun runtime, for example `bun src/index.tsx`.
+If `bun --help` prints Gloomberb help instead of Bun help, your Bun binary has been overwritten and needs to be reinstalled.
+In-app self-updates are disabled while running from source so Gloomberb does not replace the Bun executable.
+
 ## 🧩 Plugins
 
 Gloomberb has a plugin architecture where everything, from the portfolio list to broker integrations, is a plugin. 
@@ -50,11 +54,17 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 | **SEC** | View recent SEC filings for supported US equities |
 | **Notes** | Write and save markdown notes, stored locally |
 | **Options** | View US equity options chains |
-| **Ask AI** | Chat with AI about tickers using local CLI tools |
+| **AI** | Keep an Ask AI detail tab for tickers and create prompt-driven AI screener panes |
 | **Compare Charts** | Compare multiple ticker charts overlaid on one shared chart |
 | **X Scanner** | WIP |
 | **Alerts** | WIP |
 | **Scanner** | WIP |
+
+#### AI plugin
+
+- The ticker detail pane keeps its `Ask AI` tab for per-company questions.
+- The `AI Screener` pane lets you create multiple prompt-based screening tabs, refresh them, force reruns, edit the prompt, and review the last run time.
+- Use the `AI <prompt>` shortcut from the command bar to open a new screener pane seeded with a prompt.
 
 ### Data providers
 
