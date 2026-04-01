@@ -16,9 +16,23 @@ export interface ToggleListProps {
   onSelect?: (idx: number) => void;
   /** Background color for non-selected rows (defaults to colors.bg) */
   bgColor?: string;
+  height?: number;
+  flexGrow?: number;
+  scrollable?: boolean;
+  showSelectedDescription?: boolean;
 }
 
-export function ToggleList({ items, selectedIdx, onToggle, onSelect, bgColor }: ToggleListProps) {
+export function ToggleList({
+  items,
+  selectedIdx,
+  onToggle,
+  onSelect,
+  bgColor,
+  height,
+  flexGrow,
+  scrollable,
+  showSelectedDescription = true,
+}: ToggleListProps) {
   const listItems: ListViewItem[] = items.map((item) => ({
     id: item.id,
     label: item.label,
@@ -30,7 +44,10 @@ export function ToggleList({ items, selectedIdx, onToggle, onSelect, bgColor }: 
       items={listItems}
       selectedIndex={selectedIdx}
       bgColor={bgColor ?? colors.bg}
-      showSelectedDescription
+      showSelectedDescription={showSelectedDescription}
+      height={height}
+      flexGrow={flexGrow}
+      scrollable={scrollable}
       onSelect={onSelect}
       onActivate={(item) => {
         onToggle?.(item.id);

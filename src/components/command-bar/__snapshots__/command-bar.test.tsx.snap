@@ -135,3 +135,31 @@ exports[`CommandBar groups ticker search sections and keeps exact open matches a
                                                                                 
 "
 `;
+
+exports[`CommandBar groups ticker search sections and keeps saved matches above looser provider results 1`] = `
+"                                                                                
+                                                                                
+                Commands                                     esc                
+                T appl                                                          
+                Shortcut: Open APPL                                             
+                Saved                                                           
+                AAPL                                    NASDAQ                  
+                                                                                
+                Other Listings                                                  
+                APP                                     NASDAQ                  
+                AMAT                                    NASDAQ                  
+                AAOI                                    NASDAQ                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+"
+`;

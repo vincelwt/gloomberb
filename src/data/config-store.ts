@@ -24,12 +24,17 @@ import { debugLog } from "../utils/debug-log";
 
 const configLog = debugLog.createLogger("config");
 
-const GLOBAL_CONFIG_DIR = join(process.env.HOME || "~", ".gloomberb");
-const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, "config.json");
+function getGlobalConfigDir(): string {
+  return join(process.env.HOME || "~", ".gloomberb");
+}
+
+function getGlobalConfigFile(): string {
+  return join(getGlobalConfigDir(), "config.json");
+}
 
 export async function getDataDir(): Promise<string | null> {
   try {
-    const raw = await readFile(GLOBAL_CONFIG_FILE, "utf-8");
+    const raw = await readFile(getGlobalConfigFile(), "utf-8");
     const config = JSON.parse(raw) as { dataDir?: string };
     return config.dataDir || null;
   } catch {
