@@ -2,7 +2,7 @@
 set -e
 
 REPO="vincelwt/gloomberb"
-INSTALL_DIR="${GLOOMBERB_INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${GLOOMBERB_INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect platform
 OS="$(uname -s)"
@@ -31,7 +31,7 @@ if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
   arch="arm64"
 fi
 
-ASSET="gloomberb-${os}-${arch}"
+ASSET="gloomberb-${os}-${arch}.gz"
 
 # Get latest release download URL
 echo "Fetching latest release..."
@@ -49,8 +49,12 @@ else
   exit 1
 fi
 
-# Install
+# Decompress
+echo "Extracting..."
+mv "$TMP" "$TMP.gz"
+gunzip "$TMP.gz"
 chmod +x "$TMP"
+mkdir -p "$INSTALL_DIR"
 
 if [ -w "$INSTALL_DIR" ]; then
   mv "$TMP" "$INSTALL_DIR/gloomberb"
@@ -60,4 +64,11 @@ else
 fi
 
 echo "Installed gloomberb to ${INSTALL_DIR}/gloomberb"
+
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) echo "Warning: $INSTALL_DIR is not in your PATH. Add it with:"
+     echo "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+esac
+
 echo "Run 'gloomberb' to start."

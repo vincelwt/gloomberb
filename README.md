@@ -14,10 +14,13 @@
 
 - **Track portfolios & trade**
 - **Real-time quotes & fundamentals**
-- **Beautiful terminal charts**
-- **Keyboard-driven**
+- **Beautiful high-rez charts**
+- **Fast & keyboard-driven**
+- **Powerful layouts**
 - **Extensible**
 - **100% local**
+
+For the best experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty or WezTerm.
 
 ## 🚀 Install
 
@@ -64,32 +67,20 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 
 | Plugin | Description |
 |--------|-------------|
-| **IBKR** | Import positions from Interactive Brokers (Flex Query or Gateway API) |
+| **IBKR** | Import positions from Flex Query or trade with Gateway API. |
 | **Manual Entry** | Manually add positions, saved locally |
 
 Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`).
-
-### Plugin slots
-
-Plugins extend the UI through defined slots:
-
-- `detail:tab` / `detail:section` — tabs or sections in the detail pane
-- `list:column` — custom columns in the ticker list
-- `command:extra` / `command:preset` — extend the command bar
-- `status:widget` — status bar widgets
-- `config:section` — settings page sections
-- `data:post-refresh` / `data:enricher` — hook into the data lifecycle
 
 ## ⌨️ Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+P` or `` ` `` | Open command bar |
+| `Ctrl+x` | Close current window |
 | `Tab` | Switch between panels |
-| `j` / `k` | Navigate ticker list |
+ `j` / `k` | Navigate ticker list |
 | `h` / `l` | Switch tabs |
-| `r` | Refresh selected ticker |
-| `Shift+R` | Refresh all tickers |
 | `Ctrl+,` | Open settings |
 | `m` | Cycle chart mode in the chart tab |
 | `q` | Quit |

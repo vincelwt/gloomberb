@@ -34,7 +34,16 @@ async function build(os: string, arch: string) {
     console.error(`Failed to build ${target}`);
     process.exit(1);
   }
-  console.log(`  -> ${outfile}`);
+  // Compress with gzip
+  const gz = Bun.spawn(["gzip", "-f", "-9", outfile], {
+    cwd: rootDir, stdout: "inherit", stderr: "inherit",
+  });
+  const gzCode = await gz.exited;
+  if (gzCode !== 0) {
+    console.error(`Failed to compress ${outfile}`);
+    process.exit(1);
+  }
+  console.log(`  -> ${outfile}.gz`);
 }
 
 if (buildAll) {
