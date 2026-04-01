@@ -27,7 +27,7 @@ For the best experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compati
 ```bash
 bun install -g gloomberb
 # or
-npm install -g gloomberb
+curl -fsSL gloomberb.com/install | bash
 ```
 
 Then run `gloomberb` to start.

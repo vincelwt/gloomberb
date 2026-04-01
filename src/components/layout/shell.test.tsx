@@ -158,6 +158,22 @@ function createHeaderDataProvider(): DataProvider {
   };
 }
 
+function HeaderHarness({
+  updateAvailable = null,
+}: {
+  updateAvailable?: ReturnType<typeof createInitialState>["updateAvailable"];
+}) {
+  const initialState = createInitialState(createDefaultConfig("/tmp/gloomberb-header-test"));
+  initialState.updateAvailable = updateAvailable;
+  const [state, dispatch] = useReducer(appReducer, initialState);
+
+  return (
+    <AppContext value={{ state, dispatch }}>
+      <Header />
+    </AppContext>
+  );
+}
+
 function BrokerShellHarness({ pluginRegistry }: { pluginRegistry: PluginRegistry }) {
   const config = createDefaultConfig("/tmp/gloomberb-shell-broker-test");
   const portfolioId = "broker:ibkr-flex:DU12345";
@@ -234,6 +250,47 @@ function BrokerShellHarness({ pluginRegistry }: { pluginRegistry: PluginRegistry
     </AppContext>
   );
 }
+
+describe("Header", () => {
+  test("shows the self-update shortcut for standalone binaries", async () => {
+    testSetup = await testRender(
+      <HeaderHarness updateAvailable={{
+        version: "0.3.0",
+        tagName: "v0.3.0",
+        downloadUrl: "https://example.com/gloomberb",
+        publishedAt: "2026-04-01T00:00:00.000Z",
+        updateAction: { kind: "self" },
+      }} />,
+      { width: 120, height: 2 },
+    );
+
+    await testSetup.renderOnce();
+    const frame = testSetup.captureCharFrame();
+
+    expect(frame).toContain("v0.3.0 available");
+    expect(frame).toContain("press u to update");
+  });
+
+  test("shows the manual npm command when self-update is disabled", async () => {
+    testSetup = await testRender(
+      <HeaderHarness updateAvailable={{
+        version: "0.3.0",
+        tagName: "v0.3.0",
+        downloadUrl: "https://example.com/gloomberb",
+        publishedAt: "2026-04-01T00:00:00.000Z",
+        updateAction: { kind: "manual", command: "npm install -g gloomberb@latest" },
+      }} />,
+      { width: 120, height: 2 },
+    );
+
+    await testSetup.renderOnce();
+    const frame = testSetup.captureCharFrame();
+
+    expect(frame).toContain("v0.3.0 available");
+    expect(frame).toContain("run npm install -g gloomberb@latest");
+    expect(frame).not.toContain("press u to update");
+  });
+});
 
 describe("Shell", () => {
   test("uses the live floating preview rect for native occluders", () => {

@@ -65,7 +65,7 @@ import { layoutManagerPlugin, setLayoutManagerDispatch } from "./plugins/builtin
 import { yahooPlugin } from "./plugins/builtin/yahoo";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
-import { checkForUpdate, performUpdate } from "./updater";
+import { canSelfUpdate, checkForUpdate, performUpdate } from "./updater";
 import { VERSION } from "./version";
 import { join } from "path";
 import {
@@ -1285,7 +1285,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       if (actions.length > 0 && ticker) {
         dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       }
-    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress) {
+    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress && canSelfUpdate(state.updateAvailable)) {
       performUpdate(state.updateAvailable, (progress) => {
         dispatch({ type: "SET_UPDATE_PROGRESS", progress });
       });

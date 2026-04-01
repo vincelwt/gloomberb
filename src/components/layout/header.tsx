@@ -8,6 +8,7 @@ import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
 import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
+import { VERSION } from "../../version";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 
@@ -43,6 +44,13 @@ function UpdateStatus() {
   }
 
   if (updateAvailable) {
+    if (updateAvailable.updateAction.kind === "manual") {
+      return (
+        <text fg={colors.headerText}>
+          v{updateAvailable.version} available — run {updateAvailable.updateAction.command}
+        </text>
+      );
+    }
     return (
       <text fg={colors.headerText}>
         v{updateAvailable.version} available — press <span fg={colors.headerText}>u</span> to update
@@ -92,7 +100,7 @@ export function Header() {
     >
       <box paddingLeft={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.headerText}>
-          GLOOMBERB TERMINAL
+          Gloomberb v{VERSION}
         </text>
       </box>
       <box flexGrow={1} paddingLeft={2}>

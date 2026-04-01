@@ -9,16 +9,17 @@
   },
   "files": [
     "bin",
-    "install.mjs"
+    "src",
+    "patches"
   ],
   "scripts": {
+    "sync-version": "bun run scripts/sync-version.ts",
     "dev": "bun run --watch src/index.tsx",
     "start": "bun src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
     "test": "bun test",
-    "release": "./scripts/release.sh",
-    "postinstall": "node install.mjs"
+    "release": "./scripts/release.sh"
   },
   "license": "MIT",
   "repository": {

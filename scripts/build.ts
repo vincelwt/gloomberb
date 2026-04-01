@@ -1,15 +1,9 @@
-import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { syncVersion } from "./sync-version";
 
 const rootDir = join(import.meta.dir, "..");
-const pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf-8"));
-const version = pkg.version;
 
-// Sync version into generated files
-writeFileSync(
-  join(rootDir, "src/version.ts"),
-  `export const VERSION = "${version}";\n`,
-);
+syncVersion();
 
 
 const targets = [

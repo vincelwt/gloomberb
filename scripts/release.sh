@@ -1,27 +1,92 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROMPT=$(cat <<'EOF'
-You are releasing the project "gloomberb" (a Bloomberg-style terminal stock tracker).
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/release.sh <version> [--skip-push]
 
-Use gh to:
-1. Find the latest release tag and its date
-2. List all merged PRs since that release
-3. Decide the version bump. The project is pre-1.0, so bump the minor (0.x.0) for features/breaking changes and patch (0.x.y) for fixes/improvements. Never bump to 1.0+.
-4. Create a new GitHub release with gh release create --draft using a short title and clean markdown release notes referencing PR numbers
+Steps:
+1. Update package.json
+2. Run bun run sync-version
+3. Commit package.json and src/version.ts as v<version>
+4. Create tag v<version>
+5. Push commit and tag with git push --atomic origin HEAD v<version>
 
-Style rules for the release title and notes:
-- Keep it professional and straightforward, no hype or marketing speak
-- Never use em dashes
-- Title should just be the version and a short factual summary
-
-The release tag should be vX.Y.Z. Steps:
-1. Update the version in package.json using jq
-2. Commit the version bump with message "vX.Y.Z"
-3. Create a git tag vX.Y.Z
-4. Push the commit and tag
-5. Create the GitHub release with gh release create --draft
+Options:
+  --skip-push   Prepare the release locally without pushing to origin
 EOF
-)
+}
 
-echo "$PROMPT" | claude -p --allowedTools 'Bash(gh:*),Bash(git:*),Bash(jq:*)'
+VERSION=""
+SKIP_PUSH=0
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --skip-push)
+      SKIP_PUSH=1
+      ;;
+    *)
+      if [[ -n "$VERSION" ]]; then
+        echo "error: unexpected argument: $arg" >&2
+        usage >&2
+        exit 1
+      fi
+      VERSION="$arg"
+      ;;
+  esac
+done
+
+if [[ -z "$VERSION" ]]; then
+  echo "error: version is required" >&2
+  usage >&2
+  exit 1
+fi
+
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: version must be in X.Y.Z format" >&2
+  exit 1
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "error: working tree must be clean before releasing" >&2
+  exit 1
+fi
+
+CURRENT_VERSION="$(bun -e 'const pkg = JSON.parse(await Bun.file("package.json").text()); console.log(pkg.version);')"
+if [[ "$VERSION" == "$CURRENT_VERSION" ]]; then
+  echo "error: version $VERSION is already current" >&2
+  exit 1
+fi
+
+TAG="v$VERSION"
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "error: tag $TAG already exists" >&2
+  exit 1
+fi
+
+bun -e '
+  const path = "package.json";
+  const pkg = JSON.parse(await Bun.file(path).text());
+  pkg.version = process.argv[1];
+  await Bun.write(path, `${JSON.stringify(pkg, null, 2)}\n`);
+' "$VERSION"
+
+bun run sync-version
+
+git add package.json src/version.ts
+git commit -m "$TAG"
+git tag -a "$TAG" -m "$TAG"
+
+if [[ "$SKIP_PUSH" -eq 1 ]]; then
+  echo "Prepared $TAG locally. Skipping push."
+  exit 0
+fi
+
+git push --atomic origin HEAD "$TAG"
