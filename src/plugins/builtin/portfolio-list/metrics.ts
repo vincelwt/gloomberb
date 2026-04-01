@@ -220,7 +220,7 @@ export function getColumnValue(
       return { text: totalShares !== 0 ? formatCompact(totalShares) : "—" };
     case "avg_cost":
       if (totalCostUnits === 0) return { text: "—" };
-      return { text: formatCurrency(totalCost / Math.abs(totalCostUnits), positionCurrency) };
+      return { text: formatPrice(totalCost / Math.abs(totalCostUnits)) };
     case "cost_basis":
       if (totalCost === 0) return { text: "—" };
       return { text: formatCompact(toBasePosition(totalCost)) };
