@@ -139,7 +139,7 @@ function makeRegistry(): PluginRegistry {
     ["ibkr-trade", { id: "ibkr-trade", name: "Trade", order: 25, component: stubTab }],
     ["options", { id: "options", name: "Options", order: 35, component: stubTab }],
     ["sec", { id: "sec", name: "SEC", order: 45, component: stubTab, isVisible: ({ ticker }) => isUsEquityTicker(ticker) }],
-    ["ask-ai", { id: "ask-ai", name: "Ask AI", order: 60, component: stubTab }],
+    ["ai-chat", { id: "ai-chat", name: "Ask AI", order: 60, component: stubTab }],
   ]);
   return { detailTabs } as unknown as PluginRegistry;
 }

@@ -64,6 +64,11 @@ describe("command-bar helpers", () => {
     expect(summarizeWorkflowFieldValue(workflowFields[2]!, true)).toBe("On");
     expect(summarizeWorkflowFieldValue(workflowFields[0]!, "broker")).toBe("Broker");
     expect(summarizeWorkflowFieldValue({
+      id: "prompt",
+      label: "Prompt",
+      type: "textarea",
+    }, "quality\ncompounders")).toBe("quality compounders");
+    expect(summarizeWorkflowFieldValue({
       id: "columns",
       label: "Columns",
       type: "ordered-multi-select",
@@ -120,6 +125,7 @@ describe("command-bar helpers", () => {
       { key: "_validate-broker", label: "Validate", type: "info", body: ["Connecting…", "Connected"] },
       { key: "mode", label: "Mode", type: "select", options: [{ label: "Paper", value: "paper" }, { label: "Live", value: "live" }] },
       { key: "account", label: "Account", type: "text", defaultValue: "DU12345", dependsOn: { key: "mode", value: "live" } },
+      { key: "prompt", label: "Prompt", type: "textarea", defaultValue: "Find quality compounders" },
     ];
 
     const normalized = normalizeWizardFields(steps);
@@ -130,8 +136,10 @@ describe("command-bar helpers", () => {
     expect(normalized.initialValues).toEqual({
       mode: "paper",
       account: "DU12345",
+      prompt: "Find quality compounders",
     });
     expect(normalized.fields[1]?.dependsOn).toEqual([{ key: "mode", value: "live" }]);
+    expect(normalized.fields[2]?.type).toBe("textarea");
   });
 
   test("builds generated template fields from shortcut placeholders", () => {
@@ -198,6 +206,7 @@ describe("command-bar helpers", () => {
 
   test("identifies workflow text fields and destructive commands", () => {
     expect(isWorkflowTextField({ id: "name", label: "Name", type: "text" })).toBe(true);
+    expect(isWorkflowTextField({ id: "prompt", label: "Prompt", type: "textarea" })).toBe(true);
     expect(isWorkflowTextField({ id: "enabled", label: "Enabled", type: "toggle" })).toBe(false);
     expect(looksDestructiveCommand({
       id: "reset-layout",

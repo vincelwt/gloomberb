@@ -163,7 +163,7 @@ export interface WizardStep {
   label: string;
   placeholder?: string;
   defaultValue?: string;
-  type?: "text" | "password" | "info" | "select" | "number";
+  type?: "text" | "password" | "info" | "select" | "number" | "textarea";
   options?: Array<{ label: string; value: string }>;
   dependsOn?: { key: string; value: string };
   body?: string[];

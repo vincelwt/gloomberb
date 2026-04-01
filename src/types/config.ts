@@ -121,7 +121,6 @@ const TICKER_PANE_IDS = new Set([
   "news",
   "notes",
   "options",
-  "ask-ai",
   "ibkr-trading",
 ]);
 

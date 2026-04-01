@@ -1026,6 +1026,136 @@ describe("CommandBar", () => {
     expect(frame).toContain("AAPL,");
   });
 
+  test("AI <prompt> opens the inline workflow and prefills the textarea prompt", async () => {
+    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="AI quality compounders"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.panes as Map<string, any>).set("ai-screener", {
+          id: "ai-screener",
+          name: "AI Screener",
+          component: () => null,
+          defaultPosition: "right",
+          defaultMode: "floating",
+        });
+        (pluginRegistry.paneTemplates as Map<string, any>).set("new-ai-screener-pane", {
+          id: "new-ai-screener-pane",
+          paneId: "ai-screener",
+          label: "AI Screener",
+          description: "Create a prompt-driven screener pane.",
+          shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+          wizard: [
+            {
+              key: "providerId",
+              label: "AI Provider",
+              type: "select",
+              defaultValue: "claude",
+              options: [{ label: "Claude", value: "claude" }],
+            },
+            {
+              key: "prompt",
+              label: "Screener Prompt",
+              type: "textarea",
+            },
+          ],
+        });
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("AI Screener");
+    expect(frame).toContain("AI Provider");
+    expect(frame).toContain("quality compounders");
+    expect(created).toEqual([]);
+  });
+
+  test("submits typed AI screener prompts from the textarea field", async () => {
+    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="AI"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.panes as Map<string, any>).set("ai-screener", {
+          id: "ai-screener",
+          name: "AI Screener",
+          component: () => null,
+          defaultPosition: "right",
+          defaultMode: "floating",
+        });
+        (pluginRegistry.paneTemplates as Map<string, any>).set("new-ai-screener-pane", {
+          id: "new-ai-screener-pane",
+          paneId: "ai-screener",
+          label: "AI Screener",
+          description: "Create a prompt-driven screener pane.",
+          shortcut: { prefix: "AI", argPlaceholder: "prompt", argKind: "text" },
+          wizard: [
+            {
+              key: "providerId",
+              label: "AI Provider",
+              type: "select",
+              defaultValue: "claude",
+              options: [{ label: "Claude", value: "claude" }],
+            },
+            {
+              key: "prompt",
+              label: "Screener Prompt",
+              type: "textarea",
+            },
+          ],
+        });
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("humanoid robot suppliers");
+      await testSetup!.renderOnce();
+    });
+    await clickFrameText("Create Pane");
+    await act(async () => {
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{
+      templateId: "new-ai-screener-pane",
+      options: {
+        arg: "humanoid robot suppliers",
+        values: {
+          providerId: "claude",
+          prompt: "humanoid robot suppliers",
+        },
+      },
+    }]);
+  });
+
   test("edits pane settings inline inside the command bar", async () => {
     const appliedValues: Array<{ paneId: string; key: string; value: unknown }> = [];
 

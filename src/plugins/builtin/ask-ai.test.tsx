@@ -68,7 +68,7 @@ function createAskAiHarness(
   height = 12,
   onCapture: (capturing: boolean) => void = () => {},
 ) {
-  const config = createDefaultConfig("/tmp/gloomberb-ask-ai");
+  const config = createDefaultConfig("/tmp/gloomberb-ai");
   config.layout.instances = config.layout.instances.map((instance) => (
     instance.instanceId === PANE_ID
       ? { ...instance, binding: { kind: "fixed" as const, symbol: "AAPL" } }
@@ -95,7 +95,7 @@ function createAskAiHarness(
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={PANE_ID}>
-        <PluginRenderProvider pluginId="ask-ai" runtime={makeRuntime()}>
+        <PluginRenderProvider pluginId="ai" runtime={makeRuntime()}>
           <AskAiTab width={width} height={height} focused onCapture={onCapture} />
         </PluginRenderProvider>
       </PaneInstanceProvider>
@@ -126,6 +126,25 @@ afterEach(() => {
 });
 
 describe("AskAiTab", () => {
+  test("lists Claude, Gemini, and Codex when no AI CLIs are detected", async () => {
+    setProviders([]);
+
+    await act(async () => {
+      testSetup = await testRender(
+        createAskAiHarness(60, 12),
+        { width: 60, height: 12 },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("No AI CLI tools detected.");
+    expect(frame).toContain("claude");
+    expect(frame).toContain("gemini");
+    expect(frame).toContain("codex");
+  });
+
   test("keeps the provider header readable in a narrow pane", async () => {
     setProviders([
       { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },

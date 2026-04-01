@@ -1,4 +1,5 @@
 import { writeFileSync, renameSync, unlinkSync, chmodSync } from "fs";
+import { basename } from "path";
 
 const REPO = "vincelwt/gloomberb";
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -33,9 +34,33 @@ function getAssetName(): string {
   return `gloomberb-${os}-${arch}`;
 }
 
+function normalizePath(value: string): string {
+  return value.replace(/\\/g, "/").toLowerCase();
+}
+
+export function resolveSelfUpdateTargetPath(
+  execPath = process.execPath,
+  argv = process.argv,
+): string | null {
+  const normalizedExecPath = normalizePath(execPath);
+  const execBase = basename(normalizedExecPath);
+  const runtimeExecutables = new Set(["bun", "bunx", "node", "nodejs", "npm", "npx", "pnpm", "yarn"]);
+  if (runtimeExecutables.has(execBase)) return null;
+  if (normalizedExecPath.includes("/.bun/bin/")) return null;
+
+  const entrypoint = normalizePath(argv[1] ?? "");
+  const sourceEntrypointPattern = /\.(c|m)?jsx?$/;
+  const tsEntrypointPattern = /\.(c|m)?tsx?$/;
+  if (sourceEntrypointPattern.test(entrypoint) || tsEntrypointPattern.test(entrypoint)) return null;
+
+  return execPath;
+}
+
 export async function checkForUpdate(
   currentVersion: string,
 ): Promise<ReleaseInfo | null> {
+  if (!resolveSelfUpdateTargetPath()) return null;
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -76,7 +101,15 @@ export async function performUpdate(
   release: ReleaseInfo,
   onProgress: (p: UpdateProgress) => void,
 ): Promise<void> {
-  const execPath = process.execPath;
+  const execPath = resolveSelfUpdateTargetPath();
+  if (!execPath) {
+    onProgress({
+      phase: "error",
+      error: "Self-update is unavailable when running from source or via Bun/Node. Relaunch the packaged gloomberb binary to update.",
+    });
+    return;
+  }
+
   const updatePath = execPath + ".update";
   const oldPath = execPath + ".old";
 

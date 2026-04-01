@@ -10,6 +10,8 @@ export { TabBar } from "./tab-bar";
 export type { Tab, TabBarProps } from "./tab-bar";
 export { Spinner } from "./spinner";
 export type { SpinnerProps } from "./spinner";
+export { TickerListTable } from "./ticker-list-table";
+export type { QuoteFlashDirection, TickerTableCell } from "./ticker-list-table";
 
 // Theme
 export { colors, priceColor, hoverBg } from "../theme/colors";

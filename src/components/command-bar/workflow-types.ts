@@ -24,7 +24,7 @@ interface CommandBarFieldBase {
 }
 
 export type CommandBarWorkflowField =
-  | (CommandBarFieldBase & { type: "text" | "password" | "number" })
+  | (CommandBarFieldBase & { type: "text" | "password" | "number" | "textarea" })
   | (CommandBarFieldBase & { type: "toggle" })
   | (CommandBarFieldBase & { type: "select"; options: CommandBarFieldOption[] })
   | (CommandBarFieldBase & { type: "multi-select" | "ordered-multi-select"; options: CommandBarFieldOption[] });
