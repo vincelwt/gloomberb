@@ -319,9 +319,10 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toMatch(/AAPL\s+125\s+\+4\.17%/);
-    expect(frame).toContain("€100.00");
+    expect(frame).toContain("100");
     expect(frame).toContain("1.4k");
     expect(frame).toContain("+275");
+    expect(frame).not.toContain("€100.00");
     expect(frame).not.toContain("$137.50");
   });
 
@@ -435,11 +436,12 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("$4.25");
+    expect(frame).toContain("4.25");
     expect(frame).toContain("5");
     expect(frame).toContain("850");
     expect(frame).toContain("1k");
     expect(frame).toContain("+150");
+    expect(frame).not.toContain("$4.25");
   });
 
   test("shows flex cash summary and hides unavailable margin metrics", async () => {
