@@ -4,7 +4,7 @@ import { App } from "./app";
 import { getDataDir, initDataDir } from "./data/config-store";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
-import { runCli } from "./cli";
+import { runCli } from "./cli/index";
 import { loadExternalPlugins } from "./plugins/loader";
 import { debugLog } from "./utils/debug-log";
 

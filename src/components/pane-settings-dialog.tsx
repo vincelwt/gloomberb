@@ -219,12 +219,7 @@ function MultiSelectFieldDialog({
   const optionByValue = new Map(field.options.map((option) => [option.value, option]));
   const [selectedValues, setSelectedValues] = useState(() => coerceSelectedValues(currentValue));
   const knownSelectedValues = selectedValues.filter((value) => optionByValue.has(value));
-  const orderedOptions = field.type === "ordered-multi-select"
-    ? [
-      ...knownSelectedValues.map((value) => optionByValue.get(value)).filter((option): option is PaneSettingOption => option != null),
-      ...field.options.filter((option) => !selectedValues.includes(option.value)),
-    ]
-    : field.options;
+  const orderedOptions = field.options;
   const [selectedOptionId, setSelectedOptionId] = useState(orderedOptions[0]?.value ?? "");
   const selectedIndex = Math.max(0, orderedOptions.findIndex((option) => option.value === selectedOptionId));
   const selectedOptionValue = orderedOptions[selectedIndex]?.value ?? "";
@@ -256,6 +251,7 @@ function MultiSelectFieldDialog({
       description: [option.description, orderDescription].filter((entry): entry is string => !!entry).join(" "),
     };
   });
+  const listHeight = Math.min(12, Math.max(6, toggleItems.length));
 
   const applySelectedValues = async (nextValues: string[]) => {
     const previousValues = selectedValues;
@@ -314,6 +310,9 @@ function MultiSelectFieldDialog({
           items={toggleItems}
           selectedIdx={selectedIndex}
           bgColor={colors.commandBg}
+          height={listHeight}
+          scrollable
+          showSelectedDescription={false}
           onSelect={(index) => setSelectedOptionId(orderedOptions[index]?.value ?? selectedOptionId)}
           onToggle={(id) => {
             setSelectedOptionId(id);
