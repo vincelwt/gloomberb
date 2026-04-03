@@ -1,13 +1,30 @@
-import { describe, expect, it, test } from "bun:test";
+import { afterEach, describe, expect, it, test } from "bun:test";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { gzipSync } from "zlib";
 import {
   canSelfUpdate,
   checkForUpdate,
+  checkForUpdateDetailed,
   detectUpdateAction,
   performUpdate,
   resolveSelfUpdateTargetPath,
   type ReleaseInfo,
   type UpdateProgress,
 } from "./updater";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+function expectedAssetName(compressed = false): string {
+  const os = process.platform === "darwin" ? "darwin" : "linux";
+  const arch = os === "darwin" || process.arch === "arm64" ? "arm64" : "x64";
+  return compressed ? `gloomberb-${os}-${arch}.gz` : `gloomberb-${os}-${arch}`;
+}
 
 describe("detectUpdateAction", () => {
   test("uses self-update for standalone binaries", () => {
@@ -100,6 +117,66 @@ describe("checkForUpdate", () => {
       Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
     }
   });
+
+  it("finds gzipped release assets published on GitHub", async () => {
+    const originalExecPath = process.execPath;
+    const originalArgv = process.argv;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      tag_name: "v0.3.2",
+      published_at: "2026-04-03T00:00:00Z",
+      assets: [{
+        name: expectedAssetName(true),
+        browser_download_url: "https://example.com/gloomberb.gz",
+      }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+
+    try {
+      Object.defineProperty(process, "execPath", { value: "/Applications/gloomberb", configurable: true });
+      Object.defineProperty(process, "argv", {
+        value: ["/Applications/gloomberb"],
+        configurable: true,
+      });
+
+      await expect(checkForUpdate("0.3.1")).resolves.toEqual({
+        version: "0.3.2",
+        tagName: "v0.3.2",
+        downloadUrl: "https://example.com/gloomberb.gz",
+        publishedAt: "2026-04-03T00:00:00Z",
+        updateAction: { kind: "self" },
+        compressed: true,
+      });
+    } finally {
+      Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+      Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+    }
+  });
+});
+
+describe("checkForUpdateDetailed", () => {
+  it("returns a useful error when GitHub rejects the request", async () => {
+    const originalExecPath = process.execPath;
+    const originalArgv = process.argv;
+    globalThis.fetch = (async () => new Response("busy", { status: 503 })) as typeof fetch;
+
+    try {
+      Object.defineProperty(process, "execPath", { value: "/Applications/gloomberb", configurable: true });
+      Object.defineProperty(process, "argv", {
+        value: ["/Applications/gloomberb"],
+        configurable: true,
+      });
+
+      await expect(checkForUpdateDetailed("0.3.1")).resolves.toEqual({
+        kind: "error",
+        error: "GitHub returned 503",
+      });
+    } finally {
+      Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+      Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+    }
+  });
 });
 
 describe("performUpdate", () => {
@@ -157,6 +234,49 @@ describe("performUpdate", () => {
     } finally {
       Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
       Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+    }
+  });
+
+  it("decompresses gzipped release assets before replacing the binary", async () => {
+    const originalExecPath = process.execPath;
+    const originalArgv = process.argv;
+    const tempDir = mkdtempSync(join(tmpdir(), "gloomberb-update-"));
+    const execPath = join(tempDir, "gloomberb");
+    const nextBinary = Buffer.from("new-binary");
+    const payload = gzipSync(nextBinary);
+    const progress: UpdateProgress[] = [];
+
+    writeFileSync(execPath, Buffer.from("old-binary"));
+    chmodSync(execPath, 0o755);
+    globalThis.fetch = (async () => new Response(payload, {
+      status: 200,
+      headers: { "content-length": String(payload.length) },
+    })) as typeof fetch;
+
+    try {
+      Object.defineProperty(process, "execPath", { value: execPath, configurable: true });
+      Object.defineProperty(process, "argv", {
+        value: [execPath],
+        configurable: true,
+      });
+
+      await performUpdate({
+        version: "9.9.9",
+        tagName: "v9.9.9",
+        downloadUrl: "https://example.com/gloomberb.gz",
+        publishedAt: "2026-04-03T00:00:00Z",
+        updateAction: { kind: "self" },
+        compressed: true,
+      }, (entry) => {
+        progress.push(entry);
+      });
+
+      expect(readFileSync(execPath)).toEqual(nextBinary);
+      expect(progress.at(-1)).toEqual({ phase: "done" });
+    } finally {
+      Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+      Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+      rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });

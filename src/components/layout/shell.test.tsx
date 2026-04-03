@@ -160,11 +160,17 @@ function createHeaderDataProvider(): DataProvider {
 
 function HeaderHarness({
   updateAvailable = null,
+  updateCheckInProgress = false,
+  updateNotice = null,
 }: {
   updateAvailable?: ReturnType<typeof createInitialState>["updateAvailable"];
+  updateCheckInProgress?: boolean;
+  updateNotice?: string | null;
 }) {
   const initialState = createInitialState(createDefaultConfig("/tmp/gloomberb-header-test"));
   initialState.updateAvailable = updateAvailable;
+  initialState.updateCheckInProgress = updateCheckInProgress;
+  initialState.updateNotice = updateNotice;
   const [state, dispatch] = useReducer(appReducer, initialState);
 
   return (
@@ -289,6 +295,26 @@ describe("Header", () => {
     expect(frame).toContain("v0.3.0 available");
     expect(frame).toContain("run npm install -g gloomberb@latest");
     expect(frame).not.toContain("press u to update");
+  });
+
+  test("shows update check progress and notices", async () => {
+    testSetup = await testRender(
+      <HeaderHarness updateCheckInProgress />,
+      { width: 120, height: 2 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Checking for updates...");
+
+    testSetup.renderer.destroy();
+
+    testSetup = await testRender(
+      <HeaderHarness updateNotice="Already on v0.3.1" />,
+      { width: 120, height: 2 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Already on v0.3.1");
   });
 });
 

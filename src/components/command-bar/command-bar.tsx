@@ -118,6 +118,7 @@ interface CommandBarProps {
   tickerRepository: TickerRepository;
   pluginRegistry: PluginRegistry;
   quitApp: () => void;
+  onCheckForUpdates?: () => void | Promise<void>;
 }
 
 interface ResultItem {
@@ -204,7 +205,13 @@ function getVisibleMultiSelectPickerOptions(
   });
 }
 
-export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, quitApp }: CommandBarProps) {
+export function CommandBar({
+  dataProvider,
+  tickerRepository,
+  pluginRegistry,
+  quitApp,
+  onCheckForUpdates,
+}: CommandBarProps) {
   const { state, dispatch } = useAppState();
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -1985,6 +1992,10 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         closeAll({ revertThemePreview: false });
         return;
       }
+      case "check-for-updates":
+        void onCheckForUpdates?.();
+        closeAll({ revertThemePreview: false });
+        return;
       case "search-ticker":
         void runTickerSearchShortcut(arg);
         return;
@@ -2016,6 +2027,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
     openModeRoute,
     openPaneSettingsRoute,
     openPickerRoute,
+    onCheckForUpdates,
     pluginRegistry,
     quitApp,
     runTickerSearchShortcut,
@@ -2219,6 +2231,11 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
             .filter(Boolean);
           return names?.length ? `from "${names.join(", ")}"` : command.description;
         }
+        case "check-for-updates":
+          if (state.updateCheckInProgress) return "Checking GitHub releases now";
+          if (state.updateAvailable) return `Latest available: v${state.updateAvailable.version}`;
+          if (state.updateNotice) return state.updateNotice;
+          return command.description;
         default:
           return command.description;
       }
@@ -2233,6 +2250,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         category: command.category,
         kind: "command",
         right: command.prefix || undefined,
+        disabled: command.id === "check-for-updates" && (state.updateCheckInProgress || !!state.updateProgress),
         action: () => runDirectCommand(command, ""),
       };
     }

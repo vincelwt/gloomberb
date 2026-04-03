@@ -129,4 +129,34 @@ describe("appReducer command bar state", () => {
       ? secondUndone.config.layout.dockRoot.ratio
       : null).toBe(0.4);
   });
+
+  test("tracks manual update-check feedback", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const checking = appReducer(initial, { type: "SET_UPDATE_CHECK_IN_PROGRESS", checking: true });
+    const noticed = appReducer(checking, { type: "SET_UPDATE_NOTICE", notice: "Already on v0.3.1" });
+
+    expect(checking.updateCheckInProgress).toBe(true);
+    expect(noticed.updateNotice).toBe("Already on v0.3.1");
+  });
+
+  test("clears stale update notices when an update becomes available", () => {
+    const initial = {
+      ...createInitialState(createDefaultConfig("/tmp/gloomberb-test")),
+      updateNotice: "Already on v0.3.1",
+    };
+    const next = appReducer(initial, {
+      type: "SET_UPDATE_AVAILABLE",
+      release: {
+        version: "0.3.2",
+        tagName: "v0.3.2",
+        downloadUrl: "https://example.com/gloomberb.gz",
+        publishedAt: "2026-04-03T00:00:00Z",
+        updateAction: { kind: "self" },
+        compressed: true,
+      },
+    });
+
+    expect(next.updateAvailable?.version).toBe("0.3.2");
+    expect(next.updateNotice).toBeNull();
+  });
 });

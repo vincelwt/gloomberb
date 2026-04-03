@@ -78,6 +78,8 @@ export interface AppState {
   inputCaptured: boolean;
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
+  updateCheckInProgress: boolean;
+  updateNotice: string | null;
   layoutHistory: Record<number, LayoutHistoryEntry>;
 }
 
@@ -101,8 +103,10 @@ export type AppAction =
   | { type: "SHOW_GRIDLOCK_TIP" }
   | { type: "DISMISS_GRIDLOCK_TIP" }
   | { type: "SET_THEME"; theme: string }
-  | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo }
+  | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo | null }
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
+  | { type: "SET_UPDATE_CHECK_IN_PROGRESS"; checking: boolean }
+  | { type: "SET_UPDATE_NOTICE"; notice: string | null }
   | { type: "TOGGLE_PLUGIN"; pluginId: string }
   | { type: "SET_INPUT_CAPTURED"; captured: boolean }
   | { type: "SET_EXCHANGE_RATE"; currency: string; rate: number }
@@ -548,10 +552,16 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, config: { ...state.config, theme: action.theme } };
 
     case "SET_UPDATE_AVAILABLE":
-      return { ...state, updateAvailable: action.release };
+      return { ...state, updateAvailable: action.release, updateNotice: action.release ? null : state.updateNotice };
 
     case "SET_UPDATE_PROGRESS":
-      return { ...state, updateProgress: action.progress };
+      return { ...state, updateProgress: action.progress, updateNotice: action.progress ? null : state.updateNotice };
+
+    case "SET_UPDATE_CHECK_IN_PROGRESS":
+      return { ...state, updateCheckInProgress: action.checking };
+
+    case "SET_UPDATE_NOTICE":
+      return { ...state, updateNotice: action.notice };
 
     case "TOGGLE_PLUGIN": {
       const disabledPlugins = state.config.disabledPlugins.includes(action.pluginId)
@@ -936,6 +946,8 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     inputCaptured: false,
     updateAvailable: null,
     updateProgress: null,
+    updateCheckInProgress: false,
+    updateNotice: null,
     layoutHistory: {},
   };
 }

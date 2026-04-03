@@ -218,6 +218,7 @@ function CommandBarHarness({
   configurePluginRegistry,
   dataProvider = makeDataProvider(),
   hasPaneSettings,
+  onCheckForUpdates,
 }: {
   query: string;
   disabledPlugins?: string[];
@@ -231,6 +232,7 @@ function CommandBarHarness({
   configurePluginRegistry?: (pluginRegistry: PluginRegistry) => void;
   dataProvider?: DataProvider;
   hasPaneSettings?: (paneId: string) => boolean;
+  onCheckForUpdates?: () => void | Promise<void>;
 }) {
   let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
@@ -285,6 +287,7 @@ function CommandBarHarness({
             tickerRepository={tickerRepository as any}
             pluginRegistry={pluginRegistry}
             quitApp={() => {}}
+            onCheckForUpdates={onCheckForUpdates}
           />
         )}
       </DialogProvider>
@@ -302,6 +305,25 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     expect(testSetup.captureCharFrame()).toMatchSnapshot();
+  });
+
+  test("runs check for updates from the command bar", async () => {
+    const calls = [];
+
+    testSetup = await testRender(<CommandBarHarness query="check for updates" live onCheckForUpdates={() => { calls.push(Date.now()); }} />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Check for Updates");
+
+    await clickFrameText("Check for Updates");
+    await Bun.sleep(0);
+    await testSetup.renderOnce();
+
+    expect(calls).toHaveLength(1);
+    expect(testSetup.captureCharFrame()).not.toContain("Commands");
   });
 
   test("renders theme prefix results in the root query", async () => {

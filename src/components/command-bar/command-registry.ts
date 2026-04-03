@@ -171,6 +171,14 @@ export const commands: Command[] = [
       dispatch({ type: "TOGGLE_STATUS_BAR" });
     },
   },
+  {
+    id: "check-for-updates",
+    prefix: "",
+    label: "Check for Updates",
+    description: "Check GitHub releases for a newer version",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
 
   // Theme
   {

@@ -70,7 +70,7 @@ import {
 } from "./plugins/prediction-markets/launch";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
-import { canSelfUpdate, checkForUpdate, performUpdate } from "./updater";
+import { canSelfUpdate, checkForUpdateDetailed, performUpdate } from "./updater";
 import { VERSION } from "./version";
 import { join } from "path";
 import {
@@ -543,12 +543,46 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     }
   }, [state.config.brokerInstances, importBrokerPositions]);
 
+  const runUpdateCheck = useCallback(async (manual = false) => {
+    if (manual) {
+      dispatch({ type: "SET_UPDATE_CHECK_IN_PROGRESS", checking: true });
+      dispatch({ type: "SET_UPDATE_NOTICE", notice: null });
+    }
+
+    const result = await checkForUpdateDetailed(VERSION);
+
+    if (!manual) {
+      if (result.kind === "available") {
+        dispatch({ type: "SET_UPDATE_AVAILABLE", release: result.release });
+      }
+      return;
+    }
+
+    dispatch({ type: "SET_UPDATE_CHECK_IN_PROGRESS", checking: false });
+
+    if (result.kind === "available") {
+      dispatch({ type: "SET_UPDATE_AVAILABLE", release: result.release });
+      return;
+    }
+
+    if (result.kind === "current") {
+      dispatch({ type: "SET_UPDATE_AVAILABLE", release: null });
+      dispatch({ type: "SET_UPDATE_NOTICE", notice: `Already on v${VERSION}` });
+      return;
+    }
+
+    if (result.kind === "disabled") {
+      dispatch({ type: "SET_UPDATE_NOTICE", notice: "Update checks are unavailable in source mode" });
+      return;
+    }
+
+    dispatch({ type: "SET_UPDATE_NOTICE", notice: `Update check failed: ${result.error}` });
+  }, [dispatch]);
+
   // Check for updates on mount
   useEffect(() => {
-    checkForUpdate(VERSION).then((release) => {
-      if (release) dispatch({ type: "SET_UPDATE_AVAILABLE", release });
-    });
-  }, []);
+    void runUpdateCheck(false);
+  }, [runUpdateCheck]);
 
   // Load tickers on mount
   useEffect(() => {
@@ -1155,7 +1189,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       if (actions.length > 0 && ticker) {
         dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       }
-    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress && canSelfUpdate(state.updateAvailable)) {
+    } else if (event.name === "u" && state.updateAvailable && !state.updateProgress && !state.updateCheckInProgress && canSelfUpdate(state.updateAvailable)) {
       performUpdate(state.updateAvailable, (progress) => {
         dispatch({ type: "SET_UPDATE_PROGRESS", progress });
       });
@@ -1186,6 +1220,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
           tickerRepository={tickerRepository}
           pluginRegistry={pluginRegistry}
           quitApp={() => renderer.destroy()}
+          onCheckForUpdates={() => runUpdateCheck(true)}
         />
       )}
       <Toaster position="bottom-right" />

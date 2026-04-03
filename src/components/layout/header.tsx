@@ -11,10 +11,19 @@ import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../
 import { VERSION } from "../../version";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
+const UPDATE_NOTICE_DURATION_MS = 5_000;
 
 function UpdateStatus() {
-  const { state } = useAppState();
-  const { updateAvailable, updateProgress } = state;
+  const { state, dispatch } = useAppState();
+  const { updateAvailable, updateProgress, updateCheckInProgress, updateNotice } = state;
+
+  useEffect(() => {
+    if (!updateNotice || updateAvailable || updateProgress || updateCheckInProgress) return;
+    const timeout = setTimeout(() => {
+      dispatch({ type: "SET_UPDATE_NOTICE", notice: null });
+    }, UPDATE_NOTICE_DURATION_MS);
+    return () => clearTimeout(timeout);
+  }, [dispatch, updateAvailable, updateCheckInProgress, updateNotice, updateProgress]);
 
   if (updateProgress) {
     if (updateProgress.phase === "downloading") {
@@ -43,6 +52,15 @@ function UpdateStatus() {
     }
   }
 
+  if (updateCheckInProgress) {
+    return (
+      <box flexDirection="row" gap={1}>
+        <spinner name="dots" color={colors.headerText} />
+        <text fg={colors.headerText}>Checking for updates...</text>
+      </box>
+    );
+  }
+
   if (updateAvailable) {
     if (updateAvailable.updateAction.kind === "manual") {
       return (
@@ -56,6 +74,10 @@ function UpdateStatus() {
         v{updateAvailable.version} available — press <span fg={colors.headerText}>u</span> to update
       </text>
     );
+  }
+
+  if (updateNotice) {
+    return <text fg={colors.headerText}>{updateNotice}</text>;
   }
 
   return null;
