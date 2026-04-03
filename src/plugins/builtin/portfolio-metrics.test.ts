@@ -133,6 +133,77 @@ describe("portfolio-metrics", () => {
     });
   });
 
+  test("does not double-apply IBKR option multipliers when avgCost is already contract-scaled", () => {
+    const ticker = createTicker({
+      ticker: "AMD   270917C00230000",
+      assetCategory: "OPT",
+      positions: [{
+        portfolio: "main",
+        shares: 10,
+        avgCost: 5095.07295,
+        broker: "ibkr",
+        currency: "USD",
+        marketValue: 58803.06,
+        unrealizedPnl: 7852.33,
+        multiplier: 100,
+        markPrice: 58.8030586,
+      }],
+    });
+    const financialsMap = new Map<string, TickerFinancials>();
+
+    const totals = calculatePortfolioSummaryTotals(
+      [ticker],
+      financialsMap,
+      "USD",
+      new Map([["USD", 1]]),
+      true,
+      "main",
+    );
+
+    expect(totals.totalMktValue).toBeCloseTo(58803.06, 2);
+    expect(totals.totalCostBasis).toBeCloseTo(50950.7295, 4);
+    expect(totals.unrealizedPnl).toBeCloseTo(7852.3305, 4);
+    expect(totals.hasPositions).toBe(true);
+  });
+
+  test("keeps option avg cost display contract-scaled while using the correct cost basis", () => {
+    const ticker = createTicker({
+      ticker: "AMD   270917C00230000",
+      assetCategory: "OPT",
+      positions: [{
+        portfolio: "main",
+        shares: 10,
+        avgCost: 5095.07295,
+        broker: "ibkr",
+        currency: "USD",
+        marketValue: 58803.06,
+        unrealizedPnl: 7852.33,
+        multiplier: 100,
+        markPrice: 58.8030586,
+      }],
+    });
+    const financials = createFinancials({
+      quote: {
+        symbol: "AMD   270917C00230000",
+        price: 58.8030586,
+        currency: "USD",
+        change: 0,
+        changePercent: 0,
+        previousClose: 58.8030586,
+      },
+    });
+    const avgCostColumn: ColumnConfig = { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" };
+    const pnlColumn: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" };
+
+    expect(getColumnValue(avgCostColumn, ticker, financials, defaultColumnContext)).toEqual({
+      text: "5,095.07",
+    });
+    expect(getColumnValue(pnlColumn, ticker, financials, defaultColumnContext)).toEqual({
+      text: "+7.9k",
+      color: expect.any(String),
+    });
+  });
+
   test("formats portfolio-only column values and sort keys consistently", () => {
     const ticker = createTicker({
       positions: [{ portfolio: "main", shares: 10, avgCost: 100, broker: "manual" }],

@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 10;
+export const CURRENT_CONFIG_VERSION = 11;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -134,6 +134,16 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: "latency", label: "AGE", width: 6, align: "right" },
 ];
 
+export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
+  ...DEFAULT_COLUMNS.map((column) => column.id),
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+];
+
 export const DEFAULT_LAYOUT: LayoutConfig = {
   dockRoot: {
     kind: "split",
@@ -148,7 +158,7 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       paneId: "portfolio-list",
       params: { collectionId: "main" },
       settings: {
-        columnIds: DEFAULT_COLUMNS.map((column) => column.id),
+        columnIds: [...DEFAULT_PORTFOLIO_COLUMN_IDS],
         collectionScope: "all",
         visibleCollectionIds: [],
         hideTabs: false,

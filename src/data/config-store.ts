@@ -16,6 +16,8 @@ import {
   createDefaultConfig,
   createPaneInstanceId,
   CURRENT_CONFIG_VERSION,
+  DEFAULT_COLUMNS,
+  DEFAULT_PORTFOLIO_COLUMN_IDS,
   clonePaneSettings,
   normalizePaneLayout,
 } from "../types/config";
@@ -23,6 +25,7 @@ import type { Portfolio, Watchlist } from "../types/ticker";
 import { debugLog } from "../utils/debug-log";
 
 const configLog = debugLog.createLogger("config");
+const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 
 function getGlobalConfigDir(): string {
   return join(process.env.HOME || "~", ".gloomberb");
@@ -62,8 +65,16 @@ async function loadConfigState(dataDir: string): Promise<{ config: AppConfig; ne
 
 function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
-  const directLayout = sanitizeLayout(saved.layout, defaults.layout);
-  const layouts = sanitizeSavedLayouts(saved.layouts, directLayout);
+  const shouldMigratePortfolioDefaults =
+    typeof saved.configVersion !== "number" || saved.configVersion < CURRENT_CONFIG_VERSION;
+  const directLayout = migrateLegacyPortfolioDefaultColumns(
+    sanitizeLayout(saved.layout, defaults.layout),
+    shouldMigratePortfolioDefaults,
+  );
+  const layouts = sanitizeSavedLayouts(saved.layouts, directLayout).map((entry) => ({
+    ...entry,
+    layout: migrateLegacyPortfolioDefaultColumns(entry.layout, shouldMigratePortfolioDefaults),
+  }));
   const activeLayoutIndex = sanitizeActiveLayoutIndex(saved.activeLayoutIndex, layouts.length);
   const layout = cloneLayout(layouts[activeLayoutIndex]?.layout ?? directLayout);
   const syncedLayouts = layouts.map((entry, index) => (
@@ -385,6 +396,33 @@ function sanitizePaneSettings(value: unknown): Record<string, unknown> | undefin
   );
 
   return Object.keys(settings).length > 0 ? clonePaneSettings(settings) : undefined;
+}
+
+function hasExactColumnIds(value: unknown, expected: string[]): boolean {
+  return Array.isArray(value)
+    && value.length === expected.length
+    && value.every((entry, index) => entry === expected[index]);
+}
+
+function migrateLegacyPortfolioDefaultColumns(layout: LayoutConfig, enabled: boolean): LayoutConfig {
+  if (!enabled) return layout;
+
+  const instanceIndex = layout.instances.findIndex((instance) =>
+    instance.instanceId === "portfolio-list:main"
+    && instance.paneId === "portfolio-list"
+    && hasExactColumnIds(instance.settings?.columnIds, LEGACY_MAIN_PORTFOLIO_COLUMN_IDS)
+  );
+  if (instanceIndex < 0) return layout;
+
+  const nextLayout = cloneLayout(layout);
+  nextLayout.instances[instanceIndex] = {
+    ...nextLayout.instances[instanceIndex]!,
+    settings: {
+      ...(nextLayout.instances[instanceIndex]?.settings ?? {}),
+      columnIds: [...DEFAULT_PORTFOLIO_COLUMN_IDS],
+    },
+  };
+  return nextLayout;
 }
 
 function getDefaultFollowSourceInstanceId(instances: PaneInstanceConfig[]): string | null {

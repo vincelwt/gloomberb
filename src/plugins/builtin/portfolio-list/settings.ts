@@ -1,5 +1,5 @@
 import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../../types/plugin";
-import { DEFAULT_COLUMNS, type AppConfig, type ColumnConfig } from "../../../types/config";
+import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
 
 export type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 
@@ -33,16 +33,6 @@ export const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
   { id: "mkt_value", label: "MKT VAL", width: 10, align: "right", format: "compact" },
   { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" },
   { id: "pnl_pct", label: "P&L%", width: 8, align: "right", format: "percent" },
-];
-
-export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
-  ...DEFAULT_COLUMNS.map((column) => column.id),
-  "shares",
-  "avg_cost",
-  "cost_basis",
-  "mkt_value",
-  "pnl",
-  "pnl_pct",
 ];
 
 const PORTFOLIO_COLUMNS_BY_ID = new Map(PORTFOLIO_COLUMN_DEFS.map((column) => [column.id, column]));
