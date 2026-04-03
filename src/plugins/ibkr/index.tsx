@@ -1,5 +1,7 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { ibkrBroker } from "./broker-adapter";
+import { buildPersistedIbkrGatewayConfig } from "./config";
+import { setResolvedIbkrGatewayListener } from "./gateway-service";
 import {
   getTradeTicketState,
   getTradingPaneState,
@@ -61,6 +63,14 @@ export const ibkrPlugin: GloomPlugin = {
 
   setup(ctx) {
     ctx.log.info("IBKR plugin initializing");
+    setResolvedIbkrGatewayListener(async (instanceId, resolved) => {
+      if (!instanceId) return;
+      const instance = ctx.getConfig().brokerInstances.find((entry) => entry.id === instanceId);
+      if (!instance || instance.brokerType !== "ibkr") return;
+      const nextConfig = buildPersistedIbkrGatewayConfig(instance.config, resolved);
+      if (!nextConfig) return;
+      await ctx.updateBrokerInstance(instanceId, nextConfig);
+    });
 
     ctx.registerPane({
       id: "ibkr-trading",

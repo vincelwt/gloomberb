@@ -34,10 +34,9 @@ import {
 } from "./types/config";
 import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig, WizardStep } from "./types/plugin";
 import type { PaneSettingField } from "./types/plugin";
-import type { TickerRecord, TickerMetadata, TickerPosition, Portfolio } from "./types/ticker";
+import type { TickerRecord } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { TickerFinancials } from "./types/financials";
-import type { BrokerContractRef } from "./types/instrument";
 import type { BrokerAccount } from "./types/trading";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
 
@@ -49,8 +48,8 @@ import { ibkrPlugin } from "./plugins/ibkr";
 import {
   clearPersistedIbkrAccounts,
   loadPersistedIbkrAccountMap,
-  persistIbkrAccounts,
 } from "./plugins/ibkr/account-cache";
+import { getIbkrConfigIdentity } from "./plugins/ibkr/config";
 import { newsPlugin } from "./plugins/builtin/news";
 import { secPlugin } from "./plugins/builtin/sec";
 import { optionsPlugin } from "./plugins/builtin/options";
@@ -86,7 +85,6 @@ import {
   removePane,
 } from "./plugins/pane-manager";
 import {
-  buildBrokerPortfolioId,
   createBrokerInstanceId,
   getBrokerInstance,
 } from "./utils/broker-instances";
@@ -112,6 +110,7 @@ import {
 import { debugLog } from "./utils/debug-log";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
+import { syncBrokerInstance } from "./brokers/sync-broker-instance";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -487,216 +486,57 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     marketData.primeCachedFinancials(primeEntries);
   }, [marketData]);
 
-  // Ensure a portfolio exists in config, creating it if needed
-  const ensurePortfolio = useCallback(async (
-    portfolioId: string,
-    name: string,
-    currency = "USD",
-    brokerId?: string,
-    brokerInstanceId?: string,
-    brokerAccountId?: string,
-  ) => {
-    const existing = state.config.portfolios.find((p) => p.id === portfolioId);
-    if (existing) {
-      if (
-        existing.name === name
-        && existing.currency === currency
-        && existing.brokerId === brokerId
-        && existing.brokerInstanceId === brokerInstanceId
-        && existing.brokerAccountId === brokerAccountId
-      ) {
-        return;
-      }
-
-      const updatedConfig = {
-        ...state.config,
-        portfolios: state.config.portfolios.map((portfolio) =>
-          portfolio.id === portfolioId
-            ? { ...portfolio, name, currency, brokerId, brokerInstanceId, brokerAccountId }
-            : portfolio,
-        ),
-      };
-      dispatch({ type: "SET_CONFIG", config: updatedConfig });
-      await saveConfig(updatedConfig);
-      return;
-    }
-
-    const portfolio: Portfolio = { id: portfolioId, name, currency, brokerId, brokerInstanceId, brokerAccountId };
-    const updatedConfig = {
-      ...state.config,
-      portfolios: [...state.config.portfolios, portfolio],
-    };
-    dispatch({ type: "SET_CONFIG", config: updatedConfig });
-    await saveConfig(updatedConfig);
-  }, [state.config, dispatch]);
-
-  const mergeBrokerContracts = useCallback((existing: BrokerContractRef[], next: BrokerContractRef[]): BrokerContractRef[] => {
-    const merged = new Map<string, BrokerContractRef>();
-    for (const contract of [...existing, ...next]) {
-      const key = `${contract.brokerId}:${contract.brokerInstanceId ?? ""}:${contract.conId ?? contract.localSymbol ?? contract.symbol}:${contract.secType ?? ""}`;
-      merged.set(key, contract);
-    }
-    return [...merged.values()];
-  }, []);
-
   // Import positions from a single broker instance
   const importBrokerPositions = useCallback(async (
     instanceId: string,
     tickerMap?: Map<string, TickerRecord>,
     options?: { refreshImportedTickers?: boolean },
   ) => {
-    const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
-    if (!instance || instance.enabled === false) return;
+    const result = await syncBrokerInstance({
+      config: state.config,
+      instanceId,
+      brokers: pluginRegistry.brokers,
+      tickerRepository,
+      existingTickers: tickerMap ?? new Map(state.tickers),
+      resources: pluginRegistry.persistence.resources,
+    });
 
-    const broker = pluginRegistry.brokers.get(instance.brokerType);
-    if (!broker) return;
+    dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts: result.brokerAccounts });
 
-    const valid = await broker.validate(instance).catch(() => false);
-    if (!valid) return;
-
-    const existingTickers = tickerMap ?? new Map(state.tickers);
-    let brokerAccounts: BrokerAccount[] = [];
-    if (broker.listAccounts) {
-      try {
-        brokerAccounts = await broker.listAccounts(instance);
-        if (instance.brokerType === "ibkr") {
-          try {
-            persistIbkrAccounts(pluginRegistry.persistence.resources, instance, brokerAccounts);
-          } catch {}
-        }
-        dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId: instance.id, accounts: brokerAccounts });
-      } catch {
-        brokerAccounts = [];
-      }
-    }
-    const accountMetadata = new Map(
-      brokerAccounts.map((account) => [
-        account.accountId,
-        {
-          name: account.name || account.accountId,
-          currency: account.currency || "USD",
-        },
-      ]),
-    );
-    const positions = await broker.importPositions(instance);
-
-    const accountIds = new Set<string>();
-    for (const account of brokerAccounts) {
-      if (account.accountId) accountIds.add(account.accountId);
-    }
-    for (const position of positions) {
-      if (position.accountId) accountIds.add(position.accountId);
+    if (result.config !== state.config) {
+      dispatch({ type: "SET_CONFIG", config: result.config });
+      await saveConfig(result.config);
+      pluginRegistry.events.emit("config:changed", { config: result.config });
     }
 
-    // Create portfolios for each account
-    if (accountIds.size > 0) {
-      for (const accountId of accountIds) {
-        const portfolioId = buildBrokerPortfolioId(instance.id, accountId);
-        const account = accountMetadata.get(accountId);
-        await ensurePortfolio(
-          portfolioId,
-          account?.name || accountId,
-          account?.currency || "USD",
-          instance.brokerType,
-          instance.id,
-          accountId,
-        );
-      }
-    } else {
-      const defaultAccount = brokerAccounts[0];
-      const fallbackName = defaultAccount?.name || defaultAccount?.accountId || instance.label || broker.name;
-      await ensurePortfolio(
-        buildBrokerPortfolioId(instance.id, defaultAccount?.accountId),
-        fallbackName,
-        defaultAccount?.currency || "USD",
-        instance.brokerType,
-        instance.id,
-        defaultAccount?.accountId,
-      );
+    for (const ticker of result.addedTickers) {
+      pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
     }
-
-    for (const pos of positions) {
-      const portfolioId = buildBrokerPortfolioId(instance.id, pos.accountId);
-      const brokerContract = pos.brokerContract
-        ? { ...pos.brokerContract, brokerId: instance.brokerType, brokerInstanceId: instance.id }
-        : undefined;
-
-      const positionEntry: TickerPosition = {
-        portfolio: portfolioId,
-        shares: pos.shares,
-        avgCost: pos.avgCost ?? 0,
-        currency: pos.currency,
-        broker: instance.brokerType,
-        side: pos.side,
-        marketValue: pos.marketValue,
-        unrealizedPnl: pos.unrealizedPnl,
-        multiplier: pos.multiplier,
-        markPrice: pos.markPrice,
-        brokerInstanceId: instance.id,
-        brokerAccountId: pos.accountId,
-        brokerContractId: brokerContract?.conId,
-      };
-
-      let ticker = existingTickers.get(pos.ticker);
-      if (!ticker) {
-        const metadata: TickerMetadata = {
-          ticker: pos.ticker,
-          exchange: pos.exchange,
-          currency: pos.currency,
-          name: pos.name || pos.ticker,
-          assetCategory: pos.assetCategory,
-          isin: pos.isin,
-          portfolios: [portfolioId],
-          watchlists: [],
-          positions: [positionEntry],
-          broker_contracts: brokerContract ? [brokerContract] : [],
-          custom: {},
-          tags: [],
-        };
-        ticker = await tickerRepository.createTicker(metadata);
-        pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
-      } else {
-        // Update ticker-level fields from broker if richer
-        if (pos.name && ticker.metadata.name === ticker.metadata.ticker) {
-          ticker.metadata.name = pos.name;
-        }
-        if (pos.assetCategory && !ticker.metadata.assetCategory) {
-          ticker.metadata.assetCategory = pos.assetCategory;
-        }
-        if (pos.isin && !ticker.metadata.isin) {
-          ticker.metadata.isin = pos.isin;
-        }
-
-        // Remove old positions from this broker for this account
-        const otherPositions = ticker.metadata.positions.filter(
-          (p) => !(p.brokerInstanceId === instance.id && p.portfolio === portfolioId),
-        );
-        ticker.metadata.positions = [...otherPositions, positionEntry];
-        ticker.metadata.broker_contracts = mergeBrokerContracts(
-          ticker.metadata.broker_contracts ?? [],
-          brokerContract ? [brokerContract] : [],
-        );
-        if (!ticker.metadata.portfolios.includes(portfolioId)) {
-          ticker.metadata.portfolios.push(portfolioId);
-        }
-        await tickerRepository.saveTicker(ticker);
-      }
-      existingTickers.set(pos.ticker, ticker);
+    for (const ticker of [...result.addedTickers, ...result.updatedTickers]) {
       dispatch({ type: "UPDATE_TICKER", ticker: { ...ticker } });
+    }
+
+    for (const position of result.positions) {
       // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
       // Position data (markPrice, marketValue, unrealizedPnl) is used directly.
-      if (options?.refreshImportedTickers !== false && pos.assetCategory !== "OPT") {
-        refreshQuote(pos.ticker, pos.exchange, undefined, 1);
+      if (options?.refreshImportedTickers !== false && position.assetCategory !== "OPT") {
+        refreshQuote(position.ticker, position.exchange, undefined, 1);
       }
     }
-  }, [pluginRegistry.brokers, state.config.brokerInstances, state.tickers, tickerRepository, dispatch, refreshQuote, ensurePortfolio, mergeBrokerContracts]);
+
+    return result;
+  }, [dispatch, pluginRegistry.brokers, pluginRegistry.events, pluginRegistry.persistence.resources, refreshQuote, state.config, state.tickers, tickerRepository]);
 
   // Auto-import positions from all configured broker instances
   const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerRecord>) => {
+    let nextTickerMap = tickerMap;
     for (const instance of state.config.brokerInstances) {
       if (instance.enabled === false) continue;
       try {
-        await importBrokerPositions(instance.id, tickerMap, { refreshImportedTickers: false });
+        const result = await importBrokerPositions(instance.id, nextTickerMap, { refreshImportedTickers: false });
+        if (result) {
+          nextTickerMap = result.tickers;
+        }
       } catch {
         // Silently fail — broker import is best-effort on startup
       }
@@ -829,18 +669,26 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     return instance;
   };
   pluginRegistry.updateBrokerInstanceFn = async (instanceId, values) => {
-    clearPersistedIbkrAccounts(pluginRegistry.persistence.resources, instanceId);
+    const currentInstance = state.config.brokerInstances.find((instance) => instance.id === instanceId);
+    const nextInstances = state.config.brokerInstances.map((instance) =>
+      instance.id === instanceId
+        ? {
+          ...instance,
+          connectionMode: typeof values.connectionMode === "string" ? values.connectionMode : instance.connectionMode,
+          config: { ...instance.config, ...values },
+        }
+        : instance,
+    );
+    const nextInstance = nextInstances.find((instance) => instance.id === instanceId);
+    const shouldClearIbkrAccounts = currentInstance?.brokerType === "ibkr"
+      && nextInstance?.brokerType === "ibkr"
+      && getIbkrConfigIdentity(currentInstance.config) !== getIbkrConfigIdentity(nextInstance.config);
+    if (shouldClearIbkrAccounts) {
+      clearPersistedIbkrAccounts(pluginRegistry.persistence.resources, instanceId);
+    }
     const nextConfig = {
       ...state.config,
-      brokerInstances: state.config.brokerInstances.map((instance) =>
-        instance.id === instanceId
-          ? {
-            ...instance,
-            connectionMode: typeof values.connectionMode === "string" ? values.connectionMode : instance.connectionMode,
-            config: { ...instance.config, ...values },
-          }
-          : instance,
-      ),
+      brokerInstances: nextInstances,
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     await saveConfig(nextConfig);

@@ -7,6 +7,7 @@ import type {
   TimeRange,
 } from "./chart-types";
 import { RANGE_DAYS } from "./chart-types";
+import { clampChartZoom, getVisiblePointCount } from "./chart-viewport";
 
 export interface ComparisonProjectedPoint {
   date: Date;
@@ -94,11 +95,6 @@ function getUniqueSortedDates(series: ComparisonChartSeries[]): Date[] {
     .map(([, date]) => date);
 }
 
-function getVisibleCount(total: number, zoomLevel: number, chartWidth: number): number {
-  if (total <= 0) return 0;
-  return Math.min(total, Math.max(Math.floor(chartWidth / zoomLevel), 10));
-}
-
 export function getMaxComparisonPanOffset(
   series: ComparisonChartSeries[],
   timeRange: TimeRange,
@@ -107,7 +103,7 @@ export function getMaxComparisonPanOffset(
 ): number {
   const filtered = filterComparisonSeriesByTimeRange(series, timeRange);
   const dates = getUniqueSortedDates(filtered);
-  const visibleCount = getVisibleCount(dates.length, zoomLevel, chartWidth);
+  const visibleCount = getVisiblePointCount(dates.length, zoomLevel);
   return Math.max(dates.length - visibleCount, 0);
 }
 
@@ -123,7 +119,7 @@ export function getVisibleComparisonWindow(
     return { dates: [], startIdx: 0, endIdx: 0, totalDates: 0 };
   }
 
-  const visibleCount = getVisibleCount(dates.length, viewState.zoomLevel, chartWidth);
+  const visibleCount = getVisiblePointCount(dates.length, viewState.zoomLevel);
   const maxPan = Math.max(dates.length - visibleCount, 0);
   const pan = clamp(viewState.panOffset, 0, maxPan);
   const endIdx = dates.length - pan;
@@ -148,9 +144,9 @@ export function applyComparisonZoomAroundAnchor(
   const dates = getUniqueSortedDates(filtered);
   if (dates.length === 0) return view;
 
-  const clampedZoom = clamp(nextZoomLevel, 0.5, 10);
-  const currentVisibleCount = getVisibleCount(dates.length, view.zoomLevel, chartWidth);
-  const nextVisibleCount = getVisibleCount(dates.length, clampedZoom, chartWidth);
+  const clampedZoom = clampChartZoom(dates.length, nextZoomLevel);
+  const currentVisibleCount = getVisiblePointCount(dates.length, view.zoomLevel);
+  const nextVisibleCount = getVisiblePointCount(dates.length, clampedZoom);
   const currentPanOffset = clamp(view.panOffset, 0, Math.max(dates.length - currentVisibleCount, 0));
   const ratio = clamp(anchorRatio, 0, 1);
   const anchorIndex = dates.length - currentPanOffset - currentVisibleCount + ratio * Math.max(currentVisibleCount - 1, 0);

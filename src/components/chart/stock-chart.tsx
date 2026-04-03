@@ -8,6 +8,7 @@ import { formatCompact, formatCurrency } from "../../utils/format";
 import { useChartQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import { filterByTimeRange, getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
+import { clampChartZoom, getVisiblePointCount } from "./chart-viewport";
 import {
   buildChartScene,
   formatDateShort,
@@ -399,7 +400,7 @@ function formatAxisCell(label: string | null, width: number): string {
 
 function getMaxPanOffset(history: PricePoint[], timeRange: ChartViewState["timeRange"], zoomLevel: number, chartWidth: number): number {
   const filtered = filterByTimeRange(history, timeRange);
-  const visibleCount = Math.max(Math.floor(chartWidth / zoomLevel), 10);
+  const visibleCount = getVisiblePointCount(filtered.length, zoomLevel);
   return Math.max(filtered.length - visibleCount, 0);
 }
 
@@ -413,9 +414,9 @@ function applyZoomAroundAnchor(
   const filtered = filterByTimeRange(history, view.timeRange);
   if (filtered.length === 0) return view;
 
-  const clampedZoom = clamp(nextZoomLevel, 0.5, 10);
-  const currentVisibleCount = Math.max(Math.floor(chartWidth / view.zoomLevel), 10);
-  const nextVisibleCount = Math.max(Math.floor(chartWidth / clampedZoom), 10);
+  const clampedZoom = clampChartZoom(filtered.length, nextZoomLevel);
+  const currentVisibleCount = getVisiblePointCount(filtered.length, view.zoomLevel);
+  const nextVisibleCount = getVisiblePointCount(filtered.length, clampedZoom);
   const currentPanOffset = clamp(view.panOffset, 0, Math.max(filtered.length - currentVisibleCount, 0));
   const ratio = clamp(anchorRatio, 0, 1);
   const anchorIndex = filtered.length - currentPanOffset - currentVisibleCount + ratio * Math.max(currentVisibleCount - 1, 0);
@@ -765,10 +766,10 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
 
     switch (event.name) {
       case "=":
-        setViewState((current) => ({ ...current, zoomLevel: Math.min(current.zoomLevel * 1.5, 10) }));
+        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.5, 0.5, baseHistory, chartWidth));
         return;
       case "-":
-        setViewState((current) => ({ ...current, zoomLevel: Math.max(current.zoomLevel / 1.5, 0.5) }));
+        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel / 1.5, 0.5, baseHistory, chartWidth));
         return;
       case "0":
         updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
@@ -1329,7 +1330,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     if (!dragRef.current) return;
 
     const filtered = filterByTimeRange(baseHistory, viewState.timeRange);
-    const visibleCount = Math.max(Math.floor(chartWidth / viewState.zoomLevel), 10);
+    const visibleCount = getVisiblePointCount(filtered.length, viewState.zoomLevel);
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
     const pointDelta = Math.round((deltaCells / Math.max(chartWidth, 1)) * visibleCount);
     const nextPan = clamp(

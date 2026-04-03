@@ -46,6 +46,11 @@ async function clickFrameText(text: string): Promise<void> {
   });
 }
 
+function expectSingleBackControl(frame: string): void {
+  expect(frame.match(/\bBack\b/g)?.length ?? 0).toBe(1);
+  expect(frame).not.toContain("esc");
+}
+
 function makeTicker(symbol: string, name: string): TickerRecord {
   return {
     metadata: {
@@ -679,6 +684,7 @@ describe("CommandBar", () => {
     let frame = testSetup.captureCharFrame();
     expect(frame).toContain("Delete Layout");
     expect(frame).toContain("Back");
+    expectSingleBackControl(frame);
     expect(executed).toEqual([]);
 
     await act(async () => {
@@ -903,6 +909,12 @@ describe("CommandBar", () => {
       await testSetup!.mockInput.typeText("secret");
       await testSetup!.renderOnce();
     });
+
+    frame = await waitForFrameToContain("******");
+    expect(frame).toContain("******");
+    expect(frame).not.toContain("secret");
+    expectSingleBackControl(frame);
+
     await act(async () => {
       testSetup!.mockInput.pressEnter();
       await Bun.sleep(0);
@@ -1318,6 +1330,7 @@ describe("CommandBar", () => {
     expect(frame).toContain("Columns");
     expect(frame).toContain("Done");
     expect(frame).not.toContain("Options");
+    expectSingleBackControl(frame);
   });
 
   test("matches the IBKR trading shortcut when a gateway profile exists", async () => {
@@ -1454,6 +1467,7 @@ describe("CommandBar", () => {
     expect(frame).toContain("Email");
     expect(frame).toContain("Password");
     expect(frame).toContain("Your password");
+    expectSingleBackControl(frame);
   });
 
   test("submits single-field form-layout wizards", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { projectComparisonChartData } from "./comparison-chart-data";
+import { getVisibleComparisonWindow, projectComparisonChartData } from "./comparison-chart-data";
 import type { ComparisonChartSeries } from "./chart-types";
 
 function makeSeries(symbol: string, currency: string, closes: Array<[string, number]>): ComparisonChartSeries {
@@ -16,6 +16,25 @@ function makeSeries(symbol: string, currency: string, closes: Array<[string, num
 }
 
 describe("projectComparisonChartData", () => {
+  test("shows the full selected date range at default zoom", () => {
+    const closes = Array.from({ length: 120 }, (_, index) => [
+      new Date(Date.UTC(2024, 0, index + 1)).toISOString().slice(0, 10),
+      100 + index,
+    ] as [string, number]);
+
+    const window = getVisibleComparisonWindow([
+      makeSeries("AAPL", "USD", closes),
+    ], {
+      timeRange: "ALL",
+      panOffset: 0,
+      zoomLevel: 1,
+    }, 40);
+
+    expect(window.dates).toHaveLength(120);
+    expect(window.dates[0]?.toISOString()).toBe("2024-01-01T00:00:00.000Z");
+    expect(window.dates.at(-1)?.toISOString()).toBe("2024-04-29T00:00:00.000Z");
+  });
+
   test("aligns multiple series on a shared date axis and preserves gaps", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "USD", [

@@ -27,7 +27,7 @@ export const RANGE_DAYS: Record<TimeRange, number> = {
 export interface ChartViewState {
   timeRange: TimeRange;
   panOffset: number;   // data points shifted left from right edge (0 = most recent)
-  zoomLevel: number;   // 1.0 = default, 2.0 = zoomed in 2x
+  zoomLevel: number;   // 1.0 = full selected range, 2.0 = zoomed in 2x
   cursorX: number | null; // local plot x in cell units; may be fractional with pixel mouse
   cursorY: number | null; // local plot y in cell units; may be fractional with pixel mouse
   renderMode?: ChartRenderMode;
@@ -74,7 +74,7 @@ export interface ComparisonChartSeries {
 export interface ComparisonChartViewState {
   timeRange: TimeRange;
   panOffset: number;
-  zoomLevel: number;
+  zoomLevel: number; // 1.0 = full selected range, 2.0 = zoomed in 2x
   cursorX: number | null;
   cursorY: number | null;
   renderMode?: ComparisonChartRenderMode;

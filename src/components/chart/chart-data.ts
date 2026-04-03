@@ -1,6 +1,7 @@
 import type { PricePoint } from "../../types/financials";
 import type { TimeRange, ChartRenderMode, ChartViewState, VisibleWindow } from "./chart-types";
 import { RANGE_DAYS } from "./chart-types";
+import { getVisiblePointCount } from "./chart-viewport";
 
 export interface ProjectedChartPoint {
   date: Date;
@@ -82,11 +83,7 @@ export function getVisibleWindow(
     return { points: [], startIdx: 0, endIdx: 0 };
   }
 
-  // Number of data points visible at current zoom
-  const visibleCount = Math.max(
-    Math.floor(chartWidth / viewState.zoomLevel),
-    10, // minimum 10 data points visible
-  );
+  const visibleCount = getVisiblePointCount(filtered.length, viewState.zoomLevel);
 
   // Clamp pan offset
   const maxPan = Math.max(filtered.length - visibleCount, 0);

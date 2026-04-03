@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe("StatusBar", () => {
-  test("shows the focused-pane close shortcut when only one layout exists", async () => {
+  test("shows the command bar shortcut when only one layout exists", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const state = {
       ...createInitialState(config),
@@ -33,8 +33,8 @@ describe("StatusBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Ctrl+W");
-    expect(frame).toContain("close");
+    expect(frame).toContain("Ctrl+P");
+    expect(frame).toContain("command bar");
   });
 
   test("renders layout tabs without preview suffixes", async () => {

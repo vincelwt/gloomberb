@@ -10,20 +10,22 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField } from "../../types/broker";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
+import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
+import { debugLog } from "../../utils/debug-log";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
 import { TextField, ExternalLink } from "../ui";
 
 interface OnboardingWizardProps {
   config: AppConfig;
   pluginRegistry: PluginRegistry;
-  onComplete: (config: AppConfig) => void;
+  onComplete: (config: AppConfig) => void | Promise<void>;
 }
 
 type Step = "welcome" | "theme" | "portfolio" | "plugins" | "shortcuts" | "ready";
 const STEPS: Step[] = ["welcome", "theme", "portfolio", "plugins", "shortcuts", "ready"];
 
 // Sub-steps within the portfolio step
-type PortfolioSub = "choose" | "manual-name" | "broker-setup" | "broker-fields";
+type PortfolioSub = "choose" | "manual-name" | "broker-setup" | "broker-fields" | "broker-sync";
 
 interface BrokerOption {
   id: string;
@@ -39,6 +41,12 @@ const LOGO = [
 ];
 
 const PASSWORD_MASK_CHAR = "*";
+const onboardingLog = debugLog.createLogger("onboarding");
+
+interface BrokerSyncSummary {
+  portfolioId: string | null;
+  positionsImported: number;
+}
 
 function getToggleablePlugins(pluginRegistry: PluginRegistry) {
   const result: Array<{ id: string; name: string; description: string; order: number }> = [];
@@ -57,6 +65,46 @@ function getToggleablePlugins(pluginRegistry: PluginRegistry) {
     .map(({ order: _order, ...plugin }) => plugin);
 }
 
+function summarizeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return "Unable to finish onboarding.";
+}
+
+function focusPortfolioListCollection(config: AppConfig, collectionId: string): AppConfig {
+  const nextInstances = config.layout.instances.map((instance) => {
+    if (instance.paneId !== "portfolio-list") {
+      return instance;
+    }
+
+    const visibleCollectionIds = Array.isArray(instance.settings?.visibleCollectionIds)
+      ? instance.settings.visibleCollectionIds.filter((value): value is string => typeof value === "string")
+      : [];
+
+    return {
+      ...instance,
+      params: {
+        ...instance.params,
+        collectionId,
+      },
+      settings: {
+        ...instance.settings,
+        lockedCollectionId: collectionId,
+        visibleCollectionIds: [collectionId, ...visibleCollectionIds.filter((value) => value !== collectionId)],
+      },
+    };
+  });
+
+  return {
+    ...config,
+    layout: {
+      ...config.layout,
+      instances: nextInstances,
+    },
+  };
+}
+
 export function OnboardingWizard({ config, pluginRegistry, onComplete }: OnboardingWizardProps) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
   const [step, setStep] = useState<Step>("welcome");
@@ -72,6 +120,12 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const [brokerFieldIdx, setBrokerFieldIdx] = useState(0);
   const [brokerSelectIdx, setBrokerSelectIdx] = useState(0);
   const [editingField, setEditingField] = useState(false);
+  const [isBrokerSyncing, setIsBrokerSyncing] = useState(false);
+  const [brokerSyncError, setBrokerSyncError] = useState<string | null>(null);
+  const [brokerSyncedConfig, setBrokerSyncedConfig] = useState<AppConfig | null>(null);
+  const [brokerSyncSummary, setBrokerSyncSummary] = useState<BrokerSyncSummary | null>(null);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
 
   // Plugin state
   const toggleablePlugins = useMemo(() => getToggleablePlugins(pluginRegistry), [pluginRegistry]);
@@ -81,6 +135,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const [pluginIdx, setPluginIdx] = useState(0);
 
   const inputRef = useRef<InputRenderable>(null);
+  const brokerSyncAttemptRef = useRef(0);
   const themeIds = getThemeIds();
   const stepIdx = STEPS.indexOf(step);
 
@@ -140,6 +195,12 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     setBrokerSelectIdx(index);
   }, [selectedBrokerId, brokerFieldIdx, activeBrokerFields, brokerValues]);
 
+  useEffect(() => {
+    if (step !== "ready" && finishError) {
+      setFinishError(null);
+    }
+  }, [finishError, step]);
+
   const nextStep = useCallback(() => {
     const idx = STEPS.indexOf(step);
     if (idx < STEPS.length - 1) {
@@ -155,53 +216,172 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     }
   }, [step]);
 
-  const finish = useCallback(() => {
+  const resetBrokerSync = useCallback(() => {
+    brokerSyncAttemptRef.current += 1;
+    setIsBrokerSyncing(false);
+    setBrokerSyncError(null);
+    setBrokerSyncedConfig(null);
+    setBrokerSyncSummary(null);
+  }, []);
+
+  const buildDraftBrokerConfig = useCallback((brokerValueOverrides?: Record<string, string>) => {
+    const selectedValues = selectedBrokerId ? (brokerValueOverrides ?? brokerValues[selectedBrokerId]) : null;
+    if (!selectedBrokerId || selectedBrokerId === "manual" || !selectedValues) {
+      throw new Error("Broker setup is incomplete.");
+    }
+
+    const brokerOption = brokerOptions.find((option) => option.id === selectedBrokerId);
+    const label = brokerOption?.name || selectedBrokerId;
+    const brokerConfig = (selectedBrokerId === "ibkr"
+      ? buildIbkrConfigFromValues(selectedValues)
+      : { ...selectedValues }) as unknown as Record<string, unknown>;
+    const instanceId = createBrokerInstanceId(
+      selectedBrokerId,
+      label,
+      config.brokerInstances.map((instance) => instance.id),
+    );
+
+    return {
+      instanceId,
+      config: {
+        ...config,
+        brokerInstances: [
+          ...config.brokerInstances,
+          {
+            id: instanceId,
+            brokerType: selectedBrokerId,
+            label,
+            connectionMode: typeof brokerConfig.connectionMode === "string" ? brokerConfig.connectionMode : undefined,
+            config: brokerConfig,
+            enabled: true,
+          },
+        ],
+      } satisfies AppConfig,
+    };
+  }, [brokerOptions, brokerValues, config, selectedBrokerId]);
+
+  const syncSelectedBroker = useCallback(async (brokerValueOverrides?: Record<string, string>) => {
+    const attemptId = brokerSyncAttemptRef.current + 1;
+    brokerSyncAttemptRef.current = attemptId;
+    setEditingField(false);
+    setPortfolioSub("broker-sync");
+    setIsBrokerSyncing(true);
+    setBrokerSyncError(null);
+    setBrokerSyncedConfig(null);
+    setBrokerSyncSummary(null);
+
+    try {
+      const { config: draftConfig, instanceId } = buildDraftBrokerConfig(brokerValueOverrides);
+      onboardingLog.info("Syncing broker during onboarding", { instanceId, brokerId: selectedBrokerId });
+      const result = await syncBrokerInstance({
+        config: draftConfig,
+        instanceId,
+        brokers: pluginRegistry.brokers,
+        tickerRepository: pluginRegistry.tickerRepository,
+        resources: pluginRegistry.persistence.resources,
+        persistResolvedIbkrConnection: true,
+      });
+      if (brokerSyncAttemptRef.current !== attemptId) {
+        return;
+      }
+
+      const portfolioId = result.portfolioIds[0] ?? null;
+      const nextConfig = portfolioId
+        ? focusPortfolioListCollection(result.config, portfolioId)
+        : result.config;
+      setBrokerSyncedConfig(nextConfig);
+      setBrokerSyncSummary({
+        portfolioId,
+        positionsImported: result.positions.length,
+      });
+      setBrokerSyncError(null);
+      setIsBrokerSyncing(false);
+      setPortfolioSub("broker-fields");
+      onboardingLog.info("Broker onboarding sync completed", {
+        instanceId,
+        portfolioId,
+        positionsImported: result.positions.length,
+      });
+      nextStep();
+    } catch (error) {
+      if (brokerSyncAttemptRef.current !== attemptId) {
+        return;
+      }
+
+      onboardingLog.error("Broker onboarding sync failed", { error: summarizeError(error), brokerId: selectedBrokerId });
+      setBrokerSyncError(summarizeError(error));
+      setIsBrokerSyncing(false);
+      setPortfolioSub("broker-sync");
+    }
+  }, [
+    buildDraftBrokerConfig,
+    nextStep,
+    pluginRegistry.brokers,
+    pluginRegistry.persistence.resources,
+    pluginRegistry.tickerRepository,
+    selectedBrokerId,
+  ]);
+
+  const finish = useCallback(async () => {
+    if (isFinishing) {
+      return;
+    }
+
+    setFinishError(null);
     const selectedTheme = themeIds[themeIdx]!;
     applyTheme(selectedTheme);
 
     const isBroker = selectedBrokerId && selectedBrokerId !== "manual";
+    const baseConfig = isBroker ? brokerSyncedConfig : config;
 
-    // Build initial broker instance from collected values
-    const brokerInstances = [...config.brokerInstances];
-    if (isBroker && brokerValues[selectedBrokerId]) {
-      const brokerOption = brokerOptions.find((option) => option.id === selectedBrokerId);
-      const label = brokerOption?.name || selectedBrokerId;
-      const brokerConfig = (selectedBrokerId === "ibkr"
-        ? buildIbkrConfigFromValues(brokerValues[selectedBrokerId])
-        : { ...brokerValues[selectedBrokerId] }) as unknown as Record<string, unknown>;
-      brokerInstances.push({
-        id: createBrokerInstanceId(selectedBrokerId, label, brokerInstances.map((instance) => instance.id)),
-        brokerType: selectedBrokerId,
-        label,
-        connectionMode: typeof brokerConfig.connectionMode === "string" ? brokerConfig.connectionMode : undefined,
-        config: brokerConfig,
-        enabled: true,
-      });
+    setIsFinishing(true);
+    try {
+      if (isBroker && !baseConfig) {
+        throw new Error("Connect and sync the broker before finishing onboarding.");
+      }
+
+      const updatedConfig: AppConfig = {
+        ...(baseConfig ?? config),
+        theme: selectedTheme,
+        portfolios: isBroker
+          ? (baseConfig ?? config).portfolios
+          : [{ id: "main", name: portfolioName || "Main Portfolio", currency: "USD" }],
+        disabledPlugins,
+        onboardingComplete: true,
+      };
+
+      await saveConfig(updatedConfig);
+      await Promise.resolve(onComplete(updatedConfig));
+    } catch (error) {
+      setFinishError(summarizeError(error));
+      setIsFinishing(false);
     }
-
-    const updatedConfig: AppConfig = {
-      ...config,
-      theme: selectedTheme,
-      portfolios: isBroker
-        ? config.portfolios // Broker plugins auto-create portfolios on sync
-        : [{ id: "main", name: portfolioName || "Main Portfolio", currency: "USD" }],
-      disabledPlugins,
-      onboardingComplete: true,
-      brokerInstances,
-    };
-    saveConfig(updatedConfig).catch(() => {});
-    onComplete(updatedConfig);
-  }, [config, themeIdx, themeIds, portfolioName, selectedBrokerId, brokerValues, disabledPlugins, onComplete, brokerOptions]);
+  }, [
+    brokerSyncedConfig,
+    config,
+    disabledPlugins,
+    isFinishing,
+    onComplete,
+    portfolioName,
+    selectedBrokerId,
+    themeIds,
+    themeIdx,
+  ]);
 
   // Helper to update a broker field value
   const setBrokerFieldValue = useCallback((brokerId: string, key: string, value: string) => {
+    resetBrokerSync();
     setBrokerValues((prev) => ({
       ...prev,
       [brokerId]: { ...prev[brokerId], [key]: value },
     }));
-  }, []);
+  }, [resetBrokerSync]);
 
   useKeyboard((event) => {
+    if (isFinishing) {
+      return;
+    }
+
     // --- Input field handling ---
     if (editingField) {
       if (event.name === "return") {
@@ -211,12 +391,16 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         } else if (portfolioSub === "broker-fields" && selectedBrokerId) {
           const currentField = activeBrokerFields[brokerFieldIdx];
           if (!currentField) {
-            nextStep();
+            void syncSelectedBroker();
             return;
           }
           const rawValue = brokerValues[selectedBrokerId]?.[currentField.key] ?? "";
           const currentValue = rawValue.trim() || currentField.defaultValue || "";
           if (currentValue) {
+            const nextValues = {
+              ...(brokerValues[selectedBrokerId] ?? {}),
+              [currentField.key]: currentValue,
+            };
             if (!rawValue.trim() && currentField.defaultValue) {
               setBrokerFieldValue(selectedBrokerId, currentField.key, currentField.defaultValue);
             }
@@ -227,7 +411,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
               setBrokerFieldIdx(nextIndex);
               setEditingField(nextField?.type !== "select");
             } else {
-              nextStep();
+              void syncSelectedBroker(nextValues);
             }
           }
         }
@@ -246,17 +430,19 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     // --- Global nav ---
     if (event.name === "return" || event.name === "enter") {
       if (step === "ready") {
-        finish();
+        void finish();
         return;
       }
       if (step === "portfolio") {
         if (portfolioSub === "choose") {
           const choice = portfolioChoices[portfolioOptionIdx]!;
           if (choice.id === "manual") {
+            resetBrokerSync();
             setSelectedBrokerId(null);
             setPortfolioSub("manual-name");
             setEditingField(true);
           } else {
+            resetBrokerSync();
             setSelectedBrokerId(choice.id);
             setBrokerFieldIdx(0);
             setPortfolioSub("broker-fields");
@@ -277,7 +463,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         if (portfolioSub === "broker-fields" && selectedBrokerId) {
           const currentField = activeBrokerFields[brokerFieldIdx];
           if (!currentField) {
-            nextStep();
+            void syncSelectedBroker();
             return;
           }
           if (currentField.type === "select") {
@@ -303,7 +489,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
                 setEditingField(nextField?.type !== "select");
               }
             } else {
-              nextStep();
+              void syncSelectedBroker(nextValues);
             }
             return;
           }
@@ -312,9 +498,20 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             return;
           }
         }
+        if (portfolioSub === "broker-sync") {
+          if (!isBrokerSyncing && brokerSyncError) {
+            void syncSelectedBroker();
+          }
+          return;
+        }
       }
       nextStep();
     } else if (event.name === "escape") {
+      if (step === "portfolio" && portfolioSub === "broker-sync") {
+        resetBrokerSync();
+        setPortfolioSub("broker-fields");
+        return;
+      }
       if (step === "portfolio" && portfolioSub === "broker-fields") {
         setPortfolioSub("broker-setup");
         return;
@@ -331,6 +528,11 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
       }
       prevStep();
     } else if (event.name === "left") {
+      if (step === "portfolio" && portfolioSub === "broker-sync") {
+        resetBrokerSync();
+        setPortfolioSub("broker-fields");
+        return;
+      }
       if (step === "portfolio" && portfolioSub === "broker-fields") {
         setPortfolioSub("broker-setup");
         return;
@@ -405,7 +607,14 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
   // Bottom hint text
   let hintText = "enter ->";
-  if (step === "ready") hintText = "enter to launch";
+  if (step === "ready") {
+    hintText = "enter to launch";
+  }
+  if (step === "portfolio" && portfolioSub === "broker-sync") {
+    hintText = isBrokerSyncing ? "syncing broker..." : "enter to retry";
+  } else if (isFinishing) {
+    hintText = "launching...";
+  }
 
   // Determine what the ready step should show
   const connectedBrokerName = selectedBrokerId
@@ -446,6 +655,8 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             onBrokerFieldChange={setBrokerFieldValue}
             editing={editingField}
             inputRef={inputRef}
+            brokerSyncing={isBrokerSyncing}
+            brokerSyncError={brokerSyncError}
           />
         )}
         {step === "plugins" && (
@@ -468,6 +679,9 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
           <ReadyStep
             brokerName={connectedBrokerName ?? null}
             portfolioName={portfolioName}
+            brokerSyncSummary={brokerSyncSummary}
+            isFinishing={isFinishing}
+            error={finishError}
           />
         )}
 
@@ -594,6 +808,8 @@ function PortfolioStep({
   onBrokerFieldChange,
   editing,
   inputRef,
+  brokerSyncing,
+  brokerSyncError,
 }: {
   sub: PortfolioSub;
   choices: Array<{ id: string; label: string; desc: string }>;
@@ -608,6 +824,8 @@ function PortfolioStep({
   onBrokerFieldChange: (brokerId: string, key: string, value: string) => void;
   editing: boolean;
   inputRef: RefObject<InputRenderable | null>;
+  brokerSyncing: boolean;
+  brokerSyncError: string | null;
 }) {
   if (sub === "choose") {
     return (
@@ -756,7 +974,10 @@ function PortfolioStep({
               <text fg={colors.textDim}>{"   Enable \"ActiveX and Socket Clients\""}</text>
             </box>
             <box height={1}>
-              <text fg={colors.textDim}>{"   Note the socket port (default: 4002)"}</text>
+              <text fg={colors.textDim}>{"   Gloomberb can auto-detect local API ports (4001, 4002, 7496, 7497)"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"   Use Manual setup only if you need a custom host or exact socket port"}</text>
             </box>
             <box height={1}>
               <text fg={colors.textDim}>{"4. Keep it running while using Gloomberb"}</text>
@@ -779,6 +1000,33 @@ function PortfolioStep({
 
         <box height={2} />
 
+      </box>
+    );
+  }
+
+  if (sub === "broker-sync" && selectedBrokerId) {
+    const brokerLabel = choices.find((choice) => choice.id === selectedBrokerId)?.label.replace("Connect ", "") ?? selectedBrokerId;
+    return (
+      <box flexDirection="column" paddingX={2}>
+        <box height={1}>
+          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{`Connect ${brokerLabel}`}</text>
+        </box>
+        <box height={1} />
+        <box height={1}>
+          <text fg={brokerSyncing ? colors.text : colors.negative}>
+            {brokerSyncing
+              ? `Connecting to ${brokerLabel} and importing accounts and positions...`
+              : brokerSyncError || `Unable to sync ${brokerLabel}.`}
+          </text>
+        </box>
+        <box height={2} />
+        <box height={1}>
+          <text fg={colors.textDim}>
+            {brokerSyncing
+              ? "This happens now so your portfolio is ready before onboarding finishes."
+              : "Press Enter to retry, or Esc to edit the broker settings."}
+          </text>
+        </box>
       </box>
     );
   }
@@ -1043,7 +1291,22 @@ function ShortcutsStep({
   );
 }
 
-function ReadyStep({ brokerName, portfolioName }: { brokerName: string | null; portfolioName: string }) {
+function ReadyStep({
+  brokerName,
+  portfolioName,
+  brokerSyncSummary,
+  isFinishing,
+  error,
+}: {
+  brokerName: string | null;
+  portfolioName: string;
+  brokerSyncSummary: BrokerSyncSummary | null;
+  isFinishing: boolean;
+  error: string | null;
+}) {
+  const positionsImported = brokerSyncSummary?.positionsImported ?? 0;
+  const positionLabel = positionsImported === 1 ? "position" : "positions";
+
   return (
     <box flexDirection="column" paddingX={2}>
       <box height={2} />
@@ -1058,18 +1321,36 @@ function ReadyStep({ brokerName, portfolioName }: { brokerName: string | null; p
       <box height={1}>
         <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
         <text fg={colors.text}>
-          {brokerName ? ` ${brokerName} connected. Positions will sync on launch` : ` Portfolio "${portfolioName}" created`}
+          {brokerName
+            ? ` ${brokerName} connected. Imported ${positionsImported} ${positionLabel}`
+            : ` Portfolio "${portfolioName}" created`}
         </text>
       </box>
       <box height={1}>
         <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
         <text fg={colors.text}>{" Plugins selected"}</text>
       </box>
-      {!brokerName && (
+      <box height={2} />
+      {brokerName ? (
+        <box height={1}>
+          <text fg={isFinishing ? colors.text : colors.textDim}>
+            {isFinishing
+              ? "Launching Gloomberb..."
+              : positionsImported > 0
+              ? "Your broker portfolio is ready and will open directly after launch."
+              : "Broker sync finished. If you expected holdings, check the selected account or connection mode."}
+          </text>
+        </box>
+      ) : (
+        <box height={1}>
+          <text fg={colors.textDim}>{"Search for broker names in the command bar to connect."}</text>
+        </box>
+      )}
+      {error && (
         <>
-          <box height={2} />
-          <box height={1}>
-            <text fg={colors.textDim}>{"Search for broker names in the command bar to connect."}</text>
+          <box height={1} />
+          <box height={2}>
+            <text fg={colors.negative}>{error}</text>
           </box>
         </>
       )}

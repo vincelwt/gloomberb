@@ -4578,6 +4578,7 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
                 ) : (
                   <TextField
                     inputRef={getInputRef(workflowInputRefs.current, field.id) as RefObject<InputRenderable | null>}
+                    type={field.type === "password" ? "password" : "text"}
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
@@ -4634,9 +4635,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         <box flexGrow={1} />
         <box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
           <Button label={currentRoute.submitLabel} variant="primary" onPress={() => { void submitWorkflowRoute(currentRoute); }} disabled={currentRoute.pending} />
-          {!visibleFields.some((field) => field.type === "textarea") ? (
-            <Button label={currentRoute.cancelLabel || "Back"} variant="ghost" onPress={popRoute} disabled={currentRoute.pending} />
-          ) : null}
         </box>
       </box>
     );
@@ -4670,7 +4668,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
             onPress={() => { void confirmCurrentRoute(); }}
             disabled={currentRoute.pending}
           />
-          <Button label={currentRoute.cancelLabel || "Back"} variant="ghost" onPress={popRoute} disabled={currentRoute.pending} />
         </box>
       </box>
     );
@@ -4707,7 +4704,6 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
         />
         <box flexDirection="row" gap={1}>
           <Button label="Done" variant="primary" onPress={commitMultiSelectPicker} />
-          <Button label="Back" variant="ghost" onPress={popRoute} />
         </box>
       </box>
     );
@@ -4759,11 +4755,10 @@ export function CommandBar({ dataProvider, tickerRepository, pluginRegistry, qui
                 : currentRoute?.kind === "picker" ? currentRoute.title
                   : currentRoute?.kind === "pane-settings" ? "Pane Settings"
                     : currentRoute?.kind === "workflow" ? currentRoute.title
-                      : currentRoute?.kind === "confirm" ? currentRoute.title
+                    : currentRoute?.kind === "confirm" ? currentRoute.title
                         : "Commands"}
             </text>
           </box>
-          <text fg={paletteSubtleText}>esc</text>
         </box>
 
         <box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={paletteBg}>

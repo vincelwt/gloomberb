@@ -237,6 +237,34 @@ describe("loadConfig", () => {
     expect(config.disabledPlugins).toEqual(["chat", "news"]);
   });
 
+  test("preserves IBKR gateway configs without migration rewrites", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 10,
+      brokerInstances: [{
+        id: "ibkr-interactive-brokers",
+        brokerType: "ibkr",
+        label: "Interactive Brokers",
+        connectionMode: "gateway",
+        config: {
+          connectionMode: "gateway",
+          host: "127.0.0.1",
+          port: 4002,
+          clientId: 1,
+        },
+      }],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.brokerInstances[0]?.config).toEqual({
+      connectionMode: "gateway",
+      host: "127.0.0.1",
+      port: 4002,
+      clientId: 1,
+    });
+  });
+
   test("falls back to the default layout when persisted layouts use the obsolete column shape", async () => {
     const dataDir = await createTempConfigDir();
     const obsoleteLayout = {

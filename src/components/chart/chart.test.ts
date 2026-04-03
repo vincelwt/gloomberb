@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { bucketOhlcSeries, projectChartData, resolveRenderMode } from "./chart-data";
+import { bucketOhlcSeries, getVisibleWindow, projectChartData, resolveRenderMode } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
 import { buildTimeAxis, formatAxisValue, renderChart, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
-import type { ChartRenderMode } from "./chart-types";
+import type { ChartRenderMode, ChartViewState } from "./chart-types";
 
 const aggregationFixture: PricePoint[] = [
   { date: new Date("2024-01-02"), close: 10, volume: 100 },
@@ -18,6 +18,14 @@ const chartFixture: PricePoint[] = [
   { date: new Date("2024-01-04"), open: 12, high: 12.5, low: 8, close: 9, volume: 140 },
   { date: new Date("2024-01-05"), open: 9, high: 11, low: 8.5, close: 10.5, volume: 160 },
 ];
+
+function buildDenseHistory(length: number): PricePoint[] {
+  return Array.from({ length }, (_, index) => ({
+    date: new Date(Date.UTC(2024, 0, index + 1)),
+    close: 100 + index,
+    volume: 1_000 + index,
+  }));
+}
 
 const palette = resolveChartPalette({
   bg: "#000000",
@@ -85,6 +93,42 @@ describe("resolveRenderMode", () => {
     expect(projectChartData(denseSeries, 80, "candles", false).points).toHaveLength(40);
     expect(projectChartData(denseSeries, 80, "ohlc", false).points).toHaveLength(40);
     expect(projectChartData(denseSeries, 80, "line", false).points).toHaveLength(80);
+  });
+});
+
+describe("getVisibleWindow", () => {
+  test("shows the full selected range at default zoom and lets the renderer downsample it", () => {
+    const history = buildDenseHistory(252);
+    const viewState: ChartViewState = {
+      timeRange: "1Y",
+      panOffset: 0,
+      zoomLevel: 1,
+      cursorX: null,
+      cursorY: null,
+    };
+
+    const window = getVisibleWindow(history, viewState, 80);
+
+    expect(window.points).toHaveLength(history.length);
+    expect(window.points[0]?.date.toISOString()).toBe(history[0]?.date.toISOString());
+    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)?.date.toISOString());
+  });
+
+  test("zooms into the selected range instead of pinning the default view to chart width", () => {
+    const history = buildDenseHistory(252);
+    const viewState: ChartViewState = {
+      timeRange: "1Y",
+      panOffset: 0,
+      zoomLevel: 2,
+      cursorX: null,
+      cursorY: null,
+    };
+
+    const window = getVisibleWindow(history, viewState, 80);
+
+    expect(window.points).toHaveLength(126);
+    expect(window.points[0]?.date.toISOString()).toBe(history[126]?.date.toISOString());
+    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)?.date.toISOString());
   });
 });
 

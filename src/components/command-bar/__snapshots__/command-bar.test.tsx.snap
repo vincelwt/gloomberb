@@ -3,7 +3,7 @@
 exports[`CommandBar renders the default layout with opencode-style chrome 1`] = `
 "                                                                                
                                                                                 
-                Commands                                     esc                
+                Commands                                                        
                 Search                                                          
                                                                                 
                 Tickers                                                         
@@ -31,7 +31,7 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
 exports[`CommandBar renders theme prefix results in the root query 1`] = `
 "                                                                                
                                                                                 
-                Commands                                     esc                
+                Commands                                                        
                 TH                                                              
                                                                                 
                 Themes                                                          
@@ -59,7 +59,7 @@ exports[`CommandBar renders theme prefix results in the root query 1`] = `
 exports[`CommandBar renders plugin toggle state 1`] = `
 "                                                                                
                                                                                 
-                Commands                                     esc                
+                Commands                                                        
                 PL                                                              
                                                                                 
                 Plugins                                                         
@@ -87,7 +87,7 @@ exports[`CommandBar renders plugin toggle state 1`] = `
 exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
 "                                          
                                           
-       Commands                         es
+       Commands                           
        Search                             
                                           
        Tickers                            
@@ -108,38 +108,10 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
 "
 `;
 
-exports[`CommandBar groups ticker search sections and keeps exact open matches above loose provider results 1`] = `
-"                                                                                
-                                                                                
-                Commands                                     esc                
-                T appl                                                          
-                Shortcut: Open APPL                                             
-                Open                                                            
-                AAPL                                    NASDAQ                  
-                                                                                
-                Search Results                                                  
-                APP                                     NASDAQ                  
-                AMAT                                    NASDAQ                  
-                AAOI                                    NASDAQ                  
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-"
-`;
-
 exports[`CommandBar groups ticker search sections and keeps saved matches above looser provider results 1`] = `
 "                                                                                
                                                                                 
-                Commands                                     esc                
+                Commands                                                        
                 T appl                                                          
                 Shortcut: Open APPL                                             
                 Saved                                                           

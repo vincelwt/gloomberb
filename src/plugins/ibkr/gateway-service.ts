@@ -20,6 +20,7 @@ import {
   type TickByTickAllLast,
 } from "@stoqey/ib";
 import { mkdir, open, readFile, rm } from "fs/promises";
+import { createConnection } from "net";
 import { tmpdir } from "os";
 import { join } from "path";
 import { firstValueFrom, filter, take, timeout } from "rxjs";
@@ -42,9 +43,19 @@ import { getIbkrPriceDivisor, normalizeIbkrPriceValue } from "./price-normalizat
 
 export interface IbkrGatewayConfig {
   host: string;
+  port?: number;
+  clientId?: number;
+  lastSuccessfulPort?: number;
+  lastSuccessfulClientId?: number;
+  marketDataType?: "auto" | "live" | "frozen" | "delayed" | "delayed-frozen";
+}
+
+export interface ResolvedIbkrGatewayConnection {
+  host: string;
   port: number;
   clientId: number;
-  marketDataType?: "auto" | "live" | "frozen" | "delayed" | "delayed-frozen";
+  requestedPort?: number;
+  requestedClientId: number;
 }
 
 export interface IbkrSnapshot {
@@ -82,6 +93,14 @@ interface ActiveQuoteStream {
   lastQuote?: Quote;
 }
 
+interface AccountPortfolioSnapshotPosition {
+  contract: Contract;
+  avgCost?: number;
+  marketPrice?: number;
+  marketValue?: number;
+  unrealizedPNL?: number;
+}
+
 const DEFAULT_SNAPSHOT: IbkrSnapshot = {
   status: { state: "disconnected", updatedAt: Date.now() },
   accounts: [],
@@ -92,6 +111,21 @@ const DEFAULT_SNAPSHOT: IbkrSnapshot = {
 const gatewayLog = debugLog.createLogger("ibkr-gateway");
 const IBKR_CLIENT_LOCK_DIR = join(tmpdir(), "gloomberb-ibkr-client-locks");
 const IBKR_CLIENT_ID_SEARCH_SPAN = 64;
+const LOCAL_IBKR_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+const COMMON_LOCAL_IBKR_PORTS = [4001, 4002, 7496, 7497] as const;
+const LOCAL_TCP_PROBE_TIMEOUT_MS = 250;
+const DEFAULT_AUTO_CLIENT_ID = 1;
+
+type ResolvedGatewayListener = (
+  instanceId: string | undefined,
+  connection: ResolvedIbkrGatewayConnection,
+) => void | Promise<void>;
+
+let resolvedGatewayListener: ResolvedGatewayListener | null = null;
+
+export function setResolvedIbkrGatewayListener(listener: ResolvedGatewayListener | null): void {
+  resolvedGatewayListener = listener;
+}
 
 type AccountSummaryValueMap = ReadonlyMap<string, { value: string }>;
 type AccountSummaryTags = ReadonlyMap<string, AccountSummaryValueMap>;
@@ -127,6 +161,19 @@ function getAccountSummaryNumber(
   preferredCurrency?: string,
 ): number | undefined {
   return getAccountSummaryEntry(tags?.get(tagName), preferredCurrency)?.value;
+}
+
+function getAccountSummaryNumberWithAggregateFallback(
+  tags: AccountSummaryTags | undefined,
+  aggregateTags: AccountSummaryTags | undefined,
+  tagName: string,
+  preferredCurrency: string | undefined,
+  allowAggregateFallback: boolean,
+): number | undefined {
+  const direct = getAccountSummaryNumber(tags, tagName, preferredCurrency);
+  if (direct != null) return direct;
+  if (!allowAggregateFallback) return undefined;
+  return getAccountSummaryNumber(aggregateTags, tagName, preferredCurrency);
 }
 
 function inferAccountCurrency(tags: AccountSummaryTags | undefined): string | undefined {
@@ -209,21 +256,21 @@ export function summarizeBrokerAccount(
   aggregateTags?: AccountSummaryTags,
   allowAggregateCashBalances = false,
 ): BrokerAccount {
-  const currency = inferAccountCurrency(tags);
+  const currency = inferAccountCurrency(tags) ?? (allowAggregateCashBalances ? inferAccountCurrency(aggregateTags) : undefined);
   return {
     accountId,
     name: accountId,
     currency,
     source: "gateway",
     updatedAt,
-    netLiquidation: getAccountSummaryNumber(tags, "NetLiquidation", currency),
-    totalCashValue: getAccountSummaryNumber(tags, "TotalCashValue", currency),
-    settledCash: getAccountSummaryNumber(tags, "SettledCash", currency),
-    availableFunds: getAccountSummaryNumber(tags, "AvailableFunds", currency),
-    buyingPower: getAccountSummaryNumber(tags, "BuyingPower", currency),
-    excessLiquidity: getAccountSummaryNumber(tags, "ExcessLiquidity", currency),
-    initMarginReq: getAccountSummaryNumber(tags, "InitMarginReq", currency),
-    maintMarginReq: getAccountSummaryNumber(tags, "MaintMarginReq", currency),
+    netLiquidation: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "NetLiquidation", currency, allowAggregateCashBalances),
+    totalCashValue: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "TotalCashValue", currency, allowAggregateCashBalances),
+    settledCash: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "SettledCash", currency, allowAggregateCashBalances),
+    availableFunds: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "AvailableFunds", currency, allowAggregateCashBalances),
+    buyingPower: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "BuyingPower", currency, allowAggregateCashBalances),
+    excessLiquidity: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "ExcessLiquidity", currency, allowAggregateCashBalances),
+    initMarginReq: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "InitMarginReq", currency, allowAggregateCashBalances),
+    maintMarginReq: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "MaintMarginReq", currency, allowAggregateCashBalances),
     cashBalances: buildCashBalances(tags, aggregateTags, currency, allowAggregateCashBalances),
   };
 }
@@ -402,6 +449,20 @@ function isMarketDataPermissionError(code: number | undefined, message: string |
     || text.includes("market data subscription");
 }
 
+function isIbInformationalWarning(code: number | undefined, message: string | undefined): boolean {
+  if (code != null && [1102, 2104, 2106, 2107, 2108, 2158].includes(code)) {
+    return true;
+  }
+
+  const text = (message || "").toLowerCase();
+  return text.includes("connection is ok")
+    || text.includes("connectivity between ib and trader workstation has been restored")
+    || text.includes("inactive but should be available upon demand")
+    || text.includes("sec-def data farm connection is ok")
+    || text.includes("market data farm connection is ok")
+    || text.includes("hmds data farm connection is ok");
+}
+
 function getIbErrorCode(error: any): number | undefined {
   const candidates = [
     error?.errorCode,
@@ -445,6 +506,16 @@ function buildClientLockPath(config: IbkrGatewayConfig, clientId: number): strin
   return join(IBKR_CLIENT_LOCK_DIR, `${host}-${config.port}-${clientId}.lock`);
 }
 
+function buildPortfolioPositionKey(accountId: string, contract: Contract): string {
+  return [
+    accountId.trim(),
+    contract.conId ?? "",
+    contract.localSymbol ?? "",
+    contract.symbol ?? "",
+    contract.secType ?? "",
+  ].join("|");
+}
+
 function isProcessAlive(pid: number | undefined): boolean {
   if (!pid || !Number.isFinite(pid) || pid <= 0) return false;
   try {
@@ -483,13 +554,153 @@ async function readClientLock(path: string): Promise<ClientLockMetadata | null> 
   }
 }
 
-function buildConnectionNote(requestedClientId: number, actualClientId: number): string | undefined {
-  if (requestedClientId === actualClientId) return undefined;
-  return `Using client ID ${actualClientId} because ${requestedClientId} is already in use.`;
+function buildConnectionNote(
+  requestedClientId: number,
+  actualClientId: number,
+  requestedPort: number | undefined,
+  actualPort: number,
+): string | undefined {
+  const notes: string[] = [];
+  if (requestedPort == null || requestedPort !== actualPort) {
+    notes.push(`Detected IBKR API on port ${actualPort}.`);
+  }
+  if (requestedClientId !== actualClientId) {
+    notes.push(`Using client ID ${actualClientId} because ${requestedClientId} is already in use.`);
+  }
+  return notes.length > 0 ? notes.join(" ") : undefined;
 }
 
 function isRetryableErrorCode(code: number): boolean {
   return ![200, 201, 202, 321, 354].includes(code);
+}
+
+function isLoopbackHost(host: string): boolean {
+  return LOCAL_IBKR_HOSTS.has(host.trim().toLowerCase());
+}
+
+async function probeTcpPort(host: string, port: number, timeoutMs = LOCAL_TCP_PROBE_TIMEOUT_MS): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(result);
+    };
+
+    const socket = createConnection({ host, port });
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.setTimeout(timeoutMs, () => finish(false));
+  });
+}
+
+function uniquePorts(...values: Array<number | undefined | readonly number[]>): number[] {
+  const unique = new Set<number>();
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      for (const candidate of value) {
+        if (Number.isFinite(candidate)) unique.add(candidate);
+      }
+      continue;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      unique.add(value);
+    }
+  }
+  return [...unique];
+}
+
+interface IbkrPortDiagnosticOptions {
+  candidatePorts?: readonly number[];
+  probePort?: (host: string, port: number) => Promise<boolean>;
+}
+
+export async function diagnoseLocalIbkrPortIssue(
+  config: IbkrGatewayConfig,
+  options: IbkrPortDiagnosticOptions = {},
+): Promise<string | null> {
+  if (typeof config.port !== "number" || !Number.isFinite(config.port)) return null;
+  if (!isLoopbackHost(config.host)) return null;
+
+  const candidatePorts = options.candidatePorts ?? COMMON_LOCAL_IBKR_PORTS;
+  const probePort = options.probePort ?? ((host: string, port: number) => probeTcpPort(host, port));
+  if (await probePort(config.host, config.port)) return null;
+
+  const openAlternatives: number[] = [];
+  for (const port of candidatePorts) {
+    if (port === config.port) continue;
+    if (await probePort(config.host, port)) openAlternatives.push(port);
+  }
+
+  if (openAlternatives.length === 0) {
+    return `IBKR is not listening on ${config.host}:${config.port}. Start Gateway/TWS and confirm the API socket port in the IBKR API settings.`;
+  }
+
+  const detectedTargets = openAlternatives.map((port) => `${config.host}:${port}`).join(", ");
+  return `IBKR is not listening on ${config.host}:${config.port}. Detected a local IBKR API listener on ${detectedTargets} instead. Update this profile's port to match Gateway/TWS.`;
+}
+
+export async function resolveGatewayConnection(
+  config: IbkrGatewayConfig,
+  options: IbkrPortDiagnosticOptions = {},
+): Promise<ResolvedIbkrGatewayConnection> {
+  const host = (config.host || "127.0.0.1").trim() || "127.0.0.1";
+  const requestedPort = typeof config.port === "number" && Number.isFinite(config.port) ? config.port : undefined;
+  const requestedClientId = typeof config.clientId === "number" && Number.isFinite(config.clientId)
+    ? config.clientId
+    : typeof config.lastSuccessfulClientId === "number" && Number.isFinite(config.lastSuccessfulClientId)
+      ? config.lastSuccessfulClientId
+      : DEFAULT_AUTO_CLIENT_ID;
+  const probePort = options.probePort ?? ((candidateHost: string, candidatePort: number) => probeTcpPort(candidateHost, candidatePort));
+
+  if (requestedPort != null) {
+    const localPortIssue = await diagnoseLocalIbkrPortIssue({
+      host,
+      port: requestedPort,
+      clientId: requestedClientId,
+      marketDataType: config.marketDataType,
+    }, options);
+    if (localPortIssue) throw new Error(localPortIssue);
+    return {
+      host,
+      port: requestedPort,
+      clientId: requestedClientId,
+      requestedPort,
+      requestedClientId,
+    };
+  }
+
+  if (isLoopbackHost(host)) {
+    const candidatePorts = uniquePorts(config.lastSuccessfulPort, options.candidatePorts ?? COMMON_LOCAL_IBKR_PORTS);
+    for (const port of candidatePorts) {
+      if (await probePort(host, port)) {
+        return {
+          host,
+          port,
+          clientId: requestedClientId,
+          requestedPort: typeof config.lastSuccessfulPort === "number" ? config.lastSuccessfulPort : undefined,
+          requestedClientId,
+        };
+      }
+    }
+
+    throw new Error(
+      `No local IBKR API listeners were detected on ${host}. Checked ports ${candidatePorts.join(", ")}. Start Gateway/TWS and enable socket clients in the IBKR API settings.`,
+    );
+  }
+
+  const fallbackPort = typeof config.lastSuccessfulPort === "number" && Number.isFinite(config.lastSuccessfulPort)
+    ? config.lastSuccessfulPort
+    : COMMON_LOCAL_IBKR_PORTS[0];
+  return {
+    host,
+    port: fallbackPort,
+    clientId: requestedClientId,
+    requestedPort: typeof config.lastSuccessfulPort === "number" ? config.lastSuccessfulPort : undefined,
+    requestedClientId,
+  };
 }
 
 export class IbkrGatewayService {
@@ -507,6 +718,7 @@ export class IbkrGatewayService {
   private readonly clientLockOwner = `${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
   private claimedClientLock: ClaimedClientLock | null = null;
   private connectionNote?: string;
+  private resolvedConnection: ResolvedIbkrGatewayConnection | null = null;
   private readonly quoteStreams = new Map<string, ActiveQuoteStream>();
   private readonly quoteStreamStarts = new Map<string, Promise<void>>();
 
@@ -534,8 +746,17 @@ export class IbkrGatewayService {
     return this.snapshot.status;
   }
 
+  getResolvedConnection(): ResolvedIbkrGatewayConnection | null {
+    return this.resolvedConnection;
+  }
+
   async connect(config: IbkrGatewayConfig): Promise<void> {
-    const nextKey = JSON.stringify(config);
+    const nextKey = JSON.stringify({
+      host: config.host,
+      port: config.port ?? null,
+      clientId: config.clientId ?? null,
+      marketDataType: config.marketDataType ?? "auto",
+    });
     if (this.api?.isConnected && this.configKey === nextKey) {
       return;
     }
@@ -559,6 +780,7 @@ export class IbkrGatewayService {
     this.autoMarketData = true;
     this.activeMarketDataType = MarketDataType.REALTIME;
     this.connectionNote = undefined;
+    this.resolvedConnection = null;
     await this.releaseClientLock();
     this.updateSnapshot({
       ...this.snapshot,
@@ -594,31 +816,31 @@ export class IbkrGatewayService {
 
   async getAccounts(config: IbkrGatewayConfig): Promise<BrokerAccount[]> {
     await this.connect(config);
-    const accounts = await this.loadAccounts();
-    this.updateSnapshot({ ...this.snapshot, accounts });
-    return accounts;
+    return this.loadAccountsAndUpdateSnapshot();
   }
 
   async getPositions(config: IbkrGatewayConfig): Promise<BrokerPosition[]> {
     await this.connect(config);
     const update = await firstValueFrom(this.api!.getPositions().pipe(take(1), timeout(10_000)));
+    const portfolioSnapshots = await this.loadPortfolioSnapshotsForAccounts([...update.all.keys()]);
     const positions: BrokerPosition[] = [];
     for (const [accountId, accountPositions] of update.all) {
       for (const position of accountPositions) {
         if (!position.contract.symbol) continue;
+        const portfolioSnapshot = portfolioSnapshots.get(buildPortfolioPositionKey(accountId, position.contract));
         const priceDivisor = getIbkrPriceDivisor(position.contract);
         positions.push({
           ticker: position.contract.localSymbol || position.contract.symbol,
           exchange: position.contract.primaryExch || position.contract.exchange || "",
           shares: Math.abs(position.pos),
-          avgCost: normalizeIbkrPriceValue(position.avgCost, priceDivisor),
+          avgCost: normalizeIbkrPriceValue(portfolioSnapshot?.avgCost ?? position.avgCost, priceDivisor),
           currency: position.contract.currency || "USD",
           accountId,
           name: position.contract.description || position.contract.localSymbol || position.contract.symbol,
           assetCategory: position.contract.secType,
-          markPrice: normalizeIbkrPriceValue(position.marketPrice, priceDivisor),
-          marketValue: position.marketValue,
-          unrealizedPnl: position.unrealizedPNL,
+          markPrice: normalizeIbkrPriceValue(portfolioSnapshot?.marketPrice ?? position.marketPrice, priceDivisor),
+          marketValue: portfolioSnapshot?.marketValue ?? position.marketValue,
+          unrealizedPnl: portfolioSnapshot?.unrealizedPNL ?? position.unrealizedPNL,
           side: position.pos < 0 ? "short" : "long",
           multiplier: position.contract.multiplier,
           brokerContract: this.contractToRef(position.contract),
@@ -854,29 +1076,12 @@ export class IbkrGatewayService {
 
   async listOpenOrders(config: IbkrGatewayConfig): Promise<BrokerOrder[]> {
     await this.connect(config);
-    const orders = await withTimeout(this.api!.getAllOpenOrders(), IBKR_DATA_TIMEOUT, "getAllOpenOrders");
-    const mapped = orders.map((order) => this.openOrderToBrokerOrder(order));
-    this.updateSnapshot({ ...this.snapshot, openOrders: mapped });
-    return mapped;
+    return this.loadOpenOrders();
   }
 
   async listExecutions(config: IbkrGatewayConfig): Promise<BrokerExecution[]> {
     await this.connect(config);
-    const executions = await withTimeout(this.api!.getExecutionDetails({}), IBKR_DATA_TIMEOUT, "getExecutionDetails");
-    const mapped = executions.map((detail) => ({
-      execId: detail.execution.execId || `${detail.execution.orderId ?? "exec"}-${detail.execution.time ?? Date.now()}`,
-      brokerInstanceId: this.instanceId,
-      orderId: detail.execution.orderId,
-      accountId: detail.execution.acctNumber,
-      side: detail.execution.side || "",
-      shares: detail.execution.shares ?? 0,
-      price: detail.execution.price ?? 0,
-      time: detail.execution.time ? Date.parse(detail.execution.time) : Date.now(),
-      exchange: detail.execution.exchange,
-      contract: this.contractToRef(detail.contract),
-    }));
-    this.updateSnapshot({ ...this.snapshot, executions: mapped });
-    return mapped;
+    return this.loadExecutions();
   }
 
   async previewOrder(config: IbkrGatewayConfig, request: BrokerOrderRequest): Promise<BrokerOrderPreview> {
@@ -1058,19 +1263,42 @@ export class IbkrGatewayService {
   }
 
   private async connectWithClientFallback(config: IbkrGatewayConfig, configKey: string): Promise<void> {
-    const candidates = this.getClientIdCandidates(config.clientId);
+    let resolvedConfig: ResolvedIbkrGatewayConnection;
+    try {
+      resolvedConfig = await resolveGatewayConnection(config);
+    } catch (error: any) {
+      const message = error?.message || String(error || "");
+      this.updateSnapshot({
+        ...this.snapshot,
+        status: {
+          state: "error",
+          updatedAt: Date.now(),
+          mode: "gateway",
+          message,
+        },
+        lastError: message,
+      });
+      throw error;
+    }
+
+    const candidates = this.getClientIdCandidates(resolvedConfig.requestedClientId);
     let lastConflict: Error | null = null;
 
     for (const clientId of candidates) {
-      const claimed = await this.tryClaimClientLock(config, clientId, config.clientId);
+      const claimed = await this.tryClaimClientLock(resolvedConfig, clientId, resolvedConfig.requestedClientId);
       if (!claimed) continue;
 
       try {
         await this.connectInternal(
-          { ...config, clientId },
+          { ...config, host: resolvedConfig.host, port: resolvedConfig.port, clientId },
           configKey,
-          buildConnectionNote(config.clientId, clientId),
+          buildConnectionNote(resolvedConfig.requestedClientId, clientId, resolvedConfig.requestedPort, resolvedConfig.port),
         );
+        this.resolvedConnection = {
+          ...resolvedConfig,
+          clientId,
+        };
+        void resolvedGatewayListener?.(this.instanceId, this.resolvedConnection);
         return;
       } catch (error: any) {
         const code = getIbErrorCode(error);
@@ -1084,7 +1312,7 @@ export class IbkrGatewayService {
     }
 
     throw lastConflict ?? new Error(
-      `No IBKR client IDs are available near ${config.clientId}. Close other sessions or choose a different client ID.`,
+      `No IBKR client IDs are available near ${resolvedConfig.requestedClientId}. Close other sessions or choose a different client ID.`,
     );
   }
 
@@ -1156,9 +1384,9 @@ export class IbkrGatewayService {
     this.api.setMarketDataType(this.activeMarketDataType);
     this.configKey = configKey;
     await Promise.allSettled([
-      this.getAccounts(config),
-      this.listOpenOrders(config),
-      this.listExecutions(config),
+      this.loadAccountsAndUpdateSnapshot(),
+      this.loadOpenOrders(),
+      this.loadExecutions(),
     ]);
     this.updateSnapshot({
       ...this.snapshot,
@@ -1225,9 +1453,30 @@ export class IbkrGatewayService {
         });
         return;
       }
+      if (isIbInformationalWarning(code, message)) {
+        this.updateSnapshot({
+          ...this.snapshot,
+          status: {
+            ...this.snapshot.status,
+            updatedAt: Date.now(),
+            mode: "gateway",
+            message,
+          },
+        });
+        return;
+      }
+
+      const keepConnectionState = this.snapshot.status.state === "connected" || this.snapshot.status.state === "connecting";
       this.updateSnapshot({
         ...this.snapshot,
-        status: { state: "error", updatedAt: Date.now(), mode: "gateway", message },
+        status: keepConnectionState
+          ? {
+            ...this.snapshot.status,
+            updatedAt: Date.now(),
+            mode: "gateway",
+            message,
+          }
+          : { state: "error", updatedAt: Date.now(), mode: "gateway", message },
         lastError: message,
       });
     });
@@ -1608,6 +1857,72 @@ export class IbkrGatewayService {
       aggregateTags,
       allowAggregateCashBalances,
     ));
+  }
+
+  private async loadAccountsAndUpdateSnapshot(): Promise<BrokerAccount[]> {
+    const accounts = await this.loadAccounts();
+    this.updateSnapshot({ ...this.snapshot, accounts });
+    return accounts;
+  }
+
+  private async loadPortfolioSnapshotsForAccounts(
+    accountIds: string[],
+  ): Promise<Map<string, AccountPortfolioSnapshotPosition>> {
+    const snapshots = new Map<string, AccountPortfolioSnapshotPosition>();
+    for (const accountId of accountIds) {
+      const positions = await this.loadPortfolioSnapshotForAccount(accountId);
+      for (const position of positions) {
+        snapshots.set(buildPortfolioPositionKey(accountId, position.contract), position);
+      }
+    }
+    return snapshots;
+  }
+
+  private async loadPortfolioSnapshotForAccount(accountId: string): Promise<AccountPortfolioSnapshotPosition[]> {
+    if (!this.api || !accountId) return [];
+
+    try {
+      const update = await firstValueFrom(
+        this.api.getAccountUpdates(accountId).pipe(
+          filter((value) => value.changed == null && value.added == null && value.removed == null),
+          take(1),
+          timeout(IBKR_DATA_TIMEOUT),
+        ),
+      );
+      return (update.all.portfolio?.get(accountId) ?? []) as AccountPortfolioSnapshotPosition[];
+    } catch (error: any) {
+      gatewayLog.warn("Failed to load IBKR portfolio snapshot", {
+        instanceId: this.instanceId,
+        accountId,
+        error: error?.message || String(error || ""),
+      });
+      return [];
+    }
+  }
+
+  private async loadOpenOrders(): Promise<BrokerOrder[]> {
+    const orders = await withTimeout(this.api!.getAllOpenOrders(), IBKR_DATA_TIMEOUT, "getAllOpenOrders");
+    const mapped = orders.map((order) => this.openOrderToBrokerOrder(order));
+    this.updateSnapshot({ ...this.snapshot, openOrders: mapped });
+    return mapped;
+  }
+
+  private async loadExecutions(): Promise<BrokerExecution[]> {
+    const executions = await withTimeout(this.api!.getExecutionDetails({}), IBKR_DATA_TIMEOUT, "getExecutionDetails");
+    const mapped = executions.map((detail) => ({
+      execId: detail.execution.execId || `${detail.execution.orderId ?? "exec"}-${detail.execution.time ?? Date.now()}`,
+      brokerInstanceId: this.instanceId,
+      orderId: detail.execution.orderId,
+      accountId: detail.execution.acctNumber,
+      side: detail.execution.side || "",
+      shares: detail.execution.shares ?? 0,
+      price: detail.execution.price ?? 0,
+      time: detail.execution.time ? Date.parse(detail.execution.time) : Date.now(),
+      exchange: detail.execution.exchange,
+      contract: this.contractToRef(detail.contract),
+    }));
+    this.updateSnapshot({ ...this.snapshot, executions: mapped });
+    return mapped;
   }
 
   private contractDescriptionToSearchResult(description: ContractDescription): InstrumentSearchResult | null {

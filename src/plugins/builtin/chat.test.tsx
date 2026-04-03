@@ -369,6 +369,52 @@ describe("ChatContent", () => {
     expect(frame).not.toContain("vince");
   });
 
+  test("shows clickable login actions instead of the cloud shortcut when logged out", async () => {
+    const controller = createController({
+      sessionToken: null,
+      user: null,
+    });
+    const openedQueries: string[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    setSharedRegistryForTests({
+      openCommandBarFn(query?: string) {
+        openedQueries.push(query ?? "");
+      },
+    } as any);
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <ChatStatusWidget controller={controller} />
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("☁");
+    expect(frame).toContain("Login");
+    expect(frame).toContain("Sign Up");
+    expect(frame).not.toContain("Shift+C");
+
+    const line = frame.split("\n")[0] ?? "";
+    const signUpCol = line.indexOf("Sign Up");
+
+    expect(signUpCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(signUpCol + 1, 0);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(openedQueries).toEqual(["Sign Up"]);
+  });
+
   test("auth commands use a single-form layout and signup no longer prompts for display name", () => {
     const registeredCommands: Array<{ id: string; wizardLayout?: string; wizard?: Array<{ key: string }> }> = [];
 

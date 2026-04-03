@@ -398,8 +398,10 @@ export function ChatPane({ focused, width, height, close }: PaneProps) {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
+  const registry = getSharedRegistry();
   const { state } = useAppState();
   const initialSnapshot = controller.getSnapshot();
+  const [hoveredAction, setHoveredAction] = useState<"login" | "signup" | null>(null);
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
 
@@ -414,9 +416,36 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
 
   if (state.config.disabledPlugins.includes("gloomberb-cloud")) return null;
 
+  const openAuthCommand = (query: string, event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    registry?.openCommandBarFn(query);
+  };
+
   return (
     <box flexDirection="row" paddingRight={1}>
-      {username || hasSavedSession ? (
+      {!username && !hasSavedSession ? (
+        <>
+          <text fg={colors.textDim}>☁ </text>
+          <box
+            backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
+            onMouseMove={() => setHoveredAction("login")}
+            onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
+            onMouseDown={(event: any) => openAuthCommand("Login", event)}
+          >
+            <text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Login </text>
+          </box>
+          <text fg={colors.textDim}>/</text>
+          <box
+            backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
+            onMouseMove={() => setHoveredAction("signup")}
+            onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
+            onMouseDown={(event: any) => openAuthCommand("Sign Up", event)}
+          >
+            <text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </text>
+          </box>
+        </>
+      ) : (
         <text fg={colors.textDim}>
           <span fg={colors.positive}>@</span>
           {username ? (
@@ -426,10 +455,6 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
               {"  "}
             </>
           ) : "  "}
-          <span fg={colors.text}>Shift+C</span> cloud
-        </text>
-      ) : (
-        <text fg={colors.textDim}>
           <span fg={colors.text}>Shift+C</span> cloud
         </text>
       )}

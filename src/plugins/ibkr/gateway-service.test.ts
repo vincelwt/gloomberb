@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { SecType, type ContractDetails, type TickByTickAllLast } from "@stoqey/ib";
-import { applyTickByTickAllLastToQuote, applyTickByTickBidAskToQuote, summarizeBrokerAccount } from "./gateway-service";
+import { ConnectionState, SecType, type ContractDetails, type TickByTickAllLast } from "@stoqey/ib";
+import { Subject, of } from "rxjs";
+import {
+  applyTickByTickAllLastToQuote,
+  applyTickByTickBidAskToQuote,
+  diagnoseLocalIbkrPortIssue,
+  IbkrGatewayService,
+  resolveGatewayConnection,
+  summarizeBrokerAccount,
+} from "./gateway-service";
 
 function makeTags(input: Record<string, Record<string, string>>) {
   return new Map(
@@ -70,6 +78,48 @@ describe("summarizeBrokerAccount", () => {
     });
 
     expect(summarizeBrokerAccount("DU12345", accountTags, 1_717_000_000_000, aggregateTags, true)).toEqual({
+      accountId: "DU12345",
+      name: "DU12345",
+      currency: "USD",
+      source: "gateway",
+      updatedAt: 1_717_000_000_000,
+      netLiquidation: 129360.15,
+      totalCashValue: 128293.79,
+      settledCash: undefined,
+      availableFunds: 129031.52,
+      buyingPower: 860210.13,
+      excessLiquidity: 129061.51,
+      initMarginReq: 328.63,
+      maintMarginReq: 298.64,
+      cashBalances: [
+        { currency: "HKD", quantity: 1012836.31, baseValue: 129314.68614829802, baseCurrency: "USD" },
+        { currency: "USD", quantity: -1020.86, baseValue: -1020.86, baseCurrency: "USD" },
+      ],
+    });
+  });
+
+  test("falls back to aggregate summary metrics when a single-account gateway only returns the All row", () => {
+    const aggregateTags = makeTags({
+      NetLiquidation: { USD: "129360.15" },
+      TotalCashValue: { USD: "128293.79" },
+      AvailableFunds: { USD: "129031.52" },
+      BuyingPower: { USD: "860210.13" },
+      ExcessLiquidity: { USD: "129061.51" },
+      InitMarginReq: { USD: "328.63" },
+      MaintMarginReq: { USD: "298.64" },
+      CashBalance: {
+        HKD: "1012836.31",
+        USD: "-1020.86",
+        BASE: "128293.7944",
+      },
+      ExchangeRate: {
+        HKD: "0.1276758",
+        USD: "1.00",
+        BASE: "1.00",
+      },
+    });
+
+    expect(summarizeBrokerAccount("DU12345", undefined, 1_717_000_000_000, aggregateTags, true)).toEqual({
       accountId: "DU12345",
       name: "DU12345",
       currency: "USD",
@@ -186,5 +236,215 @@ describe("tick-by-tick quote updates", () => {
     expect(next?.bidSize).toBe(14);
     expect(next?.askSize).toBe(18);
     expect(next?.lastUpdated).toBe(1_700_000_100_000);
+  });
+});
+
+describe("diagnoseLocalIbkrPortIssue", () => {
+  test("reports a detected local IBKR listener on a different port", async () => {
+    const issue = await diagnoseLocalIbkrPortIssue({
+      host: "127.0.0.1",
+      port: 4002,
+      clientId: 1,
+    }, {
+      candidatePorts: [4001, 4002],
+      probePort: async (_host, port) => port === 4001,
+    });
+
+    expect(issue).toBe(
+      "IBKR is not listening on 127.0.0.1:4002. Detected a local IBKR API listener on 127.0.0.1:4001 instead. Update this profile's port to match Gateway/TWS.",
+    );
+  });
+
+  test("returns null when the configured local port is reachable", async () => {
+    const issue = await diagnoseLocalIbkrPortIssue({
+      host: "localhost",
+      port: 4001,
+      clientId: 1,
+    }, {
+      candidatePorts: [4001, 4002],
+      probePort: async (_host, port) => port === 4001,
+    });
+
+    expect(issue).toBeNull();
+  });
+
+  test("ignores non-local hosts", async () => {
+    const issue = await diagnoseLocalIbkrPortIssue({
+      host: "192.168.1.10",
+      port: 4001,
+      clientId: 1,
+    }, {
+      probePort: async () => true,
+    });
+
+    expect(issue).toBeNull();
+  });
+});
+
+describe("resolveGatewayConnection", () => {
+  test("auto-detects the first reachable local IBKR port", async () => {
+    const resolved = await resolveGatewayConnection({
+      host: "127.0.0.1",
+      marketDataType: "auto",
+    }, {
+      candidatePorts: [4001, 4002],
+      probePort: async (_host, port) => port === 4001,
+    });
+
+    expect(resolved).toEqual({
+      host: "127.0.0.1",
+      port: 4001,
+      clientId: 1,
+      requestedPort: undefined,
+      requestedClientId: 1,
+    });
+  });
+
+  test("prefers the last successful local port before scanning defaults", async () => {
+    const resolved = await resolveGatewayConnection({
+      host: "127.0.0.1",
+      lastSuccessfulPort: 7497,
+      lastSuccessfulClientId: 12,
+      marketDataType: "auto",
+    }, {
+      candidatePorts: [4001, 4002, 7497],
+      probePort: async (_host, port) => port === 7497 || port === 4001,
+    });
+
+    expect(resolved).toEqual({
+      host: "127.0.0.1",
+      port: 7497,
+      clientId: 12,
+      requestedPort: 7497,
+      requestedClientId: 12,
+    });
+  });
+});
+
+describe("IbkrGatewayService", () => {
+  test("enriches imported positions with portfolio snapshot metrics", async () => {
+    const contract = {
+      conId: 123456,
+      symbol: "SPY",
+      localSymbol: "SPY  260619C00500000",
+      description: "SPY Jun19'26 500 Call",
+      exchange: "SMART",
+      primaryExch: "SMART",
+      currency: "USD",
+      secType: "OPT",
+      multiplier: "100",
+    };
+    const service = new IbkrGatewayService("ibkr-test");
+    (service as any).connect = async () => {};
+    (service as any).api = {
+      getPositions: () => of({
+        all: new Map([
+          ["DU12345", [{
+            contract,
+            pos: 2,
+            avgCost: 3.5,
+          }]],
+        ]),
+      }),
+      getAccountUpdates: (accountId: string) => of({
+        all: {
+          portfolio: new Map([
+            [accountId, [{
+              contract,
+              avgCost: 3.5,
+              marketPrice: 4.25,
+              marketValue: 850,
+              unrealizedPNL: 150,
+            }]],
+          ]),
+        },
+      }),
+    };
+
+    const positions = await service.getPositions({
+      host: "127.0.0.1",
+      port: 4002,
+      clientId: 1,
+    });
+
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toMatchObject({
+      ticker: "SPY  260619C00500000",
+      accountId: "DU12345",
+      avgCost: 3.5,
+      markPrice: 4.25,
+      marketValue: 850,
+      unrealizedPnl: 150,
+      multiplier: "100",
+      side: "long",
+    });
+  });
+
+  test("keeps the broker status connected when post-connect requests fail", () => {
+    const connectionState = new Subject<ConnectionState>();
+    const error = new Subject<any>();
+    const service = new IbkrGatewayService("ibkr-test");
+    const fakeApi = {
+      connectionState,
+      error,
+      on() {},
+      off() {},
+    };
+
+    (service as any).api = fakeApi;
+    (service as any).bindConnectionEvents(fakeApi);
+
+    connectionState.next(ConnectionState.Connected);
+    error.next({ errorCode: 321, message: "Validation failed" });
+
+    expect(service.getSnapshot().status.state).toBe("connected");
+    expect(service.getSnapshot().lastError).toBe("Validation failed");
+  });
+
+  test("initial connection refreshes account snapshots without re-entering connect", async () => {
+    const connectionState = new Subject<ConnectionState>();
+    const error = new Subject<any>();
+    const service = new IbkrGatewayService("ibkr-test");
+    const fakeApi = {
+      isConnected: false,
+      connectionState,
+      error,
+      connect() {
+        fakeApi.isConnected = true;
+        queueMicrotask(() => connectionState.next(ConnectionState.Connected));
+      },
+      setMarketDataType() {},
+      getManagedAccounts: async () => ["DU12345"],
+      getAccountSummary: () => of({
+        all: new Map([
+          ["DU12345", makeTags({
+            NetLiquidation: { USD: "1000" },
+          })],
+        ]),
+      }),
+      getAllOpenOrders: async () => [],
+      getExecutionDetails: async () => [],
+      on() {},
+      off() {},
+    };
+
+    (service as any).api = fakeApi;
+    (service as any).configKey = "test-key";
+    (service as any).bindConnectionEvents(fakeApi);
+
+    await Promise.race([
+      (service as any).connectInternal({
+        host: "127.0.0.1",
+        port: 4002,
+        clientId: 1,
+        marketDataType: "auto",
+      }, "test-key"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("connectInternal timed out")), 100)),
+    ]);
+
+    expect(service.getSnapshot().status.state).toBe("connected");
+    expect(service.getSnapshot().accounts[0]?.netLiquidation).toBe(1000);
+    expect(service.getSnapshot().openOrders).toEqual([]);
+    expect(service.getSnapshot().executions).toEqual([]);
   });
 });
