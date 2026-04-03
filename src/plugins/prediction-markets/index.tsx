@@ -24,7 +24,7 @@ export const predictionMarketsPlugin: GloomPlugin = {
   name: "Prediction Markets",
   version: "1.0.0",
   description:
-    "Browse read-only prediction markets across Polymarket and Kalshi.",
+    "Browse prediction markets (Polymarket and Kalshi).",
   toggleable: true,
   panes: [
     {

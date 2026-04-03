@@ -1054,7 +1054,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
           <box flexDirection="column" paddingX={1}>
             <text fg={colors.textDim}>
               {editorProvider?.available === false
-                ? `${editorProvider.name} is not currently installed. You can still save and switch later.`
+                ? `${editorProvider.name} is not currently installed. Save and switch later.`
                 : "Click a provider chip or press Ctrl+P to switch. Save to keep the draft."}
             </text>
           </box>

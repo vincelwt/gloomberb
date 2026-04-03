@@ -42,6 +42,7 @@ export interface BrokerPosition {
 export interface BrokerConfigFieldOption {
   label: string;
   value: string;
+  description?: string;
 }
 
 export interface BrokerConfigField {

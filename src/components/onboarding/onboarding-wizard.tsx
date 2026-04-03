@@ -11,7 +11,7 @@ import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField }
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
-import { TextField } from "../ui";
+import { TextField, ExternalLink } from "../ui";
 
 interface OnboardingWizardProps {
   config: AppConfig;
@@ -23,7 +23,7 @@ type Step = "welcome" | "theme" | "portfolio" | "plugins" | "shortcuts" | "ready
 const STEPS: Step[] = ["welcome", "theme", "portfolio", "plugins", "shortcuts", "ready"];
 
 // Sub-steps within the portfolio step
-type PortfolioSub = "choose" | "manual-name" | "broker-fields";
+type PortfolioSub = "choose" | "manual-name" | "broker-setup" | "broker-fields";
 
 interface BrokerOption {
   id: string;
@@ -233,8 +233,8 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         }
       } else if (event.name === "escape") {
         setEditingField(false);
-        if (portfolioSub === "broker-fields" && brokerFieldIdx > 0) {
-          setBrokerFieldIdx(brokerFieldIdx - 1);
+        if (portfolioSub === "broker-fields") {
+          setPortfolioSub("broker-setup");
         } else {
           setPortfolioSub("choose");
           setBrokerFieldIdx(0);
@@ -268,6 +268,12 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
           }
           return;
         }
+        if (portfolioSub === "broker-setup" && selectedBrokerId) {
+          setPortfolioSub("broker-fields");
+          const currentField = activeBrokerFields[brokerFieldIdx];
+          setEditingField(currentField?.type !== "select");
+          return;
+        }
         if (portfolioSub === "broker-fields" && selectedBrokerId) {
           const currentField = activeBrokerFields[brokerFieldIdx];
           if (!currentField) {
@@ -278,19 +284,24 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             const option = currentField.options?.[brokerSelectIdx];
             if (!option) return;
             setBrokerFieldValue(selectedBrokerId, currentField.key, option.value);
-            if (brokerFieldIdx < activeBrokerFields.length - 1) {
+            const nextValues = {
+              ...(brokerValues[selectedBrokerId] ?? {}),
+              [currentField.key]: option.value,
+            };
+            const broker = brokerOptions.find((entry) => entry.id === selectedBrokerId);
+            const fields = broker
+              ? resolveBrokerConfigFields(broker.adapter, nextValues).filter((field) => field.required)
+              : activeBrokerFields;
+            if (brokerFieldIdx < fields.length - 1) {
               const nextIndex = brokerFieldIdx + 1;
-              const nextValues = {
-                ...(brokerValues[selectedBrokerId] ?? {}),
-                [currentField.key]: option.value,
-              };
-              const broker = brokerOptions.find((entry) => entry.id === selectedBrokerId);
-              const fields = broker
-                ? resolveBrokerConfigFields(broker.adapter, nextValues).filter((field) => field.required)
-                : activeBrokerFields;
               const nextField = fields[nextIndex];
               setBrokerFieldIdx(nextIndex);
-              setEditingField(nextField?.type !== "select");
+              // Show setup guide after connection mode is selected
+              if (currentField.key === "connectionMode") {
+                setPortfolioSub("broker-setup");
+              } else {
+                setEditingField(nextField?.type !== "select");
+              }
             } else {
               nextStep();
             }
@@ -304,6 +315,15 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
       }
       nextStep();
     } else if (event.name === "escape") {
+      if (step === "portfolio" && portfolioSub === "broker-fields") {
+        setPortfolioSub("broker-setup");
+        return;
+      }
+      if (step === "portfolio" && portfolioSub === "broker-setup") {
+        setPortfolioSub("broker-fields");
+        setBrokerFieldIdx(0);
+        return;
+      }
       if (step === "portfolio" && portfolioSub !== "choose") {
         setPortfolioSub("choose");
         setBrokerFieldIdx(0);
@@ -311,6 +331,15 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
       }
       prevStep();
     } else if (event.name === "left") {
+      if (step === "portfolio" && portfolioSub === "broker-fields") {
+        setPortfolioSub("broker-setup");
+        return;
+      }
+      if (step === "portfolio" && portfolioSub === "broker-setup") {
+        setPortfolioSub("broker-fields");
+        setBrokerFieldIdx(0);
+        return;
+      }
       if (step === "portfolio" && portfolioSub !== "choose") {
         setPortfolioSub("choose");
         setBrokerFieldIdx(0);
@@ -375,10 +404,8 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   }).join(" ");
 
   // Bottom hint text
-  let hintText = "enter to continue ->";
+  let hintText = "enter ->";
   if (step === "ready") hintText = "enter to launch";
-  else if (step === "portfolio" && portfolioSub === "choose") hintText = "enter to select";
-  else if (step === "portfolio" && editingField) hintText = "enter to confirm \u00b7 esc to go back";
 
   // Determine what the ready step should show
   const connectedBrokerName = selectedBrokerId
@@ -434,7 +461,9 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             onSelect={setPluginIdx}
           />
         )}
-        {step === "shortcuts" && <ShortcutsStep />}
+        {step === "shortcuts" && (
+          <ShortcutsStep pluginRegistry={pluginRegistry} disabledPlugins={disabledPlugins} />
+        )}
         {step === "ready" && (
           <ReadyStep
             brokerName={connectedBrokerName ?? null}
@@ -475,26 +504,14 @@ function WelcomeStep() {
       ))}
       <box height={2} />
       <box height={1}>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{"Welcome to Gloomberb"}</text>
-      </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"A terminal for tracking your portfolio,"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"watchlists, and markets."}</text>
+        <text fg={colors.textDim}>{"The open terminal for modern finance."}</text>
       </box>
       <box height={2} />
       <box height={1}>
-        <text fg={colors.textDim}>{"Everything is a plugin -- brokers, data sources,"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"and UI panels are all swappable and extensible."}</text>
+        <text fg={colors.textMuted}>{"Let's set things up (~30s)."}</text>
       </box>
       <box height={2} />
-      <box height={1}>
-        <text fg={colors.textMuted}>{"Let's set things up. This will take ~30 seconds."}</text>
-      </box>
+
     </box>
   );
 }
@@ -509,14 +526,11 @@ function ThemeStep({ themeIds, selectedIdx, height }: { themeIds: string[]; sele
   return (
     <box flexDirection="column" paddingX={2}>
       <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Choose Your Theme"}</text>
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Theme"}</text>
       </box>
       <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Pick a color scheme. You can always change it later"}</text>
-      </box>
       <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"from the command bar with "}</text>
+        <text fg={colors.textDim}>{"Change it later from the command bar with "}</text>
         <text fg={colors.text} attributes={TextAttributes.BOLD}>{"TH"}</text>
       </box>
       <box height={1} />
@@ -599,7 +613,7 @@ function PortfolioStep({
     return (
       <box flexDirection="column" paddingX={2}>
         <box height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Set Up Your Portfolio"}</text>
+          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Set up a portfolio"}</text>
         </box>
         <box height={1} />
         <box height={1}>
@@ -628,14 +642,11 @@ function PortfolioStep({
 
         <box height={1} />
         <box height={1}>
-          <text fg={colors.textDim}>{"You can always add more brokers or portfolios"}</text>
-        </box>
-        <box height={1}>
-          <text fg={colors.textDim}>{"later from the command bar."}</text>
+          <text fg={colors.textDim}>{"Edits later from the command bar."}</text>
         </box>
         <box height={1} />
         <box height={1}>
-          <text fg={colors.textMuted}>{"Use \u2191\u2193 to choose \u00b7 enter to select"}</text>
+          <text fg={colors.textMuted}>{"Use \u2191\u2193 to choose"}</text>
         </box>
       </box>
     );
@@ -645,17 +656,11 @@ function PortfolioStep({
     return (
       <box flexDirection="column" paddingX={2}>
         <box height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Name Your Portfolio"}</text>
+          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Name your portfolio"}</text>
         </box>
         <box height={1} />
         <box height={1}>
-          <text fg={colors.textDim}>{"A portfolio tracks your positions with cost basis."}</text>
-        </box>
-        <box height={1}>
-          <text fg={colors.textDim}>{"You can create watchlists later for tickers you"}</text>
-        </box>
-        <box height={1}>
-          <text fg={colors.textDim}>{"want to follow without holding."}</text>
+          <text fg={colors.textDim}>{"Create watchlists later."}</text>
         </box>
         <box height={2} />
         <box height={1}>
@@ -691,6 +696,89 @@ function PortfolioStep({
           <text fg={colors.text} attributes={TextAttributes.BOLD}>{"T AAPL"}</text>
           <text fg={colors.textDim}>{" to search and add any stock or ETF."}</text>
         </box>
+      </box>
+    );
+  }
+
+  if (sub === "broker-setup" && selectedBrokerId) {
+    const brokerLabel = choices.find((c) => c.id === selectedBrokerId)?.label.replace("Connect ", "") ?? selectedBrokerId;
+    const connectionMode = brokerValues[selectedBrokerId]?.connectionMode;
+    const isGateway = connectionMode === "gateway";
+
+    return (
+      <box flexDirection="column" paddingX={2}>
+        <box height={1}>
+          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+            {`Setup Guide — ${brokerLabel}`}
+          </text>
+        </box>
+        <box height={1} />
+
+        {selectedBrokerId === "ibkr" && !isGateway && (
+          <>
+            <box height={1}>
+              <text fg={colors.textDim}>{"You'll need 2 things from IBKR Account Management:"}</text>
+            </box>
+            <box height={2} />
+            <box height={1}>
+              <text fg={colors.textDim}>{"1. Go to "}<u><span fg={colors.text}>{"Reports > Flex Queries"}</span></u></text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"2. Create a Flex Query that includes positions data"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"3. Note the "}<strong><span fg={colors.text}>{"Query ID"}</span></strong>{" (numeric)"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"4. Under "}<u><span fg={colors.text}>{"Reports > Settings"}</span></u>{", generate a "}<strong><span fg={colors.text}>{"Flex Web Service Token"}</span></strong></text>
+            </box>
+            <box height={2} />
+            <ExternalLink url="https://www.ibkrguides.com/orgportal/performanceandstatements/flex.htm" />
+          </>
+        )}
+
+        {selectedBrokerId === "ibkr" && isGateway && (
+          <>
+            <box height={1}>
+              <text fg={colors.textDim}>{"You'll need IB Gateway or TWS running locally:"}</text>
+            </box>
+            <box height={2} />
+            <box height={1}>
+              <text fg={colors.textDim}>{"1. Download and install "}<strong><span fg={colors.text}>{"IB Gateway"}</span></strong>{" (or use TWS)"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"2. Log in with your IBKR credentials"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"3. In "}<u><span fg={colors.text}>{"Configuration > API > Settings"}</span></u>{":"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"   Enable \"ActiveX and Socket Clients\""}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"   Note the socket port (default: 4002)"}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"4. Keep it running while using Gloomberb"}</text>
+            </box>
+            <box height={2} />
+            <ExternalLink url="https://www.interactivebrokers.com/en/trading/ibgateway-stable.php" />
+          </>
+        )}
+
+        {selectedBrokerId !== "ibkr" && (
+          <>
+            <box height={1}>
+              <text fg={colors.textDim}>{`You'll need your ${brokerLabel} API credentials.`}</text>
+            </box>
+            <box height={1}>
+              <text fg={colors.textDim}>{"Check your broker's documentation for setup instructions."}</text>
+            </box>
+          </>
+        )}
+
+        <box height={2} />
+
       </box>
     );
   }
@@ -771,14 +859,21 @@ function PortfolioStep({
                   {(field.options ?? []).map((option, optionIdx) => {
                     const selected = optionIdx === brokerSelectIdx;
                     return (
-                      <box key={option.value} backgroundColor={selected ? colors.selected : colors.bg}>
-                        <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "\u25b8 " : "  "}</text>
-                        <text
-                          fg={selected ? colors.text : colors.textDim}
-                          attributes={selected ? TextAttributes.BOLD : 0}
-                        >
-                          {option.label}
-                        </text>
+                      <box key={option.value} flexDirection="column" backgroundColor={selected ? colors.selected : colors.bg}>
+                        <box height={1}>
+                          <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "\u25b8 " : "  "}</text>
+                          <text
+                            fg={selected ? colors.text : colors.textDim}
+                            attributes={selected ? TextAttributes.BOLD : 0}
+                          >
+                            {option.label}
+                          </text>
+                        </box>
+                        {option.description && (
+                          <box height={1}>
+                            <text fg={colors.textMuted}>{`  ${option.description}`}</text>
+                          </box>
+                        )}
                       </box>
                     );
                   })}
@@ -800,10 +895,7 @@ function PortfolioStep({
 
       <box height={2} />
       <box height={1}>
-        <text fg={colors.textDim}>{"Your credentials will be saved and positions"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"will sync automatically when Gloomberb starts."}</text>
+        <text fg={colors.textDim}>{"Credentials are saved locally."}</text>
       </box>
       <box height={1} />
       <box height={1}>
@@ -838,15 +930,9 @@ function PluginsStep({
   return (
     <box flexDirection="column" paddingX={2}>
       <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Enable Plugins"}</text>
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Select plugins to enable"}</text>
       </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Core features are plugins too. These optional"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"ones add extra functionality:"}</text>
-      </box>
+
       <box height={2} />
 
       <ToggleList
@@ -862,7 +948,7 @@ function PluginsStep({
       </box>
       <box height={1} />
       <box height={1}>
-        <text fg={colors.textDim}>{"You can toggle plugins anytime from the command bar"}</text>
+        <text fg={colors.textDim}>{"Toggle plugins anytime from the command bar"}</text>
       </box>
       <box height={1} flexDirection="row">
         <text fg={colors.textDim}>{"with the "}</text>
@@ -873,52 +959,85 @@ function PluginsStep({
   );
 }
 
-function ShortcutsStep() {
-  const shortcuts = [
-    { key: "Ctrl+P / `  ", desc: "Open the command bar" },
-    { key: "help        ", desc: "Open the help window" },
-    { key: "Tab         ", desc: "Switch between panels" },
-    { key: "Ctrl+W      ", desc: "Close the focused pane" },
-    { key: "T AAPL      ", desc: "Search and add any ticker" },
-    { key: "TH          ", desc: "Switch theme" },
-    { key: "PL          ", desc: "Toggle plugins" },
-    { key: "PS          ", desc: "Edit the focused pane settings" },
-    { key: "r / R       ", desc: "Refresh selected / all tickers" },
-    { key: "q           ", desc: "Quit" },
+function ShortcutsStep({
+  pluginRegistry,
+  disabledPlugins,
+}: {
+  pluginRegistry: PluginRegistry;
+  disabledPlugins: string[];
+}) {
+  const keyboardShortcuts = [
+    { key: "Ctrl+P / `", desc: "Open the command bar" },
+    { key: "Tab", desc: "Switch between panels" },
+    { key: "Ctrl+W", desc: "Close the current window" },
+    { key: "q", desc: "Quit" },
   ];
+
+  const disabledSet = useMemo(() => new Set(disabledPlugins), [disabledPlugins]);
+
+  const commandPrefixes = useMemo(() => {
+    const builtIn = [
+      { key: "T AAPL", desc: "Search and add any ticker" },
+      { key: "TH", desc: "Switch theme" },
+      { key: "PL", desc: "Toggle plugins" },
+      { key: "PS", desc: "Edit the current window settings" },
+      { key: "HELP", desc: "Open the help window" },
+    ];
+
+    const builtInKeys = new Set(builtIn.map((b) => b.key.split(" ")[0]));
+    const pluginPrefixes: { key: string; desc: string }[] = [];
+
+    for (const [, template] of pluginRegistry.paneTemplates) {
+      if (!template.shortcut) continue;
+      const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
+      if (pluginId && disabledSet.has(pluginId)) continue;
+      if (builtInKeys.has(template.shortcut.prefix)) continue;
+      const label = template.shortcut.argPlaceholder
+        ? `${template.shortcut.prefix} <${template.shortcut.argPlaceholder}>`
+        : template.shortcut.prefix;
+      pluginPrefixes.push({ key: label, desc: template.label });
+    }
+
+    pluginPrefixes.sort((a, b) => a.key.localeCompare(b.key));
+    return [...builtIn, ...pluginPrefixes];
+  }, [pluginRegistry, disabledSet]);
+
+  const COL = 14;
 
   return (
     <box flexDirection="column" paddingX={2}>
       <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"The Command Bar"}</text>
-      </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"The command bar is your main way to interact"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"with Gloomberb. Open it anytime with:"}</text>
-      </box>
-      <box height={2} />
-      <box height={1} paddingX={2}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Ctrl+P  or  ` (backtick)"}</text>
-      </box>
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"It supports prefix shortcuts for quick access:"}</text>
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Useful shortcuts"}</text>
       </box>
       <box height={1} />
 
-      {shortcuts.map((s) => (
+      {keyboardShortcuts.map((s) => (
         <box key={s.key} height={1} flexDirection="row">
-          <text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key}</text>
+          <text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key.padEnd(COL)}</text>
           <text fg={colors.textDim}>{s.desc}</text>
         </box>
       ))}
 
       <box height={2} />
       <box height={1}>
-        <text fg={colors.textDim}>{"Everything is searchable -- just type what you want."}</text>
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Command-bar prefixes"}</text>
+      </box>
+      <box height={1} />
+      <box height={1}>
+        <text fg={colors.textDim}>{"Type these in the command bar ("}<span fg={colors.text}><strong>{"Ctrl+P"}</strong></span>{" or "}<span fg={colors.text}><strong>{"`"}</strong></span>{"):"}</text>
+      </box>
+      <box height={1} />
+
+      {commandPrefixes.map((s) => (
+        <box key={s.key} height={1} flexDirection="row">
+          <text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key.padEnd(COL)}</text>
+          <text fg={colors.textDim}>{s.desc}</text>
+        </box>
+      ))}
+
+      <box height={2} />
+      <box height={1}>
+        <text fg={colors.textDim}>{"Everything is searchable, just type what you want."}</text>
       </box>
     </box>
   );
@@ -929,7 +1048,7 @@ function ReadyStep({ brokerName, portfolioName }: { brokerName: string | null; p
     <box flexDirection="column" paddingX={2}>
       <box height={2} />
       <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"You're All Set"}</text>
+        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"You're all set"}</text>
       </box>
       <box height={2} />
       <box height={1}>
@@ -939,53 +1058,27 @@ function ReadyStep({ brokerName, portfolioName }: { brokerName: string | null; p
       <box height={1}>
         <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
         <text fg={colors.text}>
-          {brokerName ? ` ${brokerName} connected -- positions will sync on launch` : ` Portfolio "${portfolioName}" created`}
+          {brokerName ? ` ${brokerName} connected. Positions will sync on launch` : ` Portfolio "${portfolioName}" created`}
         </text>
       </box>
       <box height={1}>
         <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
         <text fg={colors.text}>{" Plugins selected"}</text>
       </box>
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Quick tips to get started:"}</text>
-      </box>
-      <box height={1} />
-      <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"\u2022 Press "}</text>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{"Ctrl+P"}</text>
-        <text fg={colors.textDim}>{" to open the command bar"}</text>
-      </box>
-      <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"\u2022 Type "}</text>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{"T AAPL"}</text>
-        <text fg={colors.textDim}>{" to add your first ticker"}</text>
-      </box>
-      <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"\u2022 Use "}</text>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{"Tab"}</text>
-        <text fg={colors.textDim}>{" to switch between panels"}</text>
-      </box>
       {!brokerName && (
-        <box height={1}>
-          <text fg={colors.textDim}>{"\u2022 Search for broker names in the command bar to connect"}</text>
-        </box>
+        <>
+          <box height={2} />
+          <box height={1}>
+            <text fg={colors.textDim}>{"Search for broker names in the command bar to connect."}</text>
+          </box>
+        </>
       )}
       <box height={2} />
       <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"Gloomberb stores data in "}</text>
-        <text fg={colors.text}>{"~/gloomberb-data/"}</text>
+        <text fg={colors.textDim}>{"Data stored in "}</text>
+        <text fg={colors.text}>{"~/gloomberb/"}</text>
       </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"Everything is plain files -- easy to back up,"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>{"version control, or script against."}</text>
-      </box>
-      <box height={3} />
-      <box height={1}>
-        <text fg={colors.borderFocused} attributes={TextAttributes.BOLD}>{"Press Enter to launch Gloomberb \u25b8"}</text>
-      </box>
+      <box height={1} />
     </box>
   );
 }

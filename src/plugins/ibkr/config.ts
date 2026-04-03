@@ -37,8 +37,8 @@ export const IBKR_CONFIG_FIELDS: BrokerConfigField[] = [
     type: "select",
     required: true,
     options: [
-      { label: "Flex (read-only)", value: "flex" },
-      { label: "Gateway / TWS", value: "gateway" },
+      { label: "Flex (read-only)", value: "flex", description: "Syncs via IBKR's Flex API. No software needed." },
+      { label: "Gateway / TWS", value: "gateway", description: "Use IB Gateway or TWS for live data and trading." },
     ],
   },
   {

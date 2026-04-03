@@ -156,7 +156,7 @@ export function ListView({
       {showSelectedDescription && selectedItem?.description && (
         <>
           <box height={1} />
-          <box height={1}>
+          <box>
             <text fg={colors.textDim}>{"    "}{selectedItem.description}</text>
           </box>
         </>

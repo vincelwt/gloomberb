@@ -354,7 +354,7 @@ export const notesPlugin: GloomPlugin = {
   id: "notes",
   name: "Notes",
   version: "1.0.0",
-  description: "Write notes about each ticker",
+  description: "Add markdown notes to your tickers.",
   toggleable: true,
 
   setup(ctx) {

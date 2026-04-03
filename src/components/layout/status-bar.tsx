@@ -20,7 +20,6 @@ export function StatusBar() {
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const [hoveredTab, setHoveredTab] = useState<number | null>(null);
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
-  if (!state.statusBarVisible) return null;
 
   const q = focusedFinancials?.quote;
   const mktState = q?.marketState;
@@ -60,6 +59,8 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
+  if (!state.statusBarVisible) return null;
+
   return (
     <box
       flexDirection="row"
@@ -93,7 +94,7 @@ export function StatusBar() {
           })
         ) : (
           <text fg={colors.textDim}>
-            <span fg={colors.text}>Ctrl+P</span> search  <span fg={colors.text}>Ctrl+W</span> close  <span fg={colors.text}>Tab</span> switch  <span fg={colors.text}>r</span> refresh  <span fg={colors.text}>q</span> quit
+            <span fg={colors.text}>Ctrl+P</span> command bar
           </text>
         )}
       </box>

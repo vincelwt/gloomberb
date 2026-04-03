@@ -441,7 +441,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
   id: "gloomberb-cloud",
   name: "Gloomberb Cloud",
   version: "1.0.0",
-  description: "Free near-real-time data + chat. Sign up and verify email.",
+  description: "Free near-real-time data + chat. Requires signup.",
   toggleable: true,
   order: 10,
   dataProvider: createGloomberbCloudProvider(),

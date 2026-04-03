@@ -42,6 +42,8 @@ export type {
 export { Section, FieldRow, DialogFrame } from "./frame";
 export type { SectionProps, FieldRowProps, DialogFrameProps } from "./frame";
 
+export { ExternalLink, openUrl } from "./external-link";
+
 export { Spinner, ProgressBar, SkeletonRow, LoadingBlock } from "./loading";
 export type {
   SpinnerProps,

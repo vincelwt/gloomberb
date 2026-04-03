@@ -1,6 +1,7 @@
 import { TextAttributes } from "@opentui/core";
 import { colors, hoverBg } from "../theme/colors";
 import { formatTimeAgo } from "../utils/format";
+import { ExternalLink } from "./ui";
 
 export interface DetailFeedItem {
   id: string;
@@ -265,11 +266,15 @@ export function DetailFeedView({
                 {selected.detailNote && (
                   <>
                     <box height={1} />
-                    {wrapTextLines(selected.detailNote, detailTextWidth).map((line, index) => (
-                      <box key={`note-${index}`} height={1}>
-                        <text fg={colors.textDim}>{line}</text>
-                      </box>
-                    ))}
+                    {wrapTextLines(selected.detailNote, detailTextWidth).map((line, index) =>
+                      /^https?:\/\/\S+$/.test(line.trim()) ? (
+                        <ExternalLink key={`note-${index}`} url={line.trim()} />
+                      ) : (
+                        <box key={`note-${index}`} height={1}>
+                          <text fg={colors.textDim}>{line}</text>
+                        </box>
+                      )
+                    )}
                   </>
                 )}
               </box>

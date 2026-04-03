@@ -8,7 +8,7 @@ export const aiPlugin: GloomPlugin = {
   id: "ai",
   name: "AI",
   version: "1.0.0",
-  description: "Ask AI about tickers and run prompt-driven AI screeners.",
+  description: "Use local AI CLI with your financial data.",
   toggleable: true,
 
   setup(ctx) {
