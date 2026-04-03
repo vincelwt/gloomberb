@@ -1,6 +1,6 @@
 {
   "name": "gloomberb",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Bloomberg-style stock portfolio tracker for the terminal",
   "module": "src/index.tsx",
   "type": "module",
