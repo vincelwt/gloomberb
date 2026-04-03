@@ -13,7 +13,6 @@
     "patches"
   ],
   "scripts": {
-    "sync-version": "bun run scripts/sync-version.ts",
     "dev": "bun run --watch src/index.tsx",
     "start": "bun src/index.tsx",
     "build": "bun run scripts/build.ts",
