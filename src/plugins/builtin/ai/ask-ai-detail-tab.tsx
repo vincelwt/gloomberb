@@ -1,13 +1,13 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { InputRenderable } from "@opentui/core";
+import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
 import type { DetailTabProps } from "../../../types/plugin";
 import { useAppState, usePaneTicker } from "../../../state/app-context";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePluginState } from "../../../plugins/plugin-runtime";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
-import { TickerBadgeText } from "../../../components/ticker-badge-text";
+import { MarkdownText } from "../../../components/markdown-text";
 import { colors } from "../../../theme/colors";
 import { Spinner } from "../../../components/spinner";
 import { buildTickerAiContext } from "./ticker-context";
@@ -80,6 +80,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<InputRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
   const runRef = useRef<ReturnType<typeof runAiPrompt> | null>(null);
   const availableProviders = getAvailableProviders(providers);
   const currentProvider = providers.find((provider) => provider.id === providerId && provider.available)
@@ -116,13 +117,24 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
 
   useEffect(() => {
     if (!tickerSymbol || !currentProvider || messages.length === 0) return;
-    const trimmed = messages.filter((message) => !message.loading).slice(-ASK_AI_HISTORY_LIMIT);
+    const hasLoading = messages.some((message) => message.loading);
+    if (hasLoading) {
+      chatHistories.set(tickerSymbol, messages);
+      return;
+    }
+    const trimmed = messages.slice(-ASK_AI_HISTORY_LIMIT);
     chatHistories.set(tickerSymbol, trimmed);
     setPersistedConversation({
       updatedAt: Date.now(),
       messages: trimmed,
     });
   }, [currentProvider, messages, setPersistedConversation, tickerSymbol]);
+
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb || messages.length === 0) return;
+    sb.scrollTo({ x: 0, y: Math.max(0, sb.scrollHeight - sb.viewport.height) });
+  }, [messages, focused]);
 
   const cycleProvider = useCallback(() => {
     if (availableProviders.length <= 1) return;
@@ -267,7 +279,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
         </box>
       </box>
 
-      <scrollbox height={chatHeight} scrollY>
+      <scrollbox ref={scrollRef} height={chatHeight} scrollY>
         <box flexDirection="column">
           {messages.length === 0 ? (
             <box paddingTop={1}>
@@ -289,7 +301,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
                 </box>
                 <box>
                   {message.content ? (
-                    <TickerBadgeText
+                    <MarkdownText
                       text={message.content}
                       lineWidth={contentWidth}
                       catalog={catalog}

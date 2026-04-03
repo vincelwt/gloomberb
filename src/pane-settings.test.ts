@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cloneLayout, createDefaultConfig, createPaneInstance, type LayoutConfig } from "./types/config";
+import { cloneLayout, createDefaultConfig, createPaneInstance, DEFAULT_PORTFOLIO_COLUMN_IDS, type LayoutConfig } from "./types/config";
 import { deletePaneSetting, getPaneSettingValue, setPaneSetting } from "./pane-settings";
 
 describe("pane settings helpers", () => {
@@ -13,15 +13,7 @@ describe("pane settings helpers", () => {
       hideTabs: false,
       lockedCollectionId: "main",
     });
-    expect(portfolioPane?.settings?.columnIds).toEqual([
-      "ticker",
-      "price",
-      "change_pct",
-      "market_cap",
-      "pe",
-      "forward_pe",
-      "latency",
-    ]);
+    expect(portfolioPane?.settings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
     expect(detailPane?.settings).toEqual({
       hideTabs: false,
       lockedTabId: "overview",
@@ -38,15 +30,7 @@ describe("pane settings helpers", () => {
     expect(clonedPortfolioSettings).not.toBe(originalPortfolioSettings);
 
     (clonedPortfolioSettings?.columnIds as string[]).push("change");
-    expect(originalPortfolioSettings?.columnIds).toEqual([
-      "ticker",
-      "price",
-      "change_pct",
-      "market_cap",
-      "pe",
-      "forward_pe",
-      "latency",
-    ]);
+    expect(originalPortfolioSettings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
   });
 
   test("setPaneSetting and deletePaneSetting update pane-scoped settings immutably", () => {

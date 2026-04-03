@@ -3,7 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { loadConfig, sanitizeLayout, saveConfig } from "./config-store";
-import { CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT, findPaneInstance } from "../types/config";
+import {
+  CURRENT_CONFIG_VERSION,
+  DEFAULT_COLUMNS,
+  DEFAULT_LAYOUT,
+  DEFAULT_PORTFOLIO_COLUMN_IDS,
+  findPaneInstance,
+} from "../types/config";
 import { getDockedPaneIds } from "../plugins/pane-manager";
 
 const tempDirs: string[] = [];
@@ -240,7 +246,7 @@ describe("loadConfig", () => {
   test("preserves IBKR gateway configs without migration rewrites", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: 10,
+      configVersion: 11,
       brokerInstances: [{
         id: "ibkr-interactive-brokers",
         brokerType: "ibkr",
@@ -263,6 +269,37 @@ describe("loadConfig", () => {
       port: 4002,
       clientId: 1,
     });
+  });
+
+  test("migrates legacy main portfolio panes to the portfolio default columns", async () => {
+    const dataDir = await createTempConfigDir();
+    const legacyColumnIds = DEFAULT_COLUMNS.map((column) => column.id);
+    const legacyLayout = {
+      ...DEFAULT_LAYOUT,
+      instances: DEFAULT_LAYOUT.instances.map((instance) => (
+        instance.instanceId === "portfolio-list:main"
+          ? {
+            ...instance,
+            settings: {
+              ...(instance.settings ?? {}),
+              columnIds: legacyColumnIds,
+            },
+          }
+          : instance
+      )),
+    };
+
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 10,
+      layout: legacyLayout,
+      layouts: [{ name: "Default", layout: legacyLayout }],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(findPaneInstance(config.layout, "portfolio-list:main")?.settings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
+    expect(findPaneInstance(config.layouts[0]?.layout ?? DEFAULT_LAYOUT, "portfolio-list:main")?.settings?.columnIds)
+      .toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
   });
 
   test("falls back to the default layout when persisted layouts use the obsolete column shape", async () => {

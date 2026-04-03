@@ -57,6 +57,31 @@ function getPositionCurrency(
   return positions.find((position) => position.currency)?.currency || fallbackCurrency;
 }
 
+function normalizePositionMultiplier(multiplier: number | undefined): number {
+  return typeof multiplier === "number" && Number.isFinite(multiplier) && multiplier > 0
+    ? multiplier
+    : 1;
+}
+
+function resolvePositionCostMultiplier(
+  position: TickerRecord["metadata"]["positions"][number],
+): number {
+  const priceMultiplier = normalizePositionMultiplier(position.multiplier);
+  if (priceMultiplier === 1) return 1;
+
+  if (position.marketValue == null || position.unrealizedPnl == null) {
+    return priceMultiplier;
+  }
+
+  const costWithoutMultiplier = position.shares * position.avgCost;
+  const costWithMultiplier = costWithoutMultiplier * priceMultiplier;
+  const withoutMultiplierError = Math.abs((position.marketValue - costWithoutMultiplier) - position.unrealizedPnl);
+  const withMultiplierError = Math.abs((position.marketValue - costWithMultiplier) - position.unrealizedPnl);
+
+  // IBKR gateway derivatives can report avgCost already scaled to the contract.
+  return withoutMultiplierError < withMultiplierError ? 1 : priceMultiplier;
+}
+
 function getPortfolioPositionMetrics(
   ticker: TickerRecord,
   activeTab: string | undefined,
@@ -66,25 +91,24 @@ function getPortfolioPositionMetrics(
     ? ticker.metadata.positions.filter((position) => position.portfolio === activeTab)
     : ticker.metadata.positions;
   const positionCurrency = getPositionCurrency(tabPositions, fallbackCurrency);
-  const totalShares = tabPositions.reduce((sum, position) => sum + position.shares * (position.side === "short" ? -1 : 1), 0);
-  const totalCost = tabPositions.reduce(
-    (sum, position) => sum + position.shares * position.avgCost * (position.multiplier || 1),
-    0,
-  );
-  const totalCostUnits = tabPositions.reduce(
-    (sum, position) => sum + position.shares * (position.multiplier || 1),
-    0,
-  );
-  const totalPriceUnits = tabPositions.reduce(
-    (sum, position) => sum + position.shares * (position.multiplier || 1) * (position.side === "short" ? -1 : 1),
-    0,
-  );
-
+  let totalShares = 0;
+  let totalCost = 0;
+  let totalCostUnits = 0;
+  let totalPriceUnits = 0;
   let brokerMktValue = 0;
   let hasBrokerMktValue = false;
   let brokerPnl = 0;
   let hasBrokerPnl = false;
   for (const position of tabPositions) {
+    const direction = position.side === "short" ? -1 : 1;
+    const priceMultiplier = normalizePositionMultiplier(position.multiplier);
+    const costMultiplier = resolvePositionCostMultiplier(position);
+
+    totalShares += position.shares * direction;
+    totalCost += position.shares * position.avgCost * costMultiplier;
+    totalCostUnits += position.shares * costMultiplier;
+    totalPriceUnits += position.shares * priceMultiplier * direction;
+
     if (position.marketValue != null) {
       brokerMktValue += position.marketValue;
       hasBrokerMktValue = true;
