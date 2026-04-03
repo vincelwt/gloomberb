@@ -3,6 +3,7 @@ import type { InstrumentSearchResult } from "../types/instrument";
 import { debugLog } from "./debug-log";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
+const SESSION_COOKIE_NAMES = ["__Secure-gloomberb.session_token", "gloomberb.session_token"] as const;
 const cloudApiLog = debugLog.createLogger("cloud-api");
 
 export interface ChatMessage {
@@ -107,6 +108,7 @@ function marketKey(symbol: string, exchange?: string): string {
 
 type ChannelListener = (message: ChatMessage) => void;
 type QuoteListener = (target: QuoteStreamTarget, quote: CloudQuotePayload) => void;
+type SessionCookieName = (typeof SESSION_COOKIE_NAMES)[number];
 
 class ApiRequestError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -117,6 +119,7 @@ class ApiRequestError extends Error {
 
 class GloomApiClient {
   private sessionToken: string | null = null;
+  private sessionCookieName: SessionCookieName | null = null;
   private websocketToken: string | null = null;
   private currentUser: AuthUser | null = null;
   private readonly baseUrl: string;
@@ -142,6 +145,9 @@ class GloomApiClient {
   }
 
   setSessionToken(token: string | null): void {
+    if (this.sessionToken !== token) {
+      this.sessionCookieName = null;
+    }
     this.sessionToken = token;
     if (!token) {
       this.websocketToken = null;
@@ -195,11 +201,32 @@ class GloomApiClient {
 
   private extractSessionCookie(res: Response): void {
     const setCookie = res.headers.getSetCookie?.() ?? [];
+    const fallbackHeader = res.headers.get("set-cookie");
+    if (fallbackHeader) {
+      setCookie.push(fallbackHeader);
+    }
     for (const cookie of setCookie) {
-      const match = cookie.match(/gloomberb\.session_token=([^;]+)/);
-      if (match) {
+      for (const cookieName of SESSION_COOKIE_NAMES) {
+        const escapedCookieName = cookieName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = cookie.match(new RegExp(`${escapedCookieName}=([^;]+)`));
+        if (!match) continue;
         this.sessionToken = match[1] ?? null;
+        this.sessionCookieName = cookieName;
+        return;
       }
+    }
+  }
+
+  private buildSessionCookieHeader(): string | null {
+    if (!this.sessionToken) return null;
+    const cookieNames = this.sessionCookieName ? [this.sessionCookieName] : SESSION_COOKIE_NAMES;
+    return cookieNames.map((cookieName) => `${cookieName}=${this.sessionToken}`).join("; ");
+  }
+
+  private setSessionCookieHeader(headers: Headers): void {
+    const cookieHeader = this.buildSessionCookieHeader();
+    if (cookieHeader) {
+      headers.set("Cookie", cookieHeader);
     }
   }
 
@@ -208,9 +235,7 @@ class GloomApiClient {
     if (!headers.has("Content-Type") && options?.method && options.method !== "GET") {
       headers.set("Content-Type", "application/json");
     }
-    if (this.sessionToken) {
-      headers.set("Cookie", `gloomberb.session_token=${this.sessionToken}`);
-    }
+    this.setSessionCookieHeader(headers);
     headers.set("Origin", this.baseUrl);
 
     const res = await fetch(`${this.baseUrl}${path}`, {
