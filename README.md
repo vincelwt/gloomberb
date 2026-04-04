@@ -25,20 +25,16 @@ For the best experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compati
 ## 🚀 Install
 
 ```bash
-bun install -g gloomberb
-# or
 curl -fsSL gloomberb.com/install | bash
+# or
+bun install -g gloomberb
 ```
 
-Then run `gloomberb` to start.
-
-When developing from source, launch with a real Bun runtime, for example `bun src/index.tsx`.
-If `bun --help` prints Gloomberb help instead of Bun help, your Bun binary has been overwritten and needs to be reinstalled.
-In-app self-updates are disabled while running from source so Gloomberb does not replace the Bun executable.
+Then run `gloomberb`.
 
 ## 🧩 Plugins
 
-Gloomberb has a plugin architecture where everything, from the portfolio list to broker integrations, is a plugin. 
+Everything, from the portfolio list to broker integrations, is a plugin. 
 
 Plugins can add tabs, columns, commands, status bar widgets, and more.
 
@@ -98,3 +94,7 @@ Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`
 ## License
 
 MIT
+
+## Credits
+
+- [OpenTUI](https://opentui.com/) for the layout
