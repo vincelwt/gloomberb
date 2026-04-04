@@ -20,7 +20,6 @@ export function SummaryLink({
 }) {
   return (
     <box height={1} onMouseDown={() => openUrl(url)}>
-      <text fg={colors.textDim}>{"Venue: "}</text>
       <text fg={colors.textBright} attributes={TextAttributes.UNDERLINE}>
         {truncatePredictionText(url, maxLength)}
       </text>

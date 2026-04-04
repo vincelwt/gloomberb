@@ -69,6 +69,8 @@ interface StockChartProps {
   interactive?: boolean;
   compact?: boolean;
   axisMode?: ChartAxisMode;
+  historyOverride?: PricePoint[] | null;
+  currencyOverride?: string | null;
 }
 
 interface DragState {
@@ -505,7 +507,16 @@ function resolveSelectionCursor(
   };
 }
 
-export function StockChart({ width, height, focused, interactive, compact, axisMode = "price" }: StockChartProps) {
+export function StockChart({
+  width,
+  height,
+  focused,
+  interactive,
+  compact,
+  axisMode = "price",
+  historyOverride = null,
+  currencyOverride = null,
+}: StockChartProps) {
   const renderer = useRenderer();
   const { state, dispatch } = useAppState();
   const paneId = usePaneInstanceId();
@@ -637,9 +648,10 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
   const chartWidth = Math.max(width - axisWidth - axisGap, compact ? 12 : 20);
   const maxCursorX = chartWidth - 1;
   const panStep = Math.max(Math.floor(chartWidth / 10), 1);
-  const baseHistory = rangeHistory && rangeHistory.length > 0
-    ? rangeHistory
-    : (financials?.priceHistory ?? []);
+  const baseHistory = historyOverride
+    ?? (rangeHistory && rangeHistory.length > 0
+      ? rangeHistory
+      : (financials?.priceHistory ?? []));
   const detailRequest = useMemo(() => {
     if (compact || !instrumentRef || baseHistory.length < 2 || viewState.zoomLevel <= 1) return null;
     const window = getVisibleWindow(baseHistory, viewState, chartWidth);
@@ -751,11 +763,18 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     queueMicrotask(() => renderer.requestRender());
   }, [chartHeight, chartWidth, compact, historyRenderKey, renderer, ticker?.metadata.ticker, viewState.renderMode]);
 
-  const chartWindow = useMemo(() => (
-    isDetailView
+  const chartWindow = useMemo(() => {
+    if (historyOverride) {
+      return { points: history, startIdx: 0, endIdx: history.length };
+    }
+    return isDetailView
       ? { points: history, startIdx: 0, endIdx: history.length }
-      : getVisibleWindow(history, viewState, chartWidth)
-  ), [chartWidth, history, isDetailView, viewState.panOffset, viewState.timeRange, viewState.zoomLevel]);
+      : getVisibleWindow(history, viewState, chartWidth);
+  }, [chartWidth, history, historyOverride, isDetailView, viewState.panOffset, viewState.timeRange, viewState.zoomLevel]);
+  const timeAxisDates = useMemo(
+    () => chartWindow.points.map((point) => point.date),
+    [chartWindow.points],
+  );
 
   const projection = useMemo(() => (
     projectChartData(chartWindow.points, chartWidth, viewState.renderMode, !!compact)
@@ -891,7 +910,7 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
       negative: colors.negative,
     }, trend);
   }, [chartWindow.points]);
-  const chartCurrency = financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
+  const chartCurrency = currencyOverride ?? financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;
@@ -918,7 +937,8 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     mode: projection.effectiveMode,
     axisMode,
     colors: chartColors,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, volumeHeight]);
+    timeAxisDates,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, timeAxisDates, volumeHeight]);
   const snappedSelectionCursorX = selectionScene
     ? getPointTerminalColumn(selectionScene.activeIdx, projection.points.length, chartWidth, projection.effectiveMode)
     : null;
@@ -962,7 +982,8 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     mode: projection.effectiveMode,
     axisMode,
     colors: chartColors,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+    timeAxisDates,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
@@ -978,7 +999,8 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
     axisMode,
     currency: chartCurrency,
     colors: chartColors,
-  }), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+    timeAxisDates,
+  }), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty"
@@ -994,8 +1016,9 @@ export function StockChart({ width, height, focused, interactive, compact, axisM
         axisMode,
         currency: chartCurrency,
         colors: chartColors,
+        timeAxisDates,
       })
-  ), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, volumeHeight]);
+  ), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
 

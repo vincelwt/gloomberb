@@ -90,7 +90,8 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Prediction Markets");
+    expect(frame).toContain("All venues");
+    expect(frame).not.toContain("VOL = native venue units");
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Kalshi");
 
@@ -115,6 +116,45 @@ describe("prediction markets pane interactions", () => {
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will the Fed cut rates?");
     expect(frame).toContain("Kalshi primary rule");
+  });
+
+  test("loads selected detail once instead of refetching in a render loop", async () => {
+    const { fetchUrls } = installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+    const kalshiRow = lines.findIndex((line) =>
+      line.includes("Will the Fed cut rates?"),
+    );
+    const kalshiCol = lines[kalshiRow]?.indexOf("Will the Fed cut rates?") ?? -1;
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup, 8);
+
+    const eventFetches = fetchUrls.filter((url) =>
+      url.includes("/trade-api/v2/events/FED-1"),
+    );
+    const orderbookFetches = fetchUrls.filter((url) =>
+      url.includes("/trade-api/v2/markets/KAL-1/orderbook"),
+    );
+    const tradeFetches = fetchUrls.filter((url) =>
+      url.includes("/trade-api/v2/markets/trades?ticker=KAL-1"),
+    );
+    const historyFetches = fetchUrls.filter((url) =>
+      url.includes("/trade-api/v2/series/FED/markets/KAL-1/candlesticks"),
+    );
+
+    expect(eventFetches).toHaveLength(2);
+    expect(orderbookFetches).toHaveLength(1);
+    expect(tradeFetches).toHaveLength(1);
+    expect(historyFetches).toHaveLength(1);
+    expect(testSetup.captureCharFrame()).not.toContain("Loading market detail...");
   });
 
   test("moves selection through the list with keyboard navigation", async () => {

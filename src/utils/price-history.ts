@@ -1,7 +1,10 @@
 import type { PricePoint, TickerFinancials } from "../types/financials";
 
 function getPointTimestamp(point: PricePoint): number {
-  return point.date instanceof Date ? point.date.getTime() : new Date(point.date).getTime();
+  const value = point.date as Date | string | number | null | undefined;
+  if (value instanceof Date) return value.getTime();
+  if (value == null) return Number.NaN;
+  return new Date(value).getTime();
 }
 
 function comparePricePointsByDate(left: PricePoint, right: PricePoint): number {
@@ -17,18 +20,39 @@ function comparePricePointsByDate(left: PricePoint, right: PricePoint): number {
 }
 
 export function normalizePriceHistory(points: PricePoint[]): PricePoint[] {
-  if (points.length <= 1) return points;
+  if (points.length === 0) return points;
 
+  const validPoints: PricePoint[] = [];
+  let sawDistinctTimestamp = false;
+  let firstTimestamp: number | null = null;
   let previousTime = Number.NEGATIVE_INFINITY;
+  let requiresSort = false;
+
   for (const point of points) {
     const time = getPointTimestamp(point);
-    if (!Number.isFinite(time) || time < previousTime) {
-      return [...points].sort(comparePricePointsByDate);
+    if (!Number.isFinite(time)) continue;
+
+    if (firstTimestamp === null) {
+      firstTimestamp = time;
+    } else if (time !== firstTimestamp) {
+      sawDistinctTimestamp = true;
+    }
+
+    if (time < previousTime) {
+      requiresSort = true;
     }
     previousTime = time;
+    validPoints.push(point);
   }
 
-  return points;
+  if (validPoints.length === 0) return [];
+  if (validPoints.length === 1) return validPoints;
+  if (!sawDistinctTimestamp) return [];
+
+  if (requiresSort) {
+    return [...validPoints].sort(comparePricePointsByDate);
+  }
+  return validPoints.length === points.length ? points : validPoints;
 }
 
 export function normalizeTickerFinancialsPriceHistory(financials: TickerFinancials): TickerFinancials {

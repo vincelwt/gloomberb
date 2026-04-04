@@ -483,9 +483,10 @@ export class ProviderRouter implements DataProvider {
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
+    const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
     const forceRefresh = context?.cacheMode === "refresh";
-    if (cached && !forceRefresh && !cached.stale) {
-      return cached.value;
+    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale) {
+      return cachedValue;
     }
 
     const brokerHistory = await withBrokerTimeout(this.fetchBrokerPriceHistory(ticker, exchange, range, context));
@@ -495,7 +496,7 @@ export class ProviderRouter implements DataProvider {
     if (providerHistory && providerHistory.value.length > 0) {
       return providerHistory.value;
     }
-    if (cached) return cached.value;
+    if (cachedValue.length > 0) return cachedValue;
     if (!providerHistory) {
       throw new Error(`No history provider available for ${ticker}`);
     }
@@ -520,9 +521,10 @@ export class ProviderRouter implements DataProvider {
       ...this.getProviderSourceKeys(),
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
+    const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
     const forceRefresh = context?.cacheMode === "refresh";
-    if (cached && !forceRefresh && !cached.stale) {
-      return cached.value;
+    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale) {
+      return cachedValue;
     }
 
     const brokerResult = await withBrokerTimeout(this.fetchBrokerDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
@@ -532,7 +534,7 @@ export class ProviderRouter implements DataProvider {
     if (providerResult && providerResult.value.length > 0) {
       return providerResult.value;
     }
-    return cached?.value ?? providerResult?.value ?? [];
+    return cachedValue.length > 0 ? cachedValue : (providerResult?.value ?? []);
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {

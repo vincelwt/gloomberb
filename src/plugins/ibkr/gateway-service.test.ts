@@ -6,6 +6,7 @@ import {
   applyTickByTickBidAskToQuote,
   diagnoseLocalIbkrPortIssue,
   IbkrGatewayService,
+  parseIbkrHistoricalBarTime,
   resolveGatewayConnection,
   summarizeBrokerAccount,
 } from "./gateway-service";
@@ -236,6 +237,35 @@ describe("tick-by-tick quote updates", () => {
     expect(next?.bidSize).toBe(14);
     expect(next?.askSize).toBe(18);
     expect(next?.lastUpdated).toBe(1_700_000_100_000);
+  });
+});
+
+describe("parseIbkrHistoricalBarTime", () => {
+  test("parses compact day bars without treating them as epoch seconds", () => {
+    const date = parseIbkrHistoricalBarTime(20250328);
+
+    expect(Number.isNaN(date.getTime())).toBe(false);
+    expect(date.getFullYear()).toBe(2025);
+    expect(date.getMonth()).toBe(2);
+    expect(date.getDate()).toBe(28);
+    expect(date.getHours()).toBe(0);
+    expect(date.getMinutes()).toBe(0);
+  });
+
+  test("parses compact intraday bar timestamps", () => {
+    const date = parseIbkrHistoricalBarTime("20250328 09:30:00");
+
+    expect(Number.isNaN(date.getTime())).toBe(false);
+    expect(date.getFullYear()).toBe(2025);
+    expect(date.getMonth()).toBe(2);
+    expect(date.getDate()).toBe(28);
+    expect(date.getHours()).toBe(9);
+    expect(date.getMinutes()).toBe(30);
+    expect(date.getSeconds()).toBe(0);
+  });
+
+  test("preserves epoch-second timestamps for streaming-style bars", () => {
+    expect(parseIbkrHistoricalBarTime(1_700_000_000).getTime()).toBe(1_700_000_000_000);
   });
 });
 

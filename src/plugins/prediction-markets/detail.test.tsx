@@ -43,5 +43,9 @@ describe("prediction markets detail views", () => {
     expect(frame).toContain("Outcomes");
     expect(frame).toContain("Above 4.25%");
     expect(frame).toContain("Above 4.50%");
+    expect(frame).not.toContain("Ranked by implied YES probability.");
+    expect(frame).not.toContain("TOP Above 4.25%");
+    expect(frame).not.toContain("Kalshi");
+    expect(frame).not.toContain("targets");
   });
 });

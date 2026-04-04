@@ -27,11 +27,10 @@ export function PredictionMarketOutcomesView({
 
   return (
     <box flexDirection="column">
-      <box flexDirection="column">
+      <box height={1}>
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           Outcomes
         </text>
-        <text fg={colors.textDim}>Ranked by implied YES probability.</text>
       </box>
 
       <box flexDirection="row" height={1}>
@@ -64,10 +63,7 @@ export function PredictionMarketOutcomesView({
                 fg={selected ? colors.selectedText : colors.text}
                 attributes={selected ? TextAttributes.BOLD : 0}
               >
-                {padTo(
-                  `${index === 0 ? "TOP " : ""}${market.marketLabel}`,
-                  labelWidth,
-                )}
+                {padTo(market.marketLabel, labelWidth)}
               </text>
             </box>
             <box width={8}>

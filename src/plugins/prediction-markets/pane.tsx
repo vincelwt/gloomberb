@@ -1,16 +1,14 @@
 import { useRef } from "react";
 import { TextAttributes, type BoxRenderable } from "@opentui/core";
-import { Spinner, TabBar } from "../../components";
+import { TabBar } from "../../components";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { BROWSE_TABS, VENUE_TABS } from "./navigation";
 import { PredictionMarketsTable } from "./table";
-import { formatPredictionTransportBadge } from "./status";
 import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import type { PredictionBrowseTab, PredictionCategoryId } from "./types";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
-import { formatTimeAgo } from "../../utils/format";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -22,12 +20,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(
     null,
   );
-  const statusBadge = formatPredictionTransportBadge(
-    controller.catalogLoadCount > 0 || controller.detailLoadCount > 0
-      ? "loading"
-      : controller.transportState,
-  );
-  const showSummaryUnitsHint = controller.effectiveVenueScope === "all";
   const minTableWidth = 44;
   const minDetailWidth = 36;
   const effectiveMinTableWidth = controller.selectedSummary
@@ -108,28 +100,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       backgroundColor={colors.panel}
       onMouse={handlePaneMouse}
     >
-      {!controller.paneSettings.hideHeader && (
-        <box flexDirection="row" height={1} paddingX={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            Prediction Markets
-          </text>
-          <box flexGrow={1} />
-          {showSummaryUnitsHint && (
-            <text fg={colors.textDim}>VOL = native venue units</text>
-          )}
-          <box width={1} />
-          {controller.searchLoading && <Spinner />}
-          {controller.searchLoading && <box width={1} />}
-          <text fg={statusBadge.color}>{statusBadge.label}</text>
-          <box width={1} />
-          <text fg={colors.textDim}>
-            {controller.lastRefreshAt
-              ? `refresh ${formatTimeAgo(new Date(controller.lastRefreshAt))}`
-              : "waiting"}
-          </text>
-        </box>
-      )}
-
       {!controller.paneSettings.hideTabs && (
         <TabBar
           tabs={VENUE_TABS.map((tab) => ({

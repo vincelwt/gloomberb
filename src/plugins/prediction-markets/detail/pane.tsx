@@ -8,7 +8,6 @@ import { DETAIL_TABS } from "../navigation";
 import {
   formatPredictionEndsAt,
   formatPredictionMetric,
-  formatPredictionPercent,
   formatPredictionProbability,
   formatPredictionSpread,
   getPredictionProbabilityColor,
@@ -32,10 +31,6 @@ interface MetricCell {
   value: string;
   width: number;
   color?: string;
-}
-
-function formatVenueLabel(venue: PredictionMarketSummary["venue"]): string {
-  return venue === "polymarket" ? "Polymarket" : "Kalshi";
 }
 
 function MetricLabelRow({ metrics }: { metrics: MetricCell[] }) {
@@ -114,14 +109,9 @@ export function PredictionMarketDetailPane({
   const summaryMetrics = detail?.summary ?? selectedSummary;
   const detailTitle =
     selectedRow?.kind === "group" ? selectedRow.title : summaryMetrics.title;
-  const selectedLabel = truncatePredictionText(
-    selectedSummary.marketLabel,
-    Math.max(detailWidth - 18, 12),
-  );
-  const detailSubtitleParts = [formatVenueLabel(summaryMetrics.venue)];
+  const detailSubtitleParts: string[] = [];
   if (selectedRow?.kind === "group") {
     if (summaryMetrics.category) detailSubtitleParts.push(summaryMetrics.category);
-    detailSubtitleParts.push(`${selectedRow.marketCount} targets`);
   } else if (
     summaryMetrics.eventLabel &&
     summaryMetrics.eventLabel !== summaryMetrics.title
@@ -195,7 +185,7 @@ export function PredictionMarketDetailPane({
             0,
             Math.max(Math.min(Math.floor((detailWidth - 10) / 18), 3), 0),
           ) ?? []);
-  const headerHeight = selectedRow?.kind === "group" ? 4 : 3;
+  const headerHeight = detailSubtitle.length > 0 ? 3 : 2;
   const detailLoading = detailLoadCount > 0 && !detail;
   const titleColor = focused ? colors.textBright : colors.text;
 
@@ -207,20 +197,9 @@ export function PredictionMarketDetailPane({
             {detailTitle}
           </text>
         </box>
-        <box flexDirection="row" height={1}>
-          <text fg={colors.textDim}>{detailSubtitle}</text>
-        </box>
-        {selectedRow?.kind === "group" && (
+        {detailSubtitle.length > 0 && (
           <box flexDirection="row" height={1}>
-            <text fg={colors.textDim}>Top target:</text>
-            <box width={1} />
-            <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-              {selectedLabel}
-            </text>
-            <box width={1} />
-            <text fg={getPredictionProbabilityColor(selectedSummary.yesPrice)}>
-              {formatPredictionPercent(selectedSummary.yesPrice)}
-            </text>
+            <text fg={colors.textDim}>{detailSubtitle}</text>
           </box>
         )}
       </box>

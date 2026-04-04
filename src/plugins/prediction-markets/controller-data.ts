@@ -431,14 +431,18 @@ export function usePredictionMarketsDataState({
       setTransportState("idle");
       return;
     }
-    const detailSummary = selectedSummaryRef.current ?? selectedSummary;
+    const detailSummary = selectedSummaryRef.current;
+    if (!detailSummary) {
+      setTransportState("idle");
+      return;
+    }
     const delayMs = detailLoadDelayRef.current;
     detailLoadDelayRef.current = 0;
     const timeoutId = setTimeout(() => {
       void loadSelectedDetail(detailSummary);
     }, delayMs);
     return () => clearTimeout(timeoutId);
-  }, [loadSelectedDetail, selectedSummaryKey, selectedSummary]);
+  }, [loadSelectedDetail, selectedSummaryKey]);
 
   useEffect(() => {
     if (!focused || selectedSummaryVenue !== "kalshi" || !selectedSummaryKey) {

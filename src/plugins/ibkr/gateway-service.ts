@@ -310,6 +310,42 @@ const GENERIC_BAR_SIZE_MAP: Record<string, BarSizeSetting> = {
   "1w": BarSizeSetting.WEEKS_ONE,
 };
 
+export function parseIbkrHistoricalBarTime(value: string | number): Date {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return new Date(Number.NaN);
+
+    const compactDate = String(Math.trunc(value));
+    if (/^\d{8}$/.test(compactDate)) {
+      return parseIbkrHistoricalBarTime(compactDate);
+    }
+
+    return new Date(value > 10_000_000_000 ? value : value * 1000);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return new Date(Number.NaN);
+
+  const parsed = Date.parse(trimmed);
+  if (Number.isFinite(parsed)) {
+    return new Date(parsed);
+  }
+
+  const compactMatch = trimmed.match(/^(\d{4})(\d{2})(\d{2})(?:\D+(\d{2}):(\d{2}):(\d{2}))?/);
+  if (!compactMatch) {
+    return new Date(Number.NaN);
+  }
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = compactMatch;
+  const year = Number(yearText);
+  const month = Number(monthText) - 1;
+  const day = Number(dayText);
+  const hour = Number(hourText ?? "0");
+  const minute = Number(minuteText ?? "0");
+  const second = Number(secondText ?? "0");
+
+  return new Date(year, month, day, hour, minute, second);
+}
+
 function normalizeQuoteStreamTarget(target: QuoteSubscriptionTarget): QuoteSubscriptionTarget | null {
   const symbol = target.symbol.trim().toUpperCase();
   if (!symbol) return null;
@@ -1006,7 +1042,7 @@ export class IbkrGatewayService {
       const priceDivisor = getIbkrPriceDivisor(contract, details);
 
       return bars.map((bar) => ({
-        date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
+        date: parseIbkrHistoricalBarTime(bar.time),
         open: normalizeIbkrPriceValue(bar.open, priceDivisor),
         high: normalizeIbkrPriceValue(bar.high, priceDivisor),
         low: normalizeIbkrPriceValue(bar.low, priceDivisor),
@@ -1064,7 +1100,7 @@ export class IbkrGatewayService {
       const priceDivisor = getIbkrPriceDivisor(contract, details);
 
       return bars.map((bar) => ({
-        date: new Date(typeof bar.time === "number" ? bar.time * 1000 : Date.parse(String(bar.time))),
+        date: parseIbkrHistoricalBarTime(bar.time),
         open: normalizeIbkrPriceValue(bar.open, priceDivisor),
         high: normalizeIbkrPriceValue(bar.high, priceDivisor),
         low: normalizeIbkrPriceValue(bar.low, priceDivisor),

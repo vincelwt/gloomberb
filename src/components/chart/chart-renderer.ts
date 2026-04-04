@@ -917,6 +917,7 @@ export interface RenderChartOptions {
   axisMode?: ChartAxisMode;
   currency?: string;
   colors: ResolvedChartPalette;
+  timeAxisDates?: Array<Date | string | number>;
 }
 
 export interface ChartScene {
@@ -1027,6 +1028,8 @@ export function buildChartScene(
     ? null
     : max - (cursorY / Math.max(chartRows - 1, 1)) * range;
 
+  const timeAxisDates = opts.timeAxisDates ?? points.map((point) => point.date);
+
   return {
     points,
     width: opts.width,
@@ -1045,7 +1048,7 @@ export function buildChartScene(
     dateAtCursor: activePoint.date,
     changeAtCursor: activePoint.close - points[0]!.close,
     changePctAtCursor: points[0]!.close ? ((activePoint.close - points[0]!.close) / points[0]!.close) * 100 : 0,
-    timeLabels: buildTimeAxis(points.map((point) => point.date), opts.width),
+    timeLabels: buildTimeAxis(timeAxisDates, opts.width),
     cursorX,
     cursorY,
     cursorColumn,
@@ -1138,10 +1141,12 @@ export function renderChart(
     );
   }
 
+  const timeAxisDates = opts.timeAxisDates ?? points.map((point) => point.date);
+
   return {
     lines: bufferToBrailleLines(buf, palette.bgColor),
     axisLabels: [...axisLabelsByRow.entries()].map(([row, label]) => ({ row, label })),
-    timeLabels: buildTimeAxis(points.map((point) => point.date), width),
+    timeLabels: buildTimeAxis(timeAxisDates, width),
     activePoint,
     priceAtCursor,
     crosshairPrice,

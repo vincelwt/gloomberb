@@ -1355,6 +1355,49 @@ describe("ProviderRouter", () => {
     expect(history.map((point) => point.close)).toEqual([101, 102, 103]);
   });
 
+  test("ignores poisoned cached chart history and refetches clean data", async () => {
+    const dbPath = createTempDbPath("poisoned-chart-cache");
+    const persistence = new AppPersistence(dbPath);
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "price-history",
+        entityKey: "AAPL",
+        variantKey: "exchange=NASDAQ;range=1Y",
+        sourceKey: "provider:yahoo",
+      },
+      [
+        { date: null as any, close: 101 },
+        { date: null as any, close: 102 },
+      ],
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
+      },
+    );
+
+    let providerCalls = 0;
+    const router = new ProviderRouter({
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async getPriceHistory() {
+        providerCalls += 1;
+        return [
+          { date: new Date("2026-03-27T00:00:00Z"), close: 201 },
+          { date: new Date("2026-03-28T00:00:00Z"), close: 202 },
+        ];
+      },
+    }, [], persistence.resources);
+
+    const history = await router.getPriceHistory("AAPL", "NASDAQ", "1Y");
+
+    expect(providerCalls).toBe(1);
+    expect(history.map((point) => point.close)).toEqual([201, 202]);
+
+    persistence.close();
+  });
+
   test("bypasses cached financials on explicit refresh requests", async () => {
     const dbPath = createTempDbPath("forced-financial-refresh");
     const persistence = new AppPersistence(dbPath);

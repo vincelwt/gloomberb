@@ -206,6 +206,32 @@ describe("renderChart", () => {
     expect(buildTimeAxis(yearlyDates, 48)).toBe("2020   2021      2022     2023      2024    2025");
   });
 
+  test("uses source time-axis dates instead of projected extrema dates when provided", () => {
+    const sourceHistory = Array.from({ length: 96 }, (_, index) => ({
+      date: new Date(Date.UTC(2026, 2, 25, index * 3)),
+      close: index % 2 === 0 ? 0.7 + index * 0.001 : 0.3 + index * 0.001,
+      volume: 100 + index,
+    })) as PricePoint[];
+    const sourceDates = sourceHistory.map((point) => point.date);
+    const projection = projectChartData(sourceHistory, 48, "area", true);
+
+    const result = renderChart(projection.points, {
+      width: 48,
+      height: 8,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "area",
+      axisMode: "price",
+      currency: "USD",
+      colors: palette,
+      timeAxisDates: sourceDates,
+    });
+
+    expect(result.timeLabels).toBe(buildTimeAxis(sourceDates, 48));
+  });
+
   test("maps active bucket metadata across all render modes", () => {
     const cases: Array<{ mode: ChartRenderMode; width: number; cursorX: number }> = [
       { mode: "area", width: 12, cursorX: 4 },
