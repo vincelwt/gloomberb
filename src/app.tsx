@@ -32,7 +32,7 @@ import {
   type PaneBinding,
   type PaneInstanceConfig,
 } from "./types/config";
-import type { PaneTemplateCreateOptions, PaneTemplateInstanceConfig, WizardStep } from "./types/plugin";
+import type { CliLaunchRequest, PaneTemplateCreateOptions, PaneTemplateInstanceConfig, WizardStep } from "./types/plugin";
 import type { PaneSettingField } from "./types/plugin";
 import type { TickerRecord } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
@@ -41,33 +41,14 @@ import type { BrokerAccount } from "./types/trading";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
 
 // Built-in plugins
-import { portfolioListPlugin } from "./plugins/builtin/portfolio-list";
-import { tickerDetailPlugin } from "./plugins/builtin/ticker-detail";
-import { manualEntryPlugin } from "./plugins/builtin/manual-entry";
-import { ibkrPlugin } from "./plugins/ibkr";
 import {
   clearPersistedIbkrAccounts,
   loadPersistedIbkrAccountMap,
 } from "./plugins/ibkr/account-cache";
 import { getIbkrConfigIdentity } from "./plugins/ibkr/config";
-import { newsPlugin } from "./plugins/builtin/news";
-import { secPlugin } from "./plugins/builtin/sec";
-import { optionsPlugin } from "./plugins/builtin/options";
-import { notesPlugin } from "./plugins/builtin/notes";
-import { aiPlugin } from "./plugins/builtin/ai/index";
-import { gloomberbCloudPlugin } from "./plugins/builtin/chat";
 import { chatController } from "./plugins/builtin/chat-controller";
-import { helpPlugin } from "./plugins/builtin/help";
-import { comparisonChartPlugin } from "./plugins/builtin/comparison-chart";
-import { debugPlugin } from "./plugins/builtin/debug";
-import { layoutManagerPlugin, setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
-import { yahooPlugin } from "./plugins/builtin/yahoo";
-import { predictionMarketsPlugin } from "./plugins/prediction-markets";
-import {
-  applyPredictionLaunchIntentToConfig,
-  applyPredictionLaunchIntentToSessionSnapshot,
-  type PredictionLaunchIntent,
-} from "./plugins/prediction-markets/launch";
+import { setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
+import { getLoadablePlugins } from "./plugins/catalog";
 import { saveConfig } from "./data/config-store";
 import { Toaster, toast } from "@opentui-ui/toast/react";
 import { canSelfUpdate, checkForUpdateDetailed, performUpdate } from "./updater";
@@ -1232,25 +1213,28 @@ interface AppProps {
   config: AppConfig;
   renderer: CliRenderer;
   externalPlugins?: import("./plugins/loader").LoadedExternalPlugin[];
-  predictionLaunchIntent?: PredictionLaunchIntent | null;
+  cliLaunchRequest?: CliLaunchRequest | null;
 }
 
 export function App({
   config: initialConfig,
   renderer,
   externalPlugins = [],
-  predictionLaunchIntent = null,
+  cliLaunchRequest = null,
 }: AppProps) {
-  const applyPredictionLaunch = useCallback((configValue: AppConfig) => {
-    if (!predictionLaunchIntent) return configValue;
-    return applyPredictionLaunchIntentToConfig(configValue, predictionLaunchIntent, {
-      width: Math.max(renderer.terminalWidth, 120),
-      height: Math.max(renderer.terminalHeight, 40),
-    }).config;
-  }, [predictionLaunchIntent, renderer.terminalHeight, renderer.terminalWidth]);
+  const initialCliLaunch = useMemo(() => {
+    if (!cliLaunchRequest) {
+      return { config: initialConfig, launchState: undefined };
+    }
+    return cliLaunchRequest.applyConfig(initialConfig, {
+      terminalWidth: renderer.terminalWidth,
+      terminalHeight: renderer.terminalHeight,
+    });
+  }, [cliLaunchRequest, initialConfig, renderer.terminalHeight, renderer.terminalWidth]);
+  const cliLaunchStateRef = useRef(initialCliLaunch.launchState);
 
   const [config, setConfig] = useState(() => {
-    return applyPredictionLaunch(initialConfig);
+    return initialCliLaunch.config;
   });
   const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
 
@@ -1271,25 +1255,8 @@ export function App({
     pluginRegistry.getConfigFn = () => config;
     pluginRegistry.getLayoutFn = () => config.layout;
 
-    pluginRegistry.register(yahooPlugin);
-    pluginRegistry.register(gloomberbCloudPlugin);
-    pluginRegistry.register(portfolioListPlugin);
-    pluginRegistry.register(tickerDetailPlugin);
-    pluginRegistry.register(manualEntryPlugin);
-    pluginRegistry.register(ibkrPlugin);
-    pluginRegistry.register(layoutManagerPlugin);
-    pluginRegistry.register(newsPlugin);
-    pluginRegistry.register(secPlugin);
-    pluginRegistry.register(optionsPlugin);
-    pluginRegistry.register(notesPlugin);
-    pluginRegistry.register(aiPlugin);
-    pluginRegistry.register(helpPlugin);
-    pluginRegistry.register(comparisonChartPlugin);
-    pluginRegistry.register(predictionMarketsPlugin);
-    pluginRegistry.register(debugPlugin);
-
-    for (const { plugin, error } of externalPlugins) {
-      if (!error) pluginRegistry.register(plugin);
+    for (const plugin of getLoadablePlugins(externalPlugins)) {
+      pluginRegistry.register(plugin);
     }
 
     return {
@@ -1316,20 +1283,15 @@ export function App({
   const sessionSnapshot = useMemo(() => {
     const persisted = services.persistence.sessions.get<AppSessionSnapshot>(APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION)?.value ?? null;
     const reconciled = reconcileAppSessionSnapshot(config, persisted);
-    if (!predictionLaunchIntent) {
+    if (!cliLaunchRequest?.applySessionSnapshot) {
       return reconciled;
     }
-    const paneInstanceId = config.layout.instances.find((instance) => instance.paneId === "prediction-markets")?.instanceId;
-    if (!paneInstanceId) {
-      return reconciled;
-    }
-    return applyPredictionLaunchIntentToSessionSnapshot(
+    return cliLaunchRequest.applySessionSnapshot(
       config,
       reconciled,
-      paneInstanceId,
-      predictionLaunchIntent,
+      cliLaunchStateRef.current,
     );
-  }, [config, predictionLaunchIntent, services.persistence.sessions]);
+  }, [cliLaunchRequest, config, services.persistence.sessions]);
 
   if (showOnboarding) {
     return (
@@ -1337,7 +1299,7 @@ export function App({
         config={config}
         pluginRegistry={services.pluginRegistry}
         onComplete={(updatedConfig) => {
-          setConfig(applyPredictionLaunch(updatedConfig));
+          setConfig(updatedConfig);
           setShowOnboarding(false);
         }}
       />

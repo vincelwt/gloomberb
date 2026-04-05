@@ -7,7 +7,7 @@ import {
   type AppConfig,
   type SavedLayout,
 } from "../../types/config";
-import type { PaneDef } from "../../types/plugin";
+import type { CliLaunchRequest, PaneDef } from "../../types/plugin";
 import type { AppSessionSnapshot } from "../../state/session-persistence";
 import { PREDICTION_CATEGORY_OPTIONS, type PredictionCategoryId } from "./categories";
 import { BROWSE_TABS } from "./navigation";
@@ -48,20 +48,7 @@ function normalizeArg(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export function parsePredictionLaunchArgs(
-  args: string[],
-): PredictionLaunchIntent | null {
-  const [command, ...rest] = args;
-  if (!command) return null;
-  const normalizedCommand = normalizeArg(command);
-  if (
-    normalizedCommand !== "predictions" &&
-    normalizedCommand !== "prediction-markets" &&
-    normalizedCommand !== "pm"
-  ) {
-    return null;
-  }
-
+export function parsePredictionCommandArgs(args: string[]): PredictionLaunchIntent {
   let venueScope: PredictionVenueScope = "all";
   let categoryId: PredictionCategoryId = "all";
   let browseTab: PredictionBrowseTab = "top";
@@ -70,7 +57,7 @@ export function parsePredictionLaunchArgs(
   let browseExplicit = false;
   const searchTokens: string[] = [];
 
-  for (const arg of rest) {
+  for (const arg of args) {
     const normalized = normalizeArg(arg);
     if (!normalized) continue;
 
@@ -98,6 +85,23 @@ export function parsePredictionLaunchArgs(
     browseTab,
     searchQuery: searchTokens.join(" ").trim(),
   };
+}
+
+export function parsePredictionLaunchArgs(
+  args: string[],
+): PredictionLaunchIntent | null {
+  const [command, ...rest] = args;
+  if (!command) return null;
+  const normalizedCommand = normalizeArg(command);
+  if (
+    normalizedCommand !== "predictions" &&
+    normalizedCommand !== "prediction-markets" &&
+    normalizedCommand !== "pm"
+  ) {
+    return null;
+  }
+
+  return parsePredictionCommandArgs(rest);
 }
 
 function syncActiveLayout(
@@ -236,5 +240,36 @@ export function applyPredictionLaunchIntentToSessionSnapshot(
     hydrationTargets: [...(sessionSnapshot?.hydrationTargets ?? [])],
     exchangeCurrencies: [...(sessionSnapshot?.exchangeCurrencies ?? [])],
     savedAt: Date.now(),
+  };
+}
+
+export function createPredictionLaunchRequest(
+  intent: PredictionLaunchIntent,
+): CliLaunchRequest<{ paneInstanceId: string; intent: PredictionLaunchIntent }> {
+  return {
+    applyConfig(config, env) {
+      const result = applyPredictionLaunchIntentToConfig(config, intent, {
+        width: Math.max(env.terminalWidth, 120),
+        height: Math.max(env.terminalHeight, 40),
+      });
+      return {
+        config: result.config,
+        launchState: {
+          paneInstanceId: result.paneInstanceId,
+          intent,
+        },
+      };
+    },
+    applySessionSnapshot(config, snapshot, launchState) {
+      if (!launchState) {
+        return applyPredictionLaunchIntentToSessionSnapshot(config, snapshot, PREDICTION_MAIN_INSTANCE_ID, intent);
+      }
+      return applyPredictionLaunchIntentToSessionSnapshot(
+        config,
+        snapshot,
+        launchState.paneInstanceId,
+        launchState.intent,
+      );
+    },
   };
 }

@@ -4,10 +4,9 @@ import { App } from "./app";
 import { getDataDir, initDataDir } from "./data/config-store";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
-import { runCli } from "./cli/index";
+import { dispatchCli } from "./cli/index";
 import { loadExternalPlugins } from "./plugins/loader";
 import { debugLog } from "./utils/debug-log";
-import { parsePredictionLaunchArgs } from "./plugins/prediction-markets/launch";
 
 async function main() {
   // Intercept console.log/warn/error to capture in debug log
@@ -18,10 +17,14 @@ async function main() {
 
   // Handle CLI subcommands (install, remove, update, plugins)
   const cliArgs = process.argv.slice(2);
-  const predictionLaunchIntent = parsePredictionLaunchArgs(cliArgs);
-  if (cliArgs.length > 0 && !predictionLaunchIntent) {
-    const handled = await runCli(cliArgs);
-    if (handled) return;
+  const externalPlugins = await loadExternalPlugins();
+  let cliLaunchRequest = null;
+  if (cliArgs.length > 0) {
+    const dispatchResult = await dispatchCli(cliArgs, { externalPlugins });
+    if (dispatchResult.kind === "handled") return;
+    if (dispatchResult.kind === "launch-ui") {
+      cliLaunchRequest = dispatchResult.request;
+    }
   }
 
   // Determine data directory
@@ -40,9 +43,6 @@ async function main() {
   // Load or create config
   const config = await initDataDir(dataDir);
 
-  // Load external plugins from ~/.gloomberb/plugins/
-  const externalPlugins = await loadExternalPlugins();
-
   // Create renderer
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
@@ -56,7 +56,7 @@ async function main() {
       config={config}
       renderer={renderer}
       externalPlugins={externalPlugins}
-      predictionLaunchIntent={predictionLaunchIntent}
+      cliLaunchRequest={cliLaunchRequest}
     />
   );
 }

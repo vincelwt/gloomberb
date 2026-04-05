@@ -4,6 +4,7 @@ import type {
   PaneTemplateDef,
   WizardStep,
 } from "../../types/plugin";
+export { slugifyName } from "../../utils/slugify";
 import type {
   CommandBarFieldOption,
   CommandBarFieldValue,
@@ -249,10 +250,6 @@ export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-searc
     case "new-pane":
       return "new-pane";
   }
-}
-
-export function slugifyName(name: string, fallbackPrefix: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `${fallbackPrefix}-${Date.now()}`;
 }
 
 export function getFirstVisibleFieldId(

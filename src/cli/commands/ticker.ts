@@ -17,6 +17,7 @@ import type { NewsItem, SecFilingItem } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import { createBaseConverter, initMarketData } from "../context";
 import { closeAndFail } from "../errors";
+import type { MarketContext } from "../types";
 import {
   formatBidAsk,
   formatNullableCompact,
@@ -32,6 +33,11 @@ import { isUsEquityTicker } from "../../utils/sec";
 
 const NEWS_ITEM_LIMIT = 5;
 const SEC_FILING_LIMIT = 5;
+
+interface TickerCommandDependencies {
+  initMarketData?: () => Promise<MarketContext>;
+  closeAndFail?: typeof closeAndFail;
+}
 
 function appendMetricSection(lines: string[], title: string, metrics: Array<[string, string]>) {
   const populated = metrics.filter(([, value]) => value !== "—");
@@ -329,30 +335,34 @@ export async function buildTickerReport({
   return lines.join("\n");
 }
 
-export async function ticker(symbol: string) {
-  const { config, store, dataProvider, persistence, dataDir } = await initMarketData();
+export async function ticker(symbol: string, dependencies: TickerCommandDependencies = {}) {
+  const initMarketDataFn = dependencies.initMarketData ?? initMarketData;
+  const closeAndFailCommand = dependencies.closeAndFail ?? closeAndFail;
+  const { config, store, dataProvider, persistence, dataDir } = await initMarketDataFn();
   const normalized = symbol.trim().toUpperCase();
   const tickerFile = await store.loadTicker(normalized);
   const exchange = tickerFile?.metadata.exchange ?? "";
   const toBase = createBaseConverter(dataProvider, config.baseCurrency);
 
-  let financials: TickerFinancials;
+  let financials: TickerFinancials | null = null;
   try {
     financials = await dataProvider.getTickerFinancials(normalized, exchange);
   } catch (err: any) {
-    closeAndFail(persistence, `Failed to fetch data for ${normalized}.`, err?.message);
+    closeAndFailCommand(persistence, `Failed to fetch data for ${normalized}.`, err?.message);
   }
 
-  if (!financials.quote) {
-    closeAndFail(persistence, `No quote data available for ${normalized}.`);
+  if (!financials?.quote) {
+    closeAndFailCommand(persistence, `No quote data available for ${normalized}.`);
   }
+  const resolvedFinancials = financials as TickerFinancials;
+  const quote = resolvedFinancials.quote!;
 
   const notesFiles = new NotesFiles(dataDir);
   const [notesResult, newsResult, secFilingsResult] = await Promise.allSettled([
     notesFiles.load(normalized),
-    dataProvider.getNews(normalized, NEWS_ITEM_LIMIT, exchange || financials.quote.exchangeName || ""),
-    shouldFetchSecFilings(tickerFile, financials) && dataProvider.getSecFilings
-      ? dataProvider.getSecFilings(normalized, SEC_FILING_LIMIT, exchange || financials.quote.exchangeName || "")
+    dataProvider.getNews(normalized, NEWS_ITEM_LIMIT, exchange || quote.exchangeName || ""),
+    shouldFetchSecFilings(tickerFile, resolvedFinancials) && dataProvider.getSecFilings
+      ? dataProvider.getSecFilings(normalized, SEC_FILING_LIMIT, exchange || quote.exchangeName || "")
       : Promise.resolve([]),
   ]);
 
@@ -363,7 +373,7 @@ export async function ticker(symbol: string) {
   console.log(await buildTickerReport({
     symbol: normalized,
     tickerFile,
-    financials,
+    financials: resolvedFinancials,
     config,
     toBase,
     notes,

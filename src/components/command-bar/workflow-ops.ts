@@ -9,6 +9,7 @@ import type { TickerRepository } from "../../data/ticker-repository";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "../../utils/ticker-search";
 import { formatTickerListInput, parseTickerListInput } from "../../utils/ticker-list";
 import { updatePaneInstance, setPaneSettings } from "../../pane-settings";
+import { isManualPortfolio } from "../../plugins/builtin/portfolio-list/mutations";
 import {
   buildComparisonChartPaneTitle,
   COMPARISON_CHART_PANE_ID,
@@ -109,7 +110,7 @@ function getCollectionOptions(
   if (kind === "watchlist") {
     return state.config.watchlists;
   }
-  return state.config.portfolios.filter((portfolio) => !portfolio.brokerId && !portfolio.brokerInstanceId);
+  return state.config.portfolios.filter(isManualPortfolio);
 }
 
 export function getCollectionTargetOptions(

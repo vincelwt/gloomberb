@@ -169,6 +169,75 @@ export interface WizardStep {
   body?: string[];
 }
 
+export interface CliHelpColumn {
+  header: string;
+  align?: "left" | "right" | "center";
+  width?: number;
+}
+
+export interface CliCommandHelpSection {
+  title: string;
+  columns?: CliHelpColumn[];
+  rows?: string[][];
+  lines?: string[];
+}
+
+export interface CliCommandHelp {
+  usage?: string[];
+  sections?: CliCommandHelpSection[];
+}
+
+export interface CliLaunchEnvironment {
+  terminalWidth: number;
+  terminalHeight: number;
+}
+
+export interface CliLaunchConfigResult<TLaunchState = unknown> {
+  config: AppConfig;
+  launchState?: TLaunchState;
+}
+
+export interface CliLaunchRequest<TLaunchState = unknown> {
+  applyConfig(config: AppConfig, env: CliLaunchEnvironment): CliLaunchConfigResult<TLaunchState>;
+  applySessionSnapshot?(
+    config: AppConfig,
+    snapshot: import("../state/session-persistence").AppSessionSnapshot | null,
+    launchState: TLaunchState | undefined,
+  ): import("../state/session-persistence").AppSessionSnapshot;
+}
+
+export type CliDispatchResult =
+  | { kind: "handled" }
+  | { kind: "launch-ui"; request: CliLaunchRequest }
+  | { kind: "unhandled" };
+
+export interface CliCommandContext {
+  initConfigData(): Promise<import("../cli/types").ConfigContext>;
+  initMarketData(): Promise<import("../cli/types").MarketContext>;
+  fail(message: string, details?: string): never;
+  closeAndFail(
+    persistence: import("../data/app-persistence").AppPersistence,
+    message: string,
+    details?: string,
+  ): never;
+  output: {
+    cliStyles: typeof import("../utils/cli-output").cliStyles;
+    colorBySign: typeof import("../utils/cli-output").colorBySign;
+    renderSection: typeof import("../utils/cli-output").renderSection;
+    renderStat: typeof import("../utils/cli-output").renderStat;
+    renderTable: typeof import("../utils/cli-output").renderTable;
+  };
+  log: PluginLogger;
+}
+
+export interface CliCommandDef {
+  name: string;
+  aliases?: string[];
+  description: string;
+  help?: CliCommandHelp;
+  execute(args: string[], ctx: CliCommandContext): void | CliDispatchResult | Promise<void | CliDispatchResult>;
+}
+
 export interface CommandDef {
   id: string;
   label: string;
@@ -340,6 +409,7 @@ export interface GloomPlugin {
   description?: string;
   toggleable?: boolean;
   order?: number;
+  cliCommands?: CliCommandDef[];
 
   setup?(ctx: GloomPluginContext): void | Promise<void>;
   dispose?(): void;

@@ -82,6 +82,14 @@ export const commands: Command[] = [
     category: "Portfolio",
     execute: () => {},
   },
+  {
+    id: "set-portfolio-position",
+    prefix: "",
+    label: "Set Portfolio Position",
+    description: "Create or update a manual position in a portfolio",
+    category: "Portfolio",
+    execute: () => {},
+  },
 
   // Create / Delete
   {

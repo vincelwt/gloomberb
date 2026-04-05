@@ -11,6 +11,12 @@ import {
 } from "../../utils/ticker-search";
 import { initMarketData } from "../context";
 import { fail } from "../errors";
+import type { MarketContext } from "../types";
+
+interface SearchCommandDependencies {
+  initMarketData?: () => Promise<MarketContext>;
+  fail?: (message: string, details?: string) => never;
+}
 
 export async function searchCandidatesForCli({
   query,
@@ -97,13 +103,15 @@ export function buildSearchReport({
   return lines.join("\n");
 }
 
-export async function search(query: string) {
+export async function search(query: string, dependencies: SearchCommandDependencies = {}) {
   const trimmedQuery = query.trim();
+  const failCommand = dependencies.fail ?? fail;
+  const initMarketDataFn = dependencies.initMarketData ?? initMarketData;
   if (!trimmedQuery) {
-    fail("Usage: gloomberb search <query>");
+    failCommand("Usage: gloomberb search <query>");
   }
 
-  const { store, dataProvider, persistence } = await initMarketData();
+  const { store, dataProvider, persistence } = await initMarketDataFn();
   const tickers = await store.loadAllTickers();
   const candidates = await searchCandidatesForCli({
     query: trimmedQuery,

@@ -35,6 +35,15 @@ export const myPlugin: GloomPlugin = {
   version: "1.0.0",
   description: "What it does",
   toggleable: true, // let users enable/disable from settings
+  cliCommands: [
+    {
+      name: "my-plugin",
+      description: "Run a plugin-owned CLI command",
+      async execute(args, ctx) {
+        console.log(`args: ${args.join(" ")}`);
+      },
+    },
+  ],
 
   setup(ctx) {
     // Register tabs, commands, columns, etc.
@@ -58,6 +67,8 @@ For external plugins, create a directory in `~/.gloomberb/plugins/`:
 
 ## What plugins can do
 
+Use `setup()` for interactive runtime registration, and `cliCommands` for root-level CLI commands that should be discoverable without running plugin setup.
+
 The `setup()` function receives a context object with these capabilities:
 
 ### Registration methods
@@ -73,6 +84,75 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerDataProvider(provider)` | Add a data source |
 | `ctx.registerShortcut(shortcut)` | Add a global keyboard shortcut |
 | `ctx.registerTickerAction(action)` | Add a per-ticker action (shown via `a` key) |
+
+### CLI commands
+
+Plugins can also declare root CLI commands directly on the plugin object:
+
+```typescript
+import type { GloomPlugin } from "gloomberb/types/plugin";
+
+export const myPlugin: GloomPlugin = {
+  id: "my-plugin",
+  name: "My Plugin",
+  version: "1.0.0",
+  cliCommands: [
+    {
+      name: "my-plugin",
+      aliases: ["mp"],
+      description: "Run a plugin-owned CLI command",
+      help: {
+        usage: ["my-plugin [action]"],
+        sections: [{
+          title: "My Plugin CLI",
+          columns: [
+            { header: "Action" },
+            { header: "Example" },
+          ],
+          rows: [
+            ["run", "gloomberb my-plugin run"],
+          ],
+        }],
+      },
+      async execute(args, ctx) {
+        if (args[0] === "run") {
+          const { config, persistence } = await ctx.initConfigData();
+          console.log(`Using data dir ${config.dataDir}`);
+          persistence.close();
+          return;
+        }
+        ctx.fail("Usage: gloomberb my-plugin run");
+      },
+    },
+  ],
+};
+```
+
+Each CLI command owns one root namespace and parses its own subactions internally.
+
+Available CLI context helpers:
+
+| Field | What it does |
+|------|---------------|
+| `ctx.initConfigData()` | Load config, persistence, and ticker storage |
+| `ctx.initMarketData()` | Load config plus the plugin-aware provider router |
+| `ctx.fail(...)` | Print an error and exit |
+| `ctx.closeAndFail(...)` | Close persistence, then print an error and exit |
+| `ctx.output.*` | CLI formatting helpers (`cliStyles`, `renderSection`, `renderTable`, `renderStat`, `colorBySign`) |
+| `ctx.log` | Scoped debug logger for the owning plugin |
+
+CLI commands may also launch the TUI instead of exiting by returning:
+
+```typescript
+return {
+  kind: "launch-ui",
+  request: {
+    applyConfig(config, env) {
+      return { config };
+    },
+  },
+};
+```
 
 ### Data access
 

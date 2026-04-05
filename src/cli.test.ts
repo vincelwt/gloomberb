@@ -32,11 +32,15 @@ async function createTempDir(prefix: string): Promise<string> {
 }
 
 async function createCliFixture({
+  portfolios,
   watchlists,
   tickers = [],
+  baseCurrency,
 }: {
+  portfolios?: Array<{ id: string; name: string; currency: string; brokerId?: string; brokerInstanceId?: string; brokerAccountId?: string }>;
   watchlists: Array<{ id: string; name: string }>;
   tickers?: TickerRecord[];
+  baseCurrency?: string;
 }) {
   const homeDir = await createTempDir("gloomberb-cli-home-");
   const dataDir = await createTempDir("gloomberb-cli-data-");
@@ -46,6 +50,12 @@ async function createCliFixture({
   await writeFile(join(homeDir, ".gloomberb", "config.json"), JSON.stringify({ dataDir }), "utf-8");
 
   const config = createDefaultConfig(dataDir);
+  if (baseCurrency) {
+    config.baseCurrency = baseCurrency;
+  }
+  if (portfolios) {
+    config.portfolios = portfolios;
+  }
   config.watchlists = watchlists;
   await saveConfig(config);
 
@@ -85,6 +95,39 @@ async function captureConsole<T>(fn: () => Promise<T> | T): Promise<{ result: T;
   }
 }
 
+async function captureConsoleFailure(fn: () => Promise<unknown> | unknown): Promise<{ stdout: string; stderr: string; error: unknown }> {
+  const logs: string[] = [];
+  const errors: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalExit = process.exit;
+
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  process.exit = ((code?: number) => {
+    throw new Error(`process.exit:${code ?? 0}`);
+  }) as typeof process.exit;
+
+  try {
+    await fn();
+    throw new Error("Expected command to fail.");
+  } catch (error) {
+    return {
+      stdout: logs.join("\n"),
+      stderr: errors.join("\n"),
+      error,
+    };
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+    process.exit = originalExit;
+  }
+}
+
 function makeTicker(overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
   return {
     metadata: {
@@ -110,6 +153,8 @@ describe("CLI watchlist commands", () => {
     expect(stdout).toContain("predictions [...]");
     expect(stdout).toContain("Prediction Launch");
     expect(stdout).toContain("gloomberb predictions world");
+    expect(stdout).toContain("Portfolio Actions");
+    expect(stdout).toContain("Watchlist Actions");
   });
 
   test("creates a watchlist and persists the generated id", async () => {
@@ -152,6 +197,180 @@ describe("CLI watchlist commands", () => {
     persistence.close();
 
     expect(savedTicker?.metadata.watchlists).toEqual([]);
+  });
+});
+
+describe("CLI portfolio commands", () => {
+  test("creates a manual portfolio and persists the generated id", async () => {
+    const { dataDir } = await createCliFixture({
+      portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
+      watchlists: [],
+    });
+
+    const { stdout } = await captureConsole(() => runCli(["portfolio", "create", "Research"]));
+    const config = await loadConfig(dataDir);
+
+    expect(config.portfolios).toEqual([
+      { id: "main", name: "Main Portfolio", currency: "USD" },
+      { id: "research", name: "Research", currency: "USD" },
+    ]);
+    expect(stdout).toContain('Created portfolio "Research".');
+    expect(stdout).toContain("research");
+  });
+
+  test("rejects duplicate manual portfolio names", async () => {
+    await createCliFixture({
+      portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+      watchlists: [],
+    });
+
+    const result = await captureConsoleFailure(() => runCli(["portfolio", "create", "Research"]));
+    expect(String(result.error)).toContain("process.exit:1");
+    expect(result.stderr).toContain('Portfolio "Research" already exists.');
+  });
+
+  test("adds a ticker to a manual portfolio and supports legacy show", async () => {
+    const { dataDir } = await createCliFixture({
+      portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+      watchlists: [],
+      tickers: [makeTicker()],
+    });
+
+    const addResult = await captureConsole(() => runCli(["portfolio", "add", "Research", "NVDA"]));
+    expect(addResult.stdout).toContain('Added NVDA to "Research".');
+
+    let persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
+    let store = new TickerRepository(persistence.tickers);
+    let savedTicker = await store.loadTicker("NVDA");
+    persistence.close();
+
+    expect(savedTicker?.metadata.portfolios).toEqual(["research"]);
+
+    const showResult = await captureConsole(() => runCli(["portfolio", "Research"]));
+    expect(showResult.stdout).toContain("Research (USD)");
+    expect(showResult.stdout).toContain("NVDA");
+  });
+
+  test("sets and replaces a manual position for a portfolio ticker", async () => {
+    const { dataDir } = await createCliFixture({
+      portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+      watchlists: [],
+      tickers: [makeTicker()],
+      baseCurrency: "USD",
+    });
+
+    const first = await captureConsole(() => runCli(["portfolio", "position", "set", "Research", "NVDA", "10", "400"]));
+    expect(first.stdout).toContain('Set position for NVDA in "Research".');
+    expect(first.stdout).toContain("Shares");
+    expect(first.stdout).toContain("10");
+
+    const second = await captureConsole(() => runCli(["portfolio", "position", "set", "Research", "NVDA", "12", "405", "EUR"]));
+    expect(second.stdout).toContain("EUR");
+
+    const persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
+    const store = new TickerRepository(persistence.tickers);
+    const savedTicker = await store.loadTicker("NVDA");
+    persistence.close();
+
+    expect(savedTicker?.metadata.portfolios).toEqual(["research"]);
+    expect(savedTicker?.metadata.positions).toEqual([{
+      portfolio: "research",
+      shares: 12,
+      avgCost: 405,
+      currency: "EUR",
+      broker: "manual",
+    }]);
+  });
+
+  test("removes portfolio membership and positions, then cleans all references on delete", async () => {
+    const { dataDir } = await createCliFixture({
+      portfolios: [
+        { id: "main", name: "Main Portfolio", currency: "USD" },
+        { id: "research", name: "Research", currency: "USD" },
+      ],
+      watchlists: [],
+      tickers: [
+        makeTicker({
+          ticker: "NVDA",
+          portfolios: ["research"],
+          positions: [{
+            portfolio: "research",
+            shares: 5,
+            avgCost: 350,
+            currency: "USD",
+            broker: "manual",
+          }],
+        }),
+        makeTicker({
+          ticker: "ASML",
+          portfolios: ["research", "main"],
+          positions: [{
+            portfolio: "research",
+            shares: 3,
+            avgCost: 700,
+            currency: "USD",
+            broker: "manual",
+          }, {
+            portfolio: "main",
+            shares: 1,
+            avgCost: 650,
+            currency: "USD",
+            broker: "manual",
+          }],
+        }),
+      ],
+    });
+
+    const removeResult = await captureConsole(() => runCli(["portfolio", "remove", "Research", "NVDA"]));
+    expect(removeResult.stdout).toContain('Removed NVDA from "Research".');
+    expect(removeResult.stdout).toContain("Removed Positions");
+
+    let persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
+    let store = new TickerRepository(persistence.tickers);
+    let savedTicker = await store.loadTicker("NVDA");
+    persistence.close();
+
+    expect(savedTicker?.metadata.portfolios).toEqual([]);
+    expect(savedTicker?.metadata.positions).toEqual([]);
+
+    const deleteResult = await captureConsole(() => runCli(["portfolio", "delete", "Research"]));
+    expect(deleteResult.stdout).toContain('Deleted portfolio "Research".');
+    expect(deleteResult.stdout).toContain("Removed Positions");
+
+    const config = await loadConfig(dataDir);
+    expect(config.portfolios).toEqual([{ id: "main", name: "Main Portfolio", currency: "USD" }]);
+
+    persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
+    store = new TickerRepository(persistence.tickers);
+    savedTicker = await store.loadTicker("ASML");
+    persistence.close();
+
+    expect(savedTicker?.metadata.portfolios).toEqual(["main"]);
+    expect(savedTicker?.metadata.positions).toEqual([{
+      portfolio: "main",
+      shares: 1,
+      avgCost: 650,
+      currency: "USD",
+      broker: "manual",
+    }]);
+  });
+
+  test("rejects broker-managed portfolio mutations", async () => {
+    await createCliFixture({
+      portfolios: [{
+        id: "broker:ibkr:acct",
+        name: "IBKR Account",
+        currency: "USD",
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-live",
+      }],
+      watchlists: [],
+      tickers: [makeTicker()],
+    });
+
+    const result = await captureConsoleFailure(() => runCli(["portfolio", "add", "IBKR Account", "NVDA"]));
+    expect(String(result.error)).toContain("process.exit:1");
+    expect(result.stderr).toContain('Portfolio "IBKR Account" is broker-managed and cannot be modified manually.');
   });
 });
 
