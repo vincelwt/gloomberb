@@ -56,12 +56,6 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 | **Alerts** | WIP |
 | **Scanner** | WIP |
 
-#### AI plugin
-
-- The ticker detail pane keeps its `Ask AI` tab for per-company questions.
-- The `AI Screener` pane lets you create multiple prompt-based screening tabs, refresh them, force reruns, edit the prompt, and review the last run time.
-- Use the `AI <prompt>` shortcut from the command bar to open a new screener pane seeded with a prompt.
-
 ### Data providers
 
 | Provider | Description |
@@ -78,6 +72,20 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 
 Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`).
 
+## 💻 CLI
+
+Running `gloomberb` with no arguments launches the terminal UI. Use `gloomberb help` to see the full command list.
+
+```bash
+gloomberb
+gloomberb help
+gloomberb search NVDA
+gloomberb ticker AAPL
+gloomberb watchlist list
+gloomberb plugins
+gloomberb predictions world
+```
+
 ## ⌨️ Keyboard Shortcuts
 
 | Key | Action |
@@ -85,7 +93,7 @@ Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`
 | `Ctrl+P` or `` ` `` | Open command bar |
 | `Ctrl+x` | Close current window |
 | `Tab` | Switch between panels |
- `j` / `k` | Navigate ticker list |
+| `j` / `k` | Navigate ticker list |
 | `h` / `l` | Switch tabs |
 | `Ctrl+,` | Open settings |
 | `m` | Cycle chart mode in the chart tab |
