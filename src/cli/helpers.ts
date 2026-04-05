@@ -4,12 +4,9 @@ import {
   formatNumber,
   formatPercentRaw,
 } from "../utils/format";
+export { slugifyName } from "../utils/slugify";
 import type { AppConfig } from "../types/config";
 import type { Watchlist, TickerRecord } from "../types/ticker";
-
-export function slugifyName(name: string, fallbackPrefix: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `${fallbackPrefix}-${Date.now()}`;
-}
 
 export function formatSignedCurrency(value: number, currency: string): string {
   return value > 0 ? `+${formatCurrency(value, currency)}` : formatCurrency(value, currency);

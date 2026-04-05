@@ -2,6 +2,7 @@ import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { parsePredictionSearchShortcut } from "./navigation";
 import { PredictionMarketsPane } from "./pane";
 import { attachPredictionMarketsPersistence } from "./services/fetch";
+import { predictionMarketsCliCommand } from "./cli";
 import {
   buildPredictionMarketsPaneSettingsDef,
   createPredictionMarketsPaneSettings,
@@ -26,6 +27,7 @@ export const predictionMarketsPlugin: GloomPlugin = {
   description:
     "Browse prediction markets (Polymarket and Kalshi).",
   toggleable: true,
+  cliCommands: [predictionMarketsCliCommand],
   panes: [
     {
       id: PANE_ID,

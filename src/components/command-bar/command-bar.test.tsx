@@ -51,7 +51,7 @@ function expectSingleBackControl(frame: string): void {
   expect(frame).not.toContain("esc");
 }
 
-function makeTicker(symbol: string, name: string): TickerRecord {
+function makeTicker(symbol: string, name: string, overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
   return {
     metadata: {
       ticker: symbol,
@@ -63,6 +63,7 @@ function makeTicker(symbol: string, name: string): TickerRecord {
       positions: [],
       custom: {},
       tags: [],
+      ...overrides,
     },
   };
 }
@@ -626,6 +627,269 @@ describe("CommandBar", () => {
     expect(frame).toContain("Add AAPL to Watchlist");
     expect(frame).toContain("Watchlist");
     expect(frame).toContain("Back");
+  });
+
+  test("only surfaces Set Portfolio Position when a manual portfolio exists", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness query="Set Portfolio Position" />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Set Portfolio Position");
+
+    testSetup.renderer.destroy();
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="Set Portfolio Position"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{
+            id: "broker:ibkr",
+            name: "IBKR Account",
+            currency: "USD",
+            brokerId: "ibkr",
+            brokerInstanceId: "ibkr-live",
+          }],
+        })}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain('No matches for "Set Portfolio Position"');
+    expect(frame).not.toContain("Create or update a manual position in a portfolio");
+  });
+
+  test("prefills the portfolio position workflow from the active manual portfolio and ticker", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="Set Position for AAPL"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+          positions: [{
+            portfolio: "research",
+            shares: 10,
+            avgCost: 180,
+            currency: "USD",
+            broker: "manual",
+          }],
+        })]}
+      />,
+      { width: 100, height: 30 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = await waitForFrameToContain("Avg Cost");
+    expect(frame).toContain("Research");
+    expect(frame).toContain("AAPL");
+    expect(frame).toContain("10");
+    expect(frame).toContain("180");
+    expectSingleBackControl(frame);
+  });
+
+  test("submits the portfolio position workflow and persists a manual position", async () => {
+    const saved: TickerRecord[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="Set Position for AAPL"
+        selectedTicker="AAPL"
+        onSaveTicker={(ticker) => {
+          saved.push(ticker);
+        }}
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+      />,
+      { width: 100, height: 30 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("10");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("180");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("EUR");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(saved.at(-1)?.metadata.portfolios).toEqual(["research"]);
+    expect(saved.at(-1)?.metadata.positions).toEqual([{
+      portfolio: "research",
+      shares: 10,
+      avgCost: 180,
+      currency: "EUR",
+      broker: "manual",
+    }]);
+  });
+
+  test("removing a ticker from a manual portfolio also removes its position", async () => {
+    const saved: TickerRecord[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="RP AAPL"
+        selectedTicker="AAPL"
+        onSaveTicker={(ticker) => {
+          saved.push(ticker);
+        }}
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+          positions: [{
+            portfolio: "research",
+            shares: 4,
+            avgCost: 175,
+            currency: "USD",
+            broker: "manual",
+          }],
+        })]}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(saved.at(-1)?.metadata.portfolios).toEqual([]);
+    expect(saved.at(-1)?.metadata.positions).toEqual([]);
+  });
+
+  test("deleting a manual portfolio also cleans saved ticker positions", async () => {
+    const saved: TickerRecord[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="Delete Portfolio"
+        onSaveTicker={(ticker) => {
+          saved.push(ticker);
+        }}
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+          positions: [{
+            portfolio: "research",
+            shares: 2,
+            avgCost: 160,
+            currency: "USD",
+            broker: "manual",
+          }],
+        })]}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(saved.at(-1)?.metadata.portfolios).toEqual([]);
+    expect(saved.at(-1)?.metadata.positions).toEqual([]);
   });
 
   test("pressing enter after arrow navigation ignores stale mouse hover", async () => {

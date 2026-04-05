@@ -7,6 +7,7 @@ import {
   getPortfolioPaneSettings,
   resolveCollectionPaneId,
 } from "./settings";
+import { portfolioCliCommand, watchlistCliCommand } from "./cli/commands";
 
 export { shouldToggleCashMarginDrawer };
 
@@ -28,6 +29,10 @@ export const portfolioListPlugin: GloomPlugin = {
         getPortfolioPaneSettings(context.settings),
       ),
     },
+  ],
+  cliCommands: [
+    portfolioCliCommand,
+    watchlistCliCommand,
   ],
   paneTemplates: [
     {

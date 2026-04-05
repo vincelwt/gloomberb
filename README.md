@@ -36,7 +36,7 @@ Then run `gloomberb`.
 
 Everything, from the portfolio list to broker integrations, is a plugin. 
 
-Plugins can add tabs, columns, commands, status bar widgets, and more.
+Plugins can add tabs, columns, command bar commands, CLI commands, status bar widgets, and more.
 
 See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface available through `gloomberb/components`.
 
@@ -75,12 +75,15 @@ Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`
 ## 💻 CLI
 
 Running `gloomberb` with no arguments launches the terminal UI. Use `gloomberb help` to see the full command list.
+Feature-owned root commands such as `portfolio`, `watchlist`, and `predictions` are registered by their plugins rather than hardcoded in the main CLI switch.
 
 ```bash
 gloomberb
 gloomberb help
 gloomberb search NVDA
 gloomberb ticker AAPL
+gloomberb portfolio create Research
+gloomberb portfolio position set Research NVDA 10 400
 gloomberb watchlist list
 gloomberb plugins
 gloomberb predictions world
