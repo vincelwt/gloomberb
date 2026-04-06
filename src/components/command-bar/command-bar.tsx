@@ -23,6 +23,7 @@ import { exportConfig, importConfig, resetAllData, saveConfig } from "../../data
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
 import type { PluginRegistry } from "../../plugins/registry";
+import type { TickerRecord } from "../../types/ticker";
 import type {
   CommandDef,
   PaneSettingField,
@@ -113,7 +114,10 @@ import {
   summarizeWorkflowFieldValue,
   toggleSelectedValue,
 } from "./helpers";
-import { buildSetPortfolioPositionWorkflow } from "../../plugins/builtin/portfolio-list/command-bar";
+import {
+  buildAddToPortfolioWorkflow,
+  buildSetPortfolioPositionWorkflow,
+} from "../../plugins/builtin/portfolio-list/command-bar";
 import {
   addTickerToPortfolio,
   createManualPortfolio as createManualPortfolioConfig,
@@ -601,6 +605,39 @@ export function CommandBar({
     return next;
   }, []);
 
+  const openAddToPortfolioWorkflow = useCallback((
+    ticker: TickerRecord,
+    preferredPortfolioId?: string | null,
+  ) => {
+    const defaultAvgCost = stateRef.current.financials.get(ticker.metadata.ticker)?.quote?.price ?? null;
+    const workflow = buildAddToPortfolioWorkflow(stateRef.current.config, {
+      preferredPortfolioId,
+      ticker,
+      defaultAvgCost,
+    });
+    if (!workflow) {
+      pluginRegistry.showToastFn("Create a manual portfolio first.", { type: "info" });
+      return;
+    }
+
+    openWorkflowRoute({
+      kind: "workflow",
+      workflowId: "builtin:add-portfolio",
+      title: `Add ${ticker.metadata.ticker} to Portfolio`,
+      subtitle: "Choose a portfolio and optionally record the manual position now.",
+      fields: workflow.fields,
+      values: workflow.values,
+      activeFieldId: getFirstVisibleFieldId(workflow.fields, workflow.values),
+      submitLabel: "Add to Portfolio",
+      cancelLabel: "Back",
+      pendingLabel: workflow.pendingLabel,
+      pending: false,
+      error: null,
+      successBehavior: "close",
+      payload: { kind: "builtin", actionId: "add-portfolio" },
+    });
+  }, [openWorkflowRoute, pluginRegistry]);
+
   const connectBrokerProfile = useCallback(async (
     brokerId: string,
     values: WorkflowStringValues,
@@ -762,6 +799,38 @@ export function CommandBar({
     await tickerRepository.saveTicker(result.ticker);
     dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
     pluginRegistry.showToastFn(`Set position for ${result.ticker.metadata.ticker} in "${portfolio.name}".`, { type: "success" });
+  }, [activeCollectionId, activeTickerSymbol, dataProvider, dispatch, pluginRegistry, tickerRepository]);
+
+  const addTickerMembershipFromWorkflow = useCallback(async (values: Record<string, CommandBarFieldValue>) => {
+    const currentState = stateRef.current;
+    const portfolioId = coerceFieldString(values.portfolioId).trim();
+    const portfolio = currentState.config.portfolios.find((entry) => entry.id === portfolioId);
+    if (!portfolio || !isManualPortfolio(portfolio)) {
+      throw new Error("Choose a manual portfolio.");
+    }
+
+    const resolvedTicker = await resolveTickerInputOrThrow(
+      coerceFieldString(values.ticker),
+      activeTickerSymbol,
+      activeCollectionId,
+      {
+        dataProvider,
+        tickerRepository,
+        pluginRegistry,
+        dispatch,
+        getState: () => stateRef.current,
+      },
+    );
+
+    const result = addTickerToPortfolio(resolvedTicker.ticker, portfolio.id);
+    if (result.changed) {
+      await tickerRepository.saveTicker(result.ticker);
+      dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
+      pluginRegistry.showToastFn(`Added ${result.ticker.metadata.ticker} to "${portfolio.name}".`, { type: "success" });
+      return;
+    }
+
+    pluginRegistry.showToastFn(`${result.ticker.metadata.ticker} is already in "${portfolio.name}".`, { type: "info" });
   }, [activeCollectionId, activeTickerSymbol, dataProvider, dispatch, pluginRegistry, tickerRepository]);
 
   const disconnectBrokerInstance = useCallback(async (instanceId: string) => {
@@ -998,6 +1067,55 @@ export function CommandBar({
       return;
     }
 
+    if (kind === "portfolio" && action === "add") {
+      const manualPortfolios = stateForCommand.config.portfolios.filter(isManualPortfolio);
+      if (manualPortfolios.length === 0) {
+        pluginRegistry.showToastFn("Create a manual portfolio first.", { type: "info" });
+        return;
+      }
+
+      const preferredTargetId = explicitTargetId
+        ?? (activeCollectionId && manualPortfolios.some((portfolio) => portfolio.id === activeCollectionId)
+          ? activeCollectionId
+          : manualPortfolios.length === 1
+            ? manualPortfolios[0]!.id
+            : null);
+
+      if (!preferredTargetId) {
+        const options = manualPortfolios.map((portfolio) => {
+          const isMember = resolvedTicker.ticker.metadata.portfolios.includes(portfolio.id);
+          const description = isMember
+            ? `Update position in "${portfolio.name}"`
+            : `Add to "${portfolio.name}"`;
+          return {
+            id: portfolio.id,
+            label: portfolio.name,
+            detail: description,
+            description,
+          };
+        });
+        openPickerRoute({
+          kind: "picker",
+          pickerId: "collection-target",
+          title: `Add ${resolvedTicker.symbol} to Portfolio`,
+          query: "",
+          selectedIdx: 0,
+          hoveredIdx: null,
+          options,
+          payload: {
+            commandId,
+            kind,
+            action,
+            symbol: resolvedTicker.symbol,
+          },
+        });
+        return;
+      }
+
+      openAddToPortfolioWorkflow(resolvedTicker.ticker, preferredTargetId);
+      return;
+    }
+
     const targetId = explicitTargetId
       ?? resolvePreferredCollectionTarget(
         stateForCommand,
@@ -1090,6 +1208,7 @@ export function CommandBar({
     activeTickerSymbol,
     buildSharedWorkflowDeps,
     closeAll,
+    openAddToPortfolioWorkflow,
     openModeRoute,
     openPickerRoute,
     pluginRegistry,
@@ -1339,6 +1458,15 @@ export function CommandBar({
               await connectBrokerProfile(brokerId, values);
               break;
             }
+            case "add-portfolio": {
+              const shares = coerceFieldString(route.values.shares).trim();
+              if (!shares) {
+                await addTickerMembershipFromWorkflow(route.values);
+              } else {
+                await setPortfolioPositionFromWorkflow(route.values);
+              }
+              break;
+            }
             case "set-portfolio-position":
               await setPortfolioPositionFromWorkflow(route.values);
               break;
@@ -1437,6 +1565,7 @@ export function CommandBar({
     extractBrokerWorkflowValues,
     getWorkflowFieldStringValue,
     pluginRegistry,
+    addTickerMembershipFromWorkflow,
     setPortfolioPositionFromWorkflow,
     state.config.activeLayoutIndex,
     syncActiveWorkflowTextarea,
@@ -2275,6 +2404,7 @@ export function CommandBar({
 
     const isWatchlistTab = state.config.watchlists.some((entry) => entry.id === activeCollectionId);
     const isPortfolioTab = state.config.portfolios.some((entry) => entry.id === activeCollectionId);
+    const manualPortfolios = state.config.portfolios.filter(isManualPortfolio);
     const tickerData = activeTickerData;
     const focusedPaneHasSettings = !!state.focusedPaneId && pluginRegistry.hasPaneSettings(state.focusedPaneId);
 
@@ -2282,8 +2412,8 @@ export function CommandBar({
       ? activeCollectionId
       : state.config.watchlists[0]?.id ?? null;
     const targetPortfolioId = isPortfolioTab
-      ? state.config.portfolios.find((entry) => entry.id === activeCollectionId && isManualPortfolio(entry))?.id ?? null
-      : state.config.portfolios.find(isManualPortfolio)?.id ?? null;
+      ? manualPortfolios.find((entry) => entry.id === activeCollectionId)?.id ?? null
+      : manualPortfolios[0]?.id ?? null;
 
     function shouldShow(command: Command): boolean {
       switch (command.id) {
@@ -2292,18 +2422,18 @@ export function CommandBar({
         case "remove-watchlist":
           return !!tickerData && tickerData.metadata.watchlists.length > 0;
         case "add-portfolio":
-          return !!tickerData && !!targetPortfolioId && !tickerData.metadata.portfolios.includes(targetPortfolioId);
+          return !!tickerData && manualPortfolios.length > 0;
         case "remove-portfolio":
           return !!tickerData && tickerData.metadata.portfolios.some((id) =>
             state.config.portfolios.some((entry) => entry.id === id && isManualPortfolio(entry)));
         case "set-portfolio-position":
-          return state.config.portfolios.some(isManualPortfolio);
+          return manualPortfolios.length > 0;
         case "disconnect-broker-account":
           return state.config.brokerInstances.length > 0;
         case "delete-watchlist":
           return state.config.watchlists.length > 0;
         case "delete-portfolio":
-          return state.config.portfolios.some(isManualPortfolio);
+          return manualPortfolios.length > 0;
         case "pane-settings":
           return focusedPaneHasSettings;
         default:
@@ -2364,6 +2494,15 @@ export function CommandBar({
       }
     }
 
+    function smartSearchText(command: Command): string {
+      switch (command.id) {
+        case "set-portfolio-position":
+          return "edit position update position modify position manual position portfolio position";
+        default:
+          return "";
+      }
+    }
+
     function commandToItem(command: Command): ResultItem | null {
       if (!shouldShow(command)) return null;
       return {
@@ -2373,6 +2512,7 @@ export function CommandBar({
         category: command.category,
         kind: "command",
         right: command.prefix || undefined,
+        searchText: smartSearchText(command),
         disabled: command.id === "check-for-updates" && (state.updateCheckInProgress || !!state.updateProgress),
         action: () => runDirectCommand(command, ""),
       };
@@ -2414,13 +2554,19 @@ export function CommandBar({
         const displayTicker = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
         const displayName = kind === "watchlist" ? "Watchlist" : "Portfolio";
         const localTicker = displayTicker ? state.tickers.get(displayTicker) ?? null : null;
-        const preferredTargetId = resolvePreferredCollectionTarget(
-          state,
-          kind,
-          activeCollectionId,
-          action,
-          localTicker,
-        );
+        const preferredTargetId = commandId === "add-portfolio"
+          ? (activeCollectionId && manualPortfolios.some((portfolio) => portfolio.id === activeCollectionId)
+            ? activeCollectionId
+            : manualPortfolios.length === 1
+              ? manualPortfolios[0]!.id
+              : null)
+          : resolvePreferredCollectionTarget(
+            state,
+            kind,
+            activeCollectionId,
+            action,
+            localTicker,
+          );
         const preferredTargetName = preferredTargetId
           ? (kind === "watchlist"
             ? state.config.watchlists.find((entry) => entry.id === preferredTargetId)?.name

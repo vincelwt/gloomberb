@@ -629,6 +629,139 @@ describe("CommandBar", () => {
     expect(frame).toContain("Back");
   });
 
+  test("typing add still surfaces Add to Portfolio for a ticker already in the active manual portfolio", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="add"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+        })]}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Add AAPL to Portfolio");
+    expect(frame).toContain('in "Research"');
+  });
+
+  test("AP opens the add-to-portfolio workflow and prefills avg cost from the current price", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="AP AAPL"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+          financials: new Map([["AAPL", {
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+            quote: {
+              symbol: "AAPL",
+              price: 205.5,
+              currency: "USD",
+              change: 1.25,
+              changePercent: 0.61,
+              lastUpdated: Date.now(),
+            },
+          }]]),
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+        })]}
+      />,
+      { width: 100, height: 30 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = await waitForFrameToContain("Avg Cost");
+    expect(frame).toContain("Shares");
+    expect(frame).toContain("Avg Cost");
+    expect(frame).toContain("205.5");
+    expectSingleBackControl(frame);
+  });
+
+  test("add-to-portfolio can still add membership without entering a position", async () => {
+    const saved: TickerRecord[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="AP AAPL"
+        selectedTicker="AAPL"
+        onSaveTicker={(ticker) => {
+          saved.push(ticker);
+        }}
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+      />,
+      { width: 100, height: 30 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = await waitForFrameToContain("Avg Cost");
+    expect(frame).toContain("Shares");
+    expect(frame).toContain("Avg Cost");
+
+    await clickFrameText("Add to Portfolio");
+    await act(async () => {
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(saved.at(-1)?.metadata.portfolios).toEqual(["research"]);
+    expect(saved.at(-1)?.metadata.positions).toEqual([]);
+  });
+
   test("only surfaces Set Portfolio Position when a manual portfolio exists", async () => {
     testSetup = await testRender(
       <CommandBarHarness query="Set Portfolio Position" />,
@@ -660,6 +793,36 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain('No matches for "Set Portfolio Position"');
     expect(frame).not.toContain("Create or update a manual position in a portfolio");
+  });
+
+  test("matches set portfolio position when searching edit position", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="edit position"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Set Position for AAPL");
+    expect(frame).toContain('in "Research"');
   });
 
   test("prefills the portfolio position workflow from the active manual portfolio and ticker", async () => {
