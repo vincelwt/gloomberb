@@ -13,6 +13,14 @@ OpenTUI provides:
 
 Use this reference when you need snapshot tests, interaction testing, or renderer-based regression checks.
 
+## Cleanup Rule
+
+Treat cleanup as part of every test run. If you launch `tmux`, a dev server, a watcher, or any other background process to exercise the TUI, stop it before you hand off the task, even if the test fails.
+
+- Prefer named `tmux` sessions so you can reliably kill them with `tmux kill-session -t <name>`.
+- Capture background process IDs when you start them and terminate them explicitly with `kill <pid>` or the matching shutdown command.
+- Do not leave long-lived test helpers running between iterations; restart them cleanly when needed.
+
 ## Test Setup
 
 ### Bun Test Runner
