@@ -11,8 +11,8 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
                 MSFT                                    NASDAQ                  
                                                                                 
                 Panes                                                           
-                New Portfolio Pane                      PF                      
-                New Chat Pane                           CHAT                    
+                Portfolio                               PF                      
+                Chat                                    CHAT                    
                 Quote Monitor                           QQ                      
                                                                                 
                 Search                                                          
@@ -95,8 +95,8 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
        MSFT                        NASDAQ 
                                           
        Panes                              
-       New Portfolio Pane          PF     
-       New Chat Pane               CHAT   
+       Portfolio                   PF     
+       Chat                        CHAT   
        Quote Monitor               QQ     
                                           
        Search                             

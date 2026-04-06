@@ -78,6 +78,7 @@ import type {
   CommandBarWorkflowRoute,
 } from "./workflow-types";
 import { parseRootShortcutIntent } from "./root-shortcuts";
+import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 import {
   applyCollectionMembershipChange,
   getCollectionTargetOptions,
@@ -1484,6 +1485,7 @@ export function CommandBar({
   }, []);
 
   const openPaneTemplateWorkflow = useCallback((template: PaneTemplateDef, options?: { arg?: string }) => {
+    const displayLabel = getPaneTemplateDisplayLabel(template);
     const normalized = template.wizard && template.wizard.length > 0
       ? normalizeWizardFields(template.wizard)
       : { fields: [] as CommandBarWorkflowField[], description: [] as string[], initialValues: {} as Record<string, CommandBarFieldValue> };
@@ -1504,7 +1506,7 @@ export function CommandBar({
     openWorkflowRoute({
       kind: "workflow",
       workflowId: `pane-template:${template.id}`,
-      title: template.label,
+      title: displayLabel,
       subtitle: template.description,
       description: normalized.description,
       fields,
@@ -1512,7 +1514,7 @@ export function CommandBar({
       activeFieldId: getFirstVisibleFieldId(fields, values),
       submitLabel: "Create Pane",
       cancelLabel: "Back",
-      pendingLabel: normalized.pendingLabel ?? `Creating ${template.label.toLowerCase()}…`,
+      pendingLabel: normalized.pendingLabel ?? `Creating ${displayLabel.toLowerCase()}…`,
       successLabel: normalized.successLabel,
       pending: false,
       error: null,
@@ -1535,8 +1537,9 @@ export function CommandBar({
       await pluginRegistry.createPaneFromTemplateAsyncFn(template.id, createOptions);
       closeAll({ revertThemePreview: false });
     } catch (error) {
+      const displayLabel = getPaneTemplateDisplayLabel(template);
       pluginRegistry.showToastFn(
-        error instanceof Error ? error.message : `Could not create ${template.label.toLowerCase()}.`,
+        error instanceof Error ? error.message : `Could not create ${displayLabel.toLowerCase()}.`,
         { type: "error" },
       );
     }
@@ -1810,13 +1813,12 @@ export function CommandBar({
   ): ResultItem => {
     const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
     const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
-    const paneDef = pluginRegistry.panes.get(template.paneId);
+    const displayLabel = getPaneTemplateDisplayLabel(template);
     const shortcutLabel = template.shortcut
       ? [template.shortcut.prefix, template.shortcut.argPlaceholder && `<${template.shortcut.argPlaceholder}>`]
         .filter(Boolean)
         .join(" ")
       : null;
-    const placementLabel = paneDef?.defaultMode === "floating" ? "float" : "dock";
     const arg = options?.createOptions?.arg;
 
     const action = () => {
@@ -1833,12 +1835,12 @@ export function CommandBar({
 
     return {
       id: `pane-template:${template.id}:${arg || ""}`,
-      label: template.label,
+      label: displayLabel,
       detail: shortcutLabel ? `${template.description} · ${shortcutLabel}` : template.description,
       category: options?.category ?? (pluginName ? `${pluginName} Panes` : "New Panes"),
       kind: "action",
-      right: options?.showShortcut ? (template.shortcut?.prefix || placementLabel) : placementLabel,
-      searchText: `${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
+      right: options?.showShortcut ? template.shortcut?.prefix : undefined,
+      searchText: `${displayLabel} ${template.label} ${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
       action,
     };
   }, [openPaneTemplateDirect, openPaneTemplateWorkflow, pluginRegistry, runPaneTemplateShortcut, shouldOpenTemplateConfig]);
@@ -2995,22 +2997,22 @@ export function CommandBar({
         const symbol = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
         if (symbol) {
           return rootShortcutIntent.kind === "inferred-complete"
-            ? `Shortcut: ${rootShortcutIntent.template.label} for ${symbol} · Tab to accept`
-            : `Shortcut: ${rootShortcutIntent.template.label} for ${symbol}`;
+            ? `Shortcut: ${rootShortcutIntent.label} for ${symbol} · Tab to accept`
+            : `Shortcut: ${rootShortcutIntent.label} for ${symbol}`;
         }
-        return `Shortcut: ${rootShortcutIntent.template.label} · Enter to choose ticker`;
+        return `Shortcut: ${rootShortcutIntent.label} · Enter to choose ticker`;
       }
       if (argKind === "ticker-list") {
         if (rootShortcutIntent.argText) {
-          return `Shortcut: ${rootShortcutIntent.template.label} · ${rootShortcutIntent.argText}`;
+          return `Shortcut: ${rootShortcutIntent.label} · ${rootShortcutIntent.argText}`;
         }
         const inferred = normalizeTickerInput(activeTickerSymbol, undefined);
         if (inferred) {
-          return `Shortcut: ${rootShortcutIntent.template.label} · inferred ${inferred} · Tab to accept`;
+          return `Shortcut: ${rootShortcutIntent.label} · inferred ${inferred} · Tab to accept`;
         }
-        return `Shortcut: ${rootShortcutIntent.template.label} · Enter tickers to compare`;
+        return `Shortcut: ${rootShortcutIntent.label} · Enter tickers to compare`;
       }
-      return `Shortcut: ${rootShortcutIntent.template.label}`;
+      return `Shortcut: ${rootShortcutIntent.label}`;
     }
 
     if (rootShortcutIntent.command.id === "search-ticker") {
