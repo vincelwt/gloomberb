@@ -1275,8 +1275,8 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("New Chat Pane");
-    expect(frame).toContain("float");
+    expect(frame).toContain("Chat");
+    expect(frame).not.toContain("float");
   });
 
   test("shows pane shortcuts in the default browse results", async () => {
@@ -1804,7 +1804,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("New IBKR Trading Pane");
+    expect(frame).toContain("IBKR Trading");
     expect(frame).toContain("IBKR");
   });
 

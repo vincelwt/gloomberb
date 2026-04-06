@@ -8,6 +8,7 @@ const TRANSCRIPT_KIND = "channel-transcript";
 const TRANSCRIPT_KEY = "everyone";
 const TRANSCRIPT_SOURCE = "server";
 const originalGetSession = apiClient.getSession.bind(apiClient);
+const originalGetMessages = apiClient.getMessages.bind(apiClient);
 
 class MemoryPersistence implements PluginPersistence {
   private readonly state = new Map<string, { schemaVersion: number; value: unknown }>();
@@ -78,6 +79,7 @@ class MemoryPersistence implements PluginPersistence {
 afterEach(() => {
   apiClient.setSessionToken(null);
   apiClient.getSession = originalGetSession;
+  apiClient.getMessages = originalGetMessages;
 });
 
 describe("ChatController", () => {
@@ -212,6 +214,32 @@ describe("ChatController", () => {
       id: "u1",
       username: "vince",
       emailVerified: true,
+    });
+  });
+
+  test("refreshes the public transcript without requiring a session", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "hello from the lobby",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u1", username: "vince", displayName: "Vince" },
+    };
+
+    controller.attachPersistence(persistence);
+    apiClient.getMessages = async () => [message];
+
+    await controller.refreshMessages();
+
+    expect(controller.getSnapshot().messages).toEqual([message]);
+    expect(persistence.getResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: 1,
+    })?.value).toEqual({
+      messages: [message],
     });
   });
 });

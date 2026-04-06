@@ -1,5 +1,6 @@
 import type { PaneTemplateDef } from "../../types/plugin";
 import type { Command } from "./command-registry";
+import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 
 export type RootShortcutArgKind = "text" | "ticker" | "ticker-list";
 export type ShortcutIntentKind = "none" | "complete" | "inferred-complete" | "partial" | "ambiguous";
@@ -88,7 +89,7 @@ function buildShortcutCandidates(
       .filter((template) => template.shortcut?.prefix)
       .map((template) => ({
         prefix: normalizeShortcutPrefix(template.shortcut!.prefix),
-        label: template.label,
+        label: getPaneTemplateDisplayLabel(template),
         description: template.description,
         argKind: getPaneShortcutArgKind(template),
         argPlaceholder: template.shortcut?.argPlaceholder,

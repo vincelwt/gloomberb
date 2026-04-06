@@ -14,6 +14,7 @@ import {
   buildComparisonChartPaneTitle,
   COMPARISON_CHART_PANE_ID,
 } from "../../plugins/builtin/comparison-chart";
+import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 
 export interface SharedWorkflowDeps {
   dataProvider: DataProvider;
@@ -303,7 +304,7 @@ export async function createPaneTemplateOrThrow(
   const { context, resolvedOptions } = await resolvePaneTemplateOptions(template, options, deps);
 
   if (template.canCreate && !template.canCreate(context, resolvedOptions)) {
-    throw new Error(`Can't create ${template.label.toLowerCase()} right now.`);
+    throw new Error(`Can't create ${getPaneTemplateDisplayLabel(template).toLowerCase()} right now.`);
   }
 
   const createInstanceResult = await template.createInstance?.(context, resolvedOptions);
