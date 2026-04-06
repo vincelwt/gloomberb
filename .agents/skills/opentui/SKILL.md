@@ -2,7 +2,7 @@
 name: opentui
 description: Comprehensive OpenTUI skill for building terminal user interfaces. Covers the core imperative API, React reconciler, and Solid reconciler. Use for any TUI development task including components, layout, keyboard handling, animations, and testing.
 metadata:
-   references: core, react, solid
+   references: core, react, solid, testing
 ---
 
 # OpenTUI Platform Skill
@@ -17,6 +17,7 @@ Consolidated skill for building terminal user interfaces with OpenTUI. Use decis
 2. **`create-tui` options must come before arguments.** `bunx create-tui -t react my-app` works, `bunx create-tui my-app -t react` does NOT.
 3. **Never call `process.exit()` directly.** Use `renderer.destroy()` (see `core/gotchas.md`).
 4. **Text styling requires nested tags in React/Solid.** Use modifier elements, not props (see `components/text-display.md`).
+5. **Testing cleanup is mandatory.** If you use `tmux` or start any background process while testing, kill it before you finish the task (see `testing/REFERENCE.md`).
 
 ## How to Use This Skill
 

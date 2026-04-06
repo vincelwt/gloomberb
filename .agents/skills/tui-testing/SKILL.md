@@ -11,6 +11,14 @@ description: >-
 
 Three testing approaches. **Start with the simplest level that covers your change** and escalate only when needed.
 
+## Critical Rule
+
+Cleanup is part of testing. If you start `tmux`, a dev server, a watcher, or any other background process while testing, stop it before you finish the task, even if the test fails.
+
+- Prefer named `tmux` sessions and end them with `tmux kill-session -t <name>`.
+- If you start a background process without `tmux`, capture its PID and terminate it explicitly with `kill <pid>` or the matching shutdown command.
+- Do not leave test helpers running across iterations unless the workflow explicitly requires it and you clean them up before handoff.
+
 ```
 What are you testing?
 ├─ Data flow, config, business logic, or integration with external sources
@@ -204,6 +212,18 @@ tmux new-session -d -s test -x 120 -y 40 'bun run dev 2>&1'
 sleep 3
 ```
 
+If you need to run the app without `tmux`, keep the process handle so you can shut it down:
+
+```bash
+bun run dev > /tmp/gloomberb-test.log 2>&1 &
+app_pid=$!
+
+# ... test whatever you need ...
+
+kill "$app_pid"
+wait "$app_pid" 2>/dev/null
+```
+
 ### Capturing the screen
 
 ```bash
@@ -276,5 +296,5 @@ tmux kill-session -t test
 
 - **Timing:** If captures look incomplete, increase sleep duration. Network-dependent views take longer.
 - **Terminal size:** `-x 120 -y 40` gives consistent layout. Smaller sizes may cause wrapping.
-- **Cleanup:** Always `tmux kill-session -t test` when done.
+- **Cleanup:** Always kill the `tmux` session or any other background process you started when done.
 - **Debugging crashes:** stderr is captured via `2>&1` so crash output is visible.
