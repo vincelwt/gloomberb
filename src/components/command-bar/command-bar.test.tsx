@@ -46,9 +46,34 @@ async function clickFrameText(text: string): Promise<void> {
   });
 }
 
+async function emitKeypress(
+  renderer: Awaited<ReturnType<typeof testRender>>,
+  event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean; option?: boolean },
+): Promise<void> {
+  await act(async () => {
+    renderer.renderer.keyInput.emit("keypress", {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      stopPropagation: () => {},
+      preventDefault: () => {},
+      ...event,
+    } as any);
+    await renderer.renderOnce();
+  });
+}
+
+async function renderFrames(count = 2): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    await testSetup!.renderOnce();
+  }
+}
+
 function expectSingleBackControl(frame: string): void {
   expect(frame.match(/\bBack\b/g)?.length ?? 0).toBe(1);
-  expect(frame).not.toContain("esc");
 }
 
 function makeTicker(symbol: string, name: string, overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
@@ -982,6 +1007,41 @@ describe("CommandBar", () => {
     expect(executed).toEqual(["delete-layout"]);
   });
 
+  test("uses backspace to leave confirm routes", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="delete"
+        configurePluginRegistry={(pluginRegistry) => {
+          (pluginRegistry.commands as Map<string, any>).set("delete-layout", {
+            id: "delete-layout",
+            label: "Delete Layout",
+            description: "Delete the current layout preset",
+            category: "Layout Manager",
+            execute: async () => {},
+          });
+        }}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Delete Layout");
+    expect(frame).not.toContain("Back  Delete Layout");
+  });
+
   test("moves through long result lists with the mouse wheel", async () => {
     testSetup = await testRender(
       <CommandBarHarness
@@ -1211,6 +1271,48 @@ describe("CommandBar", () => {
       username: "vince",
       password: "secret",
     });
+  });
+
+  test("does not treat backspace as Back inside workflow text fields", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="Plugin Login"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("plugin:login", {
+          id: "plugin:login",
+          label: "Plugin Login",
+          description: "Authenticate without leaving the command bar",
+          category: "config",
+          wizard: [
+            { key: "username", label: "Username", type: "text", placeholder: "vince" },
+          ],
+          execute: async () => {},
+        } as any);
+        pluginRegistry.getCommandPluginId = () => "notes";
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("vince");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Plugin Login");
+    expect(frame).toContain("vinc");
+    expect(frame).toContain("Back");
   });
 
   test("QQ MSFT executes directly without opening a secondary workflow", async () => {
@@ -1545,6 +1647,96 @@ describe("CommandBar", () => {
       key: "symbol",
       value: "MSFT",
     }]);
+  });
+
+  test("uses backspace as back only when a pane-settings route query is empty", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="PS"
+      configureState={(state) => ({
+        ...state,
+        focusedPaneId: "quote-monitor:main",
+      })}
+      hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.resolvePaneSettings = () => ({
+          paneId: "quote-monitor:main",
+          pane: {
+            instanceId: "quote-monitor:main",
+            paneId: "quote-monitor",
+            title: "Quote Monitor",
+            settings: {},
+          },
+          paneDef: pluginRegistry.panes.get("quote-monitor")!,
+          settingsDef: {
+            title: "Quote Monitor Settings",
+            fields: [{
+              key: "symbol",
+              label: "Symbol",
+              type: "text",
+              description: "Ticker symbol to track",
+            }],
+          },
+          context: {
+            config: createDefaultConfig("/tmp/gloomberb-test"),
+            layout: cloneLayout(createDefaultConfig("/tmp/gloomberb-test").layout),
+            paneId: "quote-monitor:main",
+            paneType: "quote-monitor",
+            pane: {
+              instanceId: "quote-monitor:main",
+              paneId: "quote-monitor",
+              title: "Quote Monitor",
+              settings: {},
+            },
+            settings: {},
+            paneState: {},
+            activeTicker: "AAPL",
+            activeCollectionId: "main",
+          },
+        }) as any;
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("s");
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+
+    await emitKeypress(testSetup, { name: "backspace", sequence: "\b" });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Quote Monitor Settings");
+    expect(frame).not.toContain("Back  Pane Settings");
   });
 
   test("renders pane-setting multi-select pickers only once inside the command bar", async () => {

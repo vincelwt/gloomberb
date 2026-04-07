@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState } from "react";
-import { useKeyboard } from "@opentui/react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
@@ -88,15 +87,6 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     setSummaryCache((prev) => new Map(prev).set(selected.url, selectedSummary));
   }, [selected?.url, selectedSummary]);
 
-  useKeyboard((event) => {
-    if (!focused || news.length === 0) return;
-    if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((index) => Math.min(index + 1, news.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((index) => Math.max(index - 1, 0));
-    }
-  });
-
   useEffect(() => {
     if (news.length > 0 && selectedIdx >= news.length) {
       setSelectedIdx(Math.max(0, news.length - 1));
@@ -114,13 +104,13 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     <DetailFeedView
       width={width}
       height={height}
+      focused={focused}
       items={items}
       selectedIdx={selectedIdx}
       hoveredIdx={hoveredIdx}
       onSelect={setSelectedIdx}
       onHover={setHoveredIdx}
       listVariant="single-line"
-      splitListWidthRatio={0.36}
     />
   );
 }

@@ -325,7 +325,19 @@ export function getScreenFooterLeft(route: CommandBarRoute | null): string {
 }
 
 export function getScreenFooterRight(route: CommandBarRoute | null): string {
-  return route ? "esc back" : "esc close";
+  if (!route) return "esc close";
+
+  if (route.kind === "workflow") return "esc back";
+  if (route.kind === "confirm") return "backspace/esc back";
+
+  if (
+    (route.kind === "mode" || route.kind === "picker" || route.kind === "pane-settings")
+    && route.query.trim().length > 0
+  ) {
+    return "backspace delete  esc back";
+  }
+
+  return "backspace/esc back";
 }
 
 export function isRootParsedCommand(commandId: string): boolean {

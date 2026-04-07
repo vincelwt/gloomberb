@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useAppState, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
+import { useAppDispatch, useAppSelector, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
 import { saveConfig } from "../../data/config-store";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
@@ -46,7 +46,8 @@ import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-suppor
 import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
 import { syncCachedNativeSurface } from "./native/surface-sync";
-import type { PricePoint } from "../../types/financials";
+import type { PricePoint, TickerFinancials } from "../../types/financials";
+import type { TickerRecord } from "../../types/ticker";
 
 const MODE_CHIPS: Record<ChartRenderMode, string> = {
   area: "A",
@@ -71,6 +72,12 @@ interface StockChartProps {
   axisMode?: ChartAxisMode;
   historyOverride?: PricePoint[] | null;
   currencyOverride?: string | null;
+}
+
+interface ResolvedStockChartProps extends StockChartProps {
+  symbol: string | null;
+  ticker: TickerRecord | null;
+  financials: TickerFinancials | null;
 }
 
 interface DragState {
@@ -507,7 +514,12 @@ function resolveSelectionCursor(
   };
 }
 
-export function StockChart({
+export function StockChart(props: StockChartProps) {
+  const { symbol, ticker, financials } = usePaneTicker();
+  return <ResolvedStockChart {...props} symbol={symbol} ticker={ticker} financials={financials} />;
+}
+
+export const ResolvedStockChart = memo(function ResolvedStockChart({
   width,
   height,
   focused,
@@ -516,14 +528,17 @@ export function StockChart({
   axisMode = "price",
   historyOverride = null,
   currencyOverride = null,
-}: StockChartProps) {
+  symbol,
+  ticker,
+  financials,
+}: ResolvedStockChartProps) {
   const renderer = useRenderer();
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
   const paneId = usePaneInstanceId();
-  const { ticker, financials } = usePaneTicker();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
-  const defaultRenderMode = state.config.chartPreferences.defaultRenderMode;
-  const preferredRenderer = state.config.chartPreferences.renderer;
+  const defaultRenderMode = config.chartPreferences.defaultRenderMode;
+  const preferredRenderer = config.chartPreferences.renderer;
   const [viewState, setViewState] = useState<ChartViewState>({
     timeRange: compact ? "1Y" : "5Y",
     panOffset: 0,
@@ -717,9 +732,9 @@ export function StockChart({
   const persistDefaultRenderMode = (nextMode: ChartRenderMode) => {
     if (nextMode === defaultRenderMode) return;
     const nextConfig = {
-      ...state.config,
+      ...config,
       chartPreferences: {
-        ...state.config.chartPreferences,
+        ...config.chartPreferences,
         defaultRenderMode: nextMode,
       },
     };
@@ -1576,4 +1591,4 @@ export function StockChart({
       </box>
     </box>
   );
-}
+});

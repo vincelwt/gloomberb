@@ -39,6 +39,7 @@ import {
   resolveVisibleColumns,
 } from "./settings";
 import { PortfolioTickerTable, type QuoteFlashDirection } from "./table";
+import { useThrottledCursorSymbol } from "./use-throttled-cursor-symbol";
 
 const VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS = 5 * 60_000;
 
@@ -52,7 +53,6 @@ function needsVisibleFinancialWarmup(ticker: TickerRecord, financials: TickerFin
 function selectStreamTickers(
   tickers: TickerRecord[],
   _visibleRange: { start: number; end: number },
-  _cursorSymbol: string | null,
 ) {
   return tickers;
 }
@@ -129,7 +129,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const paneCollection = usePaneCollection();
 
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
-  const [cursorSymbol, setCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
+  const [committedCursorSymbol, setCommittedCursorSymbol] = usePaneStateValue<string | null>("cursorSymbol", null);
   const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
   const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
 
@@ -144,6 +144,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const warmupAttemptRef = useRef(new Map<string, number>());
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const {
+    cursorSymbol,
+    setCursorSymbol,
+    flushCursorSymbol,
+    cancelPendingCursorSymbol,
+  } = useThrottledCursorSymbol(committedCursorSymbol, setCommittedCursorSymbol);
 
   const paneSettings = useMemo(
     () => getPortfolioPaneSettings(paneInstance?.settings),
@@ -159,11 +165,16 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   );
   const activeCollectionId = resolveActiveCollectionId(currentCollectionId, visibleCollections, paneSettings);
   const isPortfolioTab = getCollectionType(state, activeCollectionId) === "portfolio";
-  const currentPortfolio = isPortfolioTab
-    ? state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
-    : null;
+  const currentPortfolio = useMemo(() => (
+    isPortfolioTab
+      ? state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
+      : null
+  ), [activeCollectionId, isPortfolioTab, state.config.portfolios]);
 
-  const tickers = getCollectionTickers(state, activeCollectionId);
+  const tickers = useMemo(
+    () => getCollectionTickers(state, activeCollectionId),
+    [activeCollectionId, state.config.portfolios, state.config.watchlists, state.tickers],
+  );
   const marketFinancialsMap = useTickerFinancialsMap(tickers);
   const sharedCoordinator = getSharedMarketDataCoordinator();
   const financialsMap = useMemo(() => {
@@ -240,6 +251,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     updateStreamWindow();
   }, [syncHeaderScroll, updateStreamWindow]);
 
+  const handleCollectionSelect = useCallback((collectionId: string) => {
+    cancelPendingCursorSymbol();
+    setCurrentCollectionId(collectionId);
+  }, [cancelPendingCursorSymbol, setCurrentCollectionId]);
+
   const setSortPreference = useCallback((preference: CollectionSortPreference) => {
     if (!activeCollectionId) return;
     setCollectionSorts({
@@ -293,17 +309,19 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
     if (!paneSettings.hideTabs && (key === "h" || key === "left")) {
       const previousCollection = visibleCollections[Math.max(currentTabIdx - 1, 0)];
-      if (previousCollection) setCurrentCollectionId(previousCollection.id);
+      if (previousCollection) handleCollectionSelect(previousCollection.id);
       return;
     }
 
     if (!paneSettings.hideTabs && (key === "l" || key === "right")) {
       const nextCollection = visibleCollections[Math.min(currentTabIdx + 1, visibleCollections.length - 1)];
-      if (nextCollection) setCurrentCollectionId(nextCollection.id);
+      if (nextCollection) handleCollectionSelect(nextCollection.id);
       return;
     }
 
     if (!isEnter) return;
+
+    flushCursorSymbol(cursorSymbol);
 
     const follower = state.config.layout.instances.find((instance) =>
       instance.paneId === "ticker-detail"
@@ -325,7 +343,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     safeSelectedIdx,
     setCashDrawerExpanded,
     setCursorSymbol,
-    setCurrentCollectionId,
+    flushCursorSymbol,
+    handleCollectionSelect,
     showCashDrawer,
     sortedTickers,
     state.config.layout.instances,
@@ -336,9 +355,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     if (activeCollectionId !== currentCollectionId) {
+      cancelPendingCursorSymbol();
       setCurrentCollectionId(activeCollectionId);
     }
-  }, [activeCollectionId, currentCollectionId, setCurrentCollectionId]);
+  }, [activeCollectionId, cancelPendingCursorSymbol, currentCollectionId, setCurrentCollectionId]);
 
   useEffect(() => {
     return () => {
@@ -402,19 +422,19 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     if (sortedTickers.length === 0) {
-      if (cursorSymbol !== null) setCursorSymbol(null);
+      if (cursorSymbol !== null) setCursorSymbol(null, { immediate: true });
       return;
     }
 
     const hasSelection = cursorSymbol && sortedTickers.some((ticker) => ticker.metadata.ticker === cursorSymbol);
     if (!hasSelection) {
-      setCursorSymbol(sortedTickers[0]!.metadata.ticker);
+      setCursorSymbol(sortedTickers[0]!.metadata.ticker, { immediate: true });
     }
   }, [cursorSymbol, setCursorSymbol, sortedTickers]);
 
   const streamTickers = useMemo(
-    () => selectStreamTickers(sortedTickers, streamWindow, cursorSymbol),
-    [cursorSymbol, sortedTickers, streamWindow],
+    () => selectStreamTickers(sortedTickers, streamWindow),
+    [sortedTickers, streamWindow],
   );
   const streamTargets = useMemo(() => (
     streamTickers
@@ -477,7 +497,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
               <TabBar
                 tabs={visibleCollections.map((collection) => ({ label: collection.name, value: collection.id }))}
                 activeValue={activeCollectionId}
-                onSelect={setCurrentCollectionId}
+                onSelect={handleCollectionSelect}
                 compact
               />
             </box>
@@ -488,7 +508,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
             <PortfolioSummaryBar
               tickers={sortedTickers}
               financialsMap={financialsMap}
-              state={state}
+              baseCurrency={state.config.baseCurrency}
+              exchangeRates={effectiveExchangeRates}
+              refreshingCount={state.refreshing.size}
               isPortfolio={isPortfolioTab}
               collectionId={activeCollectionId}
               width={Math.max(0, width)}

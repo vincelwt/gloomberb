@@ -33,6 +33,21 @@ function stableCurrencyList(currencies: Array<string | null | undefined>): strin
   )].sort((left, right) => left.localeCompare(right));
 }
 
+function buildTickerFinancialsMapKey(tickers: TickerRecord[]): string {
+  return tickers.map((ticker) => {
+    const instrument = ticker.metadata.broker_contracts?.[0];
+    return [
+      ticker.metadata.ticker,
+      ticker.metadata.exchange ?? "",
+      instrument?.brokerId ?? "",
+      instrument?.brokerInstanceId ?? "",
+      instrument?.conId ?? "",
+      instrument?.localSymbol ?? "",
+      instrument?.symbol ?? "",
+    ].join("|");
+  }).join("::");
+}
+
 export function useTickerInstrument(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): InstrumentRef | null {
   return useMemo(() => instrumentFromTicker(ticker, symbol ?? null), [symbol, ticker]);
 }
@@ -54,7 +69,12 @@ export function useTickerFinancials(symbol: string | null | undefined, ticker: T
 }
 
 export function useTickerFinancialsMap(tickers: TickerRecord[]): Map<string, TickerFinancials> {
-  return useCoordinatorSelector((coordinator) => {
+  const coordinator = getSharedMarketDataCoordinator();
+  const version = useCoordinatorVersion();
+  const tickerKey = buildTickerFinancialsMapKey(tickers);
+
+  return useMemo(() => {
+    if (!coordinator) return new Map<string, TickerFinancials>();
     const result = new Map<string, TickerFinancials>();
     for (const ticker of tickers) {
       const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
@@ -65,7 +85,7 @@ export function useTickerFinancialsMap(tickers: TickerRecord[]): Map<string, Tic
       }
     }
     return result;
-  }, new Map<string, TickerFinancials>());
+  }, [coordinator, tickerKey, version]);
 }
 
 export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): QueryEntry<Quote> | null {
@@ -203,10 +223,17 @@ export function useFxRate(currency: string | null | undefined): QueryEntry<numbe
 }
 
 export function useFxRatesMap(currencies: Array<string | null | undefined>): Map<string, number> {
-  const normalizedCurrencies = useMemo(() => stableCurrencyList(currencies), [currencies]);
-  const entries = useCoordinatorSelector((coordinator) => (
-    normalizedCurrencies.map((currency) => [currency, coordinator.getFxEntry(currency)] as const)
-  ), [] as Array<readonly [string, QueryEntry<number>]>);
+  const coordinator = getSharedMarketDataCoordinator();
+  const version = useCoordinatorVersion();
+  const normalizedCurrencyKey = stableCurrencyList(currencies).join("|");
+  const normalizedCurrencies = useMemo(
+    () => (normalizedCurrencyKey ? normalizedCurrencyKey.split("|") : []),
+    [normalizedCurrencyKey],
+  );
+  const entries = useMemo(() => {
+    if (!coordinator) return [] as Array<readonly [string, QueryEntry<number>]>;
+    return normalizedCurrencies.map((currency) => [currency, coordinator.getFxEntry(currency)] as const);
+  }, [coordinator, normalizedCurrencies, version]);
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -214,7 +241,7 @@ export function useFxRatesMap(currencies: Array<string | null | undefined>): Map
     for (const currency of normalizedCurrencies) {
       void coordinator.loadFxRate(currency);
     }
-  }, [normalizedCurrencies.join("|")]);
+  }, [normalizedCurrencyKey]);
 
   return useMemo(() => {
     const rates = new Map<string, number>();

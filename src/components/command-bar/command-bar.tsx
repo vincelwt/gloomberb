@@ -68,6 +68,7 @@ import {
   type TickerSearchCandidate,
 } from "../../utils/ticker-search";
 import { debugLog } from "../../utils/debug-log";
+import { isPlainBackspace } from "../../utils/back-navigation";
 import type {
   CommandBarFieldOption,
   CommandBarFieldValue,
@@ -4203,6 +4204,7 @@ export function CommandBar({
         name: string;
         sequence?: string;
         ctrl?: boolean;
+        option?: boolean;
         meta?: boolean;
         shift?: boolean;
         stopPropagation: () => void;
@@ -4212,6 +4214,7 @@ export function CommandBar({
         name: string;
         sequence?: string;
         ctrl?: boolean;
+        option?: boolean;
         meta?: boolean;
         shift?: boolean;
         stopPropagation: () => void;
@@ -4222,6 +4225,7 @@ export function CommandBar({
       name: string;
       sequence?: string;
       ctrl?: boolean;
+      option?: boolean;
       meta?: boolean;
       shift?: boolean;
       stopPropagation: () => void;
@@ -4235,6 +4239,12 @@ export function CommandBar({
       }
 
       if (currentRoute?.kind === "confirm") {
+        if (isPlainBackspace(event)) {
+          event.stopPropagation();
+          event.preventDefault();
+          popRoute();
+          return;
+        }
         if (event.name === "return" || event.name === "enter" || event.name === "y") {
           event.stopPropagation();
           event.preventDefault();
@@ -4246,6 +4256,20 @@ export function CommandBar({
           event.preventDefault();
           popRoute();
         }
+        return;
+      }
+
+      if (
+        currentRoute
+        && (currentRoute.kind === "mode"
+          || currentRoute.kind === "picker"
+          || currentRoute.kind === "pane-settings")
+        && isPlainBackspace(event)
+        && currentRoute.query.length === 0
+      ) {
+        event.stopPropagation();
+        event.preventDefault();
+        popRoute();
         return;
       }
 

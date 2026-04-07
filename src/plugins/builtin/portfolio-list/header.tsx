@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { AppState } from "../../../state/app-context";
-import { useFxRatesMap } from "../../../market-data/hooks";
 import { colors, priceColor } from "../../../theme/colors";
 import type { TickerFinancials } from "../../../types/financials";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
 import { formatCompact, formatNumber, formatPercentRaw, padTo } from "../../../utils/format";
 import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
-import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { ibkrGatewayManager } from "../../ibkr/gateway-service";
 import { calculatePortfolioSummaryTotals } from "./metrics";
 import {
@@ -17,22 +15,6 @@ import {
   resolvePortfolioAccountState,
   type ResolvedPortfolioAccountState,
 } from "./summary";
-
-function getSummaryCurrencies(
-  tickers: TickerRecord[],
-  financialsMap: Map<string, TickerFinancials>,
-  baseCurrency: string,
-  accountState: ResolvedPortfolioAccountState | null,
-): string[] {
-  return [
-    baseCurrency,
-    ...tickers.map((ticker) => ticker.metadata.currency),
-    ...tickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote?.currency),
-    ...tickers.flatMap((ticker) => ticker.metadata.positions.map((position) => position.currency)),
-    ...(accountState?.visibleCashBalances.map((balance) => balance.currency) ?? []),
-    ...(accountState?.visibleCashBalances.map((balance) => balance.baseCurrency) ?? []),
-  ];
-}
 
 export function shouldToggleCashMarginDrawer(key: string | undefined, showCashDrawer: boolean): boolean {
   return key === "c" && showCashDrawer;
@@ -49,7 +31,7 @@ export function usePortfolioAccountState(
   );
   return useMemo(
     () => resolvePortfolioAccountState(portfolio, state, snapshot),
-    [portfolio, snapshot, state],
+    [portfolio, snapshot, state.brokerAccounts, state.config],
   );
 }
 
@@ -139,10 +121,12 @@ export function PortfolioCashMarginDrawer({
   );
 }
 
-export function PortfolioSummaryBar({
+export const PortfolioSummaryBar = memo(function PortfolioSummaryBar({
   tickers,
   financialsMap,
-  state,
+  baseCurrency,
+  exchangeRates,
+  refreshingCount,
   isPortfolio,
   collectionId,
   width,
@@ -150,7 +134,9 @@ export function PortfolioSummaryBar({
 }: {
   tickers: TickerRecord[];
   financialsMap: Map<string, TickerFinancials>;
-  state: AppState;
+  baseCurrency: string;
+  exchangeRates: Map<string, number>;
+  refreshingCount: number;
   isPortfolio: boolean;
   collectionId: string | null;
   width: number;
@@ -163,7 +149,7 @@ export function PortfolioSummaryBar({
   const wasRefreshing = useRef(false);
 
   useEffect(() => {
-    if (state.refreshing.size > 0) {
+    if (refreshingCount > 0) {
       wasRefreshing.current = true;
       return;
     }
@@ -171,7 +157,7 @@ export function PortfolioSummaryBar({
       wasRefreshing.current = false;
       setLastRefresh(new Date());
     }
-  }, [state.refreshing.size]);
+  }, [refreshingCount]);
 
   useEffect(() => {
     if (financialsMap.size > 0 && !lastRefresh) {
@@ -179,27 +165,23 @@ export function PortfolioSummaryBar({
     }
   }, [financialsMap.size, lastRefresh]);
 
-  const exchangeRates = useFxRatesMap(
-    getSummaryCurrencies(tickers, financialsMap, state.config.baseCurrency, accountState),
-  );
-  const effectiveExchangeRates = selectEffectiveExchangeRates(exchangeRates, state.exchangeRates);
   const totals = useMemo(
     () => calculatePortfolioSummaryTotals(
       tickers,
       financialsMap,
-      state.config.baseCurrency,
-      effectiveExchangeRates,
+      baseCurrency,
+      exchangeRates,
       isPortfolio,
       collectionId,
     ),
-    [tickers, financialsMap, state.config.baseCurrency, effectiveExchangeRates, isPortfolio, collectionId],
+    [baseCurrency, collectionId, exchangeRates, financialsMap, isPortfolio, tickers],
   );
 
   const refreshTimestamp = lastRefreshTimestamp ?? lastRefresh?.getTime() ?? null;
   const refreshText = refreshTimestamp != null
     ? new Date(refreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     : "—";
-  const isRefreshing = state.refreshing.size > 0;
+  const isRefreshing = refreshingCount > 0;
 
   if (!isPortfolio) {
     if (totals.watchlistCount === 0) return null;
@@ -224,4 +206,4 @@ export function PortfolioSummaryBar({
   });
 
   return <box height={1}>{renderSummarySegments(segments, width)}</box>;
-}
+});

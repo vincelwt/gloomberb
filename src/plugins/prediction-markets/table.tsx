@@ -14,7 +14,7 @@ export function PredictionMarketsTable({
   selectedRowKey,
   hoveredIdx,
   setHoveredIdx,
-  setSelectedRowKey,
+  onOpenRow,
   watchlist,
   onToggleWatchlist,
   sortPreference,
@@ -29,7 +29,7 @@ export function PredictionMarketsTable({
   selectedRowKey: string | null;
   hoveredIdx: number | null;
   setHoveredIdx: (index: number | null) => void;
-  setSelectedRowKey: (rowKey: string) => void;
+  onOpenRow: (rowKey: string) => void;
   watchlist: Set<string>;
   onToggleWatchlist: (row: PredictionListRow) => void;
   sortPreference: PredictionSortPreference;
@@ -56,7 +56,7 @@ export function PredictionMarketsTable({
       setHoveredIdx={setHoveredIdx}
       getItemKey={(row) => row.key}
       isSelected={(row) => selectedRowKey === row.key}
-      onSelect={(row) => setSelectedRowKey(row.key)}
+      onSelect={(row) => onOpenRow(row.key)}
       virtualize
       renderCell={(row, column, _index, rowState) => {
         const watchlisted = row.watchMarketKeys.some((marketKey) =>

@@ -214,6 +214,24 @@ describe("broker account cache", () => {
   });
 });
 
+describe("pane state updates", () => {
+  test("returns the existing state object when a pane patch is a no-op", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    initial.paneState["portfolio-list:main"] = {
+      collectionId: "main",
+      cursorSymbol: "AAPL",
+    };
+
+    const next = appReducer(initial, {
+      type: "UPDATE_PANE_STATE",
+      paneId: "portfolio-list:main",
+      patch: { cursorSymbol: "AAPL" },
+    });
+
+    expect(next).toBe(initial);
+  });
+});
+
 describe("quote merging", () => {
   test("does not overwrite live broker quotes with cloud updates", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");

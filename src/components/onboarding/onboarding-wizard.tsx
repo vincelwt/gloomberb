@@ -10,6 +10,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField } from "../../types/broker";
 import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
+import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
 import { debugLog } from "../../utils/debug-log";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
@@ -415,7 +416,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             }
           }
         }
-      } else if (event.name === "escape") {
+      } else if (isPlainEscape(event)) {
         setEditingField(false);
         if (portfolioSub === "broker-fields") {
           setPortfolioSub("broker-setup");
@@ -506,7 +507,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         }
       }
       nextStep();
-    } else if (event.name === "escape") {
+    } else if (isBackNavigationKey(event)) {
       if (step === "portfolio" && portfolioSub === "broker-sync") {
         resetBrokerSync();
         setPortfolioSub("broker-fields");
@@ -693,9 +694,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
           </box>
         </box>
         <box height={1} flexDirection="row" width={contentWidth}>
-          <box flexGrow={1}>
-            {stepIdx > 0 && <text fg={colors.textMuted}>{"<- back"}</text>}
-          </box>
+          <box flexGrow={1} />
           <box>
             <text fg={colors.textMuted}>{hintText}</text>
           </box>
@@ -1024,7 +1023,7 @@ function PortfolioStep({
           <text fg={colors.textDim}>
             {brokerSyncing
               ? "This happens now so your portfolio is ready before onboarding finishes."
-              : "Press Enter to retry, or Esc to edit the broker settings."}
+              : "Press Enter to retry, or Backspace to edit the broker settings."}
           </text>
         </box>
       </box>

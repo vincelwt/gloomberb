@@ -1,106 +1,25 @@
-import { useRef } from "react";
-import { TextAttributes, type BoxRenderable } from "@opentui/core";
-import { TabBar } from "../../components";
+import { TextAttributes } from "@opentui/core";
+import { PageStackView, TabBar } from "../../components";
+import type { PaneProps } from "../../types/plugin";
+import { colors } from "../../theme/colors";
+import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { BROWSE_TABS, VENUE_TABS } from "./navigation";
 import { PredictionMarketsTable } from "./table";
-import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import type { PredictionBrowseTab, PredictionCategoryId } from "./types";
-import type { PaneProps } from "../../types/plugin";
-import { colors } from "../../theme/colors";
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const controller = usePredictionMarketsController({ focused });
-  const rootRef = useRef<BoxRenderable>(null);
-  const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(
-    null,
-  );
-  const minTableWidth = 44;
-  const minDetailWidth = 36;
-  const effectiveMinTableWidth = controller.selectedSummary
-    ? Math.min(minTableWidth, Math.max(width - minDetailWidth - 1, 20))
-    : width;
-  const effectiveMinDetailWidth = controller.selectedSummary
-    ? Math.min(minDetailWidth, Math.max(width - effectiveMinTableWidth - 1, 20))
-    : 0;
-  const listWidth = controller.selectedSummary
-    ? clamp(
-        Math.round(width * controller.detailSplitRatio),
-        effectiveMinTableWidth,
-        Math.max(effectiveMinTableWidth, width - effectiveMinDetailWidth - 1),
-      )
-    : width;
-  const detailWidth = controller.selectedSummary
-    ? Math.max(width - listWidth - 1, effectiveMinDetailWidth)
-    : 0;
-  const dividerColor =
-    controller.focusRegion === "detail" ? colors.borderFocused : colors.border;
 
-  const handlePaneMouse = (event: {
-    type?: string;
-    x?: number;
-    preventDefault?: () => void;
-    stopPropagation?: () => void;
-  }) => {
-    if (!controller.selectedSummary || !rootRef.current) {
-      splitDragRef.current = null;
-      return;
-    }
-
-    const localX = (event.x ?? 0) - rootRef.current.x;
-    const dividerX = listWidth;
-
-    if (
-      event.type === "down" &&
-      localX >= dividerX &&
-      localX <= dividerX + 1
-    ) {
-      splitDragRef.current = {
-        startX: localX,
-        startRatio: controller.detailSplitRatio,
-      };
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      return;
-    }
-
-    if (!splitDragRef.current) return;
-
-    if (event.type === "drag") {
-      const delta = localX - splitDragRef.current.startX;
-      const nextListWidth = clamp(
-        Math.round(width * splitDragRef.current.startRatio) + delta,
-        effectiveMinTableWidth,
-        Math.max(effectiveMinTableWidth, width - effectiveMinDetailWidth - 1),
-      );
-      controller.actions.setDetailSplitRatio(nextListWidth / Math.max(width, 1));
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      return;
-    }
-
-    if (event.type === "up" || event.type === "drag-end") {
-      splitDragRef.current = null;
-      event.preventDefault?.();
-      event.stopPropagation?.();
-    }
-  };
-
-  return (
+  const browseContent = (
     <box
-      ref={rootRef}
       flexDirection="column"
       width={width}
       height={height}
       backgroundColor={colors.panel}
-      onMouse={handlePaneMouse}
     >
-      {!controller.paneSettings.hideTabs && (
+      {!controller.paneSettings.hideTabs ? (
         <TabBar
           tabs={VENUE_TABS.map((tab) => ({
             label: tab.label,
@@ -110,7 +29,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           onSelect={controller.actions.setVenue}
           compact
         />
-      )}
+      ) : null}
 
       <box flexDirection="row" height={1} paddingX={1} gap={2}>
         <box
@@ -118,9 +37,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           onMouseDown={controller.actions.focusSearch}
           width={Math.max(18, Math.floor(width * 0.32))}
         >
-          <text fg={colors.textDim}>
-            {controller.searchFocused ? "?" : "/"}
-          </text>
+          <text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</text>
           <box width={1} />
           {controller.searchFocused ? (
             <input
@@ -168,7 +85,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         </box>
       </box>
 
-      {PREDICTION_CATEGORY_OPTIONS.length > 1 && (
+      {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
         <scrollbox height={1} scrollX focusable={false}>
           <box flexDirection="row" paddingX={1} gap={2}>
             {PREDICTION_CATEGORY_OPTIONS.map((category) => {
@@ -194,71 +111,74 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
             })}
           </box>
         </scrollbox>
-      )}
+      ) : null}
 
-      {controller.catalogError && (
+      {controller.catalogError ? (
         <box height={1} paddingX={1}>
           <text fg={colors.negative}>{controller.catalogError}</text>
         </box>
-      )}
+      ) : null}
 
-      <box flexDirection="row" flexGrow={1}>
-        <box
-          width={listWidth}
-          flexDirection="column"
-          onMouseDown={controller.actions.focusList}
-        >
-          <PredictionMarketsTable
-            columns={controller.visibleColumns}
-            rows={controller.visibleRows}
-            selectedRowKey={controller.selectedRow?.key ?? null}
-            hoveredIdx={controller.hoveredIdx}
-            setHoveredIdx={controller.actions.setHoveredIdx}
-            setSelectedRowKey={controller.actions.selectRow}
-            watchlist={controller.watchlistSet}
-            onToggleWatchlist={controller.actions.toggleWatchlist}
-            sortPreference={controller.sortPreference}
-            onHeaderClick={controller.actions.handleSortHeaderClick}
-            headerScrollRef={controller.headerScrollRef}
-            scrollRef={controller.scrollRef}
-            syncHeaderScroll={controller.layout.syncHeaderScroll}
-            onBodyScrollActivity={controller.layout.onBodyScrollActivity}
-          />
-        </box>
-
-        {controller.selectedSummary && (
-          <>
-            <box width={1}>
-              <text fg={dividerColor}>│</text>
-            </box>
-
-            <box
-              width={detailWidth}
-              flexDirection="column"
-              paddingX={1}
-              onMouseDown={controller.actions.focusDetail}
-            >
-              <PredictionMarketDetailPane
-                detail={controller.detail}
-                detailError={controller.detailError}
-                detailLoadCount={controller.detailLoadCount}
-                detailTab={controller.detailTab}
-                detailWidth={Math.max(detailWidth - 2, 24)}
-                focused={controller.focusRegion === "detail"}
-                height={height}
-                historyRange={controller.historyRange}
-                onDetailTabChange={controller.actions.setDetailTab}
-                onHistoryRangeChange={controller.actions.setHistoryRange}
-                onPreviewOrder={controller.actions.previewOrder}
-                onSelectMarket={controller.actions.selectMarket}
-                scrollRef={controller.detailScrollRef}
-                selectedRow={controller.selectedRow}
-                selectedSummary={controller.selectedSummary}
-              />
-            </box>
-          </>
-        )}
+      <box flexDirection="column" flexGrow={1}>
+        <PredictionMarketsTable
+          columns={controller.visibleColumns}
+          rows={controller.visibleRows}
+          selectedRowKey={controller.selectedRow?.key ?? null}
+          hoveredIdx={controller.hoveredIdx}
+          setHoveredIdx={controller.actions.setHoveredIdx}
+          onOpenRow={controller.actions.openSelectedRow}
+          watchlist={controller.watchlistSet}
+          onToggleWatchlist={controller.actions.toggleWatchlist}
+          sortPreference={controller.sortPreference}
+          onHeaderClick={controller.actions.handleSortHeaderClick}
+          headerScrollRef={controller.headerScrollRef}
+          scrollRef={controller.scrollRef}
+          syncHeaderScroll={controller.layout.syncHeaderScroll}
+          onBodyScrollActivity={controller.layout.onBodyScrollActivity}
+        />
       </box>
     </box>
+  );
+
+  const detailContent =
+    controller.selectedSummary && controller.selectedRow ? (
+      <box
+        flexDirection="column"
+        flexGrow={1}
+        width={width}
+        height={Math.max(height - 1, 1)}
+        paddingX={1}
+        backgroundColor={colors.panel}
+      >
+        <PredictionMarketDetailPane
+          detail={controller.detail}
+          detailError={controller.detailError}
+          detailLoadCount={controller.detailLoadCount}
+          detailTab={controller.detailTab}
+          detailWidth={Math.max(width - 2, 24)}
+          focused={focused && controller.detailOpen}
+          height={Math.max(height - 1, 1)}
+          historyRange={controller.historyRange}
+          onDetailTabChange={controller.actions.setDetailTab}
+          onHistoryRangeChange={controller.actions.setHistoryRange}
+          onPreviewOrder={controller.actions.previewOrder}
+          onSelectMarket={controller.actions.selectMarket}
+          scrollRef={controller.detailScrollRef}
+          selectedRow={controller.selectedRow}
+          selectedSummary={controller.selectedSummary}
+        />
+      </box>
+    ) : (
+      <box flexGrow={1} backgroundColor={colors.panel} />
+    );
+
+  return (
+    <PageStackView
+      focused={focused}
+      detailOpen={controller.detailOpen && !!controller.selectedSummary}
+      onBack={controller.actions.closeDetail}
+      rootContent={browseContent}
+      detailContent={detailContent}
+    />
   );
 }

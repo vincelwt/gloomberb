@@ -65,6 +65,20 @@ async function emitKeypress(
   });
 }
 
+async function waitForFrameToContain(text: string, attempts = 8): Promise<string> {
+  for (let index = 0; index < attempts; index += 1) {
+    const frame = testSetup!.captureCharFrame();
+    if (frame.includes(text)) {
+      return frame;
+    }
+    await act(async () => {
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+  }
+  throw new Error(`Timed out waiting for "${text}".`);
+}
+
 afterEach(async () => {
   if (testSetup) {
     await act(async () => {
@@ -79,6 +93,57 @@ afterEach(async () => {
 });
 
 describe("OnboardingWizard", () => {
+  test("uses backspace to go back when not editing and keeps backspace for text deletion while editing", async () => {
+    const pluginRegistry = {
+      allPlugins: new Map(),
+      brokers: new Map(),
+      paneTemplates: new Map(),
+      getPaneTemplatePluginId: () => undefined,
+      tickerRepository: createTickerRepository(),
+      persistence: { resources: undefined },
+    } as unknown as PluginRegistry;
+
+    testSetup = await testRender(
+      <OnboardingWizard
+        config={createDefaultConfig("/tmp/gloomberb-onboarding-backspace")}
+        pluginRegistry={pluginRegistry}
+        onComplete={() => {}}
+      />,
+      { width: 90, height: 28 },
+    );
+    await testSetup.renderOnce();
+
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+    let frame = await waitForFrameToContain("Theme");
+    expect(frame).toContain("Theme");
+
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    frame = await waitForFrameToContain("Let's set things up (~30s).");
+    expect(frame).toContain("Let's set things up (~30s).");
+
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+    frame = await waitForFrameToContain("Theme");
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+    frame = await waitForFrameToContain("Create Manual Portfolio");
+    expect(frame).toContain("Create Manual Portfolio");
+
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+    frame = await waitForFrameToContain("Main Portfolio");
+    expect(frame).toContain("Main Portfolio");
+
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Main Portfoli");
+    expect(frame).not.toContain("Create Manual Portfolio");
+  });
+
   test("waits for broker positions to import before completing onboarding", async () => {
     tempDataDir = await mkdtemp(join(tmpdir(), "gloomberb-onboarding-"));
     const importDeferred = createDeferred<any[]>();
