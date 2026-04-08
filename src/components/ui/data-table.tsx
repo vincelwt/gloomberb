@@ -1,7 +1,8 @@
-import { useMemo, useState, type RefObject } from "react";
+import { useCallback, useMemo, useState, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
+import { useAppDispatch, usePaneInstance } from "../../state/app-context";
 import { padTo } from "../../utils/format";
 import { useDoubleClickActivation } from "../use-double-click-activation";
 import { EmptyState } from "./status";
@@ -75,6 +76,8 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   virtualize = false,
   overscan = 3,
 }: DataTableProps<T, C>) {
+  const dispatch = useAppDispatch();
+  const paneInstanceId = usePaneInstance()?.instanceId ?? null;
   const [scrollVersion, setScrollVersion] = useState(0);
   const scrollTop = virtualize ? (scrollRef.current?.scrollTop ?? 0) : 0;
   const viewportHeight = virtualize
@@ -106,11 +109,21 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
     }
     onBodyScrollActivity();
   };
+  const focusPane = useCallback(() => {
+    if (!paneInstanceId) return;
+    dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
+  }, [dispatch, paneInstanceId]);
 
   return (
     <>
       <scrollbox ref={headerScrollRef} height={1} scrollX focusable={false}>
-        <box flexDirection="row" height={1} paddingX={1}>
+        <box
+          flexDirection="row"
+          height={1}
+          width="100%"
+          paddingX={1}
+          backgroundColor={colors.panel}
+        >
           {columns.map((column) => {
             const isSorted = sortColumnId === column.id;
             const indicator = isSorted
@@ -127,7 +140,9 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
               <box
                 key={column.id}
                 width={column.width + 1}
+                backgroundColor={colors.panel}
                 onMouseDown={(event) => {
+                  focusPane();
                   event.preventDefault();
                   onHeaderClick(column.id);
                 }}
@@ -150,7 +165,10 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
         scrollX
         scrollY
         focusable={false}
-        onMouseDown={() => queueMicrotask(syncHeaderScroll)}
+        onMouseDown={() => {
+          focusPane();
+          queueMicrotask(syncHeaderScroll);
+        }}
         onMouseUp={() => queueMicrotask(handleBodyScrollActivity)}
         onMouseDrag={() => queueMicrotask(handleBodyScrollActivity)}
         onMouseScroll={() => queueMicrotask(handleBodyScrollActivity)}
@@ -181,6 +199,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                   backgroundColor={rowBg}
                   onMouseMove={() => setHoveredIdx(index)}
                   onMouseDown={(event) => {
+                    focusPane();
                     event.preventDefault();
                     handleRowMouseDown(getItemKey(item, index), {
                       item,
@@ -198,6 +217,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                         key={column.id}
                         width={column.width + 1}
                         onMouseDown={(event) => {
+                          focusPane();
                           if (cell.onMouseDown) {
                             cell.onMouseDown(event);
                             return;

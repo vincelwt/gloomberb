@@ -674,6 +674,11 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       hidden: () => !apiClient.getSessionToken(),
     });
   },
+
+  dispose() {
+    chatController.dispose();
+    apiClient.dispose();
+  },
 };
 
 export const chatPlugin = gloomberbCloudPlugin;

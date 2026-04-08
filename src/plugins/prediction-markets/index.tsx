@@ -1,7 +1,7 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { parsePredictionSearchShortcut } from "./navigation";
 import { PredictionMarketsPane } from "./pane";
-import { attachPredictionMarketsPersistence } from "./services/fetch";
+import { attachPredictionMarketsPersistence, resetPredictionMarketsPersistence } from "./services/fetch";
 import { predictionMarketsCliCommand } from "./cli";
 import {
   buildPredictionMarketsPaneSettingsDef,
@@ -100,5 +100,9 @@ export const predictionMarketsPlugin: GloomPlugin = {
         openPredictionMarkets(ctx, values?.query ?? "");
       },
     });
+  },
+
+  dispose() {
+    resetPredictionMarketsPersistence();
   },
 };

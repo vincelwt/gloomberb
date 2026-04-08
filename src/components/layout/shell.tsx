@@ -38,6 +38,7 @@ import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneWrapper } from "./pane";
+import { getPaneBodyHeight } from "./pane-sizing";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
@@ -984,6 +985,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pane) return null;
         const focused = state.focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
+        const bodyHeight = getPaneBodyHeight(leaf.rect.height);
         return (
           <box
             key={`dock:${leaf.instanceId}`}
@@ -1007,7 +1009,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                   paneType={pane.instance.paneId}
                   focused={focused}
                   width={leaf.rect.width}
-                  height={leaf.rect.height - 1}
+                  height={bodyHeight}
                 />
               </PaneInstanceProvider>
             </PaneWrapper>
@@ -1019,6 +1021,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         const preview = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
         const focused = state.focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
+        const bodyHeight = getPaneBodyHeight(preview.height);
         return (
           <FloatingPaneWrapper
             key={`float:${pane.instance.instanceId}`}
@@ -1038,7 +1041,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                 paneType={pane.instance.paneId}
                 focused={focused}
                 width={preview.width}
-                height={preview.height - 1}
+                height={bodyHeight}
                 close={() => handleFloatingClose(pane.instance.instanceId)}
               />
             </PaneInstanceProvider>

@@ -272,6 +272,8 @@ describe("performUpdate", () => {
       });
 
       expect(readFileSync(execPath)).toEqual(nextBinary);
+      expect(progress[0]).toEqual({ phase: "downloading", percent: 0 });
+      expect(progress).toContainEqual({ phase: "downloading", percent: 100 });
       expect(progress.at(-1)).toEqual({ phase: "done" });
     } finally {
       Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });

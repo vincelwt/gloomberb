@@ -11,6 +11,10 @@ import type { PredictionBrowseTab, PredictionCategoryId } from "./types";
 
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const controller = usePredictionMarketsController({ focused });
+  const catalogStatusColor =
+    controller.catalogStatus?.tone === "danger"
+      ? colors.negative
+      : colors.borderFocused;
 
   const browseContent = (
     <box
@@ -113,9 +117,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         </scrollbox>
       ) : null}
 
-      {controller.catalogError ? (
-        <box height={1} paddingX={1}>
-          <text fg={colors.negative}>{controller.catalogError}</text>
+      {controller.catalogStatus ? (
+        <box height={1} paddingX={1} width={width} backgroundColor={colors.panel}>
+          <text fg={catalogStatusColor}>{controller.catalogStatus.message}</text>
         </box>
       ) : null}
 

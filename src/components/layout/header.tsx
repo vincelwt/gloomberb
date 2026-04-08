@@ -31,7 +31,7 @@ function UpdateStatus() {
         <box flexDirection="row" gap={1}>
           <spinner name="dots" color={colors.headerText} />
           <text fg={colors.headerText}>
-            Downloading v{updateAvailable?.version}... {updateProgress.percent ?? 0}%
+            Downloading v{updateAvailable?.version}: {updateProgress.percent ?? 0}%
           </text>
         </box>
       );
@@ -45,7 +45,7 @@ function UpdateStatus() {
       );
     }
     if (updateProgress.phase === "done") {
-      return <text fg={colors.headerText}>Update installed — restart to apply</text>;
+      return <text fg={colors.headerText}>Update installed, restart to apply</text>;
     }
     if (updateProgress.phase === "error") {
       return <text fg={colors.headerText}>Update failed: {updateProgress.error}</text>;
@@ -71,7 +71,7 @@ function UpdateStatus() {
     }
     return (
       <text fg={colors.headerText}>
-        v{updateAvailable.version} available — press <span fg={colors.headerText}>u</span> to update
+        v{updateAvailable.version} available — starting download...
       </text>
     );
   }

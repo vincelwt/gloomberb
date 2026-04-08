@@ -1,5 +1,6 @@
 import type { PluginPersistence, PluginResumeState } from "../../types/plugin";
 import { apiClient, type ChatMessage, type PersistedAuthUser } from "../../utils/api-client";
+import { debugLog } from "../../utils/debug-log";
 import { toTimestampMillis } from "../../utils/timestamp";
 
 const SESSION_STATE_KEY = "session";
@@ -18,6 +19,7 @@ const VERIFICATION_POLL_MS = 5_000;
 const ISO_TIMESTAMP_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const USERNAME_MENTION = /(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{2,29})(?![A-Za-z0-9_])/g;
 const PENDING_RECONCILE_WINDOW_MS = 2 * 60_000;
+const chatLog = debugLog.createLogger("chat-controller");
 
 interface PersistedSessionState {
   sessionToken: string | null;
@@ -324,6 +326,22 @@ export class ChatController {
     this.persistence?.deleteResource(TRANSCRIPT_KIND, "everyone", { sourceKey: TRANSCRIPT_SOURCE });
     this.persistChannelState();
     this.emit();
+  }
+
+  dispose(): void {
+    chatLog.info("dispose controller", {
+      listeners: this.listeners.size,
+      hasConnection: !!this.wsConnection,
+    });
+    this.stopVerificationPolling();
+    this.wsConnection?.close();
+    this.wsConnection = null;
+    this.wsConnected = false;
+    this.messagesLoading = false;
+    this.refreshMessagesPromise = null;
+    this.openViewCount = 0;
+    this.toastFn = () => {};
+    this.listeners.clear();
   }
 
   send(content: string, replyToId?: string): void {

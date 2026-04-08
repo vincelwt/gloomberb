@@ -5,6 +5,7 @@ import {
   applyTickByTickAllLastToQuote,
   applyTickByTickBidAskToQuote,
   diagnoseLocalIbkrPortIssue,
+  IbkrGatewayServiceManager,
   IbkrGatewayService,
   parseIbkrHistoricalBarTime,
   resolveGatewayConnection,
@@ -520,5 +521,26 @@ describe("IbkrGatewayService", () => {
     expect(service.getSnapshot().accounts[0]?.netLiquidation).toBe(1000);
     expect(service.getSnapshot().openOrders).toEqual([]);
     expect(service.getSnapshot().executions).toEqual([]);
+  });
+
+  test("destroyAll disconnects every cached gateway service", async () => {
+    const manager = new IbkrGatewayServiceManager();
+    let disconnectCount = 0;
+
+    (manager as any).services.set("one", {
+      disconnect: async () => {
+        disconnectCount += 1;
+      },
+    });
+    (manager as any).services.set("two", {
+      disconnect: async () => {
+        disconnectCount += 1;
+      },
+    });
+
+    await manager.destroyAll();
+
+    expect(disconnectCount).toBe(2);
+    expect((manager as any).services.size).toBe(0);
   });
 });

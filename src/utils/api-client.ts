@@ -647,6 +647,18 @@ class GloomApiClient {
     };
   }
 
+  dispose(): void {
+    cloudApiLog.info("dispose api client", {
+      quoteTargets: this.quoteTargets.size,
+      channelTargets: this.channelListeners.size,
+    });
+    this.channelListeners.clear();
+    this.quoteListeners.clear();
+    this.quoteTargets.clear();
+    this.reconnectDelayMs = 1000;
+    this.teardownSocket();
+  }
+
   async searchInstruments(query: string, limit = 10): Promise<InstrumentSearchResult[]> {
     const params = new URLSearchParams({
       q: query,
