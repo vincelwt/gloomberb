@@ -25,6 +25,13 @@ import {
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { debugLog } from "../utils/debug-log";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
+import { isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
+import {
+  mergeQuoteContributionMaps,
+  resolveCanonicalQuote,
+  resolveTickerFinancialsQuoteState,
+  seedQuoteContributions,
+} from "../utils/quote-resolution";
 import { isProviderMiss } from "./provider-errors";
 
 const providerLog = debugLog.createLogger("provider-router");
@@ -69,6 +76,15 @@ function normalizeTicker(ticker: string): string {
 
 function normalizeExchange(exchange?: string): string {
   return (exchange ?? "").trim().toUpperCase();
+}
+
+function sanitizeCachedFinancials(financials: TickerFinancials): TickerFinancials {
+  if (!isQuoteStaleForCurrentSession(financials.quote)) return financials;
+  return {
+    ...financials,
+    quote: undefined,
+    quoteContributions: undefined,
+  };
 }
 
 function compactUrl(url: string): string {
@@ -150,17 +166,23 @@ function mergeDefinedObject<T extends object>(preferred: T | null | undefined, f
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
   if (!primary || !fallback) {
     const single = primary ?? fallback;
-    return single ? normalizeTickerFinancialsPriceHistory(single) : null;
+    return single ? resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(single)) : null;
   }
 
   const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
   const dominant = preferFallbackPriceData ? fallback : primary;
   const secondary = preferFallbackPriceData ? primary : fallback;
+  const quoteContributions = mergeQuoteContributionMaps(
+    seedQuoteContributions(primary),
+    seedQuoteContributions(fallback),
+  );
+  const resolvedQuote = resolveCanonicalQuote(quoteContributions).quote;
 
   return {
     ...fallback,
     ...primary,
-    quote: mergeDefinedObject(dominant.quote, secondary.quote),
+    quote: resolvedQuote,
+    quoteContributions,
     profile: mergeDefinedObject(primary.profile, fallback.profile),
     fundamentals: mergeDefinedObject(primary.fundamentals, fallback.fundamentals),
     priceHistory: normalizePriceHistory(dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory),
@@ -180,7 +202,7 @@ function mergeCachedFinancialRecords(records: CachedResourceRecord<TickerFinanci
   for (const record of records) {
     if (seenSources.has(record.sourceKey)) continue;
     seenSources.add(record.sourceKey);
-    merged = mergeFinancials(merged, record.value);
+    merged = mergeFinancials(merged, sanitizeCachedFinancials(record.value));
     stale = stale || record.stale;
   }
 
@@ -305,7 +327,10 @@ export class ProviderRouter implements DataProvider {
       ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
       ...this.getProviderSourceKeys(),
     ];
-    const cached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
+    const rawCached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
+    const cached = rawCached && !isQuoteStaleForCurrentSession(rawCached.value)
+      ? rawCached
+      : null;
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached && !forceRefresh && !cached.stale) {
       return cached.value;
@@ -782,6 +807,9 @@ export class ProviderRouter implements DataProvider {
     const brokerRecord = brokerSourceKeys.length > 0
       ? this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, brokerSourceKeys, allowExpired)
       : null;
+    const sanitizedBrokerRecord = brokerRecord
+      ? { ...brokerRecord, value: sanitizeCachedFinancials(brokerRecord.value) }
+      : null;
     const providerSelection = mergeCachedFinancialRecords(
       this.listCachedResources<TickerFinancials>(
         "financials",
@@ -792,10 +820,10 @@ export class ProviderRouter implements DataProvider {
       ),
     );
     return {
-      brokerRecord,
+      brokerRecord: sanitizedBrokerRecord,
       providerValue: providerSelection.value,
-      value: mergeFinancials(brokerRecord?.value ?? null, providerSelection.value),
-      stale: (brokerRecord?.stale ?? false) || providerSelection.stale,
+      value: mergeFinancials(sanitizedBrokerRecord?.value ?? null, providerSelection.value),
+      stale: (sanitizedBrokerRecord?.stale ?? false) || providerSelection.stale,
     };
   }
 
@@ -945,12 +973,14 @@ export class ProviderRouter implements DataProvider {
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getTickerFinancials) continue;
       try {
-        const result = normalizeTickerFinancialsPriceHistory(await candidate.broker.getTickerFinancials(
+        const rawResult = await candidate.broker.getTickerFinancials(
           ticker,
           candidate.instance,
           exchange,
           context?.instrument ?? null,
-        ));
+        );
+        const result = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(rawResult));
+        if (!result) continue;
         this.cacheResource(
           "financials",
           entityKey,
@@ -979,7 +1009,9 @@ export class ProviderRouter implements DataProvider {
 
     for (const provider of this.providersInPriorityOrder()) {
       try {
-        const value = normalizeTickerFinancialsPriceHistory(await provider.getTickerFinancials(ticker, exchange, context));
+        const rawValue = await provider.getTickerFinancials(ticker, exchange, context);
+        const value = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(rawValue));
+        if (!value) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "financials",

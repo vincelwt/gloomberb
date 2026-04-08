@@ -16,6 +16,7 @@ import {
   exchangeShortName,
   marketStateColor,
   marketStateLabel,
+  quoteSourceLabel,
 } from "../../../utils/market-status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { EmptyState, FieldRow } from "../../../components";
@@ -56,6 +57,18 @@ export function OverviewTab({
   const sector = ticker.metadata.sector ?? profile?.sector;
   const industry = ticker.metadata.industry ?? profile?.industry;
   const description = profile?.description?.trim();
+  const listingVenue = exchangeShortName(
+    quote?.listingExchangeName ?? quote?.exchangeName,
+    quote?.listingExchangeFullName ?? quote?.fullExchangeName,
+  );
+  const routingVenue = exchangeShortName(quote?.routingExchangeName, quote?.routingExchangeFullName);
+  const priceSource = quote?.provenance?.price ? quoteSourceLabel(quote.provenance.price, "price") : "";
+  const sessionSource = quote?.provenance?.session ? quoteSourceLabel(quote.provenance.session, "session") : "";
+  const metadataParts = [
+    priceSource ? `Price source: ${priceSource}` : "",
+    sessionSource ? `Session source: ${sessionSource}` : "",
+    routingVenue && routingVenue !== listingVenue ? `Route: ${routingVenue}` : "",
+  ].filter((part) => part.length > 0);
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
@@ -72,9 +85,9 @@ export function OverviewTab({
               {" "}- {ticker.metadata.name || quote?.name || ""}
             </text>
           )}
-          {quote?.exchangeName && (
+          {listingVenue && (
             <text fg={colors.textDim}>
-              {" "}({exchangeShortName(quote.exchangeName, quote.fullExchangeName)})
+              {" "}({listingVenue})
             </text>
           )}
           {quote?.marketState && (
@@ -118,6 +131,9 @@ export function OverviewTab({
                   {(quote.postMarketChange ?? 0).toFixed(2)} ({formatPercentRaw(quote.postMarketChangePercent ?? 0)})
                 </text>
               </box>
+            )}
+            {metadataParts.length > 0 && (
+              <text fg={colors.textDim}>{metadataParts.join(" | ")}</text>
             )}
           </box>
         )}

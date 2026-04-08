@@ -1,4 +1,4 @@
-import type { MarketState, Quote } from "../types/financials";
+import type { MarketState, Quote, QuoteFieldProvenance } from "../types/financials";
 import { colors, priceColor } from "../theme/colors";
 import { formatPercentRaw } from "./format";
 
@@ -30,6 +30,22 @@ export function marketStateColor(state: MarketState): string {
   }
 }
 
+export function marketStateDot(state?: MarketState): string {
+  switch (state) {
+    case "REGULAR":
+      return "\u25CF";
+    case "PRE":
+    case "POST":
+      return "\u25D0";
+    case "CLOSED":
+    case "PREPRE":
+    case "POSTPOST":
+      return "\u25CB";
+    default:
+      return "\u25CC";
+  }
+}
+
 /** Short exchange display name */
 export function exchangeShortName(exchangeName?: string, fullExchangeName?: string): string {
   if (!exchangeName && !fullExchangeName) return "";
@@ -55,6 +71,35 @@ export function exchangeShortName(exchangeName?: string, fullExchangeName?: stri
     JPX: "TYO",
   };
   return map[name] || name;
+}
+
+export function quoteProviderLabel(providerId?: string): string {
+  switch (providerId) {
+    case "ibkr":
+      return "Broker";
+    case "gloomberb-cloud":
+      return "Cloud";
+    case "yahoo":
+      return "Yahoo";
+    default:
+      return providerId || "Unknown";
+  }
+}
+
+export function quoteSourceLabel(
+  provenance?: QuoteFieldProvenance,
+  kind: "price" | "session" = "price",
+): string {
+  if (!provenance?.providerId) return "Unknown";
+  if (provenance.providerId === "ibkr") {
+    if (kind === "session") return "Broker";
+    if (provenance.dataSource === "live") return "IBKR live";
+    if (provenance.dataSource === "delayed") return "IBKR delayed";
+    return "IBKR";
+  }
+  if (provenance.providerId === "gloomberb-cloud") return "Cloud";
+  if (provenance.providerId === "yahoo") return "Yahoo";
+  return provenance.providerId;
 }
 
 /** Get extended hours price info (pre-market or after-hours) for display */

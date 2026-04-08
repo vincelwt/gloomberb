@@ -170,4 +170,70 @@ describe("StatusBar", () => {
       globalThis.clearTimeout = originalClearTimeout;
     }
   });
+
+  test("separates listing venue, session, and source labels", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.layout.instances = config.layout.instances.map((instance) => (
+      instance.instanceId === "ticker-detail:main"
+        ? { ...instance, binding: { kind: "fixed" as const, symbol: "AMD" } }
+        : instance
+    ));
+    const state = createInitialState(config);
+    state.statusBarVisible = true;
+    state.focusedPaneId = "ticker-detail:main";
+    state.tickers = new Map([["AMD", {
+      metadata: {
+        ticker: "AMD",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Advanced Micro Devices",
+        portfolios: [],
+        watchlists: [],
+        positions: [],
+        custom: {},
+        tags: [],
+      },
+    }]]);
+    state.financials = new Map([["AMD", {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: [],
+      quote: {
+        symbol: "AMD",
+        providerId: "ibkr",
+        dataSource: "live",
+        price: 100,
+        currency: "USD",
+        change: 1,
+        changePercent: 1,
+        lastUpdated: Date.now(),
+        listingExchangeName: "NASDAQ",
+        routingExchangeName: "SMART",
+        marketState: "PRE",
+        sessionConfidence: "derived",
+        preMarketPrice: 101,
+        preMarketChange: 2,
+        preMarketChangePercent: 2,
+        provenance: {
+          price: { providerId: "ibkr", dataSource: "live" },
+          session: { providerId: "yahoo", dataSource: "yahoo" },
+        },
+      },
+    }]]);
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <StatusBar />
+      </AppContext>,
+      { width: 120, height: 1 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("NASDAQ PRE-MKT");
+    expect(frame).toContain("px IBKR live");
+    expect(frame).toContain("ses Yahoo");
+    expect(frame).not.toContain("SMART OPEN");
+  });
 });

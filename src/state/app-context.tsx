@@ -15,7 +15,7 @@ import type { SessionStore } from "../data/session-store";
 import { saveConfig } from "../data/config-store";
 import { applyTheme } from "../theme/colors";
 import { isBrokerPortfolioId } from "../utils/broker-instances";
-import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
+import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
 import {
   cloneLayout,
   DEFAULT_LAYOUT,
@@ -147,10 +147,6 @@ function isKnownCollection(config: AppConfig, collectionId: string | undefined):
 
 function shouldPreserveUnknownCollectionId(collectionId: string | undefined): boolean {
   return isBrokerPortfolioId(collectionId);
-}
-
-function hasLikelyPriceUnitMismatch(current: Quote | undefined, next: Quote): boolean {
-  return hasLikelyQuoteUnitMismatch(current, next);
 }
 
 function getConfiguredCollectionId(config: AppConfig, instance: PaneInstanceConfig): string {
@@ -288,12 +284,6 @@ function clearTickerBindings(layout: LayoutConfig, symbol: string): LayoutConfig
 function nextRecentTickers(current: string[], symbol: string | null): string[] {
   if (!symbol) return current;
   return [symbol, ...current.filter((entry) => entry !== symbol)].slice(0, 50);
-}
-
-function shouldPreserveExistingQuote(current: Quote | undefined, next: Quote): boolean {
-  return current?.dataSource === "live"
-    && current.providerId !== "gloomberb-cloud"
-    && next.providerId === "gloomberb-cloud";
 }
 
 function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: LayoutConfig): SavedLayout[] {
@@ -468,30 +458,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_FINANCIALS": {
       const financials = new Map(state.financials);
-      financials.set(action.symbol, action.data);
+      financials.set(action.symbol, resolveTickerFinancialsQuoteState(action.data)!);
       return { ...state, financials };
     }
 
     case "MERGE_QUOTE": {
-      const current = state.financials.get(action.symbol);
-      if (
-        shouldPreserveExistingQuote(current?.quote, action.quote)
-        || hasLikelyPriceUnitMismatch(current?.quote, action.quote)
-      ) {
-        return state;
-      }
       const financials = new Map(state.financials);
-      financials.set(action.symbol, {
-        annualStatements: current?.annualStatements ?? [],
-        quarterlyStatements: current?.quarterlyStatements ?? [],
-        priceHistory: current?.priceHistory ?? [],
-        fundamentals: current?.fundamentals,
-        profile: current?.profile,
-        quote: {
-          ...(current?.quote ?? {}),
-          ...action.quote,
-        },
-      });
+      const current = state.financials.get(action.symbol);
+      financials.set(action.symbol, resolveTickerFinancialsQuoteState(current, action.quote)!);
       return { ...state, financials };
     }
 
@@ -499,7 +473,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (action.financials.size === 0) return state;
       const financials = new Map(state.financials);
       for (const [symbol, data] of action.financials) {
-        financials.set(symbol, data);
+        financials.set(symbol, resolveTickerFinancialsQuoteState(data)!);
       }
       return { ...state, financials };
     }

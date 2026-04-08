@@ -15,7 +15,8 @@ import type { AppConfig } from "../../types/config";
 import type { FinancialStatement, TickerFinancials } from "../../types/financials";
 import type { NewsItem, SecFilingItem } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
-import { createBaseConverter, initMarketData } from "../context";
+import { createBaseConverter } from "../base-converter";
+import { initMarketData } from "../context";
 import { closeAndFail } from "../errors";
 import type { MarketContext } from "../types";
 import {

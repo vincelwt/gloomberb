@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
 import { useAppState, useFocusedTicker } from "../../state/app-context";
-import { marketStateLabel, marketStateColor, exchangeShortName, getExtendedHoursInfo } from "../../utils/market-status";
+import {
+  marketStateLabel,
+  marketStateColor,
+  exchangeShortName,
+  getExtendedHoursInfo,
+  quoteSourceLabel,
+} from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 
@@ -23,7 +29,12 @@ export function StatusBar() {
 
   const q = focusedFinancials?.quote;
   const mktState = q?.marketState;
-  const exchName = q ? exchangeShortName(q.exchangeName, q.fullExchangeName) : "";
+  const exchName = q
+    ? exchangeShortName(q.listingExchangeName ?? q.exchangeName, q.listingExchangeFullName ?? q.fullExchangeName)
+    : "";
+  const sessionLabel = mktState ? marketStateLabel(mktState) : "?";
+  const priceSourceLabel = q?.provenance?.price ? quoteSourceLabel(q.provenance.price, "price") : "";
+  const sessionSourceLabel = q?.provenance?.session ? quoteSourceLabel(q.provenance.session, "session") : "";
 
   // Extended hours info for selected ticker
   const extInfo = getExtendedHoursInfo(focusedFinancials?.quote);
@@ -124,11 +135,21 @@ export function StatusBar() {
           <text fg={extColor}>{symbol} {extText}</text>
         </box>
       )}
-      {mktState && (
+      {(exchName || mktState || q?.provenance?.session) && (
         <box paddingRight={1}>
-          <text fg={marketStateColor(mktState)}>
-            {exchName ? `${exchName} ` : ""}{marketStateLabel(mktState)}
+          <text fg={mktState ? marketStateColor(mktState) : colors.textDim}>
+            {exchName ? `${exchName} ` : ""}{sessionLabel}
           </text>
+        </box>
+      )}
+      {priceSourceLabel && (
+        <box paddingRight={1}>
+          <text fg={colors.textDim}>px {priceSourceLabel}</text>
+        </box>
+      )}
+      {sessionSourceLabel && sessionSourceLabel !== priceSourceLabel && (
+        <box paddingRight={1}>
+          <text fg={colors.textDim}>ses {sessionSourceLabel}</text>
         </box>
       )}
       {/* Plugin status widgets */}

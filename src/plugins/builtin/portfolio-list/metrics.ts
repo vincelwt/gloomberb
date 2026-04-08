@@ -5,7 +5,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
 import { clampQuoteTimestamp, formatQuoteAgeWithSource } from "../../../utils/quote-time";
 import { convertCurrency, formatCompact, formatCurrency, formatNumber, formatPercentRaw, formatPrice } from "../../../utils/format";
-import { getActiveQuoteDisplay, type ActiveQuoteDisplay } from "../../../utils/market-status";
+import { getActiveQuoteDisplay, marketStateDot, type ActiveQuoteDisplay } from "../../../utils/market-status";
 import { formatOptionTicker } from "../../../utils/options";
 
 export interface ColumnContext {
@@ -191,7 +191,7 @@ export function getColumnValue(
   switch (col.id) {
     case "ticker": {
       const marketState = quote?.marketState;
-      const statusDot = marketState === "REGULAR" ? "\u25CF" : "\u25CB";
+      const statusDot = marketStateDot(marketState);
       const displayName = ticker.metadata.assetCategory === "OPT"
         ? formatOptionTicker(ticker.metadata.ticker)
         : ticker.metadata.ticker;
