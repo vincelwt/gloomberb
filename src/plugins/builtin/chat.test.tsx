@@ -13,6 +13,8 @@ import { ChatController } from "./chat-controller";
 const TRANSCRIPT_KIND = "channel-transcript";
 const TRANSCRIPT_KEY = "everyone";
 const TRANSCRIPT_SOURCE = "server";
+const TRANSCRIPT_SCHEMA_VERSION = 2;
+const originalConnectChannel = apiClient.connectChannel.bind(apiClient);
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -115,12 +117,12 @@ function createController(options: {
   persistence.setState("channel:everyone", {
     draft: "",
     replyToId: null,
-    lastCursor: messages[messages.length - 1]?.createdAt ?? null,
+    lastCursor: messages[messages.length - 1]?.id ?? null,
   }, { schemaVersion: 1 });
   if (messages.length > 0) {
     persistence.setResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, { messages }, {
       sourceKey: TRANSCRIPT_SOURCE,
-      schemaVersion: 1,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
       cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
     });
   }
@@ -165,6 +167,7 @@ async function flushFrame() {
 afterEach(async () => {
   setSharedRegistryForTests(undefined);
   setSharedDataProviderForTests(undefined);
+  apiClient.connectChannel = originalConnectChannel;
   apiClient.setSessionToken(null);
 
   if (testSetup) {
@@ -210,6 +213,34 @@ describe("ChatContent", () => {
     const frameAfterType = testSetup.captureCharFrame();
     expect(frameAfterType).toContain("> DCF");
     expect(frameAfterType).not.toContain("> FCD");
+  });
+
+  test("renders optimistic sends with a sending status", async () => {
+    const controller = createController({
+      messages: [{
+        id: "local:1",
+        channelId: "everyone",
+        content: "hello",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u0", username: "vince", displayName: "Vince" },
+        clientStatus: "sending",
+        clientError: null,
+      }],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frameAfterSubmit = testSetup.captureCharFrame();
+    expect(frameAfterSubmit).toContain("hello");
+    expect(frameAfterSubmit).toContain("sending...");
   });
 
   test("auto-scrolls to newly appended messages while following the latest transcript", async () => {
@@ -439,6 +470,61 @@ describe("ChatContent", () => {
     });
 
     expect(openedQueries).toEqual(["Sign Up"]);
+  });
+
+  test("shows an unread mention badge and opens chat from the status widget", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    const openedWidgets: string[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    setSharedRegistryForTests({
+      showWidget(paneId: string) {
+        openedWidgets.push(paneId);
+      },
+    } as any);
+
+    await act(async () => {
+      (controller as any).mergeMessages([{
+        id: "m1",
+        channelId: "everyone",
+        content: "pinging @vince before the bell",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      } satisfies ChatMessage]);
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <ChatStatusWidget controller={controller} />
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("vince");
+    expect(frame).toContain("[1]");
+
+    const line = frame.split("\n")[0] ?? "";
+    const badgeCol = line.indexOf("[1]");
+
+    expect(badgeCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(badgeCol + 1, 0);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(openedWidgets).toEqual(["chat"]);
   });
 
   test("auth commands use a single-form layout and signup no longer prompts for display name", () => {

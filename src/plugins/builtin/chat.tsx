@@ -19,7 +19,7 @@ interface ChatContentProps {
   close?: () => void;
   controller?: Pick<
     ChatController,
-    "getSnapshot" | "refreshMessages" | "refreshSession" | "send" | "setDraft" | "setReplyToId" | "subscribe"
+    "attachView" | "getSnapshot" | "refreshMessages" | "refreshSession" | "send" | "setDraft" | "setReplyToId" | "subscribe"
   >;
 }
 
@@ -127,6 +127,10 @@ export function ChatContent({
   const canSend = !!user?.emailVerified;
 
   useEffect(() => {
+    return controller.attachView();
+  }, [controller]);
+
+  useEffect(() => {
     const unsubscribe = controller.subscribe((snapshot) => {
       setMessages(snapshot.messages);
       setHasSavedSession(snapshot.hasSavedSession);
@@ -170,7 +174,6 @@ export function ChatContent({
     const content = inputValueRef.current.trim();
     if (!content) return;
     controller.send(content, replyToRef.current?.id);
-    setReplyTo(null);
     setSelectedIdx(-1);
     setFollowMessages(true);
   }, [controller]);
@@ -334,6 +337,12 @@ export function ChatContent({
           const isHovered = index === hoveredIdx && !isSelected;
           const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
           const grouped = isGroupedWithPrevious(messages, index);
+          const isSending = msg.clientStatus === "sending";
+          const hasFailed = msg.clientStatus === "failed";
+          const headerStatus = isSending ? "sending..." : hasFailed ? "failed" : formatTimeAgo(msg.createdAt);
+          const headerStatusColor = isSending ? colors.textDim : hasFailed ? colors.negative : colors.textMuted;
+          const authorAttributes = (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD;
+          const bodyColor = hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
 
           return (
             <box
@@ -360,10 +369,10 @@ export function ChatContent({
               )}
               {!grouped && (
                 <box flexDirection="row" height={1} paddingLeft={1}>
-                  <text fg={colors.positive} attributes={TextAttributes.BOLD}>
+                  <text fg={colors.positive} attributes={authorAttributes}>
                     {msg.user.username ?? "anon"}
                   </text>
-                  <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
+                  <text fg={headerStatusColor}> ({headerStatus})</text>
                 </box>
               )}
               <box paddingLeft={3}>
@@ -371,7 +380,7 @@ export function ChatContent({
                   text={msg.content}
                   lineWidth={contentWidth - 4}
                   catalog={catalog}
-                  textColor={colors.text}
+                  textColor={bodyColor}
                   openTicker={openTicker}
                 />
               </box>
@@ -456,11 +465,20 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const initialSnapshot = controller.getSnapshot();
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
+  const [unreadMentionCount, setUnreadMentionCount] = useState(initialSnapshot.unreadMentionCount);
+  const [hovered, setHovered] = useState(false);
+
+  const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    getSharedRegistry()?.showWidget("chat");
+  };
 
   useEffect(() => {
     const unsubscribe = controller.subscribe((snapshot) => {
       setUsername(snapshot.user?.username ?? null);
       setHasSavedSession(snapshot.hasSavedSession);
+      setUnreadMentionCount(snapshot.unreadMentionCount);
     });
     void controller.refreshSession().catch(() => {});
     return unsubscribe;
@@ -476,15 +494,26 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           <InlineAuthActions />
         </>
       ) : (
-        <text fg={colors.textDim}>
-          <span fg={colors.positive}>@</span>
-          {username ? (
-            <>
-              {" "}
-              <span fg={colors.positive}>{username}</span>
-            </>
+        <box
+          flexDirection="row"
+          backgroundColor={hovered ? hoverBg() : undefined}
+          onMouseMove={() => setHovered(true)}
+          onMouseOut={() => setHovered(false)}
+          onMouseDown={openChat}
+        >
+          <text fg={unreadMentionCount > 0 ? colors.text : colors.textDim}>
+            <span fg={colors.positive}>@</span>
+            {username ? (
+              <>
+                {" "}
+                <span fg={colors.positive}>{username}</span>
+              </>
+            ) : null}
+          </text>
+          {unreadMentionCount > 0 ? (
+            <text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadMentionCount}]`}</text>
           ) : null}
-        </text>
+        </box>
       )}
     </box>
   );
@@ -516,6 +545,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
 
   setup(ctx) {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
+    chatController.setToastNotifier(ctx.showToast);
 
     ctx.registerPane({
       id: "chat",

@@ -1,5 +1,6 @@
 import type { PluginPersistence, PluginResumeState } from "../../types/plugin";
 import { apiClient, type ChatMessage, type PersistedAuthUser } from "../../utils/api-client";
+import { toTimestampMillis } from "../../utils/timestamp";
 
 const SESSION_STATE_KEY = "session";
 const CHANNEL_STATE_KEY = "channel:everyone";
@@ -8,12 +9,15 @@ const TRANSCRIPT_SOURCE = "server";
 const MAX_CACHED_MESSAGES = 50;
 const SESSION_SCHEMA_VERSION = 1;
 const CHANNEL_SCHEMA_VERSION = 1;
-const TRANSCRIPT_SCHEMA_VERSION = 1;
+const TRANSCRIPT_SCHEMA_VERSION = 2;
 const TRANSCRIPT_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
   expireMs: 90 * 24 * 60 * 60_000,
 };
 const VERIFICATION_POLL_MS = 5_000;
+const ISO_TIMESTAMP_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+const USERNAME_MENTION = /(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{2,29})(?![A-Za-z0-9_])/g;
+const PENDING_RECONCILE_WINDOW_MS = 2 * 60_000;
 
 interface PersistedSessionState {
   sessionToken: string | null;
@@ -25,6 +29,7 @@ interface PersistedChannelState {
   draft: string;
   replyToId: string | null;
   lastCursor: string | null;
+  lastViewedMessageId?: string | null;
 }
 
 interface PersistedTranscript {
@@ -38,9 +43,45 @@ export interface ChatControllerSnapshot {
   messages: ChatMessage[];
   draft: string;
   replyToId: string | null;
+  unreadMentionCount: number;
 }
 
-type ChatConnection = { send: (content: string, replyToId?: string) => void; close: () => void };
+type ChatConnection = { send: (content: string, replyToId?: string) => Promise<ChatMessage>; close: () => void };
+type ChatToastOptions = { duration?: number; type?: "info" | "success" | "error" };
+
+function normalizeUsername(username: string | null | undefined): string | null {
+  const trimmed = username?.trim();
+  return trimmed ? trimmed.toLowerCase() : null;
+}
+
+function messageMentionsUsername(content: string, username: string): boolean {
+  USERNAME_MENTION.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = USERNAME_MENTION.exec(content)) !== null) {
+    if ((match[2] ?? "").toLowerCase() === username) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function formatMentionToast(message: ChatMessage): string {
+  const author = message.user.username || "Someone";
+  const normalized = message.content.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return `@${author} mentioned you in chat.`;
+  }
+  const snippet = normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
+  return `@${author} mentioned you: ${snippet}`;
+}
+
+function isLegacyTimestampCursor(cursor: string | null): boolean {
+  return !!cursor && ISO_TIMESTAMP_CURSOR.test(cursor);
+}
+
+function compareMessages(a: ChatMessage, b: ChatMessage): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+}
 
 export class ChatController {
   private persistence: PluginPersistence | null = null;
@@ -52,18 +93,27 @@ export class ChatController {
   private refreshMessagesPromise: Promise<void> | null = null;
   private user: { id: string; username: string; emailVerified: boolean } | null = null;
   private messages: ChatMessage[] = [];
+  private pendingMessages: ChatMessage[] = [];
   private draft = "";
   private replyToId: string | null = null;
   private lastCursor: string | null = null;
+  private lastViewedMessageId: string | null = null;
   private wsConnection: ChatConnection | null = null;
   private wsConnected = false;
   private verificationPollTimer: ReturnType<typeof setInterval> | null = null;
+  private openViewCount = 0;
+  private pendingMessageSeq = 0;
+  private toastFn: (message: string, options?: ChatToastOptions) => void = () => {};
   private listeners = new Set<(snapshot: ChatControllerSnapshot) => void>();
 
   attachPersistence(persistence: PluginPersistence, resume?: PluginResumeState): void {
     this.persistence = persistence;
     this.resume = resume ?? this.resume;
     this.hydrate();
+  }
+
+  setToastNotifier(notify: (message: string, options?: ChatToastOptions) => void): void {
+    this.toastFn = notify;
   }
 
   hydrate(): void {
@@ -94,7 +144,8 @@ export class ChatController {
     });
     this.draft = channel?.draft ?? "";
     this.replyToId = channel?.replyToId ?? null;
-    this.lastCursor = channel?.lastCursor ?? null;
+    const persistedCursor = channel?.lastCursor ?? null;
+    const persistedViewedMessageId = channel?.lastViewedMessageId ?? null;
 
     const transcript = this.persistence.getResource<PersistedTranscript>(TRANSCRIPT_KIND, "everyone", {
       sourceKey: TRANSCRIPT_SOURCE,
@@ -102,6 +153,12 @@ export class ChatController {
       allowExpired: true,
     });
     this.messages = transcript?.value.messages ?? [];
+    this.lastCursor = this.messages.length > 0
+      ? persistedCursor ?? this.messages[this.messages.length - 1]?.id ?? null
+      : null;
+    this.lastViewedMessageId = this.user?.id && apiClient.getSessionToken()
+      ? persistedViewedMessageId ?? this.messages[this.messages.length - 1]?.id ?? null
+      : null;
     this.syncVerificationPolling();
   }
 
@@ -118,9 +175,10 @@ export class ChatController {
       loading: !this.sessionChecked || this.messagesLoading,
       hasSavedSession: !!apiClient.getSessionToken(),
       user: this.user,
-      messages: [...this.messages],
+      messages: this.getVisibleMessages(),
       draft: this.draft,
       replyToId: this.replyToId,
+      unreadMentionCount: this.getUnreadMentionCount(),
     };
   }
 
@@ -133,6 +191,8 @@ export class ChatController {
       this.wsConnected = false;
       this.user = null;
       this.sessionChecked = true;
+      this.pendingMessages = [];
+      this.lastViewedMessageId = null;
       this.persistSession();
       this.emit();
       return;
@@ -147,13 +207,21 @@ export class ChatController {
       apiClient.setSessionToken(null);
       this.user = null;
       this.sessionChecked = true;
+      this.pendingMessages = [];
+      this.lastViewedMessageId = null;
       this.persistSession();
       this.emit();
       return;
     }
 
+    const previousIdentity = `${this.user?.id ?? ""}:${normalizeUsername(this.user?.username) ?? ""}`;
     const nextUser = { id: session.id, username: session.username ?? session.name, emailVerified: !!session.emailVerified };
     this.user = nextUser;
+    const nextIdentity = `${nextUser.id}:${normalizeUsername(nextUser.username) ?? ""}`;
+    if (previousIdentity && previousIdentity !== nextIdentity) {
+      this.lastViewedMessageId = this.messages[this.messages.length - 1]?.id ?? null;
+      this.persistChannelState();
+    }
     this.sessionChecked = true;
     this.persistSession();
     this.emit();
@@ -202,6 +270,16 @@ export class ChatController {
     this.emit();
   }
 
+  attachView(): () => void {
+    this.openViewCount += 1;
+    if (this.markViewedThroughLatestMessage()) {
+      this.emit();
+    }
+    return () => {
+      this.openViewCount = Math.max(0, this.openViewCount - 1);
+    };
+  }
+
   clearSession(): void {
     this.stopVerificationPolling();
     this.wsConnection?.close();
@@ -209,6 +287,8 @@ export class ChatController {
     this.wsConnected = false;
     this.user = null;
     this.sessionChecked = false;
+    this.pendingMessages = [];
+    this.lastViewedMessageId = null;
     this.emit();
   }
 
@@ -228,9 +308,12 @@ export class ChatController {
     this.wsConnection = null;
     this.wsConnected = false;
     this.messages = [];
+    this.pendingMessages = [];
     this.draft = "";
     this.replyToId = null;
     this.lastCursor = null;
+    this.lastViewedMessageId = null;
+    this.openViewCount = 0;
     if (clearSession) {
       this.user = null;
       apiClient.setSessionToken(null);
@@ -244,9 +327,36 @@ export class ChatController {
   }
 
   send(content: string, replyToId?: string): void {
-    this.wsConnection?.send(content, replyToId);
-    this.setDraft("");
-    this.setReplyToId(null);
+    if (!this.user?.emailVerified || !apiClient.getSessionToken()) return;
+    if (!this.wsConnection && this.user?.emailVerified && apiClient.getSessionToken()) {
+      this.ensureConnection();
+    }
+    const connection = this.wsConnection;
+    if (!connection) {
+      this.toastFn("Unable to send message right now.", { type: "error" });
+      return;
+    }
+
+    const pendingMessage = this.createPendingMessage(content, replyToId);
+    this.pendingMessages = [...this.pendingMessages, pendingMessage];
+    this.draft = "";
+    this.replyToId = null;
+    this.persistChannelState();
+    this.emit();
+
+    void connection.send(content, replyToId).then((message) => {
+      this.pendingMessages = this.pendingMessages.filter((entry) => entry.id !== pendingMessage.id);
+      this.mergeMessages([message]);
+    }).catch((error) => {
+      const errorMessage = error instanceof Error && error.message ? error.message : "Failed to send message.";
+      this.pendingMessages = this.pendingMessages.map((entry) => (
+        entry.id === pendingMessage.id
+          ? { ...entry, clientStatus: "failed", clientError: errorMessage }
+          : entry
+      ));
+      this.emit();
+      this.toastFn(errorMessage, { type: "error" });
+    });
   }
 
   ensureConnection(): void {
@@ -296,6 +406,8 @@ export class ChatController {
   }
 
   private async fetchMessages(): Promise<void> {
+    const legacyTimestampCursor = isLegacyTimestampCursor(this.lastCursor);
+
     try {
       const messages = await apiClient.getMessages("everyone", {
         limit: MAX_CACHED_MESSAGES,
@@ -304,6 +416,14 @@ export class ChatController {
       if (messages.length > 0) {
         this.mergeMessages(messages);
         return;
+      }
+      if (legacyTimestampCursor) {
+        const fullRefresh = await apiClient.getMessages("everyone", { limit: MAX_CACHED_MESSAGES });
+        if (fullRefresh.length > 0) {
+          this.mergeMessages(fullRefresh);
+          return;
+        }
+        this.lastCursor = null;
       }
       this.persistChannelState();
       return;
@@ -318,13 +438,24 @@ export class ChatController {
   }
 
   private mergeMessages(messages: ChatMessage[]): void {
+    this.reconcilePendingMessages(messages);
     const merged = new Map<string, ChatMessage>();
+    const incoming = new Map<string, ChatMessage>();
     for (const message of this.messages) merged.set(message.id, message);
-    for (const message of messages) merged.set(message.id, message);
+    for (const message of messages) {
+      if (!merged.has(message.id)) {
+        incoming.set(message.id, message);
+      }
+      merged.set(message.id, message);
+    }
     this.messages = [...merged.values()]
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .sort(compareMessages)
       .slice(-MAX_CACHED_MESSAGES);
-    this.lastCursor = this.messages[this.messages.length - 1]?.createdAt ?? this.lastCursor;
+    this.lastCursor = this.messages[this.messages.length - 1]?.id ?? this.lastCursor;
+    if (this.openViewCount > 0) {
+      this.markViewedThroughLatestMessage(false);
+    }
+    this.trackUnreadMentions([...incoming.values()]);
     this.persistTranscript();
     this.emit();
   }
@@ -348,6 +479,7 @@ export class ChatController {
       draft: this.draft,
       replyToId: this.replyToId,
       lastCursor: this.lastCursor,
+      lastViewedMessageId: this.lastViewedMessageId,
     } satisfies PersistedChannelState;
     this.resume?.setState(CHANNEL_STATE_KEY, value, {
       schemaVersion: CHANNEL_SCHEMA_VERSION,
@@ -372,6 +504,111 @@ export class ChatController {
       cachePolicy: TRANSCRIPT_CACHE_POLICY,
     });
     this.persistChannelState();
+  }
+
+  private trackUnreadMentions(messages: ChatMessage[]): void {
+    if (this.openViewCount > 0) {
+      return;
+    }
+
+    const freshMentions = this.getMentionMessages(messages);
+    if (freshMentions.length === 0) return;
+    if (!this.appActive) return;
+
+    if (freshMentions.length === 1) {
+      this.toastFn(formatMentionToast(freshMentions[0]!), { type: "info" });
+      return;
+    }
+    this.toastFn(`${freshMentions.length} new mentions in #everyone.`, { type: "info" });
+  }
+
+  private getUnreadMentionCount(): number {
+    return this.getUnreadMentionMessages().length;
+  }
+
+  private getUnreadMentionMessages(): ChatMessage[] {
+    if (!this.lastViewedMessageId) {
+      return this.getMentionMessages(this.messages);
+    }
+
+    const viewedIndex = this.messages.findIndex((message) => message.id === this.lastViewedMessageId);
+    const unseenMessages = viewedIndex >= 0
+      ? this.messages.slice(viewedIndex + 1)
+      : this.messages;
+    return this.getMentionMessages(unseenMessages);
+  }
+
+  private getMentionMessages(messages: ChatMessage[]): ChatMessage[] {
+    const normalizedUsername = normalizeUsername(this.user?.username);
+    if (!normalizedUsername || messages.length === 0) return [];
+
+    return messages.filter((message) => (
+      message.user.id !== this.user?.id && messageMentionsUsername(message.content, normalizedUsername)
+    ));
+  }
+
+  private markViewedThroughLatestMessage(persist = true): boolean {
+    const latestMessageId = this.messages[this.messages.length - 1]?.id ?? null;
+    if (this.lastViewedMessageId === latestMessageId) {
+      return false;
+    }
+    this.lastViewedMessageId = latestMessageId;
+    if (persist) {
+      this.persistChannelState();
+    }
+    return true;
+  }
+
+  private getVisibleMessages(): ChatMessage[] {
+    return [...this.messages, ...this.pendingMessages]
+      .sort(compareMessages)
+      .slice(-MAX_CACHED_MESSAGES);
+  }
+
+  private createPendingMessage(content: string, replyToId?: string): ChatMessage {
+    const replyToMessage = replyToId
+      ? this.getVisibleMessages().find((message) => message.id === replyToId) ?? null
+      : null;
+    const pendingId = `local:${Date.now()}:${this.pendingMessageSeq += 1}`;
+    return {
+      id: pendingId,
+      channelId: "everyone",
+      content,
+      replyToId: replyToId ?? null,
+      createdAt: new Date().toISOString(),
+      user: {
+        id: this.user?.id ?? "local",
+        username: this.user?.username ?? "you",
+        displayName: this.user?.username ?? "You",
+      },
+      replyTo: replyToMessage
+        ? {
+          content: replyToMessage.content,
+          user: { username: replyToMessage.user.username },
+        }
+        : null,
+      clientStatus: "sending",
+      clientError: null,
+    };
+  }
+
+  private reconcilePendingMessages(messages: ChatMessage[]): void {
+    if (this.pendingMessages.length === 0 || messages.length === 0) return;
+
+    const remaining = [...this.pendingMessages];
+    for (const incoming of messages) {
+      const incomingMs = toTimestampMillis(incoming.createdAt);
+      const pendingIndex = remaining.findIndex((pending) => (
+        pending.user.id === incoming.user.id
+        && pending.content === incoming.content
+        && pending.replyToId === incoming.replyToId
+        && Math.abs(toTimestampMillis(pending.createdAt) - incomingMs) <= PENDING_RECONCILE_WINDOW_MS
+      ));
+      if (pendingIndex >= 0) {
+        remaining.splice(pendingIndex, 1);
+      }
+    }
+    this.pendingMessages = remaining;
   }
 }
 
