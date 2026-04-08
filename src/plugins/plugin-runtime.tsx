@@ -103,13 +103,20 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
   const scopedPaneId = paneId ?? usePaneInstanceId();
   const { state, dispatch } = useAppState();
   const stateRef = useRef(state);
+  const fallbackRef = useRef(fallback);
   stateRef.current = state;
+  fallbackRef.current = fallback;
   const paneState = state.paneState[scopedPaneId];
   const value = getPluginPaneStateValue(paneState, pluginId, key, fallback);
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
     const currentPaneState = stateRef.current.paneState[scopedPaneId];
-    const currentValue = getPluginPaneStateValue(currentPaneState, pluginId, key, fallback);
+    const currentValue = getPluginPaneStateValue(
+      currentPaneState,
+      pluginId,
+      key,
+      fallbackRef.current,
+    );
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
@@ -125,7 +132,7 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
       key,
       value: resolved,
     });
-  }, [dispatch, fallback, key, pluginId, scopedPaneId]);
+  }, [dispatch, key, pluginId, scopedPaneId]);
 
   return [value, setValue];
 }
@@ -133,6 +140,8 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
 export function usePluginState<T>(key: string, fallback: T, options?: { schemaVersion?: number }): [T, (value: SetStateAction<T>) => void] {
   const { pluginId, runtime } = usePluginRenderContext();
   const schemaVersion = options?.schemaVersion;
+  const fallbackRef = useRef(fallback);
+  fallbackRef.current = fallback;
 
   const subscribe = useCallback((listener: () => void) => (
     runtime.subscribeResumeState(pluginId, key, listener)
@@ -145,7 +154,9 @@ export function usePluginState<T>(key: string, fallback: T, options?: { schemaVe
   const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
-    const currentValue = runtime.getResumeState<T>(pluginId, key, schemaVersion) ?? fallback;
+    const currentValue =
+      runtime.getResumeState<T>(pluginId, key, schemaVersion) ??
+      fallbackRef.current;
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
@@ -153,7 +164,7 @@ export function usePluginState<T>(key: string, fallback: T, options?: { schemaVe
       return;
     }
     runtime.setResumeState(pluginId, key, resolved, schemaVersion);
-  }, [fallback, key, pluginId, runtime, schemaVersion]);
+  }, [key, pluginId, runtime, schemaVersion]);
 
   return [value, setValue];
 }
@@ -162,11 +173,15 @@ export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: S
   const { pluginId, runtime } = usePluginRenderContext();
   const { state } = useAppState();
   const stateRef = useRef(state);
+  const fallbackRef = useRef(fallback);
   stateRef.current = state;
+  fallbackRef.current = fallback;
   const value = (state.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback;
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
-    const currentValue = (stateRef.current.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback;
+    const currentValue =
+      (stateRef.current.config.pluginConfig[pluginId]?.[key] as T | undefined) ??
+      fallbackRef.current;
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
@@ -174,7 +189,7 @@ export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: S
       return;
     }
     void runtime.setConfigState(pluginId, key, resolved);
-  }, [fallback, key, pluginId, runtime]);
+  }, [key, pluginId, runtime]);
 
   return [value, setValue];
 }

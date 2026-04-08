@@ -76,10 +76,14 @@ export function usePredictionMarketsController({
   >("selectedRowKey", null);
   const [selectedDetailMarketKey, setSelectedDetailMarketKey] =
     usePluginPaneState<string | null>("selectedDetailMarketKey", null);
+  const defaultSortPreference = useMemo(
+    () => getDefaultPredictionSort(paneSettings.defaultBrowseTab),
+    [paneSettings.defaultBrowseTab],
+  );
   const [sortPreference, setSortPreference] =
     usePluginPaneState<PredictionSortPreference>(
       "sortPreference",
-      getDefaultPredictionSort(paneSettings.defaultBrowseTab),
+      defaultSortPreference,
     );
   const [, setOrderPreviewIntent] =
     usePluginPaneState<PredictionOrderPreviewIntent | null>(
@@ -186,14 +190,13 @@ export function usePredictionMarketsController({
   ]);
 
   useEffect(() => {
-    const nextDefault = getDefaultPredictionSort(browseTab);
     setSortPreference((current) =>
-      current.columnId === nextDefault.columnId &&
-      current.direction === nextDefault.direction
+      current.columnId === defaultSortPreference.columnId &&
+      current.direction === defaultSortPreference.direction
         ? current
-        : nextDefault,
+        : defaultSortPreference,
     );
-  }, [browseTab, setSortPreference]);
+  }, [defaultSortPreference, setSortPreference]);
 
   useEffect(() => {
     const nextFilterResetKey = [

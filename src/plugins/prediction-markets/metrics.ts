@@ -170,13 +170,17 @@ export function getNextPredictionSort(
   current: PredictionSortPreference,
   columnId: string,
 ): PredictionSortPreference {
+  const initialDirection =
+    columnId === "ends" || TEXT_SORT_COLUMNS.has(columnId) ? "asc" : "desc";
+  const alternateDirection = initialDirection === "asc" ? "desc" : "asc";
+
   if (current.columnId !== columnId) {
-    if (columnId === "ends") return { columnId, direction: "asc" };
-    if (TEXT_SORT_COLUMNS.has(columnId)) return { columnId, direction: "asc" };
-    return { columnId, direction: "desc" };
+    return { columnId, direction: initialDirection };
   }
-  if (current.direction === "desc") return { columnId, direction: "asc" };
-  return { columnId: null, direction: "desc" };
+  if (current.direction === initialDirection) {
+    return { columnId, direction: alternateDirection };
+  }
+  return { columnId: null, direction: initialDirection };
 }
 
 export function filterPredictionMarkets(

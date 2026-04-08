@@ -180,6 +180,100 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("<- Back");
   });
 
+  test("keeps a clicked header sort instead of snapping back to the default sort", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+    const headerRow = lines.findIndex((line) => line.includes("VENUE"));
+    const headerCol = lines[headerRow]?.indexOf("VENUE") ?? -1;
+
+    expect(headerRow).toBeGreaterThan(-1);
+    expect(headerCol).toBeGreaterThan(-1);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(headerCol + 1, headerRow);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup, 4);
+
+    const nextFrame = testSetup.captureCharFrame();
+    const nextLines = nextFrame.split("\n");
+    const kalshiRow = nextLines.findIndex((line) =>
+      line.includes("Will the Fed cut rates?"),
+    );
+    const polymarketRow = nextLines.findIndex((line) =>
+      line.includes("Will inflation fall?"),
+    );
+
+    expect(
+      harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
+        "prediction-markets"
+      ]?.sortPreference,
+    ).toEqual({ columnId: "venue", direction: "asc" });
+    expect(nextLines[headerRow]).toContain("VENUE ▲");
+    expect(kalshiRow).toBeGreaterThan(-1);
+    expect(polymarketRow).toBeGreaterThan(-1);
+    expect(kalshiRow).toBeLessThan(polymarketRow);
+  });
+
+  test("cycles the ends header through reverse date order before resetting", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+    const headerRow = lines.findIndex((line) => line.includes("ENDS"));
+    const headerCol = lines[headerRow]?.indexOf("ENDS") ?? -1;
+
+    expect(headerRow).toBeGreaterThan(-1);
+    expect(headerCol).toBeGreaterThan(-1);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(headerCol + 1, headerRow);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup, 2);
+
+    const sortedFrame = testSetup.captureCharFrame();
+    const sortedLines = sortedFrame.split("\n");
+    const sortedHeaderRow = sortedLines.findIndex((line) => line.includes("ENDS"));
+    const sortedHeaderCol = sortedLines[sortedHeaderRow]?.indexOf("ENDS") ?? -1;
+
+    expect(sortedHeaderRow).toBeGreaterThan(-1);
+    expect(sortedHeaderCol).toBeGreaterThan(-1);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(sortedHeaderCol + 1, sortedHeaderRow);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup, 4);
+
+    const nextFrame = testSetup.captureCharFrame();
+    const nextLines = nextFrame.split("\n");
+    const kalshiRow = nextLines.findIndex((line) =>
+      line.includes("Will the Fed cut rates?"),
+    );
+    const polymarketRow = nextLines.findIndex((line) =>
+      line.includes("Will inflation fall?"),
+    );
+
+    expect(
+      harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
+        "prediction-markets"
+      ]?.sortPreference,
+    ).toEqual({ columnId: "ends", direction: "desc" });
+    expect(nextLines[headerRow]).toContain("ENDS ▼");
+    expect(kalshiRow).toBeGreaterThan(-1);
+    expect(polymarketRow).toBeGreaterThan(-1);
+    expect(kalshiRow).toBeLessThan(polymarketRow);
+  });
+
   test("does not wrap to the last row when moving up without a selection", async () => {
     installPredictionMarketMocks();
 
