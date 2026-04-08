@@ -3,6 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
 import { padTo } from "../../utils/format";
+import { useDoubleClickActivation } from "../use-double-click-activation";
 import { EmptyState } from "./status";
 
 export type DataTableColumn = Pick<
@@ -34,6 +35,7 @@ export interface DataTableProps<
   getItemKey: (item: T, index: number) => string;
   isSelected: (item: T, index: number) => boolean;
   onSelect: (item: T, index: number) => void;
+  onActivate?: (item: T, index: number) => void;
   renderCell: (
     item: T,
     column: C,
@@ -44,6 +46,11 @@ export interface DataTableProps<
   emptyStateHint?: string;
   virtualize?: boolean;
   overscan?: number;
+}
+
+interface DataTableRowPointerTarget<T> {
+  item: T;
+  index: number;
 }
 
 export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
@@ -61,6 +68,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   getItemKey,
   isSelected,
   onSelect,
+  onActivate,
   renderCell,
   emptyStateTitle,
   emptyStateHint,
@@ -80,6 +88,17 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
     () => items.slice(startIndex, endIndex),
     [endIndex, items, scrollVersion, startIndex],
   );
+  const handleRowMouseDown =
+    useDoubleClickActivation<DataTableRowPointerTarget<T>>({
+      onSelect: ({ item, index }) => {
+        onSelect(item, index);
+      },
+      onActivate: onActivate
+        ? ({ item, index }) => {
+            onActivate(item, index);
+          }
+        : undefined,
+    });
 
   const handleBodyScrollActivity = () => {
     if (virtualize) {
@@ -163,7 +182,10 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                   onMouseMove={() => setHoveredIdx(index)}
                   onMouseDown={(event) => {
                     event.preventDefault();
-                    onSelect(item, index);
+                    handleRowMouseDown(getItemKey(item, index), {
+                      item,
+                      index,
+                    });
                   }}
                 >
                   {columns.map((column) => {
@@ -182,7 +204,10 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                           }
                           event.preventDefault();
                           event.stopPropagation?.();
-                          onSelect(item, index);
+                          handleRowMouseDown(getItemKey(item, index), {
+                            item,
+                            index,
+                          });
                         }}
                       >
                         <text

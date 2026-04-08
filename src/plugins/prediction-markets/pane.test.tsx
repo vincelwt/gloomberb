@@ -83,7 +83,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("Will the Fed cut rates?");
   });
 
-  test("renders the merged market browser and supports venue switching", async () => {
+  test("selects a market on single click and opens detail on double click", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -115,6 +115,15 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will the Fed cut rates?");
+    expect(frame).not.toContain("Kalshi primary rule");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup);
+
+    frame = testSetup.captureCharFrame();
     expect(frame).toContain("Kalshi primary rule");
   });
 
@@ -132,6 +141,8 @@ describe("prediction markets pane interactions", () => {
     const kalshiCol = lines[kalshiRow]?.indexOf("Will the Fed cut rates?") ?? -1;
 
     await act(async () => {
+      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
+      await testSetup!.renderOnce();
       await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
       await testSetup!.renderOnce();
     });
@@ -430,7 +441,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("Rule 2");
   });
 
-  test("opens full-page detail from a row click and preserves the browse selection", async () => {
+  test("opens full-page detail from a row double click and preserves the browse selection", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -444,6 +455,8 @@ describe("prediction markets pane interactions", () => {
     const kalshiCol = lines[kalshiRow]?.indexOf("Will the Fed cut rates?") ?? -1;
 
     await act(async () => {
+      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
+      await testSetup!.renderOnce();
       await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
       await testSetup!.renderOnce();
     });

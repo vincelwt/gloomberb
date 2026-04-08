@@ -1,6 +1,6 @@
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { colors, hoverBg } from "../theme/colors";
 import { isBackNavigationKey } from "../utils/back-navigation";
 import { formatTimeAgo } from "../utils/format";
@@ -134,7 +134,7 @@ export function DetailFeedView({
   hoveredIdx,
   onSelect,
   onHover,
-  helpText = "j/k move  enter open",
+  helpText = "j/k move  enter or click selected row",
   listVariant = "comfortable",
 }: DetailFeedViewProps) {
   const [openItemId, setOpenItemId] = useState<string | null>(null);
@@ -203,6 +203,13 @@ export function DetailFeedView({
     if (!selected) return;
     setOpenItemId(selected.id);
   };
+  const handleItemMouseDown = useCallback((itemId: string, index: number) => {
+    if (selectedIdx === index) {
+      setOpenItemId(itemId);
+      return;
+    }
+    onSelect(index);
+  }, [onSelect, selectedIdx]);
 
   const scrollDetailBy = (delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -260,11 +267,21 @@ export function DetailFeedView({
 
   const rootContent = (
     <box flexDirection="column" flexGrow={1} paddingX={1}>
-      <scrollbox ref={listScrollRef} height={listHeight} scrollY>
+      <scrollbox
+        ref={listScrollRef}
+        height={listHeight}
+        scrollY
+        selectable={false}
+      >
         <box flexDirection="column">
           {items.map((item, index) => {
             const isSelected = index === selectedIdx;
             const isHovered = index === hoveredIdx && !isSelected;
+            const handleRowMouseDown = (event: any) => {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              handleItemMouseDown(item.id, index);
+            };
             const titleLines = wrapTextLines(
               item.title,
               listTextWidth,
@@ -296,6 +313,7 @@ export function DetailFeedView({
                 flexDirection="column"
                 height={cardHeight}
                 paddingX={1}
+                selectable={false}
                 backgroundColor={
                   isSelected
                     ? colors.selected
@@ -304,15 +322,18 @@ export function DetailFeedView({
                       : colors.bg
                 }
                 onMouseMove={() => onHover(index)}
-                onMouseDown={() => {
-                  onSelect(index);
-                  setOpenItemId(item.id);
-                }}
+                onMouseDown={handleRowMouseDown}
               >
                 {singleLineList ? (
-                  <box flexDirection="row" height={1}>
+                  <box
+                    flexDirection="row"
+                    height={1}
+                    selectable={false}
+                    onMouseDown={handleRowMouseDown}
+                  >
                     <box flexGrow={1}>
                       <text
+                        selectable={false}
                         attributes={isSelected ? TextAttributes.BOLD : 0}
                         fg={
                           isSelected
@@ -324,14 +345,20 @@ export function DetailFeedView({
                       </text>
                     </box>
                     {timestampText ? (
-                      <text fg={colors.textDim}>{timestampText}</text>
+                      <text selectable={false} fg={colors.textDim}>{timestampText}</text>
                     ) : null}
                   </box>
                 ) : compactList ? (
                   <>
-                    <box flexDirection="row" height={1}>
+                    <box
+                      flexDirection="row"
+                      height={1}
+                      selectable={false}
+                      onMouseDown={handleRowMouseDown}
+                    >
                       <box flexGrow={1}>
                         <text
+                          selectable={false}
                           attributes={isSelected ? TextAttributes.BOLD : 0}
                           fg={
                             isSelected
@@ -343,12 +370,16 @@ export function DetailFeedView({
                         </text>
                       </box>
                       {timestampText ? (
-                        <text fg={colors.textDim}>{timestampText}</text>
+                        <text selectable={false} fg={colors.textDim}>{timestampText}</text>
                       ) : null}
                     </box>
                     {showPreviewLine ? (
-                      <box height={1}>
-                        <text fg={colors.textMuted}>
+                      <box
+                        height={1}
+                        selectable={false}
+                        onMouseDown={handleRowMouseDown}
+                      >
+                        <text selectable={false} fg={colors.textMuted}>
                           {previewLine
                             || truncateWithEllipsis(
                               item.eyebrow ?? "",
@@ -360,9 +391,14 @@ export function DetailFeedView({
                   </>
                 ) : (
                   <>
-                    <box flexDirection="row" height={1}>
+                    <box
+                      flexDirection="row"
+                      height={1}
+                      selectable={false}
+                      onMouseDown={handleRowMouseDown}
+                    >
                       <box flexGrow={1}>
-                        <text fg={colors.textMuted}>
+                        <text selectable={false} fg={colors.textMuted}>
                           {truncateWithEllipsis(
                             item.eyebrow ?? "",
                             listTextWidth,
@@ -370,11 +406,16 @@ export function DetailFeedView({
                         </text>
                       </box>
                       {timestampText ? (
-                        <text fg={colors.textDim}>{timestampText}</text>
+                        <text selectable={false} fg={colors.textDim}>{timestampText}</text>
                       ) : null}
                     </box>
-                    <box height={1}>
+                    <box
+                      height={1}
+                      selectable={false}
+                      onMouseDown={handleRowMouseDown}
+                    >
                       <text
+                        selectable={false}
                         attributes={isSelected ? TextAttributes.BOLD : 0}
                         fg={
                           isSelected
@@ -385,14 +426,25 @@ export function DetailFeedView({
                         {lineOrBlank(titleLines, 0)}
                       </text>
                     </box>
-                    <box height={1}>
-                      <text fg={isSelected ? colors.selectedText : colors.text}>
+                    <box
+                      height={1}
+                      selectable={false}
+                      onMouseDown={handleRowMouseDown}
+                    >
+                      <text
+                        selectable={false}
+                        fg={isSelected ? colors.selectedText : colors.text}
+                      >
                         {lineOrBlank(titleLines, 1)}
                       </text>
                     </box>
                     {showPreviewLine ? (
-                      <box height={1}>
-                        <text fg={colors.textMuted}>{previewLine}</text>
+                      <box
+                        height={1}
+                        selectable={false}
+                        onMouseDown={handleRowMouseDown}
+                      >
+                        <text selectable={false} fg={colors.textMuted}>{previewLine}</text>
                       </box>
                     ) : null}
                   </>
@@ -405,7 +457,7 @@ export function DetailFeedView({
 
       {helpText ? (
         <box height={1}>
-          <text fg={colors.textMuted}>{helpText}</text>
+          <text selectable={false} fg={colors.textMuted}>{helpText}</text>
         </box>
       ) : null}
     </box>

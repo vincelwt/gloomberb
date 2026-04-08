@@ -126,6 +126,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           selectedRowKey={controller.selectedRow?.key ?? null}
           hoveredIdx={controller.hoveredIdx}
           setHoveredIdx={controller.actions.setHoveredIdx}
+          onSelectRow={(rowKey) => controller.actions.setBrowseSelection(rowKey)}
           onOpenRow={controller.actions.openSelectedRow}
           watchlist={controller.watchlistSet}
           onToggleWatchlist={controller.actions.toggleWatchlist}

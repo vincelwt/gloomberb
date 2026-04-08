@@ -10,18 +10,32 @@ let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setHarnessItems:
   | ((items: DetailFeedItem[]) => void)
   | undefined;
+let harnessSelectedIdx = 0;
 
-afterEach(() => {
+afterEach(async () => {
   if (testSetup) {
-    testSetup.renderer.destroy();
+    await act(async () => {
+      testSetup!.renderer.destroy();
+    });
     testSetup = undefined;
   }
   setHarnessItems = undefined;
+  harnessSelectedIdx = 0;
 });
 
-async function renderTwice() {
-  await testSetup!.renderOnce();
-  await testSetup!.renderOnce();
+async function renderSettled() {
+  await act(async () => {
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
+}
+
+async function clickAt(x: number, y: number) {
+  await act(async () => {
+    await testSetup!.mockMouse.click(x, y);
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
 }
 
 const items: DetailFeedItem[] = [
@@ -64,6 +78,7 @@ function Harness({
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   setHarnessItems = setActiveItems;
+  harnessSelectedIdx = selectedIdx;
 
   return (
     <DetailFeedView
@@ -87,39 +102,36 @@ describe("DetailFeedView", () => {
       height: 16,
     });
 
-    await testSetup.renderOnce();
+    await renderSettled();
     const frame = testSetup.captureCharFrame();
 
     expect(frame).toContain("Long headline with enough words");
-    expect(frame).toContain("j/k move  enter open");
+    expect(frame).toContain("j/k move  enter or click selected row");
     expect(frame).not.toContain("This body should stay readable");
   });
 
-  test("opens detail on enter and returns to the list with backspace", async () => {
-    testSetup = await testRender(<Harness width={90} height={16} />, {
-      width: 90,
-      height: 16,
-    });
+  test("selects an item on single click without opening detail", async () => {
+    testSetup = await testRender(
+      <Harness width={90} height={12} listVariant="single-line" />,
+      {
+        width: 90,
+        height: 12,
+      },
+    );
 
-    await testSetup.renderOnce();
+    await renderSettled();
 
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await renderTwice();
-    });
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+    const filingRow = lines.findIndex((line) => line.includes("10-Q filing"));
+    const filingCol = lines[filingRow]?.indexOf("10-Q filing") ?? -1;
 
-    let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("<- Back");
-    expect(frame).toContain("This body should stay readable");
+    await clickAt(filingCol + 1, filingRow);
 
-    await act(async () => {
-      testSetup!.mockInput.pressBackspace();
-      await renderTwice();
-    });
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Long headline with enough words");
-    expect(frame).not.toContain("This body should stay readable");
+    const nextFrame = testSetup.captureCharFrame();
+    expect(harnessSelectedIdx).toBe(1);
+    expect(nextFrame).not.toContain("<- Back");
+    expect(nextFrame).not.toContain("Quarterly report details.");
   });
 
   test("closes the open detail page when the feed items change", async () => {
@@ -128,11 +140,12 @@ describe("DetailFeedView", () => {
       height: 16,
     });
 
-    await testSetup.renderOnce();
+    await renderSettled();
 
     await act(async () => {
       testSetup!.mockInput.pressEnter();
-      await renderTwice();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
     });
 
     await act(async () => {
@@ -144,7 +157,7 @@ describe("DetailFeedView", () => {
         },
       ]);
     });
-    await renderTwice();
+    await renderSettled();
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Fresh item after source change");
@@ -158,7 +171,7 @@ describe("DetailFeedView", () => {
       { width: 110, height: 12 },
     );
 
-    await testSetup.renderOnce();
+    await renderSettled();
     const frame = testSetup.captureCharFrame();
 
     expect(frame).toContain("Long headline with enough words");
