@@ -149,7 +149,13 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     kind: "split",
     axis: "horizontal",
     ratio: 0.4,
-    first: { kind: "pane", instanceId: "portfolio-list:main" },
+    first: {
+      kind: "split",
+      axis: "vertical",
+      ratio: 0.5,
+      first: { kind: "pane", instanceId: "portfolio-list:main" },
+      second: { kind: "pane", instanceId: "chat:main" },
+    },
     second: { kind: "pane", instanceId: "ticker-detail:main" },
   },
   instances: [
@@ -176,6 +182,14 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
         chartResolution: "1wk",
       },
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
+    },
+    {
+      instanceId: "chat:main",
+      paneId: "chat",
+      settings: {
+        hideTabs: false,
+      },
+      binding: { kind: "none" },
     },
   ],
   floating: [],

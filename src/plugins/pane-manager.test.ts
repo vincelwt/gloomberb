@@ -71,7 +71,7 @@ describe("pane-manager split-tree drops", () => {
     const next = gridlockAllPanes(layout);
 
     expect(next.floating).toHaveLength(0);
-    expect(getDockedPaneIds(next)).toHaveLength(4);
+    expect(getDockedPaneIds(next)).toHaveLength(5);
   });
 
   test("gridlock infers a matching tiled layout from arranged windows", () => {
