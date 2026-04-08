@@ -84,6 +84,7 @@ class MemoryPersistence implements PluginPersistence {
 }
 
 afterEach(() => {
+  apiClient.dispose();
   apiClient.setSessionToken(null);
   apiClient.connectChannel = originalConnectChannel;
   apiClient.getSession = originalGetSession;
@@ -201,6 +202,35 @@ describe("ChatController", () => {
     expect((controller as any).verificationPollTimer).not.toBeNull();
 
     controller.reset(true);
+  });
+
+  test("dispose stops verification polling and closes the live connection", () => {
+    const controller = new ChatController();
+    let closed = false;
+
+    apiClient.setSessionToken("token-123");
+    (controller as any).user = { id: "u1", username: "vince", emailVerified: false };
+    (controller as any).syncVerificationPolling();
+    expect((controller as any).verificationPollTimer).not.toBeNull();
+
+    (controller as any).user = { id: "u1", username: "vince", emailVerified: true };
+    apiClient.connectChannel = () => ({
+      send: async () => {
+        throw new Error("not implemented");
+      },
+      close: () => {
+        closed = true;
+      },
+    });
+
+    controller.ensureConnection();
+    expect((controller as any).wsConnection).not.toBeNull();
+
+    controller.dispose();
+
+    expect(closed).toBe(true);
+    expect((controller as any).verificationPollTimer).toBeNull();
+    expect((controller as any).wsConnection).toBeNull();
   });
 
   test("keeps the cached session when session refresh fails transiently", async () => {

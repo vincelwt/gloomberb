@@ -19,6 +19,10 @@ export function attachPredictionMarketsPersistence(
   predictionMarketsPersistence = persistence;
 }
 
+export function resetPredictionMarketsPersistence(): void {
+  predictionMarketsPersistence = null;
+}
+
 export function getPredictionMarketsPersistence(): PluginPersistence | null {
   return predictionMarketsPersistence;
 }

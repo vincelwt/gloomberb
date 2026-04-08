@@ -630,4 +630,27 @@ export class PluginRegistry implements PluginRuntimeAccess {
     this.plugins.delete(pluginId);
     this.events.emit("plugin:unregistered", { pluginId });
   }
+
+  destroy(): void {
+    for (const pluginId of [...this.plugins.keys()].reverse()) {
+      try {
+        this.unregister(pluginId);
+      } catch (error) {
+        this.registryLog.error("Failed to unregister plugin during registry destroy", {
+          pluginId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.pluginResumeListeners.clear();
+    if (sharedRegistry === this) {
+      sharedRegistry = undefined;
+    }
+    if (sharedDataProvider === this.dataProvider) {
+      sharedDataProvider = undefined;
+    }
+    if ((globalThis as any).__gloomRegistry === this) {
+      delete (globalThis as any).__gloomRegistry;
+    }
+  }
 }

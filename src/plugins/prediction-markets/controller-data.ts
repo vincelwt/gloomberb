@@ -26,6 +26,7 @@ import { subscribePolymarketMarket } from "./services/polymarket-ws";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
+  PredictionVenue,
   PredictionListRow,
   PredictionMarketDetail,
   PredictionMarketSummary,
@@ -35,6 +36,48 @@ import type {
 } from "./types";
 
 const KEYBOARD_DETAIL_LOAD_DELAY_MS = 140;
+
+function formatPredictionVenueLabel(venue: PredictionVenue): string {
+  return venue === "polymarket" ? "Polymarket" : "Kalshi";
+}
+
+function joinPredictionVenueLabels(venues: PredictionVenue[]): string {
+  const labels = [...new Set(venues.map(formatPredictionVenueLabel))];
+  if (labels.length <= 1) return labels[0] ?? "";
+  return `${labels.slice(0, -1).join(" and ")} and ${labels.at(-1)}`;
+}
+
+function formatPredictionLoadError(
+  venue: PredictionVenue,
+  subject: "markets" | "market detail",
+  error: unknown,
+): string {
+  const venueLabel = formatPredictionVenueLabel(venue);
+  const fallback = `Could not load ${venueLabel} ${subject}.`;
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  const message = error.message.trim();
+  if (message.length === 0) {
+    return fallback;
+  }
+
+  const requestFailureMatch = message.match(/Request failed \((\d+)\)/i);
+  if (requestFailureMatch) {
+    return `${venueLabel} ${subject} request failed (${requestFailureMatch[1]}).`;
+  }
+
+  if (
+    /typo in the url or port|access the url|unable to connect|could not resolve host|connection refused/i.test(
+      message,
+    )
+  ) {
+    return `${venueLabel} is unavailable right now.`;
+  }
+
+  return `${fallback} ${message}`;
+}
 
 export function usePredictionMarketsDataState({
   browseTab,
@@ -152,14 +195,84 @@ export function usePredictionMarketsDataState({
       ].filter((value): value is string => value != null),
     [includeKalshi, includePolymarket, kalshiCatalogKey, polymarketCatalogKey],
   );
+  const activeCatalogSources = useMemo(
+    () =>
+      [
+        includePolymarket
+          ? {
+              venue: "polymarket" as const,
+              cacheKey: polymarketCatalogKey,
+              error: catalogErrors[polymarketCatalogKey] ?? null,
+              markets: polymarketCatalog,
+            }
+          : null,
+        includeKalshi
+          ? {
+              venue: "kalshi" as const,
+              cacheKey: kalshiCatalogKey,
+              error: catalogErrors[kalshiCatalogKey] ?? null,
+              markets: kalshiCatalog,
+            }
+          : null,
+      ].filter(
+        (
+          value,
+        ): value is {
+          venue: PredictionVenue;
+          cacheKey: string;
+          error: string | null;
+          markets: PredictionMarketSummary[];
+        } => value != null,
+      ),
+    [
+      catalogErrors,
+      includeKalshi,
+      includePolymarket,
+      kalshiCatalog,
+      kalshiCatalogKey,
+      polymarketCatalog,
+      polymarketCatalogKey,
+    ],
+  );
   const catalogLoadCount = activeCatalogKeys.reduce(
     (count, cacheKey) => count + (catalogPending[cacheKey] ?? 0),
     0,
   );
-  const catalogError = activeCatalogKeys
-    .map((cacheKey) => catalogErrors[cacheKey])
-    .filter((value): value is string => !!value)
-    .join(" ") || null;
+  const catalogStatus = useMemo(() => {
+    const failingSources = activeCatalogSources.filter((source) => !!source.error);
+    if (failingSources.length === 0) {
+      return null;
+    }
+
+    const loadedSources = activeCatalogSources.filter(
+      (source) => !source.error && source.markets.length > 0,
+    );
+    if (failingSources.length < activeCatalogSources.length) {
+      const unavailableVenues = joinPredictionVenueLabels(
+        failingSources.map((source) => source.venue),
+      );
+      if (loadedSources.length > 0) {
+        return {
+          tone: "warning" as const,
+          message: `${unavailableVenues} unavailable right now; showing ${joinPredictionVenueLabels(
+            loadedSources.map((source) => source.venue),
+          )} markets.`,
+        };
+      }
+      return {
+        tone: "warning" as const,
+        message: `${unavailableVenues} unavailable right now.`,
+      };
+    }
+
+    return {
+      tone: "danger" as const,
+      message: failingSources
+        .map((source) => source.error)
+        .filter((value): value is string => !!value)
+        .join(" "),
+    };
+  }, [activeCatalogSources]);
 
   const allMarkets = useMemo(() => {
     const merged: PredictionMarketSummary[] = [];
@@ -276,9 +389,7 @@ export function usePredictionMarketsDataState({
           updatePredictionErrorState(
             current,
             cacheKey,
-            error instanceof Error
-              ? error.message
-              : "Could not load Polymarket markets.",
+            formatPredictionLoadError("polymarket", "markets", error),
           ),
         );
       } finally {
@@ -310,9 +421,7 @@ export function usePredictionMarketsDataState({
           updatePredictionErrorState(
             current,
             cacheKey,
-            error instanceof Error
-              ? error.message
-              : "Could not load Kalshi markets.",
+            formatPredictionLoadError("kalshi", "markets", error),
           ),
         );
       } finally {
@@ -360,9 +469,7 @@ export function usePredictionMarketsDataState({
           updatePredictionErrorState(
             current,
             cacheKey,
-            error instanceof Error
-              ? error.message
-              : "Could not load market detail.",
+            formatPredictionLoadError(summary.venue, "market detail", error),
           ),
         );
         if (currentDetailCacheKeyRef.current === cacheKey) {
@@ -605,7 +712,7 @@ export function usePredictionMarketsDataState({
   }, []);
 
   return {
-    catalogError,
+    catalogStatus,
     catalogLoadCount,
     debouncedSearchQuery,
     detail,

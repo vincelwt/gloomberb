@@ -2393,6 +2393,12 @@ export class IbkrGatewayServiceManager {
     await service.disconnect();
     this.services.delete(instanceId);
   }
+
+  async destroyAll(): Promise<void> {
+    const services = [...this.services.values()];
+    this.services.clear();
+    await Promise.allSettled(services.map((service) => service.disconnect()));
+  }
 }
 
 export const ibkrGatewayManager = new IbkrGatewayServiceManager();

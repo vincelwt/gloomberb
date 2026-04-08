@@ -1,7 +1,7 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { ibkrBroker } from "./broker-adapter";
 import { buildPersistedIbkrGatewayConfig } from "./config";
-import { setResolvedIbkrGatewayListener } from "./gateway-service";
+import { ibkrGatewayManager, setResolvedIbkrGatewayListener } from "./gateway-service";
 import {
   getTradeTicketState,
   getTradingPaneState,
@@ -149,5 +149,11 @@ export const ibkrPlugin: GloomPlugin = {
         openTradeForSymbol(ctx, lastSelectedTickerSymbol, "SELL");
       },
     });
+  },
+
+  dispose() {
+    lastSelectedTickerSymbol = null;
+    setResolvedIbkrGatewayListener(null);
+    void ibkrGatewayManager.destroyAll().catch(() => {});
   },
 };

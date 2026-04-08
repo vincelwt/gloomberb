@@ -2488,6 +2488,10 @@ export function CommandBar({
           return name ? `in "${name}"` : command.description;
         }
         case "check-for-updates":
+          if (state.updateProgress?.phase === "downloading") return `Downloading v${state.updateAvailable?.version}: ${state.updateProgress.percent ?? 0}%`;
+          if (state.updateProgress?.phase === "replacing") return "Installing update";
+          if (state.updateProgress?.phase === "done") return "Update installed - restart to apply";
+          if (state.updateProgress?.phase === "error") return `Update failed: ${state.updateProgress.error}`;
           if (state.updateCheckInProgress) return "Checking GitHub releases now";
           if (state.updateAvailable) return `Latest available: v${state.updateAvailable.version}`;
           if (state.updateNotice) return state.updateNotice;

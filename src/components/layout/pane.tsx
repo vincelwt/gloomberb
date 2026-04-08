@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { paneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
+import { getPaneBodyHeight } from "./pane-sizing";
 
 interface PaneWrapperProps {
   title?: string;
@@ -26,6 +27,9 @@ export function PaneWrapper({
   children,
 }: PaneWrapperProps) {
   const bg = paneBg(focused);
+  const bodyHeight = typeof height === "number"
+    ? title ? getPaneBodyHeight(height) : height
+    : undefined;
 
   return (
     <box
@@ -41,7 +45,7 @@ export function PaneWrapper({
       {title && (
         <PaneHeader title={title} width={width} focused={focused} showActions={showActions} />
       )}
-      <box flexGrow={1} overflow="hidden">
+      <box height={bodyHeight} flexGrow={bodyHeight == null ? 1 : 0} overflow="hidden">
         {children}
       </box>
     </box>

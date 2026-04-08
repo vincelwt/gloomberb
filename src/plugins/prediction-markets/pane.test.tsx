@@ -83,6 +83,57 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("Will the Fed cut rates?");
   });
 
+  test("shows a venue warning instead of a raw fetch error when one catalog fails", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      if (url.includes("gamma-api.polymarket.com")) {
+        throw new Error("Unable to connect. Was there a typo in the url or port?");
+      }
+      if (url.includes("/trade-api/v2/events?")) {
+        return new Response(
+          JSON.stringify({
+            events: [
+              {
+                title: "Fed series",
+                category: "Economics",
+                event_ticker: "FED-1",
+                series_ticker: "FED",
+                markets: [
+                  {
+                    ticker: "KAL-1",
+                    title: "Will the Fed cut rates?",
+                    yes_sub_title: "Yes",
+                    event_ticker: "FED-1",
+                    status: "open",
+                    market_type: "binary",
+                    last_price_dollars: "0.48",
+                    volume_24h_fp: "15000",
+                    volume_fp: "90000",
+                    open_interest_fp: "45000",
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Will the Fed cut rates?");
+    expect(frame).toContain(
+      "Polymarket unavailable right now; showing Kalshi markets.",
+    );
+    expect(frame).not.toContain("Was there a typo in the url or port?");
+  });
+
   test("selects a market on single click and opens detail on double click", async () => {
     installPredictionMarketMocks();
 
@@ -125,6 +176,33 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Kalshi primary rule");
+  });
+
+  test("focuses the pane when a market row is clicked", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(
+      <Harness initialFocusedPaneId="portfolio-list:main" />,
+      { width: 120, height: 34 },
+    );
+    await flushFrames(testSetup);
+
+    expect(harnessStateRef.current?.focusedPaneId).toBe("portfolio-list:main");
+
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+    const kalshiRow = lines.findIndex((line) =>
+      line.includes("Will the Fed cut rates?"),
+    );
+    const kalshiCol = lines[kalshiRow]?.indexOf("Will the Fed cut rates?") ?? -1;
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup);
+
+    expect(harnessStateRef.current?.focusedPaneId).toBe(TEST_PANE_ID);
   });
 
   test("loads selected detail once instead of refetching in a render loop", async () => {

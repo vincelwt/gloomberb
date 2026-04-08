@@ -86,7 +86,13 @@ const TickerListHeader = memo(function TickerListHeader({
       scrollX
       focusable={false}
     >
-      <box flexDirection="row" height={1} paddingX={1}>
+      <box
+        flexDirection="row"
+        height={1}
+        width="100%"
+        paddingX={1}
+        backgroundColor={colors.panel}
+      >
         {columns.map((column) => {
           const isSorted = sortColumnId === column.id;
           const indicator = isSorted ? (sortDirection === "asc" ? " \u25B2" : " \u25BC") : "";
@@ -95,6 +101,7 @@ const TickerListHeader = memo(function TickerListHeader({
             <box
               key={column.id}
               width={column.width + 1}
+              backgroundColor={colors.panel}
               onMouseDown={onHeaderClick ? (event) => {
                 event.preventDefault();
                 onHeaderClick(column.id);

@@ -692,7 +692,7 @@ export function usePredictionMarketsController({
     paneSettings,
     browseTab,
     categoryId,
-    catalogError: data.catalogError,
+    catalogStatus: data.catalogStatus,
     catalogLoadCount: data.catalogLoadCount,
     detail: data.detail,
     detailError: data.detailError,

@@ -99,11 +99,22 @@ export class MemoryPersistence implements PluginPersistence {
 
 attachPredictionMarketsPersistence(new MemoryPersistence());
 
-export function createConfig(): AppConfig {
+export function createConfig(options?: {
+  initialFocusedPaneId?: string;
+}): AppConfig {
   const config = createDefaultConfig("/tmp/gloomberb-prediction-markets");
+  const initialFocusedPaneId = options?.initialFocusedPaneId ?? TEST_PANE_ID;
+  const extraInstances = initialFocusedPaneId !== TEST_PANE_ID
+    ? [{
+        instanceId: initialFocusedPaneId,
+        paneId: initialFocusedPaneId.split(":")[0] ?? "portfolio-list",
+        binding: { kind: "none" as const },
+      }]
+    : [];
   const layout = {
     dockRoot: { kind: "pane" as const, instanceId: TEST_PANE_ID },
     instances: [
+      ...extraInstances,
       {
         instanceId: TEST_PANE_ID,
         paneId: "prediction-markets",
@@ -424,13 +435,17 @@ export function installPredictionMarketMocks() {
   return { fetchUrls };
 }
 
-export function Harness() {
+export function Harness({
+  initialFocusedPaneId = TEST_PANE_ID,
+}: {
+  initialFocusedPaneId?: string;
+} = {}) {
   const runtime = useMemo(() => createRuntime(), []);
   const [state, dispatch] = useReducer(
     appReducer,
     (() => {
-      const initial = createInitialState(createConfig());
-      initial.focusedPaneId = TEST_PANE_ID;
+      const initial = createInitialState(createConfig({ initialFocusedPaneId }));
+      initial.focusedPaneId = initialFocusedPaneId;
       return initial;
     })(),
   );
@@ -442,7 +457,7 @@ export function Harness() {
           <PredictionMarketsPane
             paneId={TEST_PANE_ID}
             paneType="prediction-markets"
-            focused
+            focused={state.focusedPaneId === TEST_PANE_ID}
             width={120}
             height={34}
           />

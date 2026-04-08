@@ -25,6 +25,11 @@ export function setLayoutManagerDispatch(
   getStateRef = getState;
 }
 
+export function clearLayoutManagerDispatch() {
+  dispatchRef = null;
+  getStateRef = null;
+}
+
 function persistLayout(layout: LayoutConfig) {
   if (!dispatchRef) return;
   dispatchRef({ type: "PUSH_LAYOUT_HISTORY" });
@@ -260,5 +265,9 @@ export const layoutManagerPlugin: GloomPlugin = {
         ctx.showToast("Choose a swap target from layout mode", { type: "info" });
       },
     });
+  },
+
+  dispose() {
+    clearLayoutManagerDispatch();
   },
 };
