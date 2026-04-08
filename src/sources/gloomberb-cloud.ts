@@ -55,6 +55,8 @@ async function withCloudFallback<T>(load: () => Promise<T>, message: string): Pr
 
 function mapQuote(quote: CloudQuotePayload): Quote {
   const { currency, divisor } = resolveCurrencyUnit(quote.currency);
+  const listingExchangeName = quote.listingExchangeName ?? quote.exchangeName;
+  const listingExchangeFullName = quote.listingExchangeFullName ?? quote.fullExchangeName ?? listingExchangeName;
   return {
     ...quote,
     currency: currency || quote.currency,
@@ -73,6 +75,10 @@ function mapQuote(quote: CloudQuotePayload): Quote {
     preMarketChange: normalizePriceValueByDivisor(quote.preMarketChange, divisor),
     postMarketPrice: normalizePriceValueByDivisor(quote.postMarketPrice, divisor),
     postMarketChange: normalizePriceValueByDivisor(quote.postMarketChange, divisor),
+    listingExchangeName,
+    listingExchangeFullName,
+    exchangeName: listingExchangeName,
+    fullExchangeName: listingExchangeFullName,
     providerId,
   };
 }

@@ -1,5 +1,5 @@
 import { saveConfig } from "../../../../data/config-store";
-import { createBaseConverter } from "../../../../cli/context";
+import { createBaseConverter } from "../../../../cli/base-converter";
 import {
   countCollectionTickers,
   findWatchlist,

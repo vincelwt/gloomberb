@@ -23,6 +23,7 @@ import {
 } from "./selectors";
 import { traceMarketData } from "./trace";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
+import { hasFreshQuoteForCurrentSession, isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 
 const EMPTY_MESSAGE = "No data available";
 const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
@@ -90,6 +91,21 @@ function readyEntry<T>(
     error: data == null ? { reasonCode: "NO_DATA", message: EMPTY_MESSAGE } : null,
     attempts,
   };
+}
+
+function readyQuoteEntry(
+  current: QueryEntry<Quote>,
+  quote: Quote,
+  source: string,
+  attempts: ProviderAttempt[],
+): QueryEntry<Quote> {
+  if (
+    isQuoteStaleForCurrentSession(quote)
+    && hasFreshQuoteForCurrentSession([current.data, current.lastGoodData])
+  ) {
+    return readyEntry(current, null, current.source ?? source, attempts, { keepLastGoodOnEmpty: true });
+  }
+  return readyEntry(current, quote, source, attempts, { keepLastGoodOnEmpty: true });
 }
 
 function errorEntry<T>(current: QueryEntry<T>, attempt: ProviderAttempt): QueryEntry<T> {
@@ -349,7 +365,7 @@ export class MarketDataCoordinator {
         );
         const source = quote.providerId ?? this.dataProvider.id;
         const attempts = [createAttempt(source, startedAt, "success")];
-        return this.quoteStore.update(key, (current) => readyEntry(current, quote, source, attempts, { keepLastGoodOnEmpty: true }));
+        return this.quoteStore.update(key, (current) => readyQuoteEntry(current, quote, source, attempts));
       } catch (error) {
         const classified = classifyError(error);
         const attempt = createAttempt(this.dataProvider.id, startedAt, EXPECTED_EMPTY.test(classified.message) ? "empty" : "fatal_error", classified.reasonCode, classified.message);
@@ -566,7 +582,7 @@ export class MarketDataCoordinator {
       const key = buildQuoteKey(instrument);
       const current = this.quoteStore.get(key);
       const attempts = [createAttempt(quote.providerId ?? this.dataProvider.id, Date.now(), "success")];
-      this.quoteStore.set(key, readyEntry(current, quote, quote.providerId ?? this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
+      this.quoteStore.set(key, readyQuoteEntry(current, quote, quote.providerId ?? this.dataProvider.id, attempts));
     });
   }
 }

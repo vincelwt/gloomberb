@@ -675,6 +675,7 @@ export class YahooFinanceClient implements DataProvider {
 
     const quote: Quote = {
       symbol,
+      providerId: this.id,
       price: currentPrice,
       currency: normalizedCurrency,
       change,
@@ -686,7 +687,10 @@ export class YahooFinanceClient implements DataProvider {
       lastUpdated: Date.now(),
       exchangeName: meta.exchangeName,
       fullExchangeName: meta.fullExchangeName,
+      listingExchangeName: meta.exchangeName,
+      listingExchangeFullName: meta.fullExchangeName,
       marketState,
+      sessionConfidence: "derived",
       dataSource: "yahoo",
       ...quoteSupplement,
       ...extHours,
@@ -814,6 +818,7 @@ export class YahooFinanceClient implements DataProvider {
 
         const quote: Quote = {
           symbol,
+          providerId: this.id,
           price,
           currency: normalizedCurrency,
           change,
@@ -824,7 +829,10 @@ export class YahooFinanceClient implements DataProvider {
           lastUpdated: Date.now(),
           exchangeName: meta.exchangeName,
           fullExchangeName: meta.fullExchangeName,
+          listingExchangeName: meta.exchangeName,
+          listingExchangeFullName: meta.fullExchangeName,
           marketState,
+          sessionConfidence: "derived",
           dataSource: "yahoo",
           ...quoteSupplement,
           ...extHours,

@@ -4,6 +4,7 @@ import type { InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest, Cha
 import type { QueryEntry } from "./result-types";
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { normalizePriceHistory } from "../utils/price-history";
+import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
 
 export function buildInstrumentKey(instrument: InstrumentRef): string {
   const contractKey = instrument.instrument?.conId
@@ -96,54 +97,6 @@ export function hasLikelyPriceUnitMismatch(
   return hasLikelyQuoteUnitMismatch(left, right);
 }
 
-function mergeDefinedQuoteFields(
-  preferred: Quote | null | undefined,
-  fallback: Quote | null | undefined,
-): Quote | undefined {
-  const mergedEntries: Array<[string, unknown]> = [];
-  for (const source of [fallback, preferred]) {
-    if (!source) continue;
-    for (const [key, value] of Object.entries(source)) {
-      if (value !== undefined) {
-        mergedEntries.push([key, value]);
-      }
-    }
-  }
-  if (mergedEntries.length === 0) return undefined;
-  return Object.fromEntries(mergedEntries) as Quote;
-}
-
-function projectExtendedHoursQuote(
-  snapshotQuote: Quote | null | undefined,
-  liveQuote: Quote | null | undefined,
-): Quote | undefined {
-  const merged = mergeDefinedQuoteFields(liveQuote, snapshotQuote);
-  if (!merged) return undefined;
-  if (!snapshotQuote || !liveQuote) return merged;
-
-  const snapshotState = snapshotQuote.marketState;
-  if (snapshotState !== "PRE" && snapshotState !== "POST") return merged;
-  if (liveQuote.marketState === "PRE" || liveQuote.marketState === "POST") return merged;
-
-  if (snapshotState === "PRE") {
-    return {
-      ...merged,
-      marketState: "PRE",
-      preMarketPrice: liveQuote.price,
-      preMarketChange: liveQuote.change,
-      preMarketChangePercent: liveQuote.changePercent,
-    };
-  }
-
-  return {
-    ...merged,
-    marketState: "POST",
-    postMarketPrice: liveQuote.price,
-    postMarketChange: liveQuote.change,
-    postMarketChangePercent: liveQuote.changePercent,
-  };
-}
-
 export function buildTickerFinancialsSnapshot(
   snapshotEntry: QueryEntry<TickerFinancials>,
   quoteEntry?: QueryEntry<TickerFinancials["quote"]>,
@@ -153,15 +106,27 @@ export function buildTickerFinancialsSnapshot(
   const quote = resolveEntryData(quoteEntry);
   const priceHistory = resolveEntryData(chartEntry);
   if (!snapshot && !quote && !priceHistory) return null;
-  const resolvedQuote = snapshot?.quote && quote && hasLikelyPriceUnitMismatch(snapshot.quote, quote)
-    ? snapshot.quote
-    : (projectExtendedHoursQuote(snapshot?.quote, quote) ?? snapshot?.quote);
+  if (snapshot?.quote && quote && hasLikelyPriceUnitMismatch(snapshot.quote, quote)) {
+    return {
+      ...(resolveTickerFinancialsQuoteState(snapshot) ?? {
+        annualStatements: snapshot?.annualStatements ?? [],
+        quarterlyStatements: snapshot?.quarterlyStatements ?? [],
+        priceHistory: snapshot?.priceHistory ?? [],
+      }),
+      priceHistory: normalizePriceHistory(priceHistory ?? snapshot?.priceHistory ?? []),
+    };
+  }
+
+  const resolved = resolveTickerFinancialsQuoteState(snapshot ?? {
+    annualStatements: [],
+    quarterlyStatements: [],
+    priceHistory: [],
+  }, quote);
+
+  if (!resolved) return null;
+
   return {
-    quote: resolvedQuote,
-    fundamentals: snapshot?.fundamentals,
-    profile: snapshot?.profile,
-    annualStatements: snapshot?.annualStatements ?? [],
-    quarterlyStatements: snapshot?.quarterlyStatements ?? [],
+    ...resolved,
     priceHistory: normalizePriceHistory(priceHistory ?? snapshot?.priceHistory ?? []),
   };
 }

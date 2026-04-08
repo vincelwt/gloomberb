@@ -216,6 +216,7 @@ describe("MarketDataCoordinator", () => {
         change: 2.5,
         changePercent: 2.48,
         lastUpdated: Date.now(),
+        dataSource: "live",
       },
     );
 
@@ -309,6 +310,69 @@ describe("MarketDataCoordinator", () => {
 
     expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(24.5);
     expect(coordinator.getTickerFinancialsSync(instrument)?.quote?.price).toBe(0.245);
+  });
+
+  it("keeps the fresh snapshot quote when a stale cloud stream update arrives later", async () => {
+    const fixedNow = Date.parse("2026-04-08T10:30:00Z");
+    const realDateNow = Date.now;
+    Date.now = () => fixedNow;
+    try {
+      let streamed: ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null = null;
+      const provider = createProvider({
+        getTickerFinancials: async () => ({
+          quote: {
+            symbol: "HY9H",
+            providerId: "yahoo",
+            dataSource: "yahoo",
+            price: 598,
+            currency: "EUR",
+            change: 6,
+            changePercent: 1.01,
+            lastUpdated: Date.parse("2026-04-08T10:25:00Z"),
+            listingExchangeName: "FWB2",
+            marketState: "REGULAR",
+            sessionConfidence: "derived",
+          },
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+        }),
+        subscribeQuotes: (_targets, onQuote) => {
+          streamed = onQuote as typeof streamed;
+          return () => {};
+        },
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const instrument = { symbol: "HY9H", exchange: "FWB2" };
+
+      await coordinator.loadSnapshot(instrument);
+      coordinator.subscribeQuotes([{ instrument }]);
+      const onStreamed = streamed;
+      if (!onStreamed) throw new Error("expected streaming callback");
+      onStreamed(
+        { symbol: "HY9H", exchange: "FWB2" },
+        {
+          symbol: "HY9H",
+          providerId: "gloomberb-cloud",
+          dataSource: "delayed",
+          price: 528,
+          currency: "EUR",
+          change: 4,
+          changePercent: 0.76,
+          lastUpdated: Date.parse("2026-04-07T17:55:00Z"),
+          listingExchangeName: "FWB2",
+          marketState: "REGULAR",
+          sessionConfidence: "explicit",
+        },
+      );
+
+      expect(coordinator.getQuoteEntry(instrument).data).toBeNull();
+      expect(coordinator.getQuoteEntry(instrument).lastGoodData?.price).toBe(598);
+      expect(coordinator.getTickerFinancialsSync(instrument)?.quote?.price).toBe(598);
+      expect(coordinator.getTickerFinancialsSync(instrument)?.quote?.providerId).toBe("yahoo");
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 
   it("hydrates ticker financials synchronously from primed cached data", () => {

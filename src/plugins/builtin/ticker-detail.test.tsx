@@ -495,6 +495,53 @@ describe("TickerDetailPane", () => {
     expect(frame).toContain("Builds widgets for industrial customers.");
   });
 
+  test("shows listing venue, session, sources, and route separately in Overview", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AMD")}
+        ticker={makeTicker("AMD", "Advanced Micro Devices")}
+        financials={makeFinancials({
+          quote: {
+            symbol: "AMD",
+            providerId: "ibkr",
+            dataSource: "live",
+            price: 100,
+            currency: "USD",
+            change: 1,
+            changePercent: 1,
+            lastUpdated: Date.now(),
+            listingExchangeName: "NASDAQ",
+            listingExchangeFullName: "NASDAQ",
+            routingExchangeName: "SMART",
+            routingExchangeFullName: "SMART",
+            marketState: "PRE",
+            sessionConfidence: "derived",
+            preMarketPrice: 101,
+            preMarketChange: 2,
+            preMarketChangePercent: 2,
+            provenance: {
+              price: { providerId: "ibkr", dataSource: "live" },
+              session: { providerId: "yahoo", dataSource: "yahoo" },
+            },
+          },
+        })}
+        width={110}
+      />,
+      { width: 110, height: 24 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("NASDAQ");
+    expect(frame).toContain("PRE-MKT");
+    expect(frame).toContain("Price source: IBKR live");
+    expect(frame).toContain("Session source: Yahoo");
+    expect(frame).toContain("Route: SMART");
+  });
+
   test("keeps quote prices native while converting market cap and position totals to base currency", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));

@@ -401,6 +401,65 @@ function hasDelayedMarketData(
   ].some((tickType) => marketData.has(tickType));
 }
 
+function firstNonSmartExchange(value?: string): string | undefined {
+  return value
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0 && entry !== "SMART");
+}
+
+function resolveIbkrListingExchange(
+  current: Quote | undefined,
+  contract: Contract,
+  details: ContractDetails,
+): string | undefined {
+  return current?.listingExchangeName
+    ?? contract.primaryExch
+    ?? firstNonSmartExchange(details.validExchanges)
+    ?? (current?.exchangeName !== "SMART" ? current?.exchangeName : undefined)
+    ?? (contract.exchange !== "SMART" ? contract.exchange : undefined);
+}
+
+function resolveIbkrRoutingExchange(current: Quote | undefined, contract: Contract): string | undefined {
+  return current?.routingExchangeName
+    ?? contract.exchange
+    ?? "SMART";
+}
+
+function ibkrVenueFields(
+  current: Quote | undefined,
+  contract: Contract,
+  details: ContractDetails,
+): Pick<
+  Quote,
+  | "exchangeName"
+  | "fullExchangeName"
+  | "listingExchangeName"
+  | "listingExchangeFullName"
+  | "routingExchangeName"
+  | "routingExchangeFullName"
+  | "marketState"
+  | "sessionConfidence"
+> {
+  const listingExchangeName = resolveIbkrListingExchange(current, contract, details);
+  const listingExchangeFullName = current?.listingExchangeFullName
+    ?? current?.fullExchangeName
+    ?? listingExchangeName;
+  const routingExchangeName = resolveIbkrRoutingExchange(current, contract);
+  const routingExchangeFullName = current?.routingExchangeFullName ?? routingExchangeName;
+
+  return {
+    exchangeName: listingExchangeName,
+    fullExchangeName: listingExchangeFullName,
+    listingExchangeName,
+    listingExchangeFullName,
+    routingExchangeName,
+    routingExchangeFullName,
+    marketState: current?.marketState,
+    sessionConfidence: current?.sessionConfidence ?? "unknown",
+  };
+}
+
 interface TickByTickBidAskUpdate {
   time: number;
   bidPrice: number;
@@ -435,9 +494,7 @@ export function applyTickByTickAllLastToQuote(
     volume: current?.volume,
     name: current?.name ?? details.longName ?? details.marketName ?? contract.symbol,
     lastUpdated: tick.time ? tick.time * 1000 : Date.now(),
-    exchangeName: current?.exchangeName ?? details.validExchanges?.split(",")[0],
-    fullExchangeName: current?.fullExchangeName ?? details.validExchanges?.split(",")[0],
-    marketState: current?.marketState ?? "REGULAR",
+    ...ibkrVenueFields(current, contract, details),
     preMarketPrice: current?.preMarketPrice,
     preMarketChange: current?.preMarketChange,
     preMarketChangePercent: current?.preMarketChangePercent,
@@ -2229,9 +2286,7 @@ export class IbkrGatewayService {
       volume: marketData.get(IBApiTickType.VOLUME)?.value ?? marketData.get(IBApiTickType.DELAYED_VOLUME)?.value,
       name: details.longName || details.marketName || contract.symbol,
       lastUpdated: ingressTm,
-      exchangeName: details.validExchanges?.split(",")[0],
-      fullExchangeName: details.validExchanges?.split(",")[0],
-      marketState: "REGULAR",
+      ...ibkrVenueFields(undefined, contract, details),
       bid: normalizeIbkrPriceValue(
         marketData.get(IBApiTickType.BID)?.value ?? marketData.get(IBApiTickType.DELAYED_BID)?.value,
         priceDivisor,

@@ -1,4 +1,21 @@
 export type MarketState = "PRE" | "REGULAR" | "POST" | "PREPRE" | "POSTPOST" | "CLOSED";
+export type SessionConfidence = "explicit" | "derived" | "unknown";
+export type QuoteDataSource = "live" | "delayed" | "yahoo";
+
+export interface QuoteFieldProvenance {
+  providerId: string;
+  dataSource?: QuoteDataSource;
+}
+
+export interface QuoteProvenance {
+  price?: QuoteFieldProvenance;
+  session?: QuoteFieldProvenance;
+  listing?: QuoteFieldProvenance;
+  routing?: QuoteFieldProvenance;
+  descriptive?: QuoteFieldProvenance;
+  fields?: Record<string, QuoteFieldProvenance>;
+  rejectedPriceProviders?: string[];
+}
 
 export interface Quote {
   symbol: string;
@@ -16,7 +33,12 @@ export interface Quote {
   lastUpdated: number; // timestamp ms
   exchangeName?: string;
   fullExchangeName?: string;
+  listingExchangeName?: string;
+  listingExchangeFullName?: string;
+  routingExchangeName?: string;
+  routingExchangeFullName?: string;
   marketState?: MarketState;
+  sessionConfidence?: SessionConfidence;
   preMarketPrice?: number;
   preMarketChange?: number;
   preMarketChangePercent?: number;
@@ -31,9 +53,16 @@ export interface Quote {
   high?: number;
   low?: number;
   mark?: number;
+  provenance?: QuoteProvenance;
   /** Where the quote data came from: live broker feed, delayed broker feed, or a fallback like Yahoo. */
-  dataSource?: "live" | "delayed" | "yahoo";
+  dataSource?: QuoteDataSource;
 }
+
+export interface QuoteContribution extends Quote {
+  providerId: string;
+}
+
+export type QuoteContributionMap = Record<string, QuoteContribution>;
 
 export interface Fundamentals {
   trailingPE?: number;
@@ -110,6 +139,7 @@ export interface PricePoint {
 
 export interface TickerFinancials {
   quote?: Quote;
+  quoteContributions?: QuoteContributionMap;
   fundamentals?: Fundamentals;
   profile?: CompanyProfile;
   annualStatements: FinancialStatement[];
