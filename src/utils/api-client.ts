@@ -1,6 +1,7 @@
 import type { CompanyProfile, Fundamentals, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { debugLog } from "./debug-log";
+import { normalizeTimestamp } from "./timestamp";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
 const SESSION_COOKIE_NAMES = ["__Secure-gloomberb.session_token", "gloomberb.session_token"] as const;
@@ -14,6 +15,8 @@ export interface ChatMessage {
   createdAt: string;
   user: { id: string; username: string; displayName: string };
   replyTo?: { content: string; user: { username: string } } | null;
+  clientStatus?: "sending" | "failed";
+  clientError?: string | null;
 }
 
 export interface ChatChannel {
@@ -104,6 +107,17 @@ function marketKey(symbol: string, exchange?: string): string {
   const normalizedSymbolValue = normalizeSymbol(symbol);
   const normalizedExchangeValue = normalizeExchange(exchange);
   return normalizedExchangeValue ? `${normalizedSymbolValue}:${normalizedExchangeValue}` : normalizedSymbolValue;
+}
+
+function normalizeChatMessage(message: ChatMessage): ChatMessage {
+  return {
+    ...message,
+    createdAt: normalizeTimestamp(message.createdAt),
+  };
+}
+
+function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => normalizeChatMessage(message));
 }
 
 type ChannelListener = (message: ChatMessage) => void;
@@ -404,8 +418,9 @@ class GloomApiClient {
     }
 
     if (parsed?.type === "chat.message" && typeof parsed.channelId === "string" && parsed.data) {
+      const message = normalizeChatMessage(parsed.data as ChatMessage);
       for (const listener of this.channelListeners.get(parsed.channelId) ?? []) {
-        listener(parsed.data as ChatMessage);
+        listener(message);
       }
       return;
     }
@@ -491,23 +506,30 @@ class GloomApiClient {
     if (opts?.before) params.set("before", opts.before);
     if (opts?.limit) params.set("limit", String(opts.limit));
     const qs = params.toString();
-    return this.request<ChatMessage[]>(`/chat/channels/${channelId}/messages${qs ? `?${qs}` : ""}`);
+    const messages = await this.request<ChatMessage[]>(`/chat/channels/${channelId}/messages${qs ? `?${qs}` : ""}`);
+    return normalizeChatMessages(messages);
   }
 
   async sendMessage(channelId: string, content: string, replyToId?: string): Promise<ChatMessage> {
-    return this.request<ChatMessage>(`/chat/channels/${channelId}/messages`, {
+    const message = await this.request<ChatMessage>(`/chat/channels/${channelId}/messages`, {
       method: "POST",
       body: JSON.stringify({ content, replyToId }),
     });
+    return normalizeChatMessage(message);
   }
 
   connectChannel(
     channelId: string,
     onMessage: (msg: ChatMessage) => void,
     onError?: (err: string) => void,
-  ): { send: (content: string, replyToId?: string) => void; close: () => void } {
+  ): { send: (content: string, replyToId?: string) => Promise<ChatMessage>; close: () => void } {
     if (!channelId) {
-      return { send: () => {}, close: () => {} };
+      return {
+        send: async () => {
+          throw new Error("Channel id is required");
+        },
+        close: () => {},
+      };
     }
 
     const listeners = this.channelListeners.get(channelId) ?? new Set<ChannelListener>();
@@ -520,14 +542,15 @@ class GloomApiClient {
     }
 
     return {
-      send: (content: string, replyToId?: string) => {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          this.sendSocketMessage({ type: "chat.send", channelId, content, replyToId });
-          return;
-        }
-        void this.sendMessage(channelId, content, replyToId).then(onMessage).catch((error) => {
+      send: async (content: string, replyToId?: string) => {
+        try {
+          const message = await this.sendMessage(channelId, content, replyToId);
+          onMessage(message);
+          return message;
+        } catch (error) {
           onError?.(error instanceof Error ? error.message : String(error));
-        });
+          throw error;
+        }
       },
       close: () => {
         const current = this.channelListeners.get(channelId);

@@ -84,3 +84,60 @@ describe("apiClient auth cookies", () => {
     ]);
   });
 });
+
+describe("apiClient chat timestamps", () => {
+  test("normalizes transcript and send-response timestamps to UTC ISO strings", async () => {
+    const responses = [
+      createResponse([{
+        id: "m1",
+        channelId: "everyone",
+        content: "older",
+        replyToId: null,
+        createdAt: "2026-04-08 07:28:27.625",
+        user: { id: "u1", username: "alice", displayName: "Alice" },
+        replyTo: null,
+      }]),
+      createResponse({
+        id: "m2",
+        channelId: "everyone",
+        content: "hello",
+        replyToId: null,
+        createdAt: "2026-04-08T07:29:27.625",
+        user: { id: "u1", username: "alice", displayName: "Alice" },
+        replyTo: null,
+      }),
+    ];
+
+    globalThis.fetch = (async () => responses.shift() as Response) as typeof fetch;
+
+    const messages = await apiClient.getMessages("everyone", { limit: 1 });
+    const sentMessage = await apiClient.sendMessage("everyone", "hello");
+
+    expect(messages[0]?.createdAt).toBe("2026-04-08T07:28:27.625Z");
+    expect(sentMessage.createdAt).toBe("2026-04-08T07:29:27.625Z");
+  });
+
+  test("normalizes websocket chat timestamps before notifying listeners", async () => {
+    const seenCreatedAts: string[] = [];
+    const channel = apiClient.connectChannel("everyone", (message) => {
+      seenCreatedAts.push(message.createdAt);
+    });
+
+    await (apiClient as any).handleSocketMessage(JSON.stringify({
+      type: "chat.message",
+      channelId: "everyone",
+      data: {
+        id: "m1",
+        channelId: "everyone",
+        content: "hello",
+        replyToId: null,
+        createdAt: "2026-04-08 07:28:27.625",
+        user: { id: "u1", username: "alice", displayName: "Alice" },
+        replyTo: null,
+      },
+    }));
+
+    expect(seenCreatedAts).toEqual(["2026-04-08T07:28:27.625Z"]);
+    channel.close();
+  });
+});
