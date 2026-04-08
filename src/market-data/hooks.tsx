@@ -9,6 +9,7 @@ import {
   resolveEntryValue,
 } from "./coordinator";
 import type { QueryEntry } from "./result-types";
+import { buildChartKey } from "./selectors";
 
 function useCoordinatorVersion(): number {
   const coordinator = getSharedMarketDataCoordinator();
@@ -105,15 +106,7 @@ export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerR
 }
 
 export function useChartQuery(request: ChartRequest | null | undefined): QueryEntry<PricePoint[]> | null {
-  const key = request ? [
-    request.instrument.symbol,
-    request.instrument.exchange ?? "",
-    request.range,
-    request.granularity ?? "daily",
-    request.startDate?.toISOString() ?? "",
-    request.endDate?.toISOString() ?? "",
-    request.barSize ?? "",
-  ].join("|") : null;
+  const key = request ? buildChartKey(request) : null;
   const entry = useCoordinatorSelector(
     (coordinator) => (request ? coordinator.getChartEntry(request) : null),
     null,
@@ -126,6 +119,23 @@ export function useChartQuery(request: ChartRequest | null | undefined): QueryEn
   }, [key]);
 
   return entry;
+}
+
+export function useChartQueries(requests: readonly ChartRequest[]): Map<string, QueryEntry<PricePoint[]>> {
+  const requestKey = requests.map((request) => buildChartKey(request)).join(",");
+  const entries = useCoordinatorSelector((coordinator) => (
+    requests.map((request) => [buildChartKey(request), coordinator.getChartEntry(request)] as const)
+  ), [] as Array<readonly [string, QueryEntry<PricePoint[]>]>);
+
+  useEffect(() => {
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator) return;
+    for (const request of requests) {
+      void coordinator.loadChart(request);
+    }
+  }, [requestKey]);
+
+  return useMemo(() => new Map(entries), [entries]);
 }
 
 export function useNewsQuery(request: NewsRequest | null | undefined): QueryEntry<NewsItem[]> | null {

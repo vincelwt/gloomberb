@@ -1,13 +1,14 @@
 import type { PricePoint } from "../../types/financials";
 
-export type TimeRange = "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
+export type TimeRange = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
+export type ChartResolution = "auto" | "1m" | "5m" | "15m" | "30m" | "45m" | "1h" | "1d" | "1wk" | "1mo";
 export type ChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartAxisMode = "price" | "percent";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
 export type ResolvedChartRenderer = "kitty" | "braille";
 export type ComparisonChartRenderMode = "area" | "line";
 
-export const TIME_RANGES: TimeRange[] = ["1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
+export const TIME_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc"];
 export const CHART_AXIS_MODES: ChartAxisMode[] = ["price", "percent"];
 export const CHART_RENDERER_PREFERENCES: ChartRendererPreference[] = ["auto", "kitty", "braille"];
@@ -15,6 +16,7 @@ export const COMPARISON_RENDER_MODES: ComparisonChartRenderMode[] = ["area", "li
 
 /** Number of trading days for each time range */
 export const RANGE_DAYS: Record<TimeRange, number> = {
+  "1D": 1,
   "1W": 5,
   "1M": 21,
   "3M": 63,
@@ -25,7 +27,10 @@ export const RANGE_DAYS: Record<TimeRange, number> = {
 };
 
 export interface ChartViewState {
-  timeRange: TimeRange;
+  presetRange: TimeRange;
+  bufferRange: TimeRange;
+  activePreset: TimeRange | null;
+  resolution: ChartResolution;
   panOffset: number;   // data points shifted left from right edge (0 = most recent)
   zoomLevel: number;   // 1.0 = full selected range, 2.0 = zoomed in 2x
   cursorX: number | null; // local plot x in cell units; may be fractional with pixel mouse
@@ -72,7 +77,10 @@ export interface ComparisonChartSeries {
 }
 
 export interface ComparisonChartViewState {
-  timeRange: TimeRange;
+  presetRange: TimeRange;
+  bufferRange: TimeRange;
+  activePreset: TimeRange | null;
+  resolution: ChartResolution;
   panOffset: number;
   zoomLevel: number; // 1.0 = full selected range, 2.0 = zoomed in 2x
   cursorX: number | null;

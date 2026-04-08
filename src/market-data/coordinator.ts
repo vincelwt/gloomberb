@@ -30,8 +30,8 @@ const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
 function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
   return {
     instrument,
-    range: "5Y",
-    granularity: "daily",
+    bufferRange: "5Y",
+    granularity: "range",
   };
 }
 
@@ -381,10 +381,21 @@ export class MarketDataCoordinator {
                 cacheMode: options.forceRefresh ? "refresh" : "default",
               },
             )
+            : request.granularity === "resolution" && request.resolution && this.dataProvider.getPriceHistoryForResolution
+              ? await this.dataProvider.getPriceHistoryForResolution(
+                request.instrument.symbol,
+                request.instrument.exchange ?? "",
+                request.bufferRange,
+                request.resolution,
+                {
+                  ...toMarketDataContext(request.instrument),
+                  cacheMode: options.forceRefresh ? "refresh" : "default",
+                },
+              )
             : await this.dataProvider.getPriceHistory(
               request.instrument.symbol,
               request.instrument.exchange ?? "",
-              request.range,
+              request.bufferRange,
               {
                 ...toMarketDataContext(request.instrument),
                 cacheMode: options.forceRefresh ? "refresh" : "default",

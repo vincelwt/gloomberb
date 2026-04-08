@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import {
   AppContext,
   createInitialState,
@@ -23,6 +24,7 @@ import {
 const TEST_PANE_ID = "comparison-chart:test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+let sharedCoordinator: MarketDataCoordinator | null = null;
 
 function makeTicker(symbol: string, currency: string): TickerRecord {
   return {
@@ -76,7 +78,14 @@ function createProvider(historyBySymbol: Record<string, number[]>, currencyBySym
     search: async () => [],
     getNews: async () => [],
     getArticleSummary: async () => null,
+    getChartResolutionCapabilities: async () => ["5m", "15m", "1h", "1d", "1wk", "1mo"],
     getPriceHistory: async (symbol) => (
+      historyBySymbol[symbol] ?? []
+    ).map((close, index) => ({
+      date: new Date(2024, 0, index + 2),
+      close,
+    })),
+    getPriceHistoryForResolution: async (symbol) => (
       historyBySymbol[symbol] ?? []
     ).map((close, index) => ({
       date: new Date(2024, 0, index + 2),
@@ -154,6 +163,8 @@ afterEach(() => {
     testSetup.renderer.destroy();
     testSetup = undefined;
   }
+  sharedCoordinator = null;
+  setSharedMarketDataCoordinator(null);
   setSharedRegistryForTests(undefined);
   setSharedDataProviderForTests(undefined);
 });
@@ -178,6 +189,8 @@ describe("comparisonChartPlugin", () => {
       title: "AAPL · MSFT · NVDA",
       settings: {
         axisMode: "percent",
+        rangePreset: "1Y",
+        chartResolution: "1d",
         symbols: ["AAPL", "MSFT", "NVDA"],
         symbolsText: "AAPL, MSFT, NVDA",
       },
@@ -190,19 +203,24 @@ describe("comparisonChartPlugin", () => {
       symbols: ["AAPL", "MSFT"],
     })).toEqual({
       axisMode: "percent",
+      rangePreset: "1Y",
+      chartResolution: "1d",
       symbols: ["AAPL", "MSFT"],
       symbolsText: "AAPL, MSFT",
     });
   });
 
   test("renders one shared overlay chart with the mixed-currency warning", async () => {
-    setSharedDataProviderForTests(createProvider({
+    const provider = createProvider({
       AAPL: [100, 102, 104, 106],
       "7203": [2000, 2020, 2050, 2100],
     }, {
       AAPL: "USD",
       "7203": "JPY",
-    }));
+    });
+    setSharedDataProviderForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
 
     testSetup = await testRender(
@@ -224,14 +242,54 @@ describe("comparisonChartPlugin", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Mixed currencies detected; showing percent change.");
-    expect(frame).toContain("1:1W");
+    expect(frame).toContain("1:1D");
+    expect(frame).toContain("2:1W");
+    expect(frame).toContain("1D");
+    expect(frame).toContain("view:");
     expect(frame).toContain("arrows legend");
     expect(frame).not.toContain("side by side");
   });
 
+  test("keeps controls visible when comparison history is empty", async () => {
+    const provider = createProvider({
+      AAPL: [],
+      MSFT: [],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    setSharedDataProviderForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    testSetup = await testRender(
+      createComparisonHarness({
+        axisMode: "price",
+        symbols: ["AAPL", "MSFT"],
+        symbolsText: "AAPL, MSFT",
+      }, [
+        makeTicker("AAPL", "USD"),
+        makeTicker("MSFT", "USD"),
+      ], [
+        ["AAPL", makeFinancials("AAPL", "USD", [])],
+        ["MSFT", makeFinancials("MSFT", "USD", [])],
+      ]),
+      { width: 120, height: 20 },
+    );
+
+    await flushFrames();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("No chart data yet.");
+    expect(frame).toContain("1:1D");
+    expect(frame).toContain("2:1W");
+    expect(frame).toContain("AUTO");
+  });
+
   test("moves legend selection with the keyboard and opens the selected ticker on Enter", async () => {
     const spy = { selected: [] as string[], focused: [] as string[] };
-    setSharedDataProviderForTests(createProvider({
+    const provider = createProvider({
       AAPL: [100, 102, 104],
       MSFT: [200, 202, 204],
       NVDA: [300, 305, 310],
@@ -239,7 +297,10 @@ describe("comparisonChartPlugin", () => {
       AAPL: "USD",
       MSFT: "USD",
       NVDA: "USD",
-    }));
+    });
+    setSharedDataProviderForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy(spy));
 
     testSetup = await testRender(

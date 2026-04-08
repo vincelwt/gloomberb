@@ -1485,6 +1485,56 @@ describe("ProviderRouter", () => {
     persistence.close();
   });
 
+  test("falls back to later providers for fixed-resolution chart history", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getPriceHistoryForResolution() {
+        return [];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getPriceHistoryForResolution() {
+        return [{ date: new Date("2026-03-28T00:00:00Z"), close: 102 }];
+      },
+    };
+
+    const router = new ProviderRouter(yahooProvider, [cloudProvider]);
+    const history = await router.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "1d");
+
+    expect(history[0]?.close).toBe(102);
+  });
+
+  test("returns normalized manual chart resolution capabilities", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getChartResolutionCapabilities() {
+        return [];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getChartResolutionCapabilities() {
+        return ["1wk", "auto", "1d", "bogus"];
+      },
+    };
+
+    const router = new ProviderRouter(yahooProvider, [cloudProvider]);
+    expect(await router.getChartResolutionCapabilities("AAPL", "NASDAQ")).toEqual(["1d", "1wk"]);
+  });
+
   test("falls back to later providers when detailed chart history is empty", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,

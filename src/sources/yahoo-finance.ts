@@ -1,6 +1,11 @@
 import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile } from "../types/financials";
 import type { DataProvider, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
+import {
+  normalizeChartResolutionSupport,
+  type ChartResolutionSupport,
+  type ManualChartResolution,
+} from "../components/chart/chart-resolution";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { SecEdgarClient } from "./sec-edgar";
 
@@ -272,6 +277,7 @@ const INTRADAY_HISTORY_TTL = 5 * 60_000; // 5 min for intraday ranges
 
 // Maps TimeRange → Yahoo API { range, interval } for optimal granularity
 const RANGE_PARAMS: Record<TimeRange, { range: string; interval: string; ttl: number }> = {
+  "1D": { range: "1d", interval: "5m", ttl: INTRADAY_HISTORY_TTL },
   "1W": { range: "5d", interval: "5m", ttl: INTRADAY_HISTORY_TTL },
   "1M": { range: "1mo", interval: "15m", ttl: INTRADAY_HISTORY_TTL },
   "3M": { range: "3mo", interval: "1h", ttl: QUOTE_TTL },
@@ -280,6 +286,15 @@ const RANGE_PARAMS: Record<TimeRange, { range: string; interval: string; ttl: nu
   "5Y": { range: "5y", interval: "1d", ttl: HISTORY_TTL },
   "ALL": { range: "max", interval: "1wk", ttl: HISTORY_TTL },
 };
+
+const YAHOO_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
+  { resolution: "5m", maxRange: "1W" },
+  { resolution: "15m", maxRange: "1M" },
+  { resolution: "1h", maxRange: "3M" },
+  { resolution: "1d", maxRange: "5Y" },
+  { resolution: "1wk", maxRange: "ALL" },
+  { resolution: "1mo", maxRange: "ALL" },
+]);
 
 export class YahooFinanceClient implements DataProvider {
   readonly id = "yahoo";
@@ -925,14 +940,26 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   /** Fetch price history with appropriate granularity for the given time range */
-  async getPriceHistory(ticker: string, exchange = "", range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    const params = RANGE_PARAMS[range];
+  getChartResolutionSupport(): ChartResolutionSupport[] {
+    return YAHOO_RESOLUTION_SUPPORT;
+  }
+
+  getChartResolutionCapabilities(): ManualChartResolution[] {
+    return YAHOO_RESOLUTION_SUPPORT.map((entry) => entry.resolution);
+  }
+
+  private async loadPriceHistory(
+    ticker: string,
+    exchange: string,
+    range: string,
+    interval: ManualChartResolution,
+  ): Promise<PricePoint[]> {
     const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
     let lastError: any;
 
     for (const symbol of symbolsToTry) {
       try {
-        const { meta, history } = await this.fetchChart(symbol, params.range, params.interval);
+        const { meta, history } = await this.fetchChart(symbol, range, interval);
 
         // Normalize sub-unit currencies in price history
         const { divisor } = normalizeSubUnitCurrency(meta.currency || "USD");
@@ -951,6 +978,22 @@ export class YahooFinanceClient implements DataProvider {
       }
     }
     throw lastError || new Error(`No history for ${ticker}`);
+  }
+
+  async getPriceHistory(ticker: string, exchange = "", range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
+    const params = RANGE_PARAMS[range];
+    return this.loadPriceHistory(ticker, exchange, params.range, params.interval as ManualChartResolution);
+  }
+
+  async getPriceHistoryForResolution(
+    ticker: string,
+    exchange = "",
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    _context?: MarketDataRequestContext,
+  ): Promise<PricePoint[]> {
+    const params = RANGE_PARAMS[bufferRange];
+    return this.loadPriceHistory(ticker, exchange, params.range, resolution);
   }
 
   // ── Options Chain ──────────────────────────────────────────────────

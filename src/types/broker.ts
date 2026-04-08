@@ -1,5 +1,6 @@
 import type { Quote, TickerFinancials, PricePoint, OptionsChain } from "./financials";
 import type { TimeRange } from "../components/chart/chart-types";
+import type { ChartResolutionSupport, ManualChartResolution } from "../components/chart/chart-resolution";
 import type { BrokerInstanceConfig } from "./config";
 import type { QuoteSubscriptionTarget } from "./data-provider";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
@@ -78,8 +79,28 @@ export interface BrokerAdapter {
   getTickerFinancials?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<TickerFinancials>;
   getQuote?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<Quote>;
   getPriceHistory?(ticker: string, instance: BrokerInstanceConfig, exchange: string, range: TimeRange, instrument?: BrokerContractRef | null): Promise<PricePoint[]>;
+  getPriceHistoryForResolution?(
+    ticker: string,
+    instance: BrokerInstanceConfig,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    instrument?: BrokerContractRef | null,
+  ): Promise<PricePoint[]>;
   /** Fetch higher-resolution price data for a specific date window (e.g. when zoomed in). */
   getDetailedPriceHistory?(ticker: string, instance: BrokerInstanceConfig, exchange: string, startDate: Date, endDate: Date, barSize: string, instrument?: BrokerContractRef | null): Promise<PricePoint[]>;
+  getChartResolutionSupport?(
+    ticker: string,
+    instance: BrokerInstanceConfig,
+    exchange?: string,
+    instrument?: BrokerContractRef | null,
+  ): Promise<ChartResolutionSupport[]> | ChartResolutionSupport[];
+  getChartResolutionCapabilities?(
+    ticker: string,
+    instance: BrokerInstanceConfig,
+    exchange?: string,
+    instrument?: BrokerContractRef | null,
+  ): Promise<ManualChartResolution[]> | ManualChartResolution[];
   getOptionsChain?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, expirationDate?: number, instrument?: BrokerContractRef | null): Promise<OptionsChain>;
   subscribeQuotes?(
     instance: BrokerInstanceConfig,

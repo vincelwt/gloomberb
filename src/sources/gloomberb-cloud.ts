@@ -1,4 +1,9 @@
 import type { TimeRange } from "../components/chart/chart-types";
+import {
+  normalizeChartResolutionSupport,
+  type ChartResolutionSupport,
+  type ManualChartResolution,
+} from "../components/chart/chart-resolution";
 import type { DataProvider, MarketDataRequestContext, NewsItem, QuoteSubscriptionTarget, SearchRequestContext, SecFilingItem } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
@@ -14,6 +19,17 @@ import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/curr
 import { createProviderMiss } from "./provider-errors";
 
 const providerId = "gloomberb-cloud" as const;
+const CLOUD_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
+  { resolution: "1m", maxRange: "1W" },
+  { resolution: "5m", maxRange: "1M" },
+  { resolution: "15m", maxRange: "3M" },
+  { resolution: "30m", maxRange: "6M" },
+  { resolution: "45m", maxRange: "6M" },
+  { resolution: "1h", maxRange: "1Y" },
+  { resolution: "1d", maxRange: "ALL" },
+  { resolution: "1wk", maxRange: "ALL" },
+  { resolution: "1mo", maxRange: "ALL" },
+]);
 const CLOUD_PROVIDER_MISS_PATTERNS = [
   /data not found/i,
   /symbol.*missing or invalid/i,
@@ -92,7 +108,7 @@ function toCloudInterval(interval: string): string {
       return "45min";
     case "1d":
       return "1day";
-    case "1w":
+    case "1wk":
       return "1week";
     case "1mo":
       return "1month";
@@ -118,12 +134,45 @@ function formatCloudDateTime(date: Date, includeTime: boolean): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+function getRangeStartDate(range: TimeRange, endDate = new Date()): Date {
+  const startDate = new Date(endDate);
+  switch (range) {
+    case "1D":
+      startDate.setDate(startDate.getDate() - 1);
+      break;
+    case "1W":
+      startDate.setDate(startDate.getDate() - 7);
+      break;
+    case "1M":
+      startDate.setMonth(startDate.getMonth() - 1);
+      break;
+    case "3M":
+      startDate.setMonth(startDate.getMonth() - 3);
+      break;
+    case "6M":
+      startDate.setMonth(startDate.getMonth() - 6);
+      break;
+    case "1Y":
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      break;
+    case "5Y":
+      startDate.setFullYear(startDate.getFullYear() - 5);
+      break;
+    case "ALL":
+      startDate.setFullYear(startDate.getFullYear() - 20);
+      break;
+  }
+  return startDate;
+}
+
 function toHistoryRequest(range: TimeRange): {
   interval: string;
   outputsize: number;
   rangeKey: TimeRange;
 } {
   switch (range) {
+    case "1D":
+      return { interval: "5min", outputsize: 24 * 12, rangeKey: range };
     case "1W":
       return { interval: "1h", outputsize: 7 * 24, rangeKey: range };
     case "1M":
@@ -178,6 +227,14 @@ export class GloomberbCloudProvider implements DataProvider {
   readonly id = providerId;
   readonly name = "Gloomberb Cloud";
   readonly priority = 100;
+
+  getChartResolutionSupport(): ChartResolutionSupport[] {
+    return CLOUD_RESOLUTION_SUPPORT;
+  }
+
+  getChartResolutionCapabilities(): ManualChartResolution[] {
+    return CLOUD_RESOLUTION_SUPPORT.map((entry) => entry.resolution);
+  }
 
   async canProvide(): Promise<boolean> {
     return !!(await apiClient.ensureVerifiedSession());
@@ -253,6 +310,31 @@ export class GloomberbCloudProvider implements DataProvider {
     const request = toHistoryRequest(range);
     const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, request),
+      `Cloud chart data is unavailable for ${ticker}`,
+    );
+    const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);
+    return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
+      .map((point) => mapPricePoint(point, divisor));
+  }
+
+  async getPriceHistoryForResolution(
+    ticker: string,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    _context?: MarketDataRequestContext,
+  ): Promise<PricePoint[]> {
+    await requireVerifiedSession();
+    const interval = toCloudInterval(resolution);
+    const endDate = new Date();
+    const startDate = getRangeStartDate(bufferRange, endDate);
+    const includeTime = /(min|h)$/i.test(interval);
+    const response = await withCloudFallback(
+      () => apiClient.getCloudHistory(ticker, exchange, {
+        interval,
+        startDate: formatCloudDateTime(startDate, includeTime),
+        endDate: formatCloudDateTime(endDate, includeTime),
+      }),
       `Cloud chart data is unavailable for ${ticker}`,
     );
     const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);

@@ -80,8 +80,8 @@ describe("MarketDataCoordinator", () => {
     const coordinator = new MarketDataCoordinator(provider);
     const request = {
       instrument: { symbol: "AAPL", exchange: "NASDAQ" },
-      range: "1Y" as const,
-      granularity: "daily" as const,
+      bufferRange: "1Y" as const,
+      granularity: "range" as const,
     };
 
     const first = await coordinator.loadChart(request);
@@ -103,8 +103,8 @@ describe("MarketDataCoordinator", () => {
     const coordinator = new MarketDataCoordinator(provider);
     const request = {
       instrument: { symbol: "AAPL", exchange: "NASDAQ" },
-      range: "1Y" as const,
-      granularity: "daily" as const,
+      bufferRange: "1Y" as const,
+      granularity: "range" as const,
     };
 
     const entry = await coordinator.loadChart(request);
@@ -140,6 +140,30 @@ describe("MarketDataCoordinator", () => {
     );
 
     expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(412.5);
+  });
+
+  it("routes manual-resolution chart requests through the resolution-aware provider path", async () => {
+    let requested: { range: string; resolution: string } | null = null;
+    const provider = createProvider({
+      getPriceHistoryForResolution: async (_symbol, _exchange, range, resolution) => {
+        requested = { range, resolution };
+        return [
+          { date: new Date("2024-01-01"), close: 100 },
+          { date: new Date("2024-01-02"), close: 101 },
+        ];
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+
+    const entry = await coordinator.loadChart({
+      instrument: { symbol: "AAPL", exchange: "NASDAQ" },
+      bufferRange: "1Y",
+      granularity: "resolution",
+      resolution: "1d",
+    });
+
+    expect(requested).toEqual({ range: "1Y", resolution: "1d" });
+    expect(entry.data?.length).toBe(2);
   });
 
   it("projects live quote updates into premarket display fields when the stream lacks explicit ext-hours fields", async () => {

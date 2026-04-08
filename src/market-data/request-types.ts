@@ -1,4 +1,5 @@
 import type { TimeRange } from "../components/chart/chart-types";
+import type { ManualChartResolution } from "../components/chart/chart-resolution";
 import type { QuoteSubscriptionTarget } from "../types/data-provider";
 import type { BrokerContractRef } from "../types/instrument";
 import type { TickerRecord } from "../types/ticker";
@@ -11,12 +12,13 @@ export interface InstrumentRef {
   instrument?: BrokerContractRef | null;
 }
 
-export type ChartGranularity = "daily" | "detail";
+export type ChartGranularity = "range" | "detail" | "resolution";
 
 export interface ChartRequest {
   instrument: InstrumentRef;
-  range: TimeRange;
+  bufferRange: TimeRange;
   granularity?: ChartGranularity;
+  resolution?: ManualChartResolution;
   startDate?: Date;
   endDate?: Date;
   barSize?: string;

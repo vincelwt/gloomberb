@@ -1,5 +1,6 @@
 import type { Quote, Fundamentals, TickerFinancials, PricePoint, OptionsChain } from "./financials";
 import type { TimeRange } from "../components/chart/chart-types";
+import type { ChartResolutionSupport, ManualChartResolution } from "../components/chart/chart-resolution";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
 import type { CachePolicyMap } from "./persistence";
 
@@ -71,8 +72,25 @@ export interface DataProvider {
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;
   getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]>;
+  getPriceHistoryForResolution?(
+    ticker: string,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    context?: MarketDataRequestContext,
+  ): Promise<PricePoint[]>;
   /** Fetch higher-resolution price data for a specific date window (e.g. when zoomed in). */
   getDetailedPriceHistory?(ticker: string, exchange: string, startDate: Date, endDate: Date, barSize: string, context?: MarketDataRequestContext): Promise<PricePoint[]>;
+  getChartResolutionSupport?(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<ChartResolutionSupport[]> | ChartResolutionSupport[];
+  getChartResolutionCapabilities?(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<ManualChartResolution[]> | ManualChartResolution[];
   getOptionsChain?(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain>;
   subscribeQuotes?(
     targets: QuoteSubscriptionTarget[],
