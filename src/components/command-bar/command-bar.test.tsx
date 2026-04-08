@@ -46,9 +46,34 @@ async function clickFrameText(text: string): Promise<void> {
   });
 }
 
+async function emitKeypress(
+  renderer: Awaited<ReturnType<typeof testRender>>,
+  event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean; option?: boolean },
+): Promise<void> {
+  await act(async () => {
+    renderer.renderer.keyInput.emit("keypress", {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      stopPropagation: () => {},
+      preventDefault: () => {},
+      ...event,
+    } as any);
+    await renderer.renderOnce();
+  });
+}
+
+async function renderFrames(count = 2): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    await testSetup!.renderOnce();
+  }
+}
+
 function expectSingleBackControl(frame: string): void {
   expect(frame.match(/\bBack\b/g)?.length ?? 0).toBe(1);
-  expect(frame).not.toContain("esc");
 }
 
 function makeTicker(symbol: string, name: string, overrides: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
@@ -629,6 +654,139 @@ describe("CommandBar", () => {
     expect(frame).toContain("Back");
   });
 
+  test("typing add still surfaces Add to Portfolio for a ticker already in the active manual portfolio", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="add"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+        })]}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Add AAPL to Portfolio");
+    expect(frame).toContain('in "Research"');
+  });
+
+  test("AP opens the add-to-portfolio workflow and prefills avg cost from the current price", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="AP AAPL"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+          financials: new Map([["AAPL", {
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+            quote: {
+              symbol: "AAPL",
+              price: 205.5,
+              currency: "USD",
+              change: 1.25,
+              changePercent: 0.61,
+              lastUpdated: Date.now(),
+            },
+          }]]),
+        })}
+        extraTickers={[makeTicker("AAPL", "Apple Inc.", {
+          portfolios: ["research"],
+        })]}
+      />,
+      { width: 100, height: 30 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = await waitForFrameToContain("Avg Cost");
+    expect(frame).toContain("Shares");
+    expect(frame).toContain("Avg Cost");
+    expect(frame).toContain("205.5");
+    expectSingleBackControl(frame);
+  });
+
+  test("add-to-portfolio can still add membership without entering a position", async () => {
+    const saved: TickerRecord[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="AP AAPL"
+        selectedTicker="AAPL"
+        onSaveTicker={(ticker) => {
+          saved.push(ticker);
+        }}
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+      />,
+      { width: 100, height: 30 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = await waitForFrameToContain("Avg Cost");
+    expect(frame).toContain("Shares");
+    expect(frame).toContain("Avg Cost");
+
+    await clickFrameText("Add to Portfolio");
+    await act(async () => {
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(saved.at(-1)?.metadata.portfolios).toEqual(["research"]);
+    expect(saved.at(-1)?.metadata.positions).toEqual([]);
+  });
+
   test("only surfaces Set Portfolio Position when a manual portfolio exists", async () => {
     testSetup = await testRender(
       <CommandBarHarness query="Set Portfolio Position" />,
@@ -660,6 +818,36 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain('No matches for "Set Portfolio Position"');
     expect(frame).not.toContain("Create or update a manual position in a portfolio");
+  });
+
+  test("matches set portfolio position when searching edit position", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="edit position"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+        })}
+        configureState={(state) => ({
+          ...state,
+          paneState: {
+            ...state.paneState,
+            "portfolio-list:main": {
+              collectionId: "research",
+              cursorSymbol: "AAPL",
+            },
+          },
+        })}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Set Position for AAPL");
+    expect(frame).toContain('in "Research"');
   });
 
   test("prefills the portfolio position workflow from the active manual portfolio and ticker", async () => {
@@ -982,6 +1170,41 @@ describe("CommandBar", () => {
     expect(executed).toEqual(["delete-layout"]);
   });
 
+  test("uses backspace to leave confirm routes", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="delete"
+        configurePluginRegistry={(pluginRegistry) => {
+          (pluginRegistry.commands as Map<string, any>).set("delete-layout", {
+            id: "delete-layout",
+            label: "Delete Layout",
+            description: "Delete the current layout preset",
+            category: "Layout Manager",
+            execute: async () => {},
+          });
+        }}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Delete Layout");
+    expect(frame).not.toContain("Back  Delete Layout");
+  });
+
   test("moves through long result lists with the mouse wheel", async () => {
     testSetup = await testRender(
       <CommandBarHarness
@@ -1112,8 +1335,8 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("New Chat Pane");
-    expect(frame).toContain("float");
+    expect(frame).toContain("Chat");
+    expect(frame).not.toContain("float");
   });
 
   test("shows pane shortcuts in the default browse results", async () => {
@@ -1211,6 +1434,48 @@ describe("CommandBar", () => {
       username: "vince",
       password: "secret",
     });
+  });
+
+  test("does not treat backspace as Back inside workflow text fields", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="Plugin Login"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("plugin:login", {
+          id: "plugin:login",
+          label: "Plugin Login",
+          description: "Authenticate without leaving the command bar",
+          category: "config",
+          wizard: [
+            { key: "username", label: "Username", type: "text", placeholder: "vince" },
+          ],
+          execute: async () => {},
+        } as any);
+        pluginRegistry.getCommandPluginId = () => "notes";
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("vince");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Plugin Login");
+    expect(frame).toContain("vinc");
+    expect(frame).toContain("Back");
   });
 
   test("QQ MSFT executes directly without opening a secondary workflow", async () => {
@@ -1547,6 +1812,96 @@ describe("CommandBar", () => {
     }]);
   });
 
+  test("uses backspace as back only when a pane-settings route query is empty", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="PS"
+      configureState={(state) => ({
+        ...state,
+        focusedPaneId: "quote-monitor:main",
+      })}
+      hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.resolvePaneSettings = () => ({
+          paneId: "quote-monitor:main",
+          pane: {
+            instanceId: "quote-monitor:main",
+            paneId: "quote-monitor",
+            title: "Quote Monitor",
+            settings: {},
+          },
+          paneDef: pluginRegistry.panes.get("quote-monitor")!,
+          settingsDef: {
+            title: "Quote Monitor Settings",
+            fields: [{
+              key: "symbol",
+              label: "Symbol",
+              type: "text",
+              description: "Ticker symbol to track",
+            }],
+          },
+          context: {
+            config: createDefaultConfig("/tmp/gloomberb-test"),
+            layout: cloneLayout(createDefaultConfig("/tmp/gloomberb-test").layout),
+            paneId: "quote-monitor:main",
+            paneType: "quote-monitor",
+            pane: {
+              instanceId: "quote-monitor:main",
+              paneId: "quote-monitor",
+              title: "Quote Monitor",
+              settings: {},
+            },
+            settings: {},
+            paneState: {},
+            activeTicker: "AAPL",
+            activeCollectionId: "main",
+          },
+        }) as any;
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("s");
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+
+    await emitKeypress(testSetup, { name: "backspace", sequence: "\b" });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+    await act(async () => {
+      testSetup!.mockInput.pressBackspace();
+      await testSetup!.renderOnce();
+    });
+    await renderFrames();
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Quote Monitor Settings");
+    expect(frame).not.toContain("Back  Pane Settings");
+  });
+
   test("renders pane-setting multi-select pickers only once inside the command bar", async () => {
     testSetup = await testRender(<CommandBarHarness
       query="PS"
@@ -1641,7 +1996,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("New IBKR Trading Pane");
+    expect(frame).toContain("IBKR Trading");
     expect(frame).toContain("IBKR");
   });
 

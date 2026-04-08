@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useKeyboard } from "@opentui/react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { SecFilingItem } from "../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingContent, useSecFilingsQuery } from "../../market-data/hooks";
@@ -195,15 +194,6 @@ function SecTab({ width, height, focused }: DetailTabProps) {
     }
   }, [cachedSelectedContent, filingContent, filingContentEntry?.phase, selected]);
 
-  useKeyboard((event) => {
-    if (!focused || filings.length === 0) return;
-    if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((index) => Math.min(index + 1, filings.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((index) => Math.max(index - 1, 0));
-    }
-  });
-
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {
       setSelectedIdx(Math.max(0, filings.length - 1));
@@ -220,13 +210,13 @@ function SecTab({ width, height, focused }: DetailTabProps) {
     <DetailFeedView
       width={width}
       height={height}
+      focused={focused}
       items={toFeedItems(filings, selected?.accessionNumber, contentCache, loadingContent)}
       selectedIdx={selectedIdx}
       hoveredIdx={hoveredIdx}
       onSelect={setSelectedIdx}
       onHover={setHoveredIdx}
       listVariant="single-line"
-      splitListWidthRatio={0.33}
     />
   );
 }

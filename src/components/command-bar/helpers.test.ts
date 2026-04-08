@@ -188,10 +188,32 @@ describe("command-bar helpers", () => {
       options: [],
       payload: { fieldType: "ordered-multi-select" },
     };
+    const filteredPickerRoute: CommandBarRoute = {
+      ...orderedPickerRoute,
+      query: "vol",
+    };
+    const workflowRoute: CommandBarRoute = {
+      kind: "workflow",
+      title: "Create Pane",
+      fields: [],
+      values: {},
+      activeFieldId: null,
+    };
+    const confirmRoute: CommandBarRoute = {
+      kind: "confirm",
+      title: "Delete",
+      body: ["Delete item?"],
+      confirmLabel: "Delete",
+      cancelLabel: "Back",
+      tone: "danger",
+    };
 
     expect(getScreenFooterLeft(null)).toBe("up/down move  enter select");
     expect(getScreenFooterLeft(orderedPickerRoute)).toBe("up/down move  space toggle  [ ] reorder  enter done");
-    expect(getScreenFooterRight(orderedPickerRoute)).toBe("esc back");
+    expect(getScreenFooterRight(orderedPickerRoute)).toBe("backspace/esc back");
+    expect(getScreenFooterRight(filteredPickerRoute)).toBe("backspace delete  esc back");
+    expect(getScreenFooterRight(workflowRoute)).toBe("esc back");
+    expect(getScreenFooterRight(confirmRoute)).toBe("backspace/esc back");
   });
 
   test("maps route and collection command ids", () => {

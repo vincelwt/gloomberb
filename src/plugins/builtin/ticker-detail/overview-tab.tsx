@@ -1,7 +1,7 @@
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useFxRatesMap } from "../../../market-data/hooks";
-import { useAppState, usePaneTicker } from "../../../state/app-context";
+import { useAppSelector } from "../../../state/app-context";
 import { colors, priceColor } from "../../../theme/colors";
 import {
   convertCurrency,
@@ -19,11 +19,23 @@ import {
 } from "../../../utils/market-status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { EmptyState, FieldRow } from "../../../components";
-import { StockChart } from "../../../components/chart/stock-chart";
+import { ResolvedStockChart } from "../../../components/chart/stock-chart";
+import type { TickerFinancials } from "../../../types/financials";
+import type { TickerRecord } from "../../../types/ticker";
 
-export function OverviewTab({ width }: { width?: number }) {
-  const { state } = useAppState();
-  const { ticker, financials } = usePaneTicker();
+export function OverviewTab({
+  width,
+  symbol,
+  ticker,
+  financials,
+}: {
+  width?: number;
+  symbol: string | null;
+  ticker: TickerRecord | null;
+  financials: TickerFinancials | null;
+}) {
+  const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
+  const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
   const { width: termWidth } = useTerminalDimensions();
 
   if (!ticker) return <EmptyState title="No ticker selected." />;
@@ -31,14 +43,13 @@ export function OverviewTab({ width }: { width?: number }) {
   const quote = financials?.quote;
   const fundamentals = financials?.fundamentals;
   const profile = financials?.profile;
-  const baseCurrency = state.config.baseCurrency;
   const exchangeRates = useFxRatesMap([
     baseCurrency,
     ticker.metadata.currency,
     quote?.currency,
     ...ticker.metadata.positions.map((position) => position.currency),
   ]);
-  const effectiveExchangeRates = selectEffectiveExchangeRates(exchangeRates, state.exchangeRates);
+  const effectiveExchangeRates = selectEffectiveExchangeRates(exchangeRates, exchangeRatesState);
   const quoteCurrency = quote?.currency ?? ticker.metadata.currency ?? baseCurrency;
   const toBase = (value: number, fromCurrency: string) =>
     convertCurrency(value, fromCurrency, baseCurrency, effectiveExchangeRates);
@@ -112,7 +123,15 @@ export function OverviewTab({ width }: { width?: number }) {
         )}
 
         {hasHistory && (
-          <StockChart width={chartWidth} height={8} focused={false} compact />
+          <ResolvedStockChart
+            width={chartWidth}
+            height={8}
+            focused={false}
+            compact
+            symbol={symbol}
+            ticker={ticker}
+            financials={financials}
+          />
         )}
 
         <box flexDirection="column">

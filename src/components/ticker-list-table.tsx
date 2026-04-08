@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import { memo, useRef, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { EmptyState } from "./ui";
 import { colors, hoverBg } from "../theme/colors";
@@ -13,6 +13,11 @@ export interface TickerTableCell {
 }
 
 export type QuoteFlashDirection = "up" | "down" | "flat";
+type ResolveTickerTableCell = (
+  column: ColumnConfig,
+  ticker: TickerRecord,
+  financials: TickerFinancials | undefined,
+) => TickerTableCell;
 
 const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "price",
@@ -39,6 +44,153 @@ function resolveQuoteFlashColor(direction: QuoteFlashDirection, fallbackColor: s
   }
 }
 
+interface TickerListTableProps {
+  columns: ColumnConfig[];
+  tickers: TickerRecord[];
+  cursorSymbol: string | null;
+  hoveredIdx: number | null;
+  setHoveredIdx: (index: number | null) => void;
+  setCursorSymbol: (symbol: string) => void;
+  resolveCell: ResolveTickerTableCell;
+  financialsMap: Map<string, TickerFinancials>;
+  headerScrollRef?: RefObject<ScrollBoxRenderable | null>;
+  scrollRef?: RefObject<ScrollBoxRenderable | null>;
+  syncHeaderScroll?: () => void;
+  onBodyScrollActivity?: () => void;
+  flashSymbols?: Map<string, QuoteFlashDirection>;
+  sortColumnId?: string | null;
+  sortDirection?: "asc" | "desc";
+  onHeaderClick?: (columnId: string) => void;
+  onRowActivate?: (ticker: TickerRecord) => void;
+  emptyTitle?: string;
+  emptyHint?: string;
+}
+
+const TickerListHeader = memo(function TickerListHeader({
+  columns,
+  headerScrollRef,
+  sortColumnId,
+  sortDirection,
+  onHeaderClick,
+}: {
+  columns: ColumnConfig[];
+  headerScrollRef?: RefObject<ScrollBoxRenderable | null>;
+  sortColumnId?: string | null;
+  sortDirection?: "asc" | "desc";
+  onHeaderClick?: (columnId: string) => void;
+}) {
+  return (
+    <scrollbox
+      ref={headerScrollRef}
+      height={1}
+      scrollX
+      focusable={false}
+    >
+      <box flexDirection="row" height={1} paddingX={1}>
+        {columns.map((column) => {
+          const isSorted = sortColumnId === column.id;
+          const indicator = isSorted ? (sortDirection === "asc" ? " \u25B2" : " \u25BC") : "";
+          const labelText = column.label + indicator;
+          return (
+            <box
+              key={column.id}
+              width={column.width + 1}
+              onMouseDown={onHeaderClick ? (event) => {
+                event.preventDefault();
+                onHeaderClick(column.id);
+              } : undefined}
+            >
+              <text attributes={TextAttributes.BOLD} fg={isSorted ? colors.text : colors.textDim}>
+                {padTo(labelText, column.width, column.align)}
+              </text>
+            </box>
+          );
+        })}
+      </box>
+    </scrollbox>
+  );
+});
+
+const TickerListRow = memo(function TickerListRow({
+  columns,
+  ticker,
+  index,
+  isSelected,
+  isHovered,
+  financials,
+  flashDirection,
+  setHoveredIdx,
+  setCursorSymbol,
+  resolveCell,
+  onRowActivate,
+}: {
+  columns: ColumnConfig[];
+  ticker: TickerRecord;
+  index: number;
+  isSelected: boolean;
+  isHovered: boolean;
+  financials: TickerFinancials | undefined;
+  flashDirection: QuoteFlashDirection | undefined;
+  setHoveredIdx: (index: number | null) => void;
+  setCursorSymbol: (symbol: string) => void;
+  resolveCell: ResolveTickerTableCell;
+  onRowActivate?: (ticker: TickerRecord) => void;
+}) {
+  const lastActivatedAtRef = useRef<number | null>(null);
+  const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
+
+  return (
+    <box
+      flexDirection="row"
+      height={1}
+      paddingX={1}
+      backgroundColor={rowBg}
+      onMouseMove={() => setHoveredIdx(index)}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        setCursorSymbol(ticker.metadata.ticker);
+        if (!onRowActivate) return;
+        const now = Date.now();
+        if (lastActivatedAtRef.current != null && now - lastActivatedAtRef.current <= 350) {
+          lastActivatedAtRef.current = null;
+          onRowActivate(ticker);
+          return;
+        }
+        lastActivatedAtRef.current = now;
+      }}
+    >
+      {columns.map((column) => {
+        const { text, color } = resolveCell(column, ticker, financials);
+        const baseFg = color || (isSelected ? colors.selectedText : colors.text);
+        const shouldFlash = flashDirection != null && FLASHABLE_QUOTE_COLUMN_IDS.has(column.id);
+        const cellFg = shouldFlash
+          ? resolveQuoteFlashColor(flashDirection, baseFg)
+          : baseFg;
+
+        return (
+          <box key={column.id} width={column.width + 1}>
+            <text fg={cellFg}>
+              {padTo(text, column.width, column.align)}
+            </text>
+          </box>
+        );
+      })}
+    </box>
+  );
+}, (previous, next) => (
+  previous.columns === next.columns
+  && previous.ticker === next.ticker
+  && previous.index === next.index
+  && previous.isSelected === next.isSelected
+  && previous.isHovered === next.isHovered
+  && previous.financials === next.financials
+  && previous.flashDirection === next.flashDirection
+  && previous.setHoveredIdx === next.setHoveredIdx
+  && previous.setCursorSymbol === next.setCursorSymbol
+  && previous.resolveCell === next.resolveCell
+  && previous.onRowActivate === next.onRowActivate
+));
+
 export function TickerListTable({
   columns,
   tickers,
@@ -59,60 +211,18 @@ export function TickerListTable({
   onRowActivate,
   emptyTitle = "No tickers.",
   emptyHint = "Press Ctrl+P to add one.",
-}: {
-  columns: ColumnConfig[];
-  tickers: TickerRecord[];
-  cursorSymbol: string | null;
-  hoveredIdx: number | null;
-  setHoveredIdx: (index: number | null) => void;
-  setCursorSymbol: (symbol: string) => void;
-  resolveCell: (column: ColumnConfig, ticker: TickerRecord, financials: TickerFinancials | undefined) => TickerTableCell;
-  financialsMap: Map<string, TickerFinancials>;
-  headerScrollRef?: RefObject<ScrollBoxRenderable | null>;
-  scrollRef?: RefObject<ScrollBoxRenderable | null>;
-  syncHeaderScroll?: () => void;
-  onBodyScrollActivity?: () => void;
-  flashSymbols?: Map<string, QuoteFlashDirection>;
-  sortColumnId?: string | null;
-  sortDirection?: "asc" | "desc";
-  onHeaderClick?: (columnId: string) => void;
-  onRowActivate?: (ticker: TickerRecord) => void;
-  emptyTitle?: string;
-  emptyHint?: string;
-}) {
+}: TickerListTableProps) {
   const safeFlashSymbols = flashSymbols ?? new Map<string, QuoteFlashDirection>();
-  const lastActivatedRef = useRef<{ symbol: string; at: number } | null>(null);
 
   return (
     <>
-      <scrollbox
-        ref={headerScrollRef}
-        height={1}
-        scrollX
-        focusable={false}
-      >
-        <box flexDirection="row" height={1} paddingX={1}>
-          {columns.map((column) => {
-            const isSorted = sortColumnId === column.id;
-            const indicator = isSorted ? (sortDirection === "asc" ? " \u25B2" : " \u25BC") : "";
-            const labelText = column.label + indicator;
-            return (
-              <box
-                key={column.id}
-                width={column.width + 1}
-                onMouseDown={onHeaderClick ? (event) => {
-                  event.preventDefault();
-                  onHeaderClick(column.id);
-                } : undefined}
-              >
-                <text attributes={TextAttributes.BOLD} fg={isSorted ? colors.text : colors.textDim}>
-                  {padTo(labelText, column.width, column.align)}
-                </text>
-              </box>
-            );
-          })}
-        </box>
-      </scrollbox>
+      <TickerListHeader
+        columns={columns}
+        headerScrollRef={headerScrollRef}
+        sortColumnId={sortColumnId}
+        sortDirection={sortDirection}
+        onHeaderClick={onHeaderClick}
+      />
 
       <scrollbox
         ref={scrollRef}
@@ -131,54 +241,21 @@ export function TickerListTable({
           </box>
         ) : (
           tickers.map((ticker, index) => {
-            const isSelected = ticker.metadata.ticker === cursorSymbol;
-            const isHovered = index === hoveredIdx && !isSelected;
-            const financials = financialsMap.get(ticker.metadata.ticker);
-            const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
-            const flashDirection = safeFlashSymbols.get(ticker.metadata.ticker);
-
             return (
-              <box
+              <TickerListRow
                 key={ticker.metadata.ticker}
-                flexDirection="row"
-                height={1}
-                paddingX={1}
-                backgroundColor={rowBg}
-                onMouseMove={() => setHoveredIdx(index)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  setCursorSymbol(ticker.metadata.ticker);
-                  if (!onRowActivate) return;
-                  const now = Date.now();
-                  const last = lastActivatedRef.current;
-                  if (last?.symbol === ticker.metadata.ticker && now - last.at <= 350) {
-                    lastActivatedRef.current = null;
-                    onRowActivate(ticker);
-                    return;
-                  }
-                  lastActivatedRef.current = {
-                    symbol: ticker.metadata.ticker,
-                    at: now,
-                  };
-                }}
-              >
-                {columns.map((column) => {
-                  const { text, color } = resolveCell(column, ticker, financials);
-                  const baseFg = color || (isSelected ? colors.selectedText : colors.text);
-                  const shouldFlash = flashDirection != null && FLASHABLE_QUOTE_COLUMN_IDS.has(column.id);
-                  const cellFg = shouldFlash
-                    ? resolveQuoteFlashColor(flashDirection, baseFg)
-                    : baseFg;
-
-                  return (
-                    <box key={column.id} width={column.width + 1}>
-                      <text fg={cellFg}>
-                        {padTo(text, column.width, column.align)}
-                      </text>
-                    </box>
-                  );
-                })}
-              </box>
+                columns={columns}
+                ticker={ticker}
+                index={index}
+                isSelected={ticker.metadata.ticker === cursorSymbol}
+                isHovered={index === hoveredIdx && ticker.metadata.ticker !== cursorSymbol}
+                financials={financialsMap.get(ticker.metadata.ticker)}
+                flashDirection={safeFlashSymbols.get(ticker.metadata.ticker)}
+                setHoveredIdx={setHoveredIdx}
+                setCursorSymbol={setCursorSymbol}
+                resolveCell={resolveCell}
+                onRowActivate={onRowActivate}
+              />
             );
           })
         )}

@@ -9,19 +9,24 @@ export interface SetPortfolioPositionWorkflowState {
   pendingLabel: string;
 }
 
-export function buildSetPortfolioPositionWorkflow(
+interface ManualPortfolioPositionWorkflowOptions {
+  preferredPortfolioId?: string | null;
+  ticker: TickerRecord | null;
+  pendingLabel: string;
+  positionOptional?: boolean;
+  defaultAvgCost?: number | null;
+}
+
+function buildManualPortfolioPositionWorkflow(
   config: AppConfig,
-  options: {
-    activeCollectionId: string | null;
-    activeTicker: TickerRecord | null;
-  },
+  options: ManualPortfolioPositionWorkflowOptions,
 ): SetPortfolioPositionWorkflowState | null {
   const manualPortfolios = config.portfolios.filter(isManualPortfolio);
   if (manualPortfolios.length === 0) return null;
 
-  const preferredPortfolio = manualPortfolios.find((portfolio) => portfolio.id === options.activeCollectionId) ?? manualPortfolios[0]!;
-  const preferredPosition = options.activeTicker
-    ? getManualPortfolioPosition(options.activeTicker, preferredPortfolio.id)
+  const preferredPortfolio = manualPortfolios.find((portfolio) => portfolio.id === options.preferredPortfolioId) ?? manualPortfolios[0]!;
+  const preferredPosition = options.ticker
+    ? getManualPortfolioPosition(options.ticker, preferredPortfolio.id)
     : null;
 
   const fields: CommandBarWorkflowField[] = [
@@ -48,14 +53,14 @@ export function buildSetPortfolioPositionWorkflow(
       label: "Shares",
       type: "number",
       placeholder: "10",
-      required: true,
+      required: !options.positionOptional,
     },
     {
       id: "avgCost",
       label: "Avg Cost",
       type: "number",
       placeholder: "180",
-      required: true,
+      required: !options.positionOptional,
     },
     {
       id: "currency",
@@ -68,15 +73,50 @@ export function buildSetPortfolioPositionWorkflow(
 
   const values: Record<string, CommandBarFieldValue> = {
     portfolioId: preferredPortfolio.id,
-    ticker: options.activeTicker?.metadata.ticker ?? "",
+    ticker: options.ticker?.metadata.ticker ?? "",
     shares: preferredPosition ? String(preferredPosition.shares) : "",
-    avgCost: preferredPosition ? String(preferredPosition.avgCost) : "",
+    avgCost: preferredPosition
+      ? String(preferredPosition.avgCost)
+      : Number.isFinite(options.defaultAvgCost)
+        ? String(options.defaultAvgCost)
+        : "",
     currency: preferredPosition?.currency ?? "",
   };
 
   return {
     fields,
     values,
-    pendingLabel: "Saving position…",
+    pendingLabel: options.pendingLabel,
   };
+}
+
+export function buildSetPortfolioPositionWorkflow(
+  config: AppConfig,
+  options: {
+    activeCollectionId: string | null;
+    activeTicker: TickerRecord | null;
+  },
+): SetPortfolioPositionWorkflowState | null {
+  return buildManualPortfolioPositionWorkflow(config, {
+    preferredPortfolioId: options.activeCollectionId,
+    ticker: options.activeTicker,
+    pendingLabel: "Saving position…",
+  });
+}
+
+export function buildAddToPortfolioWorkflow(
+  config: AppConfig,
+  options: {
+    preferredPortfolioId?: string | null;
+    ticker: TickerRecord | null;
+    defaultAvgCost?: number | null;
+  },
+): SetPortfolioPositionWorkflowState | null {
+  return buildManualPortfolioPositionWorkflow(config, {
+    preferredPortfolioId: options.preferredPortfolioId,
+    ticker: options.ticker,
+    pendingLabel: "Adding to portfolio…",
+    positionOptional: true,
+    defaultAvgCost: options.defaultAvgCost,
+  });
 }

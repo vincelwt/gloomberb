@@ -126,6 +126,7 @@ function createController(options: {
   }
   controller.attachPersistence(persistence);
   controller.refreshSession = async () => {};
+  controller.refreshMessages = async () => {};
   return controller;
 }
 
@@ -323,7 +324,7 @@ describe("ChatContent", () => {
     expect(opened).toEqual(["TSLA"]);
   });
 
-  test("shows a saved-login message instead of logged out when a session token is cached", async () => {
+  test("shows a saved-login read-only footer when a session token is cached", async () => {
     const controller = createController({
       sessionToken: "token-123",
       user: null,
@@ -340,8 +341,33 @@ describe("ChatContent", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Saved login found.");
-    expect(frame).toContain("Reconnect to refresh");
-    expect(frame).not.toContain("Not logged in.");
+    expect(frame).toContain("Log in again to send.");
+    expect(frame).toContain("No messages yet.");
+    expect(frame).not.toContain("Type a message...");
+  });
+
+  test("keeps the transcript visible for logged-out users and blocks the composer", async () => {
+    const controller = createController({
+      sessionToken: null,
+      user: null,
+      messages: [makeMessage(1)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("message 1");
+    expect(frame).toContain("Read-only chat.");
+    expect(frame).toContain("Login");
+    expect(frame).toContain("Sign Up");
+    expect(frame).not.toContain("Type a message...");
   });
 
   test("shows a logged-in icon in the cloud status widget for cached sessions", async () => {
@@ -365,7 +391,7 @@ describe("ChatContent", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("@");
-    expect(frame).toContain("Shift+C");
+    expect(frame).not.toContain("Shift+C");
     expect(frame).not.toContain("vince");
   });
 

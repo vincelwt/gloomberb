@@ -35,6 +35,31 @@ export function getCollectionTickers(state: AppState, collectionId: string | nul
   return [];
 }
 
+export function getCollectionTickerCount(state: AppState, collectionId: string | null): number {
+  if (!collectionId) return 0;
+
+  let count = 0;
+  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) {
+    for (const ticker of state.tickers.values()) {
+      if (ticker.metadata.portfolios.includes(collectionId)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) {
+    for (const ticker of state.tickers.values()) {
+      if (ticker.metadata.watchlists.includes(collectionId)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  return 0;
+}
+
 export function getCollectionName(state: AppState, collectionId: string | null): string {
   if (!collectionId) return "";
   const portfolio = state.config.portfolios.find((entry) => entry.id === collectionId);

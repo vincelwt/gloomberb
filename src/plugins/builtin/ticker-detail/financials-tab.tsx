@@ -217,6 +217,27 @@ export function FinancialsTab({
   bodyScrollId?: string;
 }) {
   const { financials } = usePaneTicker();
+  return (
+    <ResolvedFinancialsTab
+      focused={focused}
+      financials={financials}
+      headerScrollId={headerScrollId}
+      bodyScrollId={bodyScrollId}
+    />
+  );
+}
+
+export function ResolvedFinancialsTab({
+  focused,
+  financials,
+  headerScrollId,
+  bodyScrollId,
+}: {
+  focused: boolean;
+  financials: ReturnType<typeof usePaneTicker>["financials"];
+  headerScrollId?: string;
+  bodyScrollId?: string;
+}) {
   const annualStatements = financials?.annualStatements ?? [];
   const quarterlyStatements = financials?.quarterlyStatements ?? [];
   const hasAnnualStatements = annualStatements.length > 0;

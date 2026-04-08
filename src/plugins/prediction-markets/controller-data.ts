@@ -39,6 +39,7 @@ const KEYBOARD_DETAIL_LOAD_DELAY_MS = 140;
 export function usePredictionMarketsDataState({
   browseTab,
   categoryId,
+  detailOpen,
   effectiveVenueScope,
   focused,
   historyRange,
@@ -52,6 +53,7 @@ export function usePredictionMarketsDataState({
 }: {
   browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
+  detailOpen: boolean;
   effectiveVenueScope: PredictionVenueScope;
   focused: boolean;
   historyRange: "1D" | "1W" | "1M" | "ALL";
@@ -201,7 +203,11 @@ export function usePredictionMarketsDataState({
     [selectedRowKey, visibleRows],
   );
   const selectedSummary = useMemo(
-    () =>
+    () => {
+      if (!detailOpen || !selectedRow) {
+        return null;
+      }
+      return (
       selectedRow?.markets.find(
         (market) => market.key === selectedDetailMarketKey,
       ) ??
@@ -209,8 +215,10 @@ export function usePredictionMarketsDataState({
         (market) => market.key === selectedRow.focusMarketKey,
       ) ??
       selectedRow?.representative ??
-      null,
-    [selectedDetailMarketKey, selectedRow],
+      null
+      );
+    },
+    [detailOpen, selectedDetailMarketKey, selectedRow],
   );
   const selectedSummaryKey = selectedSummary?.key ?? null;
   const selectedSummaryVenue = selectedSummary?.venue ?? null;

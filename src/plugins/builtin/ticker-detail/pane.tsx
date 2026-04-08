@@ -1,23 +1,24 @@
 import { useKeyboard } from "@opentui/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DetailTabDef, PaneProps } from "../../../types/plugin";
 import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import {
-  useAppState,
+  useAppDispatch,
+  useAppSelector,
   usePaneCollection,
   usePaneInstance,
   usePaneStateValue,
   usePaneTicker,
 } from "../../../state/app-context";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
-import { getCollectionName, getCollectionTickers } from "../../../state/selectors";
+import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
 import { EmptyState } from "../../../components";
 import { TabBar } from "../../../components/tab-bar";
 import { getConfiguredIbkrGatewayInstances } from "../../ibkr/instance-selection";
 import { useOptionsAvailability } from "../options-availability";
 import { ChartTab } from "./chart-tab";
-import { FinancialsTab } from "./financials-tab";
+import { ResolvedFinancialsTab } from "./financials-tab";
 import { OverviewTab } from "./overview-tab";
 import {
   buildVisibleDetailTabs,
@@ -26,11 +27,13 @@ import {
 } from "./settings";
 
 export function TickerDetailPane({ focused, width, height }: PaneProps) {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
-  const { ticker, financials } = usePaneTicker();
+  const { symbol, ticker, financials } = usePaneTicker();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
-  useQuoteStreaming(streamingTarget ? [streamingTarget] : []);
+  const streamingTargets = useMemo(() => (streamingTarget ? [streamingTarget] : []), [streamingTarget]);
+  useQuoteStreaming(streamingTargets);
 
   const { collectionId } = usePaneCollection();
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
@@ -38,15 +41,20 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const [pluginCaptured, setPluginCaptured] = useState(false);
   const paneSettings = getTickerDetailPaneSettings(paneInstance?.settings);
   const hasOptionsChain = useOptionsAvailability(ticker);
-  const collectionTickers = getCollectionTickers(state, collectionId);
-  const collectionName = getCollectionName(state, collectionId);
+  const collectionTickerCount = useAppSelector((state) => getCollectionTickerCount(state, collectionId));
+  const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
 
-  const disabledPlugins = state.config.disabledPlugins || [];
+  const disabledPlugins = config.disabledPlugins;
   const registry = getSharedRegistry();
-  const pluginTabs: DetailTabDef[] = registry
-    ? [...registry.detailTabs.values()].filter((tab) => !disabledPlugins.includes(tab.id))
-    : [];
-  const hasIbkrGatewayTrading = getConfiguredIbkrGatewayInstances(state.config).length > 0;
+  const pluginTabs = useMemo<DetailTabDef[]>(() => (
+    registry
+      ? [...registry.detailTabs.values()].filter((tab) => !disabledPlugins.includes(tab.id))
+      : []
+  ), [disabledPlugins, registry]);
+  const hasIbkrGatewayTrading = useMemo(
+    () => getConfiguredIbkrGatewayInstances(config).length > 0,
+    [config],
+  );
   const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {
     hasIbkrGatewayTrading,
     hasOptionsChain,
@@ -135,7 +143,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   useKeyboard(handleKeyboard);
 
   if (!ticker) {
-    const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickers.length === 0;
+    const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
     const message = isEmptyFollowCollection
       ? `No tickers in ${collectionName || "this collection"}.`
       : "No ticker selected.";
@@ -157,8 +165,15 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
         />
       )}
 
-      {resolvedTabId === "overview" && <OverviewTab width={width} />}
-      {resolvedTabId === "financials" && <FinancialsTab focused={focused} />}
+      {resolvedTabId === "overview" && (
+        <OverviewTab
+          width={width}
+          symbol={symbol}
+          ticker={ticker}
+          financials={financials}
+        />
+      )}
+      {resolvedTabId === "financials" && <ResolvedFinancialsTab focused={focused} financials={financials} />}
       {resolvedTabId === "chart" && (
         <ChartTab
           width={width}
@@ -167,6 +182,9 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
           interactive={chartInteractive}
           axisMode={paneSettings.chartAxisMode}
           onActivate={() => setChartInteractiveEager(true)}
+          symbol={symbol}
+          ticker={ticker}
+          financials={financials}
         />
       )}
 

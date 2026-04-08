@@ -48,6 +48,8 @@ export class ChatController {
   private appActive = true;
   private hydrated = false;
   private sessionChecked = false;
+  private messagesLoading = false;
+  private refreshMessagesPromise: Promise<void> | null = null;
   private user: { id: string; username: string; emailVerified: boolean } | null = null;
   private messages: ChatMessage[] = [];
   private draft = "";
@@ -113,7 +115,7 @@ export class ChatController {
 
   getSnapshot(): ChatControllerSnapshot {
     return {
-      loading: !this.sessionChecked,
+      loading: !this.sessionChecked || this.messagesLoading,
       hasSavedSession: !!apiClient.getSessionToken(),
       user: this.user,
       messages: [...this.messages],
@@ -126,6 +128,9 @@ export class ChatController {
     const token = apiClient.getSessionToken();
     if (!token) {
       this.stopVerificationPolling();
+      this.wsConnection?.close();
+      this.wsConnection = null;
+      this.wsConnected = false;
       this.user = null;
       this.sessionChecked = true;
       this.persistSession();
@@ -134,9 +139,20 @@ export class ChatController {
     }
 
     const session = await apiClient.getSession();
-    const nextUser = session
-      ? { id: session.id, username: session.username ?? session.name, emailVerified: !!session.emailVerified }
-      : null;
+    if (!session) {
+      this.stopVerificationPolling();
+      this.wsConnection?.close();
+      this.wsConnection = null;
+      this.wsConnected = false;
+      apiClient.setSessionToken(null);
+      this.user = null;
+      this.sessionChecked = true;
+      this.persistSession();
+      this.emit();
+      return;
+    }
+
+    const nextUser = { id: session.id, username: session.username ?? session.name, emailVerified: !!session.emailVerified };
     this.user = nextUser;
     this.sessionChecked = true;
     this.persistSession();
@@ -152,10 +168,26 @@ export class ChatController {
     this.wsConnection?.close();
     this.wsConnection = null;
     this.wsConnected = false;
-    if (!nextUser) {
-      this.stopVerificationPolling();
-      this.reset(true);
-    }
+  }
+
+  async refreshMessages(): Promise<void> {
+    if (this.refreshMessagesPromise) return this.refreshMessagesPromise;
+
+    this.messagesLoading = true;
+    this.emit();
+
+    const request = this.fetchMessages()
+      .catch(() => {
+        this.persistChannelState();
+      })
+      .finally(() => {
+        this.messagesLoading = false;
+        this.refreshMessagesPromise = null;
+        this.emit();
+      });
+
+    this.refreshMessagesPromise = request;
+    return request;
   }
 
   setDraft(draft: string): void {
@@ -221,23 +253,7 @@ export class ChatController {
     if (this.wsConnected || !this.user?.emailVerified || !apiClient.getSessionToken()) return;
     this.wsConnected = true;
 
-    apiClient.getMessages("everyone", {
-      limit: MAX_CACHED_MESSAGES,
-      after: this.lastCursor ?? undefined,
-    }).then((messages) => {
-      if (messages.length > 0) {
-        this.mergeMessages(messages);
-        return;
-      }
-      this.persistChannelState();
-    }).catch(async () => {
-      try {
-        const messages = await apiClient.getMessages("everyone", { limit: MAX_CACHED_MESSAGES });
-        this.mergeMessages(messages);
-      } catch {
-        // keep local transcript
-      }
-    });
+    void this.refreshMessages().catch(() => {});
 
     this.wsConnection = apiClient.connectChannel(
       "everyone",
@@ -277,6 +293,28 @@ export class ChatController {
     if (!this.verificationPollTimer) return;
     clearInterval(this.verificationPollTimer);
     this.verificationPollTimer = null;
+  }
+
+  private async fetchMessages(): Promise<void> {
+    try {
+      const messages = await apiClient.getMessages("everyone", {
+        limit: MAX_CACHED_MESSAGES,
+        after: this.lastCursor ?? undefined,
+      });
+      if (messages.length > 0) {
+        this.mergeMessages(messages);
+        return;
+      }
+      this.persistChannelState();
+      return;
+    } catch {
+      const messages = await apiClient.getMessages("everyone", { limit: MAX_CACHED_MESSAGES });
+      if (messages.length > 0) {
+        this.mergeMessages(messages);
+        return;
+      }
+      this.persistChannelState();
+    }
   }
 
   private mergeMessages(messages: ChatMessage[]): void {

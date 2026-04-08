@@ -1,10 +1,13 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
+  useSyncExternalStore,
   type SetStateAction,
   type ReactNode,
 } from "react";
@@ -755,6 +758,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "UPDATE_PANE_STATE": {
       const current = state.paneState[action.paneId] ?? {};
+      if (Object.keys(action.patch).every((key) => Object.is(current[key], action.patch[key]))) {
+        return state;
+      }
       const nextState = { ...current, ...action.patch };
       const recentTickers = Object.prototype.hasOwnProperty.call(action.patch, "cursorSymbol")
         ? nextRecentTickers(state.recentTickers, typeof nextState.cursorSymbol === "string" ? nextState.cursorSymbol : null)
@@ -799,18 +805,70 @@ export function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
-interface AppContextValue {
+interface AppContextStoreValue {
+  dispatch: React.Dispatch<AppAction>;
+  getState: () => AppState;
+  subscribe: (listener: () => void) => () => void;
+}
+
+interface AppContextLegacyValue {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
 }
 
+type AppContextValue = AppContextStoreValue | AppContextLegacyValue;
+
 export const AppContext = createContext<AppContextValue | null>(null);
 const PaneContext = createContext<string | null>(null);
 
-export function useAppState(): AppContextValue {
+function isAppStoreContextValue(context: AppContextValue): context is AppContextStoreValue {
+  return "getState" in context && "subscribe" in context;
+}
+
+function useRequiredAppContext(): AppContextValue {
   const context = useContext(AppContext);
   if (!context) throw new Error("useAppState must be used within AppProvider");
   return context;
+}
+
+export function useAppState(): AppContextLegacyValue {
+  const context = useRequiredAppContext();
+  if (!isAppStoreContextValue(context)) {
+    return context;
+  }
+
+  const state = useSyncExternalStore(context.subscribe, context.getState, context.getState);
+  return useMemo(() => ({ state, dispatch: context.dispatch }), [context.dispatch, state]);
+}
+
+export function useAppDispatch(): React.Dispatch<AppAction> {
+  return useRequiredAppContext().dispatch;
+}
+
+export function useAppSelector<T>(selector: (state: AppState) => T): T {
+  const context = useRequiredAppContext();
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
+  const lastSelectionRef = useRef<T | undefined>(undefined);
+  const hasSelectionRef = useRef(false);
+
+  if (!isAppStoreContextValue(context)) {
+    return selector(context.state);
+  }
+
+  return useSyncExternalStore(
+    context.subscribe,
+    () => {
+      const selection = selectorRef.current(context.getState());
+      if (hasSelectionRef.current && Object.is(lastSelectionRef.current, selection)) {
+        return lastSelectionRef.current as T;
+      }
+      lastSelectionRef.current = selection;
+      hasSelectionRef.current = true;
+      return selection;
+    },
+    () => selectorRef.current(context.getState()),
+  );
 }
 
 export function PaneInstanceProvider({ paneId, children }: { paneId: string; children: ReactNode }) {
@@ -824,20 +882,23 @@ export function usePaneInstanceId(): string {
 }
 
 export function usePaneInstance(): PaneInstanceConfig | null {
-  const { state } = useAppState();
   const paneId = useContext(PaneContext);
-  return paneId ? findPaneInstance(state.config.layout, paneId) ?? null : null;
+  return useAppSelector((state) => (paneId ? findPaneInstance(state.config.layout, paneId) ?? null : null));
 }
 
 export function usePaneTicker(paneId?: string) {
-  const { state } = useAppState();
-  const scopedPaneId = paneId ?? useContext(PaneContext) ?? state.focusedPaneId;
-  const symbol = useMemo(() => (
+  const paneContextId = useContext(PaneContext);
+  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const scopedPaneId = paneId ?? paneContextId ?? focusedPaneId;
+  const symbol = useAppSelector((state) => (
     scopedPaneId ? resolveTickerForPane(state, scopedPaneId) : null
-  ), [state, scopedPaneId]);
-  const ticker = useMemo(() => (
+  ));
+  const ticker = useAppSelector((state) => (
     symbol ? state.tickers.get(symbol) ?? null : null
-  ), [state.tickers, symbol]);
+  ));
+  const cachedFinancials = useAppSelector((state) => (
+    symbol ? state.financials.get(symbol) ?? null : null
+  ));
   const marketFinancials = useTickerFinancials(symbol, ticker);
 
   return useMemo(() => {
@@ -845,9 +906,9 @@ export function usePaneTicker(paneId?: string) {
     return {
       symbol,
       ticker,
-      financials: marketFinancials ?? (symbol ? state.financials.get(symbol) ?? null : null),
+      financials: marketFinancials ?? cachedFinancials,
     };
-  }, [marketFinancials, scopedPaneId, state.financials, symbol, ticker]);
+  }, [cachedFinancials, marketFinancials, scopedPaneId, symbol, ticker]);
 }
 
 export function useSelectedTicker(paneId?: string) {
@@ -855,40 +916,46 @@ export function useSelectedTicker(paneId?: string) {
 }
 
 export function useFocusedTicker() {
-  const { state } = useAppState();
-  const symbol = useMemo(() => getFocusedTickerSymbol(state), [state]);
-  const ticker = useMemo(() => (symbol ? state.tickers.get(symbol) ?? null : null), [state.tickers, symbol]);
+  const symbol = useAppSelector((state) => getFocusedTickerSymbol(state));
+  const ticker = useAppSelector((state) => (symbol ? state.tickers.get(symbol) ?? null : null));
+  const cachedFinancials = useAppSelector((state) => (symbol ? state.financials.get(symbol) ?? null : null));
   const marketFinancials = useTickerFinancials(symbol, ticker);
   return useMemo(() => {
     return {
       symbol,
       ticker,
-      financials: marketFinancials ?? (symbol ? state.financials.get(symbol) ?? null : null),
+      financials: marketFinancials ?? cachedFinancials,
     };
-  }, [marketFinancials, state.financials, symbol, ticker]);
+  }, [cachedFinancials, marketFinancials, symbol, ticker]);
 }
 
 export function usePaneCollection(paneId?: string) {
-  const { state } = useAppState();
-  const scopedPaneId = paneId ?? useContext(PaneContext) ?? state.focusedPaneId;
-  return useMemo(() => {
-    if (!scopedPaneId) return { collectionId: null, portfolio: null, watchlist: null };
-    const collectionId = resolveCollectionForPane(state, scopedPaneId);
-    return {
-      collectionId,
-      portfolio: collectionId ? state.config.portfolios.find((portfolio) => portfolio.id === collectionId) ?? null : null,
-      watchlist: collectionId ? state.config.watchlists.find((watchlist) => watchlist.id === collectionId) ?? null : null,
-    };
-  }, [state, scopedPaneId]);
+  const paneContextId = useContext(PaneContext);
+  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const scopedPaneId = paneId ?? paneContextId ?? focusedPaneId;
+  const collectionId = useAppSelector((state) => (
+    scopedPaneId ? resolveCollectionForPane(state, scopedPaneId) : null
+  ));
+  const portfolio = useAppSelector((state) => (
+    collectionId ? state.config.portfolios.find((entry) => entry.id === collectionId) ?? null : null
+  ));
+  const watchlist = useAppSelector((state) => (
+    collectionId ? state.config.watchlists.find((entry) => entry.id === collectionId) ?? null : null
+  ));
+  return useMemo(() => (
+    { collectionId, portfolio, watchlist }
+  ), [collectionId, portfolio, watchlist]);
 }
 
 export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string): [T, (value: T) => void] {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
   const scopedPaneId = paneId ?? usePaneInstanceId();
-  const value = (state.paneState[scopedPaneId]?.[key] as T | undefined) ?? fallback;
-  const setValue = (nextValue: T) => {
+  const value = useAppSelector((state) => (
+    (state.paneState[scopedPaneId]?.[key] as T | undefined) ?? fallback
+  ));
+  const setValue = useCallback((nextValue: T) => {
     dispatch({ type: "UPDATE_PANE_STATE", paneId: scopedPaneId, patch: { [key]: nextValue } });
-  };
+  }, [dispatch, key, scopedPaneId]);
   return [value, setValue];
 }
 
@@ -967,6 +1034,24 @@ export function AppProvider({
     createInitialState(config, initialSessionSnapshot)
   ));
   const previousRecentTickers = useRef(state.recentTickers);
+  const stateRef = useRef(state);
+  const listenersRef = useRef(new Set<() => void>());
+  const storeRef = useRef<AppContextStoreValue | null>(null);
+
+  stateRef.current = state;
+
+  if (!storeRef.current) {
+    storeRef.current = {
+      dispatch,
+      getState: () => stateRef.current,
+      subscribe: (listener) => {
+        listenersRef.current.add(listener);
+        return () => {
+          listenersRef.current.delete(listener);
+        };
+      },
+    };
+  }
 
   useEffect(() => {
     if (previousRecentTickers.current !== state.recentTickers) {
@@ -975,7 +1060,14 @@ export function AppProvider({
     }
   }, [state.config, state.recentTickers]);
 
+  useLayoutEffect(() => {
+    stateRef.current = state;
+    for (const listener of listenersRef.current) {
+      listener();
+    }
+  }, [state]);
+
   usePersistSessionSnapshot(sessionStore, state, APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION);
 
-  return <AppContext value={{ state, dispatch }}>{children}</AppContext>;
+  return <AppContext value={storeRef.current}>{children}</AppContext>;
 }

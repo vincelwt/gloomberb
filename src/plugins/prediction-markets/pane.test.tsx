@@ -157,7 +157,7 @@ describe("prediction markets pane interactions", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Loading market detail...");
   });
 
-  test("moves selection through the list with keyboard navigation", async () => {
+  test("moves selection through the list with keyboard navigation without opening detail", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -176,6 +176,8 @@ describe("prediction markets pane interactions", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will the Fed cut rates?");
+    expect(frame).not.toContain("Kalshi primary rule");
+    expect(frame).not.toContain("<- Back");
   });
 
   test("does not wrap to the last row when moving up without a selection", async () => {
@@ -197,7 +199,7 @@ describe("prediction markets pane interactions", () => {
     ).toBe("polymarket:pm-1");
   });
 
-  test("supports detail outcome navigation and escape focus return from the keyboard", async () => {
+  test("supports detail outcome navigation and backspace return from the keyboard", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
     globalThis.fetch = (async (input: Request | string | URL) => {
@@ -326,17 +328,15 @@ describe("prediction markets pane interactions", () => {
       ]?.selectedDetailMarketKey,
     ).toBe("kalshi:KXFED-27APR-T4.50");
 
-    await emitKeypress(testSetup, { name: "esc", sequence: "\u001b" });
+    await emitKeypress(testSetup, { name: "backspace", sequence: "\u007f" });
     await flushFrames(testSetup);
 
-    expect(
-      harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
-        "prediction-markets"
-      ]?.focusRegion,
-    ).toBe("list");
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("search markets");
+    expect(frame).not.toContain("Rule 2");
   });
 
-  test("starts with no detail pane and toggles the detail pane off on repeat selection", async () => {
+  test("opens full-page detail from a row click and preserves the browse selection", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -355,59 +355,14 @@ describe("prediction markets pane interactions", () => {
     });
     await flushFrames(testSetup);
 
-    await act(async () => {
-      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
-      await testSetup!.renderOnce();
-    });
-    await flushFrames(testSetup);
-
+    const detailFrame = testSetup.captureCharFrame();
+    expect(detailFrame).toContain("<- Back");
+    expect(detailFrame).toContain("Kalshi primary rule");
     expect(
       harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
         "prediction-markets"
       ]?.selectedRowKey,
-    ).toBeNull();
-  });
-
-  test("resizes the list/detail split by dragging the divider", async () => {
-    installPredictionMarketMocks();
-
-    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
-    await flushFrames(testSetup);
-
-    let frame = testSetup.captureCharFrame();
-    const lines = frame.split("\n");
-    const kalshiRow = lines.findIndex((line) =>
-      line.includes("Will the Fed cut rates?"),
-    );
-    const kalshiCol = lines[kalshiRow]?.indexOf("Will the Fed cut rates?") ?? -1;
-
-    await act(async () => {
-      await testSetup!.mockMouse.click(kalshiCol + 1, kalshiRow);
-      await testSetup!.renderOnce();
-    });
-    await flushFrames(testSetup);
-
-    frame = testSetup.captureCharFrame();
-    const dividerLines = frame.split("\n");
-    const dividerRow = dividerLines.findIndex((line) => line.includes("│"));
-    const dividerCol = dividerLines[dividerRow]?.indexOf("│") ?? -1;
-
-    await act(async () => {
-      await testSetup!.mockMouse.drag(
-        dividerCol,
-        dividerRow,
-        dividerCol + 10,
-        dividerRow,
-      );
-      await testSetup!.renderOnce();
-    });
-    await flushFrames(testSetup);
-
-    expect(
-      harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
-        "prediction-markets"
-      ]?.detailSplitRatio,
-    ).toBeGreaterThan(0.42);
+    ).toBe("kalshi:KAL-1");
   });
 
   test("switches categories with arrows and venues with shift+arrows", async () => {

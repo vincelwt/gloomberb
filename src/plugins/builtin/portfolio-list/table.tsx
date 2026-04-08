@@ -1,10 +1,12 @@
-import type { RefObject } from "react";
+import { useCallback, type RefObject } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { TickerListTable, type QuoteFlashDirection } from "../../../components/ticker-list-table";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { getColumnValue, type ColumnContext } from "./metrics";
+
+export type { QuoteFlashDirection };
 
 export function PortfolioTickerTable({
   columns,
@@ -41,6 +43,13 @@ export function PortfolioTickerTable({
   columnContext: ColumnContext;
   flashSymbols: Map<string, QuoteFlashDirection>;
 }) {
+  const resolveCell = useCallback(
+    (column: ColumnConfig, ticker: TickerRecord, financials: TickerFinancials | undefined) => (
+      getColumnValue(column, ticker, financials, columnContext)
+    ),
+    [columnContext],
+  );
+
   return (
     <TickerListTable
       columns={columns}
@@ -49,7 +58,7 @@ export function PortfolioTickerTable({
       hoveredIdx={hoveredIdx}
       setHoveredIdx={setHoveredIdx}
       setCursorSymbol={setCursorSymbol}
-      resolveCell={(column, ticker, financials) => getColumnValue(column, ticker, financials, columnContext)}
+      resolveCell={resolveCell}
       financialsMap={financialsMap}
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}

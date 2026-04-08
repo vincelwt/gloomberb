@@ -28,6 +28,10 @@ export interface Theme {
   commandBorder: string;
 }
 
+const BODY_TEXT_MIN = 4.5;
+const SUBTLE_TEXT_MIN = 3.6;
+const SELECTED_SURFACE_MIN = 1.75;
+
 function highestMinimumContrast(surfaces: readonly string[], candidates: readonly string[]): string {
   return candidates.reduce((best, candidate) => {
     const bestScore = Math.min(...surfaces.map((surface) => contrastRatio(best, surface)));
@@ -38,53 +42,60 @@ function highestMinimumContrast(surfaces: readonly string[], candidates: readonl
 
 function normalizeTheme(theme: Theme): Theme {
   const bodySurfaces = [theme.bg, theme.panel] as const;
+  const bodyContrastExtreme = highestMinimumContrast(bodySurfaces, ["#ffffff", "#000000"]);
   const text = blendForContrastOnSurfaces(
     theme.text,
     bodySurfaces,
     highestMinimumContrast(bodySurfaces, [theme.textBright, theme.headerText, "#f2f2f2"]),
-    4.5,
+    BODY_TEXT_MIN,
   );
   const textDim = blendForContrastOnSurfaces(
     theme.textDim,
     bodySurfaces,
     highestMinimumContrast(bodySurfaces, [text, theme.textBright, "#d0d7de"]),
-    4.5,
+    BODY_TEXT_MIN,
   );
   const textMuted = blendForContrastOnSurfaces(
     theme.textMuted,
     bodySurfaces,
     highestMinimumContrast(bodySurfaces, [textDim, text, "#c0c7d1"]),
-    3.6,
+    SUBTLE_TEXT_MIN,
   );
   const positive = blendForContrastOnSurfaces(
     theme.positive,
     bodySurfaces,
     blendHex(theme.positive, theme.textBright, 0.5),
-    3.6,
+    SUBTLE_TEXT_MIN,
   );
   const negative = blendForContrastOnSurfaces(
     theme.negative,
     bodySurfaces,
     blendHex(theme.negative, theme.textBright, 0.45),
-    3.6,
+    SUBTLE_TEXT_MIN,
   );
   const neutral = blendForContrastOnSurfaces(
     theme.neutral,
     bodySurfaces,
     highestMinimumContrast(bodySurfaces, [textDim, text, "#c0c7d1"]),
-    3.6,
+    SUBTLE_TEXT_MIN,
+  );
+  const selected = blendForContrastOnSurfaces(
+    theme.selected,
+    bodySurfaces,
+    blendHex(theme.selected, bodyContrastExtreme, 0.62),
+    SELECTED_SURFACE_MIN,
   );
   const headerText = blendForContrast(
     theme.headerText,
     theme.header,
     higherContrast(text, theme.textBright, theme.header),
-    4.5,
+    BODY_TEXT_MIN,
   );
   const selectedText = blendForContrast(
     theme.selectedText,
-    theme.selected,
-    higherContrast(text, theme.textBright, theme.selected),
-    4.5,
+    selected,
+    highestMinimumContrast([selected], [text, theme.textBright, "#f2f2f2"]),
+    BODY_TEXT_MIN,
   );
 
   return {
@@ -96,6 +107,7 @@ function normalizeTheme(theme: Theme): Theme {
     negative,
     neutral,
     headerText,
+    selected,
     selectedText,
   };
 }

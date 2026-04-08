@@ -19,7 +19,7 @@ interface ChatContentProps {
   close?: () => void;
   controller?: Pick<
     ChatController,
-    "getSnapshot" | "refreshSession" | "send" | "setDraft" | "setReplyToId" | "subscribe"
+    "getSnapshot" | "refreshMessages" | "refreshSession" | "send" | "setDraft" | "setReplyToId" | "subscribe"
   >;
 }
 
@@ -34,16 +34,27 @@ function estimateWrappedLineCount(text: string, width: number) {
   ), 0);
 }
 
-function estimateMessageHeight(message: ChatMessage, width: number) {
+const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;
+
+function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
+  if (index === 0) return false;
+  const prev = messages[index - 1]!;
+  const curr = messages[index]!;
+  if (prev.user.id !== curr.user.id) return false;
+  return new Date(curr.createdAt).getTime() - new Date(prev.createdAt).getTime() < MESSAGE_GROUP_THRESHOLD_MS;
+}
+
+function estimateMessageHeight(message: ChatMessage, width: number, grouped = false) {
   const contentLineWidth = Math.max(width - 4, 1);
   const normalizedContent = message.content.replace(/\$[A-Z][A-Z0-9.-]{0,9}/g, (match) => ` ${match.slice(1)} +0% `);
-  return 1 + (message.replyTo ? 1 : 0) + estimateWrappedLineCount(normalizedContent, contentLineWidth);
+  const headerHeight = grouped ? 0 : 1;
+  return headerHeight + (message.replyTo ? 1 : 0) + estimateWrappedLineCount(normalizedContent, contentLineWidth);
 }
 
 function getMessageTopOffset(messages: ChatMessage[], index: number, width: number) {
   let offset = 0;
   for (let i = 0; i < index; i += 1) {
-    offset += estimateMessageHeight(messages[i]!, width);
+    offset += estimateMessageHeight(messages[i]!, width, isGroupedWithPrevious(messages, i));
   }
   return offset;
 }
@@ -51,6 +62,42 @@ function getMessageTopOffset(messages: ChatMessage[], index: number, width: numb
 function scrollToBottom(scrollBox: ScrollBoxRenderable | null) {
   if (!scrollBox) return;
   scrollBox.scrollTo(Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height));
+}
+
+function openAuthCommand(query: string, event?: { preventDefault?: () => void; stopPropagation?: () => void }) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  getSharedRegistry()?.openCommandBarFn(query);
+}
+
+function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
+  const [hoveredAction, setHoveredAction] = useState<"login" | "signup" | null>(null);
+
+  return (
+    <box flexDirection="row">
+      <box
+        backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
+        onMouseMove={() => setHoveredAction("login")}
+        onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
+        onMouseDown={(event: any) => openAuthCommand("Login", event)}
+      >
+        <text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Login </text>
+      </box>
+      {showSignup && (
+        <>
+          <text fg={colors.textDim}>/</text>
+          <box
+            backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
+            onMouseMove={() => setHoveredAction("signup")}
+            onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
+            onMouseDown={(event: any) => openAuthCommand("Sign Up", event)}
+          >
+            <text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </text>
+          </box>
+        </>
+      )}
+    </box>
+  );
 }
 
 export function ChatContent({
@@ -77,6 +124,7 @@ export function ChatContent({
   ));
   const inputRef = useRef<InputRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const canSend = !!user?.emailVerified;
 
   useEffect(() => {
     const unsubscribe = controller.subscribe((snapshot) => {
@@ -91,6 +139,7 @@ export function ChatContent({
     });
 
     void controller.refreshSession().catch(() => {});
+    void controller.refreshMessages().catch(() => {});
     return unsubscribe;
   }, [controller]);
 
@@ -127,6 +176,12 @@ export function ChatContent({
   }, [controller]);
 
   useEffect(() => {
+    if (!canSend && inputFocused) {
+      blurInput();
+    }
+  }, [blurInput, canSend, inputFocused]);
+
+  useEffect(() => {
     if (!focused && inputFocused) {
       blurInput();
     }
@@ -137,6 +192,12 @@ export function ChatContent({
       inputRef.current?.focus();
     }
   }, [focused, inputFocused]);
+
+  useEffect(() => {
+    if (canSend || !replyTo) return;
+    setReplyTo(null);
+    controller.setReplyToId(null);
+  }, [canSend, controller, replyTo]);
 
   useKeyboard((event) => {
     if (!focused) return;
@@ -161,7 +222,7 @@ export function ChatContent({
       return;
     }
 
-    if (event.name === "return" || event.name === "i") {
+    if ((event.name === "return" || event.name === "i") && canSend) {
       focusInput();
       return;
     }
@@ -187,7 +248,7 @@ export function ChatContent({
       return;
     }
 
-    if (event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
+    if (canSend && event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
       const nextReplyTo = messages[selectedIdx] ?? null;
       setReplyTo(nextReplyTo);
       controller.setReplyToId(nextReplyTo?.id ?? null);
@@ -207,7 +268,7 @@ export function ChatContent({
       queueMicrotask(() => scrollToBottom(scrollRef.current));
       return;
     }
-  }, [blurInput, close, controller, focusInput, focused, inputFocused, messages, replyTo, selectedIdx]);
+  }, [blurInput, canSend, close, controller, focusInput, focused, inputFocused, messages, replyTo, selectedIdx]);
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;
@@ -220,7 +281,7 @@ export function ChatContent({
     if (followMessages) return;
     if (selectedIdx < 0 || selectedIdx >= messages.length) return;
     const top = getMessageTopOffset(messages, selectedIdx, contentWidth);
-    const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth);
+    const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth, isGroupedWithPrevious(messages, selectedIdx));
     const viewportHeight = Math.max(sb.viewport.height, 1);
     if (top < sb.scrollTop) {
       sb.scrollTo(top);
@@ -229,49 +290,16 @@ export function ChatContent({
     }
   }, [contentWidth, followMessages, messages, selectedIdx]);
 
-  const replyBarHeight = replyTo ? 1 : 0;
-  const inputAreaHeight = 1 + replyBarHeight;
+  const replyBarHeight = canSend && replyTo ? 1 : 0;
+  const inputAreaHeight = canSend ? 1 + replyBarHeight : 2;
   const headerHeight = 1;
   const separatorHeight = 1;
   const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
 
-  if (loading) {
+  if (loading && messages.length === 0) {
     return (
       <box flexGrow={1} alignItems="center" justifyContent="center">
         <text fg={colors.textDim}>Loading...</text>
-      </box>
-    );
-  }
-
-  if (!user && !hasSavedSession) {
-    return (
-      <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
-        <text fg={colors.textDim}>Not logged in.</text>
-        <text fg={colors.textDim}> </text>
-        <text fg={colors.text}>Press Ctrl+P and search "Login" or "Sign Up"</text>
-        <text fg={colors.textDim}>to start chatting.</text>
-      </box>
-    );
-  }
-
-  if (!user && hasSavedSession) {
-    return (
-      <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
-        <text fg={colors.positive}>Saved login found.</text>
-        <text fg={colors.textDim}> </text>
-        <text fg={colors.text}>Reconnect to refresh your Gloomberb Cloud session.</text>
-        <text fg={colors.textDim}>Your cached transcript is still available locally.</text>
-      </box>
-    );
-  }
-
-  if (!user.emailVerified) {
-    return (
-      <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
-        <text fg={colors.positive}>Check your email to unlock Gloomberb Cloud.</text>
-        <text fg={colors.textDim}> </text>
-        <text fg={colors.text}>Near real-time data and chat are free, but require email verification.</text>
-        <text fg={colors.textDim}>Use Ctrl+P and search "Resend Verification Email" if you need another link.</text>
       </box>
     );
   }
@@ -305,6 +333,7 @@ export function ChatContent({
           const isSelected = index === selectedIdx;
           const isHovered = index === hoveredIdx && !isSelected;
           const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
+          const grouped = isGroupedWithPrevious(messages, index);
 
           return (
             <box
@@ -329,12 +358,14 @@ export function ChatContent({
                   </text>
                 </box>
               )}
-              <box flexDirection="row" height={1} paddingLeft={1}>
-                <text fg={colors.positive} attributes={TextAttributes.BOLD}>
-                  {msg.user.username ?? "anon"}
-                </text>
-                <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
-              </box>
+              {!grouped && (
+                <box flexDirection="row" height={1} paddingLeft={1}>
+                  <text fg={colors.positive} attributes={TextAttributes.BOLD}>
+                    {msg.user.username ?? "anon"}
+                  </text>
+                  <text fg={colors.textMuted}> ({formatTimeAgo(msg.createdAt)})</text>
+                </box>
+              )}
               <box paddingLeft={3}>
                 <TickerBadgeText
                   text={msg.content}
@@ -353,35 +384,58 @@ export function ChatContent({
         <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
       </box>
 
-      {replyTo && (
-        <box height={1} width={contentWidth} flexDirection="row">
-          <text fg={colors.textMuted}> replying to </text>
-          <text fg={colors.positive}>{replyTo.user.username}</text>
-          <box flexGrow={1} />
-          <text fg={colors.textDim}>[Esc cancel]</text>
+      {canSend ? (
+        <>
+          {replyTo && (
+            <box height={1} width={contentWidth} flexDirection="row">
+              <text fg={colors.textMuted}> replying to </text>
+              <text fg={colors.positive}>{replyTo.user.username}</text>
+              <box flexGrow={1} />
+              <text fg={colors.textDim}>[Esc cancel]</text>
+            </box>
+          )}
+
+          <box height={1} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
+            <text fg={colors.textDim}> {">"} </text>
+            <input
+              ref={inputRef}
+              value={inputValue}
+              focused={inputFocused && focused}
+              placeholder="Type a message..."
+              placeholderColor={colors.textMuted}
+              textColor={colors.text}
+              backgroundColor={colors.bg}
+              flexGrow={1}
+              onInput={updateDraft}
+              onChange={updateDraft}
+              onSubmit={() => {
+                if (inputValueRef.current.trim()) {
+                  sendMessage();
+                }
+              }}
+            />
+          </box>
+        </>
+      ) : (
+        <box width={contentWidth} height={2} flexDirection="column">
+          {!user && !hasSavedSession ? (
+            <>
+              <text fg={colors.textDim}>Read-only chat. Log in or sign up to send.</text>
+              <InlineAuthActions />
+            </>
+          ) : !user ? (
+            <>
+              <text fg={colors.positive}>Saved login found. Log in again to send.</text>
+              <InlineAuthActions showSignup={false} />
+            </>
+          ) : (
+            <>
+              <text fg={colors.positive}>Verify your email to send messages.</text>
+              <text fg={colors.textDim}>Ctrl+P: Resend Verification Email</text>
+            </>
+          )}
         </box>
       )}
-
-      <box height={1} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
-        <text fg={colors.textDim}> {">"} </text>
-        <input
-          ref={inputRef}
-          value={inputValue}
-          focused={inputFocused && focused}
-          placeholder="Type a message..."
-          placeholderColor={colors.textMuted}
-          textColor={colors.text}
-          backgroundColor={colors.bg}
-          flexGrow={1}
-          onInput={updateDraft}
-          onChange={updateDraft}
-          onSubmit={() => {
-            if (inputValueRef.current.trim()) {
-              sendMessage();
-            }
-          }}
-        />
-      </box>
     </box>
   );
 }
@@ -398,10 +452,8 @@ export function ChatPane({ focused, width, height, close }: PaneProps) {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
-  const registry = getSharedRegistry();
   const { state } = useAppState();
   const initialSnapshot = controller.getSnapshot();
-  const [hoveredAction, setHoveredAction] = useState<"login" | "signup" | null>(null);
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
 
@@ -416,34 +468,12 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
 
   if (state.config.disabledPlugins.includes("gloomberb-cloud")) return null;
 
-  const openAuthCommand = (query: string, event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    registry?.openCommandBarFn(query);
-  };
-
   return (
     <box flexDirection="row" paddingRight={1}>
       {!username && !hasSavedSession ? (
         <>
           <text fg={colors.textDim}>☁ </text>
-          <box
-            backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
-            onMouseMove={() => setHoveredAction("login")}
-            onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
-            onMouseDown={(event: any) => openAuthCommand("Login", event)}
-          >
-            <text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Login </text>
-          </box>
-          <text fg={colors.textDim}>/</text>
-          <box
-            backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
-            onMouseMove={() => setHoveredAction("signup")}
-            onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
-            onMouseDown={(event: any) => openAuthCommand("Sign Up", event)}
-          >
-            <text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </text>
-          </box>
+          <InlineAuthActions />
         </>
       ) : (
         <text fg={colors.textDim}>
@@ -452,10 +482,8 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
             <>
               {" "}
               <span fg={colors.positive}>{username}</span>
-              {"  "}
             </>
-          ) : "  "}
-          <span fg={colors.text}>Shift+C</span> cloud
+          ) : null}
         </text>
       )}
     </box>
@@ -609,7 +637,8 @@ export const gloomberbCloudPlugin: GloomPlugin = {
           return;
         }
         await apiClient.signOut();
-        chatController.reset(true);
+        await chatController.refreshSession();
+        await chatController.refreshMessages();
         ctx.showToast("Logged out.", { type: "info" });
       },
       hidden: () => !apiClient.getSessionToken(),

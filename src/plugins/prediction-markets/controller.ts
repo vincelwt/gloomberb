@@ -21,7 +21,6 @@ import type {
   PredictionBrowseTab,
   PredictionCategoryId,
   PredictionDetailTab,
-  PredictionFocusRegion,
   PredictionHistoryRange,
   PredictionListRow,
   PredictionOrderPreviewIntent,
@@ -29,7 +28,6 @@ import type {
   PredictionVenueScope,
 } from "./types";
 
-const EMPTY_SELECTIONS: Record<string, string | null> = {};
 const KEYBOARD_DETAIL_LOAD_DELAY_MS = 140;
 
 export function usePredictionMarketsController({
@@ -63,10 +61,6 @@ export function usePredictionMarketsController({
     "detailTab",
     "overview",
   );
-  const [focusRegion, setFocusRegion] = usePluginPaneState<PredictionFocusRegion>(
-    "focusRegion",
-    "list",
-  );
   const [searchQuery, setSearchQuery] = usePluginPaneState<string>(
     "searchQuery",
     "",
@@ -77,18 +71,11 @@ export function usePredictionMarketsController({
   );
   const [historyRange, setHistoryRange] =
     usePluginPaneState<PredictionHistoryRange>("historyRange", "1M");
-  const [detailSplitRatio, setDetailSplitRatio] = usePluginPaneState<number>(
-    "detailSplitRatio",
-    0.42,
-  );
   const [selectedRowKey, setSelectedRowKey] = usePluginPaneState<
     string | null
   >("selectedRowKey", null);
   const [selectedDetailMarketKey, setSelectedDetailMarketKey] =
     usePluginPaneState<string | null>("selectedDetailMarketKey", null);
-  const [, setSelectionByScope] = usePluginPaneState<
-    Record<string, string | null>
-  >("selectionByScope", EMPTY_SELECTIONS);
   const [sortPreference, setSortPreference] =
     usePluginPaneState<PredictionSortPreference>(
       "sortPreference",
@@ -101,6 +88,7 @@ export function usePredictionMarketsController({
     );
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [initialParamsApplied, setInitialParamsApplied] = useState(false);
 
@@ -126,6 +114,7 @@ export function usePredictionMarketsController({
   const data = usePredictionMarketsDataState({
     browseTab,
     categoryId,
+    detailOpen,
     effectiveVenueScope,
     focused,
     historyRange,
@@ -231,7 +220,7 @@ export function usePredictionMarketsController({
     if (headerScrollBox) {
       headerScrollBox.scrollLeft = 0;
     }
-    setFocusRegion("list");
+    setDetailOpen(false);
     setSelectedRowKey((current) => (current == null ? current : null));
     setSelectedDetailMarketKey((current) => (current == null ? current : null));
   }, [
@@ -239,54 +228,73 @@ export function usePredictionMarketsController({
     categoryId,
     data.debouncedSearchQuery,
     effectiveVenueScope,
-    setFocusRegion,
     setSelectedDetailMarketKey,
     setSelectedRowKey,
   ]);
 
   useEffect(() => {
     if (data.visibleRows.length === 0) {
-      if (selectedRowKey !== null) setSelectedRowKey(null);
-      if (selectedDetailMarketKey !== null) setSelectedDetailMarketKey(null);
-      if (focusRegion !== "list") setFocusRegion("list");
-      return;
-    }
-
-    if (data.selectedRow) {
-      setSelectionByScope((current) => {
-        if (current[effectiveVenueScope] === data.selectedRow!.key) {
-          return current;
-        }
-        return { ...current, [effectiveVenueScope]: data.selectedRow!.key };
-      });
-      if (
-        !selectedDetailMarketKey ||
-        !data.selectedRow.markets.some(
-          (market) => market.key === selectedDetailMarketKey,
-        )
-      ) {
-        setSelectedDetailMarketKey(data.selectedRow.focusMarketKey);
+      if (selectedRowKey !== null) {
+        setSelectedRowKey(null);
       }
+      if (selectedDetailMarketKey !== null) {
+        setSelectedDetailMarketKey(null);
+      }
+      if (detailOpen) {
+        setDetailOpen(false);
+      }
+    }
+  }, [
+    data.visibleRows.length,
+    detailOpen,
+    selectedDetailMarketKey,
+    selectedRowKey,
+    setSelectedDetailMarketKey,
+    setSelectedRowKey,
+  ]);
+
+  useEffect(() => {
+    if (selectedRowKey == null || data.selectedRow) {
       return;
     }
 
-    if (selectedRowKey !== null) {
-      setSelectedRowKey(null);
+    if (detailOpen) {
+      setDetailOpen(false);
     }
     if (selectedDetailMarketKey !== null) {
       setSelectedDetailMarketKey(null);
     }
+    setSelectedRowKey(null);
   }, [
     data.selectedRow,
-    data.visibleRows,
-    effectiveVenueScope,
-    focusRegion,
+    detailOpen,
     selectedDetailMarketKey,
     selectedRowKey,
-    setFocusRegion,
+    setDetailOpen,
     setSelectedDetailMarketKey,
     setSelectedRowKey,
-    setSelectionByScope,
+  ]);
+
+  useEffect(() => {
+    if (!detailOpen || !data.selectedRow) {
+      return;
+    }
+
+    if (
+      selectedDetailMarketKey
+      && data.selectedRow.markets.some(
+        (market) => market.key === selectedDetailMarketKey,
+      )
+    ) {
+      return;
+    }
+
+    setSelectedDetailMarketKey(data.selectedRow.focusMarketKey);
+  }, [
+    data.selectedRow,
+    detailOpen,
+    selectedDetailMarketKey,
+    setSelectedDetailMarketKey,
   ]);
 
   useEffect(() => {
@@ -312,9 +320,8 @@ export function usePredictionMarketsController({
   }, [searchFocused]);
 
   const focusSearch = useCallback(() => {
-    setFocusRegion("list");
     setSearchFocused(true);
-  }, [setFocusRegion]);
+  }, []);
 
   const blurSearch = useCallback(() => {
     setSearchFocused(false);
@@ -336,52 +343,51 @@ export function usePredictionMarketsController({
     [setWatchlist],
   );
 
-  const selectRow = useCallback(
+  const setBrowseSelection = useCallback(
     (rowKey: string, options?: { debounceDetail?: boolean }) => {
       setSearchFocused(false);
-      setFocusRegion("list");
-      const row = data.visibleRows.find((candidate) => candidate.key === rowKey);
-      const shouldClear = selectedRowKey === rowKey;
       data.actions.setNextDetailLoadDelay(
-        options?.debounceDetail && !shouldClear
-          ? KEYBOARD_DETAIL_LOAD_DELAY_MS
-          : 0,
+        options?.debounceDetail ? KEYBOARD_DETAIL_LOAD_DELAY_MS : 0,
       );
-      setSelectedRowKey(shouldClear ? null : rowKey);
-      setSelectedDetailMarketKey(
-        shouldClear ? null : row?.focusMarketKey ?? null,
-      );
+      setSelectedRowKey(rowKey);
     },
-    [
-      data.actions,
-      data.visibleRows,
-      selectedRowKey,
-      setFocusRegion,
-      setSelectedDetailMarketKey,
-      setSelectedRowKey,
-    ],
+    [data.actions, setSelectedRowKey],
+  );
+
+  const openSelectedRow = useCallback(
+    (rowKey: string) => {
+      const row = data.visibleRows.find((candidate) => candidate.key === rowKey);
+      if (!row) return;
+      setSearchFocused(false);
+      data.actions.setNextDetailLoadDelay(0);
+      setSelectedRowKey(row.key);
+      setSelectedDetailMarketKey(row.focusMarketKey);
+      setDetailOpen(true);
+    },
+    [data.actions, data.visibleRows, setSelectedDetailMarketKey, setSelectedRowKey],
   );
 
   const selectMarket = useCallback(
     (marketKey: string) => {
       setSearchFocused(false);
-      setFocusRegion("detail");
       data.actions.setNextDetailLoadDelay(0);
       const row = data.visibleRows.find((candidate) =>
         candidate.markets.some((market) => market.key === marketKey),
       );
       if (!row) {
+        setDetailOpen(false);
         setSelectedRowKey(null);
         setSelectedDetailMarketKey(null);
         return;
       }
       setSelectedRowKey(row.key);
       setSelectedDetailMarketKey(marketKey);
+      setDetailOpen(true);
     },
     [
       data.actions,
       data.visibleRows,
-      setFocusRegion,
+      setDetailOpen,
       setSelectedDetailMarketKey,
       setSelectedRowKey,
     ],
@@ -389,26 +395,34 @@ export function usePredictionMarketsController({
 
   const clearSelection = useCallback(() => {
     data.actions.setNextDetailLoadDelay(0);
-    setFocusRegion("list");
+    setDetailOpen(false);
     setSelectedRowKey(null);
     setSelectedDetailMarketKey(null);
   }, [
     data.actions,
-    setFocusRegion,
+    setDetailOpen,
     setSelectedDetailMarketKey,
     setSelectedRowKey,
   ]);
 
-  const focusList = useCallback(() => {
-    setFocusRegion("list");
+  const closeDetail = useCallback(() => {
+    setDetailOpen(false);
     setSearchFocused(false);
-  }, [setFocusRegion]);
+  }, []);
 
-  const focusDetail = useCallback(() => {
-    if (!data.selectedSummary) return;
-    setFocusRegion("detail");
+  const openDetail = useCallback(() => {
+    if (!data.selectedRow) return;
+    if (
+      !selectedDetailMarketKey ||
+      !data.selectedRow.markets.some(
+        (market) => market.key === selectedDetailMarketKey,
+      )
+    ) {
+      setSelectedDetailMarketKey(data.selectedRow.focusMarketKey);
+    }
+    setDetailOpen(true);
     setSearchFocused(false);
-  }, [data.selectedSummary, setFocusRegion]);
+  }, [data.selectedRow, selectedDetailMarketKey, setSelectedDetailMarketKey]);
 
   const setVenue = useCallback(
     (nextVenueScope: string) => {
@@ -490,6 +504,7 @@ export function usePredictionMarketsController({
       name?: string;
       sequence?: string;
       shift?: boolean;
+      preventDefault?: () => void;
       stopPropagation?: () => void;
     }) => {
       if (!focused) return;
@@ -500,40 +515,16 @@ export function usePredictionMarketsController({
       if (searchFocused) {
         if (command === "escape") {
           event.stopPropagation?.();
+          event.preventDefault?.();
           setSearchFocused(false);
         }
         return;
       }
 
-      if (command === "search") {
-        event.stopPropagation?.();
-        focusSearch();
-        return;
-      }
-
-      if (command === "escape") {
-        event.stopPropagation?.();
-        if (focusRegion === "detail") {
-          focusList();
-          return;
-        }
-        clearSelection();
-        return;
-      }
-
-      if (isEnter && data.selectedSummary) {
-        event.stopPropagation?.();
-        if (focusRegion === "list") {
-          focusDetail();
-        } else {
-          focusList();
-        }
-        return;
-      }
-
-      if (focusRegion === "detail") {
+      if (detailOpen) {
         if (command === "move-down") {
           event.stopPropagation?.();
+          event.preventDefault?.();
           if (detailTab === "overview" && data.sortedOutcomeMarkets.length > 0) {
             cycleDetailOutcome("next");
           } else {
@@ -544,6 +535,7 @@ export function usePredictionMarketsController({
 
         if (command === "move-up") {
           event.stopPropagation?.();
+          event.preventDefault?.();
           if (detailTab === "overview" && data.sortedOutcomeMarkets.length > 0) {
             cycleDetailOutcome("previous");
           } else {
@@ -554,39 +546,64 @@ export function usePredictionMarketsController({
 
         if (command === "previous-category") {
           event.stopPropagation?.();
+          event.preventDefault?.();
           setDetailTab(getAdjacentPredictionDetailTab(detailTab, "previous"));
           return;
         }
 
         if (command === "next-category") {
           event.stopPropagation?.();
+          event.preventDefault?.();
           setDetailTab(getAdjacentPredictionDetailTab(detailTab, "next"));
           return;
         }
+
+        return;
+      }
+
+      if (command === "search") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        focusSearch();
+        return;
+      }
+
+      if (isEnter && data.selectedRow) {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        openDetail();
+        return;
       }
 
       if (command === "move-down") {
         event.stopPropagation?.();
+        event.preventDefault?.();
         if (data.visibleRows.length === 0) return;
         const nextIndex =
           data.selectedIndex >= 0
             ? Math.min(data.selectedIndex + 1, data.visibleRows.length - 1)
             : 0;
-        selectRow(data.visibleRows[nextIndex]!.key, { debounceDetail: true });
+        setBrowseSelection(data.visibleRows[nextIndex]!.key, {
+          debounceDetail: true,
+        });
         return;
       }
 
       if (command === "move-up") {
         event.stopPropagation?.();
+        event.preventDefault?.();
         if (data.visibleRows.length === 0) return;
         const nextIndex =
           data.selectedIndex >= 0 ? Math.max(data.selectedIndex - 1, 0) : 0;
-        selectRow(data.visibleRows[nextIndex]!.key, { debounceDetail: true });
+        setBrowseSelection(data.visibleRows[nextIndex]!.key, {
+          debounceDetail: true,
+        });
         return;
       }
 
       if (!paneSettings.hideTabs && command === "previous-venue-tab") {
         event.stopPropagation?.();
+        event.preventDefault?.();
         setVenue(
           getAdjacentPredictionVenueScope(effectiveVenueScope, "previous"),
         );
@@ -595,24 +612,28 @@ export function usePredictionMarketsController({
 
       if (!paneSettings.hideTabs && command === "next-venue-tab") {
         event.stopPropagation?.();
+        event.preventDefault?.();
         setVenue(getAdjacentPredictionVenueScope(effectiveVenueScope, "next"));
         return;
       }
 
       if (command === "previous-category") {
         event.stopPropagation?.();
+        event.preventDefault?.();
         selectCategory(getAdjacentPredictionCategoryId(categoryId, "previous"));
         return;
       }
 
       if (command === "next-category") {
         event.stopPropagation?.();
+        event.preventDefault?.();
         selectCategory(getAdjacentPredictionCategoryId(categoryId, "next"));
         return;
       }
 
-      if (command === "toggle-watchlist" && data.selectedSummary) {
+      if (command === "toggle-watchlist" && data.selectedRow) {
         event.stopPropagation?.();
+        event.preventDefault?.();
         if (data.selectedRow) toggleWatchlist(data.selectedRow);
         return;
       }
@@ -636,26 +657,23 @@ export function usePredictionMarketsController({
     [
       browseTab,
       categoryId,
-      clearSelection,
       cycleDetailOutcome,
+      detailOpen,
       data.selectedIndex,
       data.selectedRow,
-      data.selectedSummary,
       data.sortedOutcomeMarkets.length,
       data.visibleRows,
       detailTab,
       effectiveVenueScope,
-      focusDetail,
-      focusList,
-      focusRegion,
       focusSearch,
       focused,
+      openDetail,
       paneSettings.hideTabs,
       scrollDetailBy,
       searchFocused,
       selectBrowseTab,
       selectCategory,
-      selectRow,
+      setBrowseSelection,
       setVenue,
       toggleWatchlist,
     ],
@@ -676,11 +694,10 @@ export function usePredictionMarketsController({
     detail: data.detail,
     detailError: data.detailError,
     detailLoadCount: data.detailLoadCount,
+    detailOpen,
     detailScrollRef,
     detailTab,
-    detailSplitRatio,
     effectiveVenueScope,
-    focusRegion,
     headerScrollRef,
     historyRange,
     hoveredIdx,
@@ -699,18 +716,18 @@ export function usePredictionMarketsController({
     watchlistSet,
     actions: {
       blurSearch,
+      closeDetail,
       clearSelection,
-      focusDetail,
-      focusList,
       focusSearch,
       handleSortHeaderClick,
+      openDetail,
+      openSelectedRow,
       previewOrder,
       selectBrowseTab,
       selectCategory,
       selectMarket,
-      selectRow,
       setDetailTab,
-      setDetailSplitRatio,
+      setBrowseSelection,
       setHistoryRange,
       setHoveredIdx,
       setSearchQuery,

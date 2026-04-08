@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useRef,
   useSyncExternalStore,
   type ReactNode,
   type SetStateAction,
@@ -101,11 +102,13 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
   const { pluginId } = usePluginRenderContext();
   const scopedPaneId = paneId ?? usePaneInstanceId();
   const { state, dispatch } = useAppState();
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const paneState = state.paneState[scopedPaneId];
   const value = getPluginPaneStateValue(paneState, pluginId, key, fallback);
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
-    const currentPaneState = state.paneState[scopedPaneId];
+    const currentPaneState = stateRef.current.paneState[scopedPaneId];
     const currentValue = getPluginPaneStateValue(currentPaneState, pluginId, key, fallback);
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
@@ -122,7 +125,7 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
       key,
       value: resolved,
     });
-  }, [dispatch, fallback, key, pluginId, scopedPaneId, state.paneState]);
+  }, [dispatch, fallback, key, pluginId, scopedPaneId]);
 
   return [value, setValue];
 }
@@ -158,10 +161,12 @@ export function usePluginState<T>(key: string, fallback: T, options?: { schemaVe
 export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: SetStateAction<T>) => void] {
   const { pluginId, runtime } = usePluginRenderContext();
   const { state } = useAppState();
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const value = (state.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback;
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
-    const currentValue = (state.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback;
+    const currentValue = (stateRef.current.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback;
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
@@ -169,7 +174,7 @@ export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: S
       return;
     }
     void runtime.setConfigState(pluginId, key, resolved);
-  }, [fallback, key, pluginId, runtime, state.config.pluginConfig]);
+  }, [fallback, key, pluginId, runtime]);
 
   return [value, setValue];
 }

@@ -1,6 +1,8 @@
 import { useTerminalDimensions } from "@opentui/react";
 import type { ChartAxisMode } from "../../../components/chart/chart-types";
-import { StockChart } from "../../../components/chart/stock-chart";
+import { ResolvedStockChart } from "../../../components/chart/stock-chart";
+import type { TickerFinancials } from "../../../types/financials";
+import type { TickerRecord } from "../../../types/ticker";
 
 export function ChartTab({
   width,
@@ -9,6 +11,9 @@ export function ChartTab({
   interactive,
   axisMode,
   onActivate,
+  symbol,
+  ticker,
+  financials,
 }: {
   width?: number;
   height?: number;
@@ -16,6 +21,9 @@ export function ChartTab({
   interactive: boolean;
   axisMode: ChartAxisMode;
   onActivate?: () => void;
+  symbol: string | null;
+  ticker: TickerRecord | null;
+  financials: TickerFinancials | null;
 }) {
   const { width: termWidth, height: termHeight } = useTerminalDimensions();
 
@@ -31,12 +39,15 @@ export function ChartTab({
         if (!interactive) onActivate?.();
       }}
     >
-      <StockChart
+      <ResolvedStockChart
         width={chartWidth}
         height={chartHeight}
         focused={focused}
         interactive={interactive}
         axisMode={axisMode}
+        symbol={symbol}
+        ticker={ticker}
+        financials={financials}
       />
     </box>
   );

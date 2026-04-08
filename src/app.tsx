@@ -88,6 +88,7 @@ import {
   applyPaneSettingFieldValue as applyPaneSettingFieldValueShared,
   createPaneTemplateOrThrow,
 } from "./components/command-bar/workflow-ops";
+import { getPaneTemplateDisplayLabel } from "./components/command-bar/pane-template-display";
 import { debugLog } from "./utils/debug-log";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
@@ -947,7 +948,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       });
     } catch (error) {
       pluginRegistry.showToastFn(
-        error instanceof Error ? error.message : `Could not create ${template.label.toLowerCase()}.`,
+        error instanceof Error ? error.message : `Could not create ${getPaneTemplateDisplayLabel(template).toLowerCase()}.`,
         { type: "info" },
       );
     }
