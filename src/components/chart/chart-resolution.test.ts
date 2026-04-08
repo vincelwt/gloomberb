@@ -1,0 +1,56 @@
+import { describe, expect, test } from "bun:test";
+import {
+  clampTimeRangeForResolution,
+  getActiveRangePreset,
+  getPresetResolution,
+  intersectChartResolutions,
+  isRangePresetSupported,
+  normalizeChartResolution,
+  sortChartResolutions,
+} from "./chart-resolution";
+
+describe("chart-resolution", () => {
+  test("maps range presets to their default manual resolutions", () => {
+    expect(getPresetResolution("1W")).toBe("5m");
+    expect(getPresetResolution("1M")).toBe("15m");
+    expect(getPresetResolution("3M")).toBe("1h");
+    expect(getPresetResolution("6M")).toBe("1d");
+    expect(getPresetResolution("1Y")).toBe("1d");
+    expect(getPresetResolution("5Y")).toBe("1wk");
+    expect(getPresetResolution("ALL")).toBe("1mo");
+  });
+
+  test("derives the active range preset only for the exact reset preset pair", () => {
+    expect(getActiveRangePreset("1Y", "1d", 1, 0)).toBe("1Y");
+    expect(getActiveRangePreset("1Y", "auto", 1, 0)).toBeNull();
+    expect(getActiveRangePreset("1Y", "1d", 1.2, 0)).toBeNull();
+    expect(getActiveRangePreset("1Y", "1d", 1, 2)).toBeNull();
+  });
+
+  test("intersects and sorts provider capabilities", () => {
+    expect(intersectChartResolutions([
+      ["1d", "5m", "1wk", "nope"],
+      ["1wk", "1d", "1mo"],
+      ["1d", "1wk"],
+    ])).toEqual(["1d", "1wk"]);
+  });
+
+  test("checks whether a range preset is supported by the visible capability set", () => {
+    expect(isRangePresetSupported("1Y", ["1d", "1wk"])).toBe(true);
+    expect(isRangePresetSupported("ALL", ["1d", "1wk"])).toBe(false);
+  });
+
+  test("clamps overly-wide ranges for manual intraday resolutions", () => {
+    expect(clampTimeRangeForResolution("5Y", "5m")).toBe("1W");
+    expect(clampTimeRangeForResolution("6M", "1h")).toBe("3M");
+    expect(clampTimeRangeForResolution("1M", "15m")).toBe("1M");
+    expect(clampTimeRangeForResolution("5Y", "1d")).toBe("5Y");
+    expect(clampTimeRangeForResolution("5Y", "auto")).toBe("5Y");
+  });
+
+  test("normalizes and sorts chart resolution values", () => {
+    expect(normalizeChartResolution("1h")).toBe("1h");
+    expect(normalizeChartResolution("bogus", "1d")).toBe("1d");
+    expect(sortChartResolutions(["1wk", "auto", "15m", "1d"])).toEqual(["auto", "15m", "1d", "1wk"]);
+  });
+});

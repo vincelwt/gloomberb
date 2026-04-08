@@ -16,6 +16,12 @@ import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
 import type { TimeRange } from "../components/chart/chart-types";
+import {
+  isIntradayResolution,
+  normalizeChartResolutionSupport,
+  type ChartResolutionSupport,
+  type ManualChartResolution,
+} from "../components/chart/chart-resolution";
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { debugLog } from "../utils/debug-log";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
@@ -106,7 +112,7 @@ function buildVariantKey(parts: Array<[string, string | number | undefined | nul
 }
 
 function isIntradayRange(range: TimeRange): boolean {
-  return range === "1W" || range === "1M" || range === "3M";
+  return range === "1D" || range === "1W" || range === "1M" || range === "3M";
 }
 
 function hasMeaningfulFundamentals(data: TickerFinancials | null | undefined): boolean {
@@ -501,6 +507,65 @@ export class ProviderRouter implements DataProvider {
       throw new Error(`No history provider available for ${ticker}`);
     }
     return providerHistory.value;
+  }
+
+  async getPriceHistoryForResolution(
+    ticker: string,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    context?: MarketDataRequestContext,
+  ): Promise<PricePoint[]> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKeys = [
+      buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]),
+      buildVariantKey([["range", bufferRange], ["resolution", resolution]]),
+    ];
+    const sourceKeys = [
+      ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
+      ...this.getProviderSourceKeys(),
+    ];
+    const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
+    const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale) {
+      return cachedValue;
+    }
+
+    const brokerHistory = await withBrokerTimeout(this.fetchBrokerPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context));
+    if (brokerHistory && brokerHistory.value.length > 0) return brokerHistory.value;
+
+    const providerHistory = await this.fetchProviderPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context);
+    if (providerHistory && providerHistory.value.length > 0) {
+      return providerHistory.value;
+    }
+    if (cachedValue.length > 0) return cachedValue;
+    if (!providerHistory) {
+      throw new Error(`No resolution-aware history provider available for ${ticker}`);
+    }
+    return providerHistory.value;
+  }
+
+  async getChartResolutionSupport(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<ChartResolutionSupport[]> {
+    const brokerSupport = await withBrokerTimeout(this.fetchBrokerChartResolutionSupport(ticker, exchange, context));
+    if (brokerSupport && brokerSupport.value.length > 0) {
+      return brokerSupport.value;
+    }
+    const providerSupport = await this.fetchProviderChartResolutionSupport(ticker, exchange, context);
+    return providerSupport?.value ?? [];
+  }
+
+  async getChartResolutionCapabilities(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<ManualChartResolution[]> {
+    const support = await this.getChartResolutionSupport(ticker, exchange, context);
+    return support.map((entry) => entry.resolution);
   }
 
   async getDetailedPriceHistory(
@@ -1020,6 +1085,42 @@ export class ProviderRouter implements DataProvider {
     return null;
   }
 
+  private async fetchBrokerPriceHistoryForResolution(
+    ticker: string,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<PricePoint[]> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
+      if (!candidate.broker.getPriceHistoryForResolution) continue;
+      try {
+        const result = normalizePriceHistory(await candidate.broker.getPriceHistoryForResolution(
+          ticker,
+          candidate.instance,
+          exchange,
+          bufferRange,
+          resolution,
+          context?.instrument ?? null,
+        ));
+        this.cacheResource(
+          "price-history",
+          entityKey,
+          variantKey,
+          this.brokerSourceKey(candidate),
+          result,
+          this.resolveBrokerPolicy(isIntradayResolution(resolution) ? "priceHistoryIntraday" : "priceHistoryDaily", candidate.broker),
+        );
+        return { sourceKey: this.brokerSourceKey(candidate), value: result };
+      } catch {
+        // continue
+      }
+    }
+    return null;
+  }
+
   private async fetchProviderPriceHistory(
     ticker: string,
     exchange: string,
@@ -1054,6 +1155,101 @@ export class ProviderRouter implements DataProvider {
     }
 
     return firstEmptyResult;
+  }
+
+  private async fetchProviderPriceHistoryForResolution(
+    ticker: string,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<PricePoint[]> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
+    let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getPriceHistoryForResolution) continue;
+      try {
+        const value = normalizePriceHistory(await provider.getPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context));
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource(
+          "price-history",
+          entityKey,
+          variantKey,
+          sourceKey,
+          value,
+          this.resolveProviderPolicy(isIntradayResolution(resolution) ? "priceHistoryIntraday" : "priceHistoryDaily", provider),
+        );
+        if (value.length > 0) {
+          return { sourceKey, value };
+        }
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    return firstEmptyResult;
+  }
+
+  private async fetchBrokerChartResolutionSupport(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<ChartResolutionSupport[]> | null> {
+    for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
+      if (!candidate.broker.getChartResolutionSupport && !candidate.broker.getChartResolutionCapabilities) continue;
+      try {
+        const result = candidate.broker.getChartResolutionSupport
+          ? normalizeChartResolutionSupport(await candidate.broker.getChartResolutionSupport(
+            ticker,
+            candidate.instance,
+            exchange,
+            context?.instrument ?? null,
+          ))
+          : normalizeChartResolutionSupport(
+            (await candidate.broker.getChartResolutionCapabilities!(
+              ticker,
+              candidate.instance,
+              exchange,
+              context?.instrument ?? null,
+            )).map((resolution) => ({ resolution, maxRange: "ALL" })),
+          );
+        if (result.length === 0) continue;
+        return { sourceKey: this.brokerSourceKey(candidate), value: result };
+      } catch {
+        // continue
+      }
+    }
+    return null;
+  }
+
+  private async fetchProviderChartResolutionSupport(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<ChartResolutionSupport[]> | null> {
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getChartResolutionSupport && !provider.getChartResolutionCapabilities) continue;
+      try {
+        const result = provider.getChartResolutionSupport
+          ? normalizeChartResolutionSupport(await provider.getChartResolutionSupport(ticker, exchange, context))
+          : normalizeChartResolutionSupport(
+            (await provider.getChartResolutionCapabilities!(ticker, exchange, context)).map((resolution) => ({ resolution, maxRange: "ALL" })),
+          );
+        if (result.length === 0) continue;
+        return { sourceKey: this.providerSourceKey(provider), value: result };
+      } catch (error) {
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    return null;
   }
 
   private async fetchBrokerDetailedPriceHistory(

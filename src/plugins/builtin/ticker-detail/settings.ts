@@ -1,7 +1,12 @@
 import type { PaneSettingsDef, DetailTabDef } from "../../../types/plugin";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import type { ChartAxisMode } from "../../../components/chart/chart-types";
+import type { ChartAxisMode, TimeRange } from "../../../components/chart/chart-types";
+import {
+  DEFAULT_TICKER_CHART_RANGE_PRESET,
+  DEFAULT_TICKER_CHART_RESOLUTION,
+  normalizeChartResolution,
+} from "../../../components/chart/chart-resolution";
 import { getSharedRegistry } from "../../registry";
 
 type DetailTabSummary = { id: string; name: string; order: number };
@@ -14,6 +19,8 @@ export interface TickerDetailPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
   chartAxisMode: ChartAxisMode;
+  chartRangePreset: TimeRange;
+  chartResolution: ReturnType<typeof normalizeChartResolution>;
 }
 
 export function getTickerDetailPaneSettings(
@@ -23,6 +30,17 @@ export function getTickerDetailPaneSettings(
     hideTabs: settings?.hideTabs === true,
     lockedTabId: typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
     chartAxisMode: settings?.chartAxisMode === "percent" ? "percent" : "price",
+    chartRangePreset: settings?.chartRangePreset === "1D"
+      || settings?.chartRangePreset === "1W"
+      || settings?.chartRangePreset === "1M"
+      || settings?.chartRangePreset === "3M"
+      || settings?.chartRangePreset === "6M"
+      || settings?.chartRangePreset === "1Y"
+      || settings?.chartRangePreset === "5Y"
+      || settings?.chartRangePreset === "ALL"
+      ? settings.chartRangePreset
+      : DEFAULT_TICKER_CHART_RANGE_PRESET,
+    chartResolution: normalizeChartResolution(settings?.chartResolution, DEFAULT_TICKER_CHART_RESOLUTION),
   };
 }
 

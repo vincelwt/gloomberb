@@ -172,6 +172,8 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       settings: {
         hideTabs: false,
         lockedTabId: "overview",
+        chartRangePreset: "5Y",
+        chartResolution: "1wk",
       },
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
     },

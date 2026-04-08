@@ -11,4 +11,30 @@ describe("YahooFinanceClient exchange aliases", () => {
     const provider = new YahooFinanceClient() as any;
     expect(provider.getSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
   });
+
+  test("reports its manual chart resolution capabilities", () => {
+    const provider = new YahooFinanceClient();
+    expect(provider.getChartResolutionCapabilities()).toEqual(["5m", "15m", "1h", "1d", "1wk", "1mo"]);
+  });
+
+  test("maps manual resolution requests to yahoo chart range plus interval", async () => {
+    const provider = new YahooFinanceClient() as any;
+    let request: { symbol: string; range: string; interval: string } | null = null;
+    provider.fetchChart = async (symbol: string, range: string, interval: string) => {
+      request = { symbol, range, interval };
+      return {
+        meta: { currency: "USD" },
+        history: [{ date: new Date("2026-03-30T00:00:00Z"), close: 200 }],
+      };
+    };
+
+    const history = await provider.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "1wk");
+
+    expect(request).toEqual({
+      symbol: "AAPL",
+      range: "1y",
+      interval: "1wk",
+    });
+    expect(history[0]?.close).toBe(200);
+  });
 });

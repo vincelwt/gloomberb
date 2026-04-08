@@ -78,22 +78,21 @@ export function getVisibleWindow(
   viewState: ChartViewState,
   chartWidth: number,
 ): VisibleWindow {
-  const filtered = filterByTimeRange(history, viewState.timeRange);
-  if (filtered.length === 0) {
+  if (history.length === 0) {
     return { points: [], startIdx: 0, endIdx: 0 };
   }
 
-  const visibleCount = getVisiblePointCount(filtered.length, viewState.zoomLevel);
+  const visibleCount = getVisiblePointCount(history.length, viewState.zoomLevel);
 
   // Clamp pan offset
-  const maxPan = Math.max(filtered.length - visibleCount, 0);
+  const maxPan = Math.max(history.length - visibleCount, 0);
   const pan = Math.min(Math.max(viewState.panOffset, 0), maxPan);
 
-  const endIdx = filtered.length - pan;
+  const endIdx = history.length - pan;
   const startIdx = Math.max(endIdx - visibleCount, 0);
 
   return {
-    points: filtered.slice(startIdx, endIdx),
+    points: history.slice(startIdx, endIdx),
     startIdx,
     endIdx,
   };

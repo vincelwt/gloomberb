@@ -98,6 +98,34 @@ export const ibkrBroker: BrokerAdapter = {
     return ibkrGatewayManager.getService(instance.id).getPriceHistory(ticker, normalized.gateway, exchange, range, instrument);
   },
 
+  getChartResolutionSupport(ticker, instance, exchange, instrument) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    if (normalized.connectionMode !== "gateway") {
+      throw new Error("Gateway mode is required for broker history");
+    }
+    return ibkrGatewayManager.getService(instance.id).getChartResolutionSupport(
+      ticker,
+      normalized.gateway,
+      exchange,
+      instrument,
+    );
+  },
+
+  async getPriceHistoryForResolution(ticker, instance, exchange, bufferRange, resolution, instrument) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    if (normalized.connectionMode !== "gateway") {
+      throw new Error("Gateway mode is required for broker history");
+    }
+    return ibkrGatewayManager.getService(instance.id).getPriceHistoryForResolution(
+      ticker,
+      normalized.gateway,
+      exchange,
+      bufferRange,
+      resolution,
+      instrument,
+    );
+  },
+
   async getDetailedPriceHistory(ticker, instance, exchange, startDate, endDate, barSize, instrument) {
     const normalized = normalizeIbkrConfig(instance.config);
     if (normalized.connectionMode !== "gateway") {

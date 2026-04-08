@@ -51,8 +51,9 @@ export function buildChartKey(request: ChartRequest): string {
   return [
     "chart",
     buildInstrumentKey(request.instrument),
-    request.range,
-    request.granularity ?? "daily",
+    request.bufferRange,
+    request.granularity ?? "range",
+    request.resolution ?? "",
     request.startDate ? request.startDate.toISOString() : "",
     request.endDate ? request.endDate.toISOString() : "",
     request.barSize ?? "",

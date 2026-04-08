@@ -26,6 +26,11 @@ afterEach(() => {
 });
 
 describe("GloomberbCloudProvider", () => {
+  test("reports its manual chart resolution capabilities", () => {
+    const provider = new GloomberbCloudProvider();
+    expect(provider.getChartResolutionCapabilities()).toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "1d", "1wk", "1mo"]);
+  });
+
   test("fetches detailed intraday chart history with Twelve Data intervals", async () => {
     apiClient.ensureVerifiedSession = async () => verifiedUser;
 
@@ -89,6 +94,30 @@ describe("GloomberbCloudProvider", () => {
       startDate: "2026-01-01",
       endDate: "2026-03-27",
     });
+  });
+
+  test("fetches fixed-resolution chart history with the requested interval", async () => {
+    apiClient.ensureVerifiedSession = async () => verifiedUser;
+
+    let requestArgs: Record<string, string | number | undefined> | null = null;
+    apiClient.getCloudHistory = async (_symbol, _exchange, params = {}) => {
+      requestArgs = params;
+      return {
+        status: "success",
+        data: [{
+          date: "2026-03-27",
+          close: 250.12,
+        }],
+      };
+    };
+
+    const provider = new GloomberbCloudProvider();
+    const history = await provider.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "1wk");
+
+    expect(requestArgs?.interval).toBe("1week");
+    expect(requestArgs?.startDate).toBeDefined();
+    expect(requestArgs?.endDate).toBeDefined();
+    expect(history[0]?.close).toBe(250.12);
   });
 
   test("normalizes sub-unit cloud quotes to their main currency", async () => {

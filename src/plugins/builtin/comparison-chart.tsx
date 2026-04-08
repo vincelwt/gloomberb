@@ -1,7 +1,12 @@
 import { useCallback, useMemo } from "react";
 import { EmptyState } from "../../components";
 import { ComparisonStockChart } from "../../components/chart/comparison-stock-chart";
-import type { ChartAxisMode } from "../../components/chart/chart-types";
+import type { ChartAxisMode, TimeRange } from "../../components/chart/chart-types";
+import {
+  DEFAULT_COMPARISON_CHART_RANGE_PRESET,
+  DEFAULT_COMPARISON_CHART_RESOLUTION,
+  normalizeChartResolution,
+} from "../../components/chart/chart-resolution";
 import { getSharedRegistry } from "../../plugins/registry";
 import { useAppState } from "../../state/app-context";
 import { colors } from "../../theme/colors";
@@ -13,6 +18,8 @@ export const COMPARISON_CHART_TEMPLATE_ID = "comparison-chart-pane";
 
 interface ComparisonChartPaneSettings {
   axisMode: ChartAxisMode;
+  rangePreset: TimeRange;
+  chartResolution: ReturnType<typeof normalizeChartResolution>;
   symbols: string[];
   symbolsText: string;
 }
@@ -46,6 +53,17 @@ export function getComparisonChartPaneSettings(settings: Record<string, unknown>
 
   return {
     axisMode: isChartAxisMode(settings?.axisMode) ? settings.axisMode : "price",
+    rangePreset: settings?.rangePreset === "1D"
+      || settings?.rangePreset === "1W"
+      || settings?.rangePreset === "1M"
+      || settings?.rangePreset === "3M"
+      || settings?.rangePreset === "6M"
+      || settings?.rangePreset === "1Y"
+      || settings?.rangePreset === "5Y"
+      || settings?.rangePreset === "ALL"
+      ? settings.rangePreset
+      : DEFAULT_COMPARISON_CHART_RANGE_PRESET,
+    chartResolution: normalizeChartResolution(settings?.chartResolution, DEFAULT_COMPARISON_CHART_RESOLUTION),
     symbols,
     symbolsText: storedText.trim().length > 0 ? storedText : formatTickerListInput(symbols),
   };
@@ -159,6 +177,8 @@ export const comparisonChartPlugin: GloomPlugin = {
           placement: "floating",
           settings: {
             axisMode: "percent",
+            rangePreset: DEFAULT_COMPARISON_CHART_RANGE_PRESET,
+            chartResolution: DEFAULT_COMPARISON_CHART_RESOLUTION,
             symbols,
             symbolsText: formatTickerListInput(symbols),
           },

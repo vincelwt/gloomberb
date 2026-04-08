@@ -25,6 +25,11 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { firstValueFrom, filter, take, timeout } from "rxjs";
 import type { TimeRange } from "../../components/chart/chart-types";
+import {
+  normalizeChartResolutionSupport,
+  type ChartResolutionSupport,
+  type ManualChartResolution,
+} from "../../components/chart/chart-resolution";
 import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
 import type { QuoteSubscriptionTarget } from "../../types/data-provider";
 import type { Fundamentals, FinancialStatement, Quote, PricePoint, TickerFinancials } from "../../types/financials";
@@ -290,6 +295,7 @@ const IBKR_DATA_TIMEOUT = 8_000;
 const IBKR_QUOTE_STREAM_TICKS = "165,221,233";
 
 const HISTORY_PARAMS: Record<TimeRange, { duration: string; size: BarSizeSetting }> = {
+  "1D": { duration: "1 D", size: BarSizeSetting.MINUTES_FIVE },
   "1W": { duration: "7 D", size: BarSizeSetting.HOURS_ONE },
   "1M": { duration: "1 M", size: BarSizeSetting.HOURS_ONE },
   "3M": { duration: "3 M", size: BarSizeSetting.DAYS_ONE },
@@ -299,6 +305,17 @@ const HISTORY_PARAMS: Record<TimeRange, { duration: string; size: BarSizeSetting
   "ALL": { duration: "10 Y", size: BarSizeSetting.MONTHS_ONE },
 };
 
+const IBKR_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
+  { resolution: "1m", maxRange: "1W" },
+  { resolution: "5m", maxRange: "1M" },
+  { resolution: "15m", maxRange: "3M" },
+  { resolution: "30m", maxRange: "6M" },
+  { resolution: "1h", maxRange: "1Y" },
+  { resolution: "1d", maxRange: "ALL" },
+  { resolution: "1wk", maxRange: "ALL" },
+  { resolution: "1mo", maxRange: "ALL" },
+]);
+
 /** Map generic bar size labels to IBKR BarSizeSetting values. */
 const GENERIC_BAR_SIZE_MAP: Record<string, BarSizeSetting> = {
   "1m": BarSizeSetting.MINUTES_ONE,
@@ -307,7 +324,8 @@ const GENERIC_BAR_SIZE_MAP: Record<string, BarSizeSetting> = {
   "30m": BarSizeSetting.MINUTES_THIRTY,
   "1h": BarSizeSetting.HOURS_ONE,
   "1d": BarSizeSetting.DAYS_ONE,
-  "1w": BarSizeSetting.WEEKS_ONE,
+  "1wk": BarSizeSetting.WEEKS_ONE,
+  "1mo": BarSizeSetting.MONTHS_ONE,
 };
 
 export function parseIbkrHistoricalBarTime(value: string | number): Date {
@@ -1033,6 +1051,67 @@ export class IbkrGatewayService {
           "",
           params.duration,
           params.size,
+          WhatToShow.TRADES,
+          1,
+          1,
+        ), IBKR_DATA_TIMEOUT, "getHistoricalData"),
+      );
+      const details = await detailsPromise;
+      const priceDivisor = getIbkrPriceDivisor(contract, details);
+
+      return bars.map((bar) => ({
+        date: parseIbkrHistoricalBarTime(bar.time),
+        open: normalizeIbkrPriceValue(bar.open, priceDivisor),
+        high: normalizeIbkrPriceValue(bar.high, priceDivisor),
+        low: normalizeIbkrPriceValue(bar.low, priceDivisor),
+        close: normalizeIbkrPriceValue(bar.close ?? bar.open ?? bar.high ?? bar.low ?? 0, priceDivisor) ?? 0,
+        volume: bar.volume,
+      }));
+    });
+  }
+
+  getChartResolutionSupport(
+    _ticker: string,
+    _config: IbkrGatewayConfig,
+    _exchange?: string,
+    _instrument?: BrokerContractRef | null,
+  ): ChartResolutionSupport[] {
+    return IBKR_RESOLUTION_SUPPORT;
+  }
+
+  getChartResolutionCapabilities(
+    _ticker: string,
+    _config: IbkrGatewayConfig,
+    _exchange?: string,
+    _instrument?: BrokerContractRef | null,
+  ): ManualChartResolution[] {
+    return IBKR_RESOLUTION_SUPPORT.map((entry) => entry.resolution);
+  }
+
+  async getPriceHistoryForResolution(
+    ticker: string,
+    config: IbkrGatewayConfig,
+    exchange: string,
+    bufferRange: TimeRange,
+    resolution: ManualChartResolution,
+    instrument?: BrokerContractRef | null,
+  ): Promise<PricePoint[]> {
+    const ibkrBarSize = GENERIC_BAR_SIZE_MAP[resolution];
+    if (!ibkrBarSize) return [];
+
+    return this.dedup(`history:${ticker}:${exchange}:${bufferRange}:${resolution}`, async () => {
+      await this.connect(config);
+      const contract = await withTimeout(this.resolveContract(ticker, exchange, instrument ?? null), IBKR_DATA_TIMEOUT, "resolveContract");
+      const params = HISTORY_PARAMS[bufferRange];
+      const detailsPromise = withTimeout(this.getPrimaryContractDetails(contract), IBKR_DATA_TIMEOUT, "getContractDetails")
+        .catch(() => undefined);
+      const bars = await this.withMarketDataFallback(
+        config,
+        () => withTimeout(this.api!.getHistoricalData(
+          contract,
+          "",
+          params.duration,
+          ibkrBarSize,
           WhatToShow.TRADES,
           1,
           1,

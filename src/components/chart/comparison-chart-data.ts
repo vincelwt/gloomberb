@@ -7,7 +7,7 @@ import type {
   TimeRange,
 } from "./chart-types";
 import { RANGE_DAYS } from "./chart-types";
-import { clampChartZoom, getVisiblePointCount } from "./chart-viewport";
+import { getVisiblePointCount, resolveAnchoredChartZoom } from "./chart-viewport";
 
 export interface ComparisonProjectedPoint {
   date: Date;
@@ -97,23 +97,21 @@ function getUniqueSortedDates(series: ComparisonChartSeries[]): Date[] {
 
 export function getMaxComparisonPanOffset(
   series: ComparisonChartSeries[],
-  timeRange: TimeRange,
+  _timeRange: TimeRange,
   zoomLevel: number,
   chartWidth: number,
 ): number {
-  const filtered = filterComparisonSeriesByTimeRange(series, timeRange);
-  const dates = getUniqueSortedDates(filtered);
+  const dates = getUniqueSortedDates(series);
   const visibleCount = getVisiblePointCount(dates.length, zoomLevel);
   return Math.max(dates.length - visibleCount, 0);
 }
 
 export function getVisibleComparisonWindow(
   series: ComparisonChartSeries[],
-  viewState: Pick<ComparisonChartViewState, "timeRange" | "panOffset" | "zoomLevel">,
+  viewState: Pick<ComparisonChartViewState, "panOffset" | "zoomLevel">,
   chartWidth: number,
 ): ComparisonVisibleWindow {
-  const filtered = filterComparisonSeriesByTimeRange(series, viewState.timeRange);
-  const dates = getUniqueSortedDates(filtered);
+  const dates = getUniqueSortedDates(series);
 
   if (dates.length === 0) {
     return { dates: [], startIdx: 0, endIdx: 0, totalDates: 0 };
@@ -138,26 +136,21 @@ export function applyComparisonZoomAroundAnchor(
   nextZoomLevel: number,
   anchorRatio: number,
   series: ComparisonChartSeries[],
-  chartWidth: number,
 ): ComparisonChartViewState {
-  const filtered = filterComparisonSeriesByTimeRange(series, view.timeRange);
-  const dates = getUniqueSortedDates(filtered);
+  const dates = getUniqueSortedDates(series);
   if (dates.length === 0) return view;
 
-  const clampedZoom = clampChartZoom(dates.length, nextZoomLevel);
-  const currentVisibleCount = getVisiblePointCount(dates.length, view.zoomLevel);
-  const nextVisibleCount = getVisiblePointCount(dates.length, clampedZoom);
-  const currentPanOffset = clamp(view.panOffset, 0, Math.max(dates.length - currentVisibleCount, 0));
-  const ratio = clamp(anchorRatio, 0, 1);
-  const anchorIndex = dates.length - currentPanOffset - currentVisibleCount + ratio * Math.max(currentVisibleCount - 1, 0);
-  const nextStart = Math.round(anchorIndex - ratio * Math.max(nextVisibleCount - 1, 0));
-  const clampedStart = clamp(nextStart, 0, Math.max(dates.length - nextVisibleCount, 0));
-  const nextPanOffset = dates.length - nextVisibleCount - clampedStart;
+  const nextZoom = resolveAnchoredChartZoom(
+    dates.length,
+    view.zoomLevel,
+    view.panOffset,
+    nextZoomLevel,
+    anchorRatio,
+  );
 
   return {
     ...view,
-    zoomLevel: clampedZoom,
-    panOffset: clamp(nextPanOffset, 0, Math.max(dates.length - nextVisibleCount, 0)),
+    ...nextZoom,
   };
 }
 
@@ -231,17 +224,17 @@ export function resolveComparisonAxisMode(
 export function projectComparisonChartData(
   series: ComparisonChartSeries[],
   chartWidth: number,
-  viewState: Pick<ComparisonChartViewState, "timeRange" | "panOffset" | "zoomLevel" | "renderMode">,
+  viewState: Pick<ComparisonChartViewState, "panOffset" | "zoomLevel" | "renderMode">,
   requestedAxisMode: ChartAxisMode,
 ): ComparisonChartProjection {
-  const filteredSeries = filterComparisonSeriesByTimeRange(series, viewState.timeRange);
-  const window = getVisibleComparisonWindow(filteredSeries, viewState, chartWidth);
-  const axisResolution = resolveComparisonAxisMode(requestedAxisMode, filteredSeries, window.dates);
+  const normalizedSeries = series.map((entry) => ({ ...entry, points: normalizeSeriesPoints(entry.points) }));
+  const window = getVisibleComparisonWindow(normalizedSeries, viewState, chartWidth);
+  const axisResolution = resolveComparisonAxisMode(requestedAxisMode, normalizedSeries, window.dates);
   const requestedMode = normalizeComparisonMode(viewState.renderMode);
   if (window.dates.length === 0) {
     return {
       dates: [],
-      series: filteredSeries.map((entry) => ({
+      series: normalizedSeries.map((entry) => ({
         symbol: entry.symbol,
         color: entry.color,
         fillColor: entry.fillColor,
@@ -261,7 +254,7 @@ export function projectComparisonChartData(
   const bucketCount = Math.min(Math.max(chartWidth, 1), Math.max(window.dates.length, 1));
   const bucketSize = window.dates.length > 0 ? window.dates.length / bucketCount : 1;
 
-  const projectedSeries = filteredSeries.map((entry) => {
+  const projectedSeries = normalizedSeries.map((entry) => {
     const rawByDate = buildSeriesMap(entry.points);
     const visibleRawValues = window.dates
       .map((date) => rawByDate.get(date.getTime()) ?? null)

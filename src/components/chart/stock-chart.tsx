@@ -1,14 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useAppState, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
+import { useAppState, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
 import { saveConfig } from "../../data/config-store";
+import { getSharedDataProvider } from "../../plugins/registry";
 import { colors, priceColor } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
-import { useChartQuery, useResolvedEntryValue } from "../../market-data/hooks";
+import { useChartQuery } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
-import { filterByTimeRange, getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
-import { clampChartZoom, getVisiblePointCount } from "./chart-viewport";
+import { usePersistChartControlSelection } from "./chart-pane-settings";
+import { getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
+import {
+  buildVisibleDateWindow,
+  clearActivePreset,
+  formatVisibleSpanLabel,
+  getCanonicalZoomLevel,
+  getPointDates,
+  isCanonicalPresetViewport,
+  resolveChartBodyState,
+  resolvePresetSelection,
+  resolvePresetSelectionWithResolution,
+  resolveResolutionSelection,
+  resolveStoredChartSelection,
+} from "./chart-controller";
+import {
+  buildChartResolutionSupportMap,
+  clampTimeRangeToMaxRange,
+  DEFAULT_TICKER_CHART_RANGE_PRESET,
+  DEFAULT_TICKER_CHART_RESOLUTION,
+  DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS,
+  getBestSupportedResolutionForPreset,
+  getChartResolutionLabel,
+  getNextFallbackResolution,
+  getNextBufferRange,
+  getPresetResolution,
+  getSupportMaxRange,
+  isRangePresetSupported,
+  normalizeChartResolutionSupport,
+  sortChartResolutions,
+  type ChartResolutionSupport,
+  type ManualChartResolution,
+} from "./chart-resolution";
+import {
+  getVisiblePointCount,
+  RIGHT_EDGE_ANCHOR_RATIO,
+  resolveAnchoredChartZoom,
+} from "./chart-viewport";
 import {
   buildChartScene,
   formatDateShort,
@@ -30,6 +67,7 @@ import {
   TIME_RANGES,
   type ChartAxisMode,
   type ChartRenderMode,
+  type ChartResolution,
   type ChartViewState,
   type ResolvedChartRenderer,
 } from "./chart-types";
@@ -77,6 +115,11 @@ interface DragState {
   startGlobalX: number;
   startPanOffset: number;
 }
+
+type PendingExpansionAction =
+  | { kind: "zoom-out"; targetVisibleCount: number; anchorRatio: number }
+  | { kind: "pan-left"; targetPanOffset: number }
+  | null;
 
 interface ChartMouseEvent {
   x: number;
@@ -400,10 +443,9 @@ function formatAxisCell(label: string | null, width: number): string {
   return label.length >= width ? label.slice(0, width) : label.padStart(width);
 }
 
-function getMaxPanOffset(history: PricePoint[], timeRange: ChartViewState["timeRange"], zoomLevel: number, chartWidth: number): number {
-  const filtered = filterByTimeRange(history, timeRange);
-  const visibleCount = getVisiblePointCount(filtered.length, zoomLevel);
-  return Math.max(filtered.length - visibleCount, 0);
+function getMaxPanOffset(history: PricePoint[], zoomLevel: number): number {
+  const visibleCount = getVisiblePointCount(history.length, zoomLevel);
+  return Math.max(history.length - visibleCount, 0);
 }
 
 function applyZoomAroundAnchor(
@@ -411,25 +453,20 @@ function applyZoomAroundAnchor(
   nextZoomLevel: number,
   anchorRatio: number,
   history: PricePoint[],
-  chartWidth: number,
 ): ChartViewState {
-  const filtered = filterByTimeRange(history, view.timeRange);
-  if (filtered.length === 0) return view;
+  if (history.length === 0) return view;
 
-  const clampedZoom = clampChartZoom(filtered.length, nextZoomLevel);
-  const currentVisibleCount = getVisiblePointCount(filtered.length, view.zoomLevel);
-  const nextVisibleCount = getVisiblePointCount(filtered.length, clampedZoom);
-  const currentPanOffset = clamp(view.panOffset, 0, Math.max(filtered.length - currentVisibleCount, 0));
-  const ratio = clamp(anchorRatio, 0, 1);
-  const anchorIndex = filtered.length - currentPanOffset - currentVisibleCount + ratio * Math.max(currentVisibleCount - 1, 0);
-  const nextStart = Math.round(anchorIndex - ratio * Math.max(nextVisibleCount - 1, 0));
-  const clampedStart = clamp(nextStart, 0, Math.max(filtered.length - nextVisibleCount, 0));
-  const nextPanOffset = filtered.length - nextVisibleCount - clampedStart;
+  const nextZoom = resolveAnchoredChartZoom(
+    history.length,
+    view.zoomLevel,
+    view.panOffset,
+    nextZoomLevel,
+    anchorRatio,
+  );
 
   return {
-    ...view,
-    zoomLevel: clampedZoom,
-    panOffset: clamp(nextPanOffset, 0, Math.max(filtered.length - nextVisibleCount, 0)),
+    ...clearActivePreset(view),
+    ...nextZoom,
   };
 }
 
@@ -524,14 +561,21 @@ export function StockChart({
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
   const defaultRenderMode = state.config.chartPreferences.defaultRenderMode;
   const preferredRenderer = state.config.chartPreferences.renderer;
+  const [storedRangePreset] = usePaneSettingValue("chartRangePreset", DEFAULT_TICKER_CHART_RANGE_PRESET);
+  const [storedResolution] = usePaneSettingValue<ChartResolution>("chartResolution", DEFAULT_TICKER_CHART_RESOLUTION);
+  const persistChartControls = usePersistChartControlSelection("chartRangePreset");
   const [viewState, setViewState] = useState<ChartViewState>({
-    timeRange: compact ? "1Y" : "5Y",
+    presetRange: compact ? "1Y" : storedRangePreset,
+    bufferRange: compact ? "1Y" : storedRangePreset,
+    activePreset: compact ? null : storedRangePreset,
+    resolution: compact ? "auto" : storedResolution,
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,
     cursorY: null,
     renderMode: defaultRenderMode,
   });
+  const [resolutionSupport, setResolutionSupport] = useState<ChartResolutionSupport[] | null>(null);
   const [showVolume, setShowVolume] = useState(!compact);
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
@@ -546,6 +590,9 @@ export function StockChart({
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
   const animationFrameRef = useRef<number | null>(null);
+  const pendingCanonicalResetRef = useRef(1);
+  const appliedCanonicalResetRef = useRef(0);
+  const pendingExpansionRef = useRef<PendingExpansionAction>(null);
 
   const commitDisplayCursor = (next: DisplayCursorState) => {
     displayCursorRef.current = next;
@@ -631,16 +678,107 @@ export function StockChart({
     () => instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null),
     [ticker],
   );
+  const capabilityKey = instrumentRef ? [
+    instrumentRef.symbol,
+    instrumentRef.exchange ?? "",
+    instrumentRef.brokerId ?? "",
+    instrumentRef.brokerInstanceId ?? "",
+    instrumentRef.instrument?.conId ?? "",
+  ].join("|") : null;
+
+  useEffect(() => {
+    if (compact) return;
+    pendingCanonicalResetRef.current += 1;
+    setViewState((current) => {
+      const nextState = resolvePresetSelection(
+        {
+          ...current,
+          resolution: storedResolution,
+        },
+        storedRangePreset,
+        storedResolution === "auto" ? null : getSupportMaxRange(resolutionSupport ?? [], storedResolution),
+      );
+      return nextState;
+    });
+    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+  }, [compact, resolutionSupport, storedRangePreset, storedResolution]);
+
+  useEffect(() => {
+    if (compact || !instrumentRef) {
+      setResolutionSupport(null);
+      return;
+    }
+    const provider = getSharedDataProvider();
+    if (!provider?.getChartResolutionSupport && !provider?.getChartResolutionCapabilities) {
+      setResolutionSupport(null);
+      return;
+    }
+
+    let cancelled = false;
+    setResolutionSupport(null);
+    Promise.resolve(provider.getChartResolutionSupport
+      ? provider.getChartResolutionSupport(
+        instrumentRef.symbol,
+        instrumentRef.exchange ?? "",
+        {
+          brokerId: instrumentRef.brokerId,
+          brokerInstanceId: instrumentRef.brokerInstanceId,
+          instrument: instrumentRef.instrument ?? null,
+        },
+      )
+      : normalizeChartResolutionSupport(
+        (provider.getChartResolutionCapabilities?.(
+          instrumentRef.symbol,
+          instrumentRef.exchange ?? "",
+          {
+            brokerId: instrumentRef.brokerId,
+            brokerInstanceId: instrumentRef.brokerInstanceId,
+            instrument: instrumentRef.instrument ?? null,
+          },
+        ) ?? []).map((resolution) => ({ resolution, maxRange: "ALL" })),
+      )
+    ).then((support) => {
+      if (!cancelled) {
+        setResolutionSupport(support);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setResolutionSupport(null);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [capabilityKey, compact, instrumentRef]);
+
+  const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
+  const effectiveResolutionSupport = useMemo<ChartResolutionSupport[]>(() => (
+    resolutionSupport ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS.map((resolution) => ({ resolution, maxRange: "ALL" as const }))
+  ), [resolutionSupport]);
+  const availableManualResolutions = resolutionSupport?.map((entry) => entry.resolution) ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS;
+  const effectiveResolution: ChartResolution = !compact
+    && viewState.resolution !== "auto"
+    && resolutionSupport !== null
+    && !supportMap.has(viewState.resolution)
+    ? "auto"
+    : viewState.resolution;
+  const resolutionChips = useMemo(
+    () => sortChartResolutions(["auto", ...availableManualResolutions] as ChartResolution[]),
+    [availableManualResolutions],
+  );
+
   const baseChartEntry = useChartQuery(
     !compact && instrumentRef
       ? {
         instrument: instrumentRef,
-        range: viewState.timeRange,
-        granularity: "daily",
+        bufferRange: viewState.bufferRange,
+        granularity: effectiveResolution === "auto" ? "range" : "resolution",
+        resolution: effectiveResolution === "auto" ? undefined : effectiveResolution,
       }
       : null,
   );
-  const rangeHistory = useResolvedEntryValue(baseChartEntry);
+  const baseBodyState = resolveChartBodyState(baseChartEntry, (value) => Array.isArray(value) && value.length > 0, "No price history available.");
   const axisWidth = compact
     ? axisMode === "percent" ? 11 : 8
     : axisMode === "percent" ? 11 : 10;
@@ -648,12 +786,11 @@ export function StockChart({
   const chartWidth = Math.max(width - axisWidth - axisGap, compact ? 12 : 20);
   const maxCursorX = chartWidth - 1;
   const panStep = Math.max(Math.floor(chartWidth / 10), 1);
-  const baseHistory = historyOverride
-    ?? (rangeHistory && rangeHistory.length > 0
-      ? rangeHistory
-      : (financials?.priceHistory ?? []));
+  const baseHistory = compact
+    ? (historyOverride ?? financials?.priceHistory ?? [])
+    : (baseBodyState.data ?? []);
   const detailRequest = useMemo(() => {
-    if (compact || !instrumentRef || baseHistory.length < 2 || viewState.zoomLevel <= 1) return null;
+    if (compact || effectiveResolution !== "auto" || !instrumentRef || baseHistory.length < 2 || viewState.zoomLevel <= 1) return null;
     const window = getVisibleWindow(baseHistory, viewState, chartWidth);
     if (window.points.length < 2) return null;
 
@@ -666,17 +803,70 @@ export function StockChart({
 
     return {
       instrument: instrumentRef,
-      range: viewState.timeRange,
+      bufferRange: viewState.bufferRange,
       granularity: "detail" as const,
       startDate,
       endDate,
       barSize,
     };
-  }, [baseHistory, chartWidth, compact, instrumentRef, viewState]);
+  }, [baseHistory, chartWidth, compact, effectiveResolution, instrumentRef, viewState]);
   const detailChartEntry = useChartQuery(detailRequest);
-  const detailHistory = useResolvedEntryValue(detailChartEntry);
+  const detailBodyState = resolveChartBodyState(detailChartEntry, (value) => Array.isArray(value) && value.length > 0, "No price history available.");
+  const history = (effectiveResolution === "auto" && viewState.zoomLevel > 1 && detailBodyState.data) ? detailBodyState.data : baseHistory;
+  const baseHistoryDates = useMemo(() => getPointDates(baseHistory), [baseHistory]);
+  const visibleDateWindow = useMemo(() => buildVisibleDateWindow(baseHistoryDates, viewState.panOffset, viewState.zoomLevel), [baseHistoryDates, viewState.panOffset, viewState.zoomLevel]);
+  const activePreset = compact || !isCanonicalPresetViewport(baseHistoryDates, {
+    activePreset: viewState.activePreset,
+    panOffset: viewState.panOffset,
+    zoomLevel: viewState.zoomLevel,
+    resolution: effectiveResolution,
+  })
+    ? null
+    : viewState.activePreset;
 
-  const history = (viewState.zoomLevel > 1 && detailHistory) ? detailHistory : baseHistory;
+  useEffect(() => {
+    if (compact || baseHistoryDates.length === 0) return;
+
+    if (appliedCanonicalResetRef.current < pendingCanonicalResetRef.current) {
+      const canonicalZoom = getCanonicalZoomLevel(baseHistoryDates, viewState.presetRange);
+      appliedCanonicalResetRef.current = pendingCanonicalResetRef.current;
+      setViewState((current) => (
+        current.zoomLevel === canonicalZoom && current.panOffset === 0
+          ? current
+          : {
+            ...current,
+            zoomLevel: canonicalZoom,
+            panOffset: 0,
+            cursorX: null,
+            cursorY: null,
+          }
+      ));
+      return;
+    }
+
+    if (!pendingExpansionRef.current) return;
+    const pendingExpansion = pendingExpansionRef.current;
+    pendingExpansionRef.current = null;
+    setViewState((current) => {
+      if (pendingExpansion.kind === "zoom-out") {
+        const nextVisibleCount = Math.min(baseHistoryDates.length, Math.max(pendingExpansion.targetVisibleCount, 1));
+        return {
+          ...current,
+          ...resolveAnchoredChartZoom(
+            baseHistoryDates.length,
+            1,
+            0,
+            baseHistoryDates.length / nextVisibleCount,
+            pendingExpansion.anchorRatio,
+          ),
+        };
+      }
+      return {
+        ...current,
+        panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxPanOffset(baseHistory, current.zoomLevel)),
+      };
+    });
+  }, [baseHistory, baseHistoryDates, compact, viewState.presetRange]);
 
   useEffect(() => {
     if (interactive) {
@@ -727,16 +917,43 @@ export function StockChart({
     saveConfig(nextConfig).catch(() => {});
   };
 
-  const setRange = (range: ChartViewState["timeRange"]) => {
-    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+  const expandBufferRange = (action: PendingExpansionAction): boolean => {
+    if (compact) return false;
+    const nextCandidate = getNextBufferRange(viewState.bufferRange);
+    const nextBufferRange = effectiveResolution === "auto"
+      ? nextCandidate
+      : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(effectiveResolution) ?? viewState.bufferRange);
+    if (nextBufferRange === viewState.bufferRange) return false;
+    pendingExpansionRef.current = action;
     setViewState((current) => ({
-      ...current,
-      timeRange: range,
-      panOffset: 0,
-      zoomLevel: 1,
+      ...clearActivePreset(current),
+      bufferRange: nextBufferRange,
       cursorX: null,
       cursorY: null,
     }));
+    return true;
+  };
+
+  const setRange = (range: TimeRange) => {
+    if (!compact && !isRangePresetSupported(range, effectiveResolutionSupport)) return;
+    const supportMaxRange = getSupportMaxRange(effectiveResolutionSupport, getPresetResolution(range));
+    if (!compact) {
+      persistChartControls(range, getPresetResolution(range));
+    }
+    pendingCanonicalResetRef.current += 1;
+    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+    setViewState((current) => resolvePresetSelection(current, range, supportMaxRange));
+  };
+
+  const setResolution = (resolution: ChartResolution) => {
+    if (compact) return;
+    if (resolution !== "auto" && !availableManualResolutions.includes(resolution)) return;
+    const nextState = resolveResolutionSelection(viewState, resolution, supportMap, visibleDateWindow);
+    if (!nextState) return;
+    pendingCanonicalResetRef.current += 1;
+    persistChartControls(nextState.presetRange, resolution);
+    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+    setViewState(nextState);
   };
 
   const setRenderMode = (mode: ChartRenderMode) => {
@@ -744,12 +961,12 @@ export function StockChart({
     setViewState((current) => ({ ...current, renderMode: mode }));
   };
 
-  const headerRows = compact ? 0 : 3;
+  const headerRows = compact ? 0 : 4;
   const helpRow = compact ? 0 : 1;
   const timeAxisRow = 1;
   const volumeHeight = showVolume && !compact ? 3 : 0;
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
-  const isDetailView = viewState.zoomLevel > 1 && detailHistory != null && detailHistory.length > 0;
+  const isDetailView = effectiveResolution === "auto" && viewState.zoomLevel > 1 && !!detailBodyState.data?.length;
   const historyRenderKey = history.length === 0
     ? "empty"
     : [
@@ -770,7 +987,7 @@ export function StockChart({
     return isDetailView
       ? { points: history, startIdx: 0, endIdx: history.length }
       : getVisibleWindow(history, viewState, chartWidth);
-  }, [chartWidth, history, historyOverride, isDetailView, viewState.panOffset, viewState.timeRange, viewState.zoomLevel]);
+  }, [chartWidth, history, historyOverride, isDetailView, viewState.panOffset, viewState.zoomLevel]);
   const timeAxisDates = useMemo(
     () => chartWindow.points.map((point) => point.date),
     [chartWindow.points],
@@ -785,23 +1002,56 @@ export function StockChart({
 
     switch (event.name) {
       case "=":
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.5, 0.5, baseHistory, chartWidth));
+        setViewState((current) => applyZoomAroundAnchor(
+          current,
+          current.zoomLevel * 1.5,
+          RIGHT_EDGE_ANCHOR_RATIO,
+          baseHistory,
+        ));
         return;
       case "-":
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel / 1.5, 0.5, baseHistory, chartWidth));
+        if (viewState.zoomLevel <= 1.001 && expandBufferRange({
+          kind: "zoom-out",
+          targetVisibleCount: Math.round(baseHistory.length * 1.5),
+          anchorRatio: RIGHT_EDGE_ANCHOR_RATIO,
+        })) {
+          return;
+        }
+        setViewState((current) => applyZoomAroundAnchor(
+          current,
+          current.zoomLevel / 1.5,
+          RIGHT_EDGE_ANCHOR_RATIO,
+          baseHistory,
+        ));
         return;
       case "0":
+        pendingCanonicalResetRef.current += 1;
         updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-        setViewState((current) => ({ ...current, panOffset: 0, zoomLevel: 1, cursorX: null, cursorY: null }));
+        setViewState((current) => {
+          const nextState = resolveResolutionSelection(current, effectiveResolution, supportMap, visibleDateWindow) ?? current;
+          return {
+            ...nextState,
+            panOffset: 0,
+            zoomLevel: 1,
+            cursorX: null,
+            cursorY: null,
+          };
+        });
         return;
       case "v":
         setShowVolume((value) => !value);
         return;
       case "a":
-        setViewState((current) => ({ ...current, panOffset: current.panOffset + panStep }));
+        if (viewState.panOffset >= getMaxPanOffset(baseHistory, viewState.zoomLevel) && expandBufferRange({
+          kind: "pan-left",
+          targetPanOffset: viewState.panOffset + panStep,
+        })) {
+          return;
+        }
+        setViewState((current) => ({ ...clearActivePreset(current), panOffset: current.panOffset + panStep }));
         return;
       case "d":
-        setViewState((current) => ({ ...current, panOffset: Math.max(current.panOffset - panStep, 0) }));
+        setViewState((current) => ({ ...clearActivePreset(current), panOffset: Math.max(current.panOffset - panStep, 0) }));
         return;
       case "m":
         setViewState((current) => {
@@ -812,6 +1062,12 @@ export function StockChart({
           return { ...current, renderMode: nextMode };
         });
         return;
+      case "r": {
+        const currentIndex = resolutionChips.indexOf(effectiveResolution);
+        const nextResolution = resolutionChips[(currentIndex + 1) % resolutionChips.length] ?? "auto";
+        setResolution(nextResolution);
+        return;
+      }
     }
 
     if (event.name >= "1" && event.name <= "7") {
@@ -825,7 +1081,13 @@ export function StockChart({
     switch (event.name) {
       case "left":
         if (event.shift) {
-          setViewState((current) => ({ ...current, panOffset: current.panOffset + panStep }));
+          if (viewState.panOffset >= getMaxPanOffset(baseHistory, viewState.zoomLevel) && expandBufferRange({
+            kind: "pan-left",
+            targetPanOffset: viewState.panOffset + panStep,
+          })) {
+            return;
+          }
+          setViewState((current) => ({ ...clearActivePreset(current), panOffset: current.panOffset + panStep }));
         } else {
           cursorMotionKindRef.current = "discrete";
           setViewState((current) => {
@@ -845,10 +1107,10 @@ export function StockChart({
               chartWidth,
               projection.effectiveMode,
             );
-            const maxPan = getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth);
+            const maxPan = getMaxPanOffset(baseHistory, current.zoomLevel);
             if (currentIndex <= 0) {
               return {
-                ...current,
+                ...clearActivePreset(current),
                 cursorX: nextCursor,
                 cursorY: null,
                 panOffset: clamp(current.panOffset + 1, 0, maxPan),
@@ -860,7 +1122,7 @@ export function StockChart({
         return;
       case "right":
         if (event.shift) {
-          setViewState((current) => ({ ...current, panOffset: Math.max(current.panOffset - panStep, 0) }));
+          setViewState((current) => ({ ...clearActivePreset(current), panOffset: Math.max(current.panOffset - panStep, 0) }));
         } else {
           cursorMotionKindRef.current = "discrete";
           setViewState((current) => {
@@ -882,7 +1144,7 @@ export function StockChart({
             );
             if (currentIndex >= pointCount - 1) {
               return {
-                ...current,
+                ...clearActivePreset(current),
                 cursorX: nextCursor,
                 cursorY: null,
                 panOffset: Math.max(current.panOffset - 1, 0),
@@ -1266,10 +1528,7 @@ export function StockChart({
     rendererState.nativeReady,
   ]);
 
-  if (history.length === 0) {
-    return <text fg={colors.textDim}>No price history available.</text>;
-  }
-
+  const hasHistory = history.length > 0;
   const firstPrice = chartWindow.points[0]?.close ?? 0;
   const lastPrice = chartWindow.points[chartWindow.points.length - 1]?.close ?? 0;
   const change = lastPrice - firstPrice;
@@ -1278,9 +1537,21 @@ export function StockChart({
   const showOhlcSummary = projection.effectiveMode === "candles" || projection.effectiveMode === "ohlc";
   const hasSelectionCursor = selectionCursorX !== null;
   const hasDisplayCursor = displayCursorX !== null && displayCursorY !== null;
-  const displayPrice = hasSelectionCursor ? (selectionScene?.priceAtCursor ?? lastPrice) : lastPrice;
-  const displayChange = hasSelectionCursor ? (selectionScene?.changeAtCursor ?? change) : change;
-  const displayChangePct = hasSelectionCursor ? (selectionScene?.changePctAtCursor ?? changePct) : changePct;
+  const displayPrice = !hasHistory
+    ? null
+    : hasSelectionCursor
+      ? (selectionScene?.priceAtCursor ?? lastPrice)
+      : lastPrice;
+  const displayChange = !hasHistory
+    ? null
+    : hasSelectionCursor
+      ? (selectionScene?.changeAtCursor ?? change)
+      : change;
+  const displayChangePct = !hasHistory
+    ? null
+    : hasSelectionCursor
+      ? (selectionScene?.changePctAtCursor ?? changePct)
+      : changePct;
   const displayDate = hasSelectionCursor || showOhlcSummary
     ? (selectionScene?.dateAtCursor ? formatDateShort(selectionScene.dateAtCursor) : null)
     : null;
@@ -1289,6 +1560,15 @@ export function StockChart({
   const cursorAxisLabel = hasDisplayCursor && cursorRow !== null && crosshairPrice !== null
     ? formatAxisValue(crosshairPrice, axisMode, projection.points[0]?.close ?? 0, chartCurrency)
     : null;
+  const visibleLabel = formatVisibleSpanLabel({
+    start: chartWindow.points[0]?.date ? coerceChartDate(chartWindow.points[0].date as Date | string | number) : null,
+    end: chartWindow.points[chartWindow.points.length - 1]?.date
+      ? coerceChartDate(chartWindow.points[chartWindow.points.length - 1]!.date as Date | string | number)
+      : null,
+  });
+  const isBlockingBody = !compact && baseBodyState.blocking;
+  const bodyMessage = !compact ? (baseBodyState.errorMessage ?? baseBodyState.emptyMessage) : null;
+  const isUpdating = !compact && (baseBodyState.updating || (detailChartEntry?.phase === "refreshing" && !!detailBodyState.data?.length));
 
   const handlePlotMove = (event: ChartMouseEvent) => {
     if (!interactive || compact) return;
@@ -1352,16 +1632,15 @@ export function StockChart({
     }
     if (!dragRef.current) return;
 
-    const filtered = filterByTimeRange(baseHistory, viewState.timeRange);
-    const visibleCount = getVisiblePointCount(filtered.length, viewState.zoomLevel);
+    const visibleCount = getVisiblePointCount(baseHistory.length, viewState.zoomLevel);
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
     const pointDelta = Math.round((deltaCells / Math.max(chartWidth, 1)) * visibleCount);
     const nextPan = clamp(
       dragRef.current.startPanOffset - pointDelta,
       0,
-      Math.max(filtered.length - visibleCount, 0),
+      Math.max(baseHistory.length - visibleCount, 0),
     );
-    setViewState((current) => ({ ...current, panOffset: nextPan }));
+    setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
   };
 
   const handlePlotScroll = (event: ChartMouseEvent) => {
@@ -1390,39 +1669,59 @@ export function StockChart({
 
     if (event.modifiers.shift && (direction === "up" || direction === "down")) {
       const shiftDirection = direction === "up" ? 1 : -1;
+      const targetPanOffset = viewState.panOffset + shiftDirection * Math.max(Math.round(chartWidth * 0.08), 1);
+      if (shiftDirection > 0 && viewState.panOffset >= getMaxPanOffset(baseHistory, viewState.zoomLevel) && expandBufferRange({
+        kind: "pan-left",
+        targetPanOffset,
+      })) {
+        return;
+      }
       const nextPan = clamp(
-        viewState.panOffset + shiftDirection * Math.max(Math.round(chartWidth * 0.08), 1),
+        targetPanOffset,
         0,
-        getMaxPanOffset(baseHistory, viewState.timeRange, viewState.zoomLevel, chartWidth),
+        getMaxPanOffset(baseHistory, viewState.zoomLevel),
       );
-      setViewState((current) => ({ ...current, panOffset: nextPan }));
+      setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
       return;
     }
 
     switch (direction) {
       case "up":
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.18, anchorRatio, baseHistory, chartWidth));
+        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.18, anchorRatio, baseHistory));
         return;
       case "down":
-        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel / 1.18, anchorRatio, baseHistory, chartWidth));
+        if (viewState.zoomLevel <= 1.001 && expandBufferRange({
+          kind: "zoom-out",
+          targetVisibleCount: Math.round(baseHistory.length * 1.18),
+          anchorRatio,
+        })) {
+          return;
+        }
+        setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel / 1.18, anchorRatio, baseHistory));
         return;
       case "left":
+        if (viewState.panOffset >= getMaxPanOffset(baseHistory, viewState.zoomLevel) && expandBufferRange({
+          kind: "pan-left",
+          targetPanOffset: viewState.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
+        })) {
+          return;
+        }
         setViewState((current) => ({
-          ...current,
+          ...clearActivePreset(current),
           panOffset: clamp(
             current.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
             0,
-            getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth),
+            getMaxPanOffset(baseHistory, current.zoomLevel),
           ),
         }));
         return;
       case "right":
         setViewState((current) => ({
-          ...current,
+          ...clearActivePreset(current),
           panOffset: clamp(
             current.panOffset - Math.max(Math.round(chartWidth * 0.08), 1),
             0,
-            getMaxPanOffset(baseHistory, current.timeRange, current.zoomLevel, chartWidth),
+            getMaxPanOffset(baseHistory, current.zoomLevel),
           ),
         }));
         return;
@@ -1443,17 +1742,29 @@ export function StockChart({
       height={chartHeight}
       flexDirection="column"
       backgroundColor={chartColors.bgColor}
-      onMouseMove={compact ? undefined : handlePlotMove}
-      onMouseDown={compact ? undefined : handlePlotDown}
-      onMouseUp={compact ? undefined : () => { dragRef.current = null; }}
-      onMouseDrag={compact ? undefined : handlePlotDrag}
-      onMouseDragEnd={compact ? undefined : () => { dragRef.current = null; }}
-      onMouseOut={compact ? undefined : () => {
+      onMouseMove={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotMove}
+      onMouseDown={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotDown}
+      onMouseUp={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => { dragRef.current = null; }}
+      onMouseDrag={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotDrag}
+      onMouseDragEnd={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => { dragRef.current = null; }}
+      onMouseOut={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => {
         dragRef.current = null;
       }}
-      onMouseScroll={compact ? undefined : handlePlotScroll}
+      onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
     >
-      {plotContent}
+      {isBlockingBody
+        ? (
+          <box flexGrow={1} alignItems="center" justifyContent="center">
+            <text fg={colors.textDim}>Loading chart...</text>
+          </box>
+        )
+        : bodyMessage
+          ? (
+            <box flexGrow={1} alignItems="center" justifyContent="center">
+              <text fg={colors.textDim}>{bodyMessage}</text>
+            </box>
+          )
+          : plotContent}
     </box>
   );
 
@@ -1489,13 +1800,16 @@ export function StockChart({
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {ticker?.metadata.ticker ?? ""} - {viewState.timeRange}
+          {ticker?.metadata.ticker ?? ""} - {getChartResolutionLabel(effectiveResolution)}
         </text>
-        <text fg={priceColor(displayChange)}>
-          {formatCurrency(displayPrice, chartCurrency)}
+        <text fg={colors.textDim}>{visibleLabel}</text>
+        <text fg={displayChange !== null ? priceColor(displayChange) : colors.textDim}>
+          {displayPrice !== null ? formatCurrency(displayPrice, chartCurrency) : "—"}
         </text>
-        <text fg={priceColor(displayChange)}>
-          {displayChange >= 0 ? "+" : ""}{displayChange.toFixed(2)} ({displayChangePct >= 0 ? "+" : ""}{displayChangePct.toFixed(2)}%)
+        <text fg={displayChange !== null ? priceColor(displayChange) : colors.textDim}>
+          {displayChange !== null && displayChangePct !== null
+            ? `${displayChange >= 0 ? "+" : ""}${displayChange.toFixed(2)} (${displayChangePct >= 0 ? "+" : ""}${displayChangePct.toFixed(2)}%)`
+            : "No data"}
         </text>
         {displayDate && <text fg={colors.textDim}>{displayDate}</text>}
         {showOhlcSummary && activePoint && (
@@ -1514,15 +1828,35 @@ export function StockChart({
           {TIME_RANGES.map((range, index) => (
             <text
               key={range}
-              fg={viewState.timeRange === range ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
-              attributes={viewState.timeRange === range ? TextAttributes.BOLD : 0}
-              onMouseDown={() => setRange(range)}
+              fg={activePreset === range ? chartColors.activeRangeColor : (isRangePresetSupported(range, availableManualResolutions) ? chartColors.inactiveRangeColor : colors.textMuted)}
+              attributes={activePreset === range ? TextAttributes.BOLD : 0}
+              onMouseDown={() => {
+                if (isRangePresetSupported(range, availableManualResolutions)) setRange(range);
+              }}
             >
               {`${index + 1}:${range}`}
             </text>
           ))}
+        </box>
+      </box>
+
+      <box flexDirection="row" height={1}>
+        <box flexDirection="row" gap={1}>
+          {resolutionChips.map((resolution) => (
+            <text
+              key={resolution}
+              fg={effectiveResolution === resolution ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
+              attributes={effectiveResolution === resolution ? TextAttributes.BOLD : 0}
+              onMouseDown={() => setResolution(resolution)}
+            >
+              {getChartResolutionLabel(resolution)}
+            </text>
+          ))}
           {viewState.zoomLevel !== 1 && (
-            <text fg={colors.textDim}> zoom:{viewState.zoomLevel.toFixed(1)}x</text>
+            <text fg={colors.textDim}>zoom:{viewState.zoomLevel.toFixed(1)}x</text>
+          )}
+          {isUpdating && (
+            <text fg={colors.textDim}>updating</text>
           )}
         </box>
         <box flexGrow={1} />
@@ -1570,8 +1904,8 @@ export function StockChart({
       <box height={1}>
         <text fg={colors.textMuted}>
           {interactive
-            ? "mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  ←→ cursor  ⇧←→ pan  m mode  1-7 range  v vol  Esc exit"
-            : "Enter crosshair  click chart to focus  a/d pan  +/- zoom  m mode  1-7 range  v volume  0 reset"}
+            ? "mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  ←→ cursor  ⇧←→ pan  m mode  r res  1-7 presets  v vol  0 reset  Esc exit"
+            : "Enter crosshair  click chart to focus  a/d pan  +/- zoom  m mode  r res  1-7 presets  v volume  0 reset"}
         </text>
       </box>
     </box>

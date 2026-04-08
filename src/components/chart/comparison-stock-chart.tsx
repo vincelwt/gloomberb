@@ -1,7 +1,9 @@
 import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { useAppState } from "../../state/app-context";
+import { useChartQueries } from "../../market-data/hooks";
+import { buildChartKey } from "../../market-data/selectors";
+import { useAppState, usePaneSettingValue } from "../../state/app-context";
 import { blendHex, colors, getComparisonSeriesColor, priceColor } from "../../theme/colors";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
@@ -13,6 +15,35 @@ import {
   getVisibleComparisonWindow,
   projectComparisonChartData,
 } from "./comparison-chart-data";
+import { usePersistChartControlSelection } from "./chart-pane-settings";
+import {
+  buildVisibleDateWindow,
+  clearActivePreset,
+  formatVisibleSpanLabel,
+  getCanonicalZoomLevel,
+  isCanonicalPresetViewport,
+  resolveChartBodyState,
+  resolvePresetSelection,
+  resolveResolutionSelection,
+} from "./chart-controller";
+import {
+  buildChartResolutionSupportMap,
+  clampTimeRangeToMaxRange,
+  DEFAULT_COMPARISON_CHART_RANGE_PRESET,
+  DEFAULT_COMPARISON_CHART_RESOLUTION,
+  DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS,
+  getChartResolutionLabel,
+  getNextBufferRange,
+  getPresetResolution,
+  getSupportMaxRange,
+  isRangePresetSupported,
+  intersectChartResolutionSupport,
+  normalizeChartResolutionSupport,
+  sortChartResolutions,
+  type ChartResolutionSupport,
+  type ManualChartResolution,
+} from "./chart-resolution";
+import { RIGHT_EDGE_ANCHOR_RATIO } from "./chart-viewport";
 import {
   buildComparisonChartScene,
   formatComparisonAxisValue,
@@ -29,9 +60,11 @@ import {
   TIME_RANGES,
   type ChartAxisMode,
   type ChartRendererPreference,
+  type ChartResolution,
   type ComparisonChartRenderMode,
   type ComparisonChartViewState,
   type ResolvedChartRenderer,
+  type TimeRange,
 } from "./chart-types";
 import {
   computeBitmapSize,
@@ -83,6 +116,11 @@ interface DragState {
   startGlobalX: number;
   startPanOffset: number;
 }
+
+type PendingExpansionAction =
+  | { kind: "zoom-out"; targetVisibleCount: number; anchorRatio: number }
+  | { kind: "pan-left"; targetPanOffset: number }
+  | null;
 
 interface ChartMouseEvent {
   x: number;
@@ -477,6 +515,22 @@ function resolveSelectionCursor(
   };
 }
 
+function getUniqueSortedSeriesDates(series: Array<{ points: PricePoint[] }>): Date[] {
+  const byTimestamp = new Map<number, Date>();
+  for (const entry of series) {
+    for (const point of entry.points) {
+      const date = point.date instanceof Date ? point.date : new Date(point.date);
+      const timestamp = date.getTime();
+      if (!Number.isNaN(timestamp)) {
+        byTimestamp.set(timestamp, date);
+      }
+    }
+  }
+  return [...byTimestamp.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, date]) => date);
+}
+
 function ComparisonStockChartView({
   paneId,
   width,
@@ -491,8 +545,14 @@ function ComparisonStockChartView({
 }: ComparisonStockChartViewProps) {
   const renderer = useRenderer();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
+  const [storedRangePreset] = usePaneSettingValue("rangePreset", DEFAULT_COMPARISON_CHART_RANGE_PRESET);
+  const [storedResolution] = usePaneSettingValue<ChartResolution>("chartResolution", DEFAULT_COMPARISON_CHART_RESOLUTION);
+  const persistChartControls = usePersistChartControlSelection("rangePreset");
   const [viewState, setViewState] = useState<ComparisonChartViewState>({
-    timeRange: "1Y",
+    presetRange: storedRangePreset,
+    bufferRange: storedRangePreset,
+    activePreset: storedRangePreset,
+    resolution: storedResolution,
     panOffset: 0,
     zoomLevel: 1,
     cursorX: null,
@@ -500,10 +560,9 @@ function ComparisonStockChartView({
     renderMode: getInitialComparisonMode(defaultRenderMode),
     selectedSymbol: symbols[0] ?? null,
   });
-  const [remoteHistory, setRemoteHistory] = useState<Record<string, PricePoint[] | null>>({});
+  const [resolutionSupport, setResolutionSupport] = useState<ChartResolutionSupport[] | null>(null);
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
-  const fetchIdRef = useRef(0);
   const plotRef = useRef<BoxRenderable | null>(null);
   const nativeBaseSurfaceIdRef = useRef(`comparison-chart-surface:${paneId}:base`);
   const nativeCrosshairSurfaceIdRef = useRef(`comparison-chart-surface:${paneId}:crosshair`);
@@ -515,11 +574,14 @@ function ComparisonStockChartView({
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
   const animationFrameRef = useRef<number | null>(null);
+  const pendingCanonicalResetRef = useRef(1);
+  const appliedCanonicalResetRef = useRef(0);
+  const pendingExpansionRef = useRef<PendingExpansionAction>(null);
 
   const axisWidth = 11;
   const axisGap = 1;
   const headerRows = 1;
-  const controlRows = 1;
+  const controlRows = 2;
   const timeAxisRows = 1;
   const helpRows = 1;
   const legendColumns = getLegendColumns(width);
@@ -545,14 +607,13 @@ function ComparisonStockChartView({
     ));
   };
 
-  const symbolMetaKey = useMemo(() => symbolSources.map((source) => {
-    return [
-      source.symbol,
-      source.exchange,
-      source.brokerId ?? "",
-      source.brokerInstanceId ?? "",
-    ].join(":");
-  }).join("|"), [symbolSources]);
+  const capabilityKey = useMemo(() => symbolSources.map((source) => [
+    source.symbol,
+    source.exchange,
+    source.brokerId ?? "",
+    source.brokerInstanceId ?? "",
+    source.instrument?.conId ?? "",
+  ].join(":")).join("|"), [symbolSources]);
 
   useEffect(() => {
     if (symbols.includes(viewState.selectedSymbol ?? "")) return;
@@ -561,6 +622,19 @@ function ComparisonStockChartView({
       selectedSymbol: symbols[0] ?? null,
     }));
   }, [symbols, viewState.selectedSymbol]);
+
+  useEffect(() => {
+    pendingCanonicalResetRef.current += 1;
+    setViewState((current) => resolvePresetSelection(
+      {
+        ...current,
+        resolution: storedResolution,
+      },
+      storedRangePreset,
+      storedResolution === "auto" ? null : getSupportMaxRange(resolutionSupport ?? [], storedResolution),
+    ));
+    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+  }, [resolutionSupport, storedRangePreset, storedResolution]);
 
   const commitDisplayCursor = (next: DisplayCursorState) => {
     displayCursorRef.current = next;
@@ -644,33 +718,145 @@ function ComparisonStockChartView({
 
   useEffect(() => {
     const provider = getSharedDataProvider();
-    if (!provider || symbols.length === 0) {
-      setRemoteHistory({});
+    if ((!provider?.getChartResolutionSupport && !provider?.getChartResolutionCapabilities) || symbolSources.length === 0) {
+      setResolutionSupport(null);
       return;
     }
 
-    const id = ++fetchIdRef.current;
-    setRemoteHistory({});
-
+    let cancelled = false;
+    setResolutionSupport(null);
     Promise.all(symbolSources.map(async (source) => {
       try {
-        const points = await provider.getPriceHistory(source.symbol, source.exchange, viewState.timeRange, {
-          brokerId: source.brokerId,
-          brokerInstanceId: source.brokerInstanceId,
-          instrument: source.instrument,
-        });
-        return [source.symbol, points] as const;
+        const support = provider.getChartResolutionSupport
+          ? await provider.getChartResolutionSupport(
+            source.symbol,
+            source.exchange,
+            {
+              brokerId: source.brokerId,
+              brokerInstanceId: source.brokerInstanceId,
+              instrument: source.instrument ?? null,
+            },
+          )
+          : normalizeChartResolutionSupport(
+            (await provider.getChartResolutionCapabilities?.(
+              source.symbol,
+              source.exchange,
+              {
+                brokerId: source.brokerId,
+                brokerInstanceId: source.brokerInstanceId,
+                instrument: source.instrument ?? null,
+              },
+            ) ?? []).map((resolution) => ({ resolution, maxRange: "ALL" })),
+          );
+        return support;
       } catch {
-        return [source.symbol, null] as const;
+        return null;
       }
-    })).then((entries) => {
-      if (fetchIdRef.current !== id) return;
-      setRemoteHistory(Object.fromEntries(entries));
+    })).then((supportSets) => {
+      if (!cancelled) {
+        setResolutionSupport(supportSets.some((support) => support === null) ? null : intersectChartResolutionSupport(supportSets));
+      }
     }).catch(() => {
-      if (fetchIdRef.current !== id) return;
-      setRemoteHistory({});
+      if (!cancelled) {
+        setResolutionSupport(null);
+      }
     });
-  }, [symbolMetaKey, symbolSources, symbols.length, viewState.timeRange]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [capabilityKey, symbolSources]);
+
+  const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
+  const effectiveResolutionSupport = useMemo<ChartResolutionSupport[]>(() => (
+    resolutionSupport ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS.map((resolution) => ({ resolution, maxRange: "ALL" as const }))
+  ), [resolutionSupport]);
+  const availableManualResolutions = resolutionSupport?.map((entry) => entry.resolution) ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS;
+  const effectiveResolution: ChartResolution = viewState.resolution !== "auto"
+    && resolutionSupport !== null
+    && !supportMap.has(viewState.resolution)
+    ? "auto"
+    : viewState.resolution;
+  const resolutionChips = useMemo(
+    () => sortChartResolutions(["auto", ...availableManualResolutions] as ChartResolution[]),
+    [availableManualResolutions],
+  );
+  const chartRequests = useMemo(() => (
+    symbolSources.map((source) => ({
+      instrument: {
+        symbol: source.symbol,
+        exchange: source.exchange,
+        brokerId: source.brokerId,
+        brokerInstanceId: source.brokerInstanceId,
+        instrument: source.instrument,
+      },
+      bufferRange: viewState.bufferRange,
+      granularity: effectiveResolution === "auto" ? "range" as const : "resolution" as const,
+      resolution: effectiveResolution === "auto" ? undefined : effectiveResolution,
+    }))
+  ), [effectiveResolution, symbolSources, viewState.bufferRange]);
+  const chartEntries = useChartQueries(chartRequests);
+  const entryStates = useMemo(() => chartRequests.map((request) => (
+    resolveChartBodyState(chartEntries.get(buildChartKey(request)), (value) => Array.isArray(value) && value.length > 0, "No chart data yet.")
+  )), [chartEntries, chartRequests]);
+  const hasSeriesData = entryStates.some((state) => !!state.data?.length);
+  const isBlockingBody = entryStates.some((state) => state.blocking) || (chartRequests.length > 0 && entryStates.length !== chartRequests.length);
+  const bodyMessage = hasSeriesData
+    ? null
+    : entryStates.find((state) => state.errorMessage)?.errorMessage
+      ?? entryStates.find((state) => state.emptyMessage)?.emptyMessage
+      ?? null;
+  const isUpdating = !isBlockingBody && entryStates.some((state) => state.updating);
+  const series = useMemo(() => symbolSources.map((source, index) => {
+    const request = chartRequests[index];
+    const history = request ? (chartEntries.get(buildChartKey(request))?.data ?? []) : [];
+    const color = getComparisonSeriesColor(index);
+    return {
+      symbol: source.symbol,
+      color,
+      fillColor: blendHex(colors.bg, color, 0.22),
+      currency: source.currency,
+      points: history,
+    };
+  }), [chartEntries, chartRequests, colors.bg, symbolSources]);
+  const seriesDates = useMemo(() => getUniqueSortedSeriesDates(series), [series]);
+  const visibleDateWindow = useMemo(() => buildVisibleDateWindow(seriesDates, viewState.panOffset, viewState.zoomLevel), [seriesDates, viewState.panOffset, viewState.zoomLevel]);
+  const activePreset = isCanonicalPresetViewport(seriesDates, {
+    activePreset: viewState.activePreset,
+    panOffset: viewState.panOffset,
+    zoomLevel: viewState.zoomLevel,
+    resolution: effectiveResolution,
+  }) ? viewState.activePreset : null;
+
+  useEffect(() => {
+    if (seriesDates.length === 0) return;
+    if (appliedCanonicalResetRef.current < pendingCanonicalResetRef.current) {
+      const canonicalZoom = getCanonicalZoomLevel(seriesDates, viewState.presetRange);
+      appliedCanonicalResetRef.current = pendingCanonicalResetRef.current;
+      setViewState((current) => (
+        current.zoomLevel === canonicalZoom && current.panOffset === 0
+          ? current
+          : { ...current, zoomLevel: canonicalZoom, panOffset: 0, cursorX: null, cursorY: null }
+      ));
+      return;
+    }
+    if (!pendingExpansionRef.current) return;
+    const pendingExpansion = pendingExpansionRef.current;
+    pendingExpansionRef.current = null;
+    setViewState((current) => {
+      if (pendingExpansion.kind === "zoom-out") {
+        const nextVisibleCount = Math.min(seriesDates.length, Math.max(pendingExpansion.targetVisibleCount, 1));
+        return {
+          ...current,
+          ...resolveAnchoredChartZoom(seriesDates.length, 1, 0, seriesDates.length / nextVisibleCount, pendingExpansion.anchorRatio),
+        };
+      }
+      return {
+        ...current,
+        panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
+      };
+    });
+  }, [chartWidth, series, seriesDates, viewState.presetRange]);
 
   useEffect(() => {
     const refreshSupport = () => setKittySupport(getCachedKittySupport(renderer));
@@ -696,19 +882,40 @@ function ComparisonStockChartView({
     };
   }, [preferredRenderer, renderer]);
 
-  const series = useMemo(() => symbolSources.map((source, index) => {
-    const history = remoteHistory[source.symbol] && remoteHistory[source.symbol]!.length > 0
-      ? remoteHistory[source.symbol]!
-      : source.priceHistory;
-    const color = getComparisonSeriesColor(index);
-    return {
-      symbol: source.symbol,
-      color,
-      fillColor: blendHex(colors.bg, color, 0.22),
-      currency: source.currency,
-      points: history,
-    };
-  }), [colors.bg, remoteHistory, symbolSources]);
+  const expandBufferRange = (action: PendingExpansionAction): boolean => {
+    const nextCandidate = getNextBufferRange(viewState.bufferRange);
+    const nextBufferRange = effectiveResolution === "auto"
+      ? nextCandidate
+      : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(effectiveResolution) ?? viewState.bufferRange);
+    if (nextBufferRange === viewState.bufferRange) return false;
+    pendingExpansionRef.current = action;
+    setViewState((current) => ({
+      ...clearActivePreset(current),
+      bufferRange: nextBufferRange,
+      cursorX: null,
+      cursorY: null,
+    }));
+    return true;
+  };
+
+  const setRangePreset = (range: TimeRange) => {
+    if (!isRangePresetSupported(range, effectiveResolutionSupport)) return;
+    const supportMaxRange = getSupportMaxRange(effectiveResolutionSupport, getPresetResolution(range));
+    persistChartControls(range, getPresetResolution(range));
+    pendingCanonicalResetRef.current += 1;
+    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+    setViewState((current) => resolvePresetSelection(current, range, supportMaxRange));
+  };
+
+  const setResolution = (resolution: ChartResolution) => {
+    if (resolution !== "auto" && !availableManualResolutions.includes(resolution)) return;
+    const nextState = resolveResolutionSelection(viewState, resolution, supportMap, visibleDateWindow);
+    if (!nextState) return;
+    pendingCanonicalResetRef.current += 1;
+    persistChartControls(nextState.presetRange, resolution);
+    updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+    setViewState(nextState);
+  };
 
   const visibleWindow = useMemo(() => (
     getVisibleComparisonWindow(series, viewState, chartWidth)
@@ -1015,15 +1222,33 @@ function ComparisonStockChartView({
 
     switch (event.name) {
       case "=":
-        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel * 1.5, 0.5, series, chartWidth));
+        setViewState((current) => applyComparisonZoomAroundAnchor(
+          clearActivePreset(current),
+          current.zoomLevel * 1.5,
+          RIGHT_EDGE_ANCHOR_RATIO,
+          series,
+        ));
         return;
       case "-":
-        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel / 1.5, 0.5, series, chartWidth));
+        if (viewState.zoomLevel <= 1.001 && expandBufferRange({
+          kind: "zoom-out",
+          targetVisibleCount: Math.round(seriesDates.length * 1.5),
+          anchorRatio: RIGHT_EDGE_ANCHOR_RATIO,
+        })) {
+          return;
+        }
+        setViewState((current) => applyComparisonZoomAroundAnchor(
+          clearActivePreset(current),
+          current.zoomLevel / 1.5,
+          RIGHT_EDGE_ANCHOR_RATIO,
+          series,
+        ));
         return;
       case "0":
+        pendingCanonicalResetRef.current += 1;
         updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
         setViewState((current) => ({
-          ...current,
+          ...(resolveResolutionSelection(current, effectiveResolution, supportMap, visibleDateWindow) ?? current),
           panOffset: 0,
           zoomLevel: 1,
           cursorX: null,
@@ -1031,15 +1256,21 @@ function ComparisonStockChartView({
         }));
         return;
       case "a":
+        if (viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+          kind: "pan-left",
+          targetPanOffset: viewState.panOffset + Math.max(Math.floor(chartWidth / 10), 1),
+        })) {
+          return;
+        }
         setViewState((current) => ({
-          ...current,
-          panOffset: clamp(current.panOffset + Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth)),
+          ...clearActivePreset(current),
+          panOffset: clamp(current.panOffset + Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
         }));
         return;
       case "d":
         setViewState((current) => ({
-          ...current,
-          panOffset: clamp(current.panOffset - Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth)),
+          ...clearActivePreset(current),
+          panOffset: clamp(current.panOffset - Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
         }));
         return;
       case "m":
@@ -1048,6 +1279,12 @@ function ComparisonStockChartView({
           renderMode: current.renderMode === "line" ? "area" : "line",
         }));
         return;
+      case "r": {
+        const currentIndex = resolutionChips.indexOf(effectiveResolution);
+        const nextResolution = resolutionChips[(currentIndex + 1) % resolutionChips.length] ?? "auto";
+        setResolution(nextResolution);
+        return;
+      }
       case "h":
         cursorMotionKindRef.current = "discrete";
         setViewState((current) => ({
@@ -1113,15 +1350,7 @@ function ComparisonStockChartView({
     if (event.name >= "1" && event.name <= "7") {
       const index = parseInt(event.name, 10) - 1;
       if (index < TIME_RANGES.length) {
-        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-        setViewState((current) => ({
-          ...current,
-          timeRange: TIME_RANGES[index]!,
-          panOffset: 0,
-          zoomLevel: 1,
-          cursorX: null,
-          cursorY: null,
-        }));
+        setRangePreset(TIME_RANGES[index]!);
       }
     }
   });
@@ -1192,7 +1421,7 @@ function ComparisonStockChartView({
       0,
       Math.max(visibleWindow.totalDates - visibleWindow.dates.length, 0),
     );
-    setViewState((current) => ({ ...current, panOffset: nextPan }));
+    setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
   };
 
   const handlePlotScroll = (event: ChartMouseEvent) => {
@@ -1220,39 +1449,59 @@ function ComparisonStockChartView({
 
     if (event.modifiers.shift && (direction === "up" || direction === "down")) {
       const shiftDirection = direction === "up" ? 1 : -1;
+      const targetPanOffset = viewState.panOffset + shiftDirection * Math.max(Math.round(chartWidth * 0.08), 1);
+      if (shiftDirection > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+        kind: "pan-left",
+        targetPanOffset,
+      })) {
+        return;
+      }
       const nextPan = clamp(
-        viewState.panOffset + shiftDirection * Math.max(Math.round(chartWidth * 0.08), 1),
+        targetPanOffset,
         0,
-        getMaxComparisonPanOffset(series, viewState.timeRange, viewState.zoomLevel, chartWidth),
+        getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth),
       );
-      setViewState((current) => ({ ...current, panOffset: nextPan }));
+      setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
       return;
     }
 
     switch (direction) {
       case "up":
-        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel * 1.18, anchorRatio, series, chartWidth));
+        setViewState((current) => applyComparisonZoomAroundAnchor(clearActivePreset(current), current.zoomLevel * 1.18, anchorRatio, series));
         return;
       case "down":
-        setViewState((current) => applyComparisonZoomAroundAnchor(current, current.zoomLevel / 1.18, anchorRatio, series, chartWidth));
+        if (viewState.zoomLevel <= 1.001 && expandBufferRange({
+          kind: "zoom-out",
+          targetVisibleCount: Math.round(seriesDates.length * 1.18),
+          anchorRatio,
+        })) {
+          return;
+        }
+        setViewState((current) => applyComparisonZoomAroundAnchor(clearActivePreset(current), current.zoomLevel / 1.18, anchorRatio, series));
         return;
       case "left":
+        if (viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+          kind: "pan-left",
+          targetPanOffset: viewState.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
+        })) {
+          return;
+        }
         setViewState((current) => ({
-          ...current,
+          ...clearActivePreset(current),
           panOffset: clamp(
             current.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
             0,
-            getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth),
+            getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
           ),
         }));
         return;
       case "right":
         setViewState((current) => ({
-          ...current,
+          ...clearActivePreset(current),
           panOffset: clamp(
             current.panOffset - Math.max(Math.round(chartWidth * 0.08), 1),
             0,
-            getMaxComparisonPanOffset(series, current.timeRange, current.zoomLevel, chartWidth),
+            getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
           ),
         }));
         return;
@@ -1263,12 +1512,9 @@ function ComparisonStockChartView({
     return <text fg={colors.textDim}>No comparison tickers configured.</text>;
   }
 
-  if (series.every((entry) => entry.points.length === 0)) {
-    return <text fg={colors.textDim}>No chart data yet.</text>;
-  }
-
-  const selectedSeries = result.selectedSeries ?? staticResult.selectedSeries;
-  const selectedPoint = result.selectedPoint ?? staticResult.selectedPoint;
+  const hasChartData = series.some((entry) => entry.points.length > 0);
+  const selectedSeries = hasChartData ? (result.selectedSeries ?? staticResult.selectedSeries) : null;
+  const selectedPoint = hasChartData ? (result.selectedPoint ?? staticResult.selectedPoint) : null;
   const selectedRawValue = selectedPoint?.rawValue ?? selectedSeries?.latestRawValue ?? null;
   const selectedBaseValue = selectedSeries?.baseValue ?? null;
   const selectedChange = selectedRawValue !== null && selectedBaseValue !== null
@@ -1283,6 +1529,10 @@ function ComparisonStockChartView({
   const cursorAxisLabel = result.cursorRow !== null && result.crosshairValue !== null
     ? formatComparisonAxisValue(result.crosshairValue, projection.effectiveAxisMode)
     : null;
+  const visibleLabel = formatVisibleSpanLabel({
+    start: visibleWindow.dates[0] ?? null,
+    end: visibleWindow.dates[visibleWindow.dates.length - 1] ?? null,
+  });
 
   const plotLines: Array<string | StyledContent> = effectiveRenderer === "kitty"
     ? blankPlotLines
@@ -1298,17 +1548,29 @@ function ComparisonStockChartView({
       height={chartHeight}
       flexDirection="column"
       backgroundColor={chartColors.bgColor}
-      onMouseMove={handlePlotMove}
-      onMouseDown={handlePlotDown}
-      onMouseUp={() => { dragRef.current = null; }}
-      onMouseDrag={handlePlotDrag}
-      onMouseDragEnd={() => { dragRef.current = null; }}
-      onMouseOut={() => {
+      onMouseMove={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotMove : undefined}
+      onMouseDown={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotDown : undefined}
+      onMouseUp={hasChartData && !isBlockingBody && !bodyMessage ? () => { dragRef.current = null; } : undefined}
+      onMouseDrag={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotDrag : undefined}
+      onMouseDragEnd={hasChartData && !isBlockingBody && !bodyMessage ? () => { dragRef.current = null; } : undefined}
+      onMouseOut={hasChartData && !isBlockingBody && !bodyMessage ? () => {
         dragRef.current = null;
-      }}
-      onMouseScroll={handlePlotScroll}
+      } : undefined}
+      onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
     >
-      {plotContent}
+      {isBlockingBody
+        ? (
+          <box flexGrow={1} alignItems="center" justifyContent="center">
+            <text fg={colors.textDim}>Loading chart...</text>
+          </box>
+        )
+        : bodyMessage
+          ? (
+            <box flexGrow={1} alignItems="center" justifyContent="center">
+              <text fg={colors.textDim}>{bodyMessage}</text>
+            </box>
+          )
+          : plotContent}
     </box>
   );
 
@@ -1334,8 +1596,9 @@ function ComparisonStockChartView({
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {viewState.selectedSymbol ?? "Compare"} - {viewState.timeRange}
+          {viewState.selectedSymbol ?? "Compare"} - {getChartResolutionLabel(effectiveResolution)}
         </text>
+        <text fg={colors.textDim}>{visibleLabel}</text>
         <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
           {selectedRawValue !== null ? formatCurrency(selectedRawValue, selectedCurrency) : "—"}
         </text>
@@ -1352,25 +1615,37 @@ function ComparisonStockChartView({
           {TIME_RANGES.map((range, index) => (
             <text
               key={range}
-              fg={viewState.timeRange === range ? colors.textBright : colors.textDim}
-              attributes={viewState.timeRange === range ? TextAttributes.BOLD : 0}
+              fg={activePreset === range ? colors.textBright : (isRangePresetSupported(range, availableManualResolutions) ? colors.textDim : colors.textMuted)}
+              attributes={activePreset === range ? TextAttributes.BOLD : 0}
               onMouseDown={() => {
-                updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-                setViewState((current) => ({
-                  ...current,
-                  timeRange: range,
-                  panOffset: 0,
-                  zoomLevel: 1,
-                  cursorX: null,
-                  cursorY: null,
-                }));
+                if (isRangePresetSupported(range, availableManualResolutions)) {
+                  setRangePreset(range);
+                }
               }}
             >
               {`${index + 1}:${range}`}
             </text>
           ))}
+        </box>
+      </box>
+
+      <box flexDirection="row" height={1}>
+        <box flexDirection="row" gap={1}>
+          {resolutionChips.map((resolution) => (
+            <text
+              key={resolution}
+              fg={effectiveResolution === resolution ? colors.textBright : colors.textDim}
+              attributes={effectiveResolution === resolution ? TextAttributes.BOLD : 0}
+              onMouseDown={() => setResolution(resolution)}
+            >
+              {getChartResolutionLabel(resolution)}
+            </text>
+          ))}
           {viewState.zoomLevel !== 1 && (
-            <text fg={colors.textDim}> zoom:{viewState.zoomLevel.toFixed(1)}x</text>
+            <text fg={colors.textDim}>zoom:{viewState.zoomLevel.toFixed(1)}x</text>
+          )}
+          {isUpdating && (
+            <text fg={colors.textDim}>updating</text>
           )}
         </box>
         <box flexGrow={1} />
@@ -1446,7 +1721,7 @@ function ComparisonStockChartView({
 
       <box height={1}>
         <text fg={colors.textMuted}>
-          mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  h/l cursor  arrows legend  Enter open  1-7 range  m mode  0 reset
+          mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  h/l cursor  arrows legend  Enter open  1-7 presets  r res  m mode  0 reset
         </text>
       </box>
     </box>
