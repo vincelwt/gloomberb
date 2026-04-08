@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useRef, type Dispatch } from "react";
 import { testRender } from "@opentui/react/test-utils";
-import { AppProvider, PaneInstanceProvider, useAppDispatch, usePaneTicker, type AppAction } from "./app-context";
+import { AppProvider, PaneInstanceProvider, useAppDispatch, useAppSelector, usePaneTicker, type AppAction } from "./app-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../types/config";
+import { getCurrentThemeId } from "../theme/colors";
 
 const TEST_PANE_ID = "ticker-detail:test";
 
@@ -40,6 +41,11 @@ function PaneTickerHarness() {
   return <text>{`${symbol ?? "none"}:${renderCountRef.current}`}</text>;
 }
 
+function ThemeSelectorHarness() {
+  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  return <text>{`${focusedPaneId ?? "none"}:${getCurrentThemeId()}`}</text>;
+}
+
 describe("pane selectors", () => {
   afterEach(() => {
     testSetup?.renderer.destroy();
@@ -68,5 +74,26 @@ describe("pane selectors", () => {
     await testSetup.renderOnce();
     await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain("AAPL:1");
+  });
+
+  test("rerenders selector consumers when the theme changes", async () => {
+    testSetup = await testRender(
+      <AppProvider config={createTickerDetailConfig("AAPL")}>
+        <DispatchCapture />
+        <ThemeSelectorHarness />
+      </AppProvider>,
+      { width: 32, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:amber`);
+
+    await act(() => {
+      capturedDispatch?.({ type: "SET_THEME", theme: "green" });
+    });
+
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
   });
 });

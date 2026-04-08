@@ -5,10 +5,7 @@ import { saveConfig } from "../../data/config-store";
 import {
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
-  addPaneFloating,
-  addPaneToLayout,
   applyDrop,
-  bringToFront,
   findDockLeaf,
   floatAtRect,
   floatPane,
@@ -29,7 +26,7 @@ import {
   type ResolvedPane,
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
-import { removePaneInstances, createPaneInstance, type LayoutConfig } from "../../types/config";
+import { removePaneInstances, type LayoutConfig } from "../../types/config";
 import {
   PaneInstanceProvider,
   resolveCollectionForPane,
@@ -435,12 +432,13 @@ function resolveSnapGuide(x: number, y: number, guides: SnapGuide[]): SnapGuide 
 
 function resolveHeaderHitAreas(
   width: number,
-  options: { floating: boolean },
+  options: { floating: boolean; focused: boolean },
 ): {
   actionStart: number | null;
   closeStart: number | null;
 } {
-  let rightEdge = width;
+  // When focused, the header renders ┌─...─┐ adding 2 chars on each side
+  let rightEdge = options.focused ? width - 2 : width;
   let closeStart: number | null = null;
   let actionStart: number | null = null;
 
@@ -463,7 +461,6 @@ function menuForPane(
   persistLayout: (nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => void,
   focusPane: (paneId: string) => void,
   openPaneSettings: (paneId: string) => void,
-  openLayoutMenu: () => void,
 ) {
   const baseActions: Array<{ id: string; label: string; action: () => void }> = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -483,11 +480,6 @@ function menuForPane(
         focusPane(pane.instance.instanceId);
       },
     });
-    baseActions.push({
-      id: "front",
-      label: "Bring To Front",
-      action: () => persistLayout(bringToFront(layout, pane.instance.instanceId), { pushHistory: false }),
-    });
   } else {
     baseActions.push({
       id: "float",
@@ -498,37 +490,6 @@ function menuForPane(
       },
     });
   }
-
-  baseActions.push({
-    id: "duplicate",
-    label: "Duplicate",
-    action: () => {
-      const duplicate = createPaneInstance(pane.instance.paneId, {
-        title: pane.instance.title,
-        binding: pane.instance.binding,
-        params: pane.instance.params,
-        settings: pane.instance.settings,
-      });
-      const nextLayout = pane.floating
-        ? floatAtRect(addPaneFloating(layout, duplicate, width, contentHeight, pane.def), duplicate.instanceId, {
-          x: Math.max(0, pane.floating.x + 2),
-          y: Math.max(0, pane.floating.y + 1),
-          width: pane.floating.width,
-          height: pane.floating.height,
-        })
-        : addPaneToLayout(layout, duplicate, { relativeTo: pane.instance.instanceId, position: "right" });
-      persistLayout(nextLayout);
-      focusPane(duplicate.instanceId);
-    },
-  });
-  baseActions.push({ id: "swap", label: "Swap With...", action: openLayoutMenu });
-  baseActions.push({
-    id: "close",
-    label: "Close",
-    action: () => {
-      persistLayout(removePane(layout, pane.instance.instanceId));
-    },
-  });
 
   return baseActions;
 }
@@ -739,10 +700,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
         persistLayout,
         focusPane,
         openPaneSettings,
-        openLayoutMenu,
       ),
     });
-  }, [contentHeight, focusPane, openLayoutMenu, openPaneSettings, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
+  }, [contentHeight, focusPane, openPaneSettings, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
     persistLayout(removePane(visibleLayout, paneId));
@@ -768,13 +728,12 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
         const relativeX = event.x - rect.x;
         const relativeY = shellY - rect.y;
+        const isFocused = state.focusedPaneId === pane.instance.instanceId;
         const headerAreas = resolveHeaderHitAreas(rect.width, {
           floating: true,
+          focused: isFocused,
         });
         focusPane(pane.instance.instanceId);
-        if ((pane.floating?.zIndex ?? 50) < 999) {
-          persistLayout(bringToFront(visibleLayout, pane.instance.instanceId), { pushHistory: false });
-        }
         if (relativeY === 0 && headerAreas.closeStart != null && relativeX >= headerAreas.closeStart && relativeX < rect.width) {
           handleFloatingClose(pane.instance.instanceId);
           event.stopPropagation();
@@ -850,8 +809,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pane) continue;
         const relativeX = event.x - leaf.rect.x;
         const relativeY = shellY - leaf.rect.y;
+        const isFocused = state.focusedPaneId === leaf.instanceId;
         const headerAreas = resolveHeaderHitAreas(leaf.rect.width, {
           floating: false,
+          focused: isFocused,
         });
         focusPane(leaf.instanceId);
         if (relativeY === 0
@@ -1021,7 +982,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       {dockLeafLayouts.map((leaf) => {
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) return null;
-        const focused = state.focusedPaneId === leaf.instanceId && !overlayOpen;
+        const focused = state.focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
         return (
           <box
@@ -1056,7 +1017,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
       {floatingPanes.map((pane) => {
         const preview = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
-        const focused = state.focusedPaneId === pane.instance.instanceId && !overlayOpen;
+        const focused = state.focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
         return (
           <FloatingPaneWrapper
@@ -1107,6 +1068,57 @@ export function Shell({ pluginRegistry }: ShellProps) {
           />
         );
       })}
+
+      {/* Focus border overlay — rendered on top of the focused pane */}
+      {(() => {
+        if (!state.focusedPaneId) return null;
+        // Hide border when command bar or dialog is open, but keep it when just the pane menu is open
+        if (overlayOpen && !menuState) return null;
+        let rect: { x: number; y: number; width: number; height: number } | null = null;
+        let z = 3;
+        // Check floating panes first (they render on top of docked panes)
+        const floatingPane = floatingPanes.find((p) => p.instance.instanceId === state.focusedPaneId);
+        if (floatingPane) {
+          rect = dragFloatingRect?.paneId === floatingPane.instance.instanceId
+            ? dragFloatingRect.rect
+            : floatingPane.floating!;
+          z = (floatingPane.floating?.zIndex ?? 50) + 1;
+        } else {
+          // Check docked panes
+          const dockedLeaf = dockLeafLayouts.find((l) => l.instanceId === state.focusedPaneId);
+          if (dockedLeaf) {
+            rect = dockedLeaf.rect;
+          }
+        }
+        if (!rect || rect.height < 2) return null;
+        const bc = colors.borderFocused;
+        const isFloating = !!floatingPane;
+        const bodyTop = rect.y + 1; // below header (header renders its own border edges)
+        const bodyH = rect.height - 2; // rows between header and bottom edge
+        return (
+          <>
+            {/* Left edge — body only */}
+            {bodyH > 0 && (
+              <box key="focus-l" position="absolute" left={rect.x} top={bodyTop} width={1} height={bodyH} zIndex={z}>
+                <text fg={bc} selectable={false}>{"│".repeat(bodyH)}</text>
+              </box>
+            )}
+            {/* Right edge — body only */}
+            {bodyH > 0 && (
+              <box key="focus-r" position="absolute" left={rect.x + rect.width - 1} top={bodyTop} width={1} height={bodyH} zIndex={z}>
+                <text fg={bc} selectable={false}>{"│".repeat(bodyH)}</text>
+              </box>
+            )}
+            {/* Bottom edge — for floating, leave last 2 chars for resize handle (rendered by FloatingPaneWrapper) */}
+            <box key="focus-b" position="absolute" left={rect.x} top={rect.y + rect.height - 1} width={isFloating ? Math.max(0, rect.width - 2) : rect.width} height={1} zIndex={z}>
+              <text fg={bc} selectable={false}>{isFloating
+                ? `└${"─".repeat(Math.max(0, rect.width - 4))}─`
+                : `└${"─".repeat(Math.max(0, rect.width - 2))}┘`
+              }</text>
+            </box>
+          </>
+        );
+      })()}
 
       {activeHoverOverlay && activeHoverOverlay.cells.map((cell) => {
         const active = dockPreview?.kind === "dock"

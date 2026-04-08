@@ -425,6 +425,32 @@ describe("CommandBar", () => {
     expect(frame).toContain("theme:green");
   });
 
+  test("keeps the selected theme after pressing enter in root theme mode", async () => {
+    testSetup = await testRender(<CommandBarHarness query="TH " live />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("theme:green");
+    expect(frame).not.toContain("theme:amber");
+    expect(frame).not.toContain("Commands");
+  });
+
   test("keeps typed prefixes in the root query until a result is activated", async () => {
     testSetup = await testRender(<CommandBarHarness query="T " />, {
       width: 80,

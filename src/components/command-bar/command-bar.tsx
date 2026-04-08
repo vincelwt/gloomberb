@@ -18,7 +18,7 @@ import {
 import { getFocusedCollectionId, useAppState, useFocusedTicker } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, getThemeOptions, matchPrefix, type Command } from "./command-registry";
-import { applyTheme, getCurrentThemeId } from "../../theme/colors";
+import { applyTheme } from "../../theme/colors";
 import { exportConfig, importConfig, resetAllData, saveConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
@@ -450,7 +450,7 @@ export function CommandBar({
       query: initialQuery,
       selectedIdx: 0,
       hoveredIdx: null,
-      themeBaseId: screen === "themes" ? getCurrentThemeId() : undefined,
+      themeBaseId: screen === "themes" ? stateRef.current.config.theme : undefined,
       payload,
     });
   }, [pushRoute]);
@@ -3889,6 +3889,7 @@ export function CommandBar({
   visibleListStateRef.current = routeListState;
 
   useEffect(() => {
+    if (!state.commandBarOpen) return;
     if (!routeListState) return;
     const selected = currentRoute?.kind === "mode" && currentRoute.screen === "themes"
       ? routeListState.results[currentRoute.selectedIdx]
@@ -3900,7 +3901,7 @@ export function CommandBar({
       applyTheme(selected.themeId);
       dispatch({ type: "SET_THEME", theme: selected.themeId });
     }
-  }, [currentRoute, dispatch, rootModeInfo.kind, rootSelectedIdx, routeListState, state.config.theme]);
+  }, [currentRoute, dispatch, rootModeInfo.kind, rootSelectedIdx, routeListState, state.commandBarOpen, state.config.theme]);
 
   useEffect(() => {
     if (currentRoute?.kind !== "workflow") return;

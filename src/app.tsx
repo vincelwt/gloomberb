@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import {
@@ -1241,8 +1241,9 @@ export function App({
 
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
-  // Apply saved theme before first render
-  if (config.theme) applyTheme(config.theme);
+  useLayoutEffect(() => {
+    if (config.theme) applyTheme(config.theme);
+  }, [config.theme]);
 
   const services = useMemo(() => {
     const dbPath = join(config.dataDir, ".gloomberb-cache.db");

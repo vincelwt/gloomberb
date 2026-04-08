@@ -42,7 +42,7 @@ export function FloatingPaneWrapper({
 
       {/* Resize handle at bottom-right corner */}
       <box position="absolute" bottom={0} right={0} width={2} height={1}>
-        <text fg={colors.textDim} selectable={false}> ◢</text>
+        <text fg={focused ? colors.borderFocused : colors.textDim} selectable={false}>{focused ? "─◢" : " ◢"}</text>
       </box>
     </box>
   );

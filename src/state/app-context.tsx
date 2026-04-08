@@ -395,6 +395,20 @@ function removeHistoryIndex(layoutHistory: Record<number, LayoutHistoryEntry>, r
   return next;
 }
 
+/** If paneId is a floating pane, bump its zIndex to the top. */
+function bringFloatingToFront(layout: LayoutConfig, paneId: string): LayoutConfig {
+  const entry = layout.floating.find((e) => e.instanceId === paneId);
+  if (!entry) return layout;
+  const maxZ = layout.floating.reduce((max, e) => Math.max(max, e.zIndex ?? 50), 0);
+  if ((entry.zIndex ?? 50) >= maxZ) return layout; // already on top
+  return {
+    ...layout,
+    floating: layout.floating.map((e) =>
+      e.instanceId === paneId ? { ...e, zIndex: maxZ + 1 } : e,
+    ),
+  };
+}
+
 function withFocusedPane(state: AppState, config: AppConfig): AppState {
   const normalizedLayout = normalizePaneLayout(config.layout);
   const nextConfig = normalizedLayout === config.layout
@@ -727,19 +741,30 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       });
     }
 
-    case "FOCUS_PANE":
+    case "FOCUS_PANE": {
+      const layout = bringFloatingToFront(state.config.layout, action.paneId);
+      const config = layout !== state.config.layout
+        ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
+        : state.config;
       return {
         ...state,
+        config,
         focusedPaneId: action.paneId,
         recentTickers: nextRecentTickers(state.recentTickers, resolveTickerForPane(state, action.paneId)),
       };
+    }
 
     case "FOCUS_NEXT": {
       if (action.paneOrder.length === 0) return state;
       const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : -1;
       const nextPaneId = action.paneOrder[(currentIndex + 1) % action.paneOrder.length]!;
+      const layout = bringFloatingToFront(state.config.layout, nextPaneId);
+      const config = layout !== state.config.layout
+        ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
+        : state.config;
       return {
         ...state,
+        config,
         focusedPaneId: nextPaneId,
         recentTickers: nextRecentTickers(state.recentTickers, resolveTickerForPane(state, nextPaneId)),
       };
@@ -749,8 +774,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (action.paneOrder.length === 0) return state;
       const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : 0;
       const nextPaneId = action.paneOrder[(currentIndex - 1 + action.paneOrder.length) % action.paneOrder.length]!;
+      const layout = bringFloatingToFront(state.config.layout, nextPaneId);
+      const config = layout !== state.config.layout
+        ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
+        : state.config;
       return {
         ...state,
+        config,
         focusedPaneId: nextPaneId,
         recentTickers: nextRecentTickers(state.recentTickers, resolveTickerForPane(state, nextPaneId)),
       };
@@ -849,26 +879,35 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
   const context = useRequiredAppContext();
   const selectorRef = useRef(selector);
   selectorRef.current = selector;
-  const lastSelectionRef = useRef<T | undefined>(undefined);
-  const hasSelectionRef = useRef(false);
+  const lastSnapshotRef = useRef<{ selection: T; themeId: string } | undefined>(undefined);
 
   if (!isAppStoreContextValue(context)) {
     return selector(context.state);
   }
 
-  return useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     context.subscribe,
     () => {
-      const selection = selectorRef.current(context.getState());
-      if (hasSelectionRef.current && Object.is(lastSelectionRef.current, selection)) {
-        return lastSelectionRef.current as T;
+      const state = context.getState();
+      const selection = selectorRef.current(state);
+      const themeId = state.config.theme;
+      const previous = lastSnapshotRef.current;
+      if (previous && Object.is(previous.selection, selection) && previous.themeId === themeId) {
+        return previous;
       }
-      lastSelectionRef.current = selection;
-      hasSelectionRef.current = true;
-      return selection;
+      const nextSnapshot = { selection, themeId };
+      lastSnapshotRef.current = nextSnapshot;
+      return nextSnapshot;
     },
-    () => selectorRef.current(context.getState()),
+    () => {
+      const state = context.getState();
+      return {
+        selection: selectorRef.current(state),
+        themeId: state.config.theme,
+      };
+    },
   );
+  return snapshot.selection;
 }
 
 export function PaneInstanceProvider({ paneId, children }: { paneId: string; children: ReactNode }) {

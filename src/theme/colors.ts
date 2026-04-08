@@ -86,26 +86,26 @@ export function commandBarSelectedText(): string {
 
 /** Background for docked pane bodies */
 export function paneBg(focused: boolean): string {
-  if (focused) return colors.bg;
-  return colors.panel;
+  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.06);
+  return blendHex(colors.panel, colors.border, 0.08);
 }
 
 /** Background for floating pane bodies — elevated above docked panes */
 export function floatingPaneBg(focused: boolean): string {
-  if (focused) return blendHex(colors.bg, colors.border, 0.12);
-  return blendHex(colors.panel, colors.border, 0.35);
+  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.08);
+  return blendHex(colors.panel, colors.border, 0.18);
 }
 
 /** Background for pane title bars */
 export function paneTitleBg(focused: boolean): string {
-  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.15);
-  return blendHex(colors.panel, colors.border, 0.25);
+  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.22);
+  return blendHex(colors.panel, colors.border, 0.15);
 }
 
 /** Background for floating pane title bars */
 export function floatingPaneTitleBg(focused: boolean): string {
-  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.18);
-  return blendHex(colors.panel, colors.border, 0.4);
+  if (focused) return blendHex(colors.bg, colors.borderFocused, 0.25);
+  return blendHex(colors.panel, colors.border, 0.25);
 }
 
 /** Title text color for panes */
