@@ -1721,7 +1721,7 @@ function ComparisonStockChartView({
 
       <box height={1}>
         <text fg={colors.textMuted}>
-          mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  h/l cursor  arrows legend  Enter open  1-7 presets  r res  m mode  0 reset
+          h/l cursor  arrows legend  Enter open  r res  m mode  0 reset
         </text>
       </box>
     </box>
