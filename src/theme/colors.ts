@@ -18,6 +18,11 @@ export function applyTheme(id: string): void {
   Object.assign(colors, theme);
 }
 
+export function syncTheme(id: string): void {
+  if (currentThemeId === id) return;
+  applyTheme(id);
+}
+
 export type ColorKey = keyof typeof colors;
 
 export { blendHex } from "./color-utils";

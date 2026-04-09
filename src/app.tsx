@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import {
@@ -21,7 +21,7 @@ import { PluginRegistry } from "./plugins/registry";
 import { AppPersistence } from "./data/app-persistence";
 import { TickerRepository } from "./data/ticker-repository";
 import { ProviderRouter } from "./sources/provider-router";
-import { colors, applyTheme } from "./theme/colors";
+import { colors, syncTheme } from "./theme/colors";
 import {
   createPaneInstance,
   findPaneInstance,
@@ -1262,10 +1262,10 @@ export function App({
   });
   const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
 
+  // Keep the shared palette aligned before this render builds any JSX that reads `colors`.
+  syncTheme(config.theme);
+
   useEffect(() => bindAppActivity(renderer), [renderer]);
-  useLayoutEffect(() => {
-    if (config.theme) applyTheme(config.theme);
-  }, [config.theme]);
 
   const services = useMemo(() => {
     const dbPath = join(config.dataDir, ".gloomberb-cache.db");

@@ -3,7 +3,7 @@ import { act, useRef, type Dispatch } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { AppProvider, PaneInstanceProvider, useAppDispatch, useAppSelector, usePaneTicker, type AppAction } from "./app-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../types/config";
-import { getCurrentThemeId } from "../theme/colors";
+import { applyTheme, getCurrentThemeId } from "../theme/colors";
 
 const TEST_PANE_ID = "ticker-detail:test";
 
@@ -51,6 +51,7 @@ describe("pane selectors", () => {
     testSetup?.renderer.destroy();
     testSetup = undefined;
     capturedDispatch = null;
+    applyTheme("amber");
   });
 
   test("does not rerender usePaneTicker consumers for unrelated app state updates", async () => {
@@ -93,6 +94,21 @@ describe("pane selectors", () => {
     });
 
     await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
+  });
+
+  test("uses the configured theme on the first provider render", async () => {
+    const config = createTickerDetailConfig("AAPL");
+    config.theme = "green";
+
+    testSetup = await testRender(
+      <AppProvider config={config}>
+        <ThemeSelectorHarness />
+      </AppProvider>,
+      { width: 32, height: 4 },
+    );
+
     await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
   });
