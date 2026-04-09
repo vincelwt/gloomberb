@@ -191,32 +191,6 @@ export function OverviewTab({
           />
         </box>
 
-        {description && (
-          <box flexDirection="column" paddingTop={1}>
-            <box height={1}>
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Description</text>
-            </box>
-            <text fg={colors.text}>{description}</text>
-          </box>
-        )}
-
-        {(sector || industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
-          <box flexDirection="column">
-            {ticker.metadata.assetCategory && (
-              <FieldRow label="Type" value={ticker.metadata.assetCategory} />
-            )}
-            {sector && (
-              <FieldRow label="Sector" value={sector} />
-            )}
-            {industry && (
-              <FieldRow label="Industry" value={industry} />
-            )}
-            {ticker.metadata.isin && (
-              <FieldRow label="ISIN" value={ticker.metadata.isin} />
-            )}
-          </box>
-        )}
-
         {ticker.metadata.positions.length > 0 && (
           <box flexDirection="column">
             <box height={1}>
@@ -269,6 +243,32 @@ export function OverviewTab({
                 </box>
               );
             })}
+          </box>
+        )}
+
+        {description && (
+          <box flexDirection="column">
+            <box height={1}>
+              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Description</text>
+            </box>
+            <text fg={colors.text}>{description}</text>
+          </box>
+        )}
+
+        {(sector || industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
+          <box flexDirection="column">
+            {ticker.metadata.assetCategory && (
+              <FieldRow label="Type" value={ticker.metadata.assetCategory} />
+            )}
+            {sector && (
+              <FieldRow label="Sector" value={sector} />
+            )}
+            {industry && (
+              <FieldRow label="Industry" value={industry} />
+            )}
+            {ticker.metadata.isin && (
+              <FieldRow label="ISIN" value={ticker.metadata.isin} />
+            )}
           </box>
         )}
       </box>

@@ -1919,8 +1919,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       <box height={1}>
         <text fg={colors.textMuted}>
           {interactive
-            ? "mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  ←→ cursor  ⇧←→ pan  m mode  r res  1-7 presets  v vol  0 reset  Esc exit"
-            : "Enter crosshair  click chart to focus  a/d pan  +/- zoom  m mode  r res  1-7 presets  v volume  0 reset"}
+            ? "←→ cursor  ⇧←→ pan  m mode  r res  v vol  0 reset  Esc exit"
+            : "a/d pan  +/- zoom  m mode  r res  v volume  0 reset"}
         </text>
       </box>
     </box>
