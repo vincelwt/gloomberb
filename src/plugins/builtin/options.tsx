@@ -7,6 +7,7 @@ import { usePaneTicker } from "../../state/app-context";
 import { ListView, type ListViewItem } from "../../components/ui";
 import { colors, hoverBg } from "../../theme/colors";
 import { padTo, formatCompact, formatNumber } from "../../utils/format";
+import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { Spinner } from "../../components/spinner";
@@ -338,9 +339,9 @@ function formatContractRow(contract: { lastPrice: number; bid: number; ask: numb
     return padTo("—", w.last) + " " + padTo("—", w.bid) + " " + padTo("—", w.ask) + " " + padTo("—", w.vol) + " " + padTo("—", w.oi);
   }
   return (
-    padTo(contract.lastPrice.toFixed(2), w.last) + " " +
-    padTo(contract.bid.toFixed(2), w.bid) + " " +
-    padTo(contract.ask.toFixed(2), w.ask) + " " +
+    padTo(formatMarketPrice(contract.lastPrice, { assetCategory: "OPT", maxWidth: w.last }), w.last) + " " +
+    padTo(formatMarketPrice(contract.bid, { assetCategory: "OPT", maxWidth: w.bid }), w.bid) + " " +
+    padTo(formatMarketPrice(contract.ask, { assetCategory: "OPT", maxWidth: w.ask }), w.ask) + " " +
     padTo(formatCompact(contract.volume), w.vol) + " " +
     padTo(formatCompact(contract.openInterest), w.oi)
   );

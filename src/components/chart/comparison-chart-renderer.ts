@@ -12,6 +12,7 @@ import {
   drawGridLines,
   drawLine,
   formatPrice,
+  resolveAxisFractionDigits,
   type StyledContent,
 } from "./chart-renderer";
 import type { ChartAxisMode, ComparisonChartRenderMode } from "./chart-types";
@@ -71,6 +72,8 @@ export interface RenderComparisonChartResult {
   crosshairValue: number | null;
   cursorColumn: number | null;
   cursorRow: number | null;
+  axisFractionDigits: number | null;
+  priceRange: number | null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -95,10 +98,32 @@ function formatPercentAxisValue(value: number): string {
   return `${prefix}${value.toFixed(decimals)}%`;
 }
 
-export function formatComparisonAxisValue(value: number, axisMode: ChartAxisMode): string {
+function getComparisonAxisFractionDigitFloor(priceRange: number | undefined): number {
+  if (priceRange === undefined || !Number.isFinite(priceRange) || priceRange <= 0) return 0;
+  const visibleStep = priceRange / 3;
+  if (!Number.isFinite(visibleStep) || visibleStep <= 0) return 0;
+  return Math.max(0, Math.ceil(-Math.log10(visibleStep)) + 1);
+}
+
+export function formatComparisonAxisValue(
+  value: number,
+  axisMode: ChartAxisMode,
+  priceRange?: number,
+  fixedFractionDigits?: number,
+): string {
   return axisMode === "percent"
     ? formatPercentAxisValue(value)
-    : formatPrice(value);
+    : formatPrice(value, undefined, priceRange, 0, 0, fixedFractionDigits);
+}
+
+export function formatComparisonCursorAxisValue(
+  value: number,
+  axisMode: ChartAxisMode,
+  priceRange?: number,
+): string {
+  return axisMode === "percent"
+    ? formatPercentAxisValue(value)
+    : formatPrice(value, undefined, priceRange, 2, Math.abs(value) >= 1 ? 2 : 4);
 }
 
 function fillColumn(
@@ -305,13 +330,23 @@ export function renderComparisonChart(
       crosshairValue: null,
       cursorColumn: null,
       cursorRow: null,
+      axisFractionDigits: null,
+      priceRange: null,
     };
   }
 
   const dotWidth = scene.width * 2;
   const chartDotBottom = scene.chartRows * 4 - 1;
+  const priceRange = scene.max - scene.min;
   const buf = createPixelBuffer(dotWidth, scene.height * 4);
   const gridLines = computeGridLines(scene.min, scene.max, 0, chartDotBottom, 3);
+  const axisFractionDigits = scene.axisMode === "price"
+    ? resolveAxisFractionDigits(
+      gridLines.map((line) => line.price),
+      (price, fixedFractionDigits) => formatComparisonAxisValue(price, scene.axisMode, priceRange, fixedFractionDigits),
+      getComparisonAxisFractionDigitFloor(priceRange),
+    )
+    : null;
   drawGridLines(buf, gridLines.map((line) => line.y), scene.colors.gridColor);
 
   const selectedSeries = getSelectedSeries(scene.series, scene.selectedSymbol);
@@ -336,7 +371,7 @@ export function renderComparisonChart(
   for (const line of gridLines) {
     axisLabelsByRow.set(
       Math.min(Math.floor(line.y / 4), Math.max(scene.chartRows - 1, 0)),
-      formatComparisonAxisValue(line.price, scene.axisMode),
+      formatComparisonAxisValue(line.price, scene.axisMode, priceRange, axisFractionDigits ?? undefined),
     );
   }
 
@@ -350,5 +385,7 @@ export function renderComparisonChart(
     crosshairValue: scene.crosshairValue,
     cursorColumn: scene.cursorColumn,
     cursorRow: scene.cursorRow,
+    axisFractionDigits,
+    priceRange,
   };
 }

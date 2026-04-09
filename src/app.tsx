@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { CliRenderer } from "@opentui/core";
 import {
@@ -10,6 +10,7 @@ import {
   useAppState,
 } from "./state/app-context";
 import { bindAppActivity, useAppActive } from "./state/app-activity";
+import { copyActiveSelection, isCopyShortcut, isPasteShortcut, pasteSystemClipboard } from "./utils/selection-clipboard";
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
@@ -20,7 +21,7 @@ import { PluginRegistry } from "./plugins/registry";
 import { AppPersistence } from "./data/app-persistence";
 import { TickerRepository } from "./data/ticker-repository";
 import { ProviderRouter } from "./sources/provider-router";
-import { colors, applyTheme } from "./theme/colors";
+import { colors, syncTheme } from "./theme/colors";
 import {
   createPaneInstance,
   findPaneInstance,
@@ -93,6 +94,7 @@ import { debugLog } from "./utils/debug-log";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
 import { syncBrokerInstance } from "./brokers/sync-broker-instance";
+import { createAppNotifier } from "./notifications/app-notifier";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -122,11 +124,26 @@ interface AppInnerProps {
 function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const appActive = useAppActive();
+  const appActiveRef = useRef(appActive);
   const renderer = useRenderer();
   const dialog = useDialog();
   const stateRef = useRef(state);
   stateRef.current = state;
+  appActiveRef.current = appActive;
   const focusedCollectionId = getFocusedCollectionId(state);
+  const appNotifier = useMemo(() => createAppNotifier({
+    isAppActive: () => appActiveRef.current,
+    renderToast: (notification) => {
+      const type = notification.type ?? "info";
+      const duration = notification.duration;
+      if (type === "success") toast.success(notification.body, { duration });
+      else if (type === "error") toast.error(notification.body, { duration });
+      else toast.info(notification.body, { duration });
+    },
+  }), []);
+  const notify = useCallback((body: string, options?: { type?: "info" | "success" | "error" }) => {
+    pluginRegistry.notify({ body, ...options });
+  }, [pluginRegistry]);
 
   const resolvePrimaryPaneInstanceId = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
     const instances = layout.instances.filter((instance) => instance.paneId === paneId);
@@ -894,7 +911,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     if (paneId === "ticker-detail") {
       const sourcePaneId = resolveCollectionSourcePaneId();
       if (!sourcePaneId) {
-        pluginRegistry.showToastFn("Open a collection pane first to inspect a ticker.");
+        notify("Open a collection pane first to inspect a ticker.");
         return;
       }
       const ensured = ensureInspectorPane(sourcePaneId);
@@ -917,7 +934,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       : buildPaneInstance(paneId);
     if (!instance) {
       if (isTickerPaneId(paneId)) {
-        pluginRegistry.showToastFn("Open a ticker or collection context first.");
+        notify("Open a ticker or collection context first.");
       }
       return;
     }
@@ -960,7 +977,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
         placePaneInstance,
       });
     } catch (error) {
-      pluginRegistry.showToastFn(
+      notify(
         error instanceof Error ? error.message : `Could not create ${getPaneTemplateDisplayLabel(template).toLowerCase()}.`,
         { type: "info" },
       );
@@ -969,6 +986,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     buildPaneInstance,
     dataProvider,
     dispatch,
+    notify,
     placePaneInstance,
     pluginRegistry,
     runPaneTemplateWizard,
@@ -1087,14 +1105,8 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     focusedPaneId: state.focusedPaneId,
   }));
 
-  // Wire up toast
-  pluginRegistry.showToastFn = (message, options) => {
-    const type = options?.type ?? "info";
-    const duration = options?.duration;
-    if (type === "success") toast.success(message, { duration });
-    else if (type === "error") toast.error(message, { duration });
-    else toast.info(message, { duration });
-  };
+  // Wire up app-level notifications.
+  pluginRegistry.notifyFn = appNotifier.notify;
 
   // Persist layout changes (switching, saving, deleting, renaming layouts)
   const prevLayouts = useRef(state.config.layouts);
@@ -1124,6 +1136,17 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
   // Global keyboard shortcuts
   useKeyboard((event) => {
+    if (isCopyShortcut(event) && copyActiveSelection(renderer)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (isPasteShortcut(event) && pasteSystemClipboard(renderer)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     // Skip all global shortcuts when a dialog is open
     if (dialogOpen) return;
 
@@ -1250,11 +1273,10 @@ export function App({
   });
   const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
 
-  useEffect(() => bindAppActivity(renderer), [renderer]);
+  // Keep the shared palette aligned before this render builds any JSX that reads `colors`.
+  syncTheme(config.theme);
 
-  useLayoutEffect(() => {
-    if (config.theme) applyTheme(config.theme);
-  }, [config.theme]);
+  useEffect(() => bindAppActivity(renderer), [renderer]);
 
   const services = useMemo(() => {
     const dbPath = join(config.dataDir, ".gloomberb-cache.db");

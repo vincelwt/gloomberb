@@ -96,6 +96,56 @@ describe("TickerBadgeText", () => {
     expect(opened).toEqual(["TSLA"]);
   });
 
+  test("renders inline links alongside ticker badges", async () => {
+    testSetup = await testRender(
+      <TickerBadgeText
+        text="Read https://example.com while watching $TSLA"
+        lineWidth={60}
+        catalog={{ TSLA: makeCatalogEntry() }}
+        textColor="#ffffff"
+        openTicker={() => {}}
+      />,
+      { width: 60, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("https://example.com");
+    expect(frame).toContain("TSLA -5%");
+  });
+
+  test("opens detected links without trailing punctuation when clicked", async () => {
+    const opened: string[] = [];
+    testSetup = await testRender(
+      <TickerBadgeText
+        text="Read https://example.com/story."
+        lineWidth={60}
+        catalog={{}}
+        textColor="#ffffff"
+        openTicker={() => {}}
+        openLink={(url) => opened.push(url)}
+      />,
+      { width: 60, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("https://example.com/story."));
+    const col = lines[row]?.indexOf("https://example.com/story") ?? -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+    });
+
+    expect(opened).toEqual(["https://example.com/story"]);
+  });
+
   test("shows the current price when the badge is hovered", async () => {
     testSetup = await testRender(
       <TickerBadgeText

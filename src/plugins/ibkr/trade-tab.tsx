@@ -8,7 +8,8 @@ import { useAppState, usePaneCollection, usePaneInstanceId, usePaneTicker } from
 import { colors, hoverBg } from "../../theme/colors";
 import type { DetailTabProps } from "../../types/plugin";
 import type { BrokerOrderRequest, BrokerOrderType } from "../../types/trading";
-import { formatCurrency, formatNumber } from "../../utils/format";
+import { formatCurrency } from "../../utils/format";
+import { formatMarketPrice, formatMarketQuantity } from "../../utils/market-format";
 import { getBrokerInstance } from "../../utils/broker-instances";
 import { isGatewayConfigured } from "./config";
 import { ChoiceDialog, InputDialog } from "./dialogs";
@@ -401,6 +402,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
           label={label}
           currentValue={currentValue}
           quote={financials?.quote}
+          assetCategory={ticker?.metadata.assetCategory}
         />
       ),
     });
@@ -818,7 +820,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               )}
             </box>
             <box height={1}>
-              <text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote)}</text>
+              <text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote, { assetCategory: ticker.metadata.assetCategory })}</text>
             </box>
           </box>
 
@@ -946,7 +948,11 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               {renderFieldPill({
                 id: "quantity",
                 label: "Qty [q]",
-                value: formatNumber(ticketState.draft.quantity, 0),
+                value: formatMarketQuantity(ticketState.draft.quantity, {
+                  assetCategory: ticker.metadata.assetCategory,
+                  contractSecType: activeContract.secType,
+                  maxWidth: fieldTextWidth,
+                }),
                 widthOverride: orderFieldWidth,
                 onPress: () => {
                   editNumericField("Quantity", ticketState.draft.quantity, (value) => {
@@ -957,7 +963,13 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               {showLimit && renderFieldPill({
                 id: "limitPrice",
                 label: "Limit [l]",
-                value: ticketState.draft.limitPrice != null ? ticketState.draft.limitPrice.toFixed(2) : "—",
+                value: ticketState.draft.limitPrice != null
+                  ? formatMarketPrice(ticketState.draft.limitPrice, {
+                    assetCategory: ticker.metadata.assetCategory,
+                    contractSecType: activeContract.secType,
+                    maxWidth: fieldTextWidth,
+                  })
+                  : "—",
                 widthOverride: orderFieldWidth,
                 onPress: () => {
                   editPriceField("Limit Price", ticketState.draft.limitPrice, (value) => {
@@ -968,7 +980,13 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               {showStop && renderFieldPill({
                 id: "stopPrice",
                 label: "Stop [x]",
-                value: ticketState.draft.stopPrice != null ? ticketState.draft.stopPrice.toFixed(2) : "—",
+                value: ticketState.draft.stopPrice != null
+                  ? formatMarketPrice(ticketState.draft.stopPrice, {
+                    assetCategory: ticker.metadata.assetCategory,
+                    contractSecType: activeContract.secType,
+                    maxWidth: fieldTextWidth,
+                  })
+                  : "—",
                 widthOverride: orderFieldWidth,
                 onPress: () => {
                   editPriceField("Stop Price", ticketState.draft.stopPrice, (value) => {

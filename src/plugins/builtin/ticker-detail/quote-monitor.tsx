@@ -5,7 +5,8 @@ import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-
 import { usePaneTicker } from "../../../state/app-context";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { colors, priceColor } from "../../../theme/colors";
-import { formatCurrency, formatPercentRaw } from "../../../utils/format";
+import { formatPercentRaw } from "../../../utils/format";
+import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../../utils/market-format";
 import { getActiveQuoteDisplay } from "../../../utils/market-status";
 import { EmptyState } from "../../../components";
 
@@ -65,14 +66,11 @@ export function QuoteMonitorPane({ focused, width }: PaneProps) {
 
             <box flexDirection="column" alignItems={compact ? "flex-start" : "flex-end"}>
               <text attributes={TextAttributes.BOLD} fg={changeColor}>
-                {formatCurrency(display.price, currency)}
+                {formatMarketPriceWithCurrency(display.price, currency, { assetCategory: ticker.metadata.assetCategory })}
               </text>
               <box flexDirection="row" gap={1}>
                 <text fg={changeColor}>{formatPercentRaw(display.changePercent)}</text>
-                <text fg={changeColor}>
-                  {display.change > 0 ? "+" : ""}
-                  {display.change.toFixed(2)}
-                </text>
+                <text fg={changeColor}>{formatSignedMarketPrice(display.change, { assetCategory: ticker.metadata.assetCategory })}</text>
               </box>
             </box>
           </box>

@@ -82,6 +82,7 @@ export function TextField({
           ref={resolvedInputRef}
           width={width}
           value={value}
+          selectable={!isPassword}
           placeholder={isPassword ? "" : placeholder}
           focused={focused}
           textColor={isPassword ? backgroundColor : textColor}
@@ -115,7 +116,7 @@ export function TextField({
               resolvedInputRef.current?.focus?.();
             }}
           >
-            <text fg={maskedTextColor}>
+            <text fg={maskedTextColor} selectable={false}>
               {maskedBefore}
               {focused && (
                 <span bg={maskedTextColor} fg={backgroundColor}>{maskedCursorChar}</span>

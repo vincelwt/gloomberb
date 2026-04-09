@@ -4,6 +4,7 @@ import {
   formatNumber,
   formatPercentRaw,
 } from "../utils/format";
+import { formatMarketPriceWithCurrency } from "../utils/market-format";
 export { slugifyName } from "../utils/slugify";
 import type { AppConfig } from "../types/config";
 import type { Watchlist, TickerRecord } from "../types/ticker";
@@ -42,13 +43,14 @@ export function formatBidAsk(
   bidSize: number | undefined,
   askSize: number | undefined,
   currency: string,
+  assetCategory?: string,
 ): string {
   if (bid == null && ask == null) return "—";
   const bidText = bid != null
-    ? `${formatCurrency(bid, currency)}${bidSize != null ? ` x ${formatNumber(bidSize, 0)}` : ""}`
+    ? `${formatMarketPriceWithCurrency(bid, currency, { assetCategory })}${bidSize != null ? ` x ${formatNumber(bidSize, 0)}` : ""}`
     : "—";
   const askText = ask != null
-    ? `${formatCurrency(ask, currency)}${askSize != null ? ` x ${formatNumber(askSize, 0)}` : ""}`
+    ? `${formatMarketPriceWithCurrency(ask, currency, { assetCategory })}${askSize != null ? ` x ${formatNumber(askSize, 0)}` : ""}`
     : "—";
   return `${bidText} / ${askText}`;
 }

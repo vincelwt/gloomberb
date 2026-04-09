@@ -111,7 +111,7 @@ function setupIbkrPlugin(config: AppConfig) {
     emit: () => {},
     showWidget: () => {},
     hideWidget: () => {},
-    showToast: (message: string) => { toasts.push(message); },
+    notify: ({ body }: { body: string }) => { toasts.push(body); },
   } satisfies GloomPluginContext;
 
   void ibkrPlugin.setup?.(ctx);

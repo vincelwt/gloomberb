@@ -1,6 +1,7 @@
 import type { MarketState, Quote, QuoteFieldProvenance } from "../types/financials";
 import { colors, priceColor } from "../theme/colors";
 import { formatPercentRaw } from "./format";
+import { formatMarketPrice } from "./market-format";
 
 export interface ActiveQuoteDisplay {
   price: number;
@@ -107,11 +108,11 @@ export function getExtendedHoursInfo(quote: Quote | null | undefined): { text: s
   if (!quote) return null;
   if ((quote.marketState === "PRE" || quote.marketState === "PREPRE") && quote.preMarketPrice != null) {
     const chg = quote.preMarketChangePercent ?? 0;
-    return { text: `Pre ${quote.preMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
+    return { text: `Pre ${formatMarketPrice(quote.preMarketPrice)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
   }
   if ((quote.marketState === "POST" || quote.marketState === "POSTPOST") && quote.postMarketPrice != null) {
     const chg = quote.postMarketChangePercent ?? 0;
-    return { text: `AH ${quote.postMarketPrice.toFixed(2)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
+    return { text: `AH ${formatMarketPrice(quote.postMarketPrice)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
   }
   return null;
 }

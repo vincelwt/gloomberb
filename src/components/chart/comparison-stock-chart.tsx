@@ -7,7 +7,8 @@ import { useAppState, usePaneSettingValue } from "../../state/app-context";
 import { blendHex, colors, getComparisonSeriesColor, priceColor } from "../../theme/colors";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
-import { formatCurrency, formatPercentRaw } from "../../utils/format";
+import { formatPercentRaw } from "../../utils/format";
+import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../utils/market-format";
 import { getSharedDataProvider } from "../../plugins/registry";
 import {
   applyComparisonZoomAroundAnchor,
@@ -47,6 +48,7 @@ import { RIGHT_EDGE_ANCHOR_RATIO } from "./chart-viewport";
 import {
   buildComparisonChartScene,
   formatComparisonAxisValue,
+  formatComparisonCursorAxisValue,
   renderComparisonChart,
 } from "./comparison-chart-renderer";
 import {
@@ -79,7 +81,7 @@ import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-suppor
 import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
 import { syncCachedNativeSurface } from "./native/surface-sync";
-import { formatDateShort, type StyledContent } from "./chart-renderer";
+import { formatAxisCell, formatDateShort, resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -407,11 +409,6 @@ function buildBlankPlotLines(width: number, height: number): string[] {
   return Array.from({ length: height }, () => " ".repeat(width));
 }
 
-function formatAxisCell(label: string | null, width: number): string {
-  if (!label) return " ".repeat(width);
-  return label.length >= width ? label.slice(0, width) : label.padStart(width);
-}
-
 function buildComparisonNativeBitmapKey(
   symbolCount: number,
   projection: ReturnType<typeof projectComparisonChartData>,
@@ -578,8 +575,10 @@ function ComparisonStockChartView({
   const appliedCanonicalResetRef = useRef(0);
   const pendingExpansionRef = useRef<PendingExpansionAction>(null);
 
-  const axisWidth = 11;
-  const axisGap = 1;
+  const axisSectionWidthBudget = 11;
+  const axisRightPadding = 1;
+  const minimumAxisWidth = axisMode === "percent" ? 5 : 4;
+  const axisGap = axisSectionWidthBudget > 0 ? 1 : 0;
   const headerRows = 1;
   const controlRows = 2;
   const timeAxisRows = 1;
@@ -589,9 +588,9 @@ function ComparisonStockChartView({
   const legendRows = legendNeededRows > 0
     ? Math.min(4, Math.max(Math.min(height - (headerRows + controlRows + timeAxisRows + helpRows + 4), legendNeededRows), 1))
     : 0;
-  const chartWidth = Math.max(width - axisWidth - axisGap, 20);
   const chartHeight = Math.max(height - headerRows - controlRows - timeAxisRows - helpRows - legendRows, 4);
-  const maxCursorX = chartWidth - 1;
+  const minChartWidth = 20;
+  const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
   const legendItemWidth = Math.max(Math.floor((width - Math.max(legendColumns - 1, 0)) / legendColumns), 20);
   const chartColors = useMemo(() => ({
     bgColor: colors.bg,
@@ -819,6 +818,70 @@ function ComparisonStockChartView({
       points: history,
     };
   }), [chartEntries, chartRequests, colors.bg, symbolSources]);
+  const axisWidth = useMemo(() => {
+    const measureAxisWidth = (targetWidth: number) => {
+      const measuredProjection = projectComparisonChartData(series, targetWidth, viewState, axisMode);
+      const measuredResult = renderComparisonChart(measuredProjection, {
+        width: targetWidth,
+        height: chartHeight,
+        cursorX: null,
+        cursorY: null,
+        selectedSymbol: viewState.selectedSymbol,
+        colors: chartColors,
+      });
+      const measuredScene = buildComparisonChartScene(measuredProjection, {
+        width: targetWidth,
+        height: chartHeight,
+        cursorX: null,
+        cursorY: null,
+        selectedSymbol: viewState.selectedSymbol,
+        colors: chartColors,
+      });
+      const cursorSamples = measuredScene
+        ? [
+          formatComparisonCursorAxisValue(
+            measuredScene.min,
+            measuredProjection.effectiveAxisMode,
+            measuredResult.priceRange ?? undefined,
+          ),
+          formatComparisonCursorAxisValue(
+            measuredScene.max,
+            measuredProjection.effectiveAxisMode,
+            measuredResult.priceRange ?? undefined,
+          ),
+        ]
+        : [];
+
+      return resolveChartAxisWidth(
+        [...measuredResult.axisLabels.map((entry) => entry.label), ...cursorSamples],
+        minimumAxisWidth,
+        Math.max(axisSectionWidthBudget - axisRightPadding, minimumAxisWidth),
+      );
+    };
+
+    const firstPassWidth = measureAxisWidth(measurementChartWidth);
+    const refinedChartWidth = Math.max(width - firstPassWidth - axisRightPadding - axisGap, minChartWidth);
+    return refinedChartWidth === measurementChartWidth ? firstPassWidth : measureAxisWidth(refinedChartWidth);
+  }, [
+    axisGap,
+    axisMode,
+    axisRightPadding,
+    axisSectionWidthBudget,
+    chartColors,
+    chartHeight,
+    measurementChartWidth,
+    minChartWidth,
+    minimumAxisWidth,
+    series,
+    viewState.panOffset,
+    viewState.renderMode,
+    viewState.selectedSymbol,
+    viewState.zoomLevel,
+    width,
+  ]);
+  const axisSectionWidth = axisWidth + axisRightPadding;
+  const chartWidth = Math.max(width - axisSectionWidth - axisGap, minChartWidth);
+  const maxCursorX = chartWidth - 1;
   const seriesDates = useMemo(() => getUniqueSortedSeriesDates(series), [series]);
   const visibleDateWindow = useMemo(() => buildVisibleDateWindow(seriesDates, viewState.panOffset, viewState.zoomLevel), [seriesDates, viewState.panOffset, viewState.zoomLevel]);
   const activePreset = isCanonicalPresetViewport(seriesDates, {
@@ -1525,9 +1588,14 @@ function ComparisonStockChartView({
     : null;
   const selectedCurrency = selectedSeries?.currency ?? "USD";
   const displayDate = result.activeDate ?? staticResult.activeDate;
+  const visiblePriceRange = result.priceRange ?? staticResult.priceRange ?? undefined;
   const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
   const cursorAxisLabel = result.cursorRow !== null && result.crosshairValue !== null
-    ? formatComparisonAxisValue(result.crosshairValue, projection.effectiveAxisMode)
+    ? formatComparisonCursorAxisValue(
+      result.crosshairValue,
+      projection.effectiveAxisMode,
+      visiblePriceRange,
+    )
     : null;
   const visibleLabel = formatVisibleSpanLabel({
     start: visibleWindow.dates[0] ?? null,
@@ -1575,13 +1643,13 @@ function ComparisonStockChartView({
   );
 
   const axisBox = (
-    <box width={axisWidth} height={chartHeight} flexDirection="column">
+    <box width={axisSectionWidth} height={chartHeight} flexDirection="column">
       {Array.from({ length: chartHeight }, (_, row) => {
         const isCursorRow = cursorAxisLabel !== null && result.cursorRow === row;
         const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
         return (
           <text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
-            {formatAxisCell(label, axisWidth)}
+            {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
           </text>
         );
       })}
@@ -1600,11 +1668,21 @@ function ComparisonStockChartView({
         </text>
         <text fg={colors.textDim}>{visibleLabel}</text>
         <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
-          {selectedRawValue !== null ? formatCurrency(selectedRawValue, selectedCurrency) : "—"}
+          {selectedRawValue !== null
+            ? formatMarketPriceWithCurrency(selectedRawValue, selectedCurrency, {
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })
+            : "—"}
         </text>
         <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
           {selectedChange !== null && selectedChangePct !== null
-            ? `${selectedChange >= 0 ? "+" : ""}${selectedChange.toFixed(2)} (${formatPercentRaw(selectedChangePct)})`
+            ? `${formatSignedMarketPrice(selectedChange, {
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })} (${formatPercentRaw(selectedChangePct)})`
             : "Waiting for data"}
         </text>
         {displayDate && <text fg={colors.textDim}>{formatDateShort(displayDate)}</text>}

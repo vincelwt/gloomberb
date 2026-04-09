@@ -4,7 +4,8 @@ import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
 import { clampQuoteTimestamp, formatQuoteAgeWithSource } from "../../../utils/quote-time";
-import { convertCurrency, formatCompact, formatCurrency, formatNumber, formatPercentRaw, formatPrice } from "../../../utils/format";
+import { convertCurrency, formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
+import { formatMarketCost, formatMarketPrice, formatMarketQuantity, formatSignedMarketPrice, type MarketFormatOptions } from "../../../utils/market-format";
 import { getActiveQuoteDisplay, marketStateDot, type ActiveQuoteDisplay } from "../../../utils/market-status";
 import { formatOptionTicker } from "../../../utils/options";
 
@@ -21,6 +22,7 @@ interface PortfolioPositionMetrics {
   totalCost: number;
   totalCostUnits: number;
   totalPriceUnits: number;
+  multiplierHint: number;
   brokerMktValue: number;
   hasBrokerMktValue: boolean;
   brokerPnl: number;
@@ -95,6 +97,7 @@ function getPortfolioPositionMetrics(
   let totalCost = 0;
   let totalCostUnits = 0;
   let totalPriceUnits = 0;
+  let multiplierHint = 1;
   let brokerMktValue = 0;
   let hasBrokerMktValue = false;
   let brokerPnl = 0;
@@ -103,6 +106,7 @@ function getPortfolioPositionMetrics(
     const direction = position.side === "short" ? -1 : 1;
     const priceMultiplier = normalizePositionMultiplier(position.multiplier);
     const costMultiplier = resolvePositionCostMultiplier(position);
+    multiplierHint = Math.max(multiplierHint, priceMultiplier, costMultiplier);
 
     totalShares += position.shares * direction;
     totalCost += position.shares * position.avgCost * costMultiplier;
@@ -125,6 +129,7 @@ function getPortfolioPositionMetrics(
     totalCost,
     totalCostUnits,
     totalPriceUnits,
+    multiplierHint,
     brokerMktValue,
     hasBrokerMktValue,
     brokerPnl,
@@ -155,15 +160,17 @@ function resolveBrokerFallbackPnl(metrics: PortfolioPositionMetrics, brokerMarke
 export function resolvePortfolioPriceValue(
   activeQuote: ActiveQuoteDisplay | null,
   brokerMarkPrice: number | undefined,
+  formatOptions: MarketFormatOptions,
+  maxWidth?: number,
 ): { text: string; color?: string } {
   if (activeQuote) {
     return {
-      text: formatPrice(activeQuote.price),
+      text: formatMarketPrice(activeQuote.price, { ...formatOptions, maxWidth }),
       color: priceColor(activeQuote.change),
     };
   }
   if (brokerMarkPrice != null) {
-    return { text: formatPrice(brokerMarkPrice) };
+    return { text: formatMarketPrice(brokerMarkPrice, { ...formatOptions, maxWidth }) };
   }
   return { text: "—" };
 }
@@ -180,13 +187,17 @@ export function getColumnValue(
   const quoteCurrency = quote?.currency || ticker.metadata.currency || "USD";
 
   const positionMetrics = getPortfolioPositionMetrics(ticker, ctx.activeTab, quoteCurrency);
-  const { positionCurrency, totalShares, totalCost, totalCostUnits, totalPriceUnits, brokerMarkPrice } = positionMetrics;
+  const { positionCurrency, totalShares, totalCost, totalCostUnits, totalPriceUnits, multiplierHint, brokerMarkPrice } = positionMetrics;
   const brokerFallbackMktValue = resolveBrokerFallbackMarketValue(positionMetrics);
   const brokerFallbackPnl = resolveBrokerFallbackPnl(positionMetrics, brokerFallbackMktValue);
   const toBaseQuote = (value: number) =>
     convertCurrency(value, quoteCurrency, ctx.baseCurrency, ctx.exchangeRates);
   const toBasePosition = (value: number) =>
     convertCurrency(value, positionCurrency, ctx.baseCurrency, ctx.exchangeRates);
+  const formatOptions: MarketFormatOptions = {
+    assetCategory: ticker.metadata.assetCategory,
+    multiplier: multiplierHint,
+  };
 
   switch (col.id) {
     case "ticker": {
@@ -198,21 +209,21 @@ export function getColumnValue(
       return { text: `${statusDot} ${displayName}` };
     }
     case "price":
-      return resolvePortfolioPriceValue(activeQuote, brokerMarkPrice);
+      return resolvePortfolioPriceValue(activeQuote, brokerMarkPrice, formatOptions, col.width);
     case "change":
       if (!activeQuote) return { text: "—" };
       return {
-        text: (activeQuote.change >= 0 ? "+" : "") + activeQuote.change.toFixed(2),
+        text: formatSignedMarketPrice(activeQuote.change, { ...formatOptions, maxWidth: col.width }),
         color: priceColor(activeQuote.change),
       };
     case "bid":
-      return { text: quote?.bid != null ? formatPrice(quote.bid) : "—" };
+      return { text: quote?.bid != null ? formatMarketPrice(quote.bid, { ...formatOptions, maxWidth: col.width }) : "—" };
     case "ask":
-      return { text: quote?.ask != null ? formatPrice(quote.ask) : "—" };
+      return { text: quote?.ask != null ? formatMarketPrice(quote.ask, { ...formatOptions, maxWidth: col.width }) : "—" };
     case "spread":
       return {
         text: quote?.bid != null && quote?.ask != null
-          ? formatCurrency(quote.ask - quote.bid, quoteCurrency)
+          ? formatMarketPrice(quote.ask - quote.bid, { ...formatOptions, maxWidth: col.width })
           : "—",
       };
     case "change_pct":
@@ -241,10 +252,10 @@ export function getColumnValue(
       }
       return { text: "—" };
     case "shares":
-      return { text: totalShares !== 0 ? formatCompact(totalShares) : "—" };
+      return { text: totalShares !== 0 ? formatMarketQuantity(totalShares, { ...formatOptions, maxWidth: col.width }) : "—" };
     case "avg_cost":
       if (totalCostUnits === 0) return { text: "—" };
-      return { text: formatPrice(totalCost / Math.abs(totalCostUnits)) };
+      return { text: formatMarketCost(totalCost / Math.abs(totalCostUnits), { ...formatOptions, maxWidth: col.width }) };
     case "cost_basis":
       if (totalCost === 0) return { text: "—" };
       return { text: formatCompact(toBasePosition(totalCost)) };

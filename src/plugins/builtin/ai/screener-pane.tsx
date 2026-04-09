@@ -142,6 +142,7 @@ function ScreenerPromptEditor({
         placeholderColor={colors.textDim}
         backgroundColor={colors.panel}
         flexGrow={1}
+        wrapText
       />
     </box>
   );

@@ -4,7 +4,8 @@ import type { AppState } from "../../../state/app-context";
 import { colors, priceColor } from "../../../theme/colors";
 import type { TickerFinancials } from "../../../types/financials";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
-import { formatCompact, formatNumber, formatPercentRaw, padTo } from "../../../utils/format";
+import { formatCompact, formatPercentRaw, padTo } from "../../../utils/format";
+import { formatMarketQuantity } from "../../../utils/market-format";
 import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
 import { ibkrGatewayManager } from "../../ibkr/gateway-service";
 import { calculatePortfolioSummaryTotals } from "./metrics";
@@ -110,7 +111,7 @@ export function PortfolioCashMarginDrawer({
             <box key={balance.currency} height={1} flexDirection="row">
               <text fg={colors.textBright}>{padTo(balance.currency, 4)}</text>
               <text fg={colors.textDim}>{" qty "}</text>
-              <text fg={colors.text}>{padTo(formatNumber(balance.quantity, 2), 14, "right")}</text>
+              <text fg={colors.text}>{padTo(formatMarketQuantity(balance.quantity, { isCashBalance: true, maxWidth: 14 }), 14, "right")}</text>
               <text fg={colors.textDim}>{"  value "}</text>
               <text fg={colors.text}>{padTo(balance.baseValue != null ? formatCompact(balance.baseValue) : "—", 10, "right")}</text>
             </box>

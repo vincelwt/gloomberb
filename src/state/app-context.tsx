@@ -13,7 +13,7 @@ import {
 } from "react";
 import type { SessionStore } from "../data/session-store";
 import { saveConfig } from "../data/config-store";
-import { applyTheme } from "../theme/colors";
+import { applyTheme, syncTheme } from "../theme/colors";
 import { isBrokerPortfolioId } from "../utils/broker-instances";
 import { resolveTickerFinancialsQuoteState } from "../utils/quote-resolution";
 import {
@@ -1043,6 +1043,8 @@ export function AppProvider({
   sessionStore?: SessionStore;
   sessionSnapshot?: AppSessionSnapshot | null;
 }) {
+  // Sync the configured theme before descendants read the shared palette on first render.
+  syncTheme(config.theme);
   const [state, dispatch] = useReducer(appReducer, { config, sessionSnapshot }, ({ config, sessionSnapshot: initialSessionSnapshot }) => (
     createInitialState(config, initialSessionSnapshot)
   ));

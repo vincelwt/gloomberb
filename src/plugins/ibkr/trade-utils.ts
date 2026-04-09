@@ -5,6 +5,7 @@ import type { TickerRecord } from "../../types/ticker";
 import type { BrokerAccount, BrokerOrderPreview, BrokerOrderType } from "../../types/trading";
 import { colors } from "../../theme/colors";
 import { formatCompact, formatCurrency } from "../../utils/format";
+import { formatMarketPrice, formatMarketPriceWithCurrency, formatSignedMarketPrice, type AssetDisplayContext } from "../../utils/market-format";
 import { getConfiguredIbkrGatewayInstances } from "./instance-selection";
 
 export type TradeTone = "neutral" | "accent" | "positive" | "negative";
@@ -71,13 +72,13 @@ export function formatContractLabel(contract: BrokerContractRef): string {
   return `${base}${suffix}`;
 }
 
-export function formatQuoteSummary(quote?: Quote): string {
+export function formatQuoteSummary(quote?: Quote, formatContext: AssetDisplayContext = {}): string {
   if (!quote) return "No broker quote loaded";
-  const change = `${quote.change >= 0 ? "+" : ""}${quote.change.toFixed(2)}`;
-  const parts = [`${formatCurrency(quote.price, quote.currency)}  ${change}`];
-  if (quote.bid != null) parts.push(`Bid ${quote.bid.toFixed(2)}`);
-  if (quote.ask != null) parts.push(`Ask ${quote.ask.toFixed(2)}`);
-  if (quote.bid != null && quote.ask != null) parts.push(`Spd ${(quote.ask - quote.bid).toFixed(2)}`);
+  const change = formatSignedMarketPrice(quote.change, formatContext);
+  const parts = [`${formatMarketPriceWithCurrency(quote.price, quote.currency, formatContext)}  ${change}`];
+  if (quote.bid != null) parts.push(`Bid ${formatMarketPrice(quote.bid, formatContext)}`);
+  if (quote.ask != null) parts.push(`Ask ${formatMarketPrice(quote.ask, formatContext)}`);
+  if (quote.bid != null && quote.ask != null) parts.push(`Spd ${formatMarketPrice(quote.ask - quote.bid, formatContext)}`);
   return parts.join(" · ");
 }
 

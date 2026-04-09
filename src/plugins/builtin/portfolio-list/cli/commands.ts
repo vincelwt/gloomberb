@@ -17,6 +17,7 @@ import {
 } from "../../../../utils/cli-output";
 import { exchangeShortName } from "../../../../utils/market-status";
 import { formatCompact, formatCurrency } from "../../../../utils/format";
+import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity } from "../../../../utils/market-format";
 import type { AppConfig } from "../../../../types/config";
 import type { CliCommandContext, CliCommandDef } from "../../../../types/plugin";
 import type { TickerRecord } from "../../../../types/ticker";
@@ -134,7 +135,9 @@ async function showCollection(name: string, ctx: CliCommandContext) {
     for (const ticker of filtered) {
       const quote = quotes.get(ticker.metadata.ticker);
       const positions = ticker.metadata.positions.filter((position) => position.portfolio === id);
-      const priceText = quote ? colorBySign(formatCurrency(quote.price, quote.currency), quote.change) : "—";
+      const priceText = quote
+        ? colorBySign(formatMarketPriceWithCurrency(quote.price, quote.currency, { assetCategory: ticker.metadata.assetCategory }), quote.change)
+        : "—";
       const changeText = quote ? colorBySign(formatSignedPercentRaw(quote.changePercent), quote.change) : "—";
 
       if (positions.length === 0) {
@@ -157,8 +160,8 @@ async function showCollection(name: string, ctx: CliCommandContext) {
           ticker.metadata.ticker,
           priceText,
           changeText,
-          String(position.shares),
-          formatCurrency(position.avgCost, positionCurrency),
+          formatMarketQuantity(position.shares, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier }),
+          formatMarketCostWithCurrency(position.avgCost, positionCurrency, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier }),
           pnl == null ? "—" : colorBySign(formatSignedCurrency(pnl, baseCurrency), pnl),
         ]);
       }
@@ -181,7 +184,9 @@ async function showCollection(name: string, ctx: CliCommandContext) {
     const rows: string[][] = [];
     for (const ticker of filtered) {
       const quote = quotes.get(ticker.metadata.ticker);
-      const priceText = quote ? colorBySign(formatCurrency(quote.price, quote.currency), quote.change) : "—";
+      const priceText = quote
+        ? colorBySign(formatMarketPriceWithCurrency(quote.price, quote.currency, { assetCategory: ticker.metadata.assetCategory }), quote.change)
+        : "—";
       const changeText = quote ? colorBySign(formatSignedPercentRaw(quote.changePercent), quote.change) : "—";
       const marketCapText = quote?.marketCap != null
         ? `${formatCompact(await toBase(quote.marketCap, quote.currency || ticker.metadata.currency || baseCurrency))} ${baseCurrency}`
@@ -343,8 +348,8 @@ async function setPositionCommand(
     });
     await store.saveTicker(result.ticker);
     console.log(cliStyles.success(`Set position for ${result.ticker.metadata.ticker} in "${portfolio.name}".`));
-    console.log(renderStat("Shares", String(shares)));
-    console.log(renderStat("Average Cost", formatCurrency(avgCost, currency)));
+    console.log(renderStat("Shares", formatMarketQuantity(shares, { assetCategory: result.ticker.metadata.assetCategory })));
+    console.log(renderStat("Average Cost", formatMarketCostWithCurrency(avgCost, currency, { assetCategory: result.ticker.metadata.assetCategory })));
     console.log(renderStat("Currency", currency));
   } catch (error: any) {
     ctx.closeAndFail(persistence, error?.message || `Failed to set position for ${symbol} in "${portfolioName}".`);

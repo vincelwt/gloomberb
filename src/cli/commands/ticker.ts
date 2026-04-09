@@ -4,6 +4,7 @@ import {
   formatNumber,
   formatPercent,
 } from "../../utils/format";
+import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity } from "../../utils/market-format";
 import {
   cliStyles,
   colorBySign,
@@ -75,6 +76,30 @@ function appendTextSection(lines: string[], title: string, content: string | und
   lines.push("");
   lines.push(renderSection(title));
   lines.push(text);
+}
+
+function normalizeTimestamp(value: Date | string | number | undefined): number | null {
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const timestamp = new Date(value).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  return null;
+}
+
+function formatFeedDate(value: Date | string | number | undefined): string {
+  const timestamp = normalizeTimestamp(value);
+  if (timestamp == null) return "";
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function appendFeedSection(
@@ -215,16 +240,16 @@ export async function buildTickerReport({
     : "—";
 
   appendMetricSection(lines, "Quote", [
-    ["Last", colorBySign(formatCurrency(quote.price, quote.currency), quote.change)],
+    ["Last", colorBySign(formatMarketPriceWithCurrency(quote.price, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory }), quote.change)],
     ["Change", colorBySign(`${formatSignedCurrency(quote.change, quote.currency)} (${formatSignedPercentRaw(quote.changePercent)})`, quote.change)],
-    ["Open", quote.open != null ? formatCurrency(quote.open, quote.currency) : "—"],
+    ["Open", quote.open != null ? formatMarketPriceWithCurrency(quote.open, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory }) : "—"],
     ["Day Range", quote.low != null || quote.high != null
-      ? `${quote.low != null ? formatCurrency(quote.low, quote.currency) : "—"} - ${quote.high != null ? formatCurrency(quote.high, quote.currency) : "—"}`
+      ? `${quote.low != null ? formatMarketPriceWithCurrency(quote.low, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory }) : "—"} - ${quote.high != null ? formatMarketPriceWithCurrency(quote.high, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory }) : "—"}`
       : "—"],
     ["52W Range", quote.low52w != null || quote.high52w != null
-      ? `${quote.low52w != null ? formatCurrency(quote.low52w, quote.currency) : "—"} - ${quote.high52w != null ? formatCurrency(quote.high52w, quote.currency) : "—"}`
+      ? `${quote.low52w != null ? formatMarketPriceWithCurrency(quote.low52w, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory }) : "—"} - ${quote.high52w != null ? formatMarketPriceWithCurrency(quote.high52w, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory }) : "—"}`
       : "—"],
-    ["Bid / Ask", formatBidAsk(quote.bid, quote.ask, quote.bidSize, quote.askSize, quote.currency)],
+    ["Bid / Ask", formatBidAsk(quote.bid, quote.ask, quote.bidSize, quote.askSize, quote.currency, tickerFile?.metadata.assetCategory)],
     ["Volume", quote.volume != null ? formatNumber(quote.volume, 0) : "—"],
     ["Updated", formatTimestamp(quote.lastUpdated)],
   ]);
@@ -232,13 +257,13 @@ export async function buildTickerReport({
   appendMetricSection(lines, "Extended Hours", [
     ["Pre-Market", quote.preMarketPrice != null
       ? colorBySign(
-        `${formatCurrency(quote.preMarketPrice, quote.currency)} (${formatSignedPercentRaw(quote.preMarketChangePercent ?? 0)})`,
+        `${formatMarketPriceWithCurrency(quote.preMarketPrice, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory })} (${formatSignedPercentRaw(quote.preMarketChangePercent ?? 0)})`,
         quote.preMarketChange ?? 0,
       )
       : "—"],
     ["After Hours", quote.postMarketPrice != null
       ? colorBySign(
-        `${formatCurrency(quote.postMarketPrice, quote.currency)} (${formatSignedPercentRaw(quote.postMarketChangePercent ?? 0)})`,
+        `${formatMarketPriceWithCurrency(quote.postMarketPrice, quote.currency, { assetCategory: tickerFile?.metadata.assetCategory })} (${formatSignedPercentRaw(quote.postMarketChangePercent ?? 0)})`,
         quote.postMarketChange ?? 0,
       )
       : "—"],
@@ -288,18 +313,20 @@ export async function buildTickerReport({
     title: item.title,
     meta: [
       item.source,
-      Number.isNaN(item.publishedAt.getTime()) ? "" : formatTimestamp(item.publishedAt.getTime()),
+      (() => {
+        const publishedAt = normalizeTimestamp(item.publishedAt as Date | string | number | undefined);
+        return publishedAt == null ? "" : formatTimestamp(publishedAt);
+      })(),
     ],
     body: item.summary,
     link: item.url,
   })));
 
   appendFeedSection(lines, "Recent SEC Filings", recentSecFilings.map((filing) => ({
-    title: `${filing.form} | ${filing.filingDate.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })}`,
+    title: (() => {
+      const filingDate = formatFeedDate(filing.filingDate as Date | string | number | undefined);
+      return filingDate ? `${filing.form} | ${filingDate}` : filing.form;
+    })(),
     meta: [
       filing.items ? `Items ${filing.items}` : "",
       getFilingDescription(filing) ?? "",
@@ -320,12 +347,15 @@ export async function buildTickerReport({
       const pnl = marketValueBase - costBasisBase;
 
       lines.push(cliStyles.bold(`${portfolioName} (${position.broker})`));
-      lines.push(renderStat("Position", `${position.shares} ${multiplier > 1 ? "contracts" : "shares"} @ ${formatCurrency(position.avgCost, positionCurrency)}`));
+      lines.push(renderStat(
+        "Position",
+        `${formatMarketQuantity(position.shares, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier })} ${multiplier > 1 ? "contracts" : "shares"} @ ${formatMarketCostWithCurrency(position.avgCost, positionCurrency, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier })}`,
+      ));
       lines.push(renderStat("Cost Basis", formatCurrency(costBasisBase, config.baseCurrency)));
       lines.push(renderStat("Market Value", formatCurrency(marketValueBase, config.baseCurrency)));
       lines.push(renderStat("P&L", colorBySign(formatSignedCurrency(pnl, config.baseCurrency), pnl)));
       if (position.markPrice != null) {
-        lines.push(renderStat("Mark", formatCurrency(position.markPrice, positionCurrency)));
+        lines.push(renderStat("Mark", formatMarketPriceWithCurrency(position.markPrice, positionCurrency, { assetCategory: tickerFile.metadata.assetCategory, multiplier: position.multiplier })));
       }
       if (index < tickerFile.metadata.positions.length - 1) {
         lines.push(cliStyles.muted("-".repeat(24)));

@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { colors, priceColor } from "../theme/colors";
-import { formatCurrency } from "../utils/format";
+import { formatMarketPriceWithCurrency } from "../utils/market-format";
 import type { Quote } from "../types/financials";
 
 export interface TickerBadgeProps {
@@ -50,7 +50,7 @@ export function TickerBadge({
 }: TickerBadgeProps) {
   const tone = status === "ready" && quote ? priceColor(quote.changePercent) : colors.borderFocused;
   const label = hovered && quote
-    ? `${symbol} ${formatCurrency(quote.price, quote.currency)}`
+    ? `${symbol} ${formatMarketPriceWithCurrency(quote.price, quote.currency)}`
     : status === "ready" && quote
     ? formatBadgeChange(quote.changePercent)
     : "…";

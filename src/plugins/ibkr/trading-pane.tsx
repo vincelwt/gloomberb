@@ -9,6 +9,7 @@ import { colors, priceColor } from "../../theme/colors";
 import type { PaneProps } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
 import { formatCurrency, padTo } from "../../utils/format";
+import { formatMarketPrice, formatMarketQuantity } from "../../utils/market-format";
 import { getBrokerInstance } from "../../utils/broker-instances";
 import { getSharedRegistry } from "../registry";
 import { isGatewayConfigured } from "./config";
@@ -354,12 +355,12 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                 const selected = index === tradeState.selectedOpenOrderIndex;
                 const orderSymbol = order.contract.symbol;
                 const orderQuote = getOrderQuote(orderSymbol);
-                const bidStr = orderQuote?.bid != null ? orderQuote.bid.toFixed(2) : "---";
-                const askStr = orderQuote?.ask != null ? orderQuote.ask.toFixed(2) : "---";
+                const bidStr = orderQuote?.bid != null ? formatMarketPrice(orderQuote.bid, { contractSecType: order.contract.secType, maxWidth: 6 }) : "---";
+                const askStr = orderQuote?.ask != null ? formatMarketPrice(orderQuote.ask, { contractSecType: order.contract.secType, maxWidth: 6 }) : "---";
                 const orderPrice = order.limitPrice != null
-                  ? order.limitPrice.toFixed(2)
+                  ? formatMarketPrice(order.limitPrice, { contractSecType: order.contract.secType, maxWidth: 9 })
                   : order.stopPrice != null
-                    ? order.stopPrice.toFixed(2)
+                    ? formatMarketPrice(order.stopPrice, { contractSecType: order.contract.secType, maxWidth: 9 })
                     : "MKT";
                 return (
                   <box
@@ -379,7 +380,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                       {padTo(order.action, 5)}
                       {padTo(order.contract.localSymbol || order.contract.symbol, 14)}
                       {padTo(order.status, 10)}
-                      {padTo(String(order.remaining), 5, "right")}
+                      {padTo(formatMarketQuantity(order.remaining, { contractSecType: order.contract.secType, maxWidth: 5 }), 5, "right")}
                       {" "}
                       {padTo(orderPrice, 9)}
                       {padTo(`B:${bidStr}`, 10)}
@@ -415,9 +416,9 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                   <text fg={priceColor(execution.side.toUpperCase() === "BOT" ? 1 : -1)}>
                     {padTo(execution.side, 5)}
                     {padTo(execution.contract.localSymbol || execution.contract.symbol, 18)}
-                    {padTo(String(execution.shares), 6, "right")}
+                    {padTo(formatMarketQuantity(execution.shares, { contractSecType: execution.contract.secType, maxWidth: 6 }), 6, "right")}
                     {" "}
-                    {execution.price.toFixed(2)}
+                    {formatMarketPrice(execution.price, { contractSecType: execution.contract.secType })}
                   </text>
                 </box>
               ))
