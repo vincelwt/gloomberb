@@ -659,11 +659,42 @@ describe("CommandBar", () => {
     expect(saved.at(-1)?.metadata.watchlists).toEqual(["watchlist"]);
   });
 
-  test("bare AW without a compatible active target opens inline target selection", async () => {
+  test("bare AW without a compatible active target adds to the sole watchlist directly", async () => {
+    const saved: TickerRecord[] = [];
+
     testSetup = await testRender(
       <CommandBarHarness
         query="AW"
         selectedTicker="AAPL"
+        onSaveTicker={(ticker) => {
+          saved.push(ticker);
+        }}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(saved.at(-1)?.metadata.watchlists).toEqual(["watchlist"]);
+  });
+
+  test("bare AW without a compatible active target opens inline target selection when multiple watchlists exist", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="AW"
+        selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          watchlists: [
+            { id: "watchlist", name: "Watchlist" },
+            { id: "growth", name: "Growth Radar" },
+          ],
+        })}
       />,
       { width: 100, height: 20 },
     );
@@ -710,7 +741,6 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Add AAPL to Portfolio");
-    expect(frame).toContain('in "Research"');
   });
 
   test("AP opens the add-to-portfolio workflow and prefills avg cost from the current price", async () => {
@@ -720,7 +750,7 @@ describe("CommandBar", () => {
         selectedTicker="AAPL"
         configureConfig={(config) => ({
           ...config,
-          portfolios: [{ id: "research", name: "Research", currency: "USD" }],
+          portfolios: [{ id: "research", name: "Only Manual Portfolio", currency: "USD" }],
         })}
         configureState={(state) => ({
           ...state,
@@ -762,6 +792,7 @@ describe("CommandBar", () => {
     expect(frame).toContain("Shares");
     expect(frame).toContain("Avg Cost");
     expect(frame).toContain("205.5");
+    expect(frame).not.toContain("Only Manual Portfolio");
     expectSingleBackControl(frame);
   });
 
@@ -873,7 +904,6 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Set Position for AAPL");
-    expect(frame).toContain('in "Research"');
   });
 
   test("prefills the portfolio position workflow from the active manual portfolio and ticker", async () => {

@@ -1,4 +1,5 @@
 import { convertCurrency, formatCompact, formatCompactCurrency, formatCurrency, formatPercent } from "../../../utils/format";
+import { formatMarketPriceWithCurrency } from "../../../utils/market-format";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 
@@ -28,9 +29,9 @@ export function buildTickerAiContext(
   if (profile?.description) lines.push(`Description: ${profile.description}`);
 
   if (quote) {
-    lines.push(`Current Price: ${formatCurrency(quote.price, quote.currency)} (${quote.change >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%)`);
+    lines.push(`Current Price: ${formatMarketPriceWithCurrency(quote.price, quote.currency, { assetCategory: metadata.assetCategory })} (${quote.change >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%)`);
     if (quote.marketCap) lines.push(`Market Cap: ${formatCompactCurrency(toBase(quote.marketCap, quoteCurrency), baseCurrency)}`);
-    if (quote.high52w && quote.low52w) lines.push(`52W Range: ${formatCurrency(quote.low52w, quote.currency)} - ${formatCurrency(quote.high52w, quote.currency)}`);
+    if (quote.high52w && quote.low52w) lines.push(`52W Range: ${formatMarketPriceWithCurrency(quote.low52w, quote.currency, { assetCategory: metadata.assetCategory })} - ${formatMarketPriceWithCurrency(quote.high52w, quote.currency, { assetCategory: metadata.assetCategory })}`);
   }
 
   if (fundamentals) {

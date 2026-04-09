@@ -7,6 +7,7 @@ import { useAppState } from "../../state/app-context";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
+import { formatMarketPrice } from "../../utils/market-format";
 import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
 import { VERSION } from "../../version";
 
@@ -103,7 +104,7 @@ export function Header() {
 
   const spyColor = spyQuote ? priceColor(spyQuote.change) : colors.headerText;
   const spyText = spyQuote
-    ? `SPY ${spyQuote.price.toFixed(2)} ${formatPercentRaw(spyQuote.changePercent)}`
+    ? `SPY ${formatMarketPrice(spyQuote.price, { assetCategory: "ETF" })} ${formatPercentRaw(spyQuote.changePercent)}`
     : "SPY —";
 
   // Extended hours info

@@ -4,6 +4,7 @@ import type { InputRenderable } from "@opentui/core";
 import { useDialogKeyboard, type PromptContext } from "@opentui-ui/dialog/react";
 import type { Quote } from "../types/financials";
 import { colors } from "../theme/colors";
+import { formatMarketPrice } from "../utils/market-format";
 import { DialogFrame, ListView, NumberField } from "./ui";
 import { padTo } from "../utils/format";
 
@@ -17,6 +18,7 @@ export interface PriceSelectorDialogProps {
   label: string;
   currentValue?: number;
   quote?: Quote;
+  assetCategory?: string;
 }
 
 function buildPresets(quote: Quote | undefined): PricePreset[] {
@@ -46,20 +48,22 @@ function buildPresets(quote: Quote | undefined): PricePreset[] {
   return presets;
 }
 
-function formatMarketContext(quote: Quote | undefined): string {
+function formatMarketContext(quote: Quote | undefined, assetCategory?: string): string {
   if (!quote) return "No quote data available";
   const parts: string[] = [];
-  parts.push(`Last ${quote.price.toFixed(2)}`);
+  parts.push(`Last ${formatMarketPrice(quote.price, { assetCategory })}`);
   if (quote.bid != null) {
-    const bidStr = quote.bidSize != null ? `Bid ${quote.bid.toFixed(2)} × ${quote.bidSize}` : `Bid ${quote.bid.toFixed(2)}`;
+    const bidValue = formatMarketPrice(quote.bid, { assetCategory });
+    const bidStr = quote.bidSize != null ? `Bid ${bidValue} × ${quote.bidSize}` : `Bid ${bidValue}`;
     parts.push(bidStr);
   }
   if (quote.ask != null) {
-    const askStr = quote.askSize != null ? `Ask ${quote.ask.toFixed(2)} × ${quote.askSize}` : `Ask ${quote.ask.toFixed(2)}`;
+    const askValue = formatMarketPrice(quote.ask, { assetCategory });
+    const askStr = quote.askSize != null ? `Ask ${askValue} × ${quote.askSize}` : `Ask ${askValue}`;
     parts.push(askStr);
   }
   if (quote.bid != null && quote.ask != null) {
-    parts.push(`Spd ${(quote.ask - quote.bid).toFixed(2)}`);
+    parts.push(`Spd ${formatMarketPrice(quote.ask - quote.bid, { assetCategory })}`);
   }
   return parts.join(" · ");
 }
@@ -72,6 +76,7 @@ export function PriceSelectorDialog({
   label,
   currentValue,
   quote,
+  assetCategory,
 }: PromptContext<string> & PriceSelectorDialogProps) {
   const presets = buildPresets(quote);
   const [index, setIndex] = useState(0);
@@ -135,7 +140,7 @@ export function PriceSelectorDialog({
       }
     >
       <box flexDirection="column">
-        <text fg={colors.textDim}>{formatMarketContext(quote)}</text>
+        <text fg={colors.textDim}>{formatMarketContext(quote, assetCategory)}</text>
         <box height={1} />
 
         {presets.length > 0 && (
@@ -163,7 +168,7 @@ export function PriceSelectorDialog({
                       {padTo(item.label, presetWidth)}
                     </text>
                     <text fg={state.selected ? colors.text : colors.textMuted}>
-                      {preset?.value.toFixed(2) ?? ""}
+                      {preset ? formatMarketPrice(preset.value, { assetCategory }) : ""}
                     </text>
                     {preset?.detail && (
                       <text fg={colors.textDim}>{`  ${preset.detail}`}</text>

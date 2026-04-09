@@ -482,14 +482,14 @@ describe("buildTickerReport", () => {
       title: "NVIDIA unveils next platform",
       source: "Example News",
       url: "https://example.com/nvda-platform",
-      publishedAt: new Date(Date.UTC(2026, 3, 1, 15, 45)),
+      publishedAt: "2026-04-01T15:45:00.000Z" as unknown as Date,
       summary: "Analysts expect the launch to expand datacenter demand.",
     }];
 
     const recentSecFilings: SecFilingItem[] = [{
       accessionNumber: "0000000000-26-000001",
       form: "8-K",
-      filingDate: new Date(Date.UTC(2026, 2, 31)),
+      filingDate: "2026-03-31T00:00:00.000Z" as unknown as Date,
       cik: "0001045810",
       filingUrl: "https://www.sec.gov/Archives/example-8k",
       primaryDocument: "nvda-8k.htm",
@@ -521,6 +521,7 @@ describe("buildTickerReport", () => {
     expect(report).toContain("Recent News");
     expect(report).toContain("NVIDIA unveils next platform");
     expect(report).toContain("Example News");
+    expect(report).toContain("Apr 1, 2026");
     expect(report).toContain("Recent SEC Filings");
     expect(report).toContain("8-K | Mar 31, 2026");
     expect(report).toContain("Current report announcing a product launch");

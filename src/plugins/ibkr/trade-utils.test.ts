@@ -125,7 +125,7 @@ describe("trade-utils", () => {
       bid: 190.2,
       ask: 190.3,
       lastUpdated: Date.now(),
-    })).toContain("Spd 0.10");
+    })).toContain("Spd 0.1");
     expect(formatPreviewSummary(null)).toContain("Preview required before submit");
     expect(formatPreviewSummary({
       initMarginBefore: 12000,
