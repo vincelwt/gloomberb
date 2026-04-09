@@ -349,12 +349,18 @@ ctx.emit("ticker:selected", { symbol: "AAPL", previous: null });
 
 Available events: `ticker:selected`, `ticker:refreshed`, `ticker:added`, `ticker:removed`, `config:changed`, `plugin:registered`, `plugin:unregistered`.
 
-### Toast notifications
+### App notifications
 
 ```typescript
-ctx.showToast("Saved successfully", { type: "success" });
-ctx.showToast("Something went wrong", { type: "error", duration: 5000 });
-ctx.showToast("FYI...");  // defaults to "info"
+ctx.notify({
+  title: "Chat mention",
+  body: "@bob mentioned you",
+  desktop: "when-inactive", // desktop only when the terminal loses focus
+});
+
+ctx.notify({ body: "Saved successfully", type: "success" });
+ctx.notify({ body: "Something went wrong", type: "error", duration: 5000 });
+ctx.notify({ body: "FYI..." }); // defaults to an in-app info toast
 ```
 
 ### Floating panes
@@ -629,7 +635,7 @@ setup(ctx) {
     description: "Export current portfolio as CSV",
     async execute() {
       // your logic here
-      ctx.showToast("Exported!", { type: "success" });
+      ctx.notify({ body: "Exported!", type: "success" });
     },
   });
 }
@@ -718,7 +724,7 @@ setup(ctx) {
     description: "Save snapshot",
     execute() {
       // your logic
-      ctx.showToast("Snapshot saved");
+      ctx.notify({ body: "Snapshot saved" });
     },
   });
 }
@@ -783,4 +789,4 @@ Available slots:
 - The UI is built with [OpenTUI](https://github.com/anthropics/opentui) React — use `<box>`, `<text>`, and `<input>` for layout
 - Use `ctx.storage` to persist data across app restarts
 - Use `ctx.on()` to react to app events without polling
-- Use `ctx.showToast()` for non-intrusive user feedback
+- Use `ctx.notify()` for non-intrusive user feedback and desktop notifications

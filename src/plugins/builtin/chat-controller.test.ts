@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { PluginPersistence } from "../../types/plugin";
+import type { AppNotificationRequest, PluginPersistence } from "../../types/plugin";
 import type { PersistedResourceValue } from "../../types/persistence";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { ChatController } from "./chat-controller";
@@ -412,15 +412,15 @@ describe("ChatController", () => {
   test("marks a pending message as failed when sending errors", async () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
-    const toasts: string[] = [];
+    const notifications: AppNotificationRequest[] = [];
 
     persistence.setState("session", {
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
     }, { schemaVersion: 1 });
 
-    controller.setToastNotifier((message) => {
-      toasts.push(message);
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
     });
     controller.attachPersistence(persistence);
 
@@ -441,13 +441,13 @@ describe("ChatController", () => {
       clientStatus: "failed",
       clientError: "server offline",
     });
-    expect(toasts).toEqual(["server offline"]);
+    expect(notifications).toEqual([{ body: "server offline", type: "error" }]);
   });
 
-  test("tracks unread mentions and shows a toast while chat is closed", () => {
+  test("tracks unread mentions and emits an app notification while chat is closed", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
-    const toasts: string[] = [];
+    const notifications: AppNotificationRequest[] = [];
     const message: ChatMessage = {
       id: "m1",
       channelId: "everyone",
@@ -462,25 +462,30 @@ describe("ChatController", () => {
       user: { id: "u1", username: "vince", emailVerified: true },
     }, { schemaVersion: 1 });
 
-    controller.setToastNotifier((toast) => {
-      toasts.push(toast);
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
     });
     controller.attachPersistence(persistence);
 
     (controller as any).mergeMessages([message]);
 
     expect(controller.getSnapshot().unreadMentionCount).toBe(1);
-    expect(toasts).toEqual(["@bob mentioned you: hey @Vince can you take a look?"]);
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      body: "@bob mentioned you: hey @Vince can you take a look?",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
     expect(persistence.getState<{ lastCursor: string | null; lastViewedMessageId: string | null }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
       lastCursor: "m1",
       lastViewedMessageId: null,
     });
   });
 
-  test("marks mentions viewed when a chat view opens", () => {
+  test("keeps emitting mention notifications while the app is backgrounded", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
-    const toasts: string[] = [];
+    const notifications: AppNotificationRequest[] = [];
     const message: ChatMessage = {
       id: "m1",
       channelId: "everyone",
@@ -495,8 +500,42 @@ describe("ChatController", () => {
       user: { id: "u1", username: "vince", emailVerified: true },
     }, { schemaVersion: 1 });
 
-    controller.setToastNotifier((toast) => {
-      toasts.push(toast);
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
+    });
+    controller.attachPersistence(persistence);
+    controller.setAppActive(false);
+
+    (controller as any).mergeMessages([message]);
+
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      body: "@bob mentioned you: hey @vince",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
+  });
+
+  test("marks mentions viewed when a chat view opens", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "hey @vince",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
     });
     controller.attachPersistence(persistence);
 
@@ -507,7 +546,12 @@ describe("ChatController", () => {
     const detachView = controller.attachView();
 
     expect(controller.getSnapshot().unreadMentionCount).toBe(0);
-    expect(toasts).toEqual(["@bob mentioned you: hey @vince"]);
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      body: "@bob mentioned you: hey @vince",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
     expect(persistence.getState<{ lastViewedMessageId: string | null }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
       lastViewedMessageId: "m1",
     });
@@ -517,7 +561,7 @@ describe("ChatController", () => {
   test("does not keep mentions unread while a chat view is already open", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
-    const toasts: string[] = [];
+    const notifications: AppNotificationRequest[] = [];
     const message: ChatMessage = {
       id: "m1",
       channelId: "everyone",
@@ -532,8 +576,8 @@ describe("ChatController", () => {
       user: { id: "u1", username: "vince", emailVerified: true },
     }, { schemaVersion: 1 });
 
-    controller.setToastNotifier((toast) => {
-      toasts.push(toast);
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
     });
     controller.attachPersistence(persistence);
     const detachView = controller.attachView();
@@ -541,7 +585,7 @@ describe("ChatController", () => {
     (controller as any).mergeMessages([message]);
 
     expect(controller.getSnapshot().unreadMentionCount).toBe(0);
-    expect(toasts).toEqual([]);
+    expect(notifications).toEqual([]);
     expect(persistence.getState<{ lastViewedMessageId: string | null }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
       lastViewedMessageId: "m1",
     });

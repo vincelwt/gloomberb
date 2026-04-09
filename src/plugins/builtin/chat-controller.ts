@@ -1,4 +1,4 @@
-import type { PluginPersistence, PluginResumeState } from "../../types/plugin";
+import type { AppNotificationRequest, PluginPersistence, PluginResumeState } from "../../types/plugin";
 import { apiClient, type ChatMessage, type PersistedAuthUser } from "../../utils/api-client";
 import { debugLog } from "../../utils/debug-log";
 import { toTimestampMillis } from "../../utils/timestamp";
@@ -49,7 +49,6 @@ export interface ChatControllerSnapshot {
 }
 
 type ChatConnection = { send: (content: string, replyToId?: string) => Promise<ChatMessage>; close: () => void };
-type ChatToastOptions = { duration?: number; type?: "info" | "success" | "error" };
 
 function normalizeUsername(username: string | null | undefined): string | null {
   const trimmed = username?.trim();
@@ -105,7 +104,7 @@ export class ChatController {
   private verificationPollTimer: ReturnType<typeof setInterval> | null = null;
   private openViewCount = 0;
   private pendingMessageSeq = 0;
-  private toastFn: (message: string, options?: ChatToastOptions) => void = () => {};
+  private notifyFn: (notification: AppNotificationRequest) => void = () => {};
   private listeners = new Set<(snapshot: ChatControllerSnapshot) => void>();
 
   attachPersistence(persistence: PluginPersistence, resume?: PluginResumeState): void {
@@ -114,8 +113,8 @@ export class ChatController {
     this.hydrate();
   }
 
-  setToastNotifier(notify: (message: string, options?: ChatToastOptions) => void): void {
-    this.toastFn = notify;
+  setNotifier(notify: (notification: AppNotificationRequest) => void): void {
+    this.notifyFn = notify;
   }
 
   hydrate(): void {
@@ -340,7 +339,7 @@ export class ChatController {
     this.messagesLoading = false;
     this.refreshMessagesPromise = null;
     this.openViewCount = 0;
-    this.toastFn = () => {};
+    this.notifyFn = () => {};
     this.listeners.clear();
   }
 
@@ -351,7 +350,7 @@ export class ChatController {
     }
     const connection = this.wsConnection;
     if (!connection) {
-      this.toastFn("Unable to send message right now.", { type: "error" });
+      this.notifyFn({ body: "Unable to send message right now.", type: "error" });
       return;
     }
 
@@ -373,7 +372,7 @@ export class ChatController {
           : entry
       ));
       this.emit();
-      this.toastFn(errorMessage, { type: "error" });
+      this.notifyFn({ body: errorMessage, type: "error" });
     });
   }
 
@@ -531,13 +530,22 @@ export class ChatController {
 
     const freshMentions = this.getMentionMessages(messages);
     if (freshMentions.length === 0) return;
-    if (!this.appActive) return;
 
     if (freshMentions.length === 1) {
-      this.toastFn(formatMentionToast(freshMentions[0]!), { type: "info" });
+      this.notifyFn({
+        title: "Gloomberb chat",
+        body: formatMentionToast(freshMentions[0]!),
+        type: "info",
+        desktop: "when-inactive",
+      });
       return;
     }
-    this.toastFn(`${freshMentions.length} new mentions in #everyone.`, { type: "info" });
+    this.notifyFn({
+      title: "Gloomberb chat",
+      body: `${freshMentions.length} new mentions in #everyone.`,
+      type: "info",
+      desktop: "when-inactive",
+    });
   }
 
   private getUnreadMentionCount(): number {

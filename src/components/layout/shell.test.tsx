@@ -530,7 +530,7 @@ describe("Shell", () => {
     const toasts: string[] = [];
     pluginRegistry.getLayoutFn = () => harnessState?.config.layout ?? { dockRoot: null, instances: [], floating: [] };
     pluginRegistry.updateLayoutFn = (layout) => { layoutUpdates.push(layout); };
-    pluginRegistry.showToastFn = (message: string) => { toasts.push(message); };
+    pluginRegistry.notify = ({ body }: { body: string }) => { toasts.push(body); };
     setSharedRegistryForTests(pluginRegistry);
 
     testSetup = await testRender(
