@@ -1,6 +1,5 @@
-import { TextAttributes } from "@opentui/core";
 import { colors } from "../../../theme/colors";
-import { openUrl } from "../../../components/ui/external-link";
+import { ExternalLinkText } from "../../../components/ui/external-link";
 
 export function truncatePredictionText(
   value: string,
@@ -19,10 +18,12 @@ export function SummaryLink({
   maxLength: number;
 }) {
   return (
-    <box height={1} onMouseDown={() => openUrl(url)}>
-      <text fg={colors.textBright} attributes={TextAttributes.UNDERLINE}>
-        {truncatePredictionText(url, maxLength)}
-      </text>
+    <box height={1}>
+      <ExternalLinkText
+        url={url}
+        label={truncatePredictionText(url, maxLength)}
+        color={colors.textBright}
+      />
     </box>
   );
 }

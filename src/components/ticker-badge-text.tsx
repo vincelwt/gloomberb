@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TickerBadge } from "./ticker-badge";
-import { tokenizeTickerText } from "../utils/ticker-tokenizer";
+import { ExternalLinkText, openUrl } from "./ui";
+import { tokenizeInlineContent } from "../utils/inline-content-tokenizer";
 import type { InlineTickerCatalogEntry } from "../state/use-inline-tickers";
 
 export interface TickerBadgeTextProps {
@@ -9,6 +10,7 @@ export interface TickerBadgeTextProps {
   catalog: Record<string, InlineTickerCatalogEntry>;
   textColor: string;
   openTicker: (symbol: string) => void;
+  openLink?: (url: string) => void;
 }
 
 export function TickerBadgeText({
@@ -17,9 +19,10 @@ export function TickerBadgeText({
   catalog,
   textColor,
   openTicker,
+  openLink = openUrl,
 }: TickerBadgeTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
-  const tokens = tokenizeTickerText(text);
+  const tokens = tokenizeInlineContent(text);
 
   return (
     <box
@@ -30,7 +33,23 @@ export function TickerBadgeText({
       {tokens.map((token, index) => {
         if (token.kind === "text") {
           if (!token.value) return null;
-          return <text key={`text:${index}`} fg={textColor}>{token.value}</text>;
+          return (
+            <text key={`text:${index}`} fg={textColor}>
+              {token.value}
+            </text>
+          );
+        }
+
+        if (token.kind === "link") {
+          return (
+            <ExternalLinkText
+              key={`link:${index}`}
+              url={token.url}
+              label={token.value}
+              color={textColor}
+              onOpen={openLink}
+            />
+          );
         }
 
         const entry = catalog[token.symbol];
