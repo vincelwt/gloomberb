@@ -131,4 +131,26 @@ describe("shared UI kit", () => {
     expect(frame).toContain("******");
     expect(frame).not.toContain("secret");
   });
+
+  test("does not allow selecting masked password fields", async () => {
+    testSetup = await testRender(
+      <TextField
+        type="password"
+        value="secret"
+        focused
+        width={12}
+        onChange={() => {}}
+      />,
+      { width: 16, height: 3 },
+    );
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      await testSetup!.mockMouse.drag(1, 0, 6, 0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(testSetup.renderer.getSelection()).toBeNull();
+  });
 });
