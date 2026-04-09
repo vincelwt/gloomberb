@@ -355,6 +355,34 @@ describe("ChatContent", () => {
     expect(opened).toEqual(["TSLA"]);
   });
 
+  test("renders detected links in chat messages", async () => {
+    const controller = createController({
+      messages: [{
+        id: "m1",
+        channelId: "everyone",
+        content: "Read https://example.com/story.",
+        replyToId: null,
+        createdAt: "2026-03-28T00:00:00.000Z",
+        user: { id: "u1", username: "vince", displayName: "Vince" },
+      }],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 60,
+        height: 12,
+      }), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("https://example.com/story.");
+  });
+
   test("shows a saved-login read-only footer when a session token is cached", async () => {
     const controller = createController({
       sessionToken: "token-123",
