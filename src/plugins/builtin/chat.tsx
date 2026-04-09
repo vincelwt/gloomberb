@@ -545,7 +545,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
 
   setup(ctx) {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
-    chatController.setToastNotifier(ctx.showToast);
+    chatController.setNotifier(ctx.notify);
 
     ctx.registerPane({
       id: "chat",
@@ -647,7 +647,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       },
       execute: async () => {
         await apiClient.sendVerification();
-        ctx.showToast("Verification email sent.", { type: "success" });
+        ctx.notify({ body: "Verification email sent.", type: "success" });
       },
     });
 
@@ -663,13 +663,13 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       category: "config",
       execute: async () => {
         if (!apiClient.getSessionToken()) {
-          ctx.showToast("Not logged in.", { type: "error" });
+          ctx.notify({ body: "Not logged in.", type: "error" });
           return;
         }
         await apiClient.signOut();
         await chatController.refreshSession();
         await chatController.refreshMessages();
-        ctx.showToast("Logged out.", { type: "info" });
+        ctx.notify({ body: "Logged out.", type: "info" });
       },
       hidden: () => !apiClient.getSessionToken(),
     });

@@ -9,6 +9,27 @@ import { writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
+function exportDebugLogFile(options: {
+  filterLevel?: LogLevel | null;
+  filterSource?: string | null;
+}): { ok: true; filename: string } | { ok: false } {
+  const text = debugLog.exportAsText(
+    options.filterLevel || options.filterSource
+      ? { level: options.filterLevel ?? undefined, source: options.filterSource ?? undefined }
+      : undefined,
+  );
+  const downloadsDir = join(homedir(), "Downloads");
+  const filename = `gloomberb-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.log`;
+  const filepath = join(downloadsDir, filename);
+
+  try {
+    writeFileSync(filepath, text);
+    return { ok: true, filename };
+  } catch {
+    return { ok: false };
+  }
+}
+
 function levelColor(level: LogLevel): string {
   switch (level) {
     case "debug": return colors.textDim;
@@ -59,22 +80,13 @@ function DebugPane({ focused, width, height, close }: PaneProps) {
   }, [filterLevel, filterSource, autoScroll]);
 
   const exportLogs = useCallback(() => {
-    const text = debugLog.exportAsText(
-      filterLevel || filterSource
-        ? { level: filterLevel ?? undefined, source: filterSource ?? undefined }
-        : undefined,
-    );
-    const downloadsDir = join(homedir(), "Downloads");
-    const filename = `gloomberb-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.log`;
-    const filepath = join(downloadsDir, filename);
-    try {
-      writeFileSync(filepath, text);
-      const registry = (globalThis as any).__gloomRegistry;
-      registry?.showToastFn?.(`Exported to ~/Downloads/${filename}`, { type: "success" });
-    } catch {
-      const registry = (globalThis as any).__gloomRegistry;
-      registry?.showToastFn?.("Failed to export logs", { type: "error" });
+    const result = exportDebugLogFile({ filterLevel, filterSource });
+    const registry = (globalThis as any).__gloomRegistry;
+    if (result.ok) {
+      registry?.notify?.({ body: `Exported to ~/Downloads/${result.filename}`, type: "success" });
+      return;
     }
+    registry?.notify?.({ body: "Failed to export logs", type: "error" });
   }, [filterLevel, filterSource]);
 
   const clearLogs = useCallback(() => {
@@ -334,15 +346,11 @@ export const debugPlugin: GloomPlugin = {
       keywords: ["export", "debug", "log", "download", "save"],
       category: "config",
       execute: () => {
-        const text = debugLog.exportAsText();
-        const downloadsDir = join(homedir(), "Downloads");
-        const filename = `gloomberb-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.log`;
-        const filepath = join(downloadsDir, filename);
-        try {
-          writeFileSync(filepath, text);
-          ctx.showToast(`Exported to ~/Downloads/${filename}`, { type: "success" });
-        } catch {
-          ctx.showToast("Failed to export logs", { type: "error" });
+        const result = exportDebugLogFile({});
+        if (result.ok) {
+          ctx.notify({ body: `Exported to ~/Downloads/${result.filename}`, type: "success" });
+        } else {
+          ctx.notify({ body: "Failed to export logs", type: "error" });
         }
       },
     });

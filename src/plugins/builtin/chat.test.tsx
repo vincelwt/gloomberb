@@ -572,7 +572,7 @@ describe("ChatContent", () => {
       },
       showWidget: () => {},
       hideWidget: () => {},
-      showToast: () => {},
+      notify: () => {},
     } as any);
 
     const loginCommand = registeredCommands.find((command) => command.id === "auth-login");

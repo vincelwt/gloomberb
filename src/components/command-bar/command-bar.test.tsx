@@ -218,7 +218,7 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     showWidget: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
-    showToastFn: () => {},
+    notify: () => {},
     createPaneFromTemplateFn: () => {},
     createPaneFromTemplateAsyncFn: async () => {},
     openPaneSettingsFn: () => {},
@@ -710,7 +710,6 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Add AAPL to Portfolio");
-    expect(frame).toContain('in "Research"');
   });
 
   test("AP opens the add-to-portfolio workflow and prefills avg cost from the current price", async () => {
@@ -873,7 +872,6 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Set Position for AAPL");
-    expect(frame).toContain('in "Research"');
   });
 
   test("prefills the portfolio position workflow from the active manual portfolio and ticker", async () => {

@@ -95,7 +95,7 @@ describe("StatusBar", () => {
       getLayoutFn: () => state.config.layout,
       getTermSizeFn: () => ({ width: 120, height: 40 }),
       updateLayoutFn: (layout) => { updatedLayout = layout; },
-      showToastFn: (message: string) => { toasts.push(message); },
+      notify: ({ body }: { body: string }) => { toasts.push(body); },
       Slot: () => null,
     } as any);
 
@@ -146,7 +146,7 @@ describe("StatusBar", () => {
       getLayoutFn: () => state.config.layout,
       getTermSizeFn: () => ({ width: 120, height: 40 }),
       updateLayoutFn: () => {},
-      showToastFn: () => {},
+      notify: () => {},
       Slot: () => null,
     } as any);
 
