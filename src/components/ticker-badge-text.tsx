@@ -33,11 +33,7 @@ export function TickerBadgeText({
       {tokens.map((token, index) => {
         if (token.kind === "text") {
           if (!token.value) return null;
-          return (
-            <text key={`text:${index}`} fg={textColor}>
-              {token.value}
-            </text>
-          );
+          return <text key={`text:${index}`} fg={textColor}>{token.value}</text>;
         }
 
         if (token.kind === "link") {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
-import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
 import { useInlineTickers } from "../../state/use-inline-tickers";
@@ -35,6 +35,10 @@ function estimateWrappedLineCount(text: string, width: number) {
 }
 
 const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;
+const CHAT_COMPOSER_MAX_ROWS = 5;
+const MESSAGE_ACTION_WIDTH = 9;
+const COMPOSER_ACTION_WIDTH = 10;
+const MESSAGE_SELECTION_BOTTOM_INSET = 1;
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   if (index === 0) return false;
@@ -44,11 +48,30 @@ function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   return new Date(curr.createdAt).getTime() - new Date(prev.createdAt).getTime() < MESSAGE_GROUP_THRESHOLD_MS;
 }
 
+function normalizeInlinePreview(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function truncateInlinePreview(text: string, width: number) {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 3) return text.slice(0, width);
+  return `${text.slice(0, width - 3)}...`;
+}
+
+function formatInlinePreview(text: string, width: number) {
+  return truncateInlinePreview(normalizeInlinePreview(text), width);
+}
+
 function estimateMessageHeight(message: ChatMessage, width: number, grouped = false) {
-  const contentLineWidth = Math.max(width - 4, 1);
+  const contentLineWidth = Math.max(width - 4 - MESSAGE_ACTION_WIDTH, 1);
   const normalizedContent = message.content.replace(/\$[A-Z][A-Z0-9.-]{0,9}/g, (match) => ` ${match.slice(1)} +0% `);
   const headerHeight = grouped ? 0 : 1;
   return headerHeight + (message.replyTo ? 1 : 0) + estimateWrappedLineCount(normalizedContent, contentLineWidth);
+}
+
+function estimateComposerHeight(text: string, width: number) {
+  return Math.max(1, Math.min(CHAT_COMPOSER_MAX_ROWS, estimateWrappedLineCount(text, width)));
 }
 
 function getMessageTopOffset(messages: ChatMessage[], index: number, width: number) {
@@ -62,6 +85,28 @@ function getMessageTopOffset(messages: ChatMessage[], index: number, width: numb
 function scrollToBottom(scrollBox: ScrollBoxRenderable | null) {
   if (!scrollBox) return;
   scrollBox.scrollTo(Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height));
+}
+
+export function getSelectedMessageScrollTop({
+  scrollTop,
+  viewportHeight,
+  top,
+  rowHeight,
+  bottomInset = MESSAGE_SELECTION_BOTTOM_INSET,
+}: {
+  scrollTop: number;
+  viewportHeight: number;
+  top: number;
+  rowHeight: number;
+  bottomInset?: number;
+}) {
+  const safeViewportHeight = Math.max(viewportHeight, 1);
+  const visibleMessageRows = Math.max(safeViewportHeight - bottomInset, 1);
+  if (top < scrollTop) return top;
+  if (top + rowHeight > scrollTop + visibleMessageRows) {
+    return Math.max(top + rowHeight - visibleMessageRows, 0);
+  }
+  return scrollTop;
 }
 
 function openAuthCommand(query: string, event?: { preventDefault?: () => void; stopPropagation?: () => void }) {
@@ -100,6 +145,43 @@ function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
   );
 }
 
+function ChatActionChip({
+  label,
+  width,
+  emphasized = false,
+  onPress,
+}: {
+  label: string;
+  width: number;
+  emphasized?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <box
+      width={width}
+      height={1}
+      backgroundColor={emphasized ? colors.borderFocused : colors.panel}
+      onMouseDown={(event: any) => {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        onPress();
+      }}
+    >
+      <text
+        fg={emphasized ? colors.bg : colors.text}
+        attributes={emphasized ? TextAttributes.BOLD : 0}
+        onMouseDown={(event: any) => {
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+          onPress();
+        }}
+      >
+        {` ${label} `}
+      </text>
+    </box>
+  );
+}
+
 export function ChatContent({
   width,
   height,
@@ -122,9 +204,16 @@ export function ChatContent({
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => (
     initialSnapshot.replyToId ? initialSnapshot.messages.find((message) => message.id === initialSnapshot.replyToId) ?? null : null
   ));
-  const inputRef = useRef<InputRenderable>(null);
+  const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const applyingExternalDraftRef = useRef(false);
   const canSend = !!user?.emailVerified;
+  const messageBodyWidth = Math.max(contentWidth - 4 - MESSAGE_ACTION_WIDTH, 1);
+  const composerPrefixWidth = 3;
+  const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
+  const composerHeight = canSend ? estimateComposerHeight(inputValue, composerTextWidth) : 0;
+  const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
+  const stickyTranscript = followMessages && !selectionActive;
 
   useEffect(() => {
     return controller.attachView();
@@ -136,7 +225,13 @@ export function ChatContent({
       setHasSavedSession(snapshot.hasSavedSession);
       setUser(snapshot.user);
       setLoading(snapshot.loading);
-      setInputValue(snapshot.draft);
+      setInputValue((current) => (current === snapshot.draft ? current : snapshot.draft));
+      const textarea = inputRef.current;
+      if (textarea && textarea.editBuffer.getText() !== snapshot.draft) {
+        applyingExternalDraftRef.current = true;
+        textarea.setText(snapshot.draft);
+        applyingExternalDraftRef.current = false;
+      }
       setReplyTo(snapshot.replyToId
         ? snapshot.messages.find((message) => message.id === snapshot.replyToId) ?? null
         : null);
@@ -165,10 +260,63 @@ export function ChatContent({
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [dispatch]);
 
-  const updateDraft = useCallback((draft: string) => {
-    setInputValue(draft);
-    controller.setDraft(draft);
+  const clearReplyTarget = useCallback(() => {
+    setReplyTo(null);
+    controller.setReplyToId(null);
   }, [controller]);
+
+  const beginReplyTo = useCallback((index: number, options?: { deferFocus?: boolean }) => {
+    if (!canSend || index < 0 || index >= messages.length) return;
+    const nextReplyTo = messages[index] ?? null;
+    if (!nextReplyTo) return;
+    setSelectedIdx(index);
+    setFollowMessages(index === messages.length - 1);
+    setReplyTo(nextReplyTo);
+    controller.setReplyToId(nextReplyTo.id);
+    if (options?.deferFocus) {
+      queueMicrotask(() => focusInput());
+    } else {
+      focusInput();
+    }
+  }, [canSend, controller, focusInput, messages]);
+
+  const returnToComposer = useCallback(() => {
+    setSelectedIdx(-1);
+    setFollowMessages(true);
+    if (canSend) {
+      queueMicrotask(() => focusInput());
+    }
+  }, [canSend, focusInput]);
+
+  const moveMessageSelection = useCallback((direction: "up" | "down") => {
+    if (messages.length === 0) return false;
+
+    let next: number;
+    if (selectedIdx < 0) {
+      if (direction === "down") return false;
+      next = messages.length - 1;
+    } else if (direction === "down") {
+      next = Math.min(selectedIdx + 1, messages.length - 1);
+    } else {
+      next = Math.max(selectedIdx - 1, 0);
+    }
+
+    setSelectedIdx(next);
+    setFollowMessages(next === messages.length - 1);
+    return true;
+  }, [messages.length, selectedIdx]);
+
+  const shouldLeaveComposerForSelection = useCallback((direction: "up" | "down") => {
+    const textarea = inputRef.current;
+    if (!textarea || textarea.hasSelection()) return false;
+
+    const visualLineCount = Math.max(textarea.virtualLineCount, 1);
+    if (direction === "up") {
+      return textarea.visualCursor.visualRow <= 0;
+    }
+
+    return textarea.visualCursor.visualRow >= visualLineCount - 1;
+  }, []);
 
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
@@ -197,81 +345,135 @@ export function ChatContent({
   }, [focused, inputFocused]);
 
   useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    textarea.onContentChange = () => {
+      if (applyingExternalDraftRef.current) return;
+      const draft = textarea.editBuffer.getText();
+      setInputValue((current) => (current === draft ? current : draft));
+      controller.setDraft(draft);
+    };
+
+    return () => {
+      if (textarea) {
+        textarea.onContentChange = undefined;
+      }
+    };
+  }, [controller]);
+
+  useEffect(() => {
     if (canSend || !replyTo) return;
-    setReplyTo(null);
-    controller.setReplyToId(null);
-  }, [canSend, controller, replyTo]);
+    clearReplyTarget();
+  }, [canSend, clearReplyTarget, replyTo]);
 
   useKeyboard((event) => {
     if (!focused) return;
-
-    if (event.name === "c" && event.shift) {
-      if (inputFocused) {
-        blurInput();
-      }
-      close?.();
-      return;
-    }
+    const isEnterKey = event.name === "return" || event.name === "enter";
 
     if (inputFocused) {
       if (event.name === "escape") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
         if (replyTo) {
-          setReplyTo(null);
-          controller.setReplyToId(null);
+          clearReplyTarget();
         } else {
           blurInput();
         }
+        return;
       }
+
+      if ((event.name === "up" || event.name === "down") && shouldLeaveComposerForSelection(event.name)) {
+        const moved = moveMessageSelection(event.name);
+        if (moved) {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          blurInput();
+          return;
+        }
+      }
+
       return;
     }
 
-    if ((event.name === "return" || event.name === "i") && canSend) {
-      focusInput();
+    if (canSend && isEnterKey && selectedIdx >= 0 && selectedIdx < messages.length) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      beginReplyTo(selectedIdx, { deferFocus: true });
+      return;
+    }
+
+    if ((isEnterKey || event.name === "i") && canSend) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      queueMicrotask(() => focusInput());
       return;
     }
 
     if (event.name === "escape") {
-      close?.();
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      if (selectedIdx >= 0) {
+        setSelectedIdx(-1);
+        setFollowMessages(true);
+      }
       return;
     }
 
     if (event.name === "j" || event.name === "down") {
-      if (messages.length === 0) return;
-      const next = Math.min(selectedIdx + 1, messages.length - 1);
-      setSelectedIdx(next);
-      setFollowMessages(next === messages.length - 1);
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      if (selectedIdx === messages.length - 1) {
+        returnToComposer();
+        return;
+      }
+      moveMessageSelection("down");
       return;
     }
     if (event.name === "k" || event.name === "up") {
-      if (messages.length === 0) return;
-      const start = selectedIdx < 0 ? messages.length - 1 : selectedIdx;
-      const next = Math.max(start - 1, 0);
-      setSelectedIdx(next);
-      setFollowMessages(false);
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      moveMessageSelection("up");
       return;
     }
 
     if (canSend && event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
-      const nextReplyTo = messages[selectedIdx] ?? null;
-      setReplyTo(nextReplyTo);
-      controller.setReplyToId(nextReplyTo?.id ?? null);
-      focusInput();
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      beginReplyTo(selectedIdx, { deferFocus: true });
       return;
     }
 
     if (event.name === "g" && !event.shift) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       setSelectedIdx(0);
       setFollowMessages(false);
       scrollRef.current?.scrollTo(0);
       return;
     }
     if (event.name === "g" && event.shift) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       setSelectedIdx(messages.length - 1);
       setFollowMessages(true);
       queueMicrotask(() => scrollToBottom(scrollRef.current));
       return;
     }
-  }, [blurInput, canSend, close, controller, focusInput, focused, inputFocused, messages, replyTo, selectedIdx]);
+  }, [
+    beginReplyTo,
+    blurInput,
+    canSend,
+    clearReplyTarget,
+    focused,
+    inputFocused,
+    messages.length,
+    moveMessageSelection,
+    replyTo,
+    returnToComposer,
+    selectedIdx,
+    shouldLeaveComposerForSelection,
+  ]);
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;
@@ -281,23 +483,33 @@ export function ChatContent({
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
-    if (followMessages) return;
-    if (selectedIdx < 0 || selectedIdx >= messages.length) return;
+    if (!selectionActive) return;
     const top = getMessageTopOffset(messages, selectedIdx, contentWidth);
     const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth, isGroupedWithPrevious(messages, selectedIdx));
-    const viewportHeight = Math.max(sb.viewport.height, 1);
-    if (top < sb.scrollTop) {
-      sb.scrollTo(top);
-    } else if (top + rowHeight > sb.scrollTop + viewportHeight) {
-      sb.scrollTo(Math.max(top + rowHeight - viewportHeight, 0));
+    const nextScrollTop = getSelectedMessageScrollTop({
+      scrollTop: sb.scrollTop,
+      viewportHeight: sb.viewport.height,
+      top,
+      rowHeight,
+    });
+    if (nextScrollTop !== sb.scrollTop) {
+      sb.scrollTo(nextScrollTop);
     }
-  }, [contentWidth, followMessages, messages, selectedIdx]);
+  }, [contentWidth, messages, selectedIdx, selectionActive]);
 
-  const replyBarHeight = canSend && replyTo ? 1 : 0;
-  const inputAreaHeight = canSend ? 1 + replyBarHeight : 2;
+  const inputMetaHeight = canSend && replyTo ? 1 : 0;
+  const inputAreaHeight = canSend ? composerHeight + inputMetaHeight : 2;
   const headerHeight = 1;
   const separatorHeight = 1;
-  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - inputAreaHeight - 1);
+  const footerSeparatorHeight = 1;
+  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - footerSeparatorHeight - inputAreaHeight);
+  const replyPreview = replyTo
+    ? formatInlinePreview(
+      replyTo.content,
+      Math.max(contentWidth - ` replying to @${replyTo.user.username}: `.length - COMPOSER_ACTION_WIDTH - 1, 0),
+    )
+    : "";
+  const inputPlaceholder = replyTo ? `Reply to @${replyTo.user.username}...` : "Type a message...";
 
   if (loading && messages.length === 0) {
     return (
@@ -324,7 +536,7 @@ export function ChatContent({
         height={messageAreaHeight}
         scrollY
         focusable={false}
-        stickyScroll={followMessages}
+        stickyScroll={stickyTranscript}
         stickyStart="bottom"
       >
         {messages.length === 0 && (
@@ -335,54 +547,82 @@ export function ChatContent({
         {messages.map((msg, index) => {
           const isSelected = index === selectedIdx;
           const isHovered = index === hoveredIdx && !isSelected;
+          const showReplyAction = canSend && (isSelected || hoveredIdx === index);
           const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
           const grouped = isGroupedWithPrevious(messages, index);
           const isSending = msg.clientStatus === "sending";
           const hasFailed = msg.clientStatus === "failed";
+          const selectedTextColor = hasFailed ? colors.negative : colors.selectedText;
+          const replyMetaColor = isSelected ? selectedTextColor : colors.textMuted;
+          const replyAuthorColor = isSelected ? selectedTextColor : colors.textDim;
           const headerStatus = isSending ? "sending..." : hasFailed ? "failed" : formatTimeAgo(msg.createdAt);
-          const headerStatusColor = isSending ? colors.textDim : hasFailed ? colors.negative : colors.textMuted;
+          const headerStatusColor = isSelected
+            ? selectedTextColor
+            : isSending
+              ? colors.textDim
+              : hasFailed
+                ? colors.negative
+                : colors.textMuted;
+          const authorColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : colors.positive;
           const authorAttributes = (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD;
-          const bodyColor = hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
-
+          const bodyColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
+          const setHovered = () => setHoveredIdx(index);
+          const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
           return (
             <box
               key={msg.id}
               flexDirection="column"
               width={contentWidth}
               backgroundColor={bgColor}
-              onMouseMove={() => setHoveredIdx(index)}
-              onMouseDown={() => {
-                setSelectedIdx(index);
-                setFollowMessages(index === messages.length - 1);
-              }}
+              onMouseMove={setHovered}
+              onMouseOut={clearHovered}
             >
               {msg.replyTo && (
                 <box flexDirection="row" height={1} paddingLeft={2}>
-                  <text fg={colors.textMuted}>reply </text>
-                  <text fg={colors.textDim}>{msg.replyTo.user.username}: </text>
-                  <text fg={colors.textMuted}>
-                    {msg.replyTo.content.length > contentWidth - 20
-                      ? msg.replyTo.content.slice(0, contentWidth - 23) + "..."
-                      : msg.replyTo.content}
+                  <text fg={replyMetaColor}>reply </text>
+                  <text fg={replyAuthorColor}>{msg.replyTo.user.username}: </text>
+                  <text fg={replyMetaColor}>
+                    {formatInlinePreview(
+                      msg.replyTo.content,
+                      Math.max(messageBodyWidth - `reply ${msg.replyTo.user.username}: `.length, 0),
+                    )}
                   </text>
                 </box>
               )}
               {!grouped && (
                 <box flexDirection="row" height={1} paddingLeft={1}>
-                  <text fg={colors.positive} attributes={authorAttributes}>
+                  <text fg={authorColor} attributes={authorAttributes}>
                     {msg.user.username ?? "anon"}
                   </text>
                   <text fg={headerStatusColor}> ({headerStatus})</text>
                 </box>
               )}
-              <box paddingLeft={3}>
-                <TickerBadgeText
-                  text={msg.content}
-                  lineWidth={contentWidth - 4}
-                  catalog={catalog}
-                  textColor={bodyColor}
-                  openTicker={openTicker}
-                />
+              <box
+                paddingLeft={3}
+                width={contentWidth}
+                flexDirection="row"
+                onMouseMove={setHovered}
+                onMouseOut={clearHovered}
+              >
+                <box width={messageBodyWidth}>
+                  <TickerBadgeText
+                    text={msg.content}
+                    lineWidth={messageBodyWidth}
+                    catalog={catalog}
+                    textColor={bodyColor}
+                    openTicker={openTicker}
+                  />
+                </box>
+                <box width={MESSAGE_ACTION_WIDTH}>
+                  {showReplyAction && (
+                    <ChatActionChip
+                      label="Reply"
+                      width={MESSAGE_ACTION_WIDTH}
+                      emphasized={isSelected}
+                      onPress={() => beginReplyTo(index)}
+                    />
+                  )}
+                </box>
               </box>
             </box>
           );
@@ -398,31 +638,48 @@ export function ChatContent({
           {replyTo && (
             <box height={1} width={contentWidth} flexDirection="row">
               <text fg={colors.textMuted}> replying to </text>
-              <text fg={colors.positive}>{replyTo.user.username}</text>
+              <text fg={colors.positive} attributes={TextAttributes.BOLD}>{`@${replyTo.user.username}`}</text>
+              <text fg={colors.textDim}>{replyPreview ? `: ${replyPreview}` : ""}</text>
               <box flexGrow={1} />
-              <text fg={colors.textDim}>[Esc cancel]</text>
+              <ChatActionChip
+                label="Cancel"
+                width={COMPOSER_ACTION_WIDTH}
+                onPress={clearReplyTarget}
+              />
             </box>
           )}
 
-          <box height={1} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
-            <text fg={colors.textDim}> {">"} </text>
-            <input
-              ref={inputRef}
-              value={inputValue}
-              focused={inputFocused && focused}
-              placeholder="Type a message..."
-              placeholderColor={colors.textMuted}
-              textColor={colors.text}
-              backgroundColor={colors.bg}
-              flexGrow={1}
-              onInput={updateDraft}
-              onChange={updateDraft}
-              onSubmit={() => {
-                if (inputValueRef.current.trim()) {
-                  sendMessage();
-                }
-              }}
-            />
+          <box height={composerHeight} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
+            <box width={composerPrefixWidth} height={composerHeight}>
+              <text fg={colors.textDim}> {">"} </text>
+            </box>
+            <box width={composerTextWidth} height={composerHeight}>
+              <textarea
+                ref={inputRef}
+                initialValue={inputValue}
+                width={composerTextWidth}
+                height={composerHeight}
+                focused={inputFocused && focused}
+                placeholder={inputPlaceholder}
+                placeholderColor={colors.textMuted}
+                textColor={colors.text}
+                backgroundColor={colors.bg}
+                keyBindings={[
+                  { name: "return", action: "submit" },
+                  { name: "linefeed", action: "submit" },
+                  { name: "return", shift: true, action: "newline" },
+                  { name: "linefeed", shift: true, action: "newline" },
+                  { name: "return", meta: true, action: "submit" },
+                  { name: "linefeed", meta: true, action: "submit" },
+                ]}
+                onSubmit={() => {
+                  if (inputValueRef.current.trim()) {
+                    sendMessage();
+                  }
+                }}
+                wrapText
+              />
+            </box>
           </box>
         </>
       ) : (

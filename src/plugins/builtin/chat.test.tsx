@@ -2,12 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { AppContext, createInitialState } from "../../state/app-context";
+import { colors } from "../../theme/colors";
 import { createDefaultConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
-import { ChatContent, ChatStatusWidget, gloomberbCloudPlugin } from "./chat";
+import { ChatContent, ChatStatusWidget, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
 import { ChatController } from "./chat-controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
@@ -103,6 +104,7 @@ function createController(options: {
   messages?: ChatMessage[];
   sessionToken?: string | null;
   user?: { id: string; username: string; emailVerified: boolean } | null;
+  replyToId?: string | null;
 } = {}) {
   const messages = options.messages ?? [];
   const persistence = new MemoryPersistence();
@@ -116,7 +118,7 @@ function createController(options: {
   }, { schemaVersion: 1 });
   persistence.setState("channel:everyone", {
     draft: "",
-    replyToId: null,
+    replyToId: options.replyToId ?? null,
     lastCursor: messages[messages.length - 1]?.id ?? null,
   }, { schemaVersion: 1 });
   if (messages.length > 0) {
@@ -138,6 +140,7 @@ function createHarness(
     width?: number;
     height?: number;
     configureState?: (state: ReturnType<typeof createInitialState>) => void;
+    close?: () => void;
   },
 ) {
   const width = options?.width ?? 60;
@@ -152,6 +155,7 @@ function createHarness(
         width={width}
         height={height}
         focused
+        close={options?.close}
       />
     </AppContext>
   );
@@ -162,6 +166,44 @@ async function flushFrame() {
     await testSetup!.renderOnce();
     await testSetup!.renderOnce();
   });
+}
+
+async function emitKeypress(event: {
+  name?: string;
+  sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  shift?: boolean;
+  option?: boolean;
+}) {
+  await act(async () => {
+    testSetup!.renderer.keyInput.emit("keypress", {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      stopPropagation: () => {},
+      preventDefault: () => {},
+      ...event,
+    } as any);
+    await testSetup!.renderOnce();
+  });
+}
+
+function lineText(line: { spans: Array<{ text: string }> }) {
+  return line.spans.map((span) => span.text).join("");
+}
+
+function hexToRgbaInts(hex: string) {
+  const normalized = hex.replace("#", "");
+  return [
+    parseInt(normalized.slice(0, 2), 16),
+    parseInt(normalized.slice(2, 4), 16),
+    parseInt(normalized.slice(4, 6), 16),
+    255,
+  ].join(",");
 }
 
 afterEach(async () => {
@@ -213,6 +255,588 @@ describe("ChatContent", () => {
     const frameAfterType = testSetup.captureCharFrame();
     expect(frameAfterType).toContain("> DCF");
     expect(frameAfterType).not.toContain("> FCD");
+  });
+
+  test("keeps appending typed text while transcript updates arrive", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frameBeforeClick = testSetup.captureCharFrame().split("\n");
+    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = frameBeforeClick[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("alpha");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      (controller as any).mergeMessages([makeMessage(2)]);
+    });
+
+    await flushFrame();
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("beta");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frameAfterType = testSetup.captureCharFrame();
+    expect(frameAfterType).toContain("> alphabeta");
+    expect(frameAfterType).not.toContain("> betaalpha");
+  });
+
+  test("does not render an idle helper row above the composer", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Type a message...");
+    expect(frame).not.toContain("click a message");
+  });
+
+  test("does not select a message when the row is clicked", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const messageRow = lines.findIndex((line) => line.includes("message 1"));
+    const messageCol = lines[messageRow]?.indexOf("message 1") ?? -1;
+
+    expect(messageRow).toBeGreaterThanOrEqual(0);
+    expect(messageCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(messageCol + 1, messageRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Type a message...");
+    expect(frame).not.toContain("Reply to @user1...");
+    expect(frame).not.toContain("Cancel");
+  });
+
+  test("down arrow does not jump to the oldest message when nothing is selected", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Type a message...");
+    expect(frame).not.toContain("replying to @user1");
+    expect(frame).not.toContain("Reply to @user1...");
+  });
+
+  test("up arrow selects the newest message first when nothing is selected", async () => {
+    const controller = createController({
+      messages: [makeMessage(1), makeMessage(2)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await emitKeypress({ name: "return", sequence: "\r" });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("replying to @user2");
+    expect(frame).toContain("Reply to @user2...");
+  });
+
+  test("down arrow from the newest selected message returns focus to the composer", async () => {
+    const controller = createController({
+      messages: [makeMessage(1), makeMessage(2)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Type a message...");
+    expect(frame).not.toContain("Reply to @user2...");
+    expect(frame).not.toContain("replying to @user2");
+  });
+
+  test("up arrow leaves the composer and selects the latest message when the caret is already at the top", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = lines[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("up");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await emitKeypress({ name: "return", sequence: "\r" });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("replying to @user1");
+    expect(frame).toContain("Reply to @user1...");
+  });
+
+  test("up arrow targets the newest bottom message when multiple messages share a timestamp", async () => {
+    const controller = createController({
+      messages: [
+        {
+          id: "z-older",
+          channelId: "everyone",
+          content: "older same timestamp",
+          replyToId: null,
+          createdAt: "2026-03-30T00:00:01.000Z",
+          user: { id: "u1", username: "older", displayName: "Older" },
+        },
+        {
+          id: "a-newer",
+          channelId: "everyone",
+          content: "newer same timestamp",
+          replyToId: null,
+          createdAt: "2026-03-30T00:00:01.000Z",
+          user: { id: "u2", username: "newer", displayName: "Newer" },
+        },
+      ],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = lines[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("up");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await emitKeypress({ name: "return", sequence: "\r" });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("replying to @newer");
+    expect(frame).toContain("Reply to @newer...");
+  });
+
+  test("leaves one row of clearance when scrolling a selected message into the bottom edge", () => {
+    const nextScrollTop = getSelectedMessageScrollTop({
+      scrollTop: 12,
+      viewportHeight: 4,
+      top: 14,
+      rowHeight: 2,
+    });
+
+    expect(nextScrollTop).toBe(13);
+  });
+
+  test("up arrow still moves within a multi-line draft before handing off to message selection", async () => {
+    const controller = createController({ sessionToken: "token-123", messages: [makeMessage(1)] });
+    const sentMessages: string[] = [];
+    apiClient.connectChannel = (() => ({
+      send: async (content: string) => {
+        sentMessages.push(content);
+        return {
+          id: `server:${sentMessages.length}`,
+          channelId: "everyone",
+          content,
+          replyToId: null,
+          createdAt: "2026-03-30T00:00:30.000Z",
+          user: { id: "u0", username: "vince", displayName: "Vince" },
+        };
+      },
+      close: () => {},
+    })) as typeof apiClient.connectChannel;
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 60,
+        height: 12,
+      }), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = lines[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("first line");
+      await testSetup!.renderOnce();
+    });
+
+    await emitKeypress({ name: "return", sequence: "\r", shift: true });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("second line");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(sentMessages).toEqual(["first line\nsecond line"]);
+    expect(testSetup.captureCharFrame()).not.toContain("replying to @user1");
+  });
+
+  test("shows a clear reply composer state when a reply target is active", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+      replyToId: "m1",
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("replying to @user1");
+    expect(frame).toContain("Cancel");
+    expect(frame).toContain("Reply to @user1...");
+  });
+
+  test("uses selected text colors for selected message rows", async () => {
+    const controller = createController({
+      messages: [makeMessage(1), makeMessage(2)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const expectedSelectedFg = hexToRgbaInts(colors.selectedText);
+    const frame = testSetup.captureSpans();
+    const headerLine = frame.lines.find((line) => lineText(line).includes("user2"));
+    const bodyLine = frame.lines.find((line) => lineText(line).includes("message 2"));
+    const headerSpan = headerLine?.spans.find((span) => span.text.includes("user2"));
+    const bodySpan = bodyLine?.spans.find((span) => span.text.includes("message 2"));
+
+    expect(headerSpan).toBeDefined();
+    expect(bodySpan).toBeDefined();
+    expect(headerSpan!.fg.toInts().join(",")).toBe(expectedSelectedFg);
+    expect(bodySpan!.fg.toInts().join(",")).toBe(expectedSelectedFg);
+  });
+
+  test("does not use escape as a pane-close shortcut", async () => {
+    const controller = createController({
+      messages: [makeMessage(1)],
+    });
+    let closeCalls = 0;
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+        close: () => {
+          closeCalls += 1;
+        },
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("escape");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(closeCalls).toBe(0);
+  });
+
+  test("grows the composer for multi-line drafts", async () => {
+    const controller = createController();
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 32,
+        height: 12,
+      }), {
+        width: 32,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frameBeforeClick = testSetup.captureCharFrame().split("\n");
+    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = frameBeforeClick[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("alpha bravo");
+      await testSetup!.renderOnce();
+    });
+
+    await emitKeypress({ name: "return", sequence: "\r", shift: true });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("charlie delta");
+      await testSetup!.renderOnce();
+    });
+
+    await emitKeypress({ name: "return", sequence: "\r", shift: true });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("echo foxtrot");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const rows = testSetup.captureCharFrame().split("\n");
+    const firstRow = rows.findIndex((line) => line.includes("alpha bravo"));
+    const secondRow = rows.findIndex((line) => line.includes("charlie delta"));
+    const thirdRow = rows.findIndex((line) => line.includes("echo foxtrot"));
+
+    expect(firstRow).toBeGreaterThanOrEqual(0);
+    expect(secondRow).toBeGreaterThan(firstRow);
+    expect(thirdRow).toBeGreaterThan(secondRow);
+  });
+
+  test("keeps Enter as send and uses Shift+Enter for composer newlines", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    const sentMessages: string[] = [];
+    apiClient.connectChannel = (() => ({
+      send: async (content: string) => {
+        sentMessages.push(content);
+        return {
+          id: `server:${sentMessages.length}`,
+          channelId: "everyone",
+          content,
+          replyToId: null,
+          createdAt: "2026-03-30T00:00:30.000Z",
+          user: { id: "u0", username: "vince", displayName: "Vince" },
+        };
+      },
+      close: () => {},
+    })) as typeof apiClient.connectChannel;
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frameBeforeClick = testSetup.captureCharFrame().split("\n");
+    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = frameBeforeClick[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("first line");
+      await testSetup!.renderOnce();
+    });
+
+    await emitKeypress({ name: "return", sequence: "\r", shift: true });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("second line");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frameAfterNewline = testSetup.captureCharFrame();
+    expect(frameAfterNewline).toContain("first line");
+    expect(frameAfterNewline).toContain("second line");
+    expect(sentMessages).toEqual([]);
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(sentMessages).toEqual(["first line\nsecond line"]);
   });
 
   test("renders optimistic sends with a sending status", async () => {

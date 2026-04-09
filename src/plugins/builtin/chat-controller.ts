@@ -82,7 +82,9 @@ function isLegacyTimestampCursor(cursor: string | null): boolean {
 }
 
 function compareMessages(a: ChatMessage, b: ChatMessage): number {
-  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+  // Preserve server/insertion order inside same-timestamp batches so the bottom-most
+  // rendered message stays the one selected first from the composer.
+  return a.createdAt.localeCompare(b.createdAt);
 }
 
 export class ChatController {
@@ -261,6 +263,7 @@ export class ChatController {
   }
 
   setDraft(draft: string): void {
+    if (draft === this.draft) return;
     this.draft = draft;
     this.persistChannelState();
     this.emit();

@@ -4875,6 +4875,7 @@ export function CommandBar({
                         placeholderColor={paletteSubtleText}
                         backgroundColor={colors.panel}
                         flexGrow={1}
+                        wrapText
                       />
                     ) : (
                       <box flexDirection="column" paddingX={1} paddingY={0}>

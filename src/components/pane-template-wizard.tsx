@@ -126,6 +126,7 @@ export function PaneTemplateTextareaStep({
             placeholderColor={colors.textDim}
             backgroundColor={colors.panel}
             flexGrow={1}
+            wrapText
           />
         </box>
         <box height={1} />
