@@ -10,6 +10,7 @@ import {
   useAppState,
 } from "./state/app-context";
 import { bindAppActivity, useAppActive } from "./state/app-activity";
+import { copyActiveSelection, isCopyShortcut, isPasteShortcut, pasteSystemClipboard } from "./utils/selection-clipboard";
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
@@ -1124,6 +1125,17 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
   // Global keyboard shortcuts
   useKeyboard((event) => {
+    if (isCopyShortcut(event) && copyActiveSelection(renderer)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (isPasteShortcut(event) && pasteSystemClipboard(renderer)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     // Skip all global shortcuts when a dialog is open
     if (dialogOpen) return;
 
