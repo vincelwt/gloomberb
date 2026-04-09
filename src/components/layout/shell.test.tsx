@@ -676,6 +676,33 @@ describe("Shell", () => {
     expect(updateLayout?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "portfolio-list:main" });
   });
 
+  test("keeps a floating pane at the preview rect after a free drag release", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-drag-test");
+    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!detailPane) throw new Error("missing detail pane");
+    const floatingOnlyLayout = {
+      dockRoot: null,
+      instances: [{ ...detailPane, binding: { kind: "fixed" as const, symbol: "AAPL" } }],
+      floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8, zIndex: 75 }],
+    };
+
+    const result = finalizePaneDragRelease(
+      floatingOnlyLayout,
+      "ticker-detail:main",
+      { x: 14, y: 4, width: 30, height: 8 },
+      null,
+    );
+
+    expect(result.shouldShowGridlockTip).toBe(false);
+    expect(result.nextLayout.floating[0]).toEqual(expect.objectContaining({
+      instanceId: "ticker-detail:main",
+      x: 14,
+      y: 4,
+      width: 30,
+      height: 8,
+    }));
+  });
+
   test("keeps the last floating pane body row visible above the border", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-footer-test");
     const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");

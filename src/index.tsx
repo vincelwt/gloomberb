@@ -7,6 +7,7 @@ import { existsSync, mkdirSync } from "fs";
 import { dispatchCli } from "./cli/index";
 import { loadExternalPlugins } from "./plugins/loader";
 import { debugLog } from "./utils/debug-log";
+import { resetTerminalInputState } from "./utils/terminal-input-reset";
 
 async function main() {
   // Intercept console.log/warn/error to capture in debug log
@@ -43,6 +44,10 @@ async function main() {
   // Load or create config
   const config = await initDataDir(dataDir);
 
+  // `bun run --watch` does not guarantee the previous run's renderer can cleanly
+  // restore mouse/raw terminal modes before the next run starts.
+  resetTerminalInputState();
+
   // Create renderer
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
@@ -63,5 +68,5 @@ async function main() {
 
 main().catch((err) => {
   console.error("Fatal error:", err);
-  process.exit(1);
+  process.exitCode = 1;
 });
