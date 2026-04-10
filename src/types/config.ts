@@ -317,6 +317,35 @@ export function isFixedTickerPane(instance: PaneInstanceConfig): boolean {
   return isTickerPaneInstance(instance) && instance.binding?.kind === "fixed";
 }
 
+export function findPrimaryPaneInstance(layout: LayoutConfig, paneId: string): PaneInstanceConfig | undefined {
+  const instances = layout.instances.filter((instance) => instance.paneId === paneId);
+  if (instances.length === 0) return undefined;
+  if (!isTickerPaneId(paneId)) return instances[0];
+  return instances.find((instance) => instance.instanceId === `${paneId}:main` && instance.binding?.kind !== "fixed")
+    ?? instances.find((instance) => instance.binding?.kind !== "fixed");
+}
+
+export function resolvePaneInstance(layout: LayoutConfig, paneIdOrInstanceId: string): PaneInstanceConfig | undefined {
+  return findPaneInstance(layout, paneIdOrInstanceId) ?? findPrimaryPaneInstance(layout, paneIdOrInstanceId);
+}
+
+export function resolveFollowBindingInstance(
+  layout: LayoutConfig,
+  paneIdOrInstanceId: string | null | undefined,
+  matcher: (instance: PaneInstanceConfig) => boolean,
+  seen = new Set<string>(),
+): PaneInstanceConfig | undefined {
+  if (!paneIdOrInstanceId) return undefined;
+  const instance = resolvePaneInstance(layout, paneIdOrInstanceId);
+  if (!instance || seen.has(instance.instanceId)) return undefined;
+  seen.add(instance.instanceId);
+  if (matcher(instance)) return instance;
+  if (instance.binding?.kind === "follow") {
+    return resolveFollowBindingInstance(layout, instance.binding.sourceInstanceId, matcher, seen);
+  }
+  return undefined;
+}
+
 export function createPaneInstance(
   paneId: string,
   options: Partial<PaneInstanceConfig> = {},
