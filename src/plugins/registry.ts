@@ -28,7 +28,7 @@ import type {
 import type { TickerRecord } from "../types/ticker";
 import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
-import { createPaneInstance } from "../types/config";
+import { createPaneInstance, resolvePaneInstance } from "../types/config";
 import { createPluginPersistence } from "./plugin-persistence";
 import { debugLog } from "../utils/debug-log";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "./plugin-runtime";
@@ -277,16 +277,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return Object.keys(this.getConfigFn().pluginConfig[pluginId] ?? {}).sort();
   }
 
-  private resolvePrimaryPaneInstanceId(paneId: string): string | undefined {
-    const layout = this.getLayoutFn();
-    return layout.instances.find((instance) => instance.paneId === paneId)?.instanceId;
-  }
-
   private resolvePaneTarget(paneId: string): string | undefined {
-    const layout = this.getLayoutFn();
-    const isInstanceId = layout.instances.some((instance) => instance.instanceId === paneId);
-    if (isInstanceId) return paneId;
-    return this.resolvePrimaryPaneInstanceId(paneId);
+    return resolvePaneInstance(this.getLayoutFn(), paneId)?.instanceId;
   }
 
   resolvePaneSettings(paneId: string): {
