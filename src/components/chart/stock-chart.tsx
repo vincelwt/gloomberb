@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useAppDispatch, useAppSelector, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
+import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
 import { saveConfig } from "../../data/config-store";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { colors, priceColor } from "../../theme/colors";
@@ -10,6 +10,11 @@ import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../ut
 import { useChartQuery } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import { usePersistChartControlSelection } from "./chart-pane-settings";
+import { computeSMA, computeEMA } from "./indicators/moving-averages";
+import { computeRSI, computeMACD } from "./indicators/oscillators";
+import { computeBollingerBands } from "./indicators/bands";
+import type { IndicatorConfig } from "./indicators/types";
+import type { ChartIndicatorOverlays } from "./chart-types";
 import { getVisibleWindow, projectChartData, resolveBarSize } from "./chart-data";
 import {
   buildVisibleDateWindow,
@@ -559,6 +564,41 @@ function resolveSelectionCursor(
   };
 }
 
+const INDICATOR_COLORS = [
+  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8",
+];
+
+function computeIndicatorOverlays(
+  closes: number[],
+  config: IndicatorConfig,
+): ChartIndicatorOverlays {
+  let colorIdx = 0;
+  const nextColor = () => INDICATOR_COLORS[colorIdx++ % INDICATOR_COLORS.length]!;
+
+  const smaLines = (config.sma ?? []).map((period) => ({
+    period,
+    points: computeSMA(closes, period),
+    color: nextColor(),
+  }));
+
+  const emaLines = (config.ema ?? []).map((period) => ({
+    period,
+    points: computeEMA(closes, period),
+    color: nextColor(),
+  }));
+
+  const bollinger = config.bollinger
+    ? { ...computeBollingerBands(closes, config.bollinger.period, config.bollinger.stdDev), color: nextColor() }
+    : null;
+
+  const rsi = config.rsi ? computeRSI(closes, config.rsi) : null;
+  const macd = config.macd
+    ? computeMACD(closes, config.macd.fast, config.macd.slow, config.macd.signal)
+    : null;
+
+  return { smaLines, emaLines, bollinger, rsi, macd };
+}
+
 export function StockChart(props: StockChartProps) {
   const { symbol, ticker, financials } = usePaneTicker();
   return <ResolvedStockChart {...props} symbol={symbol} ticker={ticker} financials={financials} />;
@@ -581,6 +621,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneId = usePaneInstanceId();
+  const pane = usePaneInstance();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
   const defaultRenderMode = config.chartPreferences.defaultRenderMode;
   const preferredRenderer = config.chartPreferences.renderer;
@@ -1121,6 +1162,16 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     projectChartData(chartWindow.points, chartWidth, viewState.renderMode, !!compact)
   ), [chartWindow.points, chartWidth, compact, viewState.renderMode]);
 
+  // Read indicator config from pane settings
+  const indicatorConfig: IndicatorConfig = (pane?.settings?.indicators as IndicatorConfig) ?? {};
+  const hasIndicators = !!(indicatorConfig.sma?.length || indicatorConfig.ema?.length || indicatorConfig.rsi || indicatorConfig.macd || indicatorConfig.bollinger);
+
+  const indicators = useMemo(() => {
+    if (!hasIndicators || !projection.points.length) return null;
+    const closes = projection.points.map((p) => p.close);
+    return computeIndicatorOverlays(closes, indicatorConfig);
+  }, [projection.points, hasIndicators, indicatorConfig]);
+
   useKeyboard((event) => {
     if (!focused || compact) return;
 
@@ -1386,7 +1437,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     assetCategory: chartAssetCategory,
     colors: chartColors,
     timeAxisDates,
-  }), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+    indicators,
+  }), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty"
@@ -1404,8 +1456,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         assetCategory: chartAssetCategory,
         colors: chartColors,
         timeAxisDates,
+        indicators,
       })
-  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
 

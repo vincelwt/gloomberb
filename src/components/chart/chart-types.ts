@@ -88,3 +88,15 @@ export interface ComparisonChartViewState {
   renderMode?: ComparisonChartRenderMode;
   selectedSymbol: string | null;
 }
+
+import type { IndicatorConfig, OverlayPoint, OscillatorPoint, MacdResult, BollingerResult } from "./indicators/types";
+
+export interface ChartIndicatorOverlays {
+  smaLines: { period: number; points: OverlayPoint[]; color: string }[];
+  emaLines: { period: number; points: OverlayPoint[]; color: string }[];
+  bollinger: (BollingerResult & { color: string }) | null;
+  rsi: OscillatorPoint[] | null;
+  macd: MacdResult | null;
+}
+
+export type { IndicatorConfig };

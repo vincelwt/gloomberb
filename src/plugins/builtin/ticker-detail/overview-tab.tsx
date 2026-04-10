@@ -2,7 +2,7 @@ import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { useAppSelector } from "../../../state/app-context";
-import { colors, priceColor } from "../../../theme/colors";
+import { colors, priceColor, blendHex } from "../../../theme/colors";
 import {
   convertCurrency,
   formatCompact,
@@ -20,10 +20,139 @@ import {
   quoteSourceLabel,
 } from "../../../utils/market-status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { EmptyState, FieldRow } from "../../../components";
+import { EmptyState } from "../../../components";
 import { ResolvedStockChart } from "../../../components/chart/stock-chart";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
+
+// ─── Visual range bar ────────────────────────────────────────────────────────
+
+function RangeBar({
+  current,
+  low,
+  high,
+  label,
+  barWidth,
+  currency,
+  assetCategory,
+}: {
+  current: number;
+  low: number;
+  high: number;
+  label: string;
+  barWidth: number;
+  currency: string;
+  assetCategory?: string;
+}) {
+  const range = high - low;
+  if (range <= 0) return null;
+  const position = Math.max(0, Math.min(1, (current - low) / range));
+  const filledWidth = Math.max(1, Math.round(position * barWidth));
+  const emptyWidth = Math.max(0, barWidth - filledWidth);
+  const pctLabel = `${Math.round(position * 100)}%`;
+  const fillColor = blendHex(colors.negative, colors.positive, position);
+  const trackChar = "─";
+  const fillChar = "━";
+
+  return (
+    <box flexDirection="column">
+      <box flexDirection="row" height={1}>
+        <box width={12}>
+          <text fg={colors.textDim}>{label}</text>
+        </box>
+        <text fg={colors.textDim}>
+          {formatMarketPriceWithCurrency(low, currency, { assetCategory })}
+        </text>
+        <box marginLeft={1} marginRight={1} flexDirection="row">
+          <text fg={fillColor}>{fillChar.repeat(filledWidth)}</text>
+          <text fg={colors.border}>{trackChar.repeat(emptyWidth)}</text>
+        </box>
+        <text fg={colors.textDim}>
+          {formatMarketPriceWithCurrency(high, currency, { assetCategory })}
+        </text>
+        <box marginLeft={1}>
+          <text fg={fillColor}>{pctLabel}</text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
+// ─── Volume bar ──────────────────────────────────────────────────────────────
+
+function VolumeBar({ volume, avgVolume, barWidth }: { volume: number; avgVolume: number; barWidth: number }) {
+  if (!volume || !avgVolume) return null;
+  const ratio = volume / avgVolume;
+  const maxRatio = Math.max(ratio, 1);
+  const volWidth = Math.max(1, Math.round((Math.min(ratio, maxRatio) / maxRatio) * barWidth));
+  const avgWidth = Math.max(1, Math.round((1 / maxRatio) * barWidth));
+  const ratioColor = ratio >= 2 ? colors.textBright : ratio >= 1 ? colors.text : colors.textDim;
+
+  return (
+    <box flexDirection="row" height={1}>
+      <box width={12}>
+        <text fg={colors.textDim}>Volume</text>
+      </box>
+      <text fg={colors.textDim}>{formatCompact(volume)}</text>
+      <box marginLeft={1} marginRight={1} flexDirection="row">
+        <text fg={ratioColor}>{"━".repeat(volWidth)}</text>
+        <text fg={colors.border}>{"─".repeat(Math.max(0, barWidth - volWidth))}</text>
+      </box>
+      <text fg={colors.textDim}>avg {formatCompact(avgVolume)}</text>
+      <box marginLeft={1}>
+        <text fg={ratioColor}>{ratio.toFixed(1)}x</text>
+      </box>
+    </box>
+  );
+}
+
+// ─── Two-column stat grid ────────────────────────────────────────────────────
+
+interface StatField {
+  label: string;
+  value: string;
+  valueColor?: string;
+}
+
+function StatGrid({ fields, width }: { fields: StatField[]; width: number }) {
+  const colWidth = Math.floor(width / 2);
+  const rows: Array<[StatField | null, StatField | null]> = [];
+  for (let i = 0; i < fields.length; i += 2) {
+    rows.push([fields[i] ?? null, fields[i + 1] ?? null]);
+  }
+
+  return (
+    <box flexDirection="column">
+      {rows.map((row, i) => (
+        <box key={i} flexDirection="row" height={1}>
+          {row.map((field, j) => {
+            if (!field) return <box key={j} width={colWidth} />;
+            return (
+              <box key={j} width={colWidth} flexDirection="row">
+                <box width={14}>
+                  <text fg={colors.textDim}>{field.label}</text>
+                </box>
+                <text fg={field.valueColor ?? colors.text}>{field.value}</text>
+              </box>
+            );
+          })}
+        </box>
+      ))}
+    </box>
+  );
+}
+
+// ─── Section header ──────────────────────────────────────────────────────────
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <box height={1}>
+      <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{title}</text>
+    </box>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export function OverviewTab({
   width,
@@ -71,12 +200,82 @@ export function OverviewTab({
     routingVenue && routingVenue !== listingVenue ? `Route: ${routingVenue}` : "",
   ].filter((part) => part.length > 0);
 
-  const chartWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
+  const contentWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
+  const chartWidth = contentWidth;
+  const barWidth = Math.max(10, contentWidth - 50);
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
+
+  // Build the two-column stat grid
+  const stats: StatField[] = [];
+
+  if (quote?.marketCap) {
+    stats.push({ label: "Market Cap", value: formatCompactCurrency(toBase(quote.marketCap, quoteCurrency), baseCurrency) });
+  }
+  if (fundamentals?.sharesOutstanding) {
+    stats.push({ label: "Shares Out", value: formatCompact(fundamentals.sharesOutstanding) });
+  }
+  if (fundamentals?.trailingPE) {
+    stats.push({ label: "P/E (TTM)", value: formatNumber(fundamentals.trailingPE, 1) });
+  }
+  if (fundamentals?.forwardPE) {
+    stats.push({ label: "Fwd P/E", value: formatNumber(fundamentals.forwardPE, 1) });
+  }
+  if (fundamentals?.eps) {
+    stats.push({ label: "EPS", value: formatCurrency(fundamentals.eps, quoteCurrency) });
+  }
+  if (fundamentals?.pegRatio) {
+    stats.push({ label: "PEG", value: formatNumber(fundamentals.pegRatio, 2) });
+  }
+  if (fundamentals?.dividendYield != null) {
+    stats.push({ label: "Div Yield", value: formatPercent(fundamentals.dividendYield) });
+  }
+  if (fundamentals?.revenue) {
+    stats.push({ label: "Revenue", value: formatCompact(fundamentals.revenue) });
+  }
+  if (fundamentals?.netIncome) {
+    stats.push({ label: "Net Income", value: formatCompact(fundamentals.netIncome) });
+  }
+  if (fundamentals?.freeCashFlow) {
+    stats.push({ label: "FCF", value: formatCompact(fundamentals.freeCashFlow) });
+  }
+  if (fundamentals?.operatingMargin != null) {
+    stats.push({ label: "Op Margin", value: formatPercent(fundamentals.operatingMargin) });
+  }
+  if (fundamentals?.profitMargin != null) {
+    stats.push({ label: "Profit Marg", value: formatPercent(fundamentals.profitMargin) });
+  }
+  if (fundamentals?.revenueGrowth != null) {
+    stats.push({
+      label: "Rev Growth",
+      value: formatPercent(fundamentals.revenueGrowth),
+      valueColor: priceColor(fundamentals.revenueGrowth),
+    });
+  }
+  if (fundamentals?.return1Y != null) {
+    stats.push({
+      label: "1Y Return",
+      value: formatPercent(fundamentals.return1Y),
+      valueColor: priceColor(fundamentals.return1Y),
+    });
+  }
+  if (fundamentals?.return3Y != null) {
+    stats.push({
+      label: "3Y Return",
+      value: formatPercent(fundamentals.return3Y),
+      valueColor: priceColor(fundamentals.return3Y),
+    });
+  }
+  if (fundamentals?.enterpriseValue) {
+    stats.push({ label: "EV", value: formatCompact(fundamentals.enterpriseValue) });
+  }
+
+  // Bid/ask
+  const hasBidAsk = quote?.bid != null || quote?.ask != null;
 
   return (
     <scrollbox flexGrow={1} scrollY>
       <box flexDirection="column" paddingX={1} paddingBottom={1} gap={1}>
+        {/* Ticker header */}
         <box flexDirection="row">
           <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
             {ticker.metadata.ticker}
@@ -87,9 +286,7 @@ export function OverviewTab({
             </text>
           )}
           {listingVenue && (
-            <text fg={colors.textDim}>
-              {" "}({listingVenue})
-            </text>
+            <text fg={colors.textDim}>{" "}({listingVenue})</text>
           )}
           {quote?.marketState && (
             <text fg={marketStateColor(quote.marketState)}>
@@ -98,6 +295,7 @@ export function OverviewTab({
           )}
         </box>
 
+        {/* Price block */}
         {quote && (
           <box flexDirection="column" gap={0}>
             <box flexDirection="row" gap={2}>
@@ -136,10 +334,42 @@ export function OverviewTab({
           </box>
         )}
 
+        {/* Range bars */}
+        {quote?.low != null && quote?.high != null && quote.high > quote.low && (
+          <RangeBar
+            current={quote.price}
+            low={quote.low}
+            high={quote.high}
+            label="Day Range"
+            barWidth={barWidth}
+            currency={quoteCurrency}
+            assetCategory={ticker.metadata.assetCategory}
+          />
+        )}
+        {quote?.low52w != null && quote?.high52w != null && quote.high52w > quote.low52w && (
+          <RangeBar
+            current={quote.price}
+            low={quote.low52w}
+            high={quote.high52w}
+            label="52W Range"
+            barWidth={barWidth}
+            currency={quoteCurrency}
+            assetCategory={ticker.metadata.assetCategory}
+          />
+        )}
+        {quote?.volume != null && fundamentals?.sharesOutstanding && (
+          <VolumeBar
+            volume={quote.volume}
+            avgVolume={Math.round((fundamentals.sharesOutstanding * 0.01) || quote.volume)}
+            barWidth={barWidth}
+          />
+        )}
+
+        {/* Chart */}
         {hasHistory && (
           <ResolvedStockChart
             width={chartWidth}
-            height={8}
+            height={10}
             focused={false}
             compact
             symbol={symbol}
@@ -148,56 +378,46 @@ export function OverviewTab({
           />
         )}
 
-        <box flexDirection="column">
-          <FieldRow
-            label="Market Cap"
-            value={quote?.marketCap ? formatCompactCurrency(toBase(quote.marketCap, quoteCurrency), baseCurrency) : "—"}
-          />
-          <FieldRow label="P/E (TTM)" value={fundamentals?.trailingPE ? formatNumber(fundamentals.trailingPE, 1) : "—"} />
-          <FieldRow label="Forward P/E" value={fundamentals?.forwardPE ? formatNumber(fundamentals.forwardPE, 1) : "—"} />
-          <FieldRow label="PEG Ratio" value={fundamentals?.pegRatio ? formatNumber(fundamentals.pegRatio, 2) : "—"} />
-          <FieldRow label="EPS" value={fundamentals?.eps ? formatCurrency(fundamentals.eps, quoteCurrency) : "—"} />
-          <FieldRow label="Div Yield" value={fundamentals?.dividendYield != null ? formatPercent(fundamentals.dividendYield) : "—"} />
-          <FieldRow label="Revenue" value={fundamentals?.revenue ? formatCompact(fundamentals.revenue) : "—"} />
-          <FieldRow label="Net Income" value={fundamentals?.netIncome ? formatCompact(fundamentals.netIncome) : "—"} />
-          <FieldRow label="FCF" value={fundamentals?.freeCashFlow ? formatCompact(fundamentals.freeCashFlow) : "—"} />
-          <FieldRow label="Op. Margin" value={fundamentals?.operatingMargin != null ? formatPercent(fundamentals.operatingMargin) : "—"} />
-          <FieldRow label="Profit Margin" value={fundamentals?.profitMargin != null ? formatPercent(fundamentals.profitMargin) : "—"} />
-          {(quote?.bid != null || quote?.ask != null) && (
-            <>
-              <FieldRow label="Bid" value={quote?.bid != null ? formatMarketPriceWithCurrency(quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"} />
-              <FieldRow label="Ask" value={quote?.ask != null ? formatMarketPriceWithCurrency(quote.ask, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"} />
-              <FieldRow
-                label="Spread"
-                value={quote?.bid != null && quote?.ask != null
-                  ? formatMarketPriceWithCurrency(quote.ask - quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory })
-                  : "—"}
-              />
-            </>
-          )}
-          <FieldRow
-            label="52W Range"
-            value={quote?.low52w && quote?.high52w
-              ? `${formatMarketPriceWithCurrency(quote.low52w, quoteCurrency, { assetCategory: ticker.metadata.assetCategory })} - ${formatMarketPriceWithCurrency(quote.high52w, quoteCurrency, { assetCategory: ticker.metadata.assetCategory })}`
-              : "—"}
-          />
-          <FieldRow
-            label="1Y Return"
-            value={fundamentals?.return1Y != null ? formatPercent(fundamentals.return1Y) : "—"}
-            valueColor={fundamentals?.return1Y != null ? priceColor(fundamentals.return1Y) : undefined}
-          />
-          <FieldRow
-            label="3Y Return"
-            value={fundamentals?.return3Y != null ? formatPercent(fundamentals.return3Y) : "—"}
-            valueColor={fundamentals?.return3Y != null ? priceColor(fundamentals.return3Y) : undefined}
-          />
-        </box>
+        {/* Bid/Ask */}
+        {hasBidAsk && quote && (
+          <box flexDirection="row" height={1} gap={3}>
+            <box flexDirection="row">
+              <text fg={colors.textDim}>Bid: </text>
+              <text fg={colors.text}>
+                {quote.bid != null ? formatMarketPriceWithCurrency(quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"}
+                {quote.bidSize != null ? ` ×${quote.bidSize}` : ""}
+              </text>
+            </box>
+            <box flexDirection="row">
+              <text fg={colors.textDim}>Ask: </text>
+              <text fg={colors.text}>
+                {quote.ask != null ? formatMarketPriceWithCurrency(quote.ask, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"}
+                {quote.askSize != null ? ` ×${quote.askSize}` : ""}
+              </text>
+            </box>
+            {quote.bid != null && quote.ask != null && (
+              <box flexDirection="row">
+                <text fg={colors.textDim}>Spread: </text>
+                <text fg={colors.text}>
+                  {formatMarketPriceWithCurrency(quote.ask - quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
+                </text>
+              </box>
+            )}
+          </box>
+        )}
 
+        {/* Two-column stats grid */}
+        {stats.length > 0 && (
+          <box flexDirection="column">
+            <SectionHeader title="Fundamentals" />
+            <StatGrid fields={stats} width={contentWidth} />
+          </box>
+        )}
+
+        {/* Positions */}
         {ticker.metadata.positions.length > 0 && (
           <box flexDirection="column">
-            <box height={1}>
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Positions</text>
-            </box>
+            <SectionHeader title="Positions" />
             {ticker.metadata.positions.map((position, index) => {
               const costBasis = position.shares * position.avgCost * (position.multiplier || 1);
               const positionCurrency = position.currency || quoteCurrency;
@@ -248,29 +468,43 @@ export function OverviewTab({
           </box>
         )}
 
-        {description && (
-          <box flexDirection="column">
-            <box height={1}>
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Description</text>
-            </box>
-            <text fg={colors.text}>{description}</text>
+        {/* Sector / Industry / Type */}
+        {(sector || industry || ticker.metadata.assetCategory) && (
+          <box flexDirection="row" height={1} gap={3}>
+            {ticker.metadata.assetCategory && (
+              <box flexDirection="row">
+                <text fg={colors.textDim}>Type: </text>
+                <text fg={colors.text}>{ticker.metadata.assetCategory}</text>
+              </box>
+            )}
+            {sector && (
+              <box flexDirection="row">
+                <text fg={colors.textDim}>Sector: </text>
+                <text fg={colors.text}>{sector}</text>
+              </box>
+            )}
+            {industry && (
+              <box flexDirection="row">
+                <text fg={colors.textDim}>Industry: </text>
+                <text fg={colors.text}>{industry}</text>
+              </box>
+            )}
           </box>
         )}
 
-        {(sector || industry || ticker.metadata.assetCategory || ticker.metadata.isin) && (
+        {/* ISIN */}
+        {ticker.metadata.isin && (
+          <box flexDirection="row" height={1}>
+            <text fg={colors.textDim}>ISIN: </text>
+            <text fg={colors.text}>{ticker.metadata.isin}</text>
+          </box>
+        )}
+
+        {/* Description — last, collapsed */}
+        {description && (
           <box flexDirection="column">
-            {ticker.metadata.assetCategory && (
-              <FieldRow label="Type" value={ticker.metadata.assetCategory} />
-            )}
-            {sector && (
-              <FieldRow label="Sector" value={sector} />
-            )}
-            {industry && (
-              <FieldRow label="Industry" value={industry} />
-            )}
-            {ticker.metadata.isin && (
-              <FieldRow label="ISIN" value={ticker.metadata.isin} />
-            )}
+            <SectionHeader title="Description" />
+            <text fg={colors.text}>{description}</text>
           </box>
         )}
       </box>
