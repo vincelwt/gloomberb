@@ -35,6 +35,8 @@ import {
   cloneLayout,
   createPaneInstance,
   findPaneInstance,
+  findPrimaryPaneInstance,
+  resolveFollowBindingInstance,
   type LayoutConfig,
 } from "../../types/config";
 import { resolveBrokerConfigFields, type BrokerConfigField } from "../../types/broker";
@@ -349,16 +351,12 @@ export function CommandBar({
 
   const setActiveCollection = useCallback((collectionId: string) => {
     const currentState = stateRef.current;
-    const resolvePortfolioPane = (candidate?: string | null): string | null => {
-      if (!candidate) return null;
-      const instance = findPaneInstance(currentState.config.layout, candidate);
-      if (!instance) return null;
-      if (instance.paneId === "portfolio-list") return instance.instanceId;
-      if (instance.binding?.kind === "follow") return resolvePortfolioPane(instance.binding.sourceInstanceId);
-      return null;
-    };
-    const targetPaneId = resolvePortfolioPane(currentState.focusedPaneId)
-      ?? currentState.config.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId
+    const targetPaneId = resolveFollowBindingInstance(
+      currentState.config.layout,
+      currentState.focusedPaneId,
+      (instance) => instance.paneId === "portfolio-list",
+    )?.instanceId
+      ?? findPrimaryPaneInstance(currentState.config.layout, "portfolio-list")?.instanceId
       ?? null;
     if (!targetPaneId) return;
     dispatch({ type: "UPDATE_PANE_STATE", paneId: targetPaneId, patch: { collectionId } });

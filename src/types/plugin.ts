@@ -405,6 +405,7 @@ export interface GloomPluginContext {
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  navigateTicker(symbol: string): void;
   openPaneSettings(paneId?: string): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
