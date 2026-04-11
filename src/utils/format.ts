@@ -116,17 +116,95 @@ export function formatWithDivisor(value: number | undefined, divisor: number): s
   return scaled.toFixed(decimals);
 }
 
-/** Pad/truncate a string to a fixed width */
-export function padTo(str: string, width: number, align: "left" | "right" | "center" = "left"): string {
-  if (str.length > width) return str.slice(0, width);
-  if (align === "right") return str.padStart(width);
-  if (align === "center") {
-    const totalPadding = width - str.length;
-    const leftPadding = Math.floor(totalPadding / 2);
-    const rightPadding = totalPadding - leftPadding;
-    return " ".repeat(leftPadding) + str + " ".repeat(rightPadding);
+const COMBINING_MARK_RE = /\p{Mark}/u;
+const EMOJI_PRESENTATION_RE = /\p{Emoji_Presentation}/u;
+const EXTENDED_PICTOGRAPHIC_RE = /\p{Extended_Pictographic}/u;
+const REGIONAL_INDICATOR_RE = /\p{Regional_Indicator}/u;
+
+function segmentGraphemes(value: string): string[] {
+  const Segmenter = (Intl as any).Segmenter;
+  if (typeof Segmenter === "function") {
+    return Array.from(
+      new Segmenter(undefined, { granularity: "grapheme" }).segment(value),
+      (entry: any) => entry.segment as string,
+    );
   }
-  return str.padEnd(width);
+  return Array.from(value);
+}
+
+function isFullwidthCodePoint(codePoint: number): boolean {
+  return codePoint >= 0x1100 && (
+    codePoint <= 0x115f ||
+    codePoint === 0x2329 ||
+    codePoint === 0x232a ||
+    (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+    (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+    (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+    (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+    (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+    (codePoint >= 0x1f300 && codePoint <= 0x1faff) ||
+    (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+  );
+}
+
+function graphemeWidth(segment: string): number {
+  if (
+    REGIONAL_INDICATOR_RE.test(segment) ||
+    EMOJI_PRESENTATION_RE.test(segment) ||
+    EXTENDED_PICTOGRAPHIC_RE.test(segment)
+  ) {
+    return 2;
+  }
+
+  let width = 0;
+  for (const char of Array.from(segment)) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (
+      codePoint === 0 ||
+      codePoint < 32 ||
+      (codePoint >= 0x7f && codePoint < 0xa0) ||
+      codePoint === 0x200d ||
+      (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+      COMBINING_MARK_RE.test(char)
+    ) {
+      continue;
+    }
+    width += isFullwidthCodePoint(codePoint) ? 2 : 1;
+  }
+  return width;
+}
+
+export function displayWidth(value: string): number {
+  return segmentGraphemes(value).reduce((total, segment) => total + graphemeWidth(segment), 0);
+}
+
+function truncateToWidth(value: string, width: number): string {
+  if (width <= 0) return "";
+  let output = "";
+  let used = 0;
+  for (const segment of segmentGraphemes(value)) {
+    const nextWidth = graphemeWidth(segment);
+    if (used + nextWidth > width) break;
+    output += segment;
+    used += nextWidth;
+  }
+  return output;
+}
+
+/** Pad/truncate a string to a fixed display width */
+export function padTo(str: string, width: number, align: "left" | "right" | "center" = "left"): string {
+  const clipped = displayWidth(str) > width ? truncateToWidth(str, width) : str;
+  const clippedWidth = displayWidth(clipped);
+  const padding = Math.max(0, width - clippedWidth);
+  if (align === "right") return " ".repeat(padding) + clipped;
+  if (align === "center") {
+    const leftPadding = Math.floor(padding / 2);
+    const rightPadding = padding - leftPadding;
+    return " ".repeat(leftPadding) + clipped + " ".repeat(rightPadding);
+  }
+  return clipped + " ".repeat(padding);
 }
 
 /** Convert a value from one currency to base currency using cached exchange rates */

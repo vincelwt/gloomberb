@@ -1,10 +1,18 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
+import type { PersistedResourceValue } from "../../../types/persistence";
+import type { PluginPersistence } from "../../../types/plugin";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import type { EconEvent, EconImpact } from "./types";
 
 const CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
-const DISK_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_KIND = "calendar";
+const CACHE_KEY = "this-week";
+const CACHE_SOURCE = "forexfactory";
+export const ECON_CALENDAR_CACHE_POLICY = {
+  staleMs: 30 * 60 * 1000,
+  expireMs: 7 * 24 * 60 * 60 * 1000,
+} as const;
+
+let econCalendarPersistence: PluginPersistence | null = null;
 
 const calendarClient = createThrottledFetch({
   requestsPerMinute: 5,
@@ -16,25 +24,28 @@ const calendarClient = createThrottledFetch({
   },
 });
 
-function getCachePath(): string {
-  const dir = join(process.env.HOME || "~", ".gloomberb", "cache");
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  return join(dir, "econ-calendar.json");
+export function attachEconCalendarPersistence(persistence: PluginPersistence): void {
+  econCalendarPersistence = persistence;
 }
 
-function readDiskCache(): { data: unknown; fetchedAt: number } | null {
-  try {
-    const raw = readFileSync(getCachePath(), "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed?.fetchedAt && Array.isArray(parsed?.data)) return parsed;
-  } catch { /* no cache or corrupt */ }
-  return null;
+export function resetEconCalendarPersistence(): void {
+  econCalendarPersistence = null;
 }
 
-function writeDiskCache(data: unknown, fetchedAt: number): void {
-  try {
-    writeFileSync(getCachePath(), JSON.stringify({ data, fetchedAt }));
-  } catch { /* ignore write failures */ }
+function readCalendarCache(options?: {
+  allowExpired?: boolean;
+}): PersistedResourceValue<unknown> | null {
+  return econCalendarPersistence?.getResource<unknown>(CACHE_KIND, CACHE_KEY, {
+    sourceKey: CACHE_SOURCE,
+    allowExpired: options?.allowExpired,
+  }) ?? null;
+}
+
+function writeCalendarCache(data: unknown): void {
+  econCalendarPersistence?.setResource(CACHE_KIND, CACHE_KEY, data, {
+    sourceKey: CACHE_SOURCE,
+    cachePolicy: ECON_CALENDAR_CACHE_POLICY,
+  });
 }
 
 const CURRENCY_TO_COUNTRY: Record<string, string> = {
@@ -91,20 +102,19 @@ export function parseCalendarJson(data: unknown): EconEvent[] {
 }
 
 export async function fetchEconCalendar(): Promise<EconEvent[]> {
-  // Try disk cache first
-  const cached = readDiskCache();
-  if (cached && Date.now() - cached.fetchedAt < DISK_CACHE_TTL_MS) {
-    return parseCalendarJson(cached.data);
+  const cached = readCalendarCache();
+  if (cached && !cached.stale) {
+    return parseCalendarJson(cached.value);
   }
 
   try {
     const data = await calendarClient.fetchJson(CALENDAR_URL);
-    writeDiskCache(data, Date.now());
+    writeCalendarCache(data);
     return parseCalendarJson(data);
   } catch (err) {
-    // If fetch fails but we have stale cache, use it
-    if (cached) {
-      return parseCalendarJson(cached.data);
+    const staleCache = cached ?? readCalendarCache({ allowExpired: true });
+    if (staleCache) {
+      return parseCalendarJson(staleCache.value);
     }
     throw err;
   }

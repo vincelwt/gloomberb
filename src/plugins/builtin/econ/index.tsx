@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StyledText, TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
+import { DataTable, PageStackView, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { colors, hoverBg, blendHex } from "../../../theme/colors";
-import { getSharedRegistry } from "../../registry";
-import { fetchEconCalendar } from "./calendar-source";
+import { colors, blendHex } from "../../../theme/colors";
+import {
+  attachEconCalendarPersistence,
+  fetchEconCalendar,
+  resetEconCalendarPersistence,
+} from "./calendar-source";
 import type { EconEvent, EconImpact } from "./types";
-import { usePluginConfigState } from "../../plugin-runtime";
+import { usePluginConfigState, usePluginTickerActions } from "../../plugin-runtime";
 import { resolveFredMapping } from "./fred-series-map";
 import { fetchFredObservations, fetchFredSeriesInfo, type FredObservation, type FredSeriesInfo } from "./fred-client";
 import { renderChart, resolveChartPalette, type StyledContent } from "../../../components/chart/chart-renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
-import { useAppSelector } from "../../../state/app-context";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -123,9 +126,19 @@ async function loadCalendar(force = false): Promise<EconEvent[]> {
 }
 
 type DisplayRow =
-  | { kind: "separator"; label: string }
-  | { kind: "now" }
-  | { kind: "event"; event: EconEvent; eventIdx: number };
+  | { kind: "separator"; key: string; label: string }
+  | { kind: "now"; key: string }
+  | { kind: "event"; key: string; event: EconEvent; eventIdx: number };
+
+type EconCalendarColumnId =
+  | "time"
+  | "impact"
+  | "country"
+  | "event"
+  | "actual"
+  | "forecast"
+  | "prior";
+type EconCalendarColumn = DataTableColumn & { id: EconCalendarColumnId };
 
 // ---------------------------------------------------------------------------
 // Detail View — drills into a single economic indicator with FRED history
@@ -141,16 +154,15 @@ interface EconDetailViewProps {
   width: number;
   height: number;
   focused: boolean;
-  onBack: () => void;
 }
 
-function EconDetailView({ event, width, height, focused, onBack }: EconDetailViewProps) {
+function EconDetailView({ event, width, height, focused }: EconDetailViewProps) {
   const [fredApiKey] = usePluginConfigState<string>("fredApiKey", "");
+  const { navigateTicker } = usePluginTickerActions();
   const cacheRef = useRef<Map<string, FredCache>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<FredCache | null>(null);
-  const [detailScrollOffset, setDetailScrollOffset] = useState(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const mapping = useMemo(() => resolveFredMapping(event.event, event.country), [event.event, event.country]);
@@ -189,16 +201,23 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
       });
   }, [mapping?.seriesId, fredApiKey]);
 
+  const scrollDetailBy = useCallback((delta: number) => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox?.viewport) return;
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
+  }, []);
+
   useKeyboard((ev) => {
     if (!focused) return;
-    if (ev.name === "escape") {
-      onBack();
-      return;
-    }
     if (ev.name === "j" || ev.name === "down") {
-      setDetailScrollOffset((prev) => prev + 1);
+      ev.stopPropagation?.();
+      ev.preventDefault?.();
+      scrollDetailBy(1);
     } else if (ev.name === "k" || ev.name === "up") {
-      setDetailScrollOffset((prev) => Math.max(0, prev - 1));
+      ev.stopPropagation?.();
+      ev.preventDefault?.();
+      scrollDetailBy(-1);
     }
   });
 
@@ -208,14 +227,11 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
       <box flexDirection="column" width={width} height={height}>
         <box height={1} paddingX={1} flexDirection="row">
           <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {"◂ "}{event.event}
+            {event.event}
           </text>
         </box>
         <box flexGrow={1} justifyContent="center" alignItems="center">
           <text fg={colors.textMuted}>No historical data available for this indicator</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>Esc back</text>
         </box>
       </box>
     );
@@ -227,16 +243,13 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
       <box flexDirection="column" width={width} height={height}>
         <box height={1} paddingX={1} flexDirection="row">
           <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {"◂ "}{event.event}
+            {event.event}
           </text>
           <box flexGrow={1} />
           <text fg={colors.textDim}>{mapping.seriesId}</text>
         </box>
         <box flexGrow={1} justifyContent="center" alignItems="center">
           <text fg={colors.textMuted}>Configure FRED API key: type 'Set FRED' in command bar</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>Esc back</text>
         </box>
       </box>
     );
@@ -248,16 +261,13 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
       <box flexDirection="column" width={width} height={height}>
         <box height={1} paddingX={1} flexDirection="row">
           <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {"◂ "}{event.event}
+            {event.event}
           </text>
           <box flexGrow={1} />
           <text fg={colors.textDim}>{mapping.seriesId}</text>
         </box>
         <box flexGrow={1} justifyContent="center" alignItems="center">
           <text fg={colors.textMuted}>Loading...</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>Esc back</text>
         </box>
       </box>
     );
@@ -269,16 +279,13 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
       <box flexDirection="column" width={width} height={height}>
         <box height={1} paddingX={1} flexDirection="row">
           <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {"◂ "}{event.event}
+            {event.event}
           </text>
           <box flexGrow={1} />
           <text fg={colors.textDim}>{mapping.seriesId}</text>
         </box>
         <box flexGrow={1} justifyContent="center" alignItems="center">
           <text fg={colors.negative}>{error}</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>Esc back</text>
         </box>
       </box>
     );
@@ -356,7 +363,7 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
       {/* Header */}
       <box height={1} paddingX={1} flexDirection="row">
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {"◂ "}{title}
+          {title}
         </text>
         <box flexGrow={1} />
         <text fg={colors.textDim}>{mapping.seriesId}</text>
@@ -393,7 +400,7 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
             <box flexDirection="column" paddingX={1} marginTop={1}>
               <box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
                 {chartResult.lines.map((line, i) => (
-                  <text key={i} content={line} />
+                  <text key={i} content={chartLineContent(line)} />
                 ))}
               </box>
               <text fg={colors.textDim}>{chartResult.timeLabels}</text>
@@ -448,7 +455,7 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
                   key={ticker}
                   marginLeft={i > 0 ? 2 : 0}
                   onMouseDown={() => {
-                    getSharedRegistry()?.navigateTickerFn(ticker);
+                    navigateTicker(ticker);
                   }}
                 >
                   <text fg={colors.textBright} attributes={TextAttributes.UNDERLINE}>{ticker}</text>
@@ -459,10 +466,6 @@ function EconDetailView({ event, width, height, focused, onBack }: EconDetailVie
         </box>
       </scrollbox>
 
-      {/* Footer */}
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>Esc back · j/k scroll</text>
-      </box>
     </box>
   );
 }
@@ -487,6 +490,10 @@ function actualColor(actual: string | null, forecast: string | null): string {
   return colors.text;
 }
 
+function chartLineContent(line: string | StyledContent): string | StyledText {
+  return typeof line === "string" ? line : new StyledText(line.chunks);
+}
+
 // ---------------------------------------------------------------------------
 // Main Calendar Pane
 // ---------------------------------------------------------------------------
@@ -496,7 +503,7 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [hoveredRowIdx, setHoveredRowIdx] = useState<number | null>(null);
   const [impactFilter, setImpactFilter] = useState<ImpactFilter>("all");
   const [countryFilter, setCountryFilter] = useState<CountryFilter>("all");
   const [now, setNow] = useState(Date.now());
@@ -504,10 +511,22 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
 
   const fetchGenRef = useRef(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const backfilledSeriesRef = useRef<Set<string>>(new Set());
 
-  const config = useAppSelector((s) => s.config);
-  const fredApiKey = config.pluginConfig?.["econ-calendar"]?.fredApiKey as string | undefined;
+  const [fredApiKey] = usePluginConfigState<string>("fredApiKey", "");
+
+  const syncHeaderScroll = useCallback(() => {
+    const bodyScrollBox = scrollRef.current;
+    const headerScrollBox = headerScrollRef.current;
+    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
+      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
+    }
+  }, []);
+
+  const handleBodyScrollActivity = useCallback(() => {
+    syncHeaderScroll();
+  }, [syncHeaderScroll]);
 
   const load = async (force = false) => {
     fetchGenRef.current += 1;
@@ -616,15 +635,18 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
     })();
   }, [events, fredApiKey]);
 
-  const filtered = events.filter(
-    (ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter),
-  );
+  const filtered = useMemo(() => events
+    .filter((ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter))
+    .sort((a, b) => b.date.getTime() - a.date.getTime()),
+  [countryFilter, events, impactFilter]);
 
   // Build display rows with separator headers and NOW marker
   const today = new Date(now);
   const rows: DisplayRow[] = [];
   let lastDateKey = "";
   let nowInserted = false;
+  const hasPastEvents = filtered.some((ev) => ev.date.getTime() <= now);
+  const hasFutureEvents = filtered.some((ev) => ev.date.getTime() > now);
 
   for (let i = 0; i < filtered.length; i++) {
     const ev = filtered[i]!;
@@ -633,28 +655,31 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
     // Insert date separator if new day
     if (dk !== lastDateKey) {
       lastDateKey = dk;
-      rows.push({ kind: "separator", label: dayLabel(ev.date, today) });
+      rows.push({ kind: "separator", key: `separator-${dk}`, label: dayLabel(ev.date, today) });
     }
 
-    // Insert NOW marker between last past event and first upcoming event
-    if (!nowInserted && ev.date.getTime() > now) {
+    // Reverse chronological order puts upcoming events above the present marker.
+    if (hasPastEvents && hasFutureEvents && !nowInserted && ev.date.getTime() <= now) {
       nowInserted = true;
-      rows.push({ kind: "now" });
+      rows.push({ kind: "now", key: "now" });
     }
 
-    rows.push({ kind: "event", event: ev, eventIdx: i });
+    rows.push({ kind: "event", key: `event-${ev.id}-${i}`, event: ev, eventIdx: i });
   }
 
   // Map from eventIdx to flat row index (for scroll tracking)
   const eventIdxToRowIdx = new Map<number, number>();
   let nowRowIdx = -1;
-  let firstUpcomingEventIdx = -1;
+  let nextUpcomingEventIdx = -1;
+  let nextUpcomingTime = Number.POSITIVE_INFINITY;
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r]!;
     if (row.kind === "event") {
       eventIdxToRowIdx.set(row.eventIdx, r);
-      if (firstUpcomingEventIdx === -1 && row.event.date.getTime() > now) {
-        firstUpcomingEventIdx = row.eventIdx;
+      const eventTime = row.event.date.getTime();
+      if (eventTime > now && eventTime < nextUpcomingTime) {
+        nextUpcomingEventIdx = row.eventIdx;
+        nextUpcomingTime = eventTime;
       }
     } else if (row.kind === "now") {
       nowRowIdx = r;
@@ -665,8 +690,8 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
   const initialScrollDone = useRef(false);
   useEffect(() => {
     if (initialScrollDone.current || filtered.length === 0) return;
-    if (firstUpcomingEventIdx >= 0) {
-      setSelectedIdx(firstUpcomingEventIdx);
+    if (nextUpcomingEventIdx >= 0) {
+      setSelectedIdx(nextUpcomingEventIdx);
     }
     const sb = scrollRef.current;
     if (sb?.viewport && nowRowIdx >= 0) {
@@ -678,7 +703,7 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
   }, [filtered.length]);
 
   // Next upcoming event for countdown
-  const nextEvent = filtered.find((ev) => ev.date.getTime() > now);
+  const nextEvent = nextUpcomingEventIdx >= 0 ? filtered[nextUpcomingEventIdx] : undefined;
   const nextCountdown = nextEvent ? formatCountdown(nextEvent.date.getTime() - now) : null;
 
   useKeyboard((event) => {
@@ -691,7 +716,7 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
       setSelectedIdx((prev) => Math.min(prev + 1, filtered.length - 1));
     } else if (event.name === "k" || event.name === "up") {
       setSelectedIdx((prev) => Math.max(prev - 1, 0));
-    } else if (event.name === "return") {
+    } else if (event.name === "enter" || event.name === "return") {
       const ev = filtered[selectedIdx];
       if (ev) setDetailEvent(ev);
     } else if (event.name === "r") {
@@ -726,35 +751,104 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
     }
   }, [selectedIdx, filtered.length]);
 
-  // Column widths
-  const timeWidth = 6;
-  const impactWidth = 4;
-  const flagWidth = 3;
-  const actualWidth = 9;
-  const forecastWidth = 10;
-  const priorWidth = 9;
-  const minEventWidth = 12;
-  const eventWidth = Math.max(
-    minEventWidth,
-    width - timeWidth - impactWidth - flagWidth - actualWidth - forecastWidth - priorWidth - 2,
-  );
+  const columns = useMemo<EconCalendarColumn[]>(() => {
+    const timeWidth = 6;
+    const impactWidth = 4;
+    const flagWidth = 2;
+    const actualWidth = 9;
+    const forecastWidth = 10;
+    const priorWidth = 9;
+    const minEventWidth = 12;
+    const fixedWidth = timeWidth + impactWidth + flagWidth + actualWidth + forecastWidth + priorWidth;
+    const columnCount = 7;
+    const eventWidth = Math.max(minEventWidth, width - 2 - columnCount - fixedWidth);
 
+    return [
+      { id: "time", label: "TIME", width: timeWidth, align: "left" },
+      { id: "impact", label: "IMP", width: impactWidth, align: "left" },
+      { id: "country", label: "🌐", width: flagWidth, align: "left" },
+      { id: "event", label: "EVENT", width: eventWidth, align: "left" },
+      { id: "actual", label: "ACTUAL", width: actualWidth, align: "right" },
+      { id: "forecast", label: "FORECAST", width: forecastWidth, align: "right" },
+      { id: "prior", label: "PRIOR", width: priorWidth, align: "right" },
+    ];
+  }, [width]);
   const separatorBg = blendHex(colors.bg, colors.border, 0.3);
   const staleness = sharedCache ? formatStaleness(sharedCache.fetchedAt, now) : "";
+  const emptyStateHint = !loading && !error
+    ? [
+        impactFilter !== "all" ? `impact: ${impactFilter}` : null,
+        countryFilter !== "all" ? `country: ${countryFilter}` : null,
+      ].filter(Boolean).join(" · ") || undefined
+    : undefined;
 
-  if (detailEvent) {
-    return (
-      <EconDetailView
-        event={detailEvent}
-        width={width}
-        height={height}
-        focused={focused}
-        onBack={() => setDetailEvent(null)}
-      />
-    );
-  }
+  const handleHeaderClick = useCallback(() => {}, []);
+  const selectDisplayRow = useCallback((row: DisplayRow) => {
+    if (row.kind !== "event") return;
+    setSelectedIdx(row.eventIdx);
+  }, []);
+  const openDisplayRow = useCallback((row: DisplayRow) => {
+    if (row.kind !== "event") return;
+    setDetailEvent(row.event);
+  }, []);
+  const renderSectionHeader = useCallback((row: DisplayRow) => {
+    if (row.kind === "separator") {
+      return {
+        text: row.label,
+        backgroundColor: separatorBg,
+        color: colors.textBright,
+        attributes: TextAttributes.BOLD,
+      };
+    }
+    if (row.kind === "now") {
+      const label = " ▸ NOW ";
+      const line = "─".repeat(Math.max(0, width - label.length - 2));
+      return {
+        text: `${label}${line}`,
+        color: colors.warning,
+        attributes: 0,
+      };
+    }
+    return null;
+  }, [separatorBg, width]);
+  const renderCell = useCallback((
+    row: DisplayRow,
+    column: EconCalendarColumn,
+    _index: number,
+    rowState: { selected: boolean },
+  ): DataTableCell => {
+    if (row.kind !== "event") return { text: "" };
 
-  return (
+    const ev = row.event;
+    const selectedColor = rowState.selected ? colors.selectedText : undefined;
+
+    switch (column.id) {
+      case "time":
+        return { text: ev.time, color: selectedColor ?? colors.textMuted };
+      case "impact": {
+        const indicator = impactIndicator(ev.impact);
+        return {
+          text: indicator.text,
+          color: selectedColor ?? indicator.color,
+        };
+      }
+      case "country":
+        return { text: countryFlag(ev.country), color: selectedColor };
+      case "event":
+        return { text: ev.event, color: selectedColor ?? colors.text };
+      case "actual":
+        return {
+          text: ev.actual ?? "—",
+          color: selectedColor ?? actualColor(ev.actual, ev.forecast),
+        };
+      case "forecast":
+        return { text: ev.forecast ?? "—", color: selectedColor ?? colors.textDim };
+      case "prior":
+        return { text: ev.prior ?? "—", color: selectedColor ?? colors.textDim };
+    }
+  }, []);
+
+  const calendarContent = (
     <box flexDirection="column" width={width} height={height}>
       {/* Header */}
       <box flexDirection="row" height={1} paddingX={1}>
@@ -786,31 +880,6 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
         {staleness ? <text fg={colors.textMuted}>{staleness}</text> : null}
       </box>
 
-      {/* Column headers */}
-      <box flexDirection="row" paddingX={1} height={1}>
-        <box width={timeWidth}>
-          <text fg={colors.textDim}>TIME</text>
-        </box>
-        <box width={impactWidth}>
-          <text fg={colors.textDim}>IMP</text>
-        </box>
-        <box width={flagWidth}>
-          <text fg={colors.textDim}>🏳</text>
-        </box>
-        <box width={eventWidth} flexShrink={1}>
-          <text fg={colors.textDim}>EVENT</text>
-        </box>
-        <box width={actualWidth} justifyContent="flex-end" paddingRight={1}>
-          <text fg={colors.textDim}>ACTUAL</text>
-        </box>
-        <box width={forecastWidth} justifyContent="flex-end" paddingRight={1}>
-          <text fg={colors.textDim}>FORECAST</text>
-        </box>
-        <box width={priorWidth} justifyContent="flex-end">
-          <text fg={colors.textDim}>PRIOR</text>
-        </box>
-      </box>
-
       {/* Error state */}
       {error && (
         <box paddingX={1} paddingY={1}>
@@ -818,112 +887,54 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
         </box>
       )}
 
-      {/* Rows */}
-      <scrollbox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
-        <box flexDirection="column">
-          {rows.map((row, flatIdx) => {
-            if (row.kind === "separator") {
-              return (
-                <box
-                  key={`sep-${flatIdx}`}
-                  flexDirection="row"
-                  width={width}
-                  backgroundColor={separatorBg}
-                  paddingX={1}
-                  height={1}
-                >
-                  <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-                    {row.label}
-                  </text>
-                </box>
-              );
-            }
-
-            if (row.kind === "now") {
-              const lineChar = "─";
-              const label = " ▸ NOW ";
-              const remaining = Math.max(0, width - label.length - 2);
-              const line = lineChar.repeat(remaining);
-              return (
-                <box
-                  key={`now-${flatIdx}`}
-                  flexDirection="row"
-                  width={width}
-                  paddingX={1}
-                  height={1}
-                >
-                  <text fg={colors.warning}>{label}{line}</text>
-                </box>
-              );
-            }
-
-            const { event: ev, eventIdx } = row;
-            const isSelected = eventIdx === selectedIdx;
-            const isHovered = eventIdx === hoveredIdx;
-            const bg = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
-            const fg = isSelected ? colors.selectedText : colors.text;
-            const indicator = impactIndicator(ev.impact);
-            const flag = countryFlag(ev.country);
-
-            return (
-              <box
-                key={`${ev.id}-${flatIdx}`}
-                flexDirection="row"
-                width={width}
-                backgroundColor={bg}
-                paddingX={1}
-                onMouseMove={() => setHoveredIdx(eventIdx)}
-                onMouseOut={() => setHoveredIdx(null)}
-                onMouseDown={(mouseEvent: any) => {
-                  mouseEvent.preventDefault?.();
-                  if (selectedIdx === eventIdx) {
-                    setDetailEvent(ev);
-                  } else {
-                    setSelectedIdx(eventIdx);
-                  }
-                }}
-              >
-                <box width={timeWidth} flexShrink={0}>
-                  <text fg={isSelected ? colors.selectedText : colors.textMuted}>{ev.time}</text>
-                </box>
-                <box width={impactWidth} flexShrink={0}>
-                  <text fg={isSelected ? colors.selectedText : indicator.color}>{indicator.text}</text>
-                </box>
-                <box width={flagWidth} flexShrink={0}>
-                  <text>{flag}</text>
-                </box>
-                <box width={eventWidth} flexShrink={1} overflow="hidden">
-                  <text fg={fg}>{ev.event}</text>
-                </box>
-                <box width={actualWidth} justifyContent="flex-end" paddingRight={1}>
-                  <text fg={isSelected ? colors.selectedText : actualColor(ev.actual, ev.forecast)}>
-                    {ev.actual ?? "—"}
-                  </text>
-                </box>
-                <box width={forecastWidth} justifyContent="flex-end" paddingRight={1}>
-                  <text fg={isSelected ? colors.selectedText : colors.textDim}>{ev.forecast ?? "—"}</text>
-                </box>
-                <box width={priorWidth} justifyContent="flex-end">
-                  <text fg={isSelected ? colors.selectedText : colors.textDim}>{ev.prior ?? "—"}</text>
-                </box>
-              </box>
-            );
-          })}
-
-          {!loading && !error && filtered.length === 0 && (
-            <box paddingX={1} paddingY={1}>
-              <text fg={colors.textMuted}>
-                No events{impactFilter !== "all" ? ` for impact: ${impactFilter}` : ""}{countryFilter !== "all" ? ` for country: ${countryFilter}` : ""}
-              </text>
-            </box>
-          )}
-        </box>
-      </scrollbox>
+      <DataTable<DisplayRow, EconCalendarColumn>
+        columns={columns}
+        items={rows}
+        sortColumnId={null}
+        sortDirection="asc"
+        onHeaderClick={handleHeaderClick}
+        headerScrollRef={headerScrollRef}
+        scrollRef={scrollRef}
+        syncHeaderScroll={syncHeaderScroll}
+        onBodyScrollActivity={handleBodyScrollActivity}
+        hoveredIdx={hoveredRowIdx}
+        setHoveredIdx={setHoveredRowIdx}
+        getItemKey={(row) => row.key}
+        isSelected={(row) => row.kind === "event" && row.eventIdx === selectedIdx}
+        onSelect={selectDisplayRow}
+        onActivate={openDisplayRow}
+        renderSectionHeader={renderSectionHeader}
+        renderCell={renderCell}
+        emptyStateTitle={loading ? "Loading economic events..." : "No events"}
+        emptyStateHint={emptyStateHint}
+        showHorizontalScrollbar={false}
+      />
 
       <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>j/k navigate · [f]ilter · [c]ountry · [r]efresh · Enter detail · Esc close</text>
+        <text fg={colors.textMuted}>[f]ilter · [c]ountry · [r]efresh</text>
       </box>
     </box>
+  );
+
+  const detailContent = detailEvent ? (
+    <EconDetailView
+      event={detailEvent}
+      width={width}
+      height={Math.max(height - 1, 1)}
+      focused={focused}
+    />
+  ) : (
+    <box flexGrow={1} />
+  );
+
+  return (
+    <PageStackView
+      focused={focused}
+      detailOpen={!!detailEvent}
+      onBack={() => setDetailEvent(null)}
+      rootContent={calendarContent}
+      detailContent={detailContent}
+    />
   );
 }
 
@@ -935,6 +946,8 @@ export const econCalendarPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
+    attachEconCalendarPersistence(ctx.persistence);
+
     ctx.registerCommand({
       id: "econ-set-fred-key",
       label: "Set FRED API Key",
@@ -956,6 +969,10 @@ export const econCalendarPlugin: GloomPlugin = {
         ctx.notify({ body: "FRED API key saved", type: "success" });
       },
     });
+  },
+
+  dispose() {
+    resetEconCalendarPersistence();
   },
 
   panes: [

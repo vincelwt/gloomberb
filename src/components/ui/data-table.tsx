@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
@@ -59,6 +59,7 @@ export interface DataTableProps<
   emptyStateHint?: string;
   virtualize?: boolean;
   overscan?: number;
+  showHorizontalScrollbar?: boolean;
 }
 
 interface DataTableRowPointerTarget<T> {
@@ -88,6 +89,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   emptyStateHint,
   virtualize = false,
   overscan = 3,
+  showHorizontalScrollbar = true,
 }: DataTableProps<T, C>) {
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
@@ -126,6 +128,15 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
     if (!paneInstanceId) return;
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
   }, [dispatch, paneInstanceId]);
+
+  useEffect(() => {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.horizontalScrollBar.visible = false;
+    }
+    if (scrollRef.current) {
+      scrollRef.current.horizontalScrollBar.visible = showHorizontalScrollbar;
+    }
+  }, [columns.length, headerScrollRef, items.length, scrollRef, showHorizontalScrollbar]);
 
   return (
     <>
