@@ -60,7 +60,7 @@ export function StatusBar() {
     if (!registry) return;
     const { width, height } = registry.getTermSizeFn();
     registry.updateLayoutFn(gridlockAllPanes(registry.getLayoutFn(), { x: 0, y: 0, width, height }));
-    registry.showToastFn("Retiled all panes", { type: "success" });
+    registry.notify({ body: "Retiled all panes", type: "success" });
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 

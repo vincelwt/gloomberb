@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { bucketOhlcSeries, getVisibleWindow, projectChartData, resolveRenderMode } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
-import { buildTimeAxis, formatAxisValue, renderChart, resolveChartPalette } from "./chart-renderer";
+import { buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode, ChartViewState } from "./chart-types";
 
@@ -133,9 +133,81 @@ describe("getVisibleWindow", () => {
 });
 
 describe("renderChart", () => {
+  test("sizes the y-axis to the visible label width instead of a fixed gutter", () => {
+    expect(resolveChartAxisWidth(["$18", "$17", "$16", "$14"], 4, 10)).toBe(4);
+    expect(resolveChartAxisWidth(["$1.1678", "$1.1654"], 4, 10)).toBe(7);
+    expect(resolveChartAxisWidth(["+0.25%", "-0.10%"], 5, 11)).toBe(6);
+  });
+
   test("formats price axes with the instrument currency", () => {
     expect(formatAxisValue(21_970, "price", 0, "JPY")).toBe("¥22.0K");
     expect(formatAxisValue(12_340, "price", 0, "HKD")).toBe("HK$12.3K");
+    expect(formatAxisValue(1.17364, "price", 0, "USD", "CURRENCY")).toBe("$1.17364");
+  });
+
+  test("adapts FX axis precision to the visible price range", () => {
+    expect(formatAxisValue(1.167815, "price", 0, "USD", "CURRENCY", 0.12)).toBe("$1.17");
+    expect(formatAxisValue(1.167815, "price", 0, "USD", "CURRENCY", 0.0024)).toBe("$1.1678");
+  });
+
+  test("keeps the active price-axis label more precise than coarse grid ticks", () => {
+    expect(formatAxisValue(21.184, "price", 0, "USD", "STK", 11)).toBe("$21");
+    expect(formatCursorAxisValue(21.184, "price", 0, "USD", "STK", 11)).toBe("$21.18");
+    expect(formatCursorAxisValue(1.167815, "price", 0, "USD", "CURRENCY", 0.12)).toBe("$1.1678");
+  });
+
+  test("keeps zoomed equity axis labels distinct and decimal-aware", () => {
+    const narrowRangeFixture: PricePoint[] = [
+      { date: new Date("2024-01-02T09:30:00Z"), close: 18.02, volume: 100 },
+      { date: new Date("2024-01-02T09:31:00Z"), close: 17.91, volume: 120 },
+      { date: new Date("2024-01-02T09:32:00Z"), close: 17.84, volume: 140 },
+      { date: new Date("2024-01-02T09:33:00Z"), close: 17.73, volume: 160 },
+    ];
+
+    const result = renderChart(projectChartData(narrowRangeFixture, 32, "area", false).points, {
+      width: 32,
+      height: 8,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "area",
+      axisMode: "price",
+      currency: "USD",
+      assetCategory: "STK",
+      colors: palette,
+    });
+
+    expect(result.axisFractionDigits).toBeGreaterThanOrEqual(1);
+    expect(new Set(result.axisLabels.map((entry) => entry.label)).size).toBe(result.axisLabels.length);
+    expect(result.axisLabels.every((entry) => entry.label.includes("."))).toBe(true);
+  });
+
+  test("keeps one decimal on zoomed equity axes even when whole-dollar ticks are distinct", () => {
+    const mediumRangeFixture: PricePoint[] = [
+      { date: new Date("2024-01-02T09:30:00Z"), close: 233.82, volume: 100 },
+      { date: new Date("2024-01-02T09:45:00Z"), close: 232.14, volume: 120 },
+      { date: new Date("2024-01-02T10:00:00Z"), close: 230.21, volume: 140 },
+      { date: new Date("2024-01-02T10:15:00Z"), close: 231.67, volume: 160 },
+      { date: new Date("2024-01-02T10:30:00Z"), close: 228.94, volume: 180 },
+    ];
+
+    const result = renderChart(projectChartData(mediumRangeFixture, 28, "area", false).points, {
+      width: 28,
+      height: 8,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "area",
+      axisMode: "price",
+      currency: "USD",
+      assetCategory: "STK",
+      colors: palette,
+    });
+
+    expect(result.axisFractionDigits).toBe(1);
+    expect(result.axisLabels.every((entry) => entry.label.includes("."))).toBe(true);
   });
 
   test("eases coarse cursor motion quickly and settles without overshooting", () => {

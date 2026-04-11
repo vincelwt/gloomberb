@@ -323,16 +323,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
     flushCursorSymbol(cursorSymbol);
 
-    const follower = state.config.layout.instances.find((instance) =>
-      instance.paneId === "ticker-detail"
-      && instance.binding?.kind === "follow"
-      && instance.binding.sourceInstanceId === paneId,
-    );
-    if (follower) {
-      registry?.focusPaneFn(follower.instanceId);
-      return;
+    const ticker = sortedTickers[safeSelectedIdx];
+    if (ticker) {
+      registry?.navigateTickerFn(ticker.metadata.ticker);
     }
-    registry?.showPaneFn("ticker-detail");
   }, [
     cashDrawerExpanded,
     currentTabIdx,

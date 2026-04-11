@@ -1,11 +1,8 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`renders the compact trade tab layout 1`] = `
-" Trade AMD · Advanced Micro Devices, Inc.                                               
- $199.80  -3.97 · Bid 199.70 · Ask 199.90 · Spd 0.20                                    
-                                                                                        
-  Broker           Account     Net Liq                                                  
-   Paper Gateway    DU123456    —                                                       
+" Trade AMD · Advanced Micro Devices, Inc.        Broker           Account     Net Liq   
+ $199.8  -3.97 · Bid 199.7 · Ask 199.9 · Spd 0.2  Paper Gateway    DU123456    —        
                                                                                         
                                                                                         
   Next Submit order   Ticket Standby   Refresh  r                                       
@@ -30,6 +27,9 @@ exports[`renders the compact trade tab layout 1`] = `
  │  Maint 10.1k → 10.7k                    Equity 58.4k → 57.1k                       │ 
  │  Preview  p  Submit Order  Enter                                                   │ 
  ╰────────────────────────────────────────────────────────────────────────────────────╯ 
+                                                                                        
+                                                                                        
+                                                                                        
                                                                                         
 "
 `;

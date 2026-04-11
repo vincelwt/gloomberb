@@ -586,12 +586,12 @@ describe("TickerDetailPane", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("€125.00");
+    expect(frame).toContain("€125");
     expect(frame).toContain("2.2B USD");
-    expect(frame).toContain("@ €100.00");
+    expect(frame).toContain("@ €100");
     expect(frame).toContain("= $1,100.00");
     expect(frame).toContain("P&L: +$275.00");
-    expect(frame).toContain("Mark: €125.00");
+    expect(frame).toContain("Mark: €125");
     expect(frame).toContain("Mkt Value: $1,375.00");
   });
 

@@ -15,6 +15,7 @@ interface ManualPortfolioPositionWorkflowOptions {
   pendingLabel: string;
   positionOptional?: boolean;
   defaultAvgCost?: number | null;
+  hidePortfolioFieldWhenSingleOption?: boolean;
 }
 
 function buildManualPortfolioPositionWorkflow(
@@ -28,19 +29,20 @@ function buildManualPortfolioPositionWorkflow(
   const preferredPosition = options.ticker
     ? getManualPortfolioPosition(options.ticker, preferredPortfolio.id)
     : null;
+  const showPortfolioField = !options.hidePortfolioFieldWhenSingleOption || manualPortfolios.length > 1;
 
   const fields: CommandBarWorkflowField[] = [
-    {
+    ...(showPortfolioField ? [{
       id: "portfolioId",
       label: "Portfolio",
-      type: "select",
+      type: "select" as const,
       options: manualPortfolios.map((portfolio) => ({
         label: portfolio.name,
         value: portfolio.id,
         description: portfolio.currency,
       })),
       required: true,
-    },
+    }] : []),
     {
       id: "ticker",
       label: "Ticker",
@@ -118,5 +120,6 @@ export function buildAddToPortfolioWorkflow(
     pendingLabel: "Adding to portfolio…",
     positionOptional: true,
     defaultAvgCost: options.defaultAvgCost,
+    hidePortfolioFieldWhenSingleOption: true,
   });
 }

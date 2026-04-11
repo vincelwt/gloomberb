@@ -152,6 +152,16 @@ export function resolvePreferredCollectionTarget(
   return options.some((option) => option.id === activeCollectionId) ? activeCollectionId : null;
 }
 
+export function resolveSoleCollectionTarget(
+  state: AppState,
+  kind: CollectionKind,
+  action: CollectionMembershipAction,
+  ticker: TickerRecord | null,
+): string | null {
+  const options = getCollectionTargetOptions(state, kind, action, ticker);
+  return options.length === 1 ? options[0]!.id : null;
+}
+
 export async function resolveTickerInput(
   rawInput: string | undefined,
   activeTicker: string | null,

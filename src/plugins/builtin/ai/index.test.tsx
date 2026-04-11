@@ -63,7 +63,7 @@ function createPluginContext() {
     emit: () => {},
     showWidget: () => {},
     hideWidget: () => {},
-    showToast: () => {},
+    notify: () => {},
   } satisfies GloomPluginContext;
 
   return { ctx, panes, templates, detailTabs };

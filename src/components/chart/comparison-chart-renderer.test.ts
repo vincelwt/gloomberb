@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { projectComparisonChartData } from "./comparison-chart-data";
-import { buildComparisonChartScene, renderComparisonChart } from "./comparison-chart-renderer";
+import {
+  buildComparisonChartScene,
+  formatComparisonAxisValue,
+  formatComparisonCursorAxisValue,
+  renderComparisonChart,
+} from "./comparison-chart-renderer";
 import type { ComparisonChartSeries } from "./chart-types";
 
 function makeSeries(symbol: string, color: string, closes: number[]): ComparisonChartSeries {
@@ -21,6 +26,71 @@ function textLines(result: ReturnType<typeof renderComparisonChart>): string[] {
 }
 
 describe("renderComparisonChart", () => {
+  test("adapts price-axis precision to the visible range", () => {
+    expect(formatComparisonAxisValue(1.167815, "price", 0.12)).toBe("1.17");
+    expect(formatComparisonAxisValue(1.167815, "price", 0.0024)).toBe("1.1678");
+  });
+
+  test("keeps the active comparison-axis label more precise than coarse ticks", () => {
+    expect(formatComparisonAxisValue(21.184, "price", 11)).toBe("21");
+    expect(formatComparisonCursorAxisValue(21.184, "price", 11)).toBe("21.18");
+  });
+
+  test("keeps narrow comparison price axes distinct", () => {
+    const projection = projectComparisonChartData([
+      makeSeries("AAPL", "#00ff00", [18.02, 17.91, 17.84, 17.73]),
+    ], 24, {
+      timeRange: "ALL",
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "line",
+    }, "price");
+
+    const result = renderComparisonChart(projection, {
+      width: 24,
+      height: 6,
+      cursorX: null,
+      cursorY: null,
+      selectedSymbol: "AAPL",
+      colors: {
+        bgColor: "#000000",
+        gridColor: "#333333",
+        crosshairColor: "#ffffff",
+      },
+    });
+
+    expect(result.axisFractionDigits).toBeGreaterThanOrEqual(1);
+    expect(new Set(result.axisLabels.map((entry) => entry.label)).size).toBe(result.axisLabels.length);
+    expect(result.axisLabels.every((entry) => entry.label.includes("."))).toBe(true);
+  });
+
+  test("keeps one decimal on zoomed comparison price axes even when whole ticks are distinct", () => {
+    const projection = projectComparisonChartData([
+      makeSeries("AAPL", "#00ff00", [233.82, 232.14, 230.21, 231.67, 228.94]),
+    ], 24, {
+      timeRange: "ALL",
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "line",
+    }, "price");
+
+    const result = renderComparisonChart(projection, {
+      width: 24,
+      height: 6,
+      cursorX: null,
+      cursorY: null,
+      selectedSymbol: "AAPL",
+      colors: {
+        bgColor: "#000000",
+        gridColor: "#333333",
+        crosshairColor: "#ffffff",
+      },
+    });
+
+    expect(result.axisFractionDigits).toBe(1);
+    expect(result.axisLabels.every((entry) => entry.label.includes("."))).toBe(true);
+  });
+
   test("renders a shared multi-series line chart", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "#00ff00", [10, 12, 11, 13]),

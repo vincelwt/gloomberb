@@ -12,6 +12,7 @@ import {
   formatPercent,
   formatPercentRaw,
 } from "../../../utils/format";
+import { formatMarketCostWithCurrency, formatMarketPriceWithCurrency, formatMarketQuantity, formatSignedMarketPrice } from "../../../utils/market-format";
 import {
   exchangeShortName,
   marketStateColor,
@@ -101,22 +102,20 @@ export function OverviewTab({
           <box flexDirection="column" gap={0}>
             <box flexDirection="row" gap={2}>
               <text attributes={TextAttributes.BOLD} fg={priceColor(quote.change)}>
-                {formatCurrency(quote.price, quote.currency)}
+                {formatMarketPriceWithCurrency(quote.price, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
               </text>
               <text fg={priceColor(quote.change)}>
-                {quote.change >= 0 ? "+" : ""}
-                {quote.change.toFixed(2)} ({formatPercentRaw(quote.changePercent)})
+                {formatSignedMarketPrice(quote.change, { assetCategory: ticker.metadata.assetCategory })} ({formatPercentRaw(quote.changePercent)})
               </text>
             </box>
             {(quote.marketState === "PRE" || quote.marketState === "PREPRE") && quote.preMarketPrice != null && (
               <box flexDirection="row" gap={2}>
                 <text fg={colors.textDim}>Pre-Market:</text>
                 <text fg={priceColor(quote.preMarketChange ?? 0)}>
-                  {formatCurrency(quote.preMarketPrice, quote.currency)}
+                  {formatMarketPriceWithCurrency(quote.preMarketPrice, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
                 </text>
                 <text fg={priceColor(quote.preMarketChange ?? 0)}>
-                  {(quote.preMarketChange ?? 0) >= 0 ? "+" : ""}
-                  {(quote.preMarketChange ?? 0).toFixed(2)} ({formatPercentRaw(quote.preMarketChangePercent ?? 0)})
+                  {formatSignedMarketPrice(quote.preMarketChange ?? 0, { assetCategory: ticker.metadata.assetCategory })} ({formatPercentRaw(quote.preMarketChangePercent ?? 0)})
                 </text>
               </box>
             )}
@@ -124,11 +123,10 @@ export function OverviewTab({
               <box flexDirection="row" gap={2}>
                 <text fg={colors.textDim}>After-Hours:</text>
                 <text fg={priceColor(quote.postMarketChange ?? 0)}>
-                  {formatCurrency(quote.postMarketPrice, quote.currency)}
+                  {formatMarketPriceWithCurrency(quote.postMarketPrice, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
                 </text>
                 <text fg={priceColor(quote.postMarketChange ?? 0)}>
-                  {(quote.postMarketChange ?? 0) >= 0 ? "+" : ""}
-                  {(quote.postMarketChange ?? 0).toFixed(2)} ({formatPercentRaw(quote.postMarketChangePercent ?? 0)})
+                  {formatSignedMarketPrice(quote.postMarketChange ?? 0, { assetCategory: ticker.metadata.assetCategory })} ({formatPercentRaw(quote.postMarketChangePercent ?? 0)})
                 </text>
               </box>
             )}
@@ -167,17 +165,21 @@ export function OverviewTab({
           <FieldRow label="Profit Margin" value={fundamentals?.profitMargin != null ? formatPercent(fundamentals.profitMargin) : "—"} />
           {(quote?.bid != null || quote?.ask != null) && (
             <>
-              <FieldRow label="Bid" value={quote?.bid != null ? formatCurrency(quote.bid, quote.currency) : "—"} />
-              <FieldRow label="Ask" value={quote?.ask != null ? formatCurrency(quote.ask, quote.currency) : "—"} />
+              <FieldRow label="Bid" value={quote?.bid != null ? formatMarketPriceWithCurrency(quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"} />
+              <FieldRow label="Ask" value={quote?.ask != null ? formatMarketPriceWithCurrency(quote.ask, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"} />
               <FieldRow
                 label="Spread"
-                value={quote?.bid != null && quote?.ask != null ? formatCurrency(quote.ask - quote.bid, quote.currency) : "—"}
+                value={quote?.bid != null && quote?.ask != null
+                  ? formatMarketPriceWithCurrency(quote.ask - quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory })
+                  : "—"}
               />
             </>
           )}
           <FieldRow
             label="52W Range"
-            value={quote?.low52w && quote?.high52w ? `${formatCurrency(quote.low52w, quoteCurrency)} - ${formatCurrency(quote.high52w, quoteCurrency)}` : "—"}
+            value={quote?.low52w && quote?.high52w
+              ? `${formatMarketPriceWithCurrency(quote.low52w, quoteCurrency, { assetCategory: ticker.metadata.assetCategory })} - ${formatMarketPriceWithCurrency(quote.high52w, quoteCurrency, { assetCategory: ticker.metadata.assetCategory })}`
+              : "—"}
           />
           <FieldRow
             label="1Y Return"
@@ -225,7 +227,7 @@ export function OverviewTab({
                   </box>
                   <box flexDirection="row" height={1}>
                     <text fg={colors.text}>
-                      {position.shares} {position.multiplier && position.multiplier > 1 ? "contracts" : "shares"} @ {formatCurrency(position.avgCost, positionCurrency)}
+                      {formatMarketQuantity(position.shares, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })} {position.multiplier && position.multiplier > 1 ? "contracts" : "shares"} @ {formatMarketCostWithCurrency(position.avgCost, positionCurrency, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })}
                       {" = "}{formatCurrency(costBasisBase, baseCurrency)}
                     </text>
                     {pnlText && (
@@ -234,7 +236,7 @@ export function OverviewTab({
                   </box>
                   {position.markPrice != null && (
                     <box flexDirection="row" height={1}>
-                      <text fg={colors.textDim}>Mark: {formatCurrency(position.markPrice, positionCurrency)}</text>
+                      <text fg={colors.textDim}>Mark: {formatMarketPriceWithCurrency(position.markPrice, positionCurrency, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })}</text>
                       {marketValueBase != null && (
                         <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(marketValueBase, baseCurrency)}</text>
                       )}

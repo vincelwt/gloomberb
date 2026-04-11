@@ -20,7 +20,7 @@ let lastSelectedTickerSymbol: string | null = null;
 
 function ensureIbkrTradingProfile(ctx: GloomPluginContext): boolean {
   if (hasIbkrTradingProfiles(ctx.getConfig())) return true;
-  ctx.showToast("Connect a Gateway / TWS IBKR profile first.", { type: "info" });
+  ctx.notify({ body: "Connect a Gateway / TWS IBKR profile first.", type: "info" });
   return false;
 }
 

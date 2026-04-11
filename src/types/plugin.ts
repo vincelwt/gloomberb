@@ -355,6 +355,19 @@ export interface PluginPaneSettingsState {
   delete(paneId: string, key: string): Promise<void>;
 }
 
+export type AppNotificationType = "info" | "success" | "error";
+export type AppDesktopNotificationMode = "never" | "when-inactive" | "always";
+
+export interface AppNotificationRequest {
+  title?: string;
+  body: string;
+  subtitle?: string;
+  duration?: number;
+  type?: AppNotificationType;
+  toast?: boolean;
+  desktop?: AppDesktopNotificationMode;
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
@@ -392,6 +405,7 @@ export interface GloomPluginContext {
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  navigateTicker(symbol: string): void;
   openPaneSettings(paneId?: string): void;
 
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
@@ -399,7 +413,7 @@ export interface GloomPluginContext {
 
   showWidget(widgetId: string): void;
   hideWidget(widgetId: string): void;
-  showToast(message: string, options?: { duration?: number; type?: "info" | "success" | "error" }): void;
+  notify(notification: AppNotificationRequest): void;
 }
 
 export interface GloomPlugin {

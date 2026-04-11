@@ -196,11 +196,23 @@ describe("portfolio-metrics", () => {
     const pnlColumn: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" };
 
     expect(getColumnValue(avgCostColumn, ticker, financials, defaultColumnContext)).toEqual({
-      text: "5,095.07",
+      text: "5,095.073",
     });
     expect(getColumnValue(pnlColumn, ticker, financials, defaultColumnContext)).toEqual({
       text: "+7.9k",
       color: expect.any(String),
+    });
+  });
+
+  test("formats equity average cost with tighter precision than quote prices", () => {
+    const ticker = createTicker({
+      assetCategory: "STK",
+      positions: [{ portfolio: "main", shares: 10, avgCost: 119.3687, broker: "manual", currency: "HKD" }],
+    });
+    const avgCostColumn: ColumnConfig = { id: "avg_cost", label: "AVG COST", width: 10, align: "right", format: "currency" };
+
+    expect(getColumnValue(avgCostColumn, ticker, undefined, defaultColumnContext)).toEqual({
+      text: "119.37",
     });
   });
 

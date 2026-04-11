@@ -1293,7 +1293,8 @@ describe("ProviderRouter", () => {
   test("drops stale cached cloud quotes while preserving cached cloud fundamentals", () => {
     const dbPath = createTempDbPath("stale-cloud-cached-financials");
     const persistence = new AppPersistence(dbPath);
-    const now = Date.parse("2026-04-08T10:55:00Z");
+    const now = Date.now();
+    const previousSession = now - 24 * 60 * 60_000;
 
     persistence.resources.set(
       {
@@ -1313,7 +1314,7 @@ describe("ProviderRouter", () => {
           currency: "EUR",
           change: 28,
           changePercent: 5.6,
-          lastUpdated: Date.parse("2026-04-07T19:55:00Z"),
+          lastUpdated: previousSession,
           marketState: "REGULAR",
           exchangeName: "FWB2",
           listingExchangeName: "FWB2",

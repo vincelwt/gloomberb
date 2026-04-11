@@ -129,6 +129,7 @@ export function MarkdownEditor({
       placeholderColor={colors.textDim}
       backgroundColor={focused ? colors.panel : colors.bg}
       flexGrow={1}
+      wrapText
     />
   );
 }

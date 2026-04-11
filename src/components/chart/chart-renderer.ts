@@ -1,7 +1,7 @@
 import { RGBA } from "@opentui/core";
 import type { ChartAxisMode, ChartColors, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
 import type { ProjectedChartPoint } from "./chart-data";
-import { formatCurrency } from "../../utils/format";
+import { formatCompactMarketPriceWithCurrency, formatMarketPrice, resolveAssetDisplayKind } from "../../utils/market-format";
 
 // ---------------------------------------------------------------------------
 // Styled output types (unchanged public API)
@@ -574,8 +574,21 @@ export function bufferToBrailleLines(buf: PixelBuffer, bgColor: string): StyledC
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-export function formatPrice(value: number): string {
-  return formatPriceWithCurrency(value);
+export function formatPrice(
+  value: number,
+  assetCategory?: string,
+  priceRange?: number,
+  precisionOffset = 0,
+  minimumFractionDigits = 0,
+  fixedFractionDigits?: number,
+): string {
+  return formatMarketPrice(value, {
+    assetCategory,
+    fixedFractionDigits,
+    minimumFractionDigits,
+    precisionOffset,
+    priceRange,
+  });
 }
 
 function formatPercentAxisValue(value: number): string {
@@ -585,39 +598,125 @@ function formatPercentAxisValue(value: number): string {
   return `${prefix}${value.toFixed(decimals)}%`;
 }
 
-const currencySymbols = new Map<string, string>();
-
-function getCurrencySymbol(currency: string): string {
-  const cached = currencySymbols.get(currency);
-  if (cached) return cached;
-
-  const formatter = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    currencyDisplay: "symbol",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+export function formatPriceWithCurrency(
+  value: number,
+  currency = "USD",
+  assetCategory?: string,
+  priceRange?: number,
+  precisionOffset = 0,
+  minimumFractionDigits = 0,
+  fixedFractionDigits?: number,
+): string {
+  return formatCompactMarketPriceWithCurrency(value, currency, {
+    assetCategory,
+    fixedFractionDigits,
+    minimumFractionDigits,
+    precisionOffset,
+    priceRange,
   });
-  const symbol = formatter.formatToParts(0).find((part) => part.type === "currency")?.value ?? currency;
-  currencySymbols.set(currency, symbol);
-  return symbol;
 }
 
-export function formatPriceWithCurrency(value: number, currency = "USD"): string {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  const symbol = getCurrencySymbol(currency);
-
-  if (abs >= 1e6) return `${sign}${symbol}${(abs / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3 && abs < 1e5) return `${sign}${symbol}${(abs / 1e3).toFixed(1)}K`;
-  return formatCurrency(value, currency);
+function hasDistinctAxisLabels(labels: string[]): boolean {
+  return new Set(labels).size === labels.length;
 }
 
-export function formatAxisValue(value: number, axisMode: ChartAxisMode, basePrice: number, currency = "USD"): string {
+function getAxisFractionDigitFloor(assetCategory: string | undefined, priceRange: number | undefined): number {
+  if (priceRange === undefined || !Number.isFinite(priceRange) || priceRange <= 0) return 0;
+
+  const kind = resolveAssetDisplayKind({ assetCategory });
+  const visibleStep = priceRange / 3;
+  if (!Number.isFinite(visibleStep) || visibleStep <= 0) return 0;
+
+  const offset = kind === "cash" ? 0 : 1;
+  return Math.max(0, Math.ceil(-Math.log10(visibleStep)) + offset);
+}
+
+export function resolveAxisFractionDigits(
+  prices: number[],
+  formatLabel: (value: number, fixedFractionDigits: number) => string,
+  minimumFractionDigits = 0,
+  maxFractionDigits = 8,
+): number {
+  for (let fixedFractionDigits = minimumFractionDigits; fixedFractionDigits <= maxFractionDigits; fixedFractionDigits += 1) {
+    const labels = prices.map((value) => formatLabel(value, fixedFractionDigits));
+    if (hasDistinctAxisLabels(labels)) return fixedFractionDigits;
+  }
+
+  return maxFractionDigits;
+}
+
+export function resolveChartAxisWidth(
+  labels: Array<string | null | undefined>,
+  minimumWidth: number,
+  maximumWidth: number,
+): number {
+  if (maximumWidth <= 0) return 0;
+
+  const longestLabel = labels.reduce((maxWidth, label) => (
+    Math.max(maxWidth, label?.length ?? 0)
+  ), 0);
+
+  return Math.min(Math.max(longestLabel, minimumWidth), maximumWidth);
+}
+
+export function formatAxisCell(label: string | null, width: number): string {
+  if (width <= 0) return "";
+  if (!label) return " ".repeat(width);
+  return label.length >= width ? label.slice(0, width) : label.padStart(width);
+}
+
+export function formatAxisValue(
+  value: number,
+  axisMode: ChartAxisMode,
+  basePrice: number,
+  currency = "USD",
+  assetCategory?: string,
+  priceRange?: number,
+  fixedFractionDigits?: number,
+): string {
   if (axisMode === "percent" && basePrice !== 0) {
     return formatPercentAxisValue(((value - basePrice) / basePrice) * 100);
   }
-  return formatPriceWithCurrency(value, currency);
+  return formatPriceWithCurrency(value, currency, assetCategory, priceRange, 0, 0, fixedFractionDigits);
+}
+
+function getCursorAxisMinimumFractionDigits(value: number, assetCategory?: string): number {
+  const kind = resolveAssetDisplayKind({ assetCategory });
+
+  switch (kind) {
+    case "cash":
+      return 4;
+    case "crypto":
+      return Math.abs(value) >= 1 ? 4 : 6;
+    case "equity":
+    case "contract":
+      return Math.abs(value) >= 1 ? 2 : 4;
+    case "other":
+    default:
+      return Math.abs(value) >= 1 ? 2 : 4;
+  }
+}
+
+export function formatCursorAxisValue(
+  value: number,
+  axisMode: ChartAxisMode,
+  basePrice: number,
+  currency = "USD",
+  assetCategory?: string,
+  priceRange?: number,
+): string {
+  if (axisMode === "percent" && basePrice !== 0) {
+    return formatPercentAxisValue(((value - basePrice) / basePrice) * 100);
+  }
+
+  return formatPriceWithCurrency(
+    value,
+    currency,
+    assetCategory,
+    priceRange,
+    2,
+    getCursorAxisMinimumFractionDigits(value, assetCategory),
+  );
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -916,6 +1015,7 @@ export interface RenderChartOptions {
   mode: ChartRenderMode;
   axisMode?: ChartAxisMode;
   currency?: string;
+  assetCategory?: string;
   colors: ResolvedChartPalette;
   timeAxisDates?: Array<Date | string | number>;
 }
@@ -958,6 +1058,8 @@ export interface RenderChartResult {
   changePctAtCursor: number | null;
   cursorColumn: number | null;
   cursorRow: number | null;
+  axisFractionDigits: number | null;
+  priceRange: number | null;
   /** Raw pixel buffer for GPU/Kitty rendering path */
   pixelBuffer: PixelBuffer | null;
 }
@@ -1075,6 +1177,8 @@ export function renderChart(
       changePctAtCursor: null,
       cursorColumn: null,
       cursorRow: null,
+      axisFractionDigits: null,
+      priceRange: null,
       pixelBuffer: null,
     };
   }
@@ -1082,6 +1186,7 @@ export function renderChart(
   const { width, colors: palette, mode } = opts;
   const axisMode = opts.axisMode ?? "price";
   const currency = opts.currency ?? "USD";
+  const assetCategory = opts.assetCategory;
 
   // Braille resolution: 2 dot-columns per terminal column, 4 dot-rows per terminal row
   const dotWidth = width * 2;
@@ -1094,8 +1199,24 @@ export function renderChart(
 
   const buf = createPixelBuffer(dotWidth, totalDotH);
   const { min, max } = scene;
+  const priceRange = max - min;
 
   const gridLines = computeGridLines(min, max, 0, chartDotBottom, 3);
+  const axisFractionDigits = axisMode === "price"
+    ? resolveAxisFractionDigits(
+      gridLines.map((line) => line.price),
+      (price, fixedFractionDigits) => formatPriceWithCurrency(
+        price,
+        currency,
+        assetCategory,
+        priceRange,
+        0,
+        0,
+        fixedFractionDigits,
+      ),
+      getAxisFractionDigitFloor(assetCategory, priceRange),
+    )
+    : null;
   drawGridLines(buf, gridLines.map((line) => line.y), palette.gridColor);
 
   switch (mode) {
@@ -1137,7 +1258,7 @@ export function renderChart(
   for (const line of gridLines) {
     axisLabelsByRow.set(
       Math.min(Math.floor(line.y / 4), Math.max(chartTermRows - 1, 0)),
-      formatAxisValue(line.price, axisMode, points[0]!.close, currency),
+      formatAxisValue(line.price, axisMode, points[0]!.close, currency, assetCategory, priceRange, axisFractionDigits ?? undefined),
     );
   }
 
@@ -1155,6 +1276,8 @@ export function renderChart(
     changePctAtCursor,
     cursorColumn: scene.cursorColumn,
     cursorRow: scene.cursorRow,
+    axisFractionDigits,
+    priceRange,
     pixelBuffer: buf,
   };
 }

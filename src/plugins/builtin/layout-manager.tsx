@@ -54,6 +54,10 @@ export const layoutManagerPlugin: GloomPlugin = {
   description: "Pane layout management commands",
 
   setup(ctx) {
+    const notify = (body: string, options?: { type?: "info" | "success" | "error" }) => {
+      ctx.notify({ body, ...options });
+    };
+
     ctx.registerCommand({
       id: "float-pane",
       label: "Float Pane",
@@ -68,7 +72,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         const { layout, termWidth, termHeight, focusedPaneId } = getStateRef();
         const focusedPane = getFocusedPane(layout, focusedPaneId);
         if (!focusedPane || !isPaneDocked(layout, focusedPane.instanceId)) {
-          ctx.showToast("Focus a docked pane to float it", { type: "info" });
+          notify("Focus a docked pane to float it", { type: "info" });
           return;
         }
 
@@ -93,7 +97,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         const { layout, focusedPaneId } = getStateRef();
         const focusedPane = getFocusedPane(layout, focusedPaneId);
         if (!focusedPane || !layout.floating.some((entry) => entry.instanceId === focusedPane.instanceId)) {
-          ctx.showToast("Focus a floating pane to dock it", { type: "info" });
+          notify("Focus a floating pane to dock it", { type: "info" });
           return;
         }
 
@@ -112,7 +116,7 @@ export const layoutManagerPlugin: GloomPlugin = {
       hidden: () => true,
       execute: async () => {
         ctx.openCommandBar("NP ");
-        ctx.showToast("Choose a pane template to create", { type: "info" });
+        notify("Choose a pane template to create", { type: "info" });
       },
     });
 
@@ -126,7 +130,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         if (!getStateRef) return;
         const { layout, termWidth, termHeight } = getStateRef();
         persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width: termWidth, height: termHeight }));
-        ctx.showToast("Retiled all panes", { type: "success" });
+        notify("Retiled all panes", { type: "success" });
       },
     });
 
@@ -141,7 +145,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         const { layout, focusedPaneId } = getStateRef();
         const focusedPane = getFocusedPane(layout, focusedPaneId);
         if (!focusedPane || !isPaneInLayout(layout, focusedPane.instanceId)) {
-          ctx.showToast("Focus a pane to remove it", { type: "info" });
+          notify("Focus a pane to remove it", { type: "info" });
           return;
         }
         persistLayout(removePane(layout, focusedPane.instanceId));
@@ -158,11 +162,11 @@ export const layoutManagerPlugin: GloomPlugin = {
       execute: async (values) => {
         const name = values?.name?.trim();
         if (!name) {
-          ctx.showToast("Layout name is required", { type: "error" });
+          notify("Layout name is required", { type: "error" });
           return;
         }
         dispatchRef?.({ type: "NEW_LAYOUT", name });
-        ctx.showToast(`Layout "${name}" created`, { type: "success" });
+        notify(`Layout "${name}" created`, { type: "success" });
       },
     });
 
@@ -191,13 +195,13 @@ export const layoutManagerPlugin: GloomPlugin = {
         if (!registry) return;
         const config = registry.getConfigFn();
         if (config.layouts.length <= 1) {
-          ctx.showToast("Can't delete the only layout", { type: "error" });
+          notify("Can't delete the only layout", { type: "error" });
           return;
         }
         const index = config.activeLayoutIndex;
         const name = config.layouts[index]!.name;
         dispatchRef?.({ type: "DELETE_LAYOUT", index });
-        ctx.showToast(`Layout "${name}" deleted`, { type: "success" });
+        notify(`Layout "${name}" deleted`, { type: "success" });
       },
     });
 
@@ -211,13 +215,13 @@ export const layoutManagerPlugin: GloomPlugin = {
       execute: async (values) => {
         const name = values?.name?.trim();
         if (!name) {
-          ctx.showToast("Name is required", { type: "error" });
+          notify("Name is required", { type: "error" });
           return;
         }
         const registry = getSharedRegistry();
         if (!registry) return;
         dispatchRef?.({ type: "RENAME_LAYOUT", index: registry.getConfigFn().activeLayoutIndex, name });
-        ctx.showToast(`Layout renamed to "${name}"`, { type: "success" });
+        notify(`Layout renamed to "${name}"`, { type: "success" });
       },
     });
 
@@ -231,7 +235,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         const registry = getSharedRegistry();
         if (!registry) return;
         dispatchRef?.({ type: "DUPLICATE_LAYOUT", index: registry.getConfigFn().activeLayoutIndex });
-        ctx.showToast("Layout duplicated", { type: "success" });
+        notify("Layout duplicated", { type: "success" });
       },
     });
 
@@ -247,11 +251,11 @@ export const layoutManagerPlugin: GloomPlugin = {
         const focusedPane = getFocusedPane(layout, focusedPaneId);
         const dockedPaneIds = getDockedPaneIds(layout);
         if (dockedPaneIds.length < 2) {
-          ctx.showToast("Need at least 2 docked panes to swap", { type: "info" });
+          notify("Need at least 2 docked panes to swap", { type: "info" });
           return;
         }
         if (!focusedPane || !isPaneDocked(layout, focusedPane.instanceId)) {
-          ctx.showToast("Focus a docked pane to swap it", { type: "info" });
+          notify("Focus a docked pane to swap it", { type: "info" });
           return;
         }
 
@@ -262,7 +266,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         }
 
         ctx.openCommandBar("LAY ");
-        ctx.showToast("Choose a swap target from layout mode", { type: "info" });
+        notify("Choose a swap target from layout mode", { type: "info" });
       },
     });
   },

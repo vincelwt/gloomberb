@@ -463,6 +463,7 @@ describe("PortfolioListPane cash and margin UI", () => {
             netLiquidation: 125000,
             cashBalances: [
               { currency: "USD", quantity: -50000, baseValue: -50000, baseCurrency: "USD" },
+              { currency: "EUR", quantity: -351957.025, baseValue: -381000, baseCurrency: "USD" },
               { currency: "JPY", quantity: 0, baseValue: 0, baseCurrency: "USD" },
             ],
           }],
@@ -478,6 +479,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("Cash & Margin");
     expect(frame).toContain("Net Liq");
     expect(frame).toContain("Flex Mar 27");
+    expect(frame).toContain("-351,957.025");
     expect(frame).not.toContain("Avail");
     expect(frame).not.toContain("JPY");
   });
@@ -654,7 +656,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("SPREAD");
     expect(frame).toContain("124.95");
     expect(frame).toContain("125.05");
-    expect(frame).toContain("0.10");
+    expect(frame).toContain("0.1");
   });
 
   test("warms full financials for visible rows when only quote data is loaded", async () => {

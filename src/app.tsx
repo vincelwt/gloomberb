@@ -25,8 +25,11 @@ import { colors, syncTheme } from "./theme/colors";
 import {
   createPaneInstance,
   findPaneInstance,
+  findPrimaryPaneInstance,
   isTickerPaneId,
   normalizePaneLayout,
+  resolveFollowBindingInstance,
+  resolvePaneInstance,
   type AppConfig,
   type BrokerInstanceConfig,
   type LayoutConfig,
@@ -94,12 +97,21 @@ import { debugLog } from "./utils/debug-log";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
 import { syncBrokerInstance } from "./brokers/sync-broker-instance";
+import { createAppNotifier } from "./notifications/app-notifier";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
 const quoteRefreshInFlight: Set<string> = (globalThis as any).__quoteRefreshInFlight ??= new Set<string>();
 const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
 const appLog = debugLog.createLogger("app");
+
+function isCollectionPaneInstance(instance: PaneInstanceConfig): boolean {
+  return instance.paneId === "portfolio-list";
+}
+
+function isTickerContextPaneInstance(instance: PaneInstanceConfig): boolean {
+  return instance.paneId === "portfolio-list" || isTickerPaneId(instance.paneId);
+}
 
 function summarizeError(error: unknown): Record<string, string> {
   if (error instanceof Error) {
@@ -123,30 +135,30 @@ interface AppInnerProps {
 function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, sessionSnapshot = null }: AppInnerProps) {
   const { state, dispatch } = useAppState();
   const appActive = useAppActive();
+  const appActiveRef = useRef(appActive);
   const renderer = useRenderer();
   const dialog = useDialog();
   const stateRef = useRef(state);
   stateRef.current = state;
+  appActiveRef.current = appActive;
   const focusedCollectionId = getFocusedCollectionId(state);
-
-  const resolvePrimaryPaneInstanceId = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
-    const instances = layout.instances.filter((instance) => instance.paneId === paneId);
-    if (instances.length === 0) return null;
-    if (isTickerPaneId(paneId)) {
-      return instances.find((instance) =>
-        instance.instanceId === `${paneId}:main` && instance.binding?.kind !== "fixed",
-      )?.instanceId
-        ?? instances.find((instance) => instance.binding?.kind !== "fixed")?.instanceId
-        ?? null;
-    }
-    return instances[0]?.instanceId ?? null;
-  }, [state.config.layout]);
+  const appNotifier = useMemo(() => createAppNotifier({
+    isAppActive: () => appActiveRef.current,
+    renderToast: (notification) => {
+      const type = notification.type ?? "info";
+      const duration = notification.duration;
+      if (type === "success") toast.success(notification.body, { duration });
+      else if (type === "error") toast.error(notification.body, { duration });
+      else toast.info(notification.body, { duration });
+    },
+  }), []);
+  const notify = useCallback((body: string, options?: { type?: "info" | "success" | "error" }) => {
+    pluginRegistry.notify({ body, ...options });
+  }, [pluginRegistry]);
 
   const resolvePaneTarget = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
-    const byInstance = layout.instances.find((instance) => instance.instanceId === paneId);
-    if (byInstance) return byInstance.instanceId;
-    return resolvePrimaryPaneInstanceId(paneId, layout);
-  }, [resolvePrimaryPaneInstanceId, state.config.layout]);
+    return resolvePaneInstance(layout, paneId)?.instanceId ?? null;
+  }, [state.config.layout]);
 
   const getPreferredPortfolio = useCallback((ticker: TickerRecord | null) => {
     const focusedPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === focusedCollectionId);
@@ -198,39 +210,17 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   }, [dialog]);
 
   const resolveCollectionSourcePaneId = useCallback((preferredPaneId?: string | null) => {
-    const tryResolve = (candidate: string | null | undefined): string | null => {
-      if (!candidate) return null;
-      const instance = findPaneInstance(state.config.layout, candidate);
-      if (!instance) return null;
-      if (instance.paneId === "portfolio-list") return instance.instanceId;
-      if (instance.binding?.kind === "follow") {
-        return tryResolve(instance.binding.sourceInstanceId);
-      }
-      return null;
-    };
-
-    return tryResolve(preferredPaneId)
-      ?? tryResolve(state.focusedPaneId)
-      ?? state.config.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId
+    return resolveFollowBindingInstance(state.config.layout, preferredPaneId, isCollectionPaneInstance)?.instanceId
+      ?? resolveFollowBindingInstance(state.config.layout, state.focusedPaneId, isCollectionPaneInstance)?.instanceId
+      ?? findPrimaryPaneInstance(state.config.layout, "portfolio-list")?.instanceId
       ?? null;
   }, [state.config.layout, state.focusedPaneId]);
 
   const resolveTickerContextSourcePaneId = useCallback((preferredPaneId?: string | null) => {
-    const tryResolve = (candidate: string | null | undefined): string | null => {
-      if (!candidate) return null;
-      const instance = findPaneInstance(state.config.layout, candidate);
-      if (!instance) return null;
-      if (instance.paneId === "portfolio-list" || isTickerPaneId(instance.paneId)) return instance.instanceId;
-      if (instance.binding?.kind === "follow") {
-        return tryResolve(instance.binding.sourceInstanceId);
-      }
-      return null;
-    };
-
-    return tryResolve(preferredPaneId)
-      ?? tryResolve(state.focusedPaneId)
-      ?? state.config.layout.instances.find((instance) => instance.paneId === "ticker-detail" && instance.binding?.kind !== "fixed")?.instanceId
-      ?? state.config.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.instanceId
+    return resolveFollowBindingInstance(state.config.layout, preferredPaneId, isTickerContextPaneInstance)?.instanceId
+      ?? resolveFollowBindingInstance(state.config.layout, state.focusedPaneId, isTickerContextPaneInstance)?.instanceId
+      ?? findPrimaryPaneInstance(state.config.layout, "ticker-detail")?.instanceId
+      ?? findPrimaryPaneInstance(state.config.layout, "portfolio-list")?.instanceId
       ?? null;
   }, [state.config.layout, state.focusedPaneId]);
 
@@ -274,9 +264,9 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
   const switchDetailTab = useCallback((tabId: string, preferredPaneId?: string | null) => {
     const targetPaneId = (() => {
-      const target = preferredPaneId ? findPaneInstance(state.config.layout, preferredPaneId) : null;
+      const target = preferredPaneId ? resolvePaneInstance(state.config.layout, preferredPaneId) : null;
       if (target?.paneId === "ticker-detail") return target.instanceId;
-      const focused = state.focusedPaneId ? findPaneInstance(state.config.layout, state.focusedPaneId) : null;
+      const focused = state.focusedPaneId ? resolvePaneInstance(state.config.layout, state.focusedPaneId) : null;
       if (focused?.paneId === "ticker-detail") return focused.instanceId;
       const sourcePaneId = resolveCollectionSourcePaneId(preferredPaneId);
       if (!sourcePaneId) return null;
@@ -895,7 +885,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     if (paneId === "ticker-detail") {
       const sourcePaneId = resolveCollectionSourcePaneId();
       if (!sourcePaneId) {
-        pluginRegistry.showToastFn("Open a collection pane first to inspect a ticker.");
+        notify("Open a collection pane first to inspect a ticker.");
         return;
       }
       const ensured = ensureInspectorPane(sourcePaneId);
@@ -918,7 +908,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       : buildPaneInstance(paneId);
     if (!instance) {
       if (isTickerPaneId(paneId)) {
-        pluginRegistry.showToastFn("Open a ticker or collection context first.");
+        notify("Open a ticker or collection context first.");
       }
       return;
     }
@@ -961,7 +951,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
         placePaneInstance,
       });
     } catch (error) {
-      pluginRegistry.showToastFn(
+      notify(
         error instanceof Error ? error.message : `Could not create ${getPaneTemplateDisplayLabel(template).toLowerCase()}.`,
         { type: "info" },
       );
@@ -970,6 +960,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     buildPaneInstance,
     dataProvider,
     dispatch,
+    notify,
     placePaneInstance,
     pluginRegistry,
     runPaneTemplateWizard,
@@ -1081,6 +1072,90 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     activatePane(instance.instanceId, nextLayout);
   };
 
+  pluginRegistry.navigateTickerFn = (rawSymbol) => {
+    (async () => {
+      try {
+      // Resolve or create the ticker in the local database
+      const resolved = await resolveTickerSearch({
+        query: rawSymbol,
+        activeTicker: null,
+        tickers: stateRef.current.tickers,
+        dataProvider,
+      });
+
+      let symbol = rawSymbol;
+      if (resolved?.kind === "local") {
+        symbol = resolved.symbol;
+      } else if (resolved?.kind === "provider" && resolved.result) {
+        const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolved.result);
+        symbol = ticker.metadata.ticker;
+        dispatch({ type: "UPDATE_TICKER", ticker });
+        if (created) {
+          pluginRegistry.events.emit("ticker:added", { symbol, ticker });
+        }
+      }
+
+      // Active panel resolution — navigate the focused or linked detail pane:
+      // 1. If the focused pane IS a ticker-detail, retarget it directly
+      // 2. If a ticker-detail follows the focused pane, retarget that
+      // 3. Any follow-mode ticker-detail in the layout
+      // 4. Any ticker-detail in the layout
+      // 5. Fall back to pinning a new pane
+      const currentState = stateRef.current;
+      const currentLayout = currentState.config.layout;
+      const focused = currentState.focusedPaneId;
+
+      const focusedInstance = focused
+        ? findPaneInstance(currentLayout, focused)
+        : null;
+
+      const detailPane =
+        (focusedInstance?.paneId === "ticker-detail" && isPaneInLayout(currentLayout, focusedInstance.instanceId)
+          ? focusedInstance
+          : null)
+        ?? currentLayout.instances.find((inst) =>
+          inst.paneId === "ticker-detail"
+          && inst.binding?.kind === "follow"
+          && inst.binding.sourceInstanceId === focused
+          && isPaneInLayout(currentLayout, inst.instanceId),
+        )
+        ?? currentLayout.instances.find((inst) =>
+          inst.paneId === "ticker-detail"
+          && inst.binding?.kind === "follow"
+          && isPaneInLayout(currentLayout, inst.instanceId),
+        )
+        ?? currentLayout.instances.find((inst) =>
+          inst.paneId === "ticker-detail"
+          && isPaneInLayout(currentLayout, inst.instanceId),
+        );
+
+      if (detailPane) {
+        if (detailPane.binding?.kind === "follow") {
+          const sourceId = detailPane.binding.sourceInstanceId;
+          dispatch({ type: "UPDATE_PANE_STATE", paneId: sourceId, patch: { cursorSymbol: symbol } });
+          activatePane(detailPane.instanceId, currentLayout);
+        } else {
+          const nextLayout = {
+            ...currentLayout,
+            instances: currentLayout.instances.map((instance) => (
+              instance.instanceId === detailPane.instanceId
+                ? { ...instance, title: symbol, binding: { kind: "fixed" as const, symbol } }
+                : instance
+            )),
+          };
+          persistLayout(nextLayout);
+          activatePane(detailPane.instanceId, nextLayout);
+        }
+      } else {
+        pluginRegistry.pinTickerFn(symbol, { floating: false });
+      }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        pluginRegistry.notify({ body: `Failed to navigate to ${rawSymbol}: ${message}`, type: "error" });
+      }
+    })();
+  };
+
   setLayoutManagerDispatch(dispatch, () => ({
     layout: state.config.layout,
     termWidth: pluginRegistry.getTermSizeFn().width,
@@ -1088,14 +1163,8 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     focusedPaneId: state.focusedPaneId,
   }));
 
-  // Wire up toast
-  pluginRegistry.showToastFn = (message, options) => {
-    const type = options?.type ?? "info";
-    const duration = options?.duration;
-    if (type === "success") toast.success(message, { duration });
-    else if (type === "error") toast.error(message, { duration });
-    else toast.info(message, { duration });
-  };
+  // Wire up app-level notifications.
+  pluginRegistry.notifyFn = appNotifier.notify;
 
   // Persist layout changes (switching, saving, deleting, renaming layouts)
   const prevLayouts = useRef(state.config.layouts);

@@ -8,6 +8,7 @@ import type { BrokerInstanceConfig, LayoutConfig, PaneInstanceConfig } from "../
 import type { DataProvider } from "../types/data-provider";
 import type { TickerFinancials } from "../types/financials";
 import type {
+  AppNotificationRequest,
   CommandDef,
   CustomColumnDef,
   DetailTabDef,
@@ -27,7 +28,7 @@ import type {
 import type { TickerRecord } from "../types/ticker";
 import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
-import { createPaneInstance } from "../types/config";
+import { createPaneInstance, resolvePaneInstance } from "../types/config";
 import { createPluginPersistence } from "./plugin-persistence";
 import { debugLog } from "../utils/debug-log";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "./plugin-runtime";
@@ -111,12 +112,13 @@ export class PluginRegistry implements PluginRuntimeAccess {
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
+  navigateTickerFn: ((symbol: string) => void) = () => {};
 
   getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [] });
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
-  showToastFn: ((message: string, options?: { duration?: number; type?: "info" | "success" | "error" }) => void) = () => {};
+  notifyFn: ((notification: AppNotificationRequest) => void) = () => {};
   getPaneRuntimeStateFn: ((paneId: string) => PaneRuntimeState | null) = () => null;
   updatePaneRuntimeStateFn: ((paneId: string, patch: Partial<PaneRuntimeState>) => void) = () => {};
   applyPaneSettingValueFn: ((paneId: string, field: import("../types/plugin").PaneSettingField, value: unknown) => Promise<void>) = async () => {};
@@ -175,6 +177,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   getPluginPaneTemplateIds(pluginId: string): string[] {
     return this.pluginItems.get(pluginId)?.paneTemplates ?? [];
+  }
+
+  notify(notification: AppNotificationRequest): void {
+    this.notifyFn(notification);
   }
 
   private getOrCreatePluginItems(pluginId: string): PluginItems {
@@ -272,16 +278,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return Object.keys(this.getConfigFn().pluginConfig[pluginId] ?? {}).sort();
   }
 
-  private resolvePrimaryPaneInstanceId(paneId: string): string | undefined {
-    const layout = this.getLayoutFn();
-    return layout.instances.find((instance) => instance.paneId === paneId)?.instanceId;
-  }
-
   private resolvePaneTarget(paneId: string): string | undefined {
-    const layout = this.getLayoutFn();
-    const isInstanceId = layout.instances.some((instance) => instance.instanceId === paneId);
-    if (isInstanceId) return paneId;
-    return this.resolvePrimaryPaneInstanceId(paneId);
+    return resolvePaneInstance(this.getLayoutFn(), paneId)?.instanceId;
   }
 
   resolvePaneSettings(paneId: string): {
@@ -515,6 +513,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       hidePane: (paneId) => this.hidePaneFn(paneId),
       focusPane: (paneId) => this.focusPaneFn(paneId),
       pinTicker: (symbol, options) => this.pinTickerFn(symbol, options),
+      navigateTicker: (symbol) => this.navigateTickerFn(symbol),
       openPaneSettings: (paneId) => this.openPaneSettingsFn(paneId),
 
       on: <K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void) => {
@@ -526,7 +525,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
       showWidget: (widgetId) => this.showWidget(widgetId),
       hideWidget: (widgetId) => this.hideWidget(widgetId),
-      showToast: (message, options) => this.showToastFn(message, options),
+      notify: (notification) => this.notifyFn(notification),
     };
   }
 

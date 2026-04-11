@@ -5,7 +5,8 @@ import { useAppDispatch, useAppSelector, usePaneInstanceId, usePaneSettingValue,
 import { saveConfig } from "../../data/config-store";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { colors, priceColor } from "../../theme/colors";
-import { formatCompact, formatCurrency } from "../../utils/format";
+import { formatCompact, formatPercentRaw } from "../../utils/format";
+import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../utils/market-format";
 import { useChartQueries, useChartQuery } from "../../market-data/hooks";
 import { instrumentFromTicker, type ChartRequest } from "../../market-data/request-types";
 import { buildChartKey } from "../../market-data/selectors";
@@ -63,12 +64,14 @@ import {
 } from "./chart-viewport";
 import {
   buildChartScene,
+  formatAxisCell,
   formatDateShort,
-  formatAxisValue,
+  formatCursorAxisValue,
   getActivePointIndex,
   getPointTerminalColumn,
   renderChart,
   resolveChartPalette,
+  resolveChartAxisWidth,
   type StyledContent,
 } from "./chart-renderer";
 import {
@@ -116,6 +119,16 @@ const MODE_LABELS: Record<ChartRenderMode, string> = {
   candles: "CANDLES",
   ohlc: "OHLC",
 };
+
+const AXIS_MEASURE_PALETTE = resolveChartPalette({
+  bg: colors.bg,
+  border: colors.border,
+  borderFocused: colors.borderFocused,
+  text: colors.text,
+  textDim: colors.textDim,
+  positive: colors.positive,
+  negative: colors.negative,
+}, "neutral");
 
 interface StockChartProps {
   width: number;
@@ -492,11 +505,6 @@ function resolveVisibleRect(
 
 function buildBlankPlotLines(width: number, height: number): string[] {
   return Array.from({ length: height }, () => " ".repeat(width));
-}
-
-function formatAxisCell(label: string | null, width: number): string {
-  if (!label) return " ".repeat(width);
-  return label.length >= width ? label.slice(0, width) : label.padStart(width);
 }
 
 function getMaxPanOffset(history: PricePoint[], zoomLevel: number): number {
@@ -1175,8 +1183,15 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const plotRef = useRef<BoxRenderable | null>(null);
-  const nativeBaseSurfaceIdRef = useRef(`chart-surface:${paneId}:${compact ? "compact" : "full"}:base`);
-  const nativeCrosshairSurfaceIdRef = useRef(`chart-surface:${paneId}:${compact ? "compact" : "full"}:crosshair`);
+  const nativeSurfaceScope = compact ? "compact" : "full";
+  const nativeBaseSurfaceId = useMemo(
+    () => `chart-surface:${paneId}:${nativeSurfaceScope}:base`,
+    [nativeSurfaceScope, paneId],
+  );
+  const nativeCrosshairSurfaceId = useMemo(
+    () => `chart-surface:${paneId}:${nativeSurfaceScope}:crosshair`,
+    [nativeSurfaceScope, paneId],
+  );
   const dragRef = useRef<DragState | null>(null);
   const lastNativeGeometryRef = useRef<{ rect: CellRect; visibleRect: CellRect | null } | null>(null);
   const lastNativeBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
@@ -1266,10 +1281,10 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       stopDisplayCursorAnimation();
       lastNativeBaseBitmapRef.current = null;
       lastNativeCrosshairBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
-      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+      nativeSurfaceManager.removeSurface(nativeBaseSurfaceId);
+      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceId);
     }
-  ), [nativeSurfaceManager]);
+  ), [nativeBaseSurfaceId, nativeCrosshairSurfaceId, nativeSurfaceManager]);
 
   const instrumentRef = useMemo(
     () => instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null),
@@ -1384,20 +1399,38 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       }
       : null,
   );
-  const boundsBodyState = resolveChartBodyState(
+  const fallbackPriceHistory = historyOverride ?? financials?.priceHistory ?? [];
+  const rawBoundsBodyState = resolveChartBodyState(
     boundsChartEntry,
     (value) => Array.isArray(value) && value.length > 0,
     "No price history available.",
   );
-  const axisWidth = compact
+  const boundsBodyState = !compact && !boundsChartEntry && fallbackPriceHistory.length > 0
+    ? {
+      data: fallbackPriceHistory,
+      blocking: false,
+      updating: false,
+      emptyMessage: null,
+      errorMessage: null,
+    }
+    : rawBoundsBodyState;
+  const axisSectionWidthBudget = compact
     ? axisMode === "percent" ? 11 : 8
     : axisMode === "percent" ? 11 : 10;
-  const axisGap = axisWidth > 0 ? 1 : 0;
-  const chartWidth = Math.max(width - axisWidth - axisGap, compact ? 12 : 20);
-  const maxCursorX = chartWidth - 1;
-  const panStep = Math.max(Math.floor(chartWidth / 10), 1);
+  const axisRightPadding = 1;
+  const minimumAxisWidth = axisMode === "percent" ? 5 : 4;
+  const axisGap = axisSectionWidthBudget > 0 ? 1 : 0;
+  const minChartWidth = compact ? 12 : 20;
+  const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
+  const headerRows = compact ? 0 : 4;
+  const helpRow = compact ? 0 : 1;
+  const timeAxisRow = 1;
+  const volumeHeight = showVolume && !compact ? 3 : 0;
+  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
+  const chartCurrency = currencyOverride ?? financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
+  const chartAssetCategory = ticker?.metadata.assetCategory;
   const boundsHistory = compact
-    ? (historyOverride ?? financials?.priceHistory ?? [])
+    ? fallbackPriceHistory
     : (boundsBodyState.data ?? []);
   const boundsHistoryDates = useMemo(() => getPointDates(boundsHistory), [boundsHistory]);
   const baseDateBounds = useMemo(() => getDateWindowBounds(boundsHistoryDates), [boundsHistoryDates]);
@@ -1451,9 +1484,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     if (!Number.isFinite(spanMs) || spanMs < 0) return null;
     if (hasResolutionSupportApi && resolutionSupport === null) return null;
     return hasResolutionSupportApi
-      ? getBestSupportedResolutionForVisibleWindow(plannedAutoWindow, supportMap, chartWidth)
+      ? getBestSupportedResolutionForVisibleWindow(plannedAutoWindow, supportMap, measurementChartWidth)
       : (resolveBarSize(spanMs) as ManualChartResolution | null);
-  }, [chartWidth, compact, plannedAutoWindow, effectiveResolution, hasResolutionSupportApi, resolutionSupport, supportMap]);
+  }, [compact, plannedAutoWindow, effectiveResolution, hasResolutionSupportApi, measurementChartWidth, resolutionSupport, supportMap]);
   const plannedDateWindow = effectiveResolution === "auto"
     ? plannedAutoWindow
     : manualVisibleDateWindow;
@@ -1552,7 +1585,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   ), [effectiveResolution, plannedDateWindow, plannedManualResolution, renderedAutoView]);
   const resolvedRender = useMemo(() => {
     const overrideBodyState = {
-      data: historyOverride ?? financials?.priceHistory ?? [],
+      data: fallbackPriceHistory,
       blocking: false,
       updating: false,
       emptyMessage: null,
@@ -1880,12 +1913,100 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     ? `showing ${getChartResolutionLabel(renderedResolution)}`
     : null;
   const history = compact
-    ? (historyOverride ?? financials?.priceHistory ?? [])
+    ? fallbackPriceHistory
     : (renderBodyState.data ?? []);
   const visibleDateWindow = displayedDateWindow;
   const navigableDateWindow = effectiveResolution === "auto"
     ? (pendingAutoWindowOverride ?? displayedDateWindow ?? plannedDateWindow)
     : visibleDateWindow;
+  const axisWidth = useMemo(() => {
+    const measureAxisWidth = (targetWidth: number) => {
+      const measuredWindow = historyOverride || !displayedDateWindow?.start || !displayedDateWindow.end
+        ? { points: history, startIdx: 0, endIdx: history.length }
+        : getVisibleWindowForDateRange(history, displayedDateWindow, 0);
+      const measuredTimeAxisDates = measuredWindow.points.map((point) => point.date);
+      const measuredProjection = projectChartData(measuredWindow.points, targetWidth, viewState.renderMode, !!compact);
+      const measuredResult = renderChart(measuredProjection.points, {
+        width: targetWidth,
+        height: chartHeight,
+        showVolume: showVolume && !compact,
+        volumeHeight,
+        cursorX: null,
+        cursorY: null,
+        mode: measuredProjection.effectiveMode,
+        axisMode,
+        currency: chartCurrency,
+        assetCategory: chartAssetCategory,
+        colors: AXIS_MEASURE_PALETTE,
+        timeAxisDates: measuredTimeAxisDates,
+      });
+      const measuredScene = buildChartScene(measuredProjection.points, {
+        width: targetWidth,
+        height: chartHeight,
+        showVolume: showVolume && !compact,
+        volumeHeight,
+        cursorX: null,
+        cursorY: null,
+        mode: measuredProjection.effectiveMode,
+        axisMode,
+        colors: AXIS_MEASURE_PALETTE,
+        timeAxisDates: measuredTimeAxisDates,
+      });
+      const cursorSamples = measuredScene
+        ? [
+          formatCursorAxisValue(
+            measuredScene.min,
+            axisMode,
+            measuredProjection.points[0]?.close ?? 0,
+            chartCurrency,
+            chartAssetCategory,
+            measuredResult.priceRange ?? undefined,
+          ),
+          formatCursorAxisValue(
+            measuredScene.max,
+            axisMode,
+            measuredProjection.points[0]?.close ?? 0,
+            chartCurrency,
+            chartAssetCategory,
+            measuredResult.priceRange ?? undefined,
+          ),
+        ]
+        : [];
+
+      return resolveChartAxisWidth(
+        [...measuredResult.axisLabels.map((entry) => entry.label), ...cursorSamples],
+        minimumAxisWidth,
+        Math.max(axisSectionWidthBudget - axisRightPadding, minimumAxisWidth),
+      );
+    };
+
+    const firstPassWidth = measureAxisWidth(measurementChartWidth);
+    const refinedChartWidth = Math.max(width - firstPassWidth - axisRightPadding - axisGap, minChartWidth);
+    return refinedChartWidth === measurementChartWidth ? firstPassWidth : measureAxisWidth(refinedChartWidth);
+  }, [
+    axisGap,
+    axisMode,
+    axisRightPadding,
+    axisSectionWidthBudget,
+    chartAssetCategory,
+    chartCurrency,
+    chartHeight,
+    compact,
+    displayedDateWindow,
+    history,
+    historyOverride,
+    measurementChartWidth,
+    minChartWidth,
+    minimumAxisWidth,
+    showVolume,
+    viewState.renderMode,
+    volumeHeight,
+    width,
+  ]);
+  const axisSectionWidth = axisWidth + axisRightPadding;
+  const chartWidth = Math.max(width - axisSectionWidth - axisGap, minChartWidth);
+  const maxCursorX = chartWidth - 1;
+  const panStep = Math.max(Math.floor(chartWidth / 10), 1);
   const activePreset = compact
     ? null
       : effectiveResolution === "auto"
@@ -2135,11 +2256,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     }
   };
 
-  const headerRows = compact ? 0 : 4;
-  const helpRow = compact ? 0 : 1;
-  const timeAxisRow = 1;
-  const volumeHeight = showVolume && !compact ? 3 : 0;
-  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
   const chartWindow = useMemo(() => {
     if (historyOverride || !displayedDateWindow?.start || !displayedDateWindow.end) {
       return { points: history, startIdx: 0, endIdx: history.length };
@@ -2409,7 +2525,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       negative: colors.negative,
     }, trend);
   }, [chartWindow.points]);
-  const chartCurrency = currencyOverride ?? financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;
@@ -2497,9 +2612,10 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     mode: projection.effectiveMode,
     axisMode,
     currency: chartCurrency,
+    assetCategory: chartAssetCategory,
     colors: chartColors,
     timeAxisDates,
-  }), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+  }), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty"
@@ -2514,10 +2630,11 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         mode: projection.effectiveMode,
         axisMode,
         currency: chartCurrency,
+        assetCategory: chartAssetCategory,
         colors: chartColors,
         timeAxisDates,
       })
-  ), [axisMode, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
 
@@ -2563,10 +2680,10 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     if (effectiveRenderer === "kitty") return;
     lastNativeBaseBitmapRef.current = null;
     lastNativeCrosshairBitmapRef.current = null;
-    nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
-    nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+    nativeSurfaceManager.removeSurface(nativeBaseSurfaceId);
+    nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceId);
     lastNativeGeometryRef.current = null;
-  }, [effectiveRenderer, nativeSurfaceManager]);
+  }, [effectiveRenderer, nativeBaseSurfaceId, nativeCrosshairSurfaceId, nativeSurfaceManager]);
 
   useEffect(() => {
     if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !plotRef.current) return;
@@ -2597,13 +2714,13 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       };
       syncCachedNativeSurface(
         nativeSurfaceManager,
-        nativeBaseSurfaceIdRef.current,
+        nativeBaseSurfaceId,
         geometry,
         lastNativeBaseBitmapRef.current,
       );
       syncCachedNativeSurface(
         nativeSurfaceManager,
-        nativeCrosshairSurfaceIdRef.current,
+        nativeCrosshairSurfaceId,
         geometry,
         lastNativeCrosshairBitmapRef.current,
       );
@@ -2622,12 +2739,12 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       renderer.unregisterLifecyclePass(plot);
       lastNativeGeometryRef.current = null;
     };
-  }, [effectiveRenderer, nativeSurfaceManager, paneId, renderer, rendererState.nativeReady]);
+  }, [effectiveRenderer, nativeBaseSurfaceId, nativeCrosshairSurfaceId, nativeSurfaceManager, paneId, renderer, rendererState.nativeReady]);
 
   useEffect(() => {
     if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !renderer.resolution || !plotRef.current || !nativeBaseScene) {
       lastNativeBaseBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
+      nativeSurfaceManager.removeSurface(nativeBaseSurfaceId);
       return;
     }
 
@@ -2660,12 +2777,12 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     }
 
     if (!visibleRect) {
-      nativeSurfaceManager.removeSurface(nativeBaseSurfaceIdRef.current);
+      nativeSurfaceManager.removeSurface(nativeBaseSurfaceId);
       return;
     }
 
     nativeSurfaceManager.upsertSurface({
-      id: nativeBaseSurfaceIdRef.current,
+      id: nativeBaseSurfaceId,
       paneId,
       rect: plotRect,
       visibleRect,
@@ -2684,6 +2801,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     compact,
     effectiveRenderer,
     nativeBaseScene,
+    nativeBaseSurfaceId,
     nativeSurfaceManager,
     paneId,
     projection.effectiveMode,
@@ -2696,7 +2814,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   useEffect(() => {
     if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !renderer.resolution || !plotRef.current || !nativeCrosshair) {
       lastNativeCrosshairBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceId);
       return;
     }
 
@@ -2717,7 +2835,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
     if (overlayPixelX === null || overlayPixelY === null) {
       lastNativeCrosshairBitmapRef.current = null;
-      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceId);
       return;
     }
 
@@ -2744,12 +2862,12 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     }
 
     if (!visibleRect) {
-      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceIdRef.current);
+      nativeSurfaceManager.removeSurface(nativeCrosshairSurfaceId);
       return;
     }
 
     nativeSurfaceManager.upsertSurface({
-      id: nativeCrosshairSurfaceIdRef.current,
+      id: nativeCrosshairSurfaceId,
       paneId,
       rect: plotRect,
       visibleRect,
@@ -2759,6 +2877,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   }, [
     effectiveRenderer,
     nativeCrosshair,
+    nativeCrosshairSurfaceId,
     nativeSurfaceManager,
     paneId,
     renderer,
@@ -2793,9 +2912,19 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     ? (selectionScene?.dateAtCursor ? formatDateShort(selectionScene.dateAtCursor) : null)
     : null;
   const activePoint = showOhlcSummary ? (selectionScene?.activePoint ?? null) : null;
+  const visiblePriceRange = selectionScene
+    ? Math.max(selectionScene.max - selectionScene.min, 0)
+    : (staticResult.priceRange ?? undefined);
   const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
   const cursorAxisLabel = hasDisplayCursor && cursorRow !== null && crosshairPrice !== null
-    ? formatAxisValue(crosshairPrice, axisMode, projection.points[0]?.close ?? 0, chartCurrency)
+    ? formatCursorAxisValue(
+      crosshairPrice,
+      axisMode,
+      projection.points[0]?.close ?? 0,
+      chartCurrency,
+      chartAssetCategory,
+      visiblePriceRange,
+    )
     : null;
   const visibleLabel = formatVisibleSpanLabel(
     visibleChartDateWindow ?? {
@@ -2995,13 +3124,13 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   );
 
   const axisBox = (
-    <box width={axisWidth} height={chartHeight} flexDirection="column">
+    <box width={axisSectionWidth} height={chartHeight} flexDirection="column">
       {Array.from({ length: chartHeight }, (_, row) => {
         const isCursorRow = cursorAxisLabel !== null && cursorRow === row;
         const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
         return (
           <text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
-            {formatAxisCell(label, axisWidth)}
+            {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
           </text>
         );
       })}
@@ -3037,20 +3166,52 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
           <text fg={colors.textDim}>{fallbackResolutionLabel}</text>
         )}
         <text fg={displayChange !== null ? priceColor(displayChange) : colors.textDim}>
-          {displayPrice !== null ? formatCurrency(displayPrice, chartCurrency) : "—"}
+          {displayPrice !== null
+            ? formatMarketPriceWithCurrency(displayPrice, chartCurrency, {
+              assetCategory: chartAssetCategory,
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })
+            : "—"}
         </text>
         <text fg={displayChange !== null ? priceColor(displayChange) : colors.textDim}>
           {displayChange !== null && displayChangePct !== null
-            ? `${displayChange >= 0 ? "+" : ""}${displayChange.toFixed(2)} (${displayChangePct >= 0 ? "+" : ""}${displayChangePct.toFixed(2)}%)`
+            ? `${formatSignedMarketPrice(displayChange, {
+              assetCategory: chartAssetCategory,
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })} (${formatPercentRaw(displayChangePct)})`
             : "No data"}
         </text>
         {displayDate && <text fg={colors.textDim}>{displayDate}</text>}
         {showOhlcSummary && activePoint && (
           <>
-            <text fg={colors.textDim}>O {formatCurrency(activePoint.open, chartCurrency)}</text>
-            <text fg={colors.textDim}>H {formatCurrency(activePoint.high, chartCurrency)}</text>
-            <text fg={colors.textDim}>L {formatCurrency(activePoint.low, chartCurrency)}</text>
-            <text fg={colors.textDim}>C {formatCurrency(activePoint.close, chartCurrency)}</text>
+            <text fg={colors.textDim}>O {formatMarketPriceWithCurrency(activePoint.open, chartCurrency, {
+              assetCategory: chartAssetCategory,
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })}</text>
+            <text fg={colors.textDim}>H {formatMarketPriceWithCurrency(activePoint.high, chartCurrency, {
+              assetCategory: chartAssetCategory,
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })}</text>
+            <text fg={colors.textDim}>L {formatMarketPriceWithCurrency(activePoint.low, chartCurrency, {
+              assetCategory: chartAssetCategory,
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })}</text>
+            <text fg={colors.textDim}>C {formatMarketPriceWithCurrency(activePoint.close, chartCurrency, {
+              assetCategory: chartAssetCategory,
+              minimumFractionDigits: 2,
+              precisionOffset: 1,
+              priceRange: visiblePriceRange,
+            })}</text>
             <text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</text>
           </>
         )}
