@@ -54,6 +54,7 @@ import {
   removePane,
   swapPanes,
 } from "../../plugins/pane-manager";
+import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import {
   buildSections,
@@ -412,6 +413,12 @@ export function CommandBar({
   const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
     pluginRegistry.updateLayoutFn(nextLayout);
   }, [pluginRegistry]);
+
+  const notifyGridlockRevert = useCallback(() => {
+    notifyGridlockComplete(pluginRegistry.notify.bind(pluginRegistry), () => {
+      dispatch({ type: "UNDO_LAYOUT" });
+    });
+  }, [dispatch, pluginRegistry]);
 
   const duplicatePane = useCallback((paneId: string) => {
     const currentState = stateRef.current;
@@ -1944,12 +1951,24 @@ export function CommandBar({
     });
   }, [getPaneTemplateContext, pluginRegistry, state.config.disabledPlugins]);
 
+  const getAvailablePluginCommands = useCallback((): CommandDef[] => {
+    const disabledPlugins = new Set(state.config.disabledPlugins || []);
+    return [...pluginRegistry.commands.values()]
+      .filter((command) => {
+        if (command.hidden?.()) return false;
+        const pluginId = pluginRegistry.getCommandPluginId(command.id);
+        if (pluginId && disabledPlugins.has(pluginId)) return false;
+        return true;
+      });
+  }, [pluginRegistry, state.config.disabledPlugins]);
+
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({
     query: rootQuery,
     commands,
+    pluginCommands: getAvailablePluginCommands(),
     paneTemplates: getAvailablePaneShortcutTemplates(rootQuery),
     activeTicker: activeTickerSymbol,
-  }), [activeTickerSymbol, getAvailablePaneShortcutTemplates, rootQuery]);
+  }), [activeTickerSymbol, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
 
   const createPaneTemplateItem = useCallback((
     template: PaneTemplateDef,
@@ -2040,56 +2059,52 @@ export function CommandBar({
     }
   }, [closeAll, notify, pluginRegistry]);
 
-  const pluginCommandItems = useCallback((): ResultItem[] => {
-    const disabledPlugins = new Set(state.config.disabledPlugins || []);
-    return [...pluginRegistry.commands.values()]
-      .filter((command) => {
-        if (command.hidden?.()) return false;
-        const pluginId = pluginRegistry.getCommandPluginId(command.id);
-        if (pluginId && disabledPlugins.has(pluginId)) return false;
-        return true;
-      })
-      .map((command) => {
-        const pluginId = pluginRegistry.getCommandPluginId(command.id);
-        const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
-        return {
-          id: command.id,
-          label: command.label,
-          detail: command.description || "",
-          category: pluginName || "Plugin Commands",
-          kind: "command" as const,
-          action: () => {
-            if (command.wizard && command.wizard.length > 0) {
-              openPluginCommandWorkflow(command);
-              return;
-            }
-            const confirm = resolvePluginCommandConfirm(command);
-            if (confirm) {
-              openInlineConfirm({
-                confirmId: `plugin-command:${command.id}`,
-                title: confirm.title,
-                body: confirm.body,
-                confirmLabel: confirm.confirmLabel || command.label,
-                cancelLabel: confirm.cancelLabel || "Back",
-                tone: confirm.tone || "danger",
-                onConfirm: async () => {
-                  await command.execute();
-                },
-              });
-              return;
-            }
-            void runPluginCommandDirect(command);
-          },
-        };
-      });
+  const createPluginCommandItem = useCallback((command: CommandDef): ResultItem => {
+    const pluginId = pluginRegistry.getCommandPluginId(command.id);
+    const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
+    const shortcut = command.shortcut?.trim() || undefined;
+    return {
+      id: command.id,
+      label: command.label,
+      detail: command.description || "",
+      category: pluginName || "Plugin Commands",
+      kind: "command",
+      right: shortcut,
+      searchText: `${command.label} ${command.description || ""} ${(command.keywords ?? []).join(" ")} ${shortcut || ""}`,
+      action: () => {
+        if (command.wizard && command.wizard.length > 0) {
+          openPluginCommandWorkflow(command);
+          return;
+        }
+        const confirm = resolvePluginCommandConfirm(command);
+        if (confirm) {
+          openInlineConfirm({
+            confirmId: `plugin-command:${command.id}`,
+            title: confirm.title,
+            body: confirm.body,
+            confirmLabel: confirm.confirmLabel || command.label,
+            cancelLabel: confirm.cancelLabel || "Back",
+            tone: confirm.tone || "danger",
+            onConfirm: async () => {
+              await command.execute();
+            },
+          });
+          return;
+        }
+        void runPluginCommandDirect(command);
+      },
+    };
   }, [
     openInlineConfirm,
     openPluginCommandWorkflow,
     pluginRegistry,
     resolvePluginCommandConfirm,
     runPluginCommandDirect,
-    state.config.disabledPlugins,
   ]);
+
+  const pluginCommandItems = useCallback((): ResultItem[] => {
+    return getAvailablePluginCommands().map((command) => createPluginCommandItem(command));
+  }, [createPluginCommandItem, getAvailablePluginCommands]);
 
   const tickerActionItems = useCallback((): ResultItem[] => {
     const ticker = activeTickerData;
@@ -2556,6 +2571,10 @@ export function CommandBar({
         });
       }
 
+      if (rootShortcutIntent.source === "plugin-command") {
+        return createPluginCommandItem(rootShortcutIntent.command);
+      }
+
       const { command } = rootShortcutIntent;
       if (command.id === "search-ticker") {
         const inferredSymbol = normalizeTickerInput(activeTickerSymbol, undefined);
@@ -2634,7 +2653,11 @@ export function CommandBar({
     let initialIdx = 0;
     const shortcutItem = buildRootShortcutItem();
 
-    if (rootShortcutIntent.kind !== "none" && rootShortcutIntent.source === "pane-template" && shortcutItem) {
+    if (
+      rootShortcutIntent.kind !== "none"
+      && (rootShortcutIntent.source === "pane-template" || rootShortcutIntent.source === "plugin-command")
+      && shortcutItem
+    ) {
       items.push(shortcutItem);
     } else if (match && match.command.id === "plugins") {
       const disabledPlugins = state.config.disabledPlugins || [];
@@ -2871,6 +2894,7 @@ export function CommandBar({
         action: () => {
           const { width, height } = pluginRegistry.getTermSizeFn();
           persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
+          notifyGridlockRevert();
           closeAll({ revertThemePreview: false });
         },
       });
@@ -3020,12 +3044,14 @@ export function CommandBar({
     activeTickerData,
     activeTickerSymbol,
     closeAll,
+    createPluginCommandItem,
     currentRoute,
     dispatch,
     duplicatePane,
     executeCollectionCommand,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,
+    notifyGridlockRevert,
     openBuiltInWorkflow,
     openPickerRoute,
     paneShortcutItems,
@@ -3195,6 +3221,10 @@ export function CommandBar({
       return `Shortcut: ${rootShortcutIntent.label}`;
     }
 
+    if (rootShortcutIntent.source === "plugin-command") {
+      return `Shortcut: ${rootShortcutIntent.label}`;
+    }
+
     if (rootShortcutIntent.command.id === "search-ticker") {
       const symbol = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
       if (symbol) {
@@ -3245,6 +3275,7 @@ export function CommandBar({
     const intent = parseRootShortcutIntent({
       query: rootQueryRef.current,
       commands,
+      pluginCommands: getAvailablePluginCommands(),
       paneTemplates: getAvailablePaneShortcutTemplates(rootQueryRef.current),
       activeTicker: activeTickerSymbol,
     });
@@ -3269,6 +3300,10 @@ export function CommandBar({
       return false;
     }
 
+    if (intent.source === "plugin-command") {
+      return false;
+    }
+
     if (intent.command.id === "search-ticker") {
       openModeRoute("ticker-search", intent.argText);
       return true;
@@ -3283,6 +3318,7 @@ export function CommandBar({
     return false;
   }, [
     activeTickerSymbol,
+    getAvailablePluginCommands,
     getAvailablePaneShortcutTemplates,
     openModeRoute,
     openPaneTemplateWorkflow,
@@ -3293,6 +3329,7 @@ export function CommandBar({
     const intent = parseRootShortcutIntent({
       query,
       commands,
+      pluginCommands: getAvailablePluginCommands(),
       paneTemplates: getAvailablePaneShortcutTemplates(query),
       activeTicker: activeTickerSymbol,
     });
@@ -3303,6 +3340,10 @@ export function CommandBar({
         showShortcut: true,
         shortcutExecution: true,
       });
+    }
+
+    if (intent.kind !== "none" && intent.source === "plugin-command") {
+      return createPluginCommandItem(intent.command);
     }
 
     const match = matchPrefix(query);
@@ -3412,8 +3453,10 @@ export function CommandBar({
     return null;
   }, [
     createPaneTemplateItem,
+    createPluginCommandItem,
     activeTickerSymbol,
     executeCollectionCommand,
+    getAvailablePluginCommands,
     getAvailablePaneShortcutTemplates,
     openModeRoute,
     paneTemplateItems,
@@ -3715,6 +3758,7 @@ export function CommandBar({
             action: () => {
               const { width, height } = pluginRegistry.getTermSizeFn();
               persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
+              notifyGridlockRevert();
               closeAll({ revertThemePreview: false });
             },
           });
@@ -3903,6 +3947,7 @@ export function CommandBar({
     localTickerSearchResultItems,
     mapTickerSearchCandidateToResultItem,
     nonShortcutPaneTemplateItems,
+    notifyGridlockRevert,
     openBuiltInWorkflow,
     openInlineConfirm,
     openPaneSettingsRoute,
