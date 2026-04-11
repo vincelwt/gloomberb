@@ -673,10 +673,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
     }
     if (pane.instance.title) return pane.instance.title;
     if (pane.instance.paneId === "portfolio-list") {
-      const collectionId = resolveCollectionForPane(state, pane.instance.instanceId);
-      return state.config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
-        ?? state.config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
-        ?? pane.def.name;
+      return pane.def.name;
     }
     const ticker = resolveTickerForPane(state, pane.instance.instanceId);
     return ticker ? `${pane.def.name}: ${ticker}` : pane.def.name;

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { colors } from "../../../theme/colors";
 import { TabBar } from "../../../components/tab-bar";
-import { getSharedRegistry } from "../../registry";
+import { getSharedRegistry, getSharedDataProvider } from "../../registry";
+import { resolveTickerSearch, upsertTickerFromSearchResult } from "../../../utils/ticker-search";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
@@ -125,7 +127,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
-  const { state } = useAppState();
+  const { state, dispatch } = useAppState();
   const paneCollection = usePaneCollection();
 
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
@@ -137,6 +139,18 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
+
+  // Inline add form
+  const [addingTicker, setAddingTicker] = useState(false);
+  const [addSymbol, setAddSymbol] = useState("");
+  const [addStatus, setAddStatus] = useState<"idle" | "searching" | "added" | "error">("idle");
+  const [searchResults, setSearchResults] = useState<Array<{ symbol: string; name: string; exchange: string }>>([]);
+  const [searchSelectedIdx, setSearchSelectedIdx] = useState(0);
+  const [addStep, setAddStep] = useState<"symbol" | "position">("symbol");
+  const [addShares, setAddShares] = useState("");
+  const [addAvgCost, setAddAvgCost] = useState("");
+  const [positionField, setPositionField] = useState<"shares" | "avgCost">("shares");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const previousPricesRef = useRef<Map<string, number>>(new Map());
   const mountedRef = useRef(true);
@@ -276,11 +290,220 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setSortPreference({ columnId, direction: "asc" });
   }, [activeSort.columnId, activeSort.direction, setSortPreference]);
 
+  // Release input capture on unmount
+  useEffect(() => {
+    return () => {
+      dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+    };
+  }, [dispatch]);
+
+  // Debounced search as user types
+  const runSearch = useCallback((query: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (query.length < 1) {
+      setSearchResults([]);
+      setSearchSelectedIdx(0);
+      return;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      const provider = getSharedDataProvider();
+      if (!provider) return;
+      try {
+        const results = await provider.search(query);
+        setSearchResults(
+          results.slice(0, 8).map((r) => ({
+            symbol: r.symbol,
+            name: r.name || r.symbol,
+            exchange: r.exchange || "",
+          })),
+        );
+        setSearchSelectedIdx(0);
+      } catch {
+        setSearchResults([]);
+      }
+    }, 200);
+  }, []);
+
+  const closeAddForm = useCallback(() => {
+    setAddingTicker(false);
+    setAddSymbol("");
+    setAddStep("symbol");
+    setAddShares("");
+    setAddAvgCost("");
+    setAddStatus("idle");
+    setSearchResults([]);
+    dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
+  }, [dispatch]);
+
+  const selectSearchResult = useCallback((result: { symbol: string; name: string; exchange: string }) => {
+    const provider = getSharedDataProvider();
+    const tickerRepo = registry?.tickerRepository;
+    if (!provider || !tickerRepo || !activeCollectionId) return;
+
+    setAddStatus("searching");
+
+    (async () => {
+      try {
+        const resolved = await resolveTickerSearch({
+          query: result.symbol,
+          activeTicker: null,
+          tickers: state.tickers,
+          dataProvider: provider,
+        });
+
+        let tickerRecord = resolved?.kind === "local" ? resolved.ticker : null;
+
+        if (resolved?.kind === "provider" && resolved.result) {
+          const { ticker } = await upsertTickerFromSearchResult(tickerRepo, resolved.result);
+          tickerRecord = ticker;
+          dispatch({ type: "UPDATE_TICKER", ticker });
+        }
+
+        if (!tickerRecord) {
+          tickerRecord = await tickerRepo.loadTicker(result.symbol);
+        }
+
+        if (!tickerRecord) {
+          setAddStatus("error");
+          return;
+        }
+
+        if (isPortfolioTab) {
+          // For portfolios, move to position entry step
+          setAddSymbol(tickerRecord.metadata.ticker);
+          setAddStep("position");
+          setPositionField("shares");
+          setSearchResults([]);
+          setAddStatus("idle");
+        } else {
+          // For watchlists, add directly
+          if (!tickerRecord.metadata.watchlists.includes(activeCollectionId)) {
+            tickerRecord = {
+              ...tickerRecord,
+              metadata: {
+                ...tickerRecord.metadata,
+                watchlists: [...tickerRecord.metadata.watchlists, activeCollectionId],
+              },
+            };
+            await tickerRepo.saveTicker(tickerRecord);
+            dispatch({ type: "UPDATE_TICKER", ticker: tickerRecord });
+          }
+          closeAddForm();
+        }
+      } catch {
+        setAddStatus("error");
+      }
+    })();
+  }, [activeCollectionId, closeAddForm, dispatch, isPortfolioTab, registry, state.tickers]);
+
+  const submitPosition = useCallback(() => {
+    const tickerRepo = registry?.tickerRepository;
+    if (!tickerRepo || !activeCollectionId) return;
+    const symbol = addSymbol.trim().toUpperCase();
+    const shares = parseFloat(addShares);
+    const avgCost = parseFloat(addAvgCost);
+
+    (async () => {
+      try {
+        let tickerRecord = await tickerRepo.loadTicker(symbol);
+        if (!tickerRecord) { setAddStatus("error"); return; }
+
+        const { addTickerToPortfolio } = await import("./mutations");
+        const memberResult = addTickerToPortfolio(tickerRecord, activeCollectionId);
+        if (memberResult.changed) {
+          tickerRecord = memberResult.ticker;
+        }
+
+        if (!isNaN(shares) && shares > 0 && !isNaN(avgCost)) {
+          const { setManualPortfolioPosition, resolveManualPositionCurrency } = await import("./mutations");
+          const portfolio = state.config.portfolios.find((p) => p.id === activeCollectionId);
+          const currency = resolveManualPositionCurrency(undefined, tickerRecord, portfolio!, state.config.baseCurrency);
+          const posResult = setManualPortfolioPosition(tickerRecord, activeCollectionId, { shares, avgCost, currency });
+          tickerRecord = posResult.ticker;
+        }
+
+        await tickerRepo.saveTicker(tickerRecord);
+        dispatch({ type: "UPDATE_TICKER", ticker: tickerRecord });
+        closeAddForm();
+      } catch {
+        setAddStatus("error");
+      }
+    })();
+  }, [addAvgCost, addShares, addSymbol, activeCollectionId, closeAddForm, dispatch, registry, state.config]);
+
   const handleKeyboard = useCallback((event: { name?: string; shift?: boolean }) => {
     if (!focused) return;
 
     const key = event.name;
     const isEnter = key === "enter" || key === "return";
+
+    // Inline add mode
+    if (addingTicker) {
+      if (key === "escape") {
+        if (addStep === "position") {
+          setAddStep("symbol");
+          return;
+        }
+        closeAddForm();
+        return;
+      }
+
+      if (addStep === "symbol") {
+        if (key === "down") {
+          setSearchSelectedIdx((prev) => Math.min(prev + 1, searchResults.length - 1));
+          return;
+        }
+        if (key === "up") {
+          setSearchSelectedIdx((prev) => Math.max(prev - 1, 0));
+          return;
+        }
+        if (isEnter) {
+          const selected = searchResults[searchSelectedIdx];
+          if (selected) selectSearchResult(selected);
+          return;
+        }
+        if (key === "backspace") {
+          setAddSymbol((prev) => {
+            const next = prev.slice(0, -1);
+            runSearch(next);
+            return next;
+          });
+          return;
+        }
+        if (key && key.length === 1 && /[a-zA-Z0-9.=^-]/.test(key)) {
+          setAddSymbol((prev) => {
+            const next = prev + key.toUpperCase();
+            runSearch(next);
+            return next;
+          });
+          return;
+        }
+        return;
+      }
+
+      if (addStep === "position") {
+        if (key === "down" || key === "up") {
+          setPositionField((prev) => prev === "shares" ? "avgCost" : "shares");
+          return;
+        }
+        if (isEnter) {
+          submitPosition();
+          return;
+        }
+        if (key === "backspace") {
+          if (positionField === "shares") setAddShares((prev) => prev.slice(0, -1));
+          else setAddAvgCost((prev) => prev.slice(0, -1));
+          return;
+        }
+        if (key && key.length === 1 && /[0-9.]/.test(key)) {
+          if (positionField === "shares") setAddShares((prev) => prev + key);
+          else setAddAvgCost((prev) => prev + key);
+          return;
+        }
+        return;
+      }
+      return;
+    }
 
     if (isEnter && event.shift) {
       const ticker = sortedTickers[safeSelectedIdx];
@@ -319,6 +542,18 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return;
     }
 
+    if (key === "a") {
+      setAddSymbol("");
+      setAddStep("symbol");
+      setAddShares("");
+      setAddAvgCost("");
+      setAddStatus("idle");
+      setSearchResults([]);
+      setAddingTicker(true);
+      dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
+      return;
+    }
+
     if (!isEnter) return;
 
     flushCursorSymbol(cursorSymbol);
@@ -328,15 +563,28 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       registry?.navigateTickerFn(ticker.metadata.ticker);
     }
   }, [
+    addingTicker,
+    addStep,
+    addSymbol,
+    activeCollectionId,
     cashDrawerExpanded,
+    closeAddForm,
     currentTabIdx,
+    dispatch,
     focused,
+    isPortfolioTab,
     paneId,
     paneSettings.hideTabs,
+    positionField,
     registry,
+    runSearch,
     safeSelectedIdx,
+    searchResults,
+    searchSelectedIdx,
+    selectSearchResult,
     setCashDrawerExpanded,
     setCursorSymbol,
+    submitPosition,
     flushCursorSymbol,
     handleCollectionSelect,
     showCashDrawer,
@@ -498,7 +746,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           </box>
         )}
         {!paneSettings.hideHeader && (
-          <box height={1}>
+          <box height={1} paddingX={1}>
             <PortfolioSummaryBar
               tickers={sortedTickers}
               financialsMap={financialsMap}
@@ -507,12 +755,93 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
               refreshingCount={state.refreshing.size}
               isPortfolio={isPortfolioTab}
               collectionId={activeCollectionId}
-              width={Math.max(0, width)}
+              width={Math.max(0, width - 2)}
               accountState={accountState}
             />
           </box>
         )}
       </box>
+
+      {addingTicker && addStep === "symbol" && (
+        <box flexDirection="column">
+          <box flexDirection="row" height={1} paddingX={1} backgroundColor={colors.selected}>
+            <text fg={colors.selectedText}>Add: </text>
+            <text fg={colors.selectedText} attributes={TextAttributes.BOLD}>
+              {addSymbol || "▏"}
+              {addSymbol ? "▏" : ""}
+            </text>
+            <box flexGrow={1} />
+            {addStatus === "searching" && <text fg={colors.textDim}>searching…</text>}
+            {addStatus === "error" && <text fg={colors.negative}>not found</text>}
+            <text fg={colors.textDim}> ↑/↓ select · Enter add · Esc cancel</text>
+          </box>
+          {searchResults.length > 0 && (
+            <box flexDirection="column" backgroundColor={colors.panel}>
+              {searchResults.map((r, i) => {
+                const isSel = i === searchSelectedIdx;
+                return (
+                  <box
+                    key={`${r.symbol}-${i}`}
+                    flexDirection="row"
+                    height={1}
+                    paddingX={2}
+                    backgroundColor={isSel ? colors.selected : undefined}
+                    onMouseDown={() => selectSearchResult(r)}
+                    onMouseMove={() => setSearchSelectedIdx(i)}
+                  >
+                    <box width={10}>
+                      <text fg={isSel ? colors.selectedText : colors.textBright} attributes={TextAttributes.BOLD}>
+                        {r.symbol}
+                      </text>
+                    </box>
+                    <box flexGrow={1} overflow="hidden">
+                      <text fg={isSel ? colors.selectedText : colors.text}>{r.name}</text>
+                    </box>
+                    {r.exchange && (
+                      <text fg={isSel ? colors.selectedText : colors.textDim}> {r.exchange}</text>
+                    )}
+                  </box>
+                );
+              })}
+            </box>
+          )}
+        </box>
+      )}
+      {addingTicker && addStep === "position" && (
+        <box flexDirection="column" paddingX={1} backgroundColor={colors.panel}>
+          <box height={1}>
+            <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+              {addSymbol}
+            </text>
+            <text fg={colors.textDim}> — enter position (optional)</text>
+          </box>
+          <box flexDirection="row" height={1}>
+            <box width={12}>
+              <text fg={colors.textDim}>Shares</text>
+            </box>
+            <box backgroundColor={positionField === "shares" ? colors.selected : undefined} paddingX={1}>
+              <text fg={positionField === "shares" ? colors.selectedText : colors.text}>
+                {addShares || (positionField === "shares" ? "▏" : "0")}
+                {positionField === "shares" && addShares ? "▏" : ""}
+              </text>
+            </box>
+          </box>
+          <box flexDirection="row" height={1}>
+            <box width={12}>
+              <text fg={colors.textDim}>Avg Cost</text>
+            </box>
+            <box backgroundColor={positionField === "avgCost" ? colors.selected : undefined} paddingX={1}>
+              <text fg={positionField === "avgCost" ? colors.selectedText : colors.text}>
+                {addAvgCost || (positionField === "avgCost" ? "▏" : "0")}
+                {positionField === "avgCost" && addAvgCost ? "▏" : ""}
+              </text>
+            </box>
+          </box>
+          <box height={1}>
+            <text fg={colors.textMuted}>↑/↓ field · Enter add · Esc back</text>
+          </box>
+        </box>
+      )}
 
       <PortfolioTickerTable
         columns={columns}
@@ -531,6 +860,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         financialsMap={financialsMap}
         columnContext={columnContext}
         flashSymbols={flashSymbols}
+        showSparklines={paneSettings.showSparklines ?? false}
       />
 
       {showCashDrawer && accountState && (

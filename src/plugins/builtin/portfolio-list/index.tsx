@@ -18,7 +18,7 @@ export const portfolioListPlugin: GloomPlugin = {
   panes: [
     {
       id: "portfolio-list",
-      name: "Portfolio",
+      name: "Portfolios",
       icon: "P",
       component: PortfolioListPane,
       defaultPosition: "left",
