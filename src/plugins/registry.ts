@@ -113,6 +113,12 @@ export class PluginRegistry implements PluginRuntimeAccess {
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
   navigateTickerFn: ((symbol: string) => void) = () => {};
+  pinTicker = (symbol: string, options?: { floating?: boolean; paneType?: string }) => {
+    this.pinTickerFn(symbol, options);
+  };
+  navigateTicker = (symbol: string) => {
+    this.navigateTickerFn(symbol);
+  };
 
   getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [] });
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
@@ -512,8 +518,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
       createPaneFromTemplate: (templateId, options) => this.createPaneFromTemplateFn(templateId, options),
       hidePane: (paneId) => this.hidePaneFn(paneId),
       focusPane: (paneId) => this.focusPaneFn(paneId),
-      pinTicker: (symbol, options) => this.pinTickerFn(symbol, options),
-      navigateTicker: (symbol) => this.navigateTickerFn(symbol),
+      pinTicker: this.pinTicker,
+      navigateTicker: this.navigateTicker,
       openPaneSettings: (paneId) => this.openPaneSettingsFn(paneId),
 
       on: <K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void) => {

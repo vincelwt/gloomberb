@@ -17,6 +17,8 @@ function makeRuntime(): PluginRuntimeAccess {
   const listeners = new Map<string, Set<() => void>>();
 
   return {
+    pinTicker() {},
+    navigateTicker() {},
     subscribeResumeState(pluginId, key, listener) {
       const storeKey = `${pluginId}:${key}`;
       if (!listeners.has(storeKey)) listeners.set(storeKey, new Set());

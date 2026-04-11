@@ -10,6 +10,8 @@ import {
 import { useAppState, usePaneInstanceId, type PaneRuntimeState } from "../state/app-context";
 
 export interface PluginRuntimeAccess {
+  pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  navigateTicker(symbol: string): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
   getResumeState<T = unknown>(pluginId: string, key: string, schemaVersion?: number): T | null;
   setResumeState(pluginId: string, key: string, value: unknown, schemaVersion?: number): void;
@@ -49,6 +51,14 @@ function usePluginRenderContext(): PluginRenderContextValue {
     throw new Error("Plugin runtime hooks must be used inside a plugin render context");
   }
   return context;
+}
+
+export function usePluginTickerActions() {
+  const { runtime } = usePluginRenderContext();
+  return {
+    pinTicker: runtime.pinTicker,
+    navigateTicker: runtime.navigateTicker,
+  };
 }
 
 export function getPluginPaneStateValue<T>(

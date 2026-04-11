@@ -179,7 +179,7 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
         hideTabs: false,
         lockedTabId: "overview",
         chartRangePreset: "5Y",
-        chartResolution: "1wk",
+        chartResolution: "auto",
       },
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
     },
