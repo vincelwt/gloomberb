@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { SQLITE_BUSY_TIMEOUT_MS, withSqliteBusyRetry } from "./sqlite-retry";
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS tickers (
@@ -52,8 +53,13 @@ export class SqliteDatabase {
 
   constructor(dbPath: string) {
     this.connection = new Database(dbPath);
-    this.connection.exec("PRAGMA journal_mode=WAL");
-    this.connection.exec(SCHEMA);
+    this.connection.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS}`);
+    withSqliteBusyRetry("enable sqlite wal", () => {
+      this.connection.exec("PRAGMA journal_mode=WAL");
+    });
+    withSqliteBusyRetry("initialize sqlite schema", () => {
+      this.connection.exec(SCHEMA);
+    });
   }
 
   close(): void {
