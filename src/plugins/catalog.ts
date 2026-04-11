@@ -12,6 +12,7 @@ import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/chat";
 import { helpPlugin } from "./builtin/help";
 import { comparisonChartPlugin } from "./builtin/comparison-chart";
+import { econCalendarPlugin } from "./builtin/econ";
 import { worldIndicesPlugin } from "./builtin/world-indices";
 import { marketMoversPlugin } from "./builtin/market-movers";
 import { debugPlugin } from "./builtin/debug";
@@ -42,6 +43,7 @@ export const builtinPlugins: GloomPlugin[] = [
   helpPlugin,
   comparisonChartPlugin,
   predictionMarketsPlugin,
+  econCalendarPlugin,
   worldIndicesPlugin,
   marketMoversPlugin,
   debugPlugin,
