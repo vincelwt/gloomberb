@@ -10,6 +10,7 @@ import {
 } from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
+import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -60,7 +61,9 @@ export function StatusBar() {
     if (!registry) return;
     const { width, height } = registry.getTermSizeFn();
     registry.updateLayoutFn(gridlockAllPanes(registry.getLayoutFn(), { x: 0, y: 0, width, height }));
-    registry.notify({ body: "Retiled all panes", type: "success" });
+    notifyGridlockComplete(registry.notify.bind(registry), () => {
+      dispatch({ type: "UNDO_LAYOUT" });
+    });
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
