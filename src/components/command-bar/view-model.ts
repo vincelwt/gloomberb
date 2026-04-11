@@ -9,17 +9,6 @@ export interface CommandBarModeInfo {
   hint: string;
 }
 
-export interface CommandBarModeStripEntry {
-  prefix: string;
-  label: string;
-  active: boolean;
-}
-
-export interface CommandBarFooterHints {
-  left: string;
-  right: string;
-}
-
 export interface CommandBarSection<T> {
   category: string;
   items: T[];
@@ -42,21 +31,15 @@ export interface CommandBarRowPresentation {
   trailing: string;
   selected: boolean;
   primaryMuted: boolean;
+  labelBold: boolean;
 }
 
-const MODE_STRIP_ENTRIES = [
-  { prefix: "T", label: "Search ticker", kind: "search" },
-  { prefix: "TH", label: "Change theme", kind: "themes" },
-  { prefix: "PL", label: "Toggle plugins", kind: "plugins" },
-  { prefix: "LAY", label: "Layout actions", kind: "layout" },
-  { prefix: "NP", label: "New pane", kind: "new-pane" },
-] as const;
 
 export function resolveCommandBarMode(query: string): CommandBarModeInfo {
   const match = matchPrefix(query);
 
   if (!query.trim()) {
-    return { kind: "default", badge: "BROWSE", hint: "Type a command, ticker, or prefix" };
+    return { kind: "default", badge: "BROWSE", hint: "Type a command, symbol, or prefix" };
   }
 
   if (!match) {
@@ -65,7 +48,7 @@ export function resolveCommandBarMode(query: string): CommandBarModeInfo {
 
   switch (match.command.id) {
     case "search-ticker":
-      return { kind: "search", badge: "SEARCH", hint: "Search Yahoo Finance and broker-backed symbols" };
+      return { kind: "search", badge: "SEARCH", hint: "Search for securities by symbol or name" };
     case "theme":
       return { kind: "themes", badge: "THEMES", hint: "Preview with arrows, Enter to save, Esc to revert" };
     case "plugins":
@@ -77,14 +60,6 @@ export function resolveCommandBarMode(query: string): CommandBarModeInfo {
     default:
       return { kind: "direct-command", badge: "COMMAND", hint: `Run ${match.command.label}` };
   }
-}
-
-export function getModeStrip(mode: CommandBarMode): CommandBarModeStripEntry[] {
-  return MODE_STRIP_ENTRIES.map((entry) => ({
-    prefix: entry.prefix,
-    label: entry.label,
-    active: entry.kind === mode,
-  }));
 }
 
 export function buildSections<T extends { category: string }>(items: T[]): Array<CommandBarSection<T>> {
@@ -106,28 +81,11 @@ export function buildSections<T extends { category: string }>(items: T[]): Array
     .map(({ section }) => section);
 }
 
-export function getFooterHints(mode: CommandBarMode, isNarrow: boolean): CommandBarFooterHints {
-  const moveAndSelect = isNarrow ? "up/down move  enter select" : "up/down move  enter select";
-  if (mode === "plugins") {
-    return {
-      left: isNarrow ? "space toggle" : `${moveAndSelect}  space toggle`,
-      right: "esc close",
-    };
-  }
-  if (mode === "layout") {
-    return { left: moveAndSelect, right: "esc close" };
-  }
-  if (mode === "new-pane") {
-    return { left: moveAndSelect, right: "esc close" };
-  }
-  return { left: moveAndSelect, right: "esc close" };
-}
-
 export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?: string): { label: string; detail: string } {
   switch (mode) {
     case "search":
       if (!searchQuery) {
-        return { label: "Type a ticker symbol", detail: "Search Yahoo Finance and connected brokers" };
+        return { label: "Enter a symbol or name", detail: "Search Yahoo Finance and connected brokers" };
       }
       return { label: `No matches for "${searchQuery}"`, detail: "Try a symbol, company name, or exchange variant" };
     case "plugins":
@@ -140,10 +98,16 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
       return { label: "No pane templates match", detail: query.trim() || "Plugin-defined pane templates will appear here" };
     default:
       if (query.trim()) {
-        return { label: `No matches for "${query.trim()}"`, detail: "Try a ticker, command name, or prefix" };
+        return { label: `No matches for "${query.trim()}"`, detail: "Try a symbol, command, or function code" };
       }
-      return { label: "No results yet", detail: "Recent tickers and suggested commands will appear here" };
+      return { label: "No results yet", detail: "Recent securities and commands will appear here" };
   }
+}
+
+const PREFIX_BADGE_WIDTH = 6;
+
+function isUppercasePrefix(s: string): boolean {
+  return s.length <= 8 && s === s.toUpperCase() && /^[A-Z]+$/.test(s);
 }
 
 export function getRowPresentation(item: CommandBarItemView, selected: boolean, showTrailing: boolean): CommandBarRowPresentation {
@@ -157,12 +121,17 @@ export function getRowPresentation(item: CommandBarItemView, selected: boolean, 
     else trailing = item.right || "";
   }
 
+  // Bold and pad uppercase prefix labels (Bloomberg function codes)
+  const labelBold = isUppercasePrefix(item.label);
+  const label = labelBold ? item.label.padEnd(PREFIX_BADGE_WIDTH) : item.label;
+
   return {
     glyph,
-    label: item.label,
+    label,
     trailing,
     selected,
     primaryMuted,
+    labelBold,
   };
 }
 

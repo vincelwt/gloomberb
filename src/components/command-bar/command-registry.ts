@@ -25,8 +25,8 @@ export const commands: Command[] = [
   {
     id: "search-ticker",
     prefix: "T",
-    label: "Search Ticker",
-    description: "Search Yahoo Finance for a ticker",
+    label: "Security Lookup",
+    description: "Search for a security by symbol or name",
     hasArg: true,
     argPlaceholder: "symbol or name",
     category: "Search",

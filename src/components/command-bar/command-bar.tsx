@@ -171,7 +171,7 @@ interface ListScreenState {
   results: ResultItem[];
   searching: boolean;
   emptyLabel: string;
-  emptyDetail: string;
+  emptyDetail?: string;
   footerLeft: string;
   footerRight: string;
 }
@@ -501,7 +501,7 @@ export function CommandBar({
       options.push({
         label: "Create Manual Portfolio",
         value: "manual",
-        description: "Add tickers and positions by hand",
+        description: "Add securities and positions by hand",
       });
     }
     options.push(...brokerChoices.map((choice) => ({
@@ -1982,8 +1982,11 @@ export function CommandBar({
     const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
     const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
     const displayLabel = getPaneTemplateDisplayLabel(template);
+    const argDisplay = template.shortcut?.argPlaceholder === "ticker" ? "security"
+      : template.shortcut?.argPlaceholder === "tickers" ? "securities"
+      : template.shortcut?.argPlaceholder;
     const shortcutLabel = template.shortcut
-      ? [template.shortcut.prefix, template.shortcut.argPlaceholder && `<${template.shortcut.argPlaceholder}>`]
+      ? [template.shortcut.prefix, argDisplay && `<${argDisplay}>`]
         .filter(Boolean)
         .join(" ")
       : null;
@@ -2001,13 +2004,14 @@ export function CommandBar({
       void openPaneTemplateDirect(template, options?.createOptions);
     };
 
+    const showPrefix = options?.showShortcut && template.shortcut?.prefix;
     return {
       id: `pane-template:${template.id}:${arg || ""}`,
-      label: displayLabel,
+      label: showPrefix ? template.shortcut!.prefix.toUpperCase() : displayLabel,
       detail: shortcutLabel ? `${template.description} · ${shortcutLabel}` : template.description,
       category: options?.category ?? (pluginName ? `${pluginName} Panes` : "New Panes"),
       kind: "action",
-      right: options?.showShortcut ? template.shortcut?.prefix : undefined,
+      right: showPrefix ? displayLabel : undefined,
       searchText: `${displayLabel} ${template.label} ${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
       action,
     };
@@ -2218,7 +2222,7 @@ export function CommandBar({
           confirmId: "reset-all-data",
           title: "Reset All Data",
           body: [
-            "This will permanently delete all portfolios, tickers, notes, broker credentials, and settings.",
+            "This will permanently delete all portfolios, securities, notes, broker credentials, and settings.",
             "Gloomberb will quit and show the setup wizard on next launch.",
           ],
           confirmLabel: "Reset Everything",
@@ -2637,7 +2641,7 @@ export function CommandBar({
             ? `${action === "add" ? "Target" : "Current"} "${preferredTargetName}"`
             : displayTicker
               ? `Choose a ${displayName.toLowerCase()}`
-              : "Choose a ticker",
+              : "Choose a security",
           category: command.category,
           kind: "command",
           right: command.prefix,
@@ -2984,7 +2988,7 @@ export function CommandBar({
       if (!match.arg && !shortcutItem) {
         items.push({
           id: "search-hint",
-          label: "Type a ticker symbol",
+          label: "Enter a symbol or name",
           detail: "Search Yahoo Finance and connected brokers",
           category: "Search",
           kind: "info",
@@ -3013,7 +3017,7 @@ export function CommandBar({
       }
       items.push(...recentTickers.map((ticker) => ({
         ...mapTickerSearchCandidateToResultItem(createLocalTickerSearchCandidates([ticker])[0]!),
-        category: "Tickers",
+        category: "Recent",
       })));
       items.push(...paneShortcutItems());
       for (const command of commands) {
@@ -3023,7 +3027,7 @@ export function CommandBar({
       items.push(...tickerActionItems());
       items.push(...pluginCommandItems());
     } else {
-      const tickerItems = localTickerSearchResultItems(undefined, { category: "Tickers" });
+      const tickerItems = localTickerSearchResultItems(undefined, { category: "Recent" });
       const commandItems = commands
         .map((command) => commandToItem(command))
         .filter((item): item is ResultItem => item !== null);
@@ -3206,7 +3210,7 @@ export function CommandBar({
             ? `Shortcut: ${rootShortcutIntent.label} for ${symbol} · Tab to accept`
             : `Shortcut: ${rootShortcutIntent.label} for ${symbol}`;
         }
-        return `Shortcut: ${rootShortcutIntent.label} · Enter to choose ticker`;
+        return `Shortcut: ${rootShortcutIntent.label} · Enter to choose security`;
       }
       if (argKind === "ticker-list") {
         if (rootShortcutIntent.argText) {
@@ -3216,7 +3220,7 @@ export function CommandBar({
         if (inferred) {
           return `Shortcut: ${rootShortcutIntent.label} · inferred ${inferred} · Tab to accept`;
         }
-        return `Shortcut: ${rootShortcutIntent.label} · Enter tickers to compare`;
+        return `Shortcut: ${rootShortcutIntent.label} · Enter securities to compare`;
       }
       return `Shortcut: ${rootShortcutIntent.label}`;
     }
@@ -3232,7 +3236,7 @@ export function CommandBar({
           ? `Shortcut: Open ${symbol} · Tab to accept`
           : `Shortcut: Open ${symbol}`;
       }
-      return "Shortcut: Search ticker";
+      return "Shortcut: Security Lookup";
     }
 
     if (isCollectionCommand(rootShortcutIntent.command.id)) {
@@ -3367,7 +3371,7 @@ export function CommandBar({
         }
         return {
           id: "search-ticker-route",
-          label: "Search Ticker",
+          label: "Security Lookup",
           detail: "Search Yahoo Finance and connected brokers",
           category: "Search",
           kind: "command",
@@ -3377,7 +3381,7 @@ export function CommandBar({
       return {
         id: `search-ticker:${match.arg}`,
         label: `Open ${match.arg.toUpperCase()}`,
-        detail: "Resolve the symbol exactly or open inline search",
+        detail: "Resolve the security exactly or open inline search",
         category: "Search",
         kind: "command",
         right: match.command.prefix,
@@ -3430,7 +3434,7 @@ export function CommandBar({
         label: displayTicker
           ? `${getCollectionCommandVerb(getCollectionCommandAction(commandId))} ${displayTicker}`
           : match.command.label,
-        detail: displayTicker ? "Resolve the ticker and apply it inline" : "Choose a ticker",
+        detail: displayTicker ? "Resolve the security and apply it inline" : "Choose a security",
         category: match.command.category,
         kind: "command",
         right: match.command.prefix,
@@ -3849,7 +3853,7 @@ export function CommandBar({
           const emptyState = getEmptyState("search", currentRoute.query, currentRoute.query);
           return {
             kind: "mode",
-            title: "Search Ticker",
+            title: "Security Lookup",
             subtitle: "Search Yahoo Finance and connected brokers.",
             query: currentRoute.query,
             selectedIdx: currentRoute.selectedIdx,
@@ -4739,7 +4743,7 @@ export function CommandBar({
   const paletteText = commandBarText();
   const paletteSubtleText = commandBarSubtleText();
   const resultsInnerWidth = Math.max(12, barWidth - contentPadding * 2);
-  const trailingWidth = Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
+  const trailingWidth = Math.max(12, Math.min(24, Math.floor(resultsInnerWidth * 0.35)));
   const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
   const queryDisplayWidth = Math.max(8, barWidth - contentPadding * 2);
   const visibleListState = routeListState && (routeListState.kind === "root" || routeListState.kind === "mode" || routeListState.kind === "picker" || routeListState.kind === "pane-settings")
@@ -4780,7 +4784,10 @@ export function CommandBar({
     if (visibleListState.searching && allRows.length === 0) {
       visibleRows = [{ kind: "spinner", id: "searching", label: "Searching…" }];
     } else if (allRows.length === 0) {
-      visibleRows = [{ kind: "message", id: "empty", label: visibleListState.emptyLabel }];
+      visibleRows = [
+        { kind: "message", id: "empty", label: visibleListState.emptyLabel },
+        ...(visibleListState.emptyDetail ? [{ kind: "message" as const, id: "empty-detail", label: visibleListState.emptyDetail, dim: true }] : []),
+      ];
     } else {
       const selectedRowIdx = allRows.findIndex((row) => row.kind === "item" && row.globalIdx === visibleListState.selectedIdx);
       const halfWindow = Math.floor(bodyHeight / 2);
@@ -4819,7 +4826,7 @@ export function CommandBar({
           if (row.kind === "message") {
             return (
               <box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
-                <text fg={paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</text>
+                <text fg={row.dim ? paletteSubtleText : paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</text>
               </box>
             );
           }
@@ -4836,7 +4843,7 @@ export function CommandBar({
           const isSelected = row.globalIdx === visibleListState.selectedIdx;
           const isHovered = row.globalIdx === visibleListState.hoveredIdx && !isSelected;
           const presentation = getRowPresentation(row.item, isSelected, trailingWidth > 0);
-          const label = truncateText(presentation.label, labelWidth);
+          const label = truncateText(presentation.label, labelWidth - 2);
           const trailing = truncateText(presentation.trailing, trailingWidth);
           return (
             <box
@@ -4863,8 +4870,14 @@ export function CommandBar({
                 activateListSelection({ item: row.item });
               }}
             >
-              <box width={labelWidth}>
-                <text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
+              <box width={2}>
+                <text fg={isSelected ? paletteSelectedText : paletteSubtleText}>{presentation.glyph} </text>
+              </box>
+              <box width={labelWidth - 2}>
+                <text
+                  fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}
+                  attributes={presentation.labelBold ? TextAttributes.BOLD : TextAttributes.NONE}
+                >
                   {label}
                 </text>
               </box>
@@ -5151,12 +5164,12 @@ export function CommandBar({
                   : currentRoute.screen === "plugins" ? "Manage Plugins"
                     : currentRoute.screen === "layout" ? "Layout Actions"
                       : currentRoute.screen === "new-pane" ? "New Pane"
-                        : "Search Ticker"
+                        : "Security Lookup"
                 : currentRoute?.kind === "picker" ? currentRoute.title
                   : currentRoute?.kind === "pane-settings" ? "Pane Settings"
                     : currentRoute?.kind === "workflow" ? currentRoute.title
                     : currentRoute?.kind === "confirm" ? currentRoute.title
-                        : "Commands"}
+                        : rootModeInfo.badge}
             </text>
           </box>
         </box>
@@ -5170,7 +5183,7 @@ export function CommandBar({
                     value={visibleListState.query}
                     onInput={setActiveListQuery}
                     onChange={setActiveListQuery}
-                    placeholder={visibleListState.kind === "root" ? "Search" : "Filter"}
+                    placeholder={visibleListState.kind === "root" ? "Symbol, command, or shortcut..." : "Filter"}
                     focused
                     width={queryDisplayWidth}
                     backgroundColor={paletteBg}
@@ -5216,7 +5229,29 @@ export function CommandBar({
           {showCustomMultiSelectPicker && renderMultiSelectBody()}
         </box>
 
-        <box flexGrow={1} />
+        {/* Preview line — selected item detail */}
+        {visibleListState && visibleListState.results.length > 0 && (() => {
+          const sel = visibleListState.results[visibleListState.selectedIdx];
+          return sel?.detail ? (
+            <box height={1} paddingX={contentPadding}>
+              <text fg={paletteSubtleText}>{truncateText(sel.detail, barWidth - contentPadding * 2)}</text>
+            </box>
+          ) : <box height={1} />;
+        })()}
+
+        {/* Footer hints */}
+        <box height={1} paddingX={contentPadding} flexDirection="row">
+          <box flexGrow={1}>
+            <text fg={paletteSubtleText}>
+              {visibleListState?.footerLeft || ""}
+            </text>
+          </box>
+          <box>
+            <text fg={paletteSubtleText}>
+              {visibleListState?.footerRight || ""}
+            </text>
+          </box>
+        </box>
       </box>
     </box>
   );

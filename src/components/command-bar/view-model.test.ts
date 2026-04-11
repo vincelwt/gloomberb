@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   buildSections,
   getEmptyState,
-  getFooterHints,
   getRowPresentation,
   rankTickerSearchItems,
   resolveCommandBarMode,
@@ -42,24 +41,9 @@ describe("command bar view model helpers", () => {
     expect(sections.map((section) => section.category)).toEqual(["Tickers", "Config", "Danger", "Debug"]);
   });
 
-  test("returns footer hints for plugin toggles", () => {
-    expect(getFooterHints("plugins", false)).toEqual({
-      left: "up/down move  enter select  space toggle",
-      right: "esc close",
-    });
-    expect(getFooterHints("layout", false)).toEqual({
-      left: "up/down move  enter select",
-      right: "esc close",
-    });
-    expect(getFooterHints("new-pane", false)).toEqual({
-      left: "up/down move  enter select",
-      right: "esc close",
-    });
-  });
-
   test("returns specific empty states", () => {
     expect(getEmptyState("search", "T ", "")).toEqual({
-      label: "Type a ticker symbol",
+      label: "Enter a symbol or name",
       detail: "Search Yahoo Finance and connected brokers",
     });
     expect(getEmptyState("search", "T zom", "zom")).toEqual({
@@ -68,7 +52,7 @@ describe("command bar view model helpers", () => {
     });
     expect(getEmptyState("default", "abc")).toEqual({
       label: 'No matches for "abc"',
-      detail: "Try a ticker, command name, or prefix",
+      detail: "Try a symbol, command, or function code",
     });
     expect(getEmptyState("layout", "LAY ")).toEqual({
       label: "No layout actions match",

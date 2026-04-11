@@ -349,7 +349,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     expect(calls).toHaveLength(1);
-    expect(testSetup.captureCharFrame()).not.toContain("Commands");
+    expect(testSetup.captureCharFrame()).not.toContain("BROWSE");
   });
 
   test("runs plugin command shortcuts from the root query", async () => {
@@ -409,7 +409,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Commands");
+    expect(frame).toContain("THEMES");
     expect(frame).toContain("TH");
     expect(frame).toContain("Themes");
     expect(frame).toMatchSnapshot();
@@ -496,7 +496,7 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("theme:green");
     expect(frame).not.toContain("theme:amber");
-    expect(frame).not.toContain("Commands");
+    expect(frame).not.toContain("BROWSE");
   });
 
   test("keeps typed prefixes in the root query until a result is activated", async () => {
@@ -508,9 +508,9 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Commands");
+    expect(frame).toContain("SEARCH");
     expect(frame).toContain("T");
-    expect(frame).toContain("Type a ticker symbol");
+    expect(frame).toContain("Enter a symbol or name");
     expect(frame).not.toContain("Back");
   });
 
@@ -521,7 +521,7 @@ describe("CommandBar", () => {
     });
 
     await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("Quote Monitor");
+    expect(testSetup.captureCharFrame()).toContain("QQ");
     expect(testSetup.captureCharFrame()).not.toContain("Back");
 
     await act(async () => {
@@ -531,7 +531,7 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Back");
-    expect(frame).toContain("Search Ticker");
+    expect(frame).toContain("Security Lookup");
   });
 
   test("QQ with an active ticker shows ghost completion and tab inserts the symbol", async () => {
@@ -605,7 +605,7 @@ describe("CommandBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Commands");
+    expect(frame).toContain("BROWSE");
     expect(frame).toContain("Search");
     expect(frame).not.toContain("T AMD");
   });
@@ -623,7 +623,7 @@ describe("CommandBar", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(testSetup.captureCharFrame()).not.toContain("Commands");
+    expect(testSetup.captureCharFrame()).not.toContain("BROWSE");
   });
 
   test("loads provider-backed ticker search results in the root command results", async () => {
@@ -1252,7 +1252,6 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     const initialFrame = testSetup.captureCharFrame();
     expect(initialFrame).toContain("Delete Layout");
-    expect(initialFrame).toContain("Danger");
 
     await act(async () => {
       testSetup!.mockInput.pressEnter();
@@ -1368,7 +1367,7 @@ describe("CommandBar", () => {
     });
     await testSetup.renderOnce();
 
-    expect(testSetup.captureCharFrame()).not.toContain("Commands");
+    expect(testSetup.captureCharFrame()).not.toContain("BROWSE");
   });
 
   const layoutModeConfig = (config: AppConfig): AppConfig => {
@@ -1440,7 +1439,6 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Chat");
-    expect(frame).not.toContain("float");
   });
 
   test("shows pane shortcuts in the default browse results", async () => {
@@ -1453,8 +1451,8 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Panes");
-    expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
+    expect(frame).toContain("Quote Mo"); // trailing column truncates long names
   });
 
   test("matches direct pane shortcut queries", async () => {
@@ -1466,8 +1464,8 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
+    expect(frame).toContain("Quote Mo"); // trailing column truncates long names
   });
 
   test("opens plugin command wizards inline inside the command bar", async () => {
@@ -1690,7 +1688,7 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Comparison Chart");
-    expect(frame).toContain("Tickers");
+    expect(frame).toContain("Securities");
     expect(frame).toContain("AAPL,");
   });
 
@@ -2141,7 +2139,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Quote Monitor");
+    expect(frame).toContain("QQ");
     expect(frame).not.toContain("Broken Pane");
   });
 
@@ -2167,8 +2165,8 @@ describe("CommandBar", () => {
     const rows = frame.split("\n");
     const savedHeadings = frame.split("\n").filter((line) => line.trim() === "Saved");
     const otherListingsHeadings = frame.split("\n").filter((line) => line.trim() === "Other Listings");
-    const aaplRow = rows.findIndex((line) => line.trimStart().startsWith("AAPL") && line.includes("NASDAQ"));
-    const appRow = rows.findIndex((line) => line.trimStart().startsWith("APP") && line.includes("NASDAQ"));
+    const aaplRow = rows.findIndex((line) => line.includes("AAPL") && line.includes("NASDAQ"));
+    const appRow = rows.findIndex((line) => /\bAPP\b/.test(line) && line.includes("NASDAQ") && !line.includes("AAPL"));
     expect(savedHeadings).toHaveLength(1);
     expect(otherListingsHeadings).toHaveLength(1);
     expect(aaplRow).toBeGreaterThanOrEqual(0);

@@ -278,7 +278,7 @@ export function buildGeneratedTemplateField(
     return {
       field: {
         id: "ticker",
-        label: "Ticker",
+        label: "Security",
         type: "text",
         required: true,
         placeholder: activeTicker || "MSFT",
@@ -290,7 +290,7 @@ export function buildGeneratedTemplateField(
     return {
       field: {
         id: "tickers",
-        label: "Tickers",
+        label: "Securities",
         type: "text",
         required: true,
         placeholder: "AAPL, MSFT, NVDA",

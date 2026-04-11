@@ -154,7 +154,7 @@ describe("command-bar helpers", () => {
     expect(buildGeneratedTemplateField(tickerTemplate, "AAPL")).toEqual({
       field: {
         id: "ticker",
-        label: "Ticker",
+        label: "Security",
         type: "text",
         required: true,
         placeholder: "AAPL",
@@ -168,7 +168,7 @@ describe("command-bar helpers", () => {
     }, null)).toEqual({
       field: {
         id: "tickers",
-        label: "Tickers",
+        label: "Securities",
         type: "text",
         required: true,
         placeholder: "AAPL, MSFT, NVDA",
