@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { computeSharpeRatio, computeBeta, computeSectorAllocation } from "./metrics";
+import {
+  computeBeta,
+  computeDatedBeta,
+  computeDatedReturns,
+  computeSectorAllocation,
+  computeSharpeRatio,
+  computeWeightedPortfolioReturns,
+  type DatedReturn,
+} from "./metrics";
+
+function datedReturns(values: number[], startDay = 1): DatedReturn[] {
+  return values.map((value, index) => ({
+    dateKey: `2024-01-${String(startDay + index).padStart(2, "0")}`,
+    value,
+  }));
+}
 
 describe("computeSharpeRatio", () => {
   test("computes positive Sharpe for good returns", () => {
@@ -27,6 +42,53 @@ describe("computeBeta", () => {
 
   test("returns null for insufficient data", () => {
     expect(computeBeta([0.01], [0.01])).toBeNull();
+  });
+
+  test("aligns dated returns before computing beta", () => {
+    const market = datedReturns([
+      -0.010, 0.015, 0.004, -0.006, 0.011,
+      0.008, -0.012, 0.009, 0.013, -0.007,
+      0.005, 0.010,
+    ], 2);
+    const asset = [
+      { dateKey: "2024-01-01", value: 0.25 },
+      ...market.map((point) => ({ dateKey: point.dateKey, value: point.value * 2 })),
+    ];
+
+    expect(computeDatedBeta(asset, market)).toBeCloseTo(2, 5);
+  });
+
+  test("weights portfolio returns by holding value", () => {
+    const market = datedReturns([
+      -0.010, 0.015, 0.004, -0.006, 0.011,
+      0.008, -0.012, 0.009, 0.013, -0.007,
+      0.005, 0.010,
+    ]);
+    const portfolio = computeWeightedPortfolioReturns([
+      {
+        weight: 80,
+        returns: market.map((point) => ({ dateKey: point.dateKey, value: point.value * 2 })),
+      },
+      {
+        weight: 20,
+        returns: market.map((point) => ({ dateKey: point.dateKey, value: 0 })),
+      },
+    ]);
+
+    expect(computeDatedBeta(portfolio, market)).toBeCloseTo(1.6, 5);
+  });
+
+  test("computes dated returns from closing prices", () => {
+    const returns = computeDatedReturns([
+      { date: new Date("2024-01-01T00:00:00Z"), close: 100 },
+      { date: new Date("2024-01-02T00:00:00Z"), close: 110 },
+      { date: new Date("2024-01-03T00:00:00Z"), close: 99 },
+    ]);
+
+    expect(returns).toEqual([
+      { dateKey: "2024-01-02", value: 0.1 },
+      { dateKey: "2024-01-03", value: -0.1 },
+    ]);
   });
 });
 
