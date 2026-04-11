@@ -19,6 +19,7 @@ import {
   resolveFloating,
   simulateDrop,
   swapPanes,
+  type DockDividerLayout,
   type DockLeafLayout,
   type DropTarget,
   type FloatingRect,
