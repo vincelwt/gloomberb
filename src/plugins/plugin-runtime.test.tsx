@@ -59,6 +59,8 @@ describe("plugin runtime hooks", () => {
     const listeners = new Map<string, Set<() => void>>();
 
     const runtime: PluginRuntimeAccess = {
+      pinTicker() {},
+      navigateTicker() {},
       subscribeResumeState(pluginId, key, listener) {
         const listenerKey = `${pluginId}:${key}`;
         if (!listeners.has(listenerKey)) listeners.set(listenerKey, new Set());

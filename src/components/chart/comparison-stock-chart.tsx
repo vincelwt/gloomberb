@@ -17,6 +17,7 @@ import {
   projectComparisonChartData,
 } from "./comparison-chart-data";
 import { usePersistChartControlSelection } from "./chart-pane-settings";
+import { applyBufferedPanExpansion, getMouseScrollStepCount, resolveHorizontalScrollPanDirection } from "./chart-scroll";
 import {
   buildVisibleDateWindow,
   clearActivePreset,
@@ -26,6 +27,7 @@ import {
   resolveChartBodyState,
   resolvePresetSelection,
   resolveResolutionSelection,
+  resolveStoredChartSelection,
 } from "./chart-controller";
 import {
   buildChartResolutionSupportMap,
@@ -44,7 +46,7 @@ import {
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "./chart-resolution";
-import { RIGHT_EDGE_ANCHOR_RATIO } from "./chart-viewport";
+import { RIGHT_EDGE_ANCHOR_RATIO, resolveAnchoredChartZoom } from "./chart-viewport";
 import {
   buildComparisonChartScene,
   formatComparisonAxisValue,
@@ -558,6 +560,7 @@ function ComparisonStockChartView({
     selectedSymbol: symbols[0] ?? null,
   });
   const [resolutionSupport, setResolutionSupport] = useState<ChartResolutionSupport[] | null>(null);
+  const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -624,16 +627,20 @@ function ComparisonStockChartView({
 
   useEffect(() => {
     pendingCanonicalResetRef.current += 1;
-    setViewState((current) => resolvePresetSelection(
-      {
-        ...current,
-        resolution: storedResolution,
-      },
-      storedRangePreset,
-      storedResolution === "auto" ? null : getSupportMaxRange(resolutionSupport ?? [], storedResolution),
+    setViewState((current) => (
+      storedResolution === "auto"
+        ? resolveStoredChartSelection(current, storedRangePreset, storedResolution, supportMap)
+        : resolvePresetSelection(
+          {
+            ...current,
+            resolution: storedResolution,
+          },
+          storedRangePreset,
+          getSupportMaxRange(supportMap, storedResolution),
+        )
     ));
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-  }, [resolutionSupport, storedRangePreset, storedResolution]);
+  }, [storedRangePreset, storedResolution, supportMap]);
 
   const commitDisplayCursor = (next: DisplayCursorState) => {
     displayCursorRef.current = next;
@@ -753,7 +760,11 @@ function ComparisonStockChartView({
       }
     })).then((supportSets) => {
       if (!cancelled) {
-        setResolutionSupport(supportSets.some((support) => support === null) ? null : intersectChartResolutionSupport(supportSets));
+        setResolutionSupport(
+          supportSets.some((support) => support === null)
+            ? null
+            : intersectChartResolutionSupport(supportSets.filter((support): support is ChartResolutionSupport[] => support !== null)),
+        );
       }
     }).catch(() => {
       if (!cancelled) {
@@ -766,7 +777,6 @@ function ComparisonStockChartView({
     };
   }, [capabilityKey, symbolSources]);
 
-  const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
   const effectiveResolutionSupport = useMemo<ChartResolutionSupport[]>(() => (
     resolutionSupport ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS.map((resolution) => ({ resolution, maxRange: "ALL" as const }))
   ), [resolutionSupport]);
@@ -952,12 +962,7 @@ function ComparisonStockChartView({
       : clampTimeRangeToMaxRange(nextCandidate, supportMap.get(effectiveResolution) ?? viewState.bufferRange);
     if (nextBufferRange === viewState.bufferRange) return false;
     pendingExpansionRef.current = action;
-    setViewState((current) => ({
-      ...clearActivePreset(current),
-      bufferRange: nextBufferRange,
-      cursorX: null,
-      cursorY: null,
-    }));
+    setViewState((current) => applyBufferedPanExpansion(current, nextBufferRange));
     return true;
   };
 
@@ -1285,6 +1290,7 @@ function ComparisonStockChartView({
 
     switch (event.name) {
       case "=":
+      case "+":
         setViewState((current) => applyComparisonZoomAroundAnchor(
           clearActivePreset(current),
           current.zoomLevel * 1.5,
@@ -1293,6 +1299,7 @@ function ComparisonStockChartView({
         ));
         return;
       case "-":
+      case "_":
         if (viewState.zoomLevel <= 1.001 && expandBufferRange({
           kind: "zoom-out",
           targetVisibleCount: Math.round(seriesDates.length * 1.5),
@@ -1490,9 +1497,11 @@ function ComparisonStockChartView({
   const handlePlotScroll = (event: ChartMouseEvent) => {
     const direction = event.scroll?.direction;
     if (!direction) return;
+    const scrollSteps = getMouseScrollStepCount(event.scroll?.delta);
+    const scrollPanCells = Math.max(Math.round(chartWidth * 0.08), 1) * scrollSteps;
+    const panDirection = resolveHorizontalScrollPanDirection(direction);
 
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
-    const anchorRatio = localPointer ? localPointer.cellX / Math.max(chartWidth - 1, 1) : 0.5;
 
     if (localPointer) {
       const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
@@ -1510,65 +1519,21 @@ function ComparisonStockChartView({
       commitSelectionCursor(selectionCursor);
     }
 
-    if (event.modifiers.shift && (direction === "up" || direction === "down")) {
-      const shiftDirection = direction === "up" ? 1 : -1;
-      const targetPanOffset = viewState.panOffset + shiftDirection * Math.max(Math.round(chartWidth * 0.08), 1);
-      if (shiftDirection > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
-        kind: "pan-left",
-        targetPanOffset,
-      })) {
-        return;
-      }
-      const nextPan = clamp(
-        targetPanOffset,
-        0,
-        getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth),
-      );
-      setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
+    const targetPanOffset = viewState.panOffset + panDirection * scrollPanCells;
+    if (panDirection > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+      kind: "pan-left",
+      targetPanOffset,
+    })) {
       return;
     }
-
-    switch (direction) {
-      case "up":
-        setViewState((current) => applyComparisonZoomAroundAnchor(clearActivePreset(current), current.zoomLevel * 1.18, anchorRatio, series));
-        return;
-      case "down":
-        if (viewState.zoomLevel <= 1.001 && expandBufferRange({
-          kind: "zoom-out",
-          targetVisibleCount: Math.round(seriesDates.length * 1.18),
-          anchorRatio,
-        })) {
-          return;
-        }
-        setViewState((current) => applyComparisonZoomAroundAnchor(clearActivePreset(current), current.zoomLevel / 1.18, anchorRatio, series));
-        return;
-      case "left":
-        if (viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
-          kind: "pan-left",
-          targetPanOffset: viewState.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
-        })) {
-          return;
-        }
-        setViewState((current) => ({
-          ...clearActivePreset(current),
-          panOffset: clamp(
-            current.panOffset + Math.max(Math.round(chartWidth * 0.08), 1),
-            0,
-            getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
-          ),
-        }));
-        return;
-      case "right":
-        setViewState((current) => ({
-          ...clearActivePreset(current),
-          panOffset: clamp(
-            current.panOffset - Math.max(Math.round(chartWidth * 0.08), 1),
-            0,
-            getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
-          ),
-        }));
-        return;
-    }
+    setViewState((current) => ({
+      ...clearActivePreset(current),
+      panOffset: clamp(
+        current.panOffset + panDirection * scrollPanCells,
+        0,
+        getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
+      ),
+    }));
   };
 
   if (symbols.length === 0) {
@@ -1606,7 +1571,7 @@ function ComparisonStockChartView({
     ? blankPlotLines
     : result.lines;
   const plotContent = plotLines.map((line, index) => (
-    <text key={index} content={line} />
+    <text key={index} content={line as unknown as string} />
   ));
 
   const plotBox = (
@@ -1719,9 +1684,6 @@ function ComparisonStockChartView({
               {getChartResolutionLabel(resolution)}
             </text>
           ))}
-          {viewState.zoomLevel !== 1 && (
-            <text fg={colors.textDim}>zoom:{viewState.zoomLevel.toFixed(1)}x</text>
-          )}
           {isUpdating && (
             <text fg={colors.textDim}>updating</text>
           )}
@@ -1771,7 +1733,11 @@ function ComparisonStockChartView({
                     : null;
                   const currency = item?.currency ?? "USD";
                   const summary = latestRaw !== null && latestChangePct !== null
-                    ? `${symbol} ${formatCurrency(latestRaw, currency)} ${formatPercentRaw(latestChangePct)}`
+                    ? `${symbol} ${formatMarketPriceWithCurrency(latestRaw, currency, {
+                      minimumFractionDigits: 2,
+                      precisionOffset: 1,
+                      priceRange: visiblePriceRange,
+                    })} ${formatPercentRaw(latestChangePct)}`
                     : `${symbol} waiting`;
 
                   return (
@@ -1799,7 +1765,7 @@ function ComparisonStockChartView({
 
       <box height={1}>
         <text fg={colors.textMuted}>
-          mouse hover inspect  drag pan  wheel zoom  ⇧wheel pan  h/l cursor  arrows legend  Enter open  1-7 presets  r res  m mode  0 reset
+          mouse hover inspect  drag pan  wheel pan  h/l cursor  arrows legend  Enter open  1-7 presets  r res  m mode  0 reset
         </text>
       </box>
     </box>
