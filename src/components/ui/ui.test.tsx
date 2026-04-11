@@ -69,6 +69,49 @@ function DataTableActivationHarness() {
   );
 }
 
+type SectionTableRow =
+  | { kind: "header"; id: string; label: string }
+  | { kind: "row"; id: string; name: string };
+
+function DataTableSectionHarness() {
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const rows: SectionTableRow[] = [
+    { kind: "header", id: "macro", label: "Macro Releases" },
+    { kind: "row", id: "cpi", name: "CPI" },
+  ];
+
+  return (
+    <DataTable
+      columns={[{ id: "name", label: "NAME", width: 16, align: "left" }]}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      syncHeaderScroll={() => {}}
+      onBodyScrollActivity={() => {}}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      getItemKey={(row) => row.id}
+      isSelected={(row) => row.kind === "row" && row.id === selectedId}
+      onSelect={(row) => {
+        if (row.kind !== "row") return;
+        selectedTableRow = row.id;
+        setSelectedId(row.id);
+      }}
+      renderSectionHeader={(row) => (
+        row.kind === "header" ? { text: row.label } : null
+      )}
+      renderCell={(row) => ({ text: row.kind === "row" ? row.name : "" })}
+      emptyStateTitle="No rows."
+    />
+  );
+}
+
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
@@ -224,5 +267,40 @@ describe("shared UI kit", () => {
     });
 
     expect(activatedTableRow).toBe("alpha");
+  });
+
+  test("renders data table section headers as non-selectable rows", async () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="portfolio-list:main">
+          <DataTableSectionHarness />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 32, height: 6 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Macro Releases");
+    expect(frame).toContain("CPI");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
+    expect(selectedTableRow).toBeNull();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 2);
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(selectedTableRow).toBe("cpi");
+    expect(frame).toContain("CPI");
   });
 });
