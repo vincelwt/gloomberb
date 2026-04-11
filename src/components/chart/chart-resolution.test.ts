@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CHART_RESOLUTION_STEP_MS,
   clampTimeRangeForResolution,
   getActiveRangePreset,
+  getBestSupportedResolutionForDateWindow,
+  getBestSupportedResolutionForVisibleWindow,
   getPresetResolution,
   intersectChartResolutions,
   isRangePresetSupported,
@@ -52,5 +55,69 @@ describe("chart-resolution", () => {
     expect(normalizeChartResolution("1h")).toBe("1h");
     expect(normalizeChartResolution("bogus", "1d")).toBe("1d");
     expect(sortChartResolutions(["1wk", "auto", "15m", "1d"])).toEqual(["auto", "15m", "1d", "1wk"]);
+  });
+
+  test("picks the best supported resolution for the current visible date window", () => {
+    const support = [
+      { resolution: "1m", maxRange: "1D" },
+      { resolution: "5m", maxRange: "1W" },
+      { resolution: "15m", maxRange: "1M" },
+      { resolution: "1h", maxRange: "3M" },
+      { resolution: "1d", maxRange: "5Y" },
+      { resolution: "1wk", maxRange: "ALL" },
+    ] as const;
+
+    expect(getBestSupportedResolutionForDateWindow({
+      start: new Date("2026-01-08T10:00:00Z"),
+      end: new Date("2026-01-08T16:00:00Z"),
+    }, support)).toBe("1m");
+
+    expect(getBestSupportedResolutionForDateWindow({
+      start: new Date("2026-01-01T00:00:00Z"),
+      end: new Date("2026-01-08T00:00:00Z"),
+    }, support)).toBe("5m");
+
+    expect(getBestSupportedResolutionForDateWindow({
+      start: new Date("2021-01-01T00:00:00Z"),
+      end: new Date("2026-01-01T00:00:00Z"),
+    }, support)).toBe("1wk");
+  });
+
+  test("picks a denser supported resolution as the visible window narrows", () => {
+    const support = [
+      { resolution: "1m", maxRange: "1D" },
+      { resolution: "5m", maxRange: "1W" },
+      { resolution: "15m", maxRange: "1M" },
+      { resolution: "1h", maxRange: "3M" },
+      { resolution: "1d", maxRange: "5Y" },
+      { resolution: "1wk", maxRange: "ALL" },
+    ] as const;
+
+    expect(getBestSupportedResolutionForVisibleWindow({
+      start: new Date("2021-01-01T00:00:00Z"),
+      end: new Date("2026-01-01T00:00:00Z"),
+    }, support, 100)).toBe("1wk");
+
+    expect(getBestSupportedResolutionForVisibleWindow({
+      start: new Date("2025-01-01T00:00:00Z"),
+      end: new Date("2026-01-01T00:00:00Z"),
+    }, support, 100)).toBe("1d");
+
+    expect(getBestSupportedResolutionForVisibleWindow({
+      start: new Date("2025-12-01T00:00:00Z"),
+      end: new Date("2026-01-01T00:00:00Z"),
+    }, support, 100)).toBe("1h");
+
+    expect(getBestSupportedResolutionForVisibleWindow({
+      start: new Date("2025-12-25T00:00:00Z"),
+      end: new Date("2026-01-01T00:00:00Z"),
+    }, support, 100)).toBe("15m");
+
+    expect(getBestSupportedResolutionForVisibleWindow({
+      start: new Date("2026-01-01T00:00:00Z"),
+      end: new Date("2026-01-02T00:00:00Z"),
+    }, support, 100)).toBe("1m");
+
+    expect(CHART_RESOLUTION_STEP_MS["1h"]).toBe(60 * 60_000);
   });
 });
