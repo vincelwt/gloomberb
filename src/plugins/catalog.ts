@@ -16,6 +16,7 @@ import { debugPlugin } from "./builtin/debug";
 import { layoutManagerPlugin } from "./builtin/layout-manager";
 import { yahooPlugin } from "./builtin/yahoo";
 import { predictionMarketsPlugin } from "./prediction-markets";
+import { alertsPlugin } from "./builtin/alerts";
 
 export interface PluginCatalogEntry {
   plugin: GloomPlugin;
@@ -40,6 +41,7 @@ export const builtinPlugins: GloomPlugin[] = [
   helpPlugin,
   comparisonChartPlugin,
   predictionMarketsPlugin,
+  alertsPlugin,
   debugPlugin,
 ];
 

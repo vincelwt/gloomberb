@@ -80,6 +80,7 @@ export function buildDesktopNotificationCommand(
     const script = [
       `display notification ${escapeAppleScriptString(body)} with title ${escapeAppleScriptString(title)}`,
       subtitle ? `subtitle ${escapeAppleScriptString(subtitle)}` : "",
+      notification.sound ? `sound name ${escapeAppleScriptString(notification.sound)}` : "",
     ].filter(Boolean).join(" ");
     return {
       command: "osascript",
@@ -137,6 +138,47 @@ function defaultDesktopNotificationRunner(
   child.unref();
 }
 
+/**
+ * Build a platform-specific command to play a notification sound.
+ * macOS: afplay with system sound files
+ * Linux: paplay, aplay, or pw-play with freedesktop sound files
+ * Windows: PowerShell with System.Media.SoundPlayer
+ */
+export function buildSoundCommand(
+  soundName: string,
+  platform: NodeJS.Platform = process.platform,
+): DesktopNotificationCommand | null {
+  if (platform === "darwin") {
+    // macOS stores system sounds in /System/Library/Sounds/
+    return {
+      command: "afplay",
+      args: [`/System/Library/Sounds/${soundName}.aiff`],
+    };
+  }
+
+  if (platform === "linux") {
+    // freedesktop sound theme — try common alert sounds
+    const soundFile = soundName === "Glass" ? "dialog-information"
+      : soundName === "Ping" ? "message-new-instant"
+      : soundName === "Hero" ? "dialog-warning"
+      : "bell";
+    // paplay is the most common (PulseAudio), fall back to pw-play (PipeWire)
+    return {
+      command: "paplay",
+      args: [`/usr/share/sounds/freedesktop/stereo/${soundFile}.oga`],
+    };
+  }
+
+  if (platform === "win32") {
+    return {
+      command: "powershell.exe",
+      args: ["-NoProfile", "-NonInteractive", "-Command", "[System.Media.SystemSounds]::Beep.Play()"],
+    };
+  }
+
+  return null;
+}
+
 export function createDesktopNotifier(
   options: {
     platform?: NodeJS.Platform;
@@ -150,26 +192,36 @@ export function createDesktopNotifier(
   return {
     notify(notification) {
       const desktopCommand = buildDesktopNotificationCommand(notification, platform);
-      if (!desktopCommand) {
-        return;
+      if (desktopCommand && disabledCommand !== desktopCommand.command) {
+        runner.run(desktopCommand.command, desktopCommand.args, {
+          onError: (error) => {
+            if (error.code === "ENOENT") {
+              disabledCommand = desktopCommand.command;
+            }
+            notificationLog.warn("desktop notification failed", {
+              command: desktopCommand.command,
+              code: error.code,
+              message: error.message,
+            });
+          },
+        });
       }
 
-      if (disabledCommand === desktopCommand.command) {
-        return;
-      }
-
-      runner.run(desktopCommand.command, desktopCommand.args, {
-        onError: (error) => {
-          if (error.code === "ENOENT") {
-            disabledCommand = desktopCommand.command;
-          }
-          notificationLog.warn("desktop notification failed", {
-            command: desktopCommand.command,
-            code: error.code,
-            message: error.message,
+      // Play sound independently from the notification display
+      if (notification.sound) {
+        const soundCommand = buildSoundCommand(notification.sound, platform);
+        if (soundCommand) {
+          runner.run(soundCommand.command, soundCommand.args, {
+            onError: (error) => {
+              notificationLog.warn("sound playback failed", {
+                command: soundCommand.command,
+                code: error.code,
+                message: error.message,
+              });
+            },
           });
-        },
-      });
+        }
+      }
     },
   };
 }
