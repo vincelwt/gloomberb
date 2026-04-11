@@ -6,6 +6,7 @@ import { createDefaultConfig } from "../types/config";
 import type {
   CachedFinancialsTarget,
   DataProvider,
+  EarningsEvent,
   MarketDataRequestContext,
   NewsItem,
   QuoteSubscriptionTarget,
@@ -1631,5 +1632,15 @@ export class ProviderRouter implements DataProvider {
         unsubscribe();
       }
     };
+  }
+
+  async getEarningsCalendar(symbols: string[], context?: MarketDataRequestContext): Promise<EarningsEvent[]> {
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getEarningsCalendar) continue;
+      try {
+        return await provider.getEarningsCalendar(symbols, context);
+      } catch { continue; }
+    }
+    return [];
   }
 }
