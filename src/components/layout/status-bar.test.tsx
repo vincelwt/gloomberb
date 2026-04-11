@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { AppContext, createInitialState } from "../../state/app-context";
-import { cloneLayout, createDefaultConfig } from "../../types/config";
+import { cloneLayout, createDefaultConfig, type LayoutConfig } from "../../types/config";
+import type { AppNotificationRequest } from "../../types/plugin";
 import { StatusBar } from "./status-bar";
 import { setSharedRegistryForTests } from "../../plugins/registry";
 
@@ -89,13 +90,13 @@ describe("StatusBar", () => {
 
     const actions: Array<{ type: string }> = [];
     let updatedLayout = null as ReturnType<typeof cloneLayout> | null;
-    const toasts: string[] = [];
+    const notifications: AppNotificationRequest[] = [];
 
     setSharedRegistryForTests({
       getLayoutFn: () => state.config.layout,
       getTermSizeFn: () => ({ width: 120, height: 40 }),
-      updateLayoutFn: (layout) => { updatedLayout = layout; },
-      notify: ({ body }: { body: string }) => { toasts.push(body); },
+      updateLayoutFn: (layout: LayoutConfig) => { updatedLayout = layout; },
+      notify: (notification: AppNotificationRequest) => { notifications.push(notification); },
       Slot: () => null,
     } as any);
 
@@ -119,8 +120,16 @@ describe("StatusBar", () => {
     await testSetup.renderOnce();
 
     expect(updatedLayout?.floating).toHaveLength(0);
-    expect(toasts).toEqual(["Retiled all panes"]);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({
+      body: "Retiled all panes",
+      type: "success",
+      action: { label: "Revert" },
+    });
     expect(actions).toContainEqual({ type: "DISMISS_GRIDLOCK_TIP" });
+
+    notifications[0]!.action!.onClick();
+    expect(actions).toContainEqual({ type: "UNDO_LAYOUT" });
   });
 
   test("auto-dismisses the gridlock tip after its timeout", async () => {
@@ -136,7 +145,7 @@ describe("StatusBar", () => {
     const originalSetTimeout = globalThis.setTimeout;
     const originalClearTimeout = globalThis.clearTimeout;
 
-    globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
+    globalThis.setTimeout = ((callback: Parameters<typeof setTimeout>[0], delay?: number) => {
       timers.push({ callback: typeof callback === "function" ? callback : null, delay });
       return 1 as unknown as ReturnType<typeof setTimeout>;
     }) as typeof setTimeout;
