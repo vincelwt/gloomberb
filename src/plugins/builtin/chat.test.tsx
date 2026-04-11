@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { AppContext, createInitialState } from "../../state/app-context";
 import { colors } from "../../theme/colors";
@@ -902,6 +902,65 @@ describe("ChatContent", () => {
     expect(frameAfterUpdate).toContain("7 messages");
     expect(frameAfterUpdate).toContain("message 7");
     expect(frameAfterUpdate).not.toContain("message 1");
+  });
+
+  test("keeps the bottom reachable after narrowing the chat pane", async () => {
+    const controller = createController({
+      messages: [
+        {
+          ...makeMessage(1),
+          content: "A wide pane can fit this update in fewer rows, but a narrow pane needs several wrapped rows before the final message.",
+        },
+        {
+          ...makeMessage(2),
+          content: "Another wrapped message takes up more transcript height after the pane gets smaller.",
+        },
+        {
+          ...makeMessage(3),
+          user: { id: "u3", username: "vince", displayName: "Vince" },
+          content: "newest message stays reachable after shrink",
+        },
+      ],
+    });
+
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat-resizable"));
+    let resize: ((size: { width: number; height: number }) => void) | undefined;
+
+    function ResizableChatHarness() {
+      const [size, setSize] = useState({ width: 78, height: 12 });
+      resize = setSize;
+
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <ChatContent
+            controller={controller}
+            width={size.width}
+            height={size.height}
+            focused
+          />
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<ResizableChatHarness />, {
+        width: 78,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await act(async () => {
+      resize?.({ width: 42, height: 9 });
+      testSetup!.resize(42, 9);
+    });
+    await flushFrame();
+
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("vince");
+    expect(frame).toContain("newest message stays");
+    expect(frame).toContain("reachable after shrink");
   });
 
   test("renders ticker badges and opens a floating detail pane on click", async () => {
