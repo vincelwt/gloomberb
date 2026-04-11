@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RIGHT_EDGE_ANCHOR_RATIO, resolveAnchoredChartZoom } from "./chart-viewport";
+import { getVisiblePointCount, RIGHT_EDGE_ANCHOR_RATIO, resolveAnchoredChartZoom } from "./chart-viewport";
 
 describe("resolveAnchoredChartZoom", () => {
   test("keeps keyboard zoom pinned to the latest data when anchored to the right edge", () => {
@@ -21,5 +21,9 @@ describe("resolveAnchoredChartZoom", () => {
       zoomLevel: 2,
       panOffset: 63,
     });
+  });
+
+  test("allows zooming down to a two-point viewport", () => {
+    expect(getVisiblePointCount(433, 1000)).toBe(2);
   });
 });

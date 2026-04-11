@@ -247,6 +247,8 @@ describe("comparisonChartPlugin", () => {
     expect(frame).toContain("1D");
     expect(frame).toContain("view:");
     expect(frame).toContain("arrows legend");
+    expect(frame).toContain("wheel pan");
+    expect(frame).not.toContain("wheel zoom");
     expect(frame).not.toContain("side by side");
   });
 

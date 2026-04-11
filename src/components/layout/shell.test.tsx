@@ -1,19 +1,23 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { TextAttributes } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import type { ReactNode } from "react";
 import { act, useReducer } from "react";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
+import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { setSharedDataProviderForTests } from "../../plugins/registry";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedRegistryForTests } from "../../plugins/registry";
 import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
 import type { PaneProps } from "../../types/plugin";
+import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
 import { Header } from "./header";
 import { buildNativeWindowState, finalizePaneDragRelease, resolveNativeDockDividers, Shell } from "./shell";
 import type { DataProvider } from "../../types/data-provider";
-import type { Quote } from "../../types/financials";
+import type { PricePoint, Quote, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -25,6 +29,8 @@ afterEach(() => {
     testSetup = undefined;
   }
   harnessState = null;
+  setSharedMarketDataCoordinator(null);
+  setSharedDataProviderForTests(undefined);
   setSharedRegistryForTests(undefined);
 });
 
@@ -134,31 +140,42 @@ function makeTicker(overrides: Partial<TickerRecord["metadata"]> = {}): TickerRe
   };
 }
 
-function createHeaderDataProvider(): DataProvider {
+function makePriceHistory(
+  length: number,
+  startDate = new Date(Date.UTC(2025, 0, 1)),
+): PricePoint[] {
+  return Array.from({ length }, (_, index) => ({
+    date: new Date(startDate.getTime() + index * 24 * 3600_000),
+    open: 100 + index * 0.2,
+    high: 101 + index * 0.2,
+    low: 99 + index * 0.2,
+    close: 100.5 + index * 0.2,
+    volume: 1_000 + index * 10,
+  }));
+}
+
+function createChartShellDataProvider(historyBySymbol: Record<string, PricePoint[]>): DataProvider {
   return {
-    id: "test",
-    name: "Test",
-    async getTickerFinancials() {
-      return { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote: makeQuote({ symbol: "SPY", name: "SPY" }) };
-    },
-    async getQuote() {
-      return makeQuote({ symbol: "SPY", name: "SPY" });
-    },
-    async getExchangeRate() {
-      return 1;
-    },
-    async search() {
-      return [];
-    },
-    async getNews() {
-      return [];
-    },
-    async getArticleSummary() {
-      return null;
-    },
-    async getPriceHistory() {
-      return [];
-    },
+    id: "shell-test-provider",
+    name: "Shell Test Provider",
+    getTickerFinancials: async (symbol) => ({
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: historyBySymbol[symbol] ?? [],
+    }),
+    getQuote: async (symbol) => ({
+      symbol,
+      price: historyBySymbol[symbol]?.[historyBySymbol[symbol]!.length - 1]?.close ?? 0,
+      currency: "USD",
+      change: 0,
+      changePercent: 0,
+      lastUpdated: Date.now(),
+    }),
+    getExchangeRate: async () => 1,
+    search: async () => [],
+    getNews: async () => [],
+    getArticleSummary: async () => null,
+    getPriceHistory: async (symbol) => historyBySymbol[symbol] ?? [],
   };
 }
 
@@ -256,10 +273,40 @@ function BrokerShellHarness({ pluginRegistry }: { pluginRegistry: PluginRegistry
   return (
     <AppContext value={{ state, dispatch }}>
       <box flexDirection="column">
-        <Header dataProvider={createHeaderDataProvider()} />
+        <Header />
         <Shell pluginRegistry={pluginRegistry} />
         <StatusBar />
       </box>
+    </AppContext>
+  );
+}
+
+function ChartShellHarness({
+  pluginRegistry,
+  config,
+  ticker,
+  financials,
+  focusedPaneId,
+}: {
+  pluginRegistry: PluginRegistry;
+  config: ReturnType<typeof createDefaultConfig>;
+  ticker: TickerRecord;
+  financials: TickerFinancials;
+  focusedPaneId: string | null;
+}) {
+  const initialState = createInitialState(config);
+  initialState.focusedPaneId = focusedPaneId;
+  initialState.tickers = new Map([[ticker.metadata.ticker, ticker]]);
+  initialState.financials = new Map([[ticker.metadata.ticker, financials]]);
+
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  harnessState = state;
+
+  return (
+    <AppContext value={{ state, dispatch }}>
+      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <Shell pluginRegistry={pluginRegistry} />
+      </DialogProvider>
     </AppContext>
   );
 }
@@ -522,6 +569,91 @@ describe("Shell", () => {
     await testSetup.renderOnce();
 
     expect(testSetup.captureCharFrame()).toContain("Settings");
+  });
+
+  test("applies a chart resolution chip on the first click even when the chart pane is unfocused", async () => {
+    const symbol = "AAPL";
+    const config = createDefaultConfig("/tmp/gloomberb-shell-chart-test");
+    config.layout = cloneLayout(config.layout);
+    config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
+    config.layout.instances = config.layout.instances.map((instance) => (
+      instance.instanceId === "ticker-detail:main"
+        ? {
+          ...instance,
+          binding: { kind: "fixed" as const, symbol },
+          settings: {
+            ...(instance.settings ?? {}),
+            chartResolution: "auto",
+            chartRangePreset: "5Y",
+          },
+        }
+        : instance
+    ));
+
+    const ticker = makeTicker({ ticker: symbol, name: symbol });
+    const history = makePriceHistory(260);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: history,
+    };
+
+    const provider = createChartShellDataProvider({ [symbol]: history });
+    setSharedDataProviderForTests(provider);
+    setSharedMarketDataCoordinator(new MarketDataCoordinator(provider));
+
+    const pluginRegistry = createShellPluginRegistry({
+      tickerDetailComponent: (props) => (
+        <StockChart width={props.width} height={props.height} focused={props.focused} />
+      ),
+    });
+
+    testSetup = await testRender(
+      <ChartShellHarness
+        pluginRegistry={pluginRegistry}
+        config={config}
+        ticker={ticker}
+        financials={financials}
+        focusedPaneId="portfolio-list:main"
+      />,
+      { width: 120, height: 32 },
+    );
+
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+
+    const initialLines = testSetup.captureCharFrame().split("\n");
+    const resolutionRow = initialLines.findIndex((line) => line.includes("AUTO 1M 5M 15M"));
+    const targetResolution = "1W";
+    expect(resolutionRow).toBeGreaterThanOrEqual(0);
+    const resolutionSpansBefore = testSetup.captureSpans().lines[resolutionRow]?.spans ?? [];
+    let resolutionCol = -1;
+    let spanColumn = 0;
+    for (const span of resolutionSpansBefore) {
+      const chipOffset = span.text.indexOf(targetResolution);
+      if (chipOffset >= 0) {
+        resolutionCol = spanColumn + chipOffset + Math.floor(targetResolution.length / 2);
+        break;
+      }
+      spanColumn += span.width;
+    }
+    expect(resolutionCol).toBeGreaterThanOrEqual(0);
+    expect(testSetup.captureCharFrame()).toContain("AAPL - AUTO");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(resolutionCol, resolutionRow);
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+
+    expect(
+      harnessState?.config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main")?.settings?.chartResolution,
+    ).toBe("1wk");
+    const resolutionSpans = testSetup.captureSpans().lines[resolutionRow]?.spans ?? [];
+    expect(
+      resolutionSpans.some((span) => span.text === targetResolution && (span.attributes & TextAttributes.BOLD) !== 0),
+    ).toBe(true);
   });
 
   test("keeps the cash drawer and gridlock tip on distinct click rows in the full app layout", async () => {
