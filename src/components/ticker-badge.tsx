@@ -50,7 +50,7 @@ export function TickerBadge({
 }: TickerBadgeProps) {
   const tone = status === "ready" && quote ? priceColor(quote.changePercent) : colors.borderFocused;
   const label = hovered && quote
-    ? `${symbol} ${formatMarketPriceWithCurrency(quote.price, quote.currency)}`
+    ? `${symbol} ${formatMarketPriceWithCurrency(quote.price, quote.currency, { minimumFractionDigits: 2 })}`
     : status === "ready" && quote
     ? formatBadgeChange(quote.changePercent)
     : "…";

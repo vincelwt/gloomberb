@@ -6,6 +6,7 @@ export type {
   DataTableCell,
   DataTableColumn,
   DataTableProps,
+  DataTableSectionHeader,
 } from "./data-table";
 
 export { Tabs } from "./tabs";

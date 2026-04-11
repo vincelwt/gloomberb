@@ -58,11 +58,34 @@ export const RANGE_PRELOAD_BUFFER: Record<TimeRange, TimeRange> = {
 };
 
 export const DEFAULT_TICKER_CHART_RANGE_PRESET: TimeRange = "5Y";
-export const DEFAULT_TICKER_CHART_RESOLUTION: ManualChartResolution = "1wk";
+export const DEFAULT_TICKER_CHART_RESOLUTION: ChartResolution = "auto";
 export const DEFAULT_COMPARISON_CHART_RANGE_PRESET: TimeRange = "1Y";
 export const DEFAULT_COMPARISON_CHART_RESOLUTION: ManualChartResolution = "1d";
 
 export const DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS: ManualChartResolution[] = ["1m", "5m", "15m", "1h", "1d", "1wk", "1mo"];
+export const CHART_RESOLUTION_STEP_MS: Record<ManualChartResolution, number> = {
+  "1m": 60_000,
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "30m": 30 * 60_000,
+  "45m": 45 * 60_000,
+  "1h": 60 * 60_000,
+  "1d": 24 * 60 * 60_000,
+  "1wk": 7 * 24 * 60 * 60_000,
+  "1mo": 30 * 24 * 60 * 60_000,
+};
+
+const CHART_RESOLUTION_POINTS_PER_DAY: Record<ManualChartResolution, number> = {
+  "1m": 390,
+  "5m": 78,
+  "15m": 26,
+  "30m": 13,
+  "45m": 9,
+  "1h": 7,
+  "1d": 1,
+  "1wk": 1 / 5,
+  "1mo": 1 / 21,
+};
 
 const TIME_RANGE_INDEX = new Map(TIME_RANGE_ORDER.map((range, index) => [range, index]));
 const RANGE_PRESETS_BY_RESOLUTION = TIME_RANGE_ORDER.reduce<Record<ManualChartResolution, TimeRange[]>>((acc, range) => {
@@ -140,7 +163,7 @@ export function normalizeManualChartResolutions(resolutions: readonly string[]):
 
 export function intersectChartResolutions(resolutionSets: Array<readonly string[]>): ManualChartResolution[] {
   if (resolutionSets.length === 0) return [];
-  const [first, ...rest] = resolutionSets.map((set) => new Set(normalizeManualChartResolutions(set)));
+  const [first = new Set<ManualChartResolution>(), ...rest] = resolutionSets.map((set) => new Set(normalizeManualChartResolutions(set)));
   return sortChartResolutions(
     [...first].filter((resolution) => rest.every((set) => set.has(resolution))),
   );
@@ -194,8 +217,8 @@ export function getSupportMaxRange(
   support: readonly ChartResolutionSupport[] | ReadonlyMap<ManualChartResolution, TimeRange>,
   resolution: ManualChartResolution,
 ): TimeRange | null {
-  if (support instanceof Map) {
-    return support.get(resolution) ?? null;
+  if (!Array.isArray(support)) {
+    return (support as ReadonlyMap<ManualChartResolution, TimeRange>).get(resolution) ?? null;
   }
   return normalizeChartResolutionSupport(support).find((entry) => entry.resolution === resolution)?.maxRange ?? null;
 }
@@ -299,6 +322,53 @@ export function getBestSupportedResolutionForPreset(
   if (coarserResolution) return coarserResolution;
 
   return supportedResolutions[supportedResolutions.length - 1] ?? null;
+}
+
+export function getBestSupportedResolutionForDateWindow(
+  window: { start: Date | null; end: Date | null } | null,
+  support: readonly ChartResolutionSupport[] | ReadonlyMap<ManualChartResolution, TimeRange>,
+): ManualChartResolution | null {
+  if (!window?.start || !window.end) return null;
+  const range = getTimeRangeForDateWindow(window);
+  return getBestSupportedResolutionForPreset(range, support);
+}
+
+export function getTimeRangeForDateWindow(
+  window: { start: Date | null; end: Date | null } | null,
+): TimeRange {
+  if (!window?.start || !window.end) return "ALL";
+  return TIME_RANGE_ORDER.find((candidate) => isDateWindowWithinTimeRange(window.start!, window.end!, candidate)) ?? "ALL";
+}
+
+export function getBestSupportedResolutionForVisibleWindow(
+  window: { start: Date | null; end: Date | null } | null,
+  support: readonly ChartResolutionSupport[] | ReadonlyMap<ManualChartResolution, TimeRange>,
+  targetPointCount: number,
+): ManualChartResolution | null {
+  if (!window?.start || !window.end) return null;
+
+  const spanMs = Math.max(window.end.getTime() - window.start.getTime(), 0);
+  const dayCount = Math.max(spanMs / CHART_RESOLUTION_STEP_MS["1d"], 1 / 24);
+  const supportedResolutions = sortChartResolutions(
+    CHART_RESOLUTION_ORDER
+      .filter((resolution): resolution is ManualChartResolution => resolution !== "auto")
+      .filter((resolution) => {
+        const maxRange = getSupportMaxRange(support, resolution);
+        return maxRange !== null && isDateWindowWithinTimeRange(window.start!, window.end!, maxRange);
+      }),
+  );
+
+  if (supportedResolutions.length === 0) return null;
+
+  const minimumPointTarget = Math.max(targetPointCount, 1);
+  for (const resolution of [...supportedResolutions].reverse()) {
+    const estimatedPointCount = Math.max(dayCount * CHART_RESOLUTION_POINTS_PER_DAY[resolution], 1);
+    if (estimatedPointCount >= minimumPointTarget) {
+      return resolution;
+    }
+  }
+
+  return supportedResolutions[0] ?? null;
 }
 
 export function getNextFallbackResolution(

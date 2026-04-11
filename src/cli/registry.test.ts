@@ -186,41 +186,48 @@ describe("CLI dispatch", () => {
   test("routes prediction market commands and aliases through launch-ui requests", async () => {
     process.env.HOME = await createTempHome("gloomberb-cli-prediction-home-");
 
-    for (const rootCommand of ["predictions", "prediction-markets", "pm"]) {
-      const dispatchResult = await dispatchCli([rootCommand, "world"]);
-      expect(dispatchResult.kind).toBe("launch-ui");
-      if (dispatchResult.kind !== "launch-ui") continue;
+    const fixedNow = Date.parse("2026-04-08T10:30:00Z");
+    const realDateNow = Date.now;
+    Date.now = () => fixedNow;
+    try {
+      for (const rootCommand of ["predictions", "prediction-markets", "pm"]) {
+        const dispatchResult = await dispatchCli([rootCommand, "world"]);
+        expect(dispatchResult.kind).toBe("launch-ui");
+        if (dispatchResult.kind !== "launch-ui") continue;
 
-      const config = createDefaultConfig("/tmp/gloomberb-cli-prediction");
-      const intent = parsePredictionCommandArgs(["world"]);
-      const expectedConfigResult = applyPredictionLaunchIntentToConfig(config, intent, {
-        width: 132,
-        height: 40,
-      });
-      const actualConfigResult = dispatchResult.request.applyConfig(config, {
-        terminalWidth: 132,
-        terminalHeight: 40,
-      });
+        const config = createDefaultConfig("/tmp/gloomberb-cli-prediction");
+        const intent = parsePredictionCommandArgs(["world"]);
+        const expectedConfigResult = applyPredictionLaunchIntentToConfig(config, intent, {
+          width: 132,
+          height: 40,
+        });
+        const actualConfigResult = dispatchResult.request.applyConfig(config, {
+          terminalWidth: 132,
+          terminalHeight: 40,
+        });
 
-      expect(actualConfigResult.config).toEqual(expectedConfigResult.config);
-      expect(actualConfigResult.launchState).toEqual({
-        paneInstanceId: expectedConfigResult.paneInstanceId,
-        intent,
-      });
+        expect(actualConfigResult.config).toEqual(expectedConfigResult.config);
+        expect(actualConfigResult.launchState).toEqual({
+          paneInstanceId: expectedConfigResult.paneInstanceId,
+          intent,
+        });
 
-      const expectedSession = applyPredictionLaunchIntentToSessionSnapshot(
-        actualConfigResult.config,
-        null,
-        expectedConfigResult.paneInstanceId,
-        intent,
-      );
-      const actualSession = dispatchResult.request.applySessionSnapshot?.(
-        actualConfigResult.config,
-        null,
-        actualConfigResult.launchState,
-      );
+        const expectedSession = applyPredictionLaunchIntentToSessionSnapshot(
+          actualConfigResult.config,
+          null,
+          expectedConfigResult.paneInstanceId,
+          intent,
+        );
+        const actualSession = dispatchResult.request.applySessionSnapshot?.(
+          actualConfigResult.config,
+          null,
+          actualConfigResult.launchState,
+        );
 
-      expect(actualSession).toEqual(expectedSession);
+        expect(actualSession).toEqual(expectedSession);
+      }
+    } finally {
+      Date.now = realDateNow;
     }
   });
 });

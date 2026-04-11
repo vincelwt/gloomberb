@@ -2,9 +2,9 @@
 
 # 📉 Gloomberb
 
-**Extensible financial terminal, for the terminal.**
+**Modern extensible financial terminal.**
 
-> Why pay for Bloomberg when you can have Gloomberb?
+> The Bloomberb Terminal for the rest of us.
 
 <img src="https://gloomberb.com/landing-terminal.png" alt="Gloomberb terminal screenshot" width="720" />
 

@@ -53,6 +53,7 @@ async function createCliFixture({
   if (baseCurrency) {
     config.baseCurrency = baseCurrency;
   }
+  config.disabledPlugins = [...new Set([...(config.disabledPlugins ?? []), "yahoo", "gloomberb-cloud"])];
   if (portfolios) {
     config.portfolios = portfolios;
   }

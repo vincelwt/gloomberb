@@ -15,6 +15,8 @@ describe("pane settings helpers", () => {
     });
     expect(portfolioPane?.settings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
     expect(detailPane?.settings).toEqual({
+      chartRangePreset: "5Y",
+      chartResolution: "auto",
       hideTabs: false,
       lockedTabId: "overview",
     });
