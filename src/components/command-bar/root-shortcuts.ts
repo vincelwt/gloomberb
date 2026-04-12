@@ -135,9 +135,10 @@ export function parseRootShortcutIntent({
   if (!trimmed) return { kind: "none" };
 
   const upper = trimmed.toUpperCase();
-  const match = buildShortcutCandidates(commands, pluginCommands, paneTemplates).find((candidate) => (
-    upper === candidate.prefix || upper.startsWith(`${candidate.prefix} `)
-  ));
+  const match = buildShortcutCandidates(commands, pluginCommands, paneTemplates).find((candidate) => {
+    if (upper === candidate.prefix) return true;
+    return !!candidate.argKind && upper.startsWith(`${candidate.prefix} `);
+  });
   if (!match) return { kind: "none" };
 
   const argText = trimmed.slice(match.prefix.length).trim();

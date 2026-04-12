@@ -1959,9 +1959,9 @@ export function CommandBar({
       if (pluginId && disabledPlugins.has(pluginId)) return false;
       const prefix = template.shortcut?.prefix?.toUpperCase();
       if (!prefix) return false;
-      if (upper !== prefix && !upper.startsWith(`${prefix} `)) return false;
       const arg = trimmed.slice(prefix.length).trim();
       const argKind = template.shortcut?.argKind ?? template.shortcut?.argPlaceholder;
+      if (upper !== prefix && (!argKind || !upper.startsWith(`${prefix} `))) return false;
       if (!template.canCreate) return true;
       try {
         const canCreate = template.canCreate(context, arg ? { arg } : undefined);

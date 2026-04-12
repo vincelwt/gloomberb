@@ -1756,6 +1756,48 @@ describe("CommandBar", () => {
     expect(frame).toContain("Top News");
   });
 
+  test("does not treat no-argument shortcut prefixes as typed pane names", async () => {
+    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="Top News"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+        const paneTemplates = pluginRegistry.paneTemplates as Map<string, any>;
+        paneTemplates.set("market-movers-pane", {
+          id: "market-movers-pane",
+          paneId: "market-movers",
+          label: "Market Movers",
+          description: "Track market gainers and losers",
+          shortcut: { prefix: "TOP" },
+        });
+        paneTemplates.set("news-top-pane", {
+          id: "news-top-pane",
+          paneId: "news-top",
+          label: "Top News",
+          description: "Curated top market stories ranked by importance",
+          shortcut: { prefix: "TOP" },
+        });
+      }}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Top News");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{ templateId: "news-top-pane", options: undefined }]);
+  });
+
   test("opens plugin command wizards inline inside the command bar", async () => {
     let submittedValues: Record<string, string> | undefined;
 
