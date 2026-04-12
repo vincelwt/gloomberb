@@ -18,6 +18,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { StockChart } from "./stock-chart";
 
 const TEST_PANE_ID = "ticker-detail:test";
+const CHART_DETAIL_REQUEST_DEBOUNCE_WAIT_MS = 220;
 
 let testSetup: Awaited<ReturnType<typeof createTestRenderer>> | undefined;
 let root: ReturnType<typeof createRoot> | undefined;
@@ -145,9 +146,19 @@ function ChartHarness({
 async function flushFrames(count = 2) {
   for (let index = 0; index < count; index += 1) {
     await act(async () => {
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
       await testSetup!.renderOnce();
+      await Promise.resolve();
     });
   }
+}
+
+async function flushDebouncedChartRequests() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, CHART_DETAIL_REQUEST_DEBOUNCE_WAIT_MS));
+  });
+  await flushFrames(2);
 }
 
 async function emitKeypress(event: { name?: string; sequence?: string }) {
@@ -213,14 +224,15 @@ function makeProvider(historyBySymbol: Record<string, PricePoint[]>): DataProvid
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   harnessDispatch = null;
   sharedCoordinator = null;
   setSharedMarketDataCoordinator(null);
   setSharedDataProviderForTests(undefined);
   if (root) {
-    act(() => {
+    await act(async () => {
       root!.unmount();
+      await Promise.resolve();
     });
     root = undefined;
   }
@@ -228,7 +240,6 @@ afterEach(() => {
     testSetup.renderer.destroy();
     testSetup = undefined;
   }
-  actEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
 describe("StockChart renderer switching", () => {
@@ -346,6 +357,7 @@ describe("StockChart renderer switching", () => {
 
     await emitKeypress({ name: "3", sequence: "3" });
     await flushFrames(3);
+    await flushDebouncedChartRequests();
 
     const frame = testSetup.captureCharFrame();
     expect(frame).not.toContain("AAPL - AUTO");
@@ -411,6 +423,7 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames(6);
+    await flushDebouncedChartRequests();
     expect(testSetup.captureCharFrame()).toContain("AAPL - AUTO");
     expect(detailBarSizes).toContain("15m");
 
@@ -418,6 +431,7 @@ describe("StockChart renderer switching", () => {
       await emitKeypress({ name: "=", sequence: "=" });
       await flushFrames(3);
     }
+    await flushDebouncedChartRequests();
 
     expect(detailBarSizes).toContain("1m");
     expect(testSetup.captureCharFrame()).not.toContain("zoom:");
@@ -481,12 +495,14 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames(6);
+    await flushDebouncedChartRequests();
     expect(detailRequests.some((request) => request.barSize === "15m")).toBe(true);
 
     for (let index = 0; index < 8; index += 1) {
       await emitKeypress({ name: "=", sequence: "=" });
       await flushFrames(3);
     }
+    await flushDebouncedChartRequests();
 
     expect(detailRequests.some((request) => request.barSize === "1m")).toBe(true);
     expect(
@@ -552,6 +568,7 @@ describe("StockChart renderer switching", () => {
       await emitKeypress({ name: "=", sequence: "=" });
       await flushFrames(4);
     }
+    await flushDebouncedChartRequests();
 
     const frame = testSetup.captureCharFrame();
     expect(resolutionRequests.some((request) => request.resolution === "1d")).toBe(true);
@@ -560,7 +577,7 @@ describe("StockChart renderer switching", () => {
     expect(frame).toContain("Apr");
   });
 
-  test("mouse scroll pans auto without zooming into narrower detail windows", async () => {
+  test("mouse scroll at the auto edge does not zoom into narrower detail windows", async () => {
     const symbol = "AAPL";
     const config = makeChartConfig(symbol);
     const ticker = makeTicker(symbol);
@@ -611,6 +628,12 @@ describe("StockChart renderer switching", () => {
     const titleRow = getFrameRowContaining(initialFrame, "AAPL - AUTO");
     expect(titleRow).toBeGreaterThanOrEqual(0);
 
+    await act(async () => {
+      await testSetup!.mockMouse.scroll(1, titleRow, "up");
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(2);
+
     for (let index = 0; index < 4; index += 1) {
       await act(async () => {
         await testSetup!.mockMouse.scroll(68, titleRow + 3, "up");
@@ -618,12 +641,258 @@ describe("StockChart renderer switching", () => {
       });
       await flushFrames(2);
     }
+    await flushDebouncedChartRequests();
 
     const pannedFrame = testSetup.captureCharFrame();
     const pannedHeader = getFrameLineContaining(pannedFrame, "AAPL - AUTO");
     expect(pannedHeader).not.toContain("view:");
-    expect(pannedFrame).not.toBe(initialFrame);
     expect(detailRequests.some((request) => /(m|h)$/i.test(request))).toBe(false);
+  });
+
+  test("keeps the chart interactive while a wider pan range is loading", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.layout.instances = config.layout.instances.map((instance) => ({
+      ...instance,
+      settings: {
+        chartRangePreset: "1Y",
+        chartResolution: "1d",
+      },
+    }));
+    config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
+    const ticker = makeTicker(symbol);
+    const oneYearHistory = makeHistory(252, new Date(Date.UTC(2025, 0, 1)));
+    const fiveYearHistory = makeHistory(1260, new Date(Date.UTC(2021, 0, 1)));
+    const pendingResolvers: Array<(history: PricePoint[]) => void> = [];
+    const provider = {
+      ...makeProvider({ [symbol]: oneYearHistory }),
+      getPriceHistory: async (_requestSymbol, _exchange, range) => {
+        if (range === "5Y") {
+          return new Promise<PricePoint[]>((resolve) => {
+            pendingResolvers.push(resolve);
+          });
+        }
+        return oneYearHistory;
+      },
+      getPriceHistoryForResolution: async (_requestSymbol, _exchange, range) => {
+        if (range === "5Y") {
+          return new Promise<PricePoint[]>((resolve) => {
+            pendingResolvers.push(resolve);
+          });
+        }
+        return oneYearHistory;
+      },
+    } satisfies DataProvider;
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: oneYearHistory,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+        />,
+      );
+    });
+
+    await flushFrames(6);
+    expect(testSetup.captureCharFrame()).toContain("AAPL - 1D");
+
+    await emitKeypress({ name: "a", sequence: "a" });
+    await flushFrames(3);
+
+    const loadingFrame = testSetup.captureCharFrame();
+    expect(pendingResolvers.length).toBeGreaterThan(0);
+    expect(loadingFrame).toContain("AAPL - 1D");
+    expect(loadingFrame).not.toContain("Loading chart...");
+
+    await emitKeypress({ name: "a", sequence: "a" });
+    await flushFrames(3);
+    expect(testSetup.captureCharFrame()).not.toContain("Loading chart...");
+
+    await act(async () => {
+      for (const resolve of pendingResolvers) {
+        resolve(fiveYearHistory);
+      }
+      await Promise.resolve();
+    });
+    await flushFrames(4);
+    expect(testSetup.captureCharFrame()).not.toContain("Loading chart...");
+  });
+
+  test("keeps the last rendered chart while a manual detail window is loading", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.layout.instances = config.layout.instances.map((instance) => ({
+      ...instance,
+      settings: {
+        chartRangePreset: "1Y",
+        chartResolution: "1d",
+      },
+    }));
+    config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
+    const ticker = makeTicker(symbol);
+    const baseHistory = makeHistory(600, new Date(Date.UTC(2024, 0, 1)));
+    let holdDetailRequests = false;
+    const pendingResolvers: Array<(history: PricePoint[]) => void> = [];
+    const provider = {
+      ...makeProvider({ [symbol]: baseHistory }),
+      getDetailedPriceHistory: async (
+        _requestSymbol,
+        _exchange,
+        startDate,
+        endDate,
+      ) => {
+        if (holdDetailRequests) {
+          return new Promise<PricePoint[]>((resolve) => {
+            pendingResolvers.push(resolve);
+          });
+        }
+        return baseHistory.filter((point) => {
+          const date = point.date instanceof Date ? point.date : new Date(point.date);
+          return date >= startDate && date <= endDate;
+        });
+      },
+    } satisfies DataProvider;
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: baseHistory,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+        />,
+      );
+    });
+
+    await flushFrames(6);
+    expect(testSetup.captureCharFrame()).toContain("AAPL - 1D");
+
+    holdDetailRequests = true;
+    for (let index = 0; index < 5; index += 1) {
+      await emitKeypress({ name: "a", sequence: "a" });
+    }
+    await flushFrames(3);
+    await flushDebouncedChartRequests();
+
+    const loadingFrame = testSetup.captureCharFrame();
+    expect(pendingResolvers.length).toBeGreaterThan(0);
+    expect(loadingFrame).toContain("AAPL - 1D");
+    expect(loadingFrame).not.toContain("Loading chart...");
+
+    await act(async () => {
+      for (const resolve of pendingResolvers) {
+        resolve(baseHistory);
+      }
+      await Promise.resolve();
+    });
+    await flushFrames(4);
+    expect(testSetup.captureCharFrame()).not.toContain("Loading chart...");
+  });
+
+  test("keeps panning on fallback data while the preferred detail request is loading", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.layout.instances = config.layout.instances.map((instance) => ({
+      ...instance,
+      settings: {
+        chartRangePreset: "1Y",
+        chartResolution: "1d",
+      },
+    }));
+    config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
+    config.chartPreferences.defaultRenderMode = "candles";
+    const ticker = makeTicker(symbol);
+    const baseHistory = makeMonthlyHistory(84, new Date(Date.UTC(2019, 0, 1)));
+    const fallbackDetailHistory = makeHistory(900, new Date(Date.UTC(2023, 8, 1)));
+    const pendingOneDayResolvers: Array<(history: PricePoint[]) => void> = [];
+    let fallbackRequests = 0;
+    const provider = {
+      ...makeProvider({ [symbol]: baseHistory }),
+      getDetailedPriceHistory: async (
+        _requestSymbol,
+        _exchange,
+        startDate,
+        endDate,
+        barSize,
+      ) => {
+        if (barSize === "1d") {
+          return new Promise<PricePoint[]>((resolve) => {
+            pendingOneDayResolvers.push(resolve);
+          });
+        }
+        if (barSize === "1wk") {
+          fallbackRequests += 1;
+          return fallbackDetailHistory.filter((point) => {
+            const date = point.date instanceof Date ? point.date : new Date(point.date);
+            return date >= startDate && date <= endDate;
+          });
+        }
+        return [];
+      },
+    } satisfies DataProvider;
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: baseHistory,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+        />,
+      );
+    });
+
+    await flushFrames(6);
+    await flushDebouncedChartRequests();
+
+    const firstFrame = testSetup.captureCharFrame();
+    expect(pendingOneDayResolvers.length).toBeGreaterThan(0);
+    expect(fallbackRequests).toBeGreaterThan(0);
+    expect(firstFrame).toContain("AAPL - 1D");
+    expect(firstFrame).toContain("showing 1W");
+    expect(firstFrame).toContain("updating");
+    expect(firstFrame).not.toContain("Loading chart...");
+
+    await emitKeypress({ name: "a", sequence: "a" });
+    await flushFrames(3);
+    await flushDebouncedChartRequests();
+
+    const pannedFrame = testSetup.captureCharFrame();
+    expect(pannedFrame).toContain("showing 1W");
+    expect(pannedFrame).not.toContain("Loading chart...");
+    expect(pannedFrame).not.toBe(firstFrame);
   });
 
   test("falls back manual resolution without repeated input when finer resolutions are empty", async () => {
@@ -676,6 +945,7 @@ describe("StockChart renderer switching", () => {
     await flushFrames(6);
     await emitKeypress({ name: "r", sequence: "r" });
     await flushFrames(12);
+    await flushDebouncedChartRequests();
 
     const frame = testSetup.captureCharFrame();
     expect(detailRequests).toContain("1m");
@@ -741,6 +1011,7 @@ describe("StockChart renderer switching", () => {
       await flushFrames(4);
       frames.push(testSetup.captureCharFrame());
     }
+    await flushDebouncedChartRequests();
 
     expect(detailRequests).toContain("1d");
     expect(frames[6]).not.toBe(frames[7]);
