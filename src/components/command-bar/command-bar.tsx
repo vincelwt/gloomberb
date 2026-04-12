@@ -2653,9 +2653,25 @@ export function CommandBar({
     let initialIdx = 0;
     const shortcutItem = buildRootShortcutItem();
 
-    if (
+    if (rootShortcutIntent.kind !== "none" && rootShortcutIntent.source === "pane-template" && shortcutItem) {
+      const matchingTemplates = getAvailablePaneShortcutTemplates(rootQuery);
+      const templateItems = matchingTemplates.length > 0
+        ? matchingTemplates.map((template) => createPaneTemplateItem(template, {
+          category: "Panes",
+          createOptions: rootShortcutIntent.argText ? { arg: rootShortcutIntent.argText } : undefined,
+          showShortcut: true,
+          shortcutExecution: true,
+        }))
+        : [shortcutItem];
+      const seenItemIds = new Set<string>();
+      for (const item of templateItems) {
+        if (seenItemIds.has(item.id)) continue;
+        seenItemIds.add(item.id);
+        items.push(item);
+      }
+    } else if (
       rootShortcutIntent.kind !== "none"
-      && (rootShortcutIntent.source === "pane-template" || rootShortcutIntent.source === "plugin-command")
+      && rootShortcutIntent.source === "plugin-command"
       && shortcutItem
     ) {
       items.push(shortcutItem);
@@ -3943,6 +3959,7 @@ export function CommandBar({
     dispatch,
     duplicatePane,
     executeCollectionCommand,
+    getAvailablePaneShortcutTemplates,
     getAvailablePaneTemplates,
     localTickerSearchResultItems,
     mapTickerSearchCandidateToResultItem,

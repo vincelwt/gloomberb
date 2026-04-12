@@ -1470,6 +1470,38 @@ describe("CommandBar", () => {
     expect(frame).toContain("QQ");
   });
 
+  test("shows pane templates that share the same shortcut", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="TOP"
+      configurePluginRegistry={(pluginRegistry) => {
+        const paneTemplates = pluginRegistry.paneTemplates as Map<string, any>;
+        paneTemplates.set("market-movers-pane", {
+          id: "market-movers-pane",
+          paneId: "market-movers",
+          label: "Market Movers",
+          description: "Track market gainers and losers",
+          shortcut: { prefix: "TOP" },
+        });
+        paneTemplates.set("news-top-pane", {
+          id: "news-top-pane",
+          paneId: "news-top",
+          label: "Top News",
+          description: "Curated top market stories ranked by importance",
+          shortcut: { prefix: "TOP" },
+        });
+      }}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Market Movers");
+    expect(frame).toContain("Top News");
+  });
+
   test("opens plugin command wizards inline inside the command bar", async () => {
     let submittedValues: Record<string, string> | undefined;
 
