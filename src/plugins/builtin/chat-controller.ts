@@ -129,7 +129,9 @@ export class ChatController {
       schemaVersion: SESSION_SCHEMA_VERSION,
     });
     apiClient.setSessionToken(session?.sessionToken ?? null);
-    apiClient.setWebSocketToken(session?.websocketToken ?? null);
+    // WebSocket tokens are short-lived connection credentials. Reusing a persisted
+    // one can trap reconnects on an expired token even while the session cookie is valid.
+    apiClient.setWebSocketToken(null);
     apiClient.restoreCachedUser(session?.user ?? null);
     this.user = session?.user
       ? {
@@ -483,7 +485,6 @@ export class ChatController {
   private persistSession(): void {
     const value = {
       sessionToken: apiClient.getSessionToken(),
-      websocketToken: apiClient.getWebSocketToken(),
       user: this.user,
     } satisfies PersistedSessionState;
     this.resume?.setState(SESSION_STATE_KEY, value, {

@@ -155,6 +155,27 @@ describe("ChatController", () => {
     });
   });
 
+  test("does not restore persisted websocket tokens", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      websocketToken: "stale-ws-token",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+
+    controller.attachPersistence(persistence);
+
+    expect(apiClient.getSessionToken()).toBe("token-123");
+    expect(apiClient.getWebSocketToken()).toBeNull();
+    expect(apiClient.getCurrentUser()).toMatchObject({
+      id: "u1",
+      username: "vince",
+      emailVerified: true,
+    });
+  });
+
   test("reset clears persisted chat state and session token", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();

@@ -3,6 +3,7 @@ import type { AuthUser } from "./api-client";
 import { apiClient } from "./api-client";
 
 const originalFetch = globalThis.fetch;
+const originalWebSocket = globalThis.WebSocket;
 
 const verifiedUser: AuthUser = {
   id: "user-1",
@@ -33,7 +34,9 @@ function createResponse(body: unknown, options: { status?: number; cookies?: str
 }
 
 afterEach(() => {
+  apiClient.dispose();
   globalThis.fetch = originalFetch;
+  globalThis.WebSocket = originalWebSocket;
   apiClient.setSessionToken(null);
   apiClient.setWebSocketToken(null);
 });
@@ -82,6 +85,93 @@ describe("apiClient auth cookies", () => {
     expect(seenCookies).toEqual([
       "__Secure-gloomberb.session_token=persisted-token.value; gloomberb.session_token=persisted-token.value",
     ]);
+  });
+
+  test("keeps cached identity when session refresh is rejected without a hard account-missing response", async () => {
+    apiClient.setSessionToken("persisted-token.value");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    globalThis.fetch = (async () => createResponse({ message: "Unauthorized" }, { status: 401 })) as typeof fetch;
+
+    await expect(apiClient.getSession()).rejects.toThrow("Unauthorized");
+    expect(apiClient.getSessionToken()).toBe("persisted-token.value");
+    expect(apiClient.getCurrentUser()).toMatchObject({
+      id: verifiedUser.id,
+      username: verifiedUser.username,
+      emailVerified: true,
+    });
+  });
+
+  test("clears cached identity when session refresh says the account no longer exists", async () => {
+    apiClient.setSessionToken("persisted-token.value");
+    apiClient.setWebSocketToken("ws-token");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    globalThis.fetch = (async () => createResponse({ code: "USER_NOT_FOUND" }, { status: 403 })) as typeof fetch;
+
+    await expect(apiClient.getSession()).resolves.toBeNull();
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.getWebSocketToken()).toBeNull();
+    expect(apiClient.getCurrentUser()).toBeNull();
+  });
+
+  test("clears local session on explicit sign out even if the server request fails", async () => {
+    apiClient.setSessionToken("persisted-token.value");
+    apiClient.setWebSocketToken("ws-token");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    globalThis.fetch = (async () => createResponse({ message: "server unavailable" }, { status: 503 })) as typeof fetch;
+
+    await expect(apiClient.signOut()).rejects.toThrow("server unavailable");
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.getWebSocketToken()).toBeNull();
+    expect(apiClient.getCurrentUser()).toBeNull();
+  });
+
+  test("drops a stale websocket token after socket close so reconnect can use the session token", () => {
+    const sockets: Array<{
+      url: string;
+      readyState: number;
+      onclose: ((event: unknown) => void) | null;
+      close: () => void;
+    }> = [];
+
+    class FakeWebSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen: ((event: unknown) => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+
+      constructor(readonly url: string) {
+        sockets.push(this);
+      }
+
+      send(): void {}
+
+      close(): void {
+        this.readyState = 3;
+        this.onclose?.({ code: 1000, reason: "closed" });
+      }
+    }
+
+    globalThis.WebSocket = FakeWebSocket as any;
+    apiClient.setSessionToken("session-token");
+    apiClient.setWebSocketToken("stale-ws-token");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    const unsubscribe = apiClient.subscribeQuotes([{ symbol: "AAPL" }], () => {});
+
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]!.url).toContain("token=stale-ws-token");
+
+    sockets[0]!.onclose?.({ code: 1008, reason: "Unauthorized" });
+
+    expect(apiClient.getWebSocketToken()).toBeNull();
+    expect(apiClient.getSessionToken()).toBe("session-token");
+
+    unsubscribe();
   });
 });
 

@@ -962,10 +962,18 @@ export const gloomberbCloudPlugin: GloomPlugin = {
           ctx.notify({ body: "Not logged in.", type: "error" });
           return;
         }
-        await apiClient.signOut();
+        let signOutError: unknown = null;
+        try {
+          await apiClient.signOut();
+        } catch (error) {
+          signOutError = error;
+        }
         await chatController.refreshSession();
         await chatController.refreshMessages();
-        ctx.notify({ body: "Logged out.", type: "info" });
+        ctx.notify({
+          body: signOutError ? "Logged out locally. Cloud sign-out did not complete." : "Logged out.",
+          type: "info",
+        });
       },
       hidden: () => !apiClient.getSessionToken(),
     });

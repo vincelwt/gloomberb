@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { getPaneBodyHeight } from "./pane-sizing";
+import { getPaneBodyHeight, getPaneBodyHorizontalInset } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
   title: string;
@@ -22,6 +22,7 @@ export function FloatingPaneWrapper({
 }: FloatingPaneWrapperProps) {
   const bg = floatingPaneBg(focused);
   const bodyHeight = getPaneBodyHeight(height);
+  const bodyInset = getPaneBodyHorizontalInset(focused);
 
   return (
     <box
@@ -38,7 +39,7 @@ export function FloatingPaneWrapper({
       <PaneHeader title={title} width={width} focused={focused} floating showActions={showActions} />
 
       {/* Content */}
-      <box height={bodyHeight} overflow="hidden">
+      <box height={bodyHeight} overflow="hidden" paddingLeft={bodyInset} paddingRight={bodyInset}>
         {children}
       </box>
 

@@ -39,7 +39,7 @@ import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneWrapper } from "./pane";
-import { getPaneBodyHeight } from "./pane-sizing";
+import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
@@ -987,6 +987,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         const focused = state.focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
         const bodyHeight = getPaneBodyHeight(leaf.rect.height);
+        const bodyWidth = getPaneBodyWidth(leaf.rect.width, focused);
         return (
           <box
             key={`dock:${leaf.instanceId}`}
@@ -1009,7 +1010,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                   paneId={pane.instance.instanceId}
                   paneType={pane.instance.paneId}
                   focused={focused}
-                  width={leaf.rect.width}
+                  width={bodyWidth}
                   height={bodyHeight}
                 />
               </PaneInstanceProvider>
@@ -1023,6 +1024,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         const focused = state.focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
         const bodyHeight = getPaneBodyHeight(preview.height);
+        const bodyWidth = getPaneBodyWidth(preview.width, focused);
         return (
           <FloatingPaneWrapper
             key={`float:${pane.instance.instanceId}`}
@@ -1041,7 +1043,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                 paneId={pane.instance.instanceId}
                 paneType={pane.instance.paneId}
                 focused={focused}
-                width={preview.width}
+                width={bodyWidth}
                 height={bodyHeight}
                 close={() => handleFloatingClose(pane.instance.instanceId)}
               />
