@@ -106,8 +106,7 @@ function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
   const settings = useMemo(() => getComparisonChartPaneSettings(pane?.settings), [pane?.settings]);
 
   const openTicker = useCallback((symbol: string) => {
-    registry?.selectTickerFn(symbol);
-    registry?.focusPaneFn("ticker-detail");
+    registry?.navigateTickerFn(symbol);
   }, [registry]);
 
   if (settings.symbols.length === 0) {
