@@ -1,7 +1,41 @@
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 import { getSharedRegistry } from "../../registry";
+
+export function useNewsArticleDetail(articles: MarketNewsItem[]) {
+  const [detailArticleId, setDetailArticleId] = useState<string | null>(null);
+  const detailArticle = useMemo(
+    () => (
+      detailArticleId
+        ? articles.find((article) => article.id === detailArticleId) ?? null
+        : null
+    ),
+    [articles, detailArticleId],
+  );
+
+  useEffect(() => {
+    if (detailArticleId && !detailArticle) {
+      setDetailArticleId(null);
+    }
+  }, [detailArticle, detailArticleId]);
+
+  const openArticle = useCallback((article: MarketNewsItem) => {
+    setDetailArticleId(article.id);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailArticleId(null);
+  }, []);
+
+  return {
+    detailArticle,
+    openArticle,
+    closeDetail,
+  };
+}
 
 export function wrapText(text: string, width: number): string[] {
   if (!text) return [];
@@ -21,12 +55,14 @@ export function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
-export function NewsDetailView({ item, width, height }: {
+export function NewsDetailView({ item, focused, width, height }: {
   item: MarketNewsItem;
+  focused: boolean;
   width: number;
   height: number;
 }) {
   const registry = getSharedRegistry();
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const innerW = Math.max(10, width - 2);
   const titleLines = wrapText(item.title, innerW);
@@ -35,9 +71,36 @@ export function NewsDetailView({ item, width, height }: {
     month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
   });
 
+  const scrollBy = useCallback((delta: number) => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox?.viewport) return;
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
+  }, []);
+
+  useEffect(() => {
+    const scrollBox = scrollRef.current;
+    if (scrollBox) scrollBox.scrollTop = 0;
+  }, [item.id]);
+
+  useKeyboard((event) => {
+    if (!focused) return;
+    if (event.name === "j" || event.name === "down") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollBy(1);
+      return;
+    }
+    if (event.name === "k" || event.name === "up") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollBy(-1);
+    }
+  });
+
   return (
     <box flexDirection="column" width={width} height={height}>
-      <scrollbox flexGrow={1} scrollY focusable={false}>
+      <scrollbox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
         <box flexDirection="column" paddingX={1} paddingY={1} gap={1}>
           {/* Title */}
           <box flexDirection="column">

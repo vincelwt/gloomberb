@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import type { PaneProps } from "../../../types/plugin";
@@ -7,7 +7,7 @@ import { colors } from "../../../theme/colors";
 import { useFirehose, useSectorNews } from "../../../news/hooks";
 import { PageStackView, TabBar } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
-import { NewsDetailView } from "./news-detail-view";
+import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleTable, type NewsSortPreference } from "./news-table";
 
 const CATEGORIES = ["all", "tech", "energy", "finance", "healthcare", "macro", "earnings", "crypto"] as const;
@@ -28,12 +28,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const [category, setCategory] = usePluginPaneState<Category>("industry:category", "all");
   const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("industry:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("industry:sort", DEFAULT_SORT);
-  const [detailArticleId, setDetailArticleId] = useState<string | null>(null);
   const { articles, allArticles } = useIndustryArticles(category);
-  const detailArticle = useMemo(
-    () => articles.find((article) => article.id === detailArticleId) ?? null,
-    [articles, detailArticleId],
-  );
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
     for (const cat of CATEGORIES) {
@@ -87,7 +83,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
         setSelectedArticleId={setSelectedArticleId}
         sortPreference={sortPreference}
         setSortPreference={setSortPreference}
-        onOpenArticle={(article) => setDetailArticleId(article.id)}
+        onOpenArticle={openArticle}
         columns={["time", "source", "title", "tickers", "categories"]}
         emptyStateTitle="No news in this category"
         emptyStateHint="Try another category or wait for the next feed refresh."
@@ -96,7 +92,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   );
 
   const detailContent = detailArticle ? (
-    <NewsDetailView item={detailArticle} width={width} height={Math.max(height - 1, 1)} />
+    <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
   ) : (
     <box flexGrow={1} />
   );
@@ -105,7 +101,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     <PageStackView
       focused={focused}
       detailOpen={!!detailArticle}
-      onBack={() => setDetailArticleId(null)}
+      onBack={closeDetail}
       rootContent={rootContent}
       detailContent={detailContent}
     />

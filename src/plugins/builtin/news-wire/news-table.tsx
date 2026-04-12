@@ -167,19 +167,30 @@ export function NewsArticleTable({
     if (article) onOpenArticle(article);
   }, [onOpenArticle, sortedArticles]);
 
+  const handleSelectArticle = useCallback((article: MarketNewsItem) => {
+    if (article.id === selectedArticleId) {
+      onOpenArticle(article);
+      return;
+    }
+    setSelectedArticleId(article.id);
+  }, [onOpenArticle, selectedArticleId, setSelectedArticleId]);
+
   useKeyboard((event) => {
     if (!focused) return;
     const key = event.name;
     const isEnter = key === "enter" || key === "return";
     if (key === "j" || key === "down") {
+      event.stopPropagation?.();
       event.preventDefault?.();
       if (sortedArticles.length === 0) return;
       selectIndex(activeIdx >= 0 ? Math.min(activeIdx + 1, sortedArticles.length - 1) : 0);
     } else if (key === "k" || key === "up") {
+      event.stopPropagation?.();
       event.preventDefault?.();
       if (sortedArticles.length === 0) return;
       selectIndex(activeIdx > 0 ? activeIdx - 1 : 0);
     } else if (isEnter) {
+      event.stopPropagation?.();
       event.preventDefault?.();
       openIndex(activeIdx);
     }
@@ -253,7 +264,7 @@ export function NewsArticleTable({
       setHoveredIdx={setHoveredIdx}
       getItemKey={(item) => item.id}
       isSelected={(item, index) => item.id === selectedArticleId || (selectedArticleId === null && index === 0)}
-      onSelect={(item) => setSelectedArticleId(item.id)}
+      onSelect={handleSelectArticle}
       onActivate={onOpenArticle}
       renderCell={renderCell}
       emptyStateTitle={emptyStateTitle}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
@@ -9,7 +9,7 @@ import type { MarketNewsItem } from "../../../types/news-source";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../ai/providers";
 import { runAiPrompt } from "../ai/runner";
 import { getDigest, setDigest, isDigestInFlight, markDigestInFlight, clearDigestInFlight } from "./digest-store";
-import { NewsDetailView } from "./news-detail-view";
+import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleTable, type NewsSortPreference } from "./news-table";
 
 const DIGEST_PROMPT = `You are a financial news wire editor. Condense this headline and summary into a single concise actionable bullet point for a professional trader. Include why it matters and potential market impact. Keep it under 120 characters. Respond with ONLY the bullet text, nothing else.
@@ -30,17 +30,13 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const articles = useBreakingNews(50);
   const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("breaking:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("breaking:sort", DEFAULT_SORT);
-  const [detailArticleId, setDetailArticleId] = useState<string | null>(null);
   const [digestVersion, setDigestVersion] = useState(0);
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiRunning, setAiRunning] = useState(false);
   const [spinFrame, setSpinFrame] = useState(0);
   const processingRef = useRef(false);
-  const detailArticle = useMemo(
-    () => articles.find((article) => article.id === detailArticleId) ?? null,
-    [articles, detailArticleId],
-  );
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
 
   useEffect(() => {
     const providers = detectProviders();
@@ -133,7 +129,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
         setSelectedArticleId={setSelectedArticleId}
         sortPreference={sortPreference}
         setSortPreference={setSortPreference}
-        onOpenArticle={(article) => setDetailArticleId(article.id)}
+        onOpenArticle={openArticle}
         columns={["time", "source", "title", "tickers", "importance"]}
         emptyStateTitle="No breaking news"
         emptyStateHint="Breaking stories appear when high-priority headlines arrive."
@@ -143,7 +139,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   );
 
   const detailContent = detailArticle ? (
-    <NewsDetailView item={detailArticle} width={width} height={Math.max(height - 1, 1)} />
+    <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
   ) : (
     <box flexGrow={1} />
   );
@@ -152,7 +148,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     <PageStackView
       focused={focused}
       detailOpen={!!detailArticle}
-      onBack={() => setDetailArticleId(null)}
+      onBack={closeDetail}
       rootContent={rootContent}
       detailContent={detailContent}
     />
