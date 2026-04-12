@@ -804,6 +804,14 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
   pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
   pluginRegistry.openCommandBarFn = (query) => dispatch({ type: "SET_COMMAND_BAR", open: true, query });
+  pluginRegistry.openPluginCommandWorkflowFn = (commandId) => {
+    dispatch({
+      type: "SET_COMMAND_BAR",
+      open: true,
+      query: "",
+      launch: { kind: "plugin-command", commandId },
+    });
+  };
   const persistLayout = (layout: LayoutConfig, options?: { pushHistory?: boolean }) => {
     const currentState = stateRef.current;
     const normalizedLayout = normalizePaneLayout(layout);

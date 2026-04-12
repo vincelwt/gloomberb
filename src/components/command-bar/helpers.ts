@@ -325,7 +325,7 @@ export function getScreenFooterLeft(route: CommandBarRoute | null): string {
 }
 
 export function getScreenFooterRight(route: CommandBarRoute | null): string {
-  if (!route) return "esc close";
+  if (!route) return "esc cancel";
 
   if (route.kind === "workflow") return "esc back";
   if (route.kind === "confirm") return "backspace/esc back";

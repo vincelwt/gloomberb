@@ -106,6 +106,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   switchPanelFn: ((panel: "left" | "right") => void) = () => {};
   switchTabFn: ((tabId: string, paneId?: string) => void) = () => {};
   openCommandBarFn: ((query?: string) => void) = () => {};
+  openPluginCommandWorkflowFn: ((commandId: string) => void) = () => {};
   openPaneSettingsFn: ((paneId?: string) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
   createPaneFromTemplateFn: ((templateId: string, options?: PaneTemplateCreateOptions) => void) = () => {};
@@ -119,6 +120,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
   };
   navigateTicker = (symbol: string) => {
     this.navigateTickerFn(symbol);
+  };
+  openPluginCommandWorkflow = (commandId: string) => {
+    this.openPluginCommandWorkflowFn(commandId);
   };
 
   getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [] });

@@ -11,6 +11,7 @@ export interface PortfolioPaneSettings {
   hideHeader: boolean;
   hideCash: boolean;
   lockedCollectionId: string;
+  showSparklines?: boolean;
 }
 
 export interface CollectionEntry {
@@ -117,6 +118,7 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
     lockedCollectionId: typeof settings?.lockedCollectionId === "string" ? settings.lockedCollectionId : "",
+    showSparklines: settings?.showSparklines === true,
   };
 }
 
@@ -129,6 +131,7 @@ export function createPortfolioPaneSettings(overrides: Partial<PortfolioPaneSett
     hideHeader: overrides.hideHeader ?? false,
     hideCash: overrides.hideCash ?? false,
     lockedCollectionId: overrides.lockedCollectionId ?? "",
+    showSparklines: overrides.showSparklines ?? false,
   };
 }
 
@@ -238,6 +241,12 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     key: "hideCash",
     label: "Hide Cash Positions",
     description: "Hide the cash & margin drawer at the bottom of the pane.",
+    type: "toggle",
+  });
+  fields.push({
+    key: "showSparklines",
+    label: "Sparklines",
+    description: "Show a tiny price history chart in each row.",
     type: "toggle",
   });
 

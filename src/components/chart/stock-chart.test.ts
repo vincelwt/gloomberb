@@ -293,7 +293,7 @@ describe("stock chart auto helpers", () => {
     });
   });
 
-  test("stops auto zooming in once only two visible points remain", () => {
+  test("keeps shrinking the auto time span once only two visible points remain", () => {
     const history = makeDailyHistory(1, 10);
 
     const nextWindow = resolveAutoZoomWindow({
@@ -308,7 +308,7 @@ describe("stock chart auto helpers", () => {
     });
 
     expect(nextWindow).toEqual({
-      start: new Date("2026-01-09T00:00:00Z"),
+      start: new Date("2026-01-09T08:00:00Z"),
       end: new Date("2026-01-10T00:00:00Z"),
     });
   });

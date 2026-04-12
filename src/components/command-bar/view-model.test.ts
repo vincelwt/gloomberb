@@ -45,15 +45,15 @@ describe("command bar view model helpers", () => {
   test("returns footer hints for plugin toggles", () => {
     expect(getFooterHints("plugins", false)).toEqual({
       left: "up/down move  enter select  space toggle",
-      right: "esc close",
+      right: "esc cancel",
     });
     expect(getFooterHints("layout", false)).toEqual({
       left: "up/down move  enter select",
-      right: "esc close",
+      right: "esc cancel",
     });
     expect(getFooterHints("new-pane", false)).toEqual({
       left: "up/down move  enter select",
-      right: "esc close",
+      right: "esc cancel",
     });
   });
 

@@ -25,6 +25,7 @@ export function PortfolioTickerTable({
   financialsMap,
   columnContext,
   flashSymbols,
+  showSparklines,
 }: {
   columns: ColumnConfig[];
   sortColumnId: string | null;
@@ -42,6 +43,7 @@ export function PortfolioTickerTable({
   financialsMap: Map<string, TickerFinancials>;
   columnContext: ColumnContext;
   flashSymbols: Map<string, QuoteFlashDirection>;
+  showSparklines?: boolean;
 }) {
   const resolveCell = useCallback(
     (column: ColumnConfig, ticker: TickerRecord, financials: TickerFinancials | undefined) => (
@@ -68,6 +70,7 @@ export function PortfolioTickerTable({
       sortColumnId={sortColumnId}
       sortDirection={sortDirection}
       onHeaderClick={onHeaderClick}
+      showSparklines={showSparklines}
     />
   );
 }

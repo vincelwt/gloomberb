@@ -400,6 +400,260 @@ describe("CommandBar", () => {
     expect(calls).toEqual(["gridlock-all"]);
   });
 
+  test("surfaces plugin commands by add-style search terms", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="add alert"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("set-alert", {
+          id: "set-alert",
+          label: "Add Alert",
+          description: "Create a price alert from a symbol, condition, and target price",
+          keywords: ["add", "set", "alert", "price", "trigger"],
+          shortcut: "SA",
+          category: "data",
+          execute: async () => {},
+        });
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Add Alert");
+    expect(frame).toContain("SA");
+  });
+
+  test("opens plugin command shortcut arguments in the wizard for confirmation", async () => {
+    const calls: Array<Record<string, string> | undefined> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="SA AAPL above 200"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("set-alert", {
+          id: "set-alert",
+          label: "Add Alert",
+          description: "Create a price alert from a symbol, condition, and target price",
+          keywords: ["add", "set", "alert", "price", "trigger"],
+          shortcut: "SA",
+          shortcutArg: {
+            placeholder: "symbol condition price",
+            kind: "text",
+            parse: (arg: string) => {
+              const [symbol, condition, price] = arg.split(/\s+/);
+              return { symbol, condition, price };
+            },
+          },
+          category: "data",
+          wizardLayout: "form",
+          wizard: [
+            { key: "symbol", label: "Symbol", type: "text" },
+            {
+              key: "condition",
+              label: "Condition",
+              type: "select",
+              options: [
+                { label: "Above", value: "above" },
+                { label: "Below", value: "below" },
+              ],
+            },
+            { key: "price", label: "Target Price", type: "number" },
+          ],
+          execute: async (values?: Record<string, string>) => {
+            calls.push(values);
+          },
+        });
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Add Alert");
+    expect(frame).toContain("AAPL above 200");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    const workflowFrame = await waitForFrameToContain("Target Price");
+    expect(workflowFrame).toContain("AAPL");
+    expect(workflowFrame).toContain("Above");
+    expect(workflowFrame).toContain("200");
+    expect(calls).toEqual([]);
+  });
+
+  test("opens partial plugin command shortcut arguments in the wizard", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="SA AMD"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("set-alert", {
+          id: "set-alert",
+          label: "Add Alert",
+          description: "Create a price alert from a symbol, condition, and target price",
+          keywords: ["add", "set", "alert", "price", "trigger"],
+          shortcut: "SA",
+          shortcutArg: {
+            placeholder: "symbol condition price",
+            kind: "text",
+            parse: (arg: string) => ({ symbol: arg.trim().toUpperCase() }),
+          },
+          category: "data",
+          wizardLayout: "form",
+          wizard: [
+            { key: "symbol", label: "Symbol", type: "text" },
+            {
+              key: "condition",
+              label: "Condition",
+              type: "select",
+              options: [{ label: "Above", value: "above" }],
+            },
+            { key: "price", label: "Target Price", type: "number" },
+          ],
+          execute: async () => {},
+        });
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    const workflowFrame = await waitForFrameToContain("Target Price");
+    expect(workflowFrame).toContain("AMD");
+  });
+
+  test("updates workflow select fields from the option picker", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="SA AMD"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("set-alert", {
+          id: "set-alert",
+          label: "Add Alert",
+          description: "Create a price alert from a symbol, condition, and target price",
+          keywords: ["add", "set", "alert", "price", "trigger"],
+          shortcut: "SA",
+          shortcutArg: {
+            placeholder: "symbol condition price",
+            kind: "text",
+            parse: (arg: string) => ({ symbol: arg.trim().toUpperCase() }),
+          },
+          category: "data",
+          wizardLayout: "form",
+          wizard: [
+            { key: "symbol", label: "Symbol", type: "text" },
+            {
+              key: "condition",
+              label: "Condition",
+              type: "select",
+              options: [
+                { label: "Above", value: "above" },
+                { label: "Below", value: "below" },
+                { label: "Crosses", value: "crosses" },
+              ],
+            },
+            { key: "price", label: "Target Price", type: "number" },
+          ],
+          execute: async () => {},
+        });
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+    await waitForFrameToContain("Target Price");
+
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+    let frame = await waitForFrameToContain("Below");
+    expect(frame).toContain("Crosses");
+
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    frame = await waitForFrameToContain("Target Price");
+    expect(frame).toContain("Below");
+  });
+
+  test("opens plugin command workflows from a launch request", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query=""
+      configureState={(state) => ({
+        ...state,
+        commandBarLaunchRequest: {
+          kind: "plugin-command",
+          commandId: "set-alert",
+          sequence: 1,
+        },
+      })}
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("set-alert", {
+          id: "set-alert",
+          label: "Set Alert",
+          keywords: ["alert", "price", "trigger"],
+          shortcut: "SA",
+          category: "data",
+          wizardLayout: "form",
+          wizard: [
+            { key: "symbol", label: "Symbol", type: "text" },
+            {
+              key: "condition",
+              label: "Condition",
+              type: "select",
+              options: [
+                { label: "Above", value: "above" },
+                { label: "Below", value: "below" },
+              ],
+            },
+            { key: "price", label: "Target Price", type: "number" },
+          ],
+          execute: async () => {},
+        });
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    const frame = await waitForFrameToContain("Target Price");
+    expect(frame).toContain("Set Alert");
+    expect(frame).toContain("Symbol");
+    expect(frame).toContain("Condition");
+  });
+
   test("renders theme prefix results in the root query", async () => {
     testSetup = await testRender(<CommandBarHarness query="TH " />, {
       width: 80,

@@ -3,9 +3,11 @@ import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { EmptyState } from "./ui";
 import { colors, hoverBg } from "../theme/colors";
 import type { ColumnConfig } from "../types/config";
-import type { TickerFinancials } from "../types/financials";
+import type { TickerFinancials, PricePoint } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import { padTo } from "../utils/format";
+import { renderChart, resolveChartPalette, type StyledContent } from "./chart/chart-renderer";
+import type { ProjectedChartPoint } from "./chart/chart-data";
 
 export interface TickerTableCell {
   text: string;
@@ -64,6 +66,7 @@ interface TickerListTableProps {
   onRowActivate?: (ticker: TickerRecord) => void;
   emptyTitle?: string;
   emptyHint?: string;
+  showSparklines?: boolean;
 }
 
 const TickerListHeader = memo(function TickerListHeader({
@@ -118,6 +121,38 @@ const TickerListHeader = memo(function TickerListHeader({
   );
 });
 
+function renderSparkline(priceHistory: PricePoint[]): StyledContent | null {
+  if (priceHistory.length < 5) return null;
+
+  const last20 = priceHistory.slice(-20);
+  const points: ProjectedChartPoint[] = last20.map((pt) => ({
+    date: pt.date,
+    open: pt.open ?? pt.close,
+    high: pt.high ?? pt.close,
+    low: pt.low ?? pt.close,
+    close: pt.close,
+    volume: pt.volume ?? 0,
+  }));
+
+  const first = last20[0]?.close ?? 0;
+  const last = last20[last20.length - 1]?.close ?? 0;
+  const trend = last >= first ? "positive" : "negative";
+  const palette = resolveChartPalette(colors, trend);
+
+  const result = renderChart(points, {
+    width: 10,
+    height: 1,
+    showVolume: false,
+    volumeHeight: 0,
+    cursorX: null,
+    cursorY: null,
+    mode: "line",
+    colors: palette,
+  });
+
+  return result.lines[0] ?? null;
+}
+
 const TickerListRow = memo(function TickerListRow({
   columns,
   ticker,
@@ -130,6 +165,8 @@ const TickerListRow = memo(function TickerListRow({
   setCursorSymbol,
   resolveCell,
   onRowActivate,
+  showSparklines,
+  priceHistory,
 }: {
   columns: ColumnConfig[];
   ticker: TickerRecord;
@@ -142,9 +179,15 @@ const TickerListRow = memo(function TickerListRow({
   setCursorSymbol: (symbol: string) => void;
   resolveCell: ResolveTickerTableCell;
   onRowActivate?: (ticker: TickerRecord) => void;
+  showSparklines?: boolean;
+  priceHistory?: PricePoint[];
 }) {
   const lastActivatedAtRef = useRef<number | null>(null);
   const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
+
+  const sparkline = showSparklines && priceHistory && priceHistory.length >= 5
+    ? renderSparkline(priceHistory)
+    : null;
 
   return (
     <box
@@ -182,6 +225,11 @@ const TickerListRow = memo(function TickerListRow({
           </box>
         );
       })}
+      {sparkline && (
+        <box width={12}>
+          <text content={sparkline} />
+        </box>
+      )}
     </box>
   );
 }, (previous, next) => (
@@ -196,6 +244,8 @@ const TickerListRow = memo(function TickerListRow({
   && previous.setCursorSymbol === next.setCursorSymbol
   && previous.resolveCell === next.resolveCell
   && previous.onRowActivate === next.onRowActivate
+  && previous.showSparklines === next.showSparklines
+  && previous.priceHistory === next.priceHistory
 ));
 
 export function TickerListTable({
@@ -218,6 +268,7 @@ export function TickerListTable({
   onRowActivate,
   emptyTitle = "No tickers.",
   emptyHint = "Press Ctrl+P to add one.",
+  showSparklines,
 }: TickerListTableProps) {
   const safeFlashSymbols = flashSymbols ?? new Map<string, QuoteFlashDirection>();
 
@@ -262,6 +313,8 @@ export function TickerListTable({
                 setCursorSymbol={setCursorSymbol}
                 resolveCell={resolveCell}
                 onRowActivate={onRowActivate}
+                showSparklines={showSparklines}
+                priceHistory={financialsMap.get(ticker.metadata.ticker)?.priceHistory}
               />
             );
           })

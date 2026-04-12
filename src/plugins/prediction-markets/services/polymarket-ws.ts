@@ -1,6 +1,8 @@
 import type { PredictionBookLevel, PredictionTrade } from "../types";
 import { parseFloatSafe } from "./fetch";
 
+const POLYMARKET_HEARTBEAT_MS = 10_000;
+
 interface PolymarketLiveCallbacks {
   onBestBidAsk?: (
     assetId: string,
@@ -38,8 +40,23 @@ export function subscribePolymarketMarket(
   let closed = false;
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  const clearHeartbeat = () => {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  };
+
+  const sendHeartbeat = () => {
+    try {
+      socket?.send("PING");
+    } catch {
+      // The close handler will schedule reconnects for broken sockets.
+    }
+  };
 
   const connect = () => {
+    clearHeartbeat();
     socket = new WebSocket(
       "wss://ws-subscriptions-clob.polymarket.com/ws/market",
     );
@@ -51,6 +68,7 @@ export function subscribePolymarketMarket(
           custom_feature_enabled: true,
         }),
       );
+      heartbeatTimer = setInterval(sendHeartbeat, POLYMARKET_HEARTBEAT_MS);
     });
     socket.addEventListener("message", (event) => {
       try {
@@ -89,6 +107,7 @@ export function subscribePolymarketMarket(
       }
     });
     socket.addEventListener("close", () => {
+      clearHeartbeat();
       socket = null;
       if (closed) return;
       reconnectTimer = setTimeout(connect, 1_500);
@@ -103,6 +122,7 @@ export function subscribePolymarketMarket(
   return () => {
     closed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    clearHeartbeat();
     socket?.close();
   };
 }

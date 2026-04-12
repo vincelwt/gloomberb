@@ -26,6 +26,18 @@ export interface SecFilingItem {
   primaryDocumentUrl?: string;
 }
 
+export interface EarningsEvent {
+  symbol: string;
+  name: string;
+  earningsDate: Date;
+  epsEstimate: number | null;
+  epsActual: number | null;
+  revenueEstimate: number | null;
+  revenueActual: number | null;
+  surprise: number | null;
+  timing: "BMO" | "AMC" | "TNS" | "";
+}
+
 export interface MarketDataRequestContext {
   brokerId?: string;
   brokerInstanceId?: string;
@@ -68,6 +80,7 @@ export interface DataProvider {
   search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]>;
   getNews(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<NewsItem[]>;
   getSecFilings?(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]>;
+  getEarningsCalendar?(symbols: string[], context?: MarketDataRequestContext): Promise<EarningsEvent[]>;
   getSecFilingContent?(filing: SecFilingItem): Promise<string | null>;
   /** Fetch article summary/description by URL (lazy-loaded on selection) */
   getArticleSummary(url: string): Promise<string | null>;

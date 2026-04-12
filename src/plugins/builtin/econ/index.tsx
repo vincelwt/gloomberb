@@ -15,6 +15,7 @@ import { resolveFredMapping } from "./fred-series-map";
 import { fetchFredObservations, fetchFredSeriesInfo, type FredObservation, type FredSeriesInfo } from "./fred-client";
 import { renderChart, resolveChartPalette, type StyledContent } from "../../../components/chart/chart-renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
+import { FRED_API_KEY_COMMAND_LABEL, FRED_API_KEY_CONFIG_KEY } from "../fred-settings";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -157,7 +158,7 @@ interface EconDetailViewProps {
 }
 
 function EconDetailView({ event, width, height, focused }: EconDetailViewProps) {
-  const [fredApiKey] = usePluginConfigState<string>("fredApiKey", "");
+  const [fredApiKey] = usePluginConfigState<string>(FRED_API_KEY_CONFIG_KEY, "");
   const { navigateTicker } = usePluginTickerActions();
   const cacheRef = useRef<Map<string, FredCache>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -249,7 +250,7 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
           <text fg={colors.textDim}>{mapping.seriesId}</text>
         </box>
         <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.textMuted}>Configure FRED API key: type 'Set FRED' in command bar</text>
+          <text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</text>
         </box>
       </box>
     );
@@ -498,7 +499,7 @@ function chartLineContent(line: string | StyledContent): string | StyledText {
 // Main Calendar Pane
 // ---------------------------------------------------------------------------
 
-export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
+export function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [events, setEvents] = useState<EconEvent[]>(sharedCache?.data ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -514,7 +515,7 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const backfilledSeriesRef = useRef<Set<string>>(new Set());
 
-  const [fredApiKey] = usePluginConfigState<string>("fredApiKey", "");
+  const [fredApiKey] = usePluginConfigState<string>(FRED_API_KEY_CONFIG_KEY, "");
 
   const syncHeaderScroll = useCallback(() => {
     const bodyScrollBox = scrollRef.current;
@@ -733,8 +734,6 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
         return COUNTRY_CYCLE[(idx + 1) % COUNTRY_CYCLE.length]!;
       });
       setSelectedIdx(0);
-    } else if (event.name === "escape") {
-      close?.();
     }
   });
 
@@ -911,7 +910,7 @@ export function EconCalendarPane({ focused, width, height, close }: PaneProps) {
       />
 
       <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>[f]ilter · [c]ountry · [r]efresh</text>
+        <text fg={colors.textMuted}>[r]efresh</text>
       </box>
     </box>
   );
@@ -950,7 +949,7 @@ export const econCalendarPlugin: GloomPlugin = {
 
     ctx.registerCommand({
       id: "econ-set-fred-key",
-      label: "Set FRED API Key",
+      label: FRED_API_KEY_COMMAND_LABEL,
       keywords: ["fred", "api", "key", "economic", "econ", "configure", "setup"],
       category: "config",
       description: "Configure your free FRED API key for historical economic data (fred.stlouisfed.org)",
@@ -965,7 +964,7 @@ export const econCalendarPlugin: GloomPlugin = {
       async execute(values) {
         const key = values?.apiKey?.trim();
         if (!key) return;
-        await ctx.configState.set("fredApiKey", key);
+        await ctx.configState.set(FRED_API_KEY_CONFIG_KEY, key);
         ctx.notify({ body: "FRED API key saved", type: "success" });
       },
     });

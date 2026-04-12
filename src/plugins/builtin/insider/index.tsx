@@ -280,9 +280,6 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
             </box>
           </box>
         </scrollbox>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>Esc back</text>
-        </box>
       </box>
     );
   }
@@ -398,12 +395,6 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
           })}
         </box>
       </scrollbox>
-
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>
-          j/k navigate · Enter detail · [f] filter by name · {nameFilter ? "Esc clear filter" : ""}
-        </text>
-      </box>
     </box>
   );
 }

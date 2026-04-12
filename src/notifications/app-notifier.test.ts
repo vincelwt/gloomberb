@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildDesktopNotificationCommand,
+  buildSoundCommand,
   createAppNotifier,
   createDesktopNotifier,
 } from "./app-notifier";
@@ -44,6 +45,30 @@ describe("desktop notification commands", () => {
     expect(command?.args[0]).toBe("-NoProfile");
     expect(command?.args.at(-1)).toContain("$notify.BalloonTipTitle = 'Chat mention';");
     expect(command?.args.at(-1)).toContain("$notify.BalloonTipText = '#everyone\n@bob mentioned you';");
+  });
+
+  test("adds macOS notification sound when requested", () => {
+    const command = buildDesktopNotificationCommand({
+      title: "Price alert",
+      body: "AAPL triggered",
+      sound: "Glass",
+    }, "darwin");
+
+    expect(command?.args[1]).toContain("sound name \"Glass\"");
+  });
+});
+
+describe("notification sound commands", () => {
+  test("builds platform sound commands", () => {
+    expect(buildSoundCommand("Glass", "darwin")).toEqual({
+      command: "afplay",
+      args: ["/System/Library/Sounds/Glass.aiff"],
+    });
+    expect(buildSoundCommand("Ping", "linux")).toEqual({
+      command: "paplay",
+      args: ["/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"],
+    });
+    expect(buildSoundCommand("Glass", "win32")?.command).toBe("powershell.exe");
   });
 });
 
@@ -132,5 +157,21 @@ describe("desktop notifier", () => {
     notifier.notify({ body: "second" });
 
     expect(calls).toEqual(["notify-send"]);
+  });
+
+  test("plays requested sounds alongside desktop notifications", () => {
+    const calls: string[] = [];
+    const notifier = createDesktopNotifier({
+      platform: "linux",
+      runner: {
+        run(command) {
+          calls.push(command);
+        },
+      },
+    });
+
+    notifier.notify({ body: "AAPL triggered", sound: "Glass" });
+
+    expect(calls).toEqual(["notify-send", "paplay"]);
   });
 });

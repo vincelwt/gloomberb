@@ -219,6 +219,27 @@ function buildPolymarketSearchUrl(query: string): string {
   return url.toString();
 }
 
+async function loadPolymarketCatalogPages(
+  offsets: number[],
+  tagSlug?: string,
+): Promise<PolymarketEventRecord[]> {
+  const results = await Promise.allSettled(
+    offsets.map((offset) =>
+      fetchJson<PolymarketEventRecord[]>(
+        buildPolymarketCatalogUrl(offset, tagSlug),
+      ),
+    ),
+  );
+  const pages = results.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : [],
+  );
+  if (pages.length > 0) return pages;
+
+  const rejected = results.find((result) => result.status === "rejected");
+  if (rejected?.status === "rejected") throw rejected.reason;
+  return [];
+}
+
 export function normalizePolymarketMarket(
   record: PolymarketMarketRecord,
   options?: {
@@ -360,12 +381,11 @@ export async function loadPolymarketCatalog(
       if (categoryId !== "all") {
         const tagSlugs = getPolymarketCategoryTagSlugs(categoryId);
         const categoryPages = await Promise.all(
-          tagSlugs.flatMap((tagSlug) =>
-            POLYMARKET_CATEGORY_OFFSETS.map((offset) =>
-              fetchJson<PolymarketEventRecord[]>(
-                buildPolymarketCatalogUrl(offset, tagSlug),
-              ).catch(() => []),
-            ),
+          tagSlugs.map((tagSlug) =>
+            loadPolymarketCatalogPages(
+              POLYMARKET_CATEGORY_OFFSETS,
+              tagSlug,
+            ).catch(() => []),
           ),
         );
         const categorized = sortPolymarketMarkets(
@@ -374,13 +394,11 @@ export async function loadPolymarketCatalog(
         if (categorized.length > 0) return categorized;
       }
 
-      const pages = await Promise.all(
-        POLYMARKET_CATALOG_OFFSETS.map((offset) =>
-          fetchJson<PolymarketEventRecord[]>(buildPolymarketCatalogUrl(offset)),
-        ),
+      const pages = await loadPolymarketCatalogPages(
+        POLYMARKET_CATALOG_OFFSETS,
       );
       return sortPolymarketMarkets(
-        flattenPolymarketEvents(pages.flat(), "", categoryId),
+        flattenPolymarketEvents(pages, "", categoryId),
       );
     },
     PREDICTION_CACHE_POLICIES.catalog,

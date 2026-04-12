@@ -264,6 +264,7 @@ export function CommandBar({
   const rootThemeBaseIdRef = useRef<string | null>(null);
   const workflowInputRefs = useRef<Record<string, RefObject<InputRenderable | TextareaRenderable | null>>>({});
   const visibleListStateRef = useRef<ListScreenState | null>(null);
+  const processedLaunchSequenceRef = useRef<number | null>(null);
   const currentRoute = routeStack[routeStack.length - 1] ?? null;
   const currentRouteRef = useRef<CommandBarRoute | null>(currentRoute);
   currentRouteRef.current = currentRoute;
@@ -1600,9 +1601,16 @@ export function CommandBar({
     updateTopRoute,
   ]);
 
-  const openPluginCommandWorkflow = useCallback((command: CommandDef) => {
+  const openPluginCommandWorkflow = useCallback((
+    command: CommandDef,
+    options?: { values?: Record<string, string> },
+  ) => {
     if (!command.wizard || command.wizard.length === 0) return;
     const normalized = normalizeWizardFields(command.wizard);
+    const values = {
+      ...normalized.initialValues,
+      ...(options?.values ?? {}),
+    };
     openWorkflowRoute({
       kind: "workflow",
       workflowId: `plugin-command:${command.id}`,
@@ -1610,8 +1618,8 @@ export function CommandBar({
       subtitle: command.description,
       description: normalized.description,
       fields: normalized.fields,
-      values: normalized.initialValues,
-      activeFieldId: getFirstVisibleFieldId(normalized.fields, normalized.initialValues),
+      values,
+      activeFieldId: getFirstVisibleFieldId(normalized.fields, values),
       submitLabel: command.label,
       cancelLabel: "Back",
       pendingLabel: normalized.pendingLabel,
@@ -1625,6 +1633,28 @@ export function CommandBar({
       },
     });
   }, [openWorkflowRoute]);
+
+  useEffect(() => {
+    const launch = state.commandBarLaunchRequest;
+    if (!launch) {
+      processedLaunchSequenceRef.current = null;
+      return;
+    }
+    if (!state.commandBarOpen) return;
+    if (processedLaunchSequenceRef.current === launch.sequence) return;
+    processedLaunchSequenceRef.current = launch.sequence;
+
+    if (launch.kind === "plugin-command") {
+      const command = pluginRegistry.commands.get(launch.commandId);
+      if (!command?.wizard || command.wizard.length === 0) return;
+      openPluginCommandWorkflow(command);
+    }
+  }, [
+    openPluginCommandWorkflow,
+    pluginRegistry,
+    state.commandBarLaunchRequest,
+    state.commandBarOpen,
+  ]);
 
   const shouldOpenTemplateConfig = useCallback((template: PaneTemplateDef, arg?: string): boolean => {
     if (template.wizard && template.wizard.length > 0) {
@@ -2047,9 +2077,12 @@ export function CommandBar({
       : items;
   }, [createPaneTemplateItem, getAvailablePaneTemplates]);
 
-  const runPluginCommandDirect = useCallback(async (command: CommandDef) => {
+  const runPluginCommandDirect = useCallback(async (
+    command: CommandDef,
+    values?: Record<string, string>,
+  ) => {
     try {
-      await command.execute();
+      await command.execute(values);
       closeAll({ revertThemePreview: false });
     } catch (error) {
       notify(
@@ -2059,19 +2092,57 @@ export function CommandBar({
     }
   }, [closeAll, notify, pluginRegistry]);
 
-  const createPluginCommandItem = useCallback((command: CommandDef): ResultItem => {
+  const parsePluginCommandShortcutArg = useCallback((
+    command: CommandDef,
+    shortcutArg: string,
+  ): Record<string, string> => {
+    if (!shortcutArg.trim()) return {};
+    return command.shortcutArg?.parse?.(shortcutArg, {
+      activeTicker: activeTickerSymbol,
+    }) ?? { shortcut: shortcutArg };
+  }, [activeTickerSymbol]);
+
+  const createPluginCommandItem = useCallback((
+    command: CommandDef,
+    options?: { shortcutArg?: string },
+  ): ResultItem => {
     const pluginId = pluginRegistry.getCommandPluginId(command.id);
     const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
     const shortcut = command.shortcut?.trim() || undefined;
+    const shortcutArg = options?.shortcutArg?.trim() || "";
     return {
       id: command.id,
       label: command.label,
-      detail: command.description || "",
+      detail: shortcutArg || command.description || "",
       category: pluginName || "Plugin Commands",
       kind: "command",
       right: shortcut,
       searchText: `${command.label} ${command.description || ""} ${(command.keywords ?? []).join(" ")} ${shortcut || ""}`,
       action: () => {
+        if (shortcutArg && command.wizard && command.wizard.length > 0) {
+          try {
+            openPluginCommandWorkflow(command, {
+              values: parsePluginCommandShortcutArg(command, shortcutArg),
+            });
+          } catch (error) {
+            notify(
+              error instanceof Error ? error.message : `Could not parse ${command.label.toLowerCase()}.`,
+              { type: "error" },
+            );
+          }
+          return;
+        }
+        if (shortcutArg) {
+          try {
+            void runPluginCommandDirect(command, parsePluginCommandShortcutArg(command, shortcutArg));
+          } catch (error) {
+            notify(
+              error instanceof Error ? error.message : `Could not parse ${command.label.toLowerCase()}.`,
+              { type: "error" },
+            );
+          }
+          return;
+        }
         if (command.wizard && command.wizard.length > 0) {
           openPluginCommandWorkflow(command);
           return;
@@ -2097,6 +2168,8 @@ export function CommandBar({
   }, [
     openInlineConfirm,
     openPluginCommandWorkflow,
+    parsePluginCommandShortcutArg,
+    notify,
     pluginRegistry,
     resolvePluginCommandConfirm,
     runPluginCommandDirect,
@@ -2572,7 +2645,9 @@ export function CommandBar({
       }
 
       if (rootShortcutIntent.source === "plugin-command") {
-        return createPluginCommandItem(rootShortcutIntent.command);
+        return createPluginCommandItem(rootShortcutIntent.command, {
+          shortcutArg: rootShortcutIntent.argText,
+        });
       }
 
       const { command } = rootShortcutIntent;
@@ -3238,7 +3313,9 @@ export function CommandBar({
     }
 
     if (rootShortcutIntent.source === "plugin-command") {
-      return `Shortcut: ${rootShortcutIntent.label}`;
+      return rootShortcutIntent.argText
+        ? `Shortcut: ${rootShortcutIntent.label} · ${rootShortcutIntent.argText}`
+        : `Shortcut: ${rootShortcutIntent.label}`;
     }
 
     if (rootShortcutIntent.command.id === "search-ticker") {
@@ -3359,7 +3436,9 @@ export function CommandBar({
     }
 
     if (intent.kind !== "none" && intent.source === "plugin-command") {
-      return createPluginCommandItem(intent.command);
+      return createPluginCommandItem(intent.command, {
+        shortcutArg: intent.argText,
+      });
     }
 
     const match = matchPrefix(query);
@@ -4097,20 +4176,31 @@ export function CommandBar({
   }, [moveListSelection, setHoveredIndex]);
 
   const updateWorkflowValue = useCallback((fieldId: string, value: CommandBarFieldValue) => {
-    updateTopRoute((route) => {
-      if (route.kind !== "workflow") return route;
+    setRouteStack((current) => {
+      let workflowIndex = -1;
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        if (current[index]?.kind === "workflow") {
+          workflowIndex = index;
+          break;
+        }
+      }
+      if (workflowIndex < 0) return current;
+      const next = [...current];
+      const route = next[workflowIndex]!;
+      if (route.kind !== "workflow") return current;
       const nextValues = { ...route.values, [fieldId]: value };
       const nextActiveFieldId = route.activeFieldId && getVisibleWorkflowFields(route.fields, nextValues).some((field) => field.id === route.activeFieldId)
         ? route.activeFieldId
         : getFirstVisibleFieldId(route.fields, nextValues);
-      return {
+      next[workflowIndex] = {
         ...route,
         values: nextValues,
         activeFieldId: nextActiveFieldId,
         error: null,
       };
+      return next;
     });
-  }, [updateTopRoute]);
+  }, []);
 
   const moveWorkflowFocus = useCallback((delta: number) => {
     if (currentRoute?.kind !== "workflow") return;

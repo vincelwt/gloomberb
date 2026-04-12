@@ -1,5 +1,4 @@
 import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
@@ -107,31 +106,21 @@ function resolveWindowTemplates(registry: ReturnType<typeof getSharedRegistry>) 
     ));
 }
 
-export function HelpPane({ focused, width, height, close }: PaneProps) {
+export function HelpPane({ width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const compact = width < 78;
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const windowTemplates = resolveWindowTemplates(registry);
 
-  useKeyboard((event) => {
-    if (!focused) return;
-    if (event.name === "escape") {
-      close?.();
-    }
-  });
-
   const openDebugLog = () => {
-    close?.();
     registry?.showWidget("debug");
   };
 
   const openLayoutActions = () => {
-    close?.();
     registry?.openCommandBarFn("LAY ");
   };
 
   const openPluginManager = () => {
-    close?.();
     registry?.openCommandBarFn("PL ");
   };
 
@@ -253,10 +242,6 @@ export function HelpPane({ focused, width, height, close }: PaneProps) {
           </HelpSection>
         </box>
       </scrollbox>
-
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>Esc closes this window. Ctrl+W closes the focused pane.</text>
-      </box>
     </box>
   );
 }

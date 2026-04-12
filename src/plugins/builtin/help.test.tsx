@@ -69,7 +69,6 @@ describe("HelpPane", () => {
 
   test("opens the debug log from the mouse action", async () => {
     const calls: string[] = [];
-    let closed = 0;
 
     setSharedRegistryForTests({
       showWidget: (paneId: string) => calls.push(`widget:${paneId}`),
@@ -83,9 +82,7 @@ describe("HelpPane", () => {
         focused
         width={88}
         height={36}
-        close={() => {
-          closed += 1;
-        }}
+        close={() => {}}
       />,
       { width: 88, height: 36 },
     );
@@ -104,7 +101,6 @@ describe("HelpPane", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(closed).toBe(1);
     expect(calls).toEqual(["widget:debug"]);
   });
 });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { act, type ReactElement } from "react";
+import { createTestRenderer } from "@opentui/core/testing";
+import { createRoot } from "@opentui/react";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import {
   AppContext,
@@ -23,8 +24,10 @@ import {
 
 const TEST_PANE_ID = "comparison-chart:test";
 
-let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+let testSetup: Awaited<ReturnType<typeof createTestRenderer>> | undefined;
+let root: ReturnType<typeof createRoot> | undefined;
 let sharedCoordinator: MarketDataCoordinator | null = null;
+const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
 function makeTicker(symbol: string, currency: string): TickerRecord {
   return {
@@ -96,8 +99,16 @@ function createProvider(historyBySymbol: Record<string, number[]>, currencyBySym
 
 function createRegistrySpy(spy: { selected: string[]; focused: string[] }): PluginRegistry {
   return {
+    navigateTickerFn: (symbol: string) => {
+      spy.selected.push(symbol);
+      spy.focused.push("ticker-detail");
+    },
     selectTickerFn: (symbol: string) => { spy.selected.push(symbol); },
     focusPaneFn: (paneId: string) => { spy.focused.push(paneId); },
+    navigateTickerFn: (symbol: string) => {
+      spy.selected.push(symbol);
+      spy.focused.push("ticker-detail");
+    },
   } as unknown as PluginRegistry;
 }
 
@@ -132,7 +143,7 @@ function createComparisonHarness(
     focused: boolean;
     width: number;
     height: number;
-  }) => JSX.Element;
+  }) => ReactElement;
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
@@ -153,12 +164,47 @@ async function flushFrames(count = 3) {
   for (let index = 0; index < count; index += 1) {
     await act(async () => {
       await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
       await testSetup!.renderOnce();
+      await Promise.resolve();
     });
   }
 }
 
-afterEach(() => {
+async function mountComparisonHarness(
+  settings: Record<string, unknown>,
+  tickers: TickerRecord[],
+  financials: Array<[string, TickerFinancials]>,
+) {
+  actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+  testSetup = await createTestRenderer({ width: 120, height: 20 });
+  root = createRoot(testSetup.renderer);
+  await act(async () => {
+    root!.render(
+      createComparisonHarness(settings, tickers, financials),
+    );
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await testSetup!.renderOnce();
+  });
+}
+
+async function pressComparisonInput(action: () => void) {
+  await act(async () => {
+    action();
+    await testSetup!.renderOnce();
+    await Promise.resolve();
+  });
+}
+
+afterEach(async () => {
+  if (root) {
+    await act(async () => {
+      root!.unmount();
+      await Promise.resolve();
+    });
+    root = undefined;
+  }
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
@@ -172,7 +218,7 @@ afterEach(() => {
 describe("comparisonChartPlugin", () => {
   test("creates a configured comparison pane with percent as the default axis", () => {
     const template = comparisonChartPlugin.paneTemplates?.find((entry) => entry.id === COMPARISON_CHART_TEMPLATE_ID);
-    const paneDef = comparisonChartPlugin.panes.find((entry) => entry.id === COMPARISON_CHART_PANE_ID);
+    const paneDef = comparisonChartPlugin.panes?.find((entry) => entry.id === COMPARISON_CHART_PANE_ID);
 
     expect(template).toBeDefined();
     expect(paneDef?.defaultMode).toBe("floating");
@@ -223,24 +269,21 @@ describe("comparisonChartPlugin", () => {
     setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
 
-    testSetup = await testRender(
-      createComparisonHarness({
-        axisMode: "price",
-        symbols: ["AAPL", "7203"],
-        symbolsText: "AAPL, 7203",
-      }, [
-        makeTicker("AAPL", "USD"),
-        makeTicker("7203", "JPY"),
-      ], [
-        ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104, 106])],
-        ["7203", makeFinancials("7203", "JPY", [2000, 2020, 2050, 2100])],
-      ]),
-      { width: 120, height: 20 },
-    );
+    await mountComparisonHarness({
+      axisMode: "price",
+      symbols: ["AAPL", "7203"],
+      symbolsText: "AAPL, 7203",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("7203", "JPY"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104, 106])],
+      ["7203", makeFinancials("7203", "JPY", [2000, 2020, 2050, 2100])],
+    ]);
 
     await flushFrames();
 
-    const frame = testSetup.captureCharFrame();
+    const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("Mixed currencies detected; showing percent change.");
     expect(frame).toContain("1:1D");
     expect(frame).toContain("2:1W");
@@ -268,24 +311,21 @@ describe("comparisonChartPlugin", () => {
     setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
 
-    testSetup = await testRender(
-      createComparisonHarness({
-        axisMode: "price",
-        symbols: ["AAPL", "MSFT"],
-        symbolsText: "AAPL, MSFT",
-      }, [
-        makeTicker("AAPL", "USD"),
-        makeTicker("MSFT", "USD"),
-      ], [
-        ["AAPL", makeFinancials("AAPL", "USD", [])],
-        ["MSFT", makeFinancials("MSFT", "USD", [])],
-      ]),
-      { width: 120, height: 20 },
-    );
+    await mountComparisonHarness({
+      axisMode: "price",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [])],
+      ["MSFT", makeFinancials("MSFT", "USD", [])],
+    ]);
 
     await flushFrames();
 
-    const frame = testSetup.captureCharFrame();
+    const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("No chart data yet.");
     expect(frame).toContain("1:1D");
     expect(frame).toContain("2:1W");
@@ -308,28 +348,23 @@ describe("comparisonChartPlugin", () => {
     setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy(spy));
 
-    testSetup = await testRender(
-      createComparisonHarness({
-        axisMode: "percent",
-        symbols: ["AAPL", "MSFT", "NVDA"],
-        symbolsText: "AAPL, MSFT, NVDA",
-      }, [
-        makeTicker("AAPL", "USD"),
-        makeTicker("MSFT", "USD"),
-        makeTicker("NVDA", "USD"),
-      ], [
-        ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
-        ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
-        ["NVDA", makeFinancials("NVDA", "USD", [300, 305, 310])],
-      ]),
-      { width: 120, height: 20 },
-    );
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT", "NVDA"],
+      symbolsText: "AAPL, MSFT, NVDA",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+      makeTicker("NVDA", "USD"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
+      ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
+      ["NVDA", makeFinancials("NVDA", "USD", [300, 305, 310])],
+    ]);
 
     await flushFrames();
-    testSetup.mockInput.pressArrow("right");
-    await flushFrames();
-    testSetup.mockInput.pressEnter();
-    await flushFrames();
+    await pressComparisonInput(() => testSetup!.mockInput.pressArrow("right"));
+    await pressComparisonInput(() => testSetup!.mockInput.pressEnter());
 
     expect(spy.selected).toEqual(["MSFT"]);
     expect(spy.focused).toEqual(["ticker-detail"]);

@@ -197,43 +197,44 @@ export function clampDateWindowToBounds(
   const effectiveMinimumSpanMs = availableSpanMs === 0
     ? 0
     : Math.min(Math.max(minimumSpanMs, 1), availableSpanMs);
+  const requestedSpanMs = Math.max(normalizedWindow.endMs - normalizedWindow.startMs, 0);
+  const targetSpanMs = Math.min(
+    Math.max(requestedSpanMs, effectiveMinimumSpanMs),
+    availableSpanMs,
+  );
 
-  let startMs = clamp(normalizedWindow.startMs, normalizedBounds.startMs, normalizedBounds.endMs);
-  let endMs = clamp(normalizedWindow.endMs, normalizedBounds.startMs, normalizedBounds.endMs);
-
-  if (endMs < startMs) {
-    [startMs, endMs] = [endMs, startMs];
+  if (availableSpanMs === 0 || targetSpanMs === 0) {
+    return {
+      start: new Date(normalizedBounds.startMs),
+      end: new Date(normalizedBounds.endMs),
+    };
   }
 
-  if (effectiveMinimumSpanMs > 0 && endMs - startMs < effectiveMinimumSpanMs) {
-    const centerMs = startMs + ((endMs - startMs) / 2);
-    startMs = centerMs - (effectiveMinimumSpanMs / 2);
-    endMs = centerMs + (effectiveMinimumSpanMs / 2);
+  if (targetSpanMs >= availableSpanMs) {
+    return {
+      start: new Date(normalizedBounds.startMs),
+      end: new Date(normalizedBounds.endMs),
+    };
+  }
+
+  let startMs: number;
+  let endMs: number;
+
+  if (requestedSpanMs < targetSpanMs) {
+    const centerMs = normalizedWindow.startMs + (requestedSpanMs / 2);
+    startMs = centerMs - (targetSpanMs / 2);
+    endMs = centerMs + (targetSpanMs / 2);
+  } else {
+    startMs = normalizedWindow.startMs;
+    endMs = normalizedWindow.startMs + targetSpanMs;
   }
 
   if (startMs < normalizedBounds.startMs) {
-    const shiftMs = normalizedBounds.startMs - startMs;
-    startMs += shiftMs;
-    endMs += shiftMs;
-  }
-
-  if (endMs > normalizedBounds.endMs) {
-    const shiftMs = endMs - normalizedBounds.endMs;
-    startMs -= shiftMs;
-    endMs -= shiftMs;
-  }
-
-  startMs = clamp(startMs, normalizedBounds.startMs, normalizedBounds.endMs);
-  endMs = clamp(endMs, normalizedBounds.startMs, normalizedBounds.endMs);
-
-  if (effectiveMinimumSpanMs > 0 && endMs - startMs < effectiveMinimumSpanMs) {
-    if (availableSpanMs <= effectiveMinimumSpanMs) {
-      startMs = normalizedBounds.startMs;
-      endMs = normalizedBounds.endMs;
-    } else {
-      endMs = Math.min(normalizedBounds.endMs, startMs + effectiveMinimumSpanMs);
-      startMs = Math.max(normalizedBounds.startMs, endMs - effectiveMinimumSpanMs);
-    }
+    startMs = normalizedBounds.startMs;
+    endMs = startMs + targetSpanMs;
+  } else if (endMs > normalizedBounds.endMs) {
+    endMs = normalizedBounds.endMs;
+    startMs = endMs - targetSpanMs;
   }
 
   return {
@@ -426,6 +427,52 @@ export function isCanonicalPresetViewport(
   if (state.panOffset !== 0) return false;
   const canonicalZoom = getCanonicalZoomLevel(dates, state.activePreset);
   return Math.abs(state.zoomLevel - canonicalZoom) < 0.001;
+}
+
+type CanonicalPresetViewportState = Pick<ViewStateWithViewport, "presetRange" | "activePreset" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">;
+
+export function needsCanonicalPresetViewportReset(
+  dates: readonly Date[],
+  state: Pick<CanonicalPresetViewportState, "presetRange" | "activePreset" | "panOffset" | "zoomLevel">,
+): boolean {
+  if (dates.length === 0) return false;
+  if (state.activePreset !== state.presetRange) return false;
+  if (state.panOffset !== 0) return false;
+  const canonicalZoom = getCanonicalZoomLevel(dates, state.presetRange);
+  return Math.abs(state.zoomLevel - canonicalZoom) >= 0.001;
+}
+
+export function resolvePresetRangeViewport<S extends CanonicalPresetViewportState>(
+  state: S,
+  dates: readonly Date[],
+): S {
+  if (dates.length === 0) return state;
+  const canonicalZoom = getCanonicalZoomLevel(dates, state.presetRange);
+  if (state.zoomLevel === canonicalZoom && state.panOffset === 0) return state;
+  return {
+    ...state,
+    panOffset: 0,
+    zoomLevel: canonicalZoom,
+    cursorX: null,
+    cursorY: null,
+  };
+}
+
+export function resolveCanonicalPresetViewport<S extends CanonicalPresetViewportState>(
+  state: S,
+  dates: readonly Date[],
+): S {
+  if (!needsCanonicalPresetViewportReset(dates, state)) return state;
+  return resolvePresetRangeViewport(state, dates);
+}
+
+export function resolveVisibleActivePreset(
+  dates: readonly Date[],
+  state: Pick<ViewStateWithViewport, "presetRange" | "activePreset" | "panOffset" | "zoomLevel" | "resolution">,
+): TimeRange | null {
+  if (!state.activePreset) return null;
+  if (isCanonicalPresetViewport(dates, state)) return state.activePreset;
+  return needsCanonicalPresetViewportReset(dates, state) ? state.activePreset : null;
 }
 
 export function resolvePresetSelectionWithResolution<S extends ViewStateWithViewport>(

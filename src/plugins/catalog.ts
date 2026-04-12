@@ -23,6 +23,11 @@ import { correlationPlugin } from "./builtin/correlation";
 import { analyticsPlugin } from "./builtin/analytics";
 import { insiderPlugin } from "./builtin/insider";
 import { newsWirePlugin } from "./builtin/news-wire";
+import { alertsPlugin } from "./builtin/alerts";
+import { fxMatrixPlugin } from "./builtin/fx-matrix";
+import { yieldCurvePlugin } from "./builtin/yield-curve";
+import { sectorsPlugin } from "./builtin/sectors";
+import { earningsPlugin } from "./builtin/earnings";
 
 export interface PluginCatalogEntry {
   plugin: GloomPlugin;
@@ -54,6 +59,11 @@ export const builtinPlugins: GloomPlugin[] = [
   worldIndicesPlugin,
   marketMoversPlugin,
   newsWirePlugin,
+  alertsPlugin,
+  fxMatrixPlugin,
+  yieldCurvePlugin,
+  sectorsPlugin,
+  earningsPlugin,
   debugPlugin,
 ];
 

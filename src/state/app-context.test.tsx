@@ -22,6 +22,30 @@ describe("appReducer command bar state", () => {
     expect(next.commandBarQuery).toBe("");
   });
 
+  test("stores and clears command bar launch requests", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const opened = appReducer(initial, {
+      type: "SET_COMMAND_BAR",
+      open: true,
+      launch: { kind: "plugin-command", commandId: "set-alert" },
+    });
+    const relaunched = appReducer(opened, {
+      type: "SET_COMMAND_BAR",
+      open: true,
+      launch: { kind: "plugin-command", commandId: "set-alert" },
+    });
+    const closed = appReducer(relaunched, { type: "SET_COMMAND_BAR", open: false });
+
+    expect(opened.commandBarOpen).toBe(true);
+    expect(opened.commandBarLaunchRequest).toEqual({
+      kind: "plugin-command",
+      commandId: "set-alert",
+      sequence: 1,
+    });
+    expect(relaunched.commandBarLaunchRequest?.sequence).toBe(2);
+    expect(closed.commandBarLaunchRequest).toBeNull();
+  });
+
   test("toggle opens blank and clears on close", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
     const opened = appReducer(initial, { type: "TOGGLE_COMMAND_BAR" });

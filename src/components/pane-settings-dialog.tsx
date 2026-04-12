@@ -82,7 +82,7 @@ function SelectFieldDialog({
   return (
     <DialogFrame
       title={field.label}
-      footer="Use ↑↓ to choose · enter to apply · esc to close"
+      footer="Use ↑↓ to choose · enter to apply · esc cancel"
     >
       <ListView
         items={field.options.map((option) => ({
@@ -141,7 +141,7 @@ function TextFieldDialog({
   return (
     <DialogFrame
       title={field.label}
-      footer="Enter to apply · esc to close"
+      footer="Enter to apply · esc cancel"
     >
       <box flexDirection="column" gap={1}>
         <TextField
@@ -276,7 +276,7 @@ export function PaneSettingsDialogContent({
 
   if (!descriptor) {
     return (
-      <DialogFrame title="Pane Settings" footer="Press esc to close">
+      <DialogFrame title="Pane Settings" footer="Press esc to cancel">
         <text fg={colors.textDim}>This pane is no longer configurable.</text>
       </DialogFrame>
     );
@@ -285,7 +285,7 @@ export function PaneSettingsDialogContent({
   const title = descriptor.settingsDef.title ?? `${descriptor.paneDef.name} Settings`;
 
   return (
-    <DialogFrame title={title} footer="Use ↑↓ to choose · enter to edit · esc to close">
+    <DialogFrame title={title} footer="Use ↑↓ to choose · enter to edit · esc cancel">
       <ListView
         items={fields.map((field) => ({
           id: field.key,

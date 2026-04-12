@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
-import { useAppState } from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../utils/debug-log";
 import { writeFileSync } from "fs";
@@ -53,8 +52,7 @@ function formatTimestamp(ts: number): string {
   return d.toISOString().slice(11, 23);
 }
 
-function DebugPane({ focused, width, height, close }: PaneProps) {
-  const { dispatch } = useAppState();
+function DebugPane({ focused, width, height }: PaneProps) {
   const [entries, setEntries] = useState<LogEntry[]>(() => debugLog.getEntries());
   const [filterLevel, setFilterLevel] = useState<LogLevel | null>(null);
   const [filterSource, setFilterSource] = useState<string | null>(null);
@@ -162,20 +160,15 @@ function DebugPane({ focused, width, height, close }: PaneProps) {
       return;
     }
 
-    if (event.name === "escape") {
-      if (showDetail) {
-        setShowDetail(false);
-      } else {
-        close?.();
-      }
+    if (event.name === "escape" && showDetail) {
+      setShowDetail(false);
       return;
     }
   });
 
   const headerHeight = 2;
-  const footerHeight = 1;
   const contentWidth = Math.max(1, width - 2);
-  const messageAreaHeight = Math.max(1, height - headerHeight - footerHeight);
+  const messageAreaHeight = Math.max(1, height - headerHeight);
 
   // Compute visible window
   const visibleCount = showDetail ? Math.max(1, messageAreaHeight - 4) : messageAreaHeight;
@@ -291,21 +284,6 @@ function DebugPane({ focused, width, height, close }: PaneProps) {
           </box>
         </box>
       )}
-
-      {/* Footer */}
-      <box height={1} width={contentWidth} flexDirection="row" paddingLeft={1}>
-        <text fg={colors.textMuted}>
-          <span fg={colors.text}>l</span>evel
-          {"  "}
-          <span fg={colors.text}>s</span>ource
-          {"  "}
-          <span fg={colors.text}>e</span>xport
-          {"  "}
-          <span fg={colors.text}>x</span> clear
-          {"  "}
-          <span fg={colors.text}>a</span>uto-scroll
-        </text>
-      </box>
     </box>
   );
 }

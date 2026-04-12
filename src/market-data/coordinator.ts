@@ -8,6 +8,7 @@ import {
   buildArticleSummaryKey,
   buildChartKey,
   buildFxKey,
+  buildInstrumentKey,
   buildTickerFinancialsSnapshot,
   buildNewsKey,
   buildOptionsKey,
@@ -24,9 +25,11 @@ import {
 import { traceMarketData } from "./trace";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { hasFreshQuoteForCurrentSession, isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
+import { TIME_RANGE_ORDER } from "../components/chart/chart-resolution";
 
 const EMPTY_MESSAGE = "No data available";
 const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
+const TIME_RANGE_INDEX = new Map(TIME_RANGE_ORDER.map((range, index) => [range, index]));
 
 function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
   return {
@@ -34,6 +37,27 @@ function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
     bufferRange: "5Y",
     granularity: "range",
   };
+}
+
+function getChartGranularity(request: ChartRequest): NonNullable<ChartRequest["granularity"]> {
+  return request.granularity ?? "range";
+}
+
+function getTimeRangeIndex(range: ChartRequest["bufferRange"]): number {
+  return TIME_RANGE_INDEX.get(range) ?? 0;
+}
+
+function isSeedableChartRequest(
+  target: ChartRequest,
+  candidate: ChartRequest,
+): boolean {
+  const targetGranularity = getChartGranularity(target);
+  const candidateGranularity = getChartGranularity(candidate);
+  if (targetGranularity !== candidateGranularity) return false;
+  if (targetGranularity === "detail") return false;
+  if (targetGranularity === "resolution" && target.resolution !== candidate.resolution) return false;
+  if (buildInstrumentKey(target.instrument) !== buildInstrumentKey(candidate.instrument)) return false;
+  return getTimeRangeIndex(candidate.bufferRange) <= getTimeRangeIndex(target.bufferRange);
 }
 
 function classifyError(error: unknown): { reasonCode: ProviderReasonCode; message: string } {
@@ -125,6 +149,7 @@ export class MarketDataCoordinator {
   private version = 0;
   private readonly listeners = new Set<() => void>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly chartRequests = new Map<string, ChartRequest>();
 
   private readonly quoteStore = new QueryStore<Quote>(() => this.bump());
   private readonly snapshotStore = new QueryStore<TickerFinancials>(() => this.bump());
@@ -281,6 +306,49 @@ export class MarketDataCoordinator {
     return promise;
   }
 
+  private findChartSeedEntry(
+    key: string,
+    request: ChartRequest,
+  ): { entry: QueryEntry<PricePoint[]>; data: PricePoint[]; score: number } | null {
+    let best: { entry: QueryEntry<PricePoint[]>; data: PricePoint[]; score: number } | null = null;
+    for (const [candidateKey, candidateRequest] of this.chartRequests) {
+      if (candidateKey === key) continue;
+      if (!isSeedableChartRequest(request, candidateRequest)) continue;
+      const entry = this.chartStore.get(candidateKey);
+      const data = resolveEntryData(entry);
+      if (!data?.length) continue;
+      const score = getTimeRangeIndex(candidateRequest.bufferRange);
+      if (!best || score > best.score) {
+        best = { entry, data, score };
+      }
+    }
+    return best;
+  }
+
+  private createChartLoadingEntry(
+    key: string,
+    request: ChartRequest,
+    current: QueryEntry<PricePoint[]>,
+  ): QueryEntry<PricePoint[]> {
+    if (resolveEntryData(current)?.length) {
+      return loadingEntry(current);
+    }
+
+    const seed = this.findChartSeedEntry(key, request);
+    if (!seed) {
+      return loadingEntry(current);
+    }
+
+    return loadingEntry({
+      ...current,
+      data: seed.data,
+      lastGoodData: seed.entry.lastGoodData?.length ? seed.entry.lastGoodData : seed.data,
+      source: seed.entry.source,
+      fetchedAt: seed.entry.fetchedAt,
+      staleAt: seed.entry.staleAt,
+    });
+  }
+
   async loadSnapshot(
     instrument: InstrumentRef,
     options: { forceRefresh?: boolean } = {},
@@ -379,9 +447,10 @@ export class MarketDataCoordinator {
     options: { forceRefresh?: boolean } = {},
   ): Promise<QueryEntry<PricePoint[]>> {
     const key = buildChartKey(request);
+    this.chartRequests.set(key, request);
     const flightKey = options.forceRefresh ? `${key}|refresh` : key;
     return this.runSingleFlight(flightKey, async () => {
-      this.chartStore.update(key, loadingEntry);
+      this.chartStore.update(key, (current) => this.createChartLoadingEntry(key, request, current));
       const startedAt = Date.now();
       try {
         const data = normalizePriceHistory(

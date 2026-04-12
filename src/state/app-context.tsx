@@ -61,6 +61,12 @@ export interface CollectionSortPreference {
   direction: SortDirection;
 }
 
+export interface CommandBarLaunchRequest {
+  kind: "plugin-command";
+  commandId: string;
+  sequence: number;
+}
+
 export interface AppState {
   config: AppConfig;
   tickers: Map<string, TickerRecord>;
@@ -73,6 +79,7 @@ export interface AppState {
   recentTickers: string[];
   commandBarOpen: boolean;
   commandBarQuery: string;
+  commandBarLaunchRequest: CommandBarLaunchRequest | null;
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
@@ -97,7 +104,12 @@ export type AppAction =
   | { type: "TRACK_TICKER"; symbol: string | null }
   | { type: "SET_ACTIVE_PANEL"; panel: "left" | "right" }
   | { type: "TOGGLE_COMMAND_BAR" }
-  | { type: "SET_COMMAND_BAR"; open: boolean; query?: string }
+  | {
+      type: "SET_COMMAND_BAR";
+      open: boolean;
+      query?: string;
+      launch?: { kind: "plugin-command"; commandId: string } | null;
+    }
   | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }
   | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
@@ -492,15 +504,23 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "TOGGLE_COMMAND_BAR":
       return state.commandBarOpen
-        ? { ...state, commandBarOpen: false, commandBarQuery: "" }
-        : { ...state, commandBarOpen: true, commandBarQuery: "" };
+        ? { ...state, commandBarOpen: false, commandBarQuery: "", commandBarLaunchRequest: null }
+        : { ...state, commandBarOpen: true, commandBarQuery: "", commandBarLaunchRequest: null };
 
-    case "SET_COMMAND_BAR":
+    case "SET_COMMAND_BAR": {
+      const launchRequest = action.open && action.launch
+        ? {
+            ...action.launch,
+            sequence: (state.commandBarLaunchRequest?.sequence ?? 0) + 1,
+          }
+        : null;
       return {
         ...state,
         commandBarOpen: action.open,
         commandBarQuery: action.open ? (action.query ?? "") : "",
+        commandBarLaunchRequest: launchRequest,
       };
+    }
 
     case "SET_COMMAND_BAR_QUERY":
       return { ...state, commandBarQuery: action.query };
@@ -1018,6 +1038,7 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     recentTickers: config.recentTickers,
     commandBarOpen: false,
     commandBarQuery: "",
+    commandBarLaunchRequest: null,
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,

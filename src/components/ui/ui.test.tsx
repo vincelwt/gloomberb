@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useRef, useState } from "react";
+import { act, useEffect, useRef, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
@@ -22,6 +22,7 @@ let setListSelection: ((index: number) => void) | null = null;
 let selectedTableRow: string | null = null;
 let activatedTableRow: string | null = null;
 let selectedChips: string[] = [];
+let tableHorizontalScrollbarVisible: boolean | null = null;
 
 function ScrollableListHarness() {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -117,6 +118,38 @@ function DataTableSectionHarness() {
   );
 }
 
+function DataTableNoHorizontalScrollHarness() {
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    tableHorizontalScrollbarVisible = scrollRef.current?.horizontalScrollBar.visible ?? null;
+  });
+
+  return (
+    <DataTable
+      columns={[{ id: "name", label: "NAME", width: 12, align: "left" }]}
+      items={[{ id: "alpha", name: "Alpha" }]}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      syncHeaderScroll={() => {}}
+      onBodyScrollActivity={() => {}}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      getItemKey={(row) => row.id}
+      isSelected={() => false}
+      onSelect={() => {}}
+      renderCell={(row) => ({ text: row.name })}
+      emptyStateTitle="No rows."
+      showHorizontalScrollbar={false}
+    />
+  );
+}
+
 function MultiSelectChipsHarness() {
   const [values, setValues] = useState(["sma"]);
   selectedChips = values;
@@ -164,6 +197,7 @@ afterEach(() => {
   selectedTableRow = null;
   activatedTableRow = null;
   selectedChips = [];
+  tableHorizontalScrollbarVisible = null;
 });
 
 describe("shared UI kit", () => {
@@ -419,5 +453,24 @@ describe("shared UI kit", () => {
     frame = testSetup.captureCharFrame();
     expect(selectedTableRow).toBe("cpi");
     expect(frame).toContain("CPI");
+  });
+
+  test("hides data table horizontal scrolling when disabled", async () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="portfolio-list:main">
+          <DataTableNoHorizontalScrollHarness />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 32, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(tableHorizontalScrollbarVisible).toBe(false);
   });
 });

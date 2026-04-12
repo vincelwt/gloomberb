@@ -111,16 +111,16 @@ export function getFooterHints(mode: CommandBarMode, isNarrow: boolean): Command
   if (mode === "plugins") {
     return {
       left: isNarrow ? "space toggle" : `${moveAndSelect}  space toggle`,
-      right: "esc close",
+      right: "esc cancel",
     };
   }
   if (mode === "layout") {
-    return { left: moveAndSelect, right: "esc close" };
+    return { left: moveAndSelect, right: "esc cancel" };
   }
   if (mode === "new-pane") {
-    return { left: moveAndSelect, right: "esc close" };
+    return { left: moveAndSelect, right: "esc cancel" };
   }
-  return { left: moveAndSelect, right: "esc close" };
+  return { left: moveAndSelect, right: "esc cancel" };
 }
 
 export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?: string): { label: string; detail: string } {

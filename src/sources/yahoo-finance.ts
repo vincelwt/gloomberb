@@ -1,5 +1,5 @@
 import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile } from "../types/financials";
-import type { DataProvider, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
+import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import {
   normalizeChartResolutionSupport,
@@ -1064,5 +1064,79 @@ export class YahooFinanceClient implements DataProvider {
       }
     }
     throw lastError || new Error(`No options chain for ${ticker}`);
+  }
+
+  async getEarningsCalendar(symbols: string[], _context?: MarketDataRequestContext): Promise<EarningsEvent[]> {
+    const results: EarningsEvent[] = [];
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 200));
+      const batch = symbols.slice(i, i + BATCH_SIZE);
+
+      const settled = await Promise.allSettled(
+        batch.map(async (symbol) => {
+          const params = new URLSearchParams({ modules: "calendarEvents,earningsTrend,quoteType" });
+          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
+          const data = await this.fetchJsonWithCrumb<{
+            quoteSummary?: {
+              result?: Array<{
+                calendarEvents?: {
+                  earnings?: {
+                    earningsDate?: Array<{ raw: number }>;
+                    earningsAverage?: { raw: number };
+                    revenueAverage?: { raw: number };
+                  };
+                };
+                earningsTrend?: {
+                  trend?: Array<{
+                    period: string;
+                    earningsEstimate?: { avg?: { raw: number } };
+                    revenueEstimate?: { avg?: { raw: number } };
+                  }>;
+                };
+                quoteType?: {
+                  shortName?: string;
+                  longName?: string;
+                };
+              }>;
+            };
+          }>(`earnings ${symbol}`, url);
+
+          const mod = data.quoteSummary?.result?.[0];
+          if (!mod) return null;
+
+          const cal = mod.calendarEvents?.earnings;
+          if (!cal?.earningsDate?.length) return null;
+
+          const earningsDate = new Date(cal.earningsDate[0]!.raw * 1000);
+          if (isNaN(earningsDate.getTime())) return null;
+
+          const currentQtr = mod.earningsTrend?.trend?.find((t) => t.period === "0q");
+          const name = mod.quoteType?.shortName || mod.quoteType?.longName || symbol;
+
+          return {
+            symbol,
+            name,
+            earningsDate,
+            epsEstimate: currentQtr?.earningsEstimate?.avg?.raw ?? cal.earningsAverage?.raw ?? null,
+            epsActual: null,
+            revenueEstimate: currentQtr?.revenueEstimate?.avg?.raw ?? cal.revenueAverage?.raw ?? null,
+            revenueActual: null,
+            surprise: null,
+            timing: "" as const,
+          };
+        }),
+      );
+
+      for (const result of settled) {
+        if (result.status === "fulfilled" && result.value) {
+          results.push(result.value);
+        }
+      }
+    }
+
+    results.sort((a, b) => a.earningsDate.getTime() - b.earningsDate.getTime());
+    return results;
   }
 }
