@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
-import type { TickerFinancials } from "../types/financials";
+import type { PricePoint, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./coordinator";
-import { useFxRatesMap, useTickerFinancialsMap } from "./hooks";
+import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "./hooks";
+import type { ChartRequest } from "./request-types";
+import { createIdleEntry } from "./result-types";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let bumpHarness: (() => void) | null = null;
+let replaceChartRequests: ((requests: readonly ChartRequest[]) => void) | null = null;
 let latestFxRates: Map<string, number> | null = null;
 let latestFinancialsMap: Map<string, TickerFinancials> | null = null;
 
@@ -70,6 +73,31 @@ function HooksHarness() {
   return <text>{String(tick)}</text>;
 }
 
+function ChartQueriesHarness({
+  initialRequests,
+  debounceMs,
+}: {
+  initialRequests: readonly ChartRequest[];
+  debounceMs: number;
+}) {
+  const [requests, setRequests] = useState<readonly ChartRequest[]>(initialRequests);
+  replaceChartRequests = setRequests;
+  useChartQueries(requests, { debounceMs });
+
+  return <text>{String(requests.length)}</text>;
+}
+
+function makeChartRequest(bufferRange: ChartRequest["bufferRange"]): ChartRequest {
+  return {
+    instrument: {
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+    },
+    bufferRange,
+    granularity: "range",
+  };
+}
+
 afterEach(async () => {
   if (testSetup) {
     await act(async () => {
@@ -78,6 +106,7 @@ afterEach(async () => {
     testSetup = undefined;
   }
   bumpHarness = null;
+  replaceChartRequests = null;
   latestFxRates = null;
   latestFinancialsMap = null;
   setSharedMarketDataCoordinator(null);
@@ -116,5 +145,47 @@ describe("market-data hooks", () => {
 
     expect(latestFxRates).toBe(initialFxRates);
     expect(latestFinancialsMap).toBe(initialFinancialsMap);
+  });
+
+  test("debounces chart query batches and cancels superseded schedules", async () => {
+    const loadedRanges: string[] = [];
+    const idleChartEntry = createIdleEntry<PricePoint[]>();
+    const coordinator = {
+      subscribe: () => () => {},
+      getVersion: () => 1,
+      getChartEntry: () => idleChartEntry,
+      loadChart: async (request: ChartRequest) => {
+        loadedRanges.push(request.bufferRange);
+        return idleChartEntry;
+      },
+    };
+    setSharedMarketDataCoordinator(coordinator as unknown as MarketDataCoordinator);
+
+    testSetup = await testRender(
+      <ChartQueriesHarness initialRequests={[makeChartRequest("1D")]} debounceMs={40} />,
+      {
+        width: 20,
+        height: 1,
+      },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      replaceChartRequests?.([makeChartRequest("1W")]);
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      replaceChartRequests?.([makeChartRequest("1M")]);
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await testSetup!.renderOnce();
+    });
+
+    expect(loadedRanges).toEqual(["1M"]);
   });
 });

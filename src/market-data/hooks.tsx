@@ -121,8 +121,12 @@ export function useChartQuery(request: ChartRequest | null | undefined): QueryEn
   return entry;
 }
 
-export function useChartQueries(requests: readonly ChartRequest[]): Map<string, QueryEntry<PricePoint[]>> {
+export function useChartQueries(
+  requests: readonly ChartRequest[],
+  options: { debounceMs?: number } = {},
+): Map<string, QueryEntry<PricePoint[]>> {
   const requestKey = requests.map((request) => buildChartKey(request)).join(",");
+  const debounceMs = Math.max(0, options.debounceMs ?? 0);
   const entries = useCoordinatorSelector((coordinator) => (
     requests.map((request) => [buildChartKey(request), coordinator.getChartEntry(request)] as const)
   ), [] as Array<readonly [string, QueryEntry<PricePoint[]>]>);
@@ -130,10 +134,18 @@ export function useChartQueries(requests: readonly ChartRequest[]): Map<string, 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator) return;
-    for (const request of requests) {
-      void coordinator.loadChart(request);
+    const loadRequests = () => {
+      for (const request of requests) {
+        void coordinator.loadChart(request);
+      }
+    };
+    if (debounceMs <= 0) {
+      loadRequests();
+      return;
     }
-  }, [requestKey]);
+    const timeout = setTimeout(loadRequests, debounceMs);
+    return () => clearTimeout(timeout);
+  }, [debounceMs, requestKey]);
 
   return useMemo(() => new Map(entries), [entries]);
 }

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { bucketOhlcSeries, getVisibleWindow, projectChartData, resolveRenderMode } from "./chart-data";
+import {
+  bucketOhlcSeries,
+  getVisibleWindow,
+  projectChartData,
+  resolveRenderMode,
+  resolveStableOhlcProjectionOptions,
+} from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
 import { buildChartScene, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
@@ -63,6 +69,111 @@ describe("bucketOhlcSeries", () => {
       volume: 450,
     });
   });
+
+  test("keeps interior OHLC buckets aligned to source bars while panning", () => {
+    const source = Array.from({ length: 13 }, (_, index) => ({
+      date: new Date(Date.UTC(2024, 0, index + 1)),
+      open: index,
+      high: index + 10,
+      low: index - 10,
+      close: index + 0.5,
+      volume: index + 1,
+    })) as PricePoint[];
+
+    const firstView = bucketOhlcSeries(source.slice(0, 12), 3, { sourceIndexOffset: 0 });
+    const pannedView = bucketOhlcSeries(source.slice(1, 13), 3, { sourceIndexOffset: 1 });
+    const firstSharedBucket = firstView[1];
+    const secondSharedBucket = firstView[2];
+    if (!firstSharedBucket || !secondSharedBucket) {
+      throw new Error("Expected shared OHLC buckets");
+    }
+
+    expect(firstSharedBucket).toEqual({
+      date: source[4]!.date,
+      open: 1,
+      high: 14,
+      low: -9,
+      close: 4.5,
+      volume: 2 + 3 + 4 + 5,
+    });
+    expect(pannedView[0]).toEqual(firstSharedBucket);
+    expect(pannedView[1]).toEqual(secondSharedBucket);
+  });
+
+  test("keeps source-aligned bucket count stable across small pans", () => {
+    const source: PricePoint[] = [];
+    let cursor = new Date(Date.UTC(2024, 0, 1));
+    let sourceIndex = 0;
+    while (source.length < 220) {
+      const day = cursor.getUTCDay();
+      if (day !== 0 && day !== 6) {
+        source.push({
+          date: new Date(cursor),
+          open: sourceIndex,
+          high: sourceIndex + 1,
+          low: sourceIndex - 1,
+          close: sourceIndex + 0.5,
+          volume: sourceIndex + 1,
+        });
+        sourceIndex += 1;
+      }
+      cursor = new Date(cursor.getTime() + 24 * 3600_000);
+    }
+
+    const visibleCount = 160;
+    const targetWidth = 40;
+    const projectionOptions = resolveStableOhlcProjectionOptions({
+      pointCount: visibleCount,
+      sourceIndexOffset: 0,
+      bucketWidth: targetWidth * 2,
+      navigationPointCount: visibleCount,
+    });
+    const targetBucketCount = projectionOptions.ohlcTargetBucketCount!;
+    const projectWindow = (start: number) => bucketOhlcSeries(
+      source.slice(start, start + visibleCount),
+      targetWidth,
+      {
+        ...projectionOptions,
+        sourceIndexOffset: start,
+      },
+    );
+
+    const first = projectWindow(0);
+    const pannedOne = projectWindow(1);
+    const pannedTwo = projectWindow(2);
+
+    expect(first).toHaveLength(targetBucketCount);
+    expect(pannedOne).toHaveLength(targetBucketCount);
+    expect(pannedTwo).toHaveLength(targetBucketCount);
+    expect(pannedOne[1]!).toEqual(first[1]!);
+    expect(pannedTwo[1]!).toEqual(first[1]!);
+  });
+
+  test("plans stable OHLC buckets from navigation count when histories are comparable", () => {
+    expect(resolveStableOhlcProjectionOptions({
+      pointCount: 158,
+      sourceIndexOffset: 12,
+      bucketWidth: 80,
+      navigationPointCount: 160,
+    })).toMatchObject({
+      ohlcBucketWidth: 80,
+      ohlcSourceBucketSize: 4,
+      ohlcTargetBucketCount: 40,
+      sourceIndexOffset: 12,
+    });
+  });
+
+  test("plans OHLC buckets from rendered points when navigation count is too different", () => {
+    expect(resolveStableOhlcProjectionOptions({
+      pointCount: 84,
+      sourceIndexOffset: 0,
+      bucketWidth: 80,
+      navigationPointCount: 160,
+    })).toMatchObject({
+      ohlcSourceBucketSize: 3,
+      ohlcTargetBucketCount: 28,
+    });
+  });
 });
 
 describe("resolveRenderMode", () => {
@@ -90,9 +201,27 @@ describe("resolveRenderMode", () => {
       volume: 1_000 + i,
     })) as PricePoint[];
 
-    expect(projectChartData(denseSeries, 80, "candles", false).points).toHaveLength(40);
-    expect(projectChartData(denseSeries, 80, "ohlc", false).points).toHaveLength(40);
+    expect(projectChartData(denseSeries, 80, "candles", false).points).toHaveLength(34);
+    expect(projectChartData(denseSeries, 80, "ohlc", false).points).toHaveLength(34);
     expect(projectChartData(denseSeries, 80, "line", false).points).toHaveLength(80);
+  });
+
+  test("keeps candle buckets stable when axis width changes the plot by one column", () => {
+    const denseSeries = Array.from({ length: 121 }, (_, index) => ({
+      date: new Date(Date.UTC(2024, 0, index + 1)),
+      open: 100 + index,
+      high: 101 + index,
+      low: 99 + index,
+      close: 100.5 + index,
+      volume: 1_000 + index,
+    })) as PricePoint[];
+
+    const wide = projectChartData(denseSeries, 80, "candles", false, { ohlcBucketWidth: 80 }).points;
+    const narrowed = projectChartData(denseSeries, 78, "candles", false, { ohlcBucketWidth: 80 }).points;
+
+    expect(narrowed.map((point) => point.date.toISOString())).toEqual(wide.map((point) => point.date.toISOString()));
+    expect(narrowed.map((point) => point.open)).toEqual(wide.map((point) => point.open));
+    expect(narrowed.map((point) => point.close)).toEqual(wide.map((point) => point.close));
   });
 });
 
@@ -100,7 +229,10 @@ describe("getVisibleWindow", () => {
   test("shows the full selected range at default zoom and lets the renderer downsample it", () => {
     const history = buildDenseHistory(252);
     const viewState: ChartViewState = {
-      timeRange: "1Y",
+      presetRange: "1Y",
+      bufferRange: "1Y",
+      activePreset: "1Y",
+      resolution: "auto",
       panOffset: 0,
       zoomLevel: 1,
       cursorX: null,
@@ -110,14 +242,17 @@ describe("getVisibleWindow", () => {
     const window = getVisibleWindow(history, viewState, 80);
 
     expect(window.points).toHaveLength(history.length);
-    expect(window.points[0]?.date.toISOString()).toBe(history[0]?.date.toISOString());
-    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)?.date.toISOString());
+    expect(window.points[0]?.date.toISOString()).toBe(history[0]!.date.toISOString());
+    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)!.date.toISOString());
   });
 
   test("zooms into the selected range instead of pinning the default view to chart width", () => {
     const history = buildDenseHistory(252);
     const viewState: ChartViewState = {
-      timeRange: "1Y",
+      presetRange: "1Y",
+      bufferRange: "1Y",
+      activePreset: "1Y",
+      resolution: "auto",
       panOffset: 0,
       zoomLevel: 2,
       cursorX: null,
@@ -127,8 +262,8 @@ describe("getVisibleWindow", () => {
     const window = getVisibleWindow(history, viewState, 80);
 
     expect(window.points).toHaveLength(126);
-    expect(window.points[0]?.date.toISOString()).toBe(history[126]?.date.toISOString());
-    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)?.date.toISOString());
+    expect(window.points[0]?.date.toISOString()).toBe(history[126]!.date.toISOString());
+    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)!.date.toISOString());
   });
 });
 
@@ -512,6 +647,7 @@ describe("renderChart", () => {
       showVolume: false,
       volumeHeight: 0,
       cursorX: null,
+      cursorY: null,
       mode: projection.effectiveMode,
       axisMode: "percent",
       colors: palette,

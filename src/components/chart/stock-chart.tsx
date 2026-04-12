@@ -1,4 +1,4 @@
-import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
@@ -16,26 +16,35 @@ import { computeRSI, computeMACD } from "./indicators/oscillators";
 import { computeBollingerBands } from "./indicators/bands";
 import type { IndicatorConfig, MacdResult, OscillatorPoint, OverlayPoint } from "./indicators/types";
 import type { ChartIndicatorOverlays } from "./chart-types";
-import { applyBufferedPanExpansion, getMouseScrollStepCount, resolveHorizontalScrollPanDirection } from "./chart-scroll";
-import { getVisibleWindow, projectChartData, resolveBarSize, type ProjectedChartPoint } from "./chart-data";
+import {
+  applyBufferedPanExpansion,
+  consumeScrollPanMovement,
+  getDragPanWindowRatio,
+  getKeyboardPanCellCount,
+  resolveDragPanOffset,
+} from "./chart-scroll";
+import { getVisibleWindow, projectChartData, resolveBarSize, resolveStableOhlcProjectionOptions, type ProjectedChartPoint } from "./chart-data";
 import {
   buildPresetDateWindow,
   buildVisibleDateWindow,
   buildVisibleDateWindowFromRange,
   clampDateWindowToBounds,
   clearActivePreset,
-  getCanonicalZoomLevel,
   getDateWindowBounds,
   getMinimumDateStepMs,
   getVisibleWindowForDateRange,
   getPointDates,
-  isCanonicalPresetViewport,
+  needsCanonicalPresetViewportReset,
   resolveChartBodyState,
+  resolveCanonicalPresetViewport,
   resolvePresetSelection,
+  resolvePresetRangeViewport,
   resolveResolutionSelection,
   resolveStoredChartSelection,
+  resolveVisibleActivePreset,
   sameDateWindow,
   shiftDateWindow,
+  type ChartBodyState,
   type DateWindowRange,
 } from "./chart-controller";
 import {
@@ -139,6 +148,7 @@ const AXIS_MEASURE_PALETTE = resolveChartPalette({
 
 const EMPTY_INDICATOR_CONFIG: IndicatorConfig = {};
 const INDICATOR_RENDER_DEBOUNCE_MS = 120;
+const CHART_DETAIL_REQUEST_DEBOUNCE_MS = 160;
 
 interface StockChartProps {
   width: number;
@@ -184,6 +194,12 @@ interface ResolvedRenderCandidate {
 interface AutoRenderedView {
   window: DateWindowRange;
   resolution: ManualChartResolution;
+  data: PricePoint[];
+}
+
+interface CachedRenderedView {
+  window: DateWindowRange | null;
+  resolution: ManualChartResolution | null;
   data: PricePoint[];
 }
 
@@ -874,11 +890,14 @@ export function resolveAutoZoomWindow(options: {
   let targetVisibleCount: number;
   if (direction === "in") {
     if (currentVisibleCount <= 2) {
-      return buildDateWindowFromIndices(
-        navigationDates,
-        currentNavigationWindow.startIdx,
-        currentNavigationWindow.endIdx,
-      ) ?? currentWindow;
+      const currentSpanMs = Math.max(currentWindow.end.getTime() - currentWindow.start.getTime(), 1);
+      const targetSpanMs = Math.max(currentSpanMs / zoomFactor, 1);
+      const anchorMs = currentWindow.start.getTime() + currentSpanMs * ratio;
+      const nextStartMs = anchorMs - targetSpanMs * ratio;
+      return {
+        start: new Date(nextStartMs),
+        end: new Date(nextStartMs + targetSpanMs),
+      };
     }
     targetVisibleCount = Math.max(2, Math.floor(currentVisibleCount / zoomFactor));
     if (targetVisibleCount >= currentVisibleCount) {
@@ -1501,6 +1520,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
   const [renderedAutoView, setRenderedAutoView] = useState<AutoRenderedView | null>(null);
   const [pendingAutoWindowOverride, setPendingAutoWindowOverride] = useState<DateWindowRange | null>(null);
+  const [lastReadyRenderView, setLastReadyRenderView] = useState<CachedRenderedView | null>(null);
   const showVolume = showVolumeOverride ?? !compact;
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
@@ -1526,6 +1546,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const appliedCanonicalResetRef = useRef(0);
   const pendingExpansionRef = useRef<PendingExpansionAction>(null);
   const pendingAutoWindowRef = useRef<DateWindowRange | null>(null);
+  const scrollPanCellRemainderRef = useRef(0);
   const lastAppliedStoredSelectionKeyRef = useRef<string | null>(null);
 
   const commitDisplayCursor = (next: DisplayCursorState) => {
@@ -1888,7 +1909,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         : [];
     }))
   ), [candidateResolutionEntries, effectiveResolution, plannedDateWindow, plannedManualResolution, renderCandidates]);
-  const candidateDetailEntries = useChartQueries(candidateDetailRequests);
+  const candidateDetailEntries = useChartQueries(candidateDetailRequests, {
+    debounceMs: CHART_DETAIL_REQUEST_DEBOUNCE_MS,
+  });
   const boundsHistoryCompatible = useMemo(() => (
     isSeriesAcceptedForRequest(boundsHistory, plannedDateWindow, plannedManualResolution, {
       requireAutoDensity: effectiveResolution === "auto",
@@ -2068,17 +2091,51 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       };
     }
 
+    if (firstCompatibleState) {
+      return {
+        bodyState: firstBlockingState
+          ? {
+            ...firstCompatibleState,
+            blocking: false,
+            updating: true,
+            emptyMessage: null,
+            errorMessage: null,
+          }
+          : firstCompatibleState,
+        resolvedManualResolution: firstCompatibleResolution ?? plannedManualResolution,
+      };
+    }
+
+    if (effectiveResolution === "auto" && firstBlockingState && boundsHistory.length > 0) {
+      return {
+        bodyState: {
+          data: boundsHistory,
+          blocking: false,
+          updating: true,
+          emptyMessage: null,
+          errorMessage: null,
+        },
+        resolvedManualResolution: plannedManualResolution,
+      };
+    }
+
+    if (effectiveResolution !== "auto" && firstBlockingState && boundsHistoryCompatible) {
+      return {
+        bodyState: {
+          data: boundsHistory,
+          blocking: false,
+          updating: true,
+          emptyMessage: null,
+          errorMessage: null,
+        },
+        resolvedManualResolution: plannedManualResolution,
+      };
+    }
+
     if (firstBlockingState) {
       return {
         bodyState: firstBlockingState,
         resolvedManualResolution: firstBlockingResolution ?? plannedManualResolution,
-      };
-    }
-
-    if (firstCompatibleState) {
-      return {
-        bodyState: firstCompatibleState,
-        resolvedManualResolution: firstCompatibleResolution ?? plannedManualResolution,
       };
     }
 
@@ -2168,6 +2225,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const shouldRejectPendingAutoView = effectiveResolution === "auto"
     && pendingAutoWindowOverride !== null
     && !plannedRenderBodyState.blocking
+    && !plannedRenderBodyState.updating
     && !canCommitPlannedAutoView;
   useEffect(() => {
     if (!shouldRejectPendingAutoView || !plannedDateWindow?.start || !plannedDateWindow.end) {
@@ -2189,13 +2247,13 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   useEffect(() => {
     setPendingAutoWindowOverride(null);
     setRenderedAutoView(null);
+    setLastReadyRenderView(null);
   }, [instrumentRef?.exchange, instrumentRef?.symbol]);
   const hasPendingAutoProposal = effectiveResolution === "auto" && pendingAutoWindowOverride !== null;
   const shouldUseRenderedAutoView = effectiveResolution === "auto"
     && !!renderedAutoView
     && (
-      hasPendingAutoProposal
-      || plannedRenderBodyState.blocking
+      plannedRenderBodyState.blocking
       || !plannedRenderBodyState.data?.length
       || !!plannedRenderBodyState.emptyMessage
       || !!plannedRenderBodyState.errorMessage
@@ -2218,15 +2276,54 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     renderedAutoView,
     shouldUseRenderedAutoView,
   ]);
-  const renderBodyState = effectiveResolution === "auto"
+  const baseRenderBodyState = effectiveResolution === "auto"
     ? autoDisplayState.bodyState
     : plannedRenderBodyState;
-  const resolvedManualResolution = effectiveResolution === "auto"
+  const baseResolvedManualResolution = effectiveResolution === "auto"
     ? autoDisplayState.resolution
     : plannedResolvedManualResolution;
-  const displayedDateWindow = effectiveResolution === "auto"
+  const baseDisplayedDateWindow = effectiveResolution === "auto"
     ? autoDisplayState.window
     : manualVisibleDateWindow;
+  useEffect(() => {
+    if (compact || baseRenderBodyState.blocking || !baseRenderBodyState.data?.length) return;
+
+    const nextView: CachedRenderedView = {
+      window: baseDisplayedDateWindow,
+      resolution: baseResolvedManualResolution,
+      data: baseRenderBodyState.data,
+    };
+    setLastReadyRenderView((current) => (
+      current
+      && current.data === nextView.data
+      && current.resolution === nextView.resolution
+      && sameDateWindow(current.window, nextView.window)
+        ? current
+        : nextView
+    ));
+  }, [
+    baseDisplayedDateWindow,
+    baseRenderBodyState.blocking,
+    baseRenderBodyState.data,
+    baseResolvedManualResolution,
+    compact,
+  ]);
+  const shouldUseLastReadyRenderView = !compact && baseRenderBodyState.blocking && !!lastReadyRenderView?.data.length;
+  const renderBodyState = shouldUseLastReadyRenderView
+    ? {
+      data: lastReadyRenderView!.data,
+      blocking: false,
+      updating: true,
+      emptyMessage: null,
+      errorMessage: null,
+    }
+    : baseRenderBodyState;
+  const resolvedManualResolution = shouldUseLastReadyRenderView
+    ? lastReadyRenderView!.resolution
+    : baseResolvedManualResolution;
+  const displayedDateWindow = shouldUseLastReadyRenderView
+    ? lastReadyRenderView!.window
+    : baseDisplayedDateWindow;
   const renderedResolution: ChartResolution = effectiveResolution === "auto"
     ? "auto"
     : (resolvedManualResolution ?? effectiveResolution);
@@ -2243,13 +2340,33 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const navigableDateWindow = effectiveResolution === "auto"
     ? (pendingAutoWindowOverride ?? displayedDateWindow ?? plannedDateWindow)
     : visibleDateWindow;
+  const navigationOhlcPointCount = !compact && effectiveResolution !== "auto"
+    ? manualVisibleDateWindow.dates.length
+    : 0;
+  const resolveOhlcProjectionOptions = useCallback((
+    pointCount: number,
+    sourceIndexOffset: number,
+  ) => (
+    resolveStableOhlcProjectionOptions({
+      pointCount,
+      sourceIndexOffset,
+      bucketWidth: measurementChartWidth,
+      navigationPointCount: navigationOhlcPointCount,
+    })
+  ), [measurementChartWidth, navigationOhlcPointCount]);
   const axisWidth = useMemo(() => {
     const measureAxisWidth = (targetWidth: number) => {
       const measuredWindow = historyOverride || !displayedDateWindow?.start || !displayedDateWindow.end
         ? { points: history, startIdx: 0, endIdx: history.length }
         : getVisibleWindowForDateRange(history, displayedDateWindow, 0);
       const measuredTimeAxisDates = measuredWindow.points.map((point) => point.date);
-      const measuredProjection = projectChartData(measuredWindow.points, targetWidth, viewState.renderMode, !!compact);
+      const measuredProjection = projectChartData(
+        measuredWindow.points,
+        targetWidth,
+        viewState.renderMode,
+        !!compact,
+        resolveOhlcProjectionOptions(measuredWindow.points.length, measuredWindow.startIdx),
+      );
       const measuredResult = renderChart(measuredProjection.points, {
         width: targetWidth,
         height: chartHeight,
@@ -2319,9 +2436,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     displayedDateWindow,
     history,
     historyOverride,
-    measurementChartWidth,
     minChartWidth,
     minimumAxisWidth,
+    resolveOhlcProjectionOptions,
     showVolume,
     viewState.renderMode,
     volumeHeight,
@@ -2330,38 +2447,35 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const axisSectionWidth = axisWidth + axisRightPadding;
   const chartWidth = Math.max(width - axisSectionWidth - axisGap, minChartWidth);
   const maxCursorX = chartWidth - 1;
-  const panStep = Math.max(Math.floor(chartWidth / 10), 1);
+  const panStep = getKeyboardPanCellCount(chartWidth);
   const activePreset = compact
     ? null
       : effectiveResolution === "auto"
       ? (canonicalAutoWindow && displayedDateWindow && sameDateWindow(displayedDateWindow, canonicalAutoWindow)
         ? viewState.presetRange
         : null)
-      : (!isCanonicalPresetViewport(boundsHistoryDates, {
+      : resolveVisibleActivePreset(boundsHistoryDates, {
+        presetRange: viewState.presetRange,
         activePreset: viewState.activePreset,
         panOffset: viewState.panOffset,
         zoomLevel: viewState.zoomLevel,
         resolution: effectiveResolution,
-      })
-        ? null
-        : viewState.activePreset);
+      });
 
   useEffect(() => {
     if (compact || effectiveResolution === "auto" || boundsHistoryDates.length === 0) return;
 
-    if (appliedCanonicalResetRef.current < pendingCanonicalResetRef.current) {
-      const canonicalZoom = getCanonicalZoomLevel(boundsHistoryDates, viewState.presetRange);
-      appliedCanonicalResetRef.current = pendingCanonicalResetRef.current;
+    const hasPendingCanonicalReset = appliedCanonicalResetRef.current < pendingCanonicalResetRef.current;
+    const shouldReconcileActivePreset = !hasPendingCanonicalReset
+      && needsCanonicalPresetViewportReset(boundsHistoryDates, viewState);
+    if (hasPendingCanonicalReset || shouldReconcileActivePreset) {
+      if (hasPendingCanonicalReset) {
+        appliedCanonicalResetRef.current = pendingCanonicalResetRef.current;
+      }
       setViewState((current) => (
-        current.zoomLevel === canonicalZoom && current.panOffset === 0
-          ? current
-          : {
-            ...current,
-            zoomLevel: canonicalZoom,
-            panOffset: 0,
-            cursorX: null,
-            cursorY: null,
-          }
+        hasPendingCanonicalReset
+          ? resolvePresetRangeViewport(current, boundsHistoryDates)
+          : resolveCanonicalPresetViewport(current, boundsHistoryDates)
       ));
       return;
     }
@@ -2388,7 +2502,16 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxPanOffset(boundsHistory, current.zoomLevel)),
       };
     });
-  }, [boundsHistory, boundsHistoryDates, compact, effectiveResolution, viewState.presetRange]);
+  }, [
+    boundsHistory,
+    boundsHistoryDates,
+    compact,
+    effectiveResolution,
+    viewState.activePreset,
+    viewState.panOffset,
+    viewState.presetRange,
+    viewState.zoomLevel,
+  ]);
 
   useEffect(() => {
     if (compact || effectiveResolution !== "auto" || !baseDateBounds) return;
@@ -2605,8 +2728,21 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   );
 
   const projection = useMemo(() => (
-    projectChartData(chartWindow.points, chartWidth, viewState.renderMode, !!compact)
-  ), [chartWindow.points, chartWidth, compact, viewState.renderMode]);
+    projectChartData(
+      chartWindow.points,
+      chartWidth,
+      viewState.renderMode,
+      !!compact,
+      resolveOhlcProjectionOptions(chartWindow.points.length, chartWindow.startIdx),
+    )
+  ), [
+    chartWindow.points,
+    chartWindow.startIdx,
+    chartWidth,
+    compact,
+    resolveOhlcProjectionOptions,
+    viewState.renderMode,
+  ]);
 
   const sourceIndicatorOverlays = useMemo(() => {
     if (!hasIndicators || !history.length) return null;
@@ -3305,7 +3441,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const bodyMessage = !compact
     ? (renderBodyState.errorMessage ?? renderBodyState.emptyMessage)
     : null;
-  const isUpdating = !compact && renderBodyState.updating;
+  const isUpdating = !compact && (renderBodyState.updating || boundsBodyState.updating);
 
   useEffect(() => {
     queueMicrotask(() => renderer.requestRender());
@@ -3383,20 +3519,22 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     if (!dragRef.current) return;
 
     if (effectiveResolution === "auto" && dragRef.current.startWindow) {
+      const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
       requestAutoWindow(shiftDateWindow(
         dragRef.current.startWindow,
-        -(getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX) / Math.max(chartWidth, 1),
+        -getDragPanWindowRatio(deltaCells, chartWidth),
       ));
       return;
     }
 
     const visibleCount = getVisiblePointCount(boundsHistory.length, viewState.zoomLevel);
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
-    const pointDelta = Math.round((deltaCells / Math.max(chartWidth, 1)) * visibleCount);
-    const nextPan = clamp(
-      dragRef.current.startPanOffset - pointDelta,
-      0,
-      Math.max(boundsHistory.length - visibleCount, 0),
+    const nextPan = resolveDragPanOffset(
+      dragRef.current.startPanOffset,
+      deltaCells,
+      chartWidth,
+      visibleCount,
+      boundsHistory.length - visibleCount,
     );
     setViewState((current) => {
       const cleared = clearActivePreset(current);
@@ -3406,13 +3544,20 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
   const handlePlotScroll = (event: ChartMouseEvent) => {
     if (compact) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
     focusPaneForMouseInteraction(event);
     const direction = event.scroll?.direction;
     if (!direction) return;
-    const scrollSteps = getMouseScrollStepCount(event.scroll?.delta);
-    const scrollPanCells = Math.max(Math.round(chartWidth * 0.08), 1) * scrollSteps;
-    const scrollPanRatio = scrollPanCells / Math.max(chartWidth, 1);
-    const panDirection = resolveHorizontalScrollPanDirection(direction);
+    const scrollPan = consumeScrollPanMovement(
+      chartWidth,
+      event.scroll?.delta,
+      direction,
+      scrollPanCellRemainderRef.current,
+    );
+    scrollPanCellRemainderRef.current = scrollPan.remainder;
+    const scrollPanCells = scrollPan.cells;
+    const scrollPanRatio = scrollPan.ratio;
 
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
 
@@ -3432,13 +3577,15 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       commitSelectionCursor(selectionCursor);
     }
 
+    if (scrollPanCells === 0) return;
+
     if (effectiveResolution === "auto") {
-      requestAutoWindow(shiftDateWindow(navigableDateWindow, panDirection * scrollPanRatio));
+      requestAutoWindow(shiftDateWindow(navigableDateWindow, scrollPanRatio));
       return;
     }
 
-    const targetPanOffset = viewState.panOffset + panDirection * scrollPanCells;
-    if (panDirection > 0 && viewState.panOffset >= getMaxPanOffset(boundsHistory, viewState.zoomLevel) && expandBufferRange({
+    const targetPanOffset = viewState.panOffset + scrollPanCells;
+    if (scrollPanCells > 0 && viewState.panOffset >= getMaxPanOffset(boundsHistory, viewState.zoomLevel) && expandBufferRange({
       kind: "pan-left",
       targetPanOffset,
     })) {
@@ -3447,7 +3594,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     setViewState((current) => ({
       ...clearActivePreset(current),
       panOffset: clamp(
-        current.panOffset + panDirection * scrollPanCells,
+        current.panOffset + scrollPanCells,
         0,
         getMaxPanOffset(boundsHistory, current.zoomLevel),
       ),
@@ -3476,7 +3623,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       onMouseOut={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => {
         dragRef.current = null;
       }}
-      onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
     >
       {isBlockingBody
         ? (
@@ -3640,7 +3786,12 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         )}
       </box>
 
-      <box flexDirection="row" height={chartHeight} gap={axisGap}>
+      <box
+        flexDirection="row"
+        height={chartHeight}
+        gap={axisGap}
+        onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
+      >
         {plotBox}
         {axisBox}
       </box>

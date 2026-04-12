@@ -17,17 +17,24 @@ import {
   projectComparisonChartData,
 } from "./comparison-chart-data";
 import { usePersistChartControlSelection } from "./chart-pane-settings";
-import { applyBufferedPanExpansion, getMouseScrollStepCount, resolveHorizontalScrollPanDirection } from "./chart-scroll";
+import {
+  applyBufferedPanExpansion,
+  consumeScrollPanMovement,
+  getKeyboardPanCellCount,
+  resolveDragPanOffset,
+} from "./chart-scroll";
 import {
   buildVisibleDateWindow,
   clearActivePreset,
   formatVisibleSpanLabel,
-  getCanonicalZoomLevel,
-  isCanonicalPresetViewport,
+  needsCanonicalPresetViewportReset,
   resolveChartBodyState,
+  resolveCanonicalPresetViewport,
   resolvePresetSelection,
+  resolvePresetRangeViewport,
   resolveResolutionSelection,
   resolveStoredChartSelection,
+  resolveVisibleActivePreset,
 } from "./chart-controller";
 import {
   buildChartResolutionSupportMap,
@@ -132,6 +139,8 @@ interface ChartMouseEvent {
   y: number;
   pixelX?: number;
   pixelY?: number;
+  stopPropagation?: () => void;
+  preventDefault?: () => void;
   modifiers: {
     shift: boolean;
     alt: boolean;
@@ -578,6 +587,7 @@ function ComparisonStockChartView({
   const pendingCanonicalResetRef = useRef(1);
   const appliedCanonicalResetRef = useRef(0);
   const pendingExpansionRef = useRef<PendingExpansionAction>(null);
+  const scrollPanCellRemainderRef = useRef(0);
 
   const axisSectionWidthBudget = 11;
   const axisRightPadding = 1;
@@ -895,22 +905,27 @@ function ComparisonStockChartView({
   const maxCursorX = chartWidth - 1;
   const seriesDates = useMemo(() => getUniqueSortedSeriesDates(series), [series]);
   const visibleDateWindow = useMemo(() => buildVisibleDateWindow(seriesDates, viewState.panOffset, viewState.zoomLevel), [seriesDates, viewState.panOffset, viewState.zoomLevel]);
-  const activePreset = isCanonicalPresetViewport(seriesDates, {
+  const activePreset = resolveVisibleActivePreset(seriesDates, {
+    presetRange: viewState.presetRange,
     activePreset: viewState.activePreset,
     panOffset: viewState.panOffset,
     zoomLevel: viewState.zoomLevel,
     resolution: effectiveResolution,
-  }) ? viewState.activePreset : null;
+  });
 
   useEffect(() => {
     if (seriesDates.length === 0) return;
-    if (appliedCanonicalResetRef.current < pendingCanonicalResetRef.current) {
-      const canonicalZoom = getCanonicalZoomLevel(seriesDates, viewState.presetRange);
-      appliedCanonicalResetRef.current = pendingCanonicalResetRef.current;
+    const hasPendingCanonicalReset = appliedCanonicalResetRef.current < pendingCanonicalResetRef.current;
+    const shouldReconcileActivePreset = !hasPendingCanonicalReset
+      && needsCanonicalPresetViewportReset(seriesDates, viewState);
+    if (hasPendingCanonicalReset || shouldReconcileActivePreset) {
+      if (hasPendingCanonicalReset) {
+        appliedCanonicalResetRef.current = pendingCanonicalResetRef.current;
+      }
       setViewState((current) => (
-        current.zoomLevel === canonicalZoom && current.panOffset === 0
-          ? current
-          : { ...current, zoomLevel: canonicalZoom, panOffset: 0, cursorX: null, cursorY: null }
+        hasPendingCanonicalReset
+          ? resolvePresetRangeViewport(current, seriesDates)
+          : resolveCanonicalPresetViewport(current, seriesDates)
       ));
       return;
     }
@@ -930,7 +945,15 @@ function ComparisonStockChartView({
         panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
       };
     });
-  }, [chartWidth, series, seriesDates, viewState.presetRange]);
+  }, [
+    chartWidth,
+    series,
+    seriesDates,
+    viewState.activePreset,
+    viewState.panOffset,
+    viewState.presetRange,
+    viewState.zoomLevel,
+  ]);
 
   useEffect(() => {
     const refreshSupport = () => setKittySupport(getCachedKittySupport(renderer));
@@ -1326,24 +1349,28 @@ function ComparisonStockChartView({
           cursorY: null,
         }));
         return;
-      case "a":
+      case "a": {
+        const panStep = getKeyboardPanCellCount(chartWidth);
         if (viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
           kind: "pan-left",
-          targetPanOffset: viewState.panOffset + Math.max(Math.floor(chartWidth / 10), 1),
+          targetPanOffset: viewState.panOffset + panStep,
         })) {
           return;
         }
         setViewState((current) => ({
           ...clearActivePreset(current),
-          panOffset: clamp(current.panOffset + Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
+          panOffset: clamp(current.panOffset + panStep, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
         }));
         return;
-      case "d":
+      }
+      case "d": {
+        const panStep = getKeyboardPanCellCount(chartWidth);
         setViewState((current) => ({
           ...clearActivePreset(current),
-          panOffset: clamp(current.panOffset - Math.max(Math.floor(chartWidth / 10), 1), 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
+          panOffset: clamp(current.panOffset - panStep, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
         }));
         return;
+      }
       case "m":
         setViewState((current) => ({
           ...current,
@@ -1486,21 +1513,29 @@ function ComparisonStockChartView({
     if (!dragRef.current) return;
 
     const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
-    const pointDelta = Math.round((deltaCells / Math.max(chartWidth, 1)) * Math.max(visibleWindow.dates.length, 1));
-    const nextPan = clamp(
-      dragRef.current.startPanOffset - pointDelta,
-      0,
-      Math.max(visibleWindow.totalDates - visibleWindow.dates.length, 0),
+    const nextPan = resolveDragPanOffset(
+      dragRef.current.startPanOffset,
+      deltaCells,
+      chartWidth,
+      visibleWindow.dates.length,
+      visibleWindow.totalDates - visibleWindow.dates.length,
     );
     setViewState((current) => ({ ...clearActivePreset(current), panOffset: nextPan }));
   };
 
   const handlePlotScroll = (event: ChartMouseEvent) => {
+    event.stopPropagation?.();
+    event.preventDefault?.();
     const direction = event.scroll?.direction;
     if (!direction) return;
-    const scrollSteps = getMouseScrollStepCount(event.scroll?.delta);
-    const scrollPanCells = Math.max(Math.round(chartWidth * 0.08), 1) * scrollSteps;
-    const panDirection = resolveHorizontalScrollPanDirection(direction);
+    const scrollPan = consumeScrollPanMovement(
+      chartWidth,
+      event.scroll?.delta,
+      direction,
+      scrollPanCellRemainderRef.current,
+    );
+    scrollPanCellRemainderRef.current = scrollPan.remainder;
+    const scrollPanCells = scrollPan.cells;
 
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
 
@@ -1520,8 +1555,10 @@ function ComparisonStockChartView({
       commitSelectionCursor(selectionCursor);
     }
 
-    const targetPanOffset = viewState.panOffset + panDirection * scrollPanCells;
-    if (panDirection > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+    if (scrollPanCells === 0) return;
+
+    const targetPanOffset = viewState.panOffset + scrollPanCells;
+    if (scrollPanCells > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
       kind: "pan-left",
       targetPanOffset,
     })) {
@@ -1530,7 +1567,7 @@ function ComparisonStockChartView({
     setViewState((current) => ({
       ...clearActivePreset(current),
       panOffset: clamp(
-        current.panOffset + panDirection * scrollPanCells,
+        current.panOffset + scrollPanCells,
         0,
         getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
       ),
@@ -1590,7 +1627,6 @@ function ComparisonStockChartView({
       onMouseOut={hasChartData && !isBlockingBody && !bodyMessage ? () => {
         dragRef.current = null;
       } : undefined}
-      onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
     >
       {isBlockingBody
         ? (
@@ -1627,7 +1663,11 @@ function ComparisonStockChartView({
   ));
 
   return (
-    <box flexDirection="column" flexGrow={1}>
+    <box
+      flexDirection="column"
+      flexGrow={1}
+      onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
+    >
       <box flexDirection="row" gap={2} height={1}>
         <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
           {viewState.selectedSymbol ?? "Compare"} - {getChartResolutionLabel(effectiveResolution)}
@@ -1710,7 +1750,12 @@ function ComparisonStockChartView({
         </box>
       </box>
 
-      <box flexDirection="row" height={chartHeight} gap={axisGap}>
+      <box
+        flexDirection="row"
+        height={chartHeight}
+        gap={axisGap}
+        onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
+      >
         {plotBox}
         {axisBox}
       </box>

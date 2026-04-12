@@ -92,6 +92,115 @@ describe("MarketDataCoordinator", () => {
     expect(second.lastGoodData?.length).toBe(2);
   });
 
+  it("uses cached chart data while a wider range request is loading", async () => {
+    const oneYearHistory = [
+      { date: new Date("2024-01-01"), close: 100 },
+      { date: new Date("2024-01-02"), close: 101 },
+    ];
+    const fiveYearHistory = [
+      { date: new Date("2020-01-01"), close: 80 },
+      ...oneYearHistory,
+    ];
+    let requestedFiveYear = false;
+    let resolveFiveYear: (history: PricePoint[] | PromiseLike<PricePoint[]>) => void = (_history) => {
+      throw new Error("expected pending 5Y request");
+    };
+    const provider = createProvider({
+      getPriceHistory: async (_symbol, _exchange, range) => {
+        if (range === "5Y") {
+          return new Promise<PricePoint[]>((resolve) => {
+            requestedFiveYear = true;
+            resolveFiveYear = resolve;
+          });
+        }
+        return oneYearHistory;
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    await coordinator.loadChart({
+      instrument,
+      bufferRange: "1Y",
+      granularity: "range",
+    });
+    const pending = coordinator.loadChart({
+      instrument,
+      bufferRange: "5Y",
+      granularity: "range",
+    });
+
+    const loadingEntry = coordinator.getChartEntry({
+      instrument,
+      bufferRange: "5Y",
+      granularity: "range",
+    });
+    expect(loadingEntry.phase).toBe("refreshing");
+    expect(loadingEntry.data?.map((point) => point.close)).toEqual([100, 101]);
+
+    expect(requestedFiveYear).toBe(true);
+    resolveFiveYear(fiveYearHistory);
+    const readyEntry = await pending;
+    expect(readyEntry.phase).toBe("ready");
+    expect(readyEntry.data?.map((point) => point.close)).toEqual([80, 100, 101]);
+  });
+
+  it("uses cached manual-resolution data while a wider resolution range is loading", async () => {
+    const oneYearHistory = [
+      { date: new Date("2024-01-01"), close: 100 },
+      { date: new Date("2024-01-02"), close: 101 },
+    ];
+    const fiveYearHistory = [
+      { date: new Date("2020-01-01"), close: 80 },
+      ...oneYearHistory,
+    ];
+    let requestedFiveYear = false;
+    let resolveFiveYear: (history: PricePoint[] | PromiseLike<PricePoint[]>) => void = (_history) => {
+      throw new Error("expected pending 5Y request");
+    };
+    const provider = createProvider({
+      getPriceHistoryForResolution: async (_symbol, _exchange, range) => {
+        if (range === "5Y") {
+          return new Promise<PricePoint[]>((resolve) => {
+            requestedFiveYear = true;
+            resolveFiveYear = resolve;
+          });
+        }
+        return oneYearHistory;
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    await coordinator.loadChart({
+      instrument,
+      bufferRange: "1Y",
+      granularity: "resolution",
+      resolution: "1d",
+    });
+    const pending = coordinator.loadChart({
+      instrument,
+      bufferRange: "5Y",
+      granularity: "resolution",
+      resolution: "1d",
+    });
+
+    const loadingEntry = coordinator.getChartEntry({
+      instrument,
+      bufferRange: "5Y",
+      granularity: "resolution",
+      resolution: "1d",
+    });
+    expect(loadingEntry.phase).toBe("refreshing");
+    expect(loadingEntry.data?.map((point) => point.close)).toEqual([100, 101]);
+
+    expect(requestedFiveYear).toBe(true);
+    resolveFiveYear(fiveYearHistory);
+    const readyEntry = await pending;
+    expect(readyEntry.phase).toBe("ready");
+    expect(readyEntry.data?.map((point) => point.close)).toEqual([80, 100, 101]);
+  });
+
   it("normalizes descending chart history before storing it", async () => {
     const provider = createProvider({
       getPriceHistory: async () => [
@@ -124,7 +233,7 @@ describe("MarketDataCoordinator", () => {
     const instrument = { symbol: "MSFT", exchange: "NASDAQ" };
 
     coordinator.subscribeQuotes([{ instrument }]);
-    const onStreamed = streamed;
+    const onStreamed = streamed as ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null;
     if (!onStreamed) throw new Error("expected streaming callback");
     onStreamed(
       { symbol: "MSFT", exchange: "NASDAQ" },
@@ -162,7 +271,7 @@ describe("MarketDataCoordinator", () => {
       resolution: "1d",
     });
 
-    expect(requested).toEqual({ range: "1Y", resolution: "1d" });
+    expect(requested as { range: string; resolution: string } | null).toEqual({ range: "1Y", resolution: "1d" });
     expect(entry.data?.length).toBe(2);
   });
 
@@ -196,7 +305,7 @@ describe("MarketDataCoordinator", () => {
 
     await coordinator.loadSnapshot(instrument);
     coordinator.subscribeQuotes([{ instrument }]);
-    const onStreamed = streamed;
+    const onStreamed = streamed as ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null;
     if (!onStreamed) throw new Error("expected streaming callback");
     onStreamed(
       {
@@ -292,7 +401,7 @@ describe("MarketDataCoordinator", () => {
 
     await coordinator.loadSnapshot(instrument);
     coordinator.subscribeQuotes([{ instrument }]);
-    const onStreamed = streamed;
+    const onStreamed = streamed as ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null;
     if (!onStreamed) throw new Error("expected streaming callback");
     onStreamed(
       { symbol: "IQE", exchange: "LSE" },
@@ -347,7 +456,7 @@ describe("MarketDataCoordinator", () => {
 
       await coordinator.loadSnapshot(instrument);
       coordinator.subscribeQuotes([{ instrument }]);
-      const onStreamed = streamed;
+      const onStreamed = streamed as ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null;
       if (!onStreamed) throw new Error("expected streaming callback");
       onStreamed(
         { symbol: "HY9H", exchange: "FWB2" },
