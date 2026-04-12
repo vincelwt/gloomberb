@@ -132,15 +132,21 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   useEffect(() => {
     if (headerScrollRef.current) {
       headerScrollRef.current.horizontalScrollBar.visible = false;
+      if (!showHorizontalScrollbar) {
+        headerScrollRef.current.scrollLeft = 0;
+      }
     }
     if (scrollRef.current) {
       scrollRef.current.horizontalScrollBar.visible = showHorizontalScrollbar;
+      if (!showHorizontalScrollbar) {
+        scrollRef.current.scrollLeft = 0;
+      }
     }
   }, [columns.length, headerScrollRef, items.length, scrollRef, showHorizontalScrollbar]);
 
   return (
     <>
-      <scrollbox ref={headerScrollRef} height={1} scrollX focusable={false}>
+      <scrollbox ref={headerScrollRef} height={1} scrollX={showHorizontalScrollbar} focusable={false}>
         <box
           flexDirection="row"
           height={1}
@@ -186,7 +192,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
       <scrollbox
         ref={scrollRef}
         flexGrow={1}
-        scrollX
+        scrollX={showHorizontalScrollbar}
         scrollY
         focusable={false}
         onMouseDown={() => {

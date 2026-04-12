@@ -113,36 +113,24 @@ type AlertColumnId =
   | "target"
   | "last"
   | "triggered"
-  | "rearm"
-  | "delete";
+  | "rearm";
 
 type AlertColumn = DataTableColumn & { id: AlertColumnId };
 
-function buildAlertColumns(width: number): AlertColumn[] {
-  if (width < 80) {
-    return [
-      { id: "status", label: "St", width: 4 },
-      { id: "symbol", label: "Symbol", width: 8 },
-      { id: "condition", label: "Cond", width: 5 },
-      { id: "target", label: "Target", width: 9, align: "right" },
-      { id: "last", label: "Last", width: 9, align: "right" },
-      { id: "triggered", label: "When", width: 7 },
-      { id: "rearm", label: "", width: 5 },
-      { id: "delete", label: "", width: 3 },
-    ];
-  }
+const ALERT_COLUMNS: AlertColumn[] = [
+  { id: "status", label: "Status", width: 6 },
+  { id: "symbol", label: "Symbol", width: 8 },
+  { id: "condition", label: "Condition", width: 9 },
+  { id: "target", label: "Target", width: 8, align: "right" },
+  { id: "last", label: "Last", width: 8, align: "right" },
+  { id: "triggered", label: "Triggered", width: 9 },
+  { id: "rearm", label: "", width: 6 },
+];
 
-  return [
-    { id: "status", label: "Status", width: 10 },
-    { id: "symbol", label: "Symbol", width: 10 },
-    { id: "condition", label: "Condition", width: 9 },
-    { id: "target", label: "Target", width: 10, align: "right" },
-    { id: "last", label: "Last", width: 10, align: "right" },
-    { id: "triggered", label: "Triggered", width: 11 },
-    { id: "rearm", label: "", width: 8 },
-    { id: "delete", label: "", width: 8 },
-  ];
-}
+const ALERT_TABLE_CONTENT_WIDTH = ALERT_COLUMNS.reduce(
+  (sum, column) => sum + column.width + 1,
+  2,
+);
 
 export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const [alertsJson, setAlertsJson] = usePluginConfigState<string>(ALERTS_KEY, "[]");
@@ -150,7 +138,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
-  const columns = useMemo(() => buildAlertColumns(width), [width]);
+  const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
 
   const { alerts, rows, activeCount, triggeredCount } = useMemo(() => {
     const parsed = deserializeAlerts(alertsJson);
@@ -188,6 +176,11 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     getSharedRegistry()?.openPluginCommandWorkflow("set-alert");
   }, []);
 
+  const deleteSelectedAlert = useCallback(() => {
+    const selected = rows[selectedIdx];
+    if (selected) deleteAlert(selected.id);
+  }, [deleteAlert, rows, selectedIdx]);
+
   const syncHeaderScroll = useCallback(() => {
     const body = scrollRef.current;
     const header = headerScrollRef.current;
@@ -219,8 +212,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       }
     } else if (event.name === "d") {
       event.preventDefault?.();
-      const selected = rows[selectedIdx];
-      if (selected) deleteAlert(selected.id);
+      deleteSelectedAlert();
     } else if (event.name === "return") {
       event.preventDefault?.();
       const selected = rows[selectedIdx];
@@ -262,9 +254,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     switch (column.id) {
       case "status":
         return {
-          text: column.width <= 4
-            ? (alert.status === "triggered" ? "Trig" : "Act")
-            : (alert.status === "triggered" ? "Triggered" : "Active"),
+          text: alert.status === "triggered" ? "Trig" : "Active",
           color: selectedColor ?? (alert.status === "triggered" ? colors.positive : colors.textDim),
           attributes: alert.status === "triggered" ? TextAttributes.BOLD : TextAttributes.NONE,
         };
@@ -276,7 +266,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         };
       case "condition":
         return {
-          text: column.width <= 5 && alert.condition === "crosses" ? "cross" : alert.condition,
+          text: alert.condition,
           color: selectedColor,
         };
       case "target":
@@ -294,19 +284,13 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       case "rearm":
         return alert.status === "triggered"
           ? {
-              text: column.width <= 5 ? "Arm" : "Re-arm",
+              text: "Re-arm",
               color: selectedColor ?? colors.textBright,
               onMouseDown: actionMouseDown(() => rearmAlert(alert.id)),
             }
           : { text: "-", color: selectedColor ?? colors.textDim };
-      case "delete":
-        return {
-          text: column.width <= 3 ? "Del" : "Delete",
-          color: selectedColor ?? colors.negative,
-          onMouseDown: actionMouseDown(() => deleteAlert(alert.id)),
-        };
     }
-  }, [deleteAlert, rearmAlert]);
+  }, [rearmAlert]);
 
   return (
     <box
@@ -327,22 +311,10 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
             <text fg={colors.textMuted}>{triggeredCount} triggered</text>
           </box>
         )}
-        <box flexGrow={1} />
-        <box
-          onMouseDown={(event: any) => {
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            openSetAlertCommand();
-          }}
-        >
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            Add Alert
-          </text>
-        </box>
       </box>
 
       <DataTable<AlertRule, AlertColumn>
-        columns={columns}
+        columns={ALERT_COLUMNS}
         items={rows}
         sortColumnId={null}
         sortDirection="asc"
@@ -361,8 +333,36 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         }}
         renderCell={renderCell}
         emptyStateTitle="No alerts"
-        emptyStateHint="Use Add Alert to create one."
+        emptyStateHint="Use the action bar to create one."
+        showHorizontalScrollbar={showHorizontalScrollbar}
       />
+
+      <box
+        flexDirection="row"
+        height={1}
+        paddingX={1}
+        backgroundColor={colors.panel}
+      >
+        <box
+          onMouseDown={(event: any) => {
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            openSetAlertCommand();
+          }}
+        >
+          <text fg={colors.textDim}>[a]dd alert</text>
+        </box>
+        <box width={2} />
+        <box
+          onMouseDown={(event: any) => {
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            deleteSelectedAlert();
+          }}
+        >
+          <text fg={rows.length > 0 ? colors.textDim : colors.textMuted}>[d]elete</text>
+        </box>
+      </box>
     </box>
   );
 }

@@ -197,7 +197,7 @@ afterEach(() => {
 });
 
 describe("AlertsPane", () => {
-  test("renders alerts in a data table without inline key hints", async () => {
+  test("renders alerts in a data table with action hints only in the footer", async () => {
     testSetup = await testRender(
       <AlertsHarness
         alerts={[
@@ -216,8 +216,9 @@ describe("AlertsPane", () => {
     expect(frame).toContain("Condition");
     expect(frame).toContain("AAPL");
     expect(frame).toContain("MSFT");
-    expect(frame).toContain("Add Alert");
-    expect(frame).not.toContain("[a]");
+    expect(frame).toContain("[a]dd alert");
+    expect(frame).toContain("[d]elete");
+    expect(frame).not.toContain("Add Alert");
     expect(frame).not.toContain("Enter");
     expect(frame).not.toContain("Esc");
     expect(frame).not.toContain("move field");
@@ -239,9 +240,11 @@ describe("AlertsPane", () => {
     await renderSettled();
     const frame = testSetup.captureCharFrame();
 
+    expect(frame).toContain("Status");
+    expect(frame).toContain("Condition");
     expect(frame).toContain("Target");
     expect(frame).toContain("200");
-    expect(frame).toContain("Add Alert");
+    expect(frame).toContain("[a]dd alert");
   });
 
   test("opens the command-bar alert workflow from keyboard and mouse", async () => {
@@ -262,7 +265,7 @@ describe("AlertsPane", () => {
       await testSetup!.mockInput.typeText("a");
       await testSetup!.renderOnce();
     });
-    await clickFrameText("Add Alert");
+    await clickFrameText("[a]");
 
     expect(workflowCalls).toEqual(["set-alert", "set-alert"]);
   });
@@ -283,7 +286,7 @@ describe("AlertsPane", () => {
 
     expect(storedAlerts().find((alert) => alert.id === "alert-msft")?.status).toBe("active");
 
-    await clickFrameText("Delete");
+    await clickFrameText("[d]");
 
     expect(storedAlerts().map((alert) => alert.id)).toEqual(["alert-msft"]);
   });
