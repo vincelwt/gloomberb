@@ -76,6 +76,14 @@ function formatPredictionLoadError(
     return `${venueLabel} is unavailable right now.`;
   }
 
+  if (
+    /socket connection|socket hang up|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|network connection|connection closed/i.test(
+      message,
+    )
+  ) {
+    return `${venueLabel} is unavailable right now.`;
+  }
+
   return `${fallback} ${message}`;
 }
 

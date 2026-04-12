@@ -1,6 +1,18 @@
 import type { PluginPersistence } from "../../../types/plugin";
+import { createThrottledFetch } from "../../../utils/throttled-fetch";
 
 const DEFAULT_SOURCE_KEY = "remote";
+const PREDICTION_FETCH = createThrottledFetch({
+  requestsPerMinute: 120,
+  maxRetries: 2,
+  timeoutMs: 10_000,
+  backoffBaseMs: 250,
+  dedupeGetRequests: false,
+  defaultHeaders: {
+    Accept: "application/json",
+    "User-Agent": "gloomberb-prediction-markets",
+  },
+});
 
 export const PREDICTION_CACHE_POLICIES = {
   catalog: { staleMs: 30_000, expireMs: 10 * 60_000 },
@@ -28,13 +40,7 @@ export function getPredictionMarketsPersistence(): PluginPersistence | null {
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(10_000),
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "gloomberb-prediction-markets",
-    },
-  });
+  const response = await PREDICTION_FETCH.fetch(url);
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}) for ${url}`);
   }

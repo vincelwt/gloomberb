@@ -363,6 +363,53 @@ describe("prediction markets plugin registration and services", () => {
     expect(markets[0]?.marketLabel).toBe("April 30");
   });
 
+  test("keeps Polymarket catalog results when one page connection resets", async () => {
+    let resetFetchCount = 0;
+
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      if (url.includes("gamma-api.polymarket.com/events?")) {
+        if (url.includes("offset=200")) {
+          resetFetchCount += 1;
+          throw Object.assign(
+            new Error("The socket connection was closed unexpectedly."),
+            { code: "ECONNRESET" },
+          );
+        }
+        return new Response(
+          JSON.stringify([
+            {
+              id: "event-stable",
+              title: "Stable catalog page",
+              tags: [{ label: "Macro", slug: "economy" }],
+              markets: [
+                {
+                  id: "pm-stable",
+                  question: "Will the stable page load?",
+                  conditionId: "cond-stable",
+                  outcomes: '["Yes","No"]',
+                  outcomePrices: '["0.57","0.43"]',
+                  clobTokenIds: '["yes-stable","no-stable"]',
+                  volume24hr: 125000,
+                  active: true,
+                  closed: false,
+                },
+              ],
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const markets = await loadPolymarketCatalog("", "all");
+
+    expect(markets).toHaveLength(1);
+    expect(markets[0]?.marketId).toBe("pm-stable");
+    expect(resetFetchCount).toBe(3);
+  });
+
   test("uses remote catalog endpoints for search and category changes", async () => {
     const { fetchUrls } = installPredictionMarketMocks();
 
@@ -420,7 +467,7 @@ describe("prediction markets plugin registration and services", () => {
       }
       if (url.includes("gamma-api.polymarket.com/events/event-1")) {
         eventFetchCount += 1;
-        if (eventFetchCount === 1) {
+        if (eventFetchCount <= 3) {
           return new Response("{}", { status: 500 });
         }
         return new Response(
