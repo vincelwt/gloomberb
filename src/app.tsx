@@ -146,10 +146,25 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     isAppActive: () => appActiveRef.current,
     renderToast: (notification) => {
       const type = notification.type ?? "info";
-      const duration = notification.duration;
-      if (type === "success") toast.success(notification.body, { duration });
-      else if (type === "error") toast.error(notification.body, { duration });
-      else toast.info(notification.body, { duration });
+      let toastId: string | number | undefined;
+      const options = {
+        duration: notification.duration,
+        action: notification.action
+          ? {
+            label: notification.action.label,
+            onClick: () => {
+              try {
+                notification.action?.onClick();
+              } finally {
+                if (toastId != null) toast.dismiss(toastId);
+              }
+            },
+          }
+          : undefined,
+      };
+      if (type === "success") toastId = toast.success(notification.body, options);
+      else if (type === "error") toastId = toast.error(notification.body, options);
+      else toastId = toast.info(notification.body, options);
     },
   }), []);
   const notify = useCallback((body: string, options?: { type?: "info" | "success" | "error" }) => {

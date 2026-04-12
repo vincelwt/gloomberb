@@ -138,18 +138,11 @@ function defaultDesktopNotificationRunner(
   child.unref();
 }
 
-/**
- * Build a platform-specific command to play a notification sound.
- * macOS: afplay with system sound files
- * Linux: paplay, aplay, or pw-play with freedesktop sound files
- * Windows: PowerShell with System.Media.SoundPlayer
- */
 export function buildSoundCommand(
   soundName: string,
   platform: NodeJS.Platform = process.platform,
 ): DesktopNotificationCommand | null {
   if (platform === "darwin") {
-    // macOS stores system sounds in /System/Library/Sounds/
     return {
       command: "afplay",
       args: [`/System/Library/Sounds/${soundName}.aiff`],
@@ -157,12 +150,10 @@ export function buildSoundCommand(
   }
 
   if (platform === "linux") {
-    // freedesktop sound theme — try common alert sounds
     const soundFile = soundName === "Glass" ? "dialog-information"
       : soundName === "Ping" ? "message-new-instant"
       : soundName === "Hero" ? "dialog-warning"
       : "bell";
-    // paplay is the most common (PulseAudio), fall back to pw-play (PipeWire)
     return {
       command: "paplay",
       args: [`/usr/share/sounds/freedesktop/stereo/${soundFile}.oga`],
@@ -207,7 +198,6 @@ export function createDesktopNotifier(
         });
       }
 
-      // Play sound independently from the notification display
       if (notification.sound) {
         const soundCommand = buildSoundCommand(notification.sound, platform);
         if (soundCommand) {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
@@ -15,7 +15,15 @@ export type DataTableColumn = Pick<
 export interface DataTableCell {
   text: string;
   color?: string;
+  attributes?: number;
   onMouseDown?: (event: any) => void;
+}
+
+export interface DataTableSectionHeader {
+  text: string;
+  color?: string;
+  backgroundColor?: string;
+  attributes?: number;
 }
 
 export interface DataTableProps<
@@ -43,10 +51,15 @@ export interface DataTableProps<
     index: number,
     rowState: { selected: boolean; hovered: boolean },
   ) => DataTableCell;
+  renderSectionHeader?: (
+    item: T,
+    index: number,
+  ) => DataTableSectionHeader | null;
   emptyStateTitle: string;
   emptyStateHint?: string;
   virtualize?: boolean;
   overscan?: number;
+  showHorizontalScrollbar?: boolean;
 }
 
 interface DataTableRowPointerTarget<T> {
@@ -71,10 +84,12 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   onSelect,
   onActivate,
   renderCell,
+  renderSectionHeader,
   emptyStateTitle,
   emptyStateHint,
   virtualize = false,
   overscan = 3,
+  showHorizontalScrollbar = true,
 }: DataTableProps<T, C>) {
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
@@ -113,6 +128,15 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
     if (!paneInstanceId) return;
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
   }, [dispatch, paneInstanceId]);
+
+  useEffect(() => {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.horizontalScrollBar.visible = false;
+    }
+    if (scrollRef.current) {
+      scrollRef.current.horizontalScrollBar.visible = showHorizontalScrollbar;
+    }
+  }, [columns.length, headerScrollRef, items.length, scrollRef, showHorizontalScrollbar]);
 
   return (
     <>
@@ -182,6 +206,32 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
             {virtualize && startIndex > 0 && <box height={startIndex} />}
             {visibleItems.map((item, visibleIndex) => {
               const index = startIndex + visibleIndex;
+              const sectionHeader = renderSectionHeader?.(item, index) ?? null;
+
+              if (sectionHeader) {
+                return (
+                  <box
+                    key={getItemKey(item, index)}
+                    flexDirection="row"
+                    height={1}
+                    width="100%"
+                    paddingX={1}
+                    backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
+                    onMouseDown={(event) => {
+                      focusPane();
+                      event.preventDefault();
+                    }}
+                  >
+                    <text
+                      attributes={sectionHeader.attributes ?? TextAttributes.BOLD}
+                      fg={sectionHeader.color ?? colors.textBright}
+                    >
+                      {sectionHeader.text}
+                    </text>
+                  </box>
+                );
+              }
+
               const selected = isSelected(item, index);
               const hovered = hoveredIdx === index && !selected;
               const rowBg = selected
@@ -231,6 +281,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                         }}
                       >
                         <text
+                          attributes={cell.attributes ?? TextAttributes.NONE}
                           fg={
                             cell.color ??
                             (selected ? colors.selectedText : colors.text)

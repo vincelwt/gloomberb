@@ -20,6 +20,7 @@ export interface ToggleListProps {
   flexGrow?: number;
   scrollable?: boolean;
   showSelectedDescription?: boolean;
+  rowIdPrefix?: string;
 }
 
 export function ToggleList({
@@ -32,6 +33,7 @@ export function ToggleList({
   flexGrow,
   scrollable,
   showSelectedDescription = true,
+  rowIdPrefix,
 }: ToggleListProps) {
   const listItems: ListViewItem[] = items.map((item) => ({
     id: item.id,
@@ -52,17 +54,28 @@ export function ToggleList({
       onActivate={(item) => {
         onToggle?.(item.id);
       }}
-      renderRow={(item, state) => {
+      renderRow={(item, state, index) => {
         const toggleItem = items.find((entry) => entry.id === item.id);
         const checked = toggleItem?.enabled ? "\u2713" : " ";
+        const activate = (event: any) => {
+          event.stopPropagation?.();
+          if (state.disabled) return;
+          onSelect?.(index);
+          onToggle?.(item.id);
+        };
         return (
-          <box flexDirection="row">
+          <box
+            id={rowIdPrefix ? `${rowIdPrefix}:${item.id}` : undefined}
+            flexDirection="row"
+            onMouseDown={activate}
+          >
             <text fg={state.selected ? colors.selectedText : colors.textDim}>
               {state.selected ? "\u25b8 " : "  "}
             </text>
             <text
               fg={state.selected ? colors.text : colors.textDim}
               attributes={state.selected ? TextAttributes.BOLD : 0}
+              onMouseDown={activate}
             >
               {`[${checked}] ${item.label}`}
             </text>

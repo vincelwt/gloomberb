@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -14,7 +15,9 @@ function createTempDbPath(name: string): string {
 
 afterEach(() => {
   for (const path of tempPaths.splice(0)) {
-    if (existsSync(path)) rmSync(path, { force: true });
+    for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
+      if (existsSync(candidate)) rmSync(candidate, { force: true });
+    }
   }
 });
 
@@ -41,6 +44,37 @@ describe("AppPersistence", () => {
       sourceKey: "provider:yahoo",
     }, { allowExpired: true })?.value.price).toBe(123);
     persistence.close();
+  });
+
+  test("returns cached resources when last-access touch is locked", () => {
+    const dbPath = createTempDbPath("resource-touch-lock");
+    const persistence = new AppPersistence(dbPath);
+    const key = {
+      namespace: "market",
+      kind: "quote",
+      entityKey: "AAPL",
+      sourceKey: "provider:yahoo",
+    };
+
+    persistence.database.connection.exec("PRAGMA busy_timeout=1");
+    persistence.resources.set(key, {
+      price: 123,
+    }, {
+      cachePolicy: { staleMs: 60_000, expireMs: 120_000 },
+      schemaVersion: 1,
+    });
+
+    const locker = new Database(dbPath);
+    locker.exec("PRAGMA busy_timeout=1");
+    locker.exec("BEGIN IMMEDIATE");
+    try {
+      const record = persistence.resources.get<{ price: number }>(key, { allowExpired: true });
+      expect(record?.value.price).toBe(123);
+    } finally {
+      locker.exec("ROLLBACK");
+      locker.close();
+      persistence.close();
+    }
   });
 
   test("invalidates plugin state when schema versions differ", () => {
@@ -88,7 +122,8 @@ describe("AppPersistence", () => {
 
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
-    expect(second?.value).toBe(first?.value);
+    if (!first || !second) throw new Error("Expected persisted plugin state");
+    expect(second.value).toBe(first.value);
     persistence.close();
   });
 

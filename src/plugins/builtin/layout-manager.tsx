@@ -1,8 +1,9 @@
 import { saveConfig } from "../../data/config-store";
 import { findPaneInstance, type LayoutConfig } from "../../types/config";
-import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
+import type { AppNotificationRequest, GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import type { AppAction } from "../../state/app-context";
 import { getSharedRegistry } from "../registry";
+import { notifyGridlockComplete } from "../gridlock-notification";
 import {
   dockPane,
   floatPane,
@@ -54,7 +55,7 @@ export const layoutManagerPlugin: GloomPlugin = {
   description: "Pane layout management commands",
 
   setup(ctx) {
-    const notify = (body: string, options?: { type?: "info" | "success" | "error" }) => {
+    const notify = (body: string, options?: Omit<AppNotificationRequest, "body">) => {
       ctx.notify({ body, ...options });
     };
 
@@ -125,12 +126,15 @@ export const layoutManagerPlugin: GloomPlugin = {
       label: "Gridlock All Windows",
       description: "Arrange all visible panes into a tiled grid",
       keywords: ["grid", "gridlock", "tile", "arrange", "windows", "layout"],
+      shortcut: "GL",
       category: "config",
       execute: async () => {
         if (!getStateRef) return;
         const { layout, termWidth, termHeight } = getStateRef();
         persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width: termWidth, height: termHeight }));
-        notify("Retiled all panes", { type: "success" });
+        notifyGridlockComplete(ctx.notify, () => {
+          dispatchRef?.({ type: "UNDO_LAYOUT" });
+        });
       },
     });
 

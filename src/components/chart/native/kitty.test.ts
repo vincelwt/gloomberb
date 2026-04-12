@@ -206,6 +206,74 @@ describe("renderNativeChartBase", () => {
     const withCursor = renderNativeChartBase(sceneWithCursor!, 120, 60);
     expect(withCursor.pixels).toEqual(withoutCursor.pixels);
   });
+
+  test("renders indicator overlays into the native chart bitmap", () => {
+    const palette = resolveChartPalette({
+      bg: "#112233",
+      border: "#333333",
+      borderFocused: "#ffff00",
+      text: "#ffffff",
+      textDim: "#777777",
+      positive: "#00ff00",
+      negative: "#ff0000",
+    }, "positive");
+    const points = [
+      { date: new Date("2024-01-02"), open: 10, high: 12, low: 9, close: 11, volume: 100 },
+      { date: new Date("2024-01-03"), open: 11, high: 13, low: 10, close: 12, volume: 120 },
+      { date: new Date("2024-01-04"), open: 12, high: 14, low: 11, close: 13, volume: 130 },
+    ];
+    const baseScene = buildChartScene(points, {
+      width: 18,
+      height: 8,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "line",
+      colors: palette,
+    });
+    const sceneWithIndicator = buildChartScene(points, {
+      width: 18,
+      height: 8,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "line",
+      colors: palette,
+      indicators: {
+        smaLines: [{
+          period: 2,
+          color: "#ff00ff",
+          points: [
+            { index: 0, value: 9.5 },
+            { index: 1, value: 10.5 },
+            { index: 2, value: 11.5 },
+          ],
+        }],
+        emaLines: [],
+        bollinger: null,
+        rsi: null,
+        macd: null,
+      },
+    });
+
+    expect(baseScene).not.toBeNull();
+    expect(sceneWithIndicator).not.toBeNull();
+
+    const baseBitmap = renderNativeChartBase(baseScene!, 120, 60);
+    const indicatorBitmap = renderNativeChartBase(sceneWithIndicator!, 120, 60);
+    expect(indicatorBitmap.pixels).not.toEqual(baseBitmap.pixels);
+
+    let magentaPixels = 0;
+    for (let offset = 0; offset < indicatorBitmap.pixels.length; offset += 4) {
+      const red = indicatorBitmap.pixels[offset]!;
+      const green = indicatorBitmap.pixels[offset + 1]!;
+      const blue = indicatorBitmap.pixels[offset + 2]!;
+      if (red > 180 && blue > 180 && green < 120) magentaPixels += 1;
+    }
+    expect(magentaPixels).toBeGreaterThan(0);
+  });
 });
 
 describe("renderNativeComparisonChartBase", () => {

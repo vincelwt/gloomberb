@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { safeParseJson, serializeJson } from "./sqlite-json";
+import { withSqliteBusyRetry } from "./sqlite-retry";
 
 export const DEFAULT_PLUGIN_STATE_SCHEMA_VERSION = 1;
 
@@ -23,11 +24,13 @@ export class PluginStateStore {
 
   get<T>(pluginId: string, key: string, schemaVersion = DEFAULT_PLUGIN_STATE_SCHEMA_VERSION): PluginStateRecord<T> | null {
     const cacheKey = `${pluginId}:${key}`;
-    const row = this.db
-      .query<{ schema_version: number; value: string; updated_at: number }, [string, string]>(
-        "SELECT schema_version, value, updated_at FROM plugin_state WHERE plugin_id = ? AND key = ?",
-      )
-      .get(pluginId, key);
+    const row = withSqliteBusyRetry("load plugin state", () => (
+      this.db
+        .query<{ schema_version: number; value: string; updated_at: number }, [string, string]>(
+          "SELECT schema_version, value, updated_at FROM plugin_state WHERE plugin_id = ? AND key = ?",
+        )
+        .get(pluginId, key)
+    ));
     if (!row) {
       this.cache.delete(cacheKey);
       return null;
@@ -63,12 +66,14 @@ export class PluginStateStore {
   set(pluginId: string, key: string, value: unknown, schemaVersion = DEFAULT_PLUGIN_STATE_SCHEMA_VERSION): void {
     const rawValue = serializeJson(value);
     const updatedAt = Date.now();
-    this.db
-      .query(
-        `INSERT OR REPLACE INTO plugin_state (plugin_id, key, schema_version, value, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(pluginId, key, schemaVersion, rawValue, updatedAt);
+    withSqliteBusyRetry("save plugin state", () => {
+      this.db
+        .query(
+          `INSERT OR REPLACE INTO plugin_state (plugin_id, key, schema_version, value, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(pluginId, key, schemaVersion, rawValue, updatedAt);
+    });
     this.cache.set(`${pluginId}:${key}`, {
       value,
       schemaVersion,
@@ -78,21 +83,27 @@ export class PluginStateStore {
   }
 
   delete(pluginId: string, key: string): void {
-    this.db.query("DELETE FROM plugin_state WHERE plugin_id = ? AND key = ?").run(pluginId, key);
+    withSqliteBusyRetry("delete plugin state", () => {
+      this.db.query("DELETE FROM plugin_state WHERE plugin_id = ? AND key = ?").run(pluginId, key);
+    });
     this.cache.delete(`${pluginId}:${key}`);
   }
 
   keys(pluginId: string): string[] {
-    return this.db
-      .query<{ key: string }, [string]>(
-        "SELECT key FROM plugin_state WHERE plugin_id = ? ORDER BY key",
-      )
-      .all(pluginId)
-      .map((row) => row.key);
+    return withSqliteBusyRetry("list plugin state keys", () => (
+      this.db
+        .query<{ key: string }, [string]>(
+          "SELECT key FROM plugin_state WHERE plugin_id = ? ORDER BY key",
+        )
+        .all(pluginId)
+        .map((row) => row.key)
+    ));
   }
 
   clear(pluginId: string): void {
-    this.db.query("DELETE FROM plugin_state WHERE plugin_id = ?").run(pluginId);
+    withSqliteBusyRetry("clear plugin state", () => {
+      this.db.query("DELETE FROM plugin_state WHERE plugin_id = ?").run(pluginId);
+    });
     for (const cacheKey of this.cache.keys()) {
       if (cacheKey.startsWith(`${pluginId}:`)) {
         this.cache.delete(cacheKey);

@@ -6,6 +6,7 @@ export type {
   DataTableCell,
   DataTableColumn,
   DataTableProps,
+  DataTableSectionHeader,
 } from "./data-table";
 
 export { Tabs } from "./tabs";
@@ -13,6 +14,12 @@ export type { TabItem, TabsProps } from "./tabs";
 
 export { Button, IconButton } from "./button";
 export type { ButtonProps, ButtonVariant, IconButtonProps } from "./button";
+
+export { MultiSelectChips } from "./multi-select-chips";
+export type { MultiSelectChipsProps, MultiSelectChipOption } from "./multi-select-chips";
+export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-select-dialog";
+export type { MultiSelectDialogButtonProps, MultiSelectDialogContentProps } from "./multi-select-dialog";
+export type { MultiSelectOption } from "./multi-select";
 
 export { Checkbox, Switch, RadioGroup, SegmentedControl } from "./toggle";
 export type {

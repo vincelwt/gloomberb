@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
@@ -25,13 +25,6 @@ interface ChatContentProps {
 
 interface ChatStatusWidgetProps {
   controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
-}
-
-function estimateWrappedLineCount(text: string, width: number) {
-  const safeWidth = Math.max(width, 1);
-  return text.split("\n").reduce((total, line) => (
-    total + Math.max(1, Math.ceil(Math.max(line.length, 1) / safeWidth))
-  ), 0);
 }
 
 const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;
@@ -63,15 +56,43 @@ function formatInlinePreview(text: string, width: number) {
   return truncateInlinePreview(normalizeInlinePreview(text), width);
 }
 
-function estimateMessageHeight(message: ChatMessage, width: number, grouped = false) {
+function wrapTextLines(text: string, width: number) {
+  const safeWidth = Math.max(width, 1);
+  const lines: string[] = [];
+
+  for (const paragraph of text.split("\n")) {
+    let remaining = paragraph;
+    if (remaining.length === 0) {
+      lines.push("");
+      continue;
+    }
+
+    while (remaining.length > safeWidth) {
+      const candidate = remaining.slice(0, safeWidth + 1);
+      const breakAt = candidate.lastIndexOf(" ");
+      const lineEnd = breakAt > 0 ? breakAt : safeWidth;
+      lines.push(remaining.slice(0, lineEnd).trimEnd());
+      remaining = remaining.slice(lineEnd).trimStart();
+    }
+
+    lines.push(remaining);
+  }
+
+  return lines.length > 0 ? lines : [""];
+}
+
+function getMessageBodyLines(message: ChatMessage, width: number) {
   const contentLineWidth = Math.max(width - 4 - MESSAGE_ACTION_WIDTH, 1);
-  const normalizedContent = message.content.replace(/\$[A-Z][A-Z0-9.-]{0,9}/g, (match) => ` ${match.slice(1)} +0% `);
+  return wrapTextLines(message.content, contentLineWidth);
+}
+
+function estimateMessageHeight(message: ChatMessage, width: number, grouped = false) {
   const headerHeight = grouped ? 0 : 1;
-  return headerHeight + (message.replyTo ? 1 : 0) + estimateWrappedLineCount(normalizedContent, contentLineWidth);
+  return headerHeight + (message.replyTo ? 1 : 0) + getMessageBodyLines(message, width).length;
 }
 
 function estimateComposerHeight(text: string, width: number) {
-  return Math.max(1, Math.min(CHAT_COMPOSER_MAX_ROWS, estimateWrappedLineCount(text, width)));
+  return Math.max(1, Math.min(CHAT_COMPOSER_MAX_ROWS, wrapTextLines(text, width).length));
 }
 
 function getMessageTopOffset(messages: ChatMessage[], index: number, width: number) {
@@ -475,10 +496,22 @@ export function ChatContent({
     shouldLeaveComposerForSelection,
   ]);
 
+  const inputMetaHeight = canSend && replyTo ? 1 : 0;
+  const inputAreaHeight = canSend ? composerHeight + inputMetaHeight : 2;
+  const headerHeight = 1;
+  const separatorHeight = 1;
+  const footerSeparatorHeight = 1;
+  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - footerSeparatorHeight - inputAreaHeight);
+
   useEffect(() => {
     if (selectedIdx < messages.length) return;
     setSelectedIdx(messages.length - 1);
   }, [messages.length, selectedIdx]);
+
+  useEffect(() => {
+    if (!stickyTranscript) return;
+    queueMicrotask(() => scrollToBottom(scrollRef.current));
+  }, [contentWidth, height, messages, messageAreaHeight, stickyTranscript]);
 
   useEffect(() => {
     const sb = scrollRef.current;
@@ -497,12 +530,6 @@ export function ChatContent({
     }
   }, [contentWidth, messages, selectedIdx, selectionActive]);
 
-  const inputMetaHeight = canSend && replyTo ? 1 : 0;
-  const inputAreaHeight = canSend ? composerHeight + inputMetaHeight : 2;
-  const headerHeight = 1;
-  const separatorHeight = 1;
-  const footerSeparatorHeight = 1;
-  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - footerSeparatorHeight - inputAreaHeight);
   const replyPreview = replyTo
     ? formatInlinePreview(
       replyTo.content,
@@ -566,19 +593,24 @@ export function ChatContent({
           const authorColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : colors.positive;
           const authorAttributes = (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD;
           const bodyColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
+          const bodyLines = getMessageBodyLines(msg, contentWidth);
           const setHovered = () => setHoveredIdx(index);
           const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
+          const messageRowProps = {
+            width: contentWidth,
+            backgroundColor: bgColor,
+            onMouseMove: setHovered,
+            onMouseOut: clearHovered,
+          };
           return (
-            <box
-              key={msg.id}
-              flexDirection="column"
-              width={contentWidth}
-              backgroundColor={bgColor}
-              onMouseMove={setHovered}
-              onMouseOut={clearHovered}
-            >
+            <Fragment key={msg.id}>
               {msg.replyTo && (
-                <box flexDirection="row" height={1} paddingLeft={2}>
+                <box
+                  {...messageRowProps}
+                  flexDirection="row"
+                  height={1}
+                  paddingLeft={2}
+                >
                   <text fg={replyMetaColor}>reply </text>
                   <text fg={replyAuthorColor}>{msg.replyTo.user.username}: </text>
                   <text fg={replyMetaColor}>
@@ -590,41 +622,48 @@ export function ChatContent({
                 </box>
               )}
               {!grouped && (
-                <box flexDirection="row" height={1} paddingLeft={1}>
+                <box
+                  {...messageRowProps}
+                  flexDirection="row"
+                  height={1}
+                  paddingLeft={1}
+                >
                   <text fg={authorColor} attributes={authorAttributes}>
                     {msg.user.username ?? "anon"}
                   </text>
                   <text fg={headerStatusColor}> ({headerStatus})</text>
                 </box>
               )}
-              <box
-                paddingLeft={3}
-                width={contentWidth}
-                flexDirection="row"
-                onMouseMove={setHovered}
-                onMouseOut={clearHovered}
-              >
-                <box width={messageBodyWidth}>
-                  <TickerBadgeText
-                    text={msg.content}
-                    lineWidth={messageBodyWidth}
-                    catalog={catalog}
-                    textColor={bodyColor}
-                    openTicker={openTicker}
-                  />
-                </box>
-                <box width={MESSAGE_ACTION_WIDTH}>
-                  {showReplyAction && (
-                    <ChatActionChip
-                      label="Reply"
-                      width={MESSAGE_ACTION_WIDTH}
-                      emphasized={isSelected}
-                      onPress={() => beginReplyTo(index)}
+              {bodyLines.map((line, lineIndex) => (
+                <box
+                  key={`${msg.id}:body:${lineIndex}`}
+                  {...messageRowProps}
+                  paddingLeft={3}
+                  height={1}
+                  flexDirection="row"
+                >
+                  <box width={messageBodyWidth} height={1}>
+                    <TickerBadgeText
+                      text={line}
+                      lineWidth={messageBodyWidth}
+                      catalog={catalog}
+                      textColor={bodyColor}
+                      openTicker={openTicker}
                     />
-                  )}
+                  </box>
+                  <box width={MESSAGE_ACTION_WIDTH} height={1}>
+                    {lineIndex === 0 && showReplyAction && (
+                      <ChatActionChip
+                        label="Reply"
+                        width={MESSAGE_ACTION_WIDTH}
+                        emphasized={isSelected}
+                        onPress={() => beginReplyTo(index)}
+                      />
+                    )}
+                  </box>
                 </box>
-              </box>
-            </box>
+              ))}
+            </Fragment>
           );
         })}
       </scrollbox>

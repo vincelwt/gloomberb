@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { bucketOhlcSeries, getVisibleWindow, projectChartData, resolveRenderMode } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
-import { buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
+import { buildChartScene, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode, ChartViewState } from "./chart-types";
 
@@ -181,6 +181,37 @@ describe("renderChart", () => {
     expect(result.axisFractionDigits).toBeGreaterThanOrEqual(1);
     expect(new Set(result.axisLabels.map((entry) => entry.label)).size).toBe(result.axisLabels.length);
     expect(result.axisLabels.every((entry) => entry.label.includes("."))).toBe(true);
+  });
+
+  test("includes visible indicator overlays in the chart price range", () => {
+    const projection = projectChartData(chartFixture, 12, "line", false);
+    const scene = buildChartScene(projection.points, {
+      width: 12,
+      height: 6,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: projection.effectiveMode,
+      colors: palette,
+      indicators: {
+        smaLines: [{
+          period: 2,
+          color: "#ff00ff",
+          points: [
+            { index: 0, value: 6 },
+            { index: 1, value: 18 },
+          ],
+        }],
+        emaLines: [],
+        bollinger: null,
+        rsi: null,
+        macd: null,
+      },
+    });
+
+    expect(scene?.min).toBe(6);
+    expect(scene?.max).toBe(18);
   });
 
   test("keeps one decimal on zoomed equity axes even when whole-dollar ticks are distinct", () => {

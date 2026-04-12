@@ -19,6 +19,7 @@ import {
   resolveFloating,
   simulateDrop,
   swapPanes,
+  type DockDividerLayout,
   type DockLeafLayout,
   type DropTarget,
   type FloatingRect,
@@ -778,8 +779,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
           event.preventDefault();
           return;
         }
-        event.stopPropagation();
-        event.preventDefault();
+        // Focus floating panes without consuming body clicks so child controls
+        // can act on the same initial mouse interaction.
         return;
       }
 
@@ -837,8 +838,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
           event.preventDefault();
           return;
         }
-        event.stopPropagation();
-        event.preventDefault();
+        // Focus docked panes without consuming body clicks so embedded widgets
+        // receive the first click instead of requiring a second one.
         return;
       }
 

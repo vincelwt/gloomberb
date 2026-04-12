@@ -9,8 +9,12 @@ import { colors } from "../../theme/colors";
 import { Spinner } from "../../components/spinner";
 import { DetailFeedView, type DetailFeedItem } from "../../components/detail-feed-view";
 import { isUsEquityTicker } from "../../utils/sec";
+import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { parseForm4Xml, transactionTypeLabel } from "./insider/insider-data";
+import { formatCompact, formatCurrency } from "../../utils/format";
 
 const SEC_FILING_LIMIT = 50;
+const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
 
 function getDisplayFormLabel(form: string): string {
   const trimmed = form.trim();
@@ -111,6 +115,64 @@ function buildDetailBody(filing: SecFilingItem): string {
     : "No additional SEC filing description is available for this entry.";
 }
 
+function buildForm4Preview(content: string | null): string | null {
+  if (!content) return null;
+  const tx = parseForm4Xml(content);
+  if (!tx) return null;
+  const type = transactionTypeLabel(tx.transactionType);
+  const shares = formatCompact(tx.shares);
+  const price = tx.pricePerShare != null ? ` @ ${formatCurrency(tx.pricePerShare)}` : "";
+  return `${tx.reportedName} — ${type} ${shares} shares${price}`;
+}
+
+function buildForm4Detail(content: string | null, filing: SecFilingItem): string {
+  if (!content) return buildDetailBody(filing);
+  const tx = parseForm4Xml(content);
+  if (!tx) return buildDetailBody(filing);
+
+  const lines: string[] = [];
+  lines.push(`Insider: ${tx.reportedName}`);
+  if (tx.title) lines.push(`Title: ${tx.title}`);
+  lines.push(`Transaction: ${transactionTypeLabel(tx.transactionType)}`);
+  lines.push(`Shares: ${formatCompact(tx.shares)}`);
+  if (tx.pricePerShare != null) lines.push(`Price/Share: ${formatCurrency(tx.pricePerShare)}`);
+  if (tx.totalValue != null) lines.push(`Total Value: ${formatCurrency(tx.totalValue)}`);
+  if (tx.sharesOwned != null) lines.push(`Shares Owned After: ${formatCompact(tx.sharesOwned)}`);
+  return lines.join("\n");
+}
+
+function getFormCategory(form: string): "annual" | "quarterly" | "current" | "ownership" | "other" {
+  const f = form.trim().toUpperCase();
+  if (f === "10-K" || f === "10-K/A" || f === "20-F") return "annual";
+  if (f === "10-Q" || f === "10-Q/A") return "quarterly";
+  if (f.startsWith("8-K")) return "current";
+  if (OWNERSHIP_FORMS.has(f) || f === "SC 13G" || f === "SC 13D" || f === "SC 13G/A" || f === "SC 13D/A") return "ownership";
+  return "other";
+}
+
+function getFormDescription(form: string): string {
+  const f = form.trim().toUpperCase();
+  switch (f) {
+    case "10-K": return "Annual Report";
+    case "10-K/A": return "Annual Report (Amended)";
+    case "10-Q": return "Quarterly Report";
+    case "10-Q/A": return "Quarterly Report (Amended)";
+    case "8-K": return "Current Report";
+    case "8-K/A": return "Current Report (Amended)";
+    case "4": return "Insider Transaction";
+    case "3": return "Initial Insider Ownership";
+    case "5": return "Annual Insider Ownership";
+    case "SC 13G": return "Beneficial Ownership (Passive)";
+    case "SC 13G/A": return "Beneficial Ownership (Amended)";
+    case "SC 13D": return "Beneficial Ownership (Active)";
+    case "SC 13D/A": return "Beneficial Ownership (Amended)";
+    case "DEF 14A": return "Proxy Statement";
+    case "S-1": return "Registration Statement";
+    case "20-F": return "Annual Report (Foreign)";
+    default: return "";
+  }
+}
+
 function toFeedItems(
   filings: SecFilingItem[],
   selectedAccessionNumber: string | undefined,
@@ -119,33 +181,47 @@ function toFeedItems(
 ): DetailFeedItem[] {
   return filings.map((filing) => {
     const displayTitle = getFilingDisplayTitle(filing);
+    const formDesc = getFormDescription(filing.form);
     const hasFetchedContent = contentCache.has(filing.accessionNumber);
     const fetchedContent = contentCache.get(filing.accessionNumber);
+    const isOwnership = OWNERSHIP_FORMS.has(filing.form.trim());
     const fallbackBody = hasFetchedContent && !loadingContent && !fetchedContent
       ? `${buildDetailBody(filing)}\n\nReadable filing content was not available for this document.`
       : buildDetailBody(filing);
 
+    // For Form 4s, build structured preview and detail from parsed XML
+    const form4Preview = isOwnership && hasFetchedContent
+      ? buildForm4Preview(fetchedContent ?? null)
+      : null;
+    const form4Detail = isOwnership && hasFetchedContent
+      ? buildForm4Detail(fetchedContent ?? null, filing)
+      : null;
+
+    const enrichedTitle = formDesc
+      ? `${displayTitle} — ${formDesc}`
+      : displayTitle;
+
     return {
       id: filing.accessionNumber,
       eyebrow: filing.form,
-      title: displayTitle,
+      title: form4Preview ? `${displayTitle} | ${form4Preview}` : enrichedTitle,
       timestamp: filing.filingDate,
-      preview: filing.items ? `Items ${filing.items}` : filing.primaryDocument,
-      detailTitle: displayTitle,
+      preview: form4Preview
+        ?? (filing.items ? `Items ${filing.items}` : (formDesc || filing.primaryDocument)),
+      detailTitle: enrichedTitle,
       detailMeta: [
         `Filed ${formatFiledAt(filing)}`,
         `Accession ${filing.accessionNumber}`,
         ...(filing.items ? [`Items ${filing.items}`] : []),
-        ...(filing.primaryDocument ? [`Primary document ${filing.primaryDocument}`] : []),
       ],
       detailBody: filing.accessionNumber === selectedAccessionNumber
         ? (
             loadingContent
               ? "Loading filing content..."
-              : fetchedContent ?? fallbackBody
+              : form4Detail ?? fetchedContent ?? fallbackBody
           )
-        : fallbackBody,
-      detailNote: [filing.primaryDocumentUrl, filing.filingUrl].filter(Boolean).join("\n"),
+        : form4Detail ?? fallbackBody,
+      detailNote: filing.filingUrl || undefined,
     };
   });
 }
@@ -199,6 +275,37 @@ function SecTab({ width, height, focused }: DetailTabProps) {
       setSelectedIdx(Math.max(0, filings.length - 1));
     }
   }, [filings.length, selectedIdx, setSelectedIdx]);
+
+  // Background prefetch Form 4 content for enriched previews
+  const prefetchStartedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (filings.length === 0) return;
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator) return;
+    const gen = contentFetchRef.current;
+    const form4s = filings.filter((f) =>
+      OWNERSHIP_FORMS.has(f.form.trim())
+      && !contentCache.has(f.accessionNumber)
+      && !prefetchStartedRef.current.has(f.accessionNumber),
+    );
+    if (form4s.length === 0) return;
+
+    for (const filing of form4s) {
+      prefetchStartedRef.current.add(filing.accessionNumber);
+    }
+
+    (async () => {
+      for (const filing of form4s) {
+        if (contentFetchRef.current !== gen) return;
+        try {
+          const entry = await coordinator.loadSecFilingContent(filing);
+          if (contentFetchRef.current !== gen) return;
+          const content = entry?.data ?? null;
+          setContentCache((prev) => new Map(prev).set(filing.accessionNumber, content));
+        } catch { /* skip */ }
+      }
+    })();
+  }, [filings]);
 
   if (!ticker) return <text fg={colors.textDim}>Select a ticker to view SEC filings.</text>;
   if (!eligibleTicker) return renderNotice("SEC filings are only shown for US equities.", width);

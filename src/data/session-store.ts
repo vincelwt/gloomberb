@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { safeParseJson, serializeJson } from "./sqlite-json";
+import { withSqliteBusyRetry } from "./sqlite-retry";
 
 export const DEFAULT_SESSION_SCHEMA_VERSION = 1;
 
@@ -14,11 +15,13 @@ export class SessionStore {
   constructor(private readonly db: Database) {}
 
   get<T>(sessionId = "app", schemaVersion = DEFAULT_SESSION_SCHEMA_VERSION): SessionSnapshotRecord<T> | null {
-    const row = this.db
-      .query<{ schema_version: number; value: string; updated_at: number }, [string]>(
-        "SELECT schema_version, value, updated_at FROM session_snapshots WHERE session_id = ?",
-      )
-      .get(sessionId);
+    const row = withSqliteBusyRetry("load session snapshot", () => (
+      this.db
+        .query<{ schema_version: number; value: string; updated_at: number }, [string]>(
+          "SELECT schema_version, value, updated_at FROM session_snapshots WHERE session_id = ?",
+        )
+        .get(sessionId)
+    ));
     if (!row) return null;
     if (row.schema_version !== schemaVersion) {
       this.delete(sessionId);
@@ -38,15 +41,19 @@ export class SessionStore {
   }
 
   set(sessionId: string, value: unknown, schemaVersion = DEFAULT_SESSION_SCHEMA_VERSION): void {
-    this.db
-      .query(
-        `INSERT OR REPLACE INTO session_snapshots (session_id, schema_version, value, updated_at)
-         VALUES (?, ?, ?, ?)`,
-      )
-      .run(sessionId, schemaVersion, serializeJson(value), Date.now());
+    withSqliteBusyRetry("save session snapshot", () => {
+      this.db
+        .query(
+          `INSERT OR REPLACE INTO session_snapshots (session_id, schema_version, value, updated_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(sessionId, schemaVersion, serializeJson(value), Date.now());
+    });
   }
 
   delete(sessionId: string): void {
-    this.db.query("DELETE FROM session_snapshots WHERE session_id = ?").run(sessionId);
+    withSqliteBusyRetry("delete session snapshot", () => {
+      this.db.query("DELETE FROM session_snapshots WHERE session_id = ?").run(sessionId);
+    });
   }
 }

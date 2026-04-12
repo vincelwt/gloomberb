@@ -507,8 +507,20 @@ export class SecEdgarClient {
   }
 
   async getFilingContent(filing: Pick<SecFilingItem, "primaryDocumentUrl" | "filingUrl" | "form">): Promise<string | null> {
-    const targetUrl = filing.primaryDocumentUrl || filing.filingUrl;
+    let targetUrl = filing.primaryDocumentUrl || filing.filingUrl;
     if (!targetUrl) return null;
+
+    // SEC ownership forms (3/4/5) have XSL-prefixed primaryDocument paths
+    // (e.g., "xslF345X06/wk-form4_xxx.xml") which return rendered HTML.
+    // Strip the prefix and return the raw XML for programmatic parsing.
+    const ownershipForms = new Set(["3", "4", "5"]);
+    if (filing.primaryDocumentUrl && filing.form && ownershipForms.has(filing.form.trim())) {
+      const rawUrl = filing.primaryDocumentUrl.replace(/\/xsl[^/]+\//, "/");
+      if (rawUrl !== filing.primaryDocumentUrl) {
+        const { body } = await this.fetchText(rawUrl);
+        return body;
+      }
+    }
 
     if (filing.primaryDocumentUrl && isPdfDocument("", "", filing.primaryDocumentUrl)) {
       const alternativeUrl = filing.filingUrl

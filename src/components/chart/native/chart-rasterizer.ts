@@ -256,6 +256,20 @@ function projectX(index: number, count: number, left: number, right: number): nu
   return lerp(left, right, index / (count - 1));
 }
 
+function projectChartX(index: number, count: number, width: number, mode: ChartRenderMode): number {
+  if (mode !== "candles" && mode !== "ohlc") {
+    return projectX(index, count, 0, Math.max(width - 1, 0));
+  }
+
+  const spacing = width / Math.max(count, 1);
+  const bodyWidth = clamp(spacing * 0.58, 2, Math.max(spacing - 1, 2));
+  const tickLength = clamp(spacing * 0.34, 2, Math.max(spacing * 0.48, 2));
+  const horizontalPad = mode === "ohlc"
+    ? Math.ceil(Math.max(tickLength - 1, 0))
+    : Math.ceil(bodyWidth / 2);
+  return projectX(index, count, horizontalPad, Math.max(width - 1 - horizontalPad, horizontalPad));
+}
+
 function projectY(value: number, min: number, max: number, top: number, bottom: number): number {
   const range = max - min || 1;
   return lerp(bottom, top, (value - min) / range);
@@ -398,6 +412,42 @@ function drawVolume(
   }
 }
 
+function drawIndicatorOverlays(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  scene: ChartScene,
+  top: number,
+  bottom: number,
+) {
+  if (!scene.indicators) return;
+
+  const drawOverlay = (points: { index: number; value: number }[], color: string) => {
+    const lineColor = parseHex(color, 0.95);
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const p0 = points[index]!;
+      const p1 = points[index + 1]!;
+      const x0 = projectChartX(p0.index, scene.points.length, width, scene.mode);
+      const y0 = projectY(p0.value, scene.min, scene.max, top, bottom);
+      const x1 = projectChartX(p1.index, scene.points.length, width, scene.mode);
+      const y1 = projectY(p1.value, scene.min, scene.max, top, bottom);
+      drawLine(data, width, height, x0, y0, x1, y1, lineColor, 1.2);
+    }
+  };
+
+  for (const sma of scene.indicators.smaLines) {
+    drawOverlay(sma.points, sma.color);
+  }
+  for (const ema of scene.indicators.emaLines) {
+    drawOverlay(ema.points, ema.color);
+  }
+  if (scene.indicators.bollinger) {
+    drawOverlay(scene.indicators.bollinger.upper, scene.indicators.bollinger.color);
+    drawOverlay(scene.indicators.bollinger.middle, scene.indicators.bollinger.color);
+    drawOverlay(scene.indicators.bollinger.lower, scene.indicators.bollinger.color);
+  }
+}
+
 function drawCrosshairOverlay(
   data: Uint8Array,
   width: number,
@@ -447,6 +497,7 @@ export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pix
       break;
   }
 
+  drawIndicatorOverlays(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
   drawVolume(pixels, pixelWidth, pixelHeight, scene, layout.volumeTop, layout.volumeBottom);
 
   return { width: pixelWidth, height: pixelHeight, pixels };

@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { CachePolicy, PersistedResourceValue } from "../types/persistence";
 import type { JsonValue } from "./sqlite-json";
 import { safeParseJson, serializeJson } from "./sqlite-json";
+import { trySqliteBusyOperation, withSqliteBusyRetry } from "./sqlite-retry";
 
 const RESOURCE_CACHE_SOFT_ROW_LIMIT = 25_000;
 const RESOURCE_CACHE_SOFT_SIZE_LIMIT = 100 * 1024 * 1024;
@@ -113,95 +114,114 @@ export class ResourceStore {
   }
 
   private deleteExact(key: ResourceCacheKey): void {
-    this.db
-      .query(
-        `DELETE FROM resource_cache
-         WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
-      )
-      .run(
-        key.namespace,
-        key.kind,
-        key.entityKey,
-        normalizeVariantKey(key.variantKey),
-        normalizeSourceKey(key.sourceKey),
-      );
+    withSqliteBusyRetry("delete cached resource", () => {
+      this.db
+        .query(
+          `DELETE FROM resource_cache
+           WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
+        )
+        .run(
+          key.namespace,
+          key.kind,
+          key.entityKey,
+          normalizeVariantKey(key.variantKey),
+          normalizeSourceKey(key.sourceKey),
+        );
+    });
   }
 
-  private touch(key: ResourceCacheKey): void {
-    this.db
-      .query(
-        `UPDATE resource_cache
-         SET last_accessed_at = ?
-         WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
-      )
-      .run(
-        Date.now(),
-        key.namespace,
-        key.kind,
-        key.entityKey,
-        normalizeVariantKey(key.variantKey),
-        normalizeSourceKey(key.sourceKey),
-      );
+  private touch(key: ResourceCacheKey): number | null {
+    const touchedAt = Date.now();
+    const result = trySqliteBusyOperation("touch cached resource", () => {
+      this.db
+        .query(
+          `UPDATE resource_cache
+           SET last_accessed_at = ?
+           WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
+        )
+        .run(
+          touchedAt,
+          key.namespace,
+          key.kind,
+          key.entityKey,
+          normalizeVariantKey(key.variantKey),
+          normalizeSourceKey(key.sourceKey),
+        );
+      return touchedAt;
+    });
+    return result;
   }
 
   private pruneIfNeeded(): void {
-    const stats = this.db
-      .query<{ count: number; total_size: number }, []>(
-        "SELECT COUNT(*) as count, COALESCE(SUM(size_bytes), 0) as total_size FROM resource_cache",
-      )
-      .get();
+    const stats = withSqliteBusyRetry("read resource cache size", () => (
+      this.db
+        .query<{ count: number; total_size: number }, []>(
+          "SELECT COUNT(*) as count, COALESCE(SUM(size_bytes), 0) as total_size FROM resource_cache",
+        )
+        .get()
+    ));
     const count = stats?.count ?? 0;
     const totalSize = stats?.total_size ?? 0;
     if (count <= RESOURCE_CACHE_SOFT_ROW_LIMIT && totalSize <= RESOURCE_CACHE_SOFT_SIZE_LIMIT) return;
 
-    this.db.query("DELETE FROM resource_cache WHERE expires_at < ?").run(Date.now());
+    withSqliteBusyRetry("prune expired cached resources", () => {
+      this.db.query("DELETE FROM resource_cache WHERE expires_at < ?").run(Date.now());
+    });
 
-    const remaining = this.db
-      .query<{ count: number; total_size: number }, []>(
-        "SELECT COUNT(*) as count, COALESCE(SUM(size_bytes), 0) as total_size FROM resource_cache",
-      )
-      .get();
+    const remaining = withSqliteBusyRetry("read pruned resource cache size", () => (
+      this.db
+        .query<{ count: number; total_size: number }, []>(
+          "SELECT COUNT(*) as count, COALESCE(SUM(size_bytes), 0) as total_size FROM resource_cache",
+        )
+        .get()
+    ));
     const remainingCount = remaining?.count ?? 0;
     const remainingSize = remaining?.total_size ?? 0;
     if (remainingCount <= RESOURCE_CACHE_SOFT_ROW_LIMIT && remainingSize <= RESOURCE_CACHE_SOFT_SIZE_LIMIT) return;
 
-    const rowsToDelete = this.db
-      .query<{ namespace: string; kind: string; entity_key: string; variant_key: string; source_key: string }, [number]>(
-        `SELECT namespace, kind, entity_key, variant_key, source_key
-         FROM resource_cache
-         ORDER BY last_accessed_at ASC, fetched_at ASC
-         LIMIT ?`,
-      )
-      .all(Math.max(Math.ceil((remainingCount - RESOURCE_CACHE_SOFT_ROW_LIMIT) + 250), 250));
+    const rowsToDelete = withSqliteBusyRetry("select cached resources to prune", () => (
+      this.db
+        .query<{ namespace: string; kind: string; entity_key: string; variant_key: string; source_key: string }, [number]>(
+          `SELECT namespace, kind, entity_key, variant_key, source_key
+           FROM resource_cache
+           ORDER BY last_accessed_at ASC, fetched_at ASC
+           LIMIT ?`,
+        )
+        .all(Math.max(Math.ceil((remainingCount - RESOURCE_CACHE_SOFT_ROW_LIMIT) + 250), 250))
+    ));
 
     if (rowsToDelete.length === 0) return;
-    const remove = this.db.query(
-      `DELETE FROM resource_cache
-       WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
-    );
-    const tx = this.db.transaction(() => {
-      for (const row of rowsToDelete) {
-        remove.run(row.namespace, row.kind, row.entity_key, row.variant_key, row.source_key);
-      }
+    withSqliteBusyRetry("prune least recently used cached resources", () => {
+      const remove = this.db.query(
+        `DELETE FROM resource_cache
+         WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
+      );
+      const tx = this.db.transaction(() => {
+        for (const row of rowsToDelete) {
+          remove.run(row.namespace, row.kind, row.entity_key, row.variant_key, row.source_key);
+        }
+      });
+      tx();
     });
-    tx();
   }
 
   get<T>(key: ResourceCacheKey, options: GetResourceOptions = {}): CachedResourceRecord<T> | null {
-    const row = this.db
-      .query<ResourceCacheRow, [string, string, string, string, string]>(
-        `SELECT namespace, kind, entity_key, variant_key, source_key, schema_version, payload, provenance,
-                fetched_at, stale_at, expires_at, last_accessed_at, size_bytes
-         FROM resource_cache
-         WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
-      )
-      .get(
-        key.namespace,
-        key.kind,
-        key.entityKey,
-        normalizeVariantKey(key.variantKey),
-        normalizeSourceKey(key.sourceKey),
-      );
+    const row = withSqliteBusyRetry("load cached resource", () => (
+      this.db
+        .query<ResourceCacheRow, [string, string, string, string, string]>(
+          `SELECT namespace, kind, entity_key, variant_key, source_key, schema_version, payload, provenance,
+                  fetched_at, stale_at, expires_at, last_accessed_at, size_bytes
+           FROM resource_cache
+           WHERE namespace = ? AND kind = ? AND entity_key = ? AND variant_key = ? AND source_key = ?`,
+        )
+        .get(
+          key.namespace,
+          key.kind,
+          key.entityKey,
+          normalizeVariantKey(key.variantKey),
+          normalizeSourceKey(key.sourceKey),
+        )
+    ));
 
     if (!row) return null;
     if (!options.allowExpired && isExpired(row.expires_at)) return null;
@@ -217,8 +237,10 @@ export class ResourceStore {
     }
 
     if (options.touch !== false) {
-      this.touch(key);
-      record.lastAccessedAt = Date.now();
+      const touchedAt = this.touch(key);
+      if (touchedAt != null) {
+        record.lastAccessedAt = touchedAt;
+      }
     }
     return record;
   }
@@ -227,14 +249,16 @@ export class ResourceStore {
     key: Pick<ResourceCacheKey, "namespace" | "kind" | "entityKey">,
     options: ListResourceOptions = {},
   ): CachedResourceRecord<T>[] {
-    const rows = this.db
-      .query<ResourceCacheRow, [string, string, string]>(
-        `SELECT namespace, kind, entity_key, variant_key, source_key, schema_version, payload, provenance,
-                fetched_at, stale_at, expires_at, last_accessed_at, size_bytes
-         FROM resource_cache
-         WHERE namespace = ? AND kind = ? AND entity_key = ?`,
-      )
-      .all(key.namespace, key.kind, key.entityKey);
+    const rows = withSqliteBusyRetry("list cached resources", () => (
+      this.db
+        .query<ResourceCacheRow, [string, string, string]>(
+          `SELECT namespace, kind, entity_key, variant_key, source_key, schema_version, payload, provenance,
+                  fetched_at, stale_at, expires_at, last_accessed_at, size_bytes
+           FROM resource_cache
+           WHERE namespace = ? AND kind = ? AND entity_key = ?`,
+        )
+        .all(key.namespace, key.kind, key.entityKey)
+    ));
 
     const allowedVariantKeys = options.variantKeys ? new Set(options.variantKeys.map(normalizeVariantKey)) : null;
     const allowedSourceKeys = options.sourceKeys ? new Set(options.sourceKeys.map(normalizeSourceKey)) : null;
@@ -282,28 +306,30 @@ export class ResourceStore {
       sourceKey: normalizeSourceKey(key.sourceKey),
     };
 
-    this.db
-      .query(
-        `INSERT OR REPLACE INTO resource_cache (
-          namespace, kind, entity_key, variant_key, source_key, schema_version,
-          payload, provenance, fetched_at, stale_at, expires_at, last_accessed_at, size_bytes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        rowKey.namespace,
-        rowKey.kind,
-        rowKey.entityKey,
-        rowKey.variantKey,
-        rowKey.sourceKey,
-        options.schemaVersion ?? DEFAULT_RESOURCE_SCHEMA_VERSION,
-        payload,
-        provenance,
-        now,
-        now + options.cachePolicy.staleMs,
-        now + options.cachePolicy.expireMs,
-        now,
-        Buffer.byteLength(payload, "utf8"),
-      );
+    withSqliteBusyRetry("save cached resource", () => {
+      this.db
+        .query(
+          `INSERT OR REPLACE INTO resource_cache (
+            namespace, kind, entity_key, variant_key, source_key, schema_version,
+            payload, provenance, fetched_at, stale_at, expires_at, last_accessed_at, size_bytes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          rowKey.namespace,
+          rowKey.kind,
+          rowKey.entityKey,
+          rowKey.variantKey,
+          rowKey.sourceKey,
+          options.schemaVersion ?? DEFAULT_RESOURCE_SCHEMA_VERSION,
+          payload,
+          provenance,
+          now,
+          now + options.cachePolicy.staleMs,
+          now + options.cachePolicy.expireMs,
+          now,
+          Buffer.byteLength(payload, "utf8"),
+        );
+    });
 
     this.pruneIfNeeded();
     return this.get<T>(rowKey, { allowExpired: true, touch: false })!;
@@ -315,9 +341,13 @@ export class ResourceStore {
 
   clear(namespace?: string): void {
     if (!namespace) {
-      this.db.query("DELETE FROM resource_cache").run();
+      withSqliteBusyRetry("clear cached resources", () => {
+        this.db.query("DELETE FROM resource_cache").run();
+      });
       return;
     }
-    this.db.query("DELETE FROM resource_cache WHERE namespace = ?").run(namespace);
+    withSqliteBusyRetry("clear namespaced cached resources", () => {
+      this.db.query("DELETE FROM resource_cache WHERE namespace = ?").run(namespace);
+    });
   }
 }

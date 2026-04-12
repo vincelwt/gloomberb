@@ -1,16 +1,27 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useState } from "react";
+import { act, useRef, useState } from "react";
 import { testRender } from "@opentui/react/test-utils";
+import { DialogProvider } from "@opentui-ui/dialog/react";
+import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { Button } from "./button";
+import { DataTable } from "./data-table";
 import { TextField } from "./fields";
 import { ListView } from "./list-view";
+import { MultiSelectChips } from "./multi-select-chips";
+import { MultiSelectDialogButton } from "./multi-select-dialog";
+import { toggleMultiSelectValue } from "./multi-select";
 import { ProgressBar } from "./loading";
 import { Notice } from "./status";
 import { Tabs } from "./tabs";
 import { ToggleList } from "../toggle-list";
+import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
+import { createDefaultConfig } from "../../types/config";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setListSelection: ((index: number) => void) | null = null;
+let selectedTableRow: string | null = null;
+let activatedTableRow: string | null = null;
+let selectedChips: string[] = [];
 
 function ScrollableListHarness() {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -29,12 +40,130 @@ function ScrollableListHarness() {
   );
 }
 
+function DataTableActivationHarness() {
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  return (
+    <DataTable
+      columns={[{ id: "name", label: "NAME", width: 12, align: "left" }]}
+      items={[{ id: "alpha", name: "Alpha" }]}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      syncHeaderScroll={() => {}}
+      onBodyScrollActivity={() => {}}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      getItemKey={(row) => row.id}
+      isSelected={(row) => selectedId === row.id}
+      onSelect={(row) => {
+        selectedTableRow = row.id;
+        setSelectedId(row.id);
+      }}
+      onActivate={(row) => {
+        activatedTableRow = row.id;
+      }}
+      renderCell={(row) => ({ text: row.name })}
+      emptyStateTitle="No rows."
+    />
+  );
+}
+
+type SectionTableRow =
+  | { kind: "header"; id: string; label: string }
+  | { kind: "row"; id: string; name: string };
+
+function DataTableSectionHarness() {
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const rows: SectionTableRow[] = [
+    { kind: "header", id: "macro", label: "Macro Releases" },
+    { kind: "row", id: "cpi", name: "CPI" },
+  ];
+
+  return (
+    <DataTable
+      columns={[{ id: "name", label: "NAME", width: 16, align: "left" }]}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      syncHeaderScroll={() => {}}
+      onBodyScrollActivity={() => {}}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      getItemKey={(row) => row.id}
+      isSelected={(row) => row.kind === "row" && row.id === selectedId}
+      onSelect={(row) => {
+        if (row.kind !== "row") return;
+        selectedTableRow = row.id;
+        setSelectedId(row.id);
+      }}
+      renderSectionHeader={(row) => (
+        row.kind === "header" ? { text: row.label } : null
+      )}
+      renderCell={(row) => ({ text: row.kind === "row" ? row.name : "" })}
+      emptyStateTitle="No rows."
+    />
+  );
+}
+
+function MultiSelectChipsHarness() {
+  const [values, setValues] = useState(["sma"]);
+  selectedChips = values;
+
+  return (
+    <MultiSelectChips
+      label="IND"
+      selectedValues={values}
+      onChange={setValues}
+      idPrefix="indicator-chip"
+      options={[
+        { value: "sma", label: "SMA" },
+        { value: "ema", label: "EMA" },
+      ]}
+    />
+  );
+}
+
+function MultiSelectDialogButtonHarness() {
+  const [values, setValues] = useState(["sma"]);
+
+  return (
+    <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <MultiSelectDialogButton
+        label="IND"
+        title="Chart Indicators"
+        selectedValues={values}
+        onChange={setValues}
+        idPrefix="indicator-dialog"
+        options={[
+          { value: "sma", label: "SMA" },
+          { value: "ema", label: "EMA" },
+        ]}
+      />
+    </DialogProvider>
+  );
+}
+
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
   }
   setListSelection = null;
+  selectedTableRow = null;
+  activatedTableRow = null;
+  selectedChips = [];
 });
 
 describe("shared UI kit", () => {
@@ -88,6 +217,79 @@ describe("shared UI kit", () => {
     expect(frame).toContain("[✓] News");
     expect(frame).toContain("Notes");
     expect(frame).toContain("Headlines and previews");
+  });
+
+  test("toggles multi-select chips with the mouse", async () => {
+    testSetup = await testRender(<MultiSelectChipsHarness />, { width: 32, height: 3 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[x] SMA");
+    expect(frame).toContain("[ ] EMA");
+    const emaChip = testSetup.renderer.root.findDescendantById("indicator-chip:ema") as BoxRenderable | undefined;
+    expect(emaChip).toBeDefined();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(emaChip!.x + 1, emaChip!.y);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[x] SMA");
+    expect(frame).toContain("[x] EMA");
+    expect(selectedChips).toEqual(["sma", "ema"]);
+  });
+
+  test("opens compact multi-select dialogs from a button", async () => {
+    testSetup = await testRender(<MultiSelectDialogButtonHarness />, { width: 60, height: 18 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("IND: SMA");
+    const button = testSetup.renderer.root.findDescendantById("indicator-dialog:button") as BoxRenderable | undefined;
+    expect(button).toBeDefined();
+    expect(button!.width).toBe(" IND: SMA ".length);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(button!.x + 1, button!.y);
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Chart Indicators");
+    expect(frame).toContain("[✓] SMA");
+    expect(frame).toContain("[ ] EMA");
+    expect(frame).not.toContain("Toggle");
+    expect(frame).not.toContain("space toggle");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(0, 0);
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Chart Indicators");
+  });
+
+  test("keeps shared multi-select values in option order when toggling", () => {
+    const options = [
+      { value: "sma", label: "SMA" },
+      { value: "ema", label: "EMA" },
+    ];
+
+    expect(toggleMultiSelectValue(options, ["sma"], "ema")).toEqual(["sma", "ema"]);
+    expect(toggleMultiSelectValue(options, ["sma", "ema"], "sma")).toEqual(["ema"]);
   });
 
   test("auto-scrolls a scrollable list to keep the selected row visible", async () => {
@@ -152,5 +354,70 @@ describe("shared UI kit", () => {
     });
 
     expect(testSetup.renderer.getSelection()).toBeNull();
+  });
+
+  test("activates data table rows on a second click", async () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="portfolio-list:main">
+          <DataTableActivationHarness />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 32, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
+
+    expect(selectedTableRow).toBe("alpha");
+    expect(activatedTableRow).toBeNull();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
+
+    expect(activatedTableRow).toBe("alpha");
+  });
+
+  test("renders data table section headers as non-selectable rows", async () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="portfolio-list:main">
+          <DataTableSectionHarness />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 32, height: 6 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Macro Releases");
+    expect(frame).toContain("CPI");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
+    expect(selectedTableRow).toBeNull();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 2);
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(selectedTableRow).toBe("cpi");
+    expect(frame).toContain("CPI");
   });
 });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot } from "@opentui/react";
+import { DialogProvider } from "@opentui-ui/dialog/react";
 import { act, useReducer, type ReactElement } from "react";
 import {
   AppContext,
@@ -97,17 +98,19 @@ function DetailHarness({
   harnessDispatch = dispatch;
 
   return (
-    <AppContext value={{ state, dispatch }}>
-      <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <DetailPane
-          paneId={TEST_PANE_ID}
-          paneType="ticker-detail"
-          focused
-          width={90}
-          height={28}
-        />
-      </PaneInstanceProvider>
-    </AppContext>
+    <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <AppContext value={{ state, dispatch }}>
+        <PaneInstanceProvider paneId={TEST_PANE_ID}>
+          <DetailPane
+            paneId={TEST_PANE_ID}
+            paneType="ticker-detail"
+            focused
+            width={90}
+            height={28}
+          />
+        </PaneInstanceProvider>
+      </AppContext>
+    </DialogProvider>
   );
 }
 
@@ -174,7 +177,9 @@ describe("Ticker detail chart tab switching", () => {
     });
 
     await flushFrames();
-    expect(testSetup.captureCharFrame()).toContain("AAPL");
+    const chartTabFrame = testSetup.captureCharFrame();
+    expect(chartTabFrame).toContain("AAPL");
+    expect(chartTabFrame).toContain("[i]ndicators");
     expect(manager.surfaces.has("chart-surface:ticker-detail:test:full:base")).toBe(true);
 
     act(() => {

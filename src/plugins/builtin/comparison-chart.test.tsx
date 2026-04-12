@@ -98,6 +98,10 @@ function createRegistrySpy(spy: { selected: string[]; focused: string[] }): Plug
   return {
     selectTickerFn: (symbol: string) => { spy.selected.push(symbol); },
     focusPaneFn: (paneId: string) => { spy.focused.push(paneId); },
+    navigateTickerFn: (symbol: string) => {
+      spy.selected.push(symbol);
+      spy.focused.push("ticker-detail");
+    },
   } as unknown as PluginRegistry;
 }
 
@@ -246,7 +250,12 @@ describe("comparisonChartPlugin", () => {
     expect(frame).toContain("2:1W");
     expect(frame).toContain("1D");
     expect(frame).toContain("view:");
-    expect(frame).toContain("arrows legend");
+    expect(frame).toContain("[m]ode");
+    expect(frame).toContain("[r]es");
+    expect(frame).toContain("[up/down]legend");
+    expect(frame).not.toContain("arrows legend");
+    expect(frame).not.toContain("wheel pan");
+    expect(frame).not.toContain("wheel zoom");
     expect(frame).not.toContain("side by side");
   });
 

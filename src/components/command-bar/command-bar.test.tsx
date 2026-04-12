@@ -352,6 +352,54 @@ describe("CommandBar", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Commands");
   });
 
+  test("runs plugin command shortcuts from the root query", async () => {
+    const calls: string[] = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="GL"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("gridlock-all", {
+          id: "gridlock-all",
+          label: "Gridlock All Windows",
+          description: "Arrange all visible panes into a tiled grid",
+          keywords: ["grid", "gridlock", "tile", "arrange", "windows", "layout"],
+          shortcut: "GL",
+          category: "config",
+          execute: async () => {
+            calls.push("gridlock-all");
+          },
+        });
+        (pluginRegistry.allPlugins as Map<string, any>).set("layout-manager", {
+          id: "layout-manager",
+          name: "Layout Manager",
+          version: "1.0.0",
+          description: "Pane layout management commands",
+        });
+        const getCommandPluginId = pluginRegistry.getCommandPluginId;
+        pluginRegistry.getCommandPluginId = (commandId: string) => (
+          commandId === "gridlock-all" ? "layout-manager" : getCommandPluginId(commandId)
+        );
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Gridlock All Windows");
+    expect(frame).toContain("GL");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(calls).toEqual(["gridlock-all"]);
+  });
+
   test("renders theme prefix results in the root query", async () => {
     testSetup = await testRender(<CommandBarHarness query="TH " />, {
       width: 80,

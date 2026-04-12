@@ -3,15 +3,12 @@ import { useDialog, useDialogKeyboard, type AlertContext } from "@opentui-ui/dia
 import { useEffect, useRef, useState } from "react";
 import type {
   PaneSettingField,
-  PaneSettingOption,
-  PaneSettingOrderedMultiSelectField,
   PaneSettingTextField,
 } from "../types/plugin";
 import type { PluginRegistry } from "../plugins/registry";
 import { useAppState } from "../state/app-context";
 import { colors } from "../theme/colors";
-import { ToggleList } from "./toggle-list";
-import { Button, DialogFrame, ListView, TextField } from "./ui";
+import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
 
 interface PaneSettingsDialogContentProps extends AlertContext {
   paneId: string;
@@ -54,37 +51,6 @@ function coerceSelectedValues(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : [];
-}
-
-function toggleSelectedValue(currentValues: string[], value: string): string[] {
-  return currentValues.includes(value)
-    ? currentValues.filter((entry) => entry !== value)
-    : [...currentValues, value];
-}
-
-function moveSelectedValue(
-  field: PaneSettingOrderedMultiSelectField,
-  currentValues: string[],
-  selectedOption: string,
-  direction: "up" | "down",
-): string[] {
-  if (!currentValues.includes(selectedOption)) return currentValues;
-
-  const optionValueSet = new Set(field.options.map((option) => option.value));
-  const ordered = currentValues.filter((value) => optionValueSet.has(value));
-  const index = ordered.indexOf(selectedOption);
-  if (index < 0) return currentValues;
-
-  const targetIndex = direction === "up"
-    ? Math.max(0, index - 1)
-    : Math.min(ordered.length - 1, index + 1);
-  if (targetIndex === index) return currentValues;
-
-  const next = [...ordered];
-  const [entry] = next.splice(index, 1);
-  next.splice(targetIndex, 0, entry!);
-  const unknownValues = currentValues.filter((value) => !optionValueSet.has(value));
-  return [...next, ...unknownValues];
 }
 
 function SelectFieldDialog({
@@ -216,121 +182,16 @@ function MultiSelectFieldDialog({
   currentValue: unknown;
   onApply: (value: string[]) => Promise<void>;
 }) {
-  const optionByValue = new Map(field.options.map((option) => [option.value, option]));
-  const [selectedValues, setSelectedValues] = useState(() => coerceSelectedValues(currentValue));
-  const knownSelectedValues = selectedValues.filter((value) => optionByValue.has(value));
-  const orderedOptions = field.options;
-  const [selectedOptionId, setSelectedOptionId] = useState(orderedOptions[0]?.value ?? "");
-  const selectedIndex = Math.max(0, orderedOptions.findIndex((option) => option.value === selectedOptionId));
-  const selectedOptionValue = orderedOptions[selectedIndex]?.value ?? "";
-  const selectedValueOrder = knownSelectedValues.indexOf(selectedOptionValue);
-  const canMoveUp = field.type === "ordered-multi-select" && selectedValueOrder > 0;
-  const canMoveDown = field.type === "ordered-multi-select"
-    && selectedValueOrder >= 0
-    && selectedValueOrder < knownSelectedValues.length - 1;
-
-  useEffect(() => {
-    setSelectedValues(coerceSelectedValues(currentValue));
-  }, [currentValue]);
-
-  useEffect(() => {
-    if (orderedOptions.some((option) => option.value === selectedOptionId)) return;
-    setSelectedOptionId(orderedOptions[0]?.value ?? "");
-  }, [orderedOptions, selectedOptionId]);
-
-  const toggleItems = orderedOptions.map((option) => {
-    const order = knownSelectedValues.indexOf(option.value);
-    const orderDescription = field.type === "ordered-multi-select" && order >= 0
-      ? `Order ${order + 1} of ${knownSelectedValues.length}.`
-      : null;
-
-    return {
-      id: option.value,
-      label: option.label,
-      enabled: selectedValues.includes(option.value),
-      description: [option.description, orderDescription].filter((entry): entry is string => !!entry).join(" "),
-    };
-  });
-  const listHeight = Math.min(12, Math.max(6, toggleItems.length));
-
-  const applySelectedValues = async (nextValues: string[]) => {
-    const previousValues = selectedValues;
-    setSelectedValues(nextValues);
-    try {
-      await onApply(nextValues);
-    } catch (error) {
-      setSelectedValues(previousValues);
-      throw error;
-    }
-  };
-
-  const toggleOption = async (option: PaneSettingOption | undefined) => {
-    if (!option) return;
-    await applySelectedValues(toggleSelectedValue(selectedValues, option.value));
-  };
-
-  const moveOption = async (direction: "up" | "down") => {
-    if (field.type !== "ordered-multi-select") return;
-    const option = orderedOptions[selectedIndex];
-    if (!option) return;
-    await applySelectedValues(moveSelectedValue(field, selectedValues, option.value, direction));
-  };
-
-  useDialogKeyboard((event) => {
-    event.stopPropagation();
-    if (event.name === "up" || event.name === "k") {
-      const nextIndex = Math.max(0, selectedIndex - 1);
-      setSelectedOptionId(orderedOptions[nextIndex]?.value ?? selectedOptionId);
-    } else if (event.name === "down" || event.name === "j") {
-      const nextIndex = Math.min(orderedOptions.length - 1, selectedIndex + 1);
-      setSelectedOptionId(orderedOptions[nextIndex]?.value ?? selectedOptionId);
-    }
-    else if (isSpaceKey(event)) {
-      void toggleOption(orderedOptions[selectedIndex]).catch(() => {});
-    } else if (event.name === "[" && field.type === "ordered-multi-select") {
-      void moveOption("up").catch(() => {});
-    } else if (event.name === "]" && field.type === "ordered-multi-select") {
-      void moveOption("down").catch(() => {});
-    } else if (event.name === "enter" || event.name === "return") {
-      dismiss();
-    } else if (event.name === "escape") {
-      dismiss();
-    }
-  }, dialogId);
-
   return (
-    <DialogFrame
+    <MultiSelectDialogContent
+      dismiss={dismiss}
+      dialogId={dialogId}
       title={field.label}
-      footer={field.type === "ordered-multi-select"
-        ? "space toggle · [ ] reorder · enter done"
-        : "space toggle · enter done"}
-    >
-      <box flexDirection="column" gap={1}>
-        <ToggleList
-          items={toggleItems}
-          selectedIdx={selectedIndex}
-          bgColor={colors.commandBg}
-          height={listHeight}
-          scrollable
-          showSelectedDescription={false}
-          onSelect={(index) => setSelectedOptionId(orderedOptions[index]?.value ?? selectedOptionId)}
-          onToggle={(id) => {
-            setSelectedOptionId(id);
-            void toggleOption(optionByValue.get(id)).catch(() => {});
-          }}
-        />
-        <box flexDirection="row" gap={1}>
-          <Button label="Toggle" variant="secondary" onPress={() => { void toggleOption(orderedOptions[selectedIndex]).catch(() => {}); }} />
-          {field.type === "ordered-multi-select" && (
-            <>
-              <Button label="Move Up" variant="ghost" disabled={!canMoveUp} onPress={() => { void moveOption("up").catch(() => {}); }} />
-              <Button label="Move Down" variant="ghost" disabled={!canMoveDown} onPress={() => { void moveOption("down").catch(() => {}); }} />
-            </>
-          )}
-          <Button label="Done" variant="primary" onPress={dismiss} />
-        </box>
-      </box>
-    </DialogFrame>
+      options={field.options}
+      selectedValues={coerceSelectedValues(currentValue)}
+      onChange={onApply}
+      ordered={field.type === "ordered-multi-select"}
+    />
   );
 }
 

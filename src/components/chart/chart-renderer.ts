@@ -1,5 +1,5 @@
 import { RGBA } from "@opentui/core";
-import type { ChartAxisMode, ChartColors, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
+import type { ChartAxisMode, ChartColors, ChartIndicatorOverlays, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
 import type { ProjectedChartPoint } from "./chart-data";
 import { formatCompactMarketPriceWithCurrency, formatMarketPrice, resolveAssetDisplayKind } from "../../utils/market-format";
 
@@ -26,6 +26,7 @@ export interface StyledContent {
 const LAYER_GRID = 0;
 const LAYER_FILL = 1;
 const LAYER_DATA = 2;
+const LAYER_OVERLAY = 2;
 const LAYER_CROSSHAIR = 3;
 
 // ---------------------------------------------------------------------------
@@ -1018,6 +1019,7 @@ export interface RenderChartOptions {
   assetCategory?: string;
   colors: ResolvedChartPalette;
   timeAxisDates?: Array<Date | string | number>;
+  indicators?: ChartIndicatorOverlays | null;
 }
 
 export interface ChartScene {
@@ -1029,6 +1031,7 @@ export interface ChartScene {
   chartRows: number;
   mode: ChartRenderMode;
   colors: ResolvedChartPalette;
+  indicators: ChartIndicatorOverlays | null;
   min: number;
   max: number;
   activeIdx: number;
@@ -1090,18 +1093,42 @@ export function getActivePointIndex(
   return bestIndex;
 }
 
+function getIndicatorOverlayValues(indicators: ChartIndicatorOverlays | null | undefined): number[] {
+  if (!indicators) return [];
+
+  const values: number[] = [];
+  for (const line of indicators.smaLines) {
+    values.push(...line.points.map((point) => point.value));
+  }
+  for (const line of indicators.emaLines) {
+    values.push(...line.points.map((point) => point.value));
+  }
+  if (indicators.bollinger) {
+    values.push(
+      ...indicators.bollinger.upper.map((point) => point.value),
+      ...indicators.bollinger.middle.map((point) => point.value),
+      ...indicators.bollinger.lower.map((point) => point.value),
+    );
+  }
+
+  return values.filter((value) => Number.isFinite(value));
+}
+
 export function buildChartScene(
   points: ProjectedChartPoint[],
   opts: RenderChartOptions,
 ): ChartScene | null {
   if (points.length === 0) return null;
 
-  const min = opts.mode === "candles" || opts.mode === "ohlc"
+  const dataMin = opts.mode === "candles" || opts.mode === "ohlc"
     ? Math.min(...points.map((point) => point.low))
     : Math.min(...points.map((point) => point.close));
-  const max = opts.mode === "candles" || opts.mode === "ohlc"
+  const dataMax = opts.mode === "candles" || opts.mode === "ohlc"
     ? Math.max(...points.map((point) => point.high))
     : Math.max(...points.map((point) => point.close));
+  const indicatorValues = getIndicatorOverlayValues(opts.indicators);
+  const min = indicatorValues.length > 0 ? Math.min(dataMin, ...indicatorValues) : dataMin;
+  const max = indicatorValues.length > 0 ? Math.max(dataMax, ...indicatorValues) : dataMax;
   const activeIdx = getActivePointIndex(points.length, opts.width, opts.cursorX, opts.mode);
   const activePoint = points[activeIdx]!;
   const range = max - min || 1;
@@ -1141,6 +1168,7 @@ export function buildChartScene(
     chartRows,
     mode: opts.mode,
     colors: opts.colors,
+    indicators: opts.indicators ?? null,
     min,
     max,
     activeIdx,
@@ -1157,6 +1185,41 @@ export function buildChartScene(
     cursorRow,
     cursorDotX,
   };
+}
+
+function drawIndicatorOverlays(
+  buf: PixelBuffer,
+  indicators: ChartIndicatorOverlays,
+  pointCount: number,
+  dotTop: number,
+  dotBottom: number,
+  min: number,
+  max: number,
+  mode: ChartRenderMode,
+): void {
+  const drawOverlay = (overlayPoints: { index: number; value: number }[], color: string) => {
+    for (let i = 0; i < overlayPoints.length - 1; i++) {
+      const p0 = overlayPoints[i]!;
+      const p1 = overlayPoints[i + 1]!;
+      const x0 = getDotX(p0.index, pointCount, buf.width, mode);
+      const y0 = getScaledY(p0.value, min, max, dotTop, dotBottom);
+      const x1 = getDotX(p1.index, pointCount, buf.width, mode);
+      const y1 = getScaledY(p1.value, min, max, dotTop, dotBottom);
+      drawLine(buf, x0, y0, x1, y1, color, LAYER_OVERLAY);
+    }
+  };
+
+  for (const sma of indicators.smaLines) {
+    drawOverlay(sma.points, sma.color);
+  }
+  for (const ema of indicators.emaLines) {
+    drawOverlay(ema.points, ema.color);
+  }
+  if (indicators.bollinger) {
+    drawOverlay(indicators.bollinger.upper, indicators.bollinger.color);
+    drawOverlay(indicators.bollinger.middle, indicators.bollinger.color);
+    drawOverlay(indicators.bollinger.lower, indicators.bollinger.color);
+  }
 }
 
 export function renderChart(
@@ -1245,6 +1308,10 @@ export function renderChart(
       mode === "candles" || mode === "ohlc" ? "openClose" : "previousClose",
       mode,
     );
+  }
+
+  if (opts.indicators) {
+    drawIndicatorOverlays(buf, opts.indicators, points.length, 0, chartDotBottom, min, max, mode);
   }
 
   // Cursor mapping stays in terminal-column space

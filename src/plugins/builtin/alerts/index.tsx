@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../../types/plugin";
-import type { AlertRule } from "./types";
+import type { AlertCondition, AlertRule } from "./types";
 import { colors } from "../../../theme/colors";
 import { useAppDispatch } from "../../../state/app-context";
 import { getSharedRegistry } from "../../registry";

@@ -366,6 +366,12 @@ export interface AppNotificationRequest {
   type?: AppNotificationType;
   toast?: boolean;
   desktop?: AppDesktopNotificationMode;
+  persistent?: boolean;
+  sound?: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 export interface GloomPluginContext {

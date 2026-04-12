@@ -1,4 +1,4 @@
-import type { PaneTemplateDef } from "../../types/plugin";
+import type { CommandDef, PaneTemplateDef } from "../../types/plugin";
 import type { Command } from "./command-registry";
 import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 
@@ -26,10 +26,16 @@ export interface PaneTemplateShortcutIntent extends ShortcutIntentBase {
   template: PaneTemplateDef;
 }
 
+export interface PluginCommandShortcutIntent extends ShortcutIntentBase {
+  source: "plugin-command";
+  command: CommandDef;
+}
+
 export type ShortcutIntent =
   | { kind: "none" }
   | CommandShortcutIntent
-  | PaneTemplateShortcutIntent;
+  | PaneTemplateShortcutIntent
+  | PluginCommandShortcutIntent;
 
 interface ShortcutParseCandidate {
   prefix: string;
@@ -37,8 +43,9 @@ interface ShortcutParseCandidate {
   description: string;
   argKind: RootShortcutArgKind | null;
   argPlaceholder?: string;
-  source: "command" | "pane-template";
+  source: "command" | "pane-template" | "plugin-command";
   command?: Command;
+  pluginCommand?: CommandDef;
   template?: PaneTemplateDef;
 }
 
@@ -71,6 +78,7 @@ function inferShortcutArg(argKind: RootShortcutArgKind | null, activeTicker: str
 
 function buildShortcutCandidates(
   commands: Command[],
+  pluginCommands: CommandDef[],
   paneTemplates: PaneTemplateDef[],
 ): ShortcutParseCandidate[] {
   return [
@@ -84,6 +92,16 @@ function buildShortcutCandidates(
         argPlaceholder: command.argPlaceholder,
         source: "command" as const,
         command,
+      })),
+    ...pluginCommands
+      .filter((command) => command.shortcut?.trim().length)
+      .map((command) => ({
+        prefix: normalizeShortcutPrefix(command.shortcut!),
+        label: command.label,
+        description: command.description ?? "",
+        argKind: null,
+        source: "plugin-command" as const,
+        pluginCommand: command,
       })),
     ...paneTemplates
       .filter((template) => template.shortcut?.prefix)
@@ -102,11 +120,13 @@ function buildShortcutCandidates(
 export function parseRootShortcutIntent({
   query,
   commands,
+  pluginCommands = [],
   paneTemplates,
   activeTicker,
 }: {
   query: string;
   commands: Command[];
+  pluginCommands?: CommandDef[];
   paneTemplates: PaneTemplateDef[];
   activeTicker: string | null;
 }): ShortcutIntent {
@@ -114,7 +134,7 @@ export function parseRootShortcutIntent({
   if (!trimmed) return { kind: "none" };
 
   const upper = trimmed.toUpperCase();
-  const match = buildShortcutCandidates(commands, paneTemplates).find((candidate) => (
+  const match = buildShortcutCandidates(commands, pluginCommands, paneTemplates).find((candidate) => (
     upper === candidate.prefix || upper.startsWith(`${candidate.prefix} `)
   ));
   if (!match) return { kind: "none" };
@@ -148,6 +168,14 @@ export function parseRootShortcutIntent({
       ...base,
       source: "command",
       command: match.command,
+    };
+  }
+
+  if (match.source === "plugin-command" && match.pluginCommand) {
+    return {
+      ...base,
+      source: "plugin-command",
+      command: match.pluginCommand,
     };
   }
 
