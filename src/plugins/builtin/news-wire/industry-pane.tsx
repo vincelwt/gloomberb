@@ -1,14 +1,13 @@
 import { useEffect, useMemo } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import type { PaneProps } from "../../../types/plugin";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 import { useFirehose, useSectorNews } from "../../../news/hooks";
-import { PageStackView, TabBar } from "../../../components";
+import { TabBar } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
-import { NewsArticleTable, type NewsSortPreference } from "./news-table";
+import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
 
 const CATEGORIES = ["all", "tech", "energy", "finance", "healthcare", "macro", "earnings", "crypto"] as const;
 type Category = typeof CATEGORIES[number];
@@ -49,18 +48,23 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     setSelectedArticleId(null);
   }, [category, setSelectedArticleId]);
 
-  useKeyboard((event) => {
-    if (!focused || detailArticle) return;
+  const handleRootKeyDown = (event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
     if (event.name !== "left" && event.name !== "right" && event.name !== "h" && event.name !== "l") return;
+    event.stopPropagation?.();
     event.preventDefault?.();
     const index = CATEGORIES.indexOf(category);
     const delta = event.name === "left" || event.name === "h" ? -1 : 1;
     const nextIndex = Math.max(0, Math.min(CATEGORIES.length - 1, index + delta));
     setCategory(CATEGORIES[nextIndex]!);
-  });
+    return true;
+  };
 
-  const rootContent = (
-    <box flexDirection="column" width={width} height={height}>
+  const rootBefore = (
+    <>
       <box height={1} flexDirection="row" paddingX={1}>
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Industry News</text>
         <box marginLeft={1}>
@@ -75,20 +79,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
           compact
         />
       </box>
-      <NewsArticleTable
-        articles={articles}
-        focused={focused}
-        width={width}
-        selectedArticleId={selectedArticleId}
-        setSelectedArticleId={setSelectedArticleId}
-        sortPreference={sortPreference}
-        setSortPreference={setSortPreference}
-        onOpenArticle={openArticle}
-        columns={["time", "source", "title", "tickers", "categories"]}
-        emptyStateTitle="No news in this category"
-        emptyStateHint="Try another category or wait for the next feed refresh."
-      />
-    </box>
+    </>
   );
 
   const detailContent = detailArticle ? (
@@ -98,12 +89,24 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   );
 
   return (
-    <PageStackView
+    <NewsArticleStackView
+      articles={articles}
       focused={focused}
+      width={width}
+      rootHeight={height}
+      selectedArticleId={selectedArticleId}
+      setSelectedArticleId={setSelectedArticleId}
+      sortPreference={sortPreference}
+      setSortPreference={setSortPreference}
+      onOpenArticle={openArticle}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
-      rootContent={rootContent}
       detailContent={detailContent}
+      rootBefore={rootBefore}
+      onRootKeyDown={handleRootKeyDown}
+      columns={["time", "source", "title", "tickers", "categories"]}
+      emptyStateTitle="No news in this category"
+      emptyStateHint="Try another category or wait for the next feed refresh."
     />
   );
 }

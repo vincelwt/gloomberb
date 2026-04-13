@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyledText, TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { DataTable, PageStackView, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTableStackView, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
 import {
@@ -504,7 +504,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [hoveredRowIdx, setHoveredRowIdx] = useState<number | null>(null);
   const [impactFilter, setImpactFilter] = useState<ImpactFilter>("all");
   const [countryFilter, setCountryFilter] = useState<CountryFilter>("all");
   const [now, setNow] = useState(Date.now());
@@ -516,18 +515,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   const backfilledSeriesRef = useRef<Set<string>>(new Set());
 
   const [fredApiKey] = usePluginConfigState<string>(FRED_API_KEY_CONFIG_KEY, "");
-
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
 
   const load = async (force = false) => {
     fetchGenRef.current += 1;
@@ -707,48 +694,37 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   const nextEvent = nextUpcomingEventIdx >= 0 ? filtered[nextUpcomingEventIdx] : undefined;
   const nextCountdown = nextEvent ? formatCountdown(nextEvent.date.getTime() - now) : null;
 
-  useKeyboard((event) => {
-    if (!focused) return;
-
-    // Detail mode handles its own keys
-    if (detailEvent) return;
-
-    if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((prev) => Math.min(prev + 1, filtered.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((prev) => Math.max(prev - 1, 0));
-    } else if (event.name === "enter" || event.name === "return") {
-      const ev = filtered[selectedIdx];
-      if (ev) setDetailEvent(ev);
-    } else if (event.name === "r") {
+  const handleRootKeyDown = useCallback((event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    if (event.name === "r") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
       load(true);
+      return true;
     } else if (event.name === "f") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
       setImpactFilter((prev) => {
         const idx = FILTER_CYCLE.indexOf(prev);
         return FILTER_CYCLE[(idx + 1) % FILTER_CYCLE.length]!;
       });
       setSelectedIdx(0);
+      return true;
     } else if (event.name === "c") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
       setCountryFilter((prev) => {
         const idx = COUNTRY_CYCLE.indexOf(prev);
         return COUNTRY_CYCLE[(idx + 1) % COUNTRY_CYCLE.length]!;
       });
       setSelectedIdx(0);
+      return true;
     }
-  });
-
-  // Scroll to keep selected row visible
-  useEffect(() => {
-    const sb = scrollRef.current;
-    if (!sb?.viewport || filtered.length === 0 || selectedIdx < 0) return;
-    const flatIdx = eventIdxToRowIdx.get(selectedIdx) ?? selectedIdx;
-    const viewportHeight = Math.max(sb.viewport.height, 1);
-    if (flatIdx < sb.scrollTop) {
-      sb.scrollTo(flatIdx);
-    } else if (flatIdx >= sb.scrollTop + viewportHeight) {
-      sb.scrollTo(flatIdx - viewportHeight + 1);
-    }
-  }, [selectedIdx, filtered.length]);
+    return false;
+  }, [load]);
 
   const columns = useMemo<EconCalendarColumn[]>(() => {
     const timeWidth = 6;
@@ -847,8 +823,8 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
-  const calendarContent = (
-    <box flexDirection="column" width={width} height={height}>
+  const calendarHeader = (
+    <>
       {/* Header */}
       <box flexDirection="row" height={1} paddingX={1}>
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
@@ -885,34 +861,13 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
           <text fg={colors.negative}>Error: {error}</text>
         </box>
       )}
+    </>
+  );
 
-      <DataTable<DisplayRow, EconCalendarColumn>
-        columns={columns}
-        items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={handleHeaderClick}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={hoveredRowIdx}
-        setHoveredIdx={setHoveredRowIdx}
-        getItemKey={(row) => row.key}
-        isSelected={(row) => row.kind === "event" && row.eventIdx === selectedIdx}
-        onSelect={selectDisplayRow}
-        onActivate={openDisplayRow}
-        renderSectionHeader={renderSectionHeader}
-        renderCell={renderCell}
-        emptyStateTitle={loading ? "Loading economic events..." : "No events"}
-        emptyStateHint={emptyStateHint}
-        showHorizontalScrollbar={false}
-      />
-
+  const calendarFooter = (
       <box height={1} paddingX={1}>
         <text fg={colors.textMuted}>[r]efresh</text>
       </box>
-    </box>
   );
 
   const detailContent = detailEvent ? (
@@ -927,12 +882,39 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   );
 
   return (
-    <PageStackView
+    <DataTableStackView<DisplayRow, EconCalendarColumn>
       focused={focused}
       detailOpen={!!detailEvent}
       onBack={() => setDetailEvent(null)}
-      rootContent={calendarContent}
       detailContent={detailContent}
+      rootBefore={calendarHeader}
+      rootAfter={calendarFooter}
+      rootWidth={width}
+      rootHeight={height}
+      onRootKeyDown={handleRootKeyDown}
+      selectedIndex={eventIdxToRowIdx.get(selectedIdx) ?? selectedIdx}
+      onSelectIndex={(_index, row) => {
+        if (row.kind === "event") setSelectedIdx(row.eventIdx);
+      }}
+      onActivateIndex={(_index, row) => {
+        if (row.kind === "event") setDetailEvent(row.event);
+      }}
+      columns={columns}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={handleHeaderClick}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      getItemKey={(row) => row.key}
+      isSelected={(row) => row.kind === "event" && row.eventIdx === selectedIdx}
+      onSelect={selectDisplayRow}
+      onActivate={openDisplayRow}
+      renderSectionHeader={renderSectionHeader}
+      renderCell={renderCell}
+      emptyStateTitle={loading ? "Loading economic events..." : "No events"}
+      emptyStateHint={emptyStateHint}
+      showHorizontalScrollbar={false}
     />
   );
 }

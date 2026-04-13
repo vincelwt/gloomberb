@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { TextAttributes } from "@opentui/core";
+import {
+  DataTableStackView,
+  type DataTableCell,
+  type DataTableColumn,
+} from "../../../components";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 
@@ -14,7 +17,7 @@ export interface NewsSortPreference {
 
 type NewsTableColumn = DataTableColumn & { id: NewsColumnId };
 
-interface NewsArticleTableProps {
+interface NewsArticleStackBaseProps {
   articles: MarketNewsItem[];
   focused: boolean;
   width: number;
@@ -120,23 +123,39 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
   }));
 }
 
-export function NewsArticleTable({
+interface NewsArticleStackViewProps extends NewsArticleStackBaseProps {
+  detailOpen: boolean;
+  onBack: () => void;
+  detailContent: ReactNode;
+  rootBefore?: ReactNode;
+  rootHeight?: number;
+  onRootKeyDown?: (event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => boolean | void;
+}
+
+export function NewsArticleStackView({
   articles,
   focused,
   width,
+  rootHeight,
   selectedArticleId,
   setSelectedArticleId,
   sortPreference,
   setSortPreference,
   onOpenArticle,
+  detailOpen,
+  onBack,
+  detailContent,
+  rootBefore,
+  onRootKeyDown,
   columns: columnIds,
   emptyStateTitle,
   emptyStateHint,
   titleForArticle,
-}: NewsArticleTableProps) {
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+}: NewsArticleStackViewProps) {
   const sortedArticles = useMemo(
     () => sortNewsArticles(articles, sortPreference),
     [articles, sortPreference],
@@ -144,19 +163,6 @@ export function NewsArticleTable({
   const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
   const activeIdx = selectedIdx >= 0 ? selectedIdx : sortedArticles.length > 0 ? 0 : -1;
-
-  const syncHeaderScroll = useCallback(() => {
-    const body = scrollRef.current;
-    const header = headerScrollRef.current;
-    if (!body || !header) return;
-    if (header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    queueMicrotask(syncHeaderScroll);
-  }, [syncHeaderScroll]);
 
   const selectIndex = useCallback((index: number) => {
     setSelectedArticleId(sortedArticles[index]?.id ?? null);
@@ -167,35 +173,6 @@ export function NewsArticleTable({
     if (article) onOpenArticle(article);
   }, [onOpenArticle, sortedArticles]);
 
-  const handleSelectArticle = useCallback((article: MarketNewsItem) => {
-    if (article.id === selectedArticleId) {
-      onOpenArticle(article);
-      return;
-    }
-    setSelectedArticleId(article.id);
-  }, [onOpenArticle, selectedArticleId, setSelectedArticleId]);
-
-  useKeyboard((event) => {
-    if (!focused) return;
-    const key = event.name;
-    const isEnter = key === "enter" || key === "return";
-    if (key === "j" || key === "down") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      if (sortedArticles.length === 0) return;
-      selectIndex(activeIdx >= 0 ? Math.min(activeIdx + 1, sortedArticles.length - 1) : 0);
-    } else if (key === "k" || key === "up") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      if (sortedArticles.length === 0) return;
-      selectIndex(activeIdx > 0 ? activeIdx - 1 : 0);
-    } else if (isEnter) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      openIndex(activeIdx);
-    }
-  });
-
   useEffect(() => {
     if (sortedArticles.length === 0) {
       if (selectedArticleId !== null) setSelectedArticleId(null);
@@ -205,17 +182,6 @@ export function NewsArticleTable({
       setSelectedArticleId(sortedArticles[0]!.id);
     }
   }, [selectedArticleId, selectedIdx, setSelectedArticleId, sortedArticles]);
-
-  useEffect(() => {
-    const sb = scrollRef.current;
-    if (!sb?.viewport || sortedArticles.length === 0 || activeIdx < 0) return;
-    const viewportHeight = Math.max(sb.viewport.height, 1);
-    if (activeIdx < sb.scrollTop) {
-      sb.scrollTo(activeIdx);
-    } else if (activeIdx >= sb.scrollTop + viewportHeight) {
-      sb.scrollTo(activeIdx - viewportHeight + 1);
-    }
-  }, [activeIdx, sortedArticles.length]);
 
   const renderCell = useCallback((
     item: MarketNewsItem,
@@ -250,21 +216,26 @@ export function NewsArticleTable({
   }, [titleForArticle]);
 
   return (
-    <DataTable<MarketNewsItem, NewsTableColumn>
+    <DataTableStackView<MarketNewsItem, NewsTableColumn>
+      focused={focused}
+      detailOpen={detailOpen}
+      onBack={onBack}
+      detailContent={detailContent}
+      selectedIndex={activeIdx}
+      onSelectIndex={selectIndex}
+      onActivateIndex={openIndex}
+      rootBefore={rootBefore}
+      rootWidth={width}
+      rootHeight={rootHeight}
+      onRootKeyDown={onRootKeyDown}
       columns={columns}
       items={sortedArticles}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId))}
-      headerScrollRef={headerScrollRef}
-      scrollRef={scrollRef}
-      syncHeaderScroll={syncHeaderScroll}
-      onBodyScrollActivity={handleBodyScrollActivity}
-      hoveredIdx={hoveredIdx}
-      setHoveredIdx={setHoveredIdx}
       getItemKey={(item) => item.id}
       isSelected={(item, index) => item.id === selectedArticleId || (selectedArticleId === null && index === 0)}
-      onSelect={handleSelectArticle}
+      onSelect={(article) => setSelectedArticleId(article.id)}
       onActivate={onOpenArticle}
       renderCell={renderCell}
       emptyStateTitle={emptyStateTitle}

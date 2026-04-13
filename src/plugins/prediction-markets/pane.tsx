@@ -1,13 +1,18 @@
 import { TextAttributes } from "@opentui/core";
-import { PageStackView, TabBar } from "../../components";
+import { DataTableStackView, TabBar } from "../../components";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
 import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
+import { getPredictionColumnValue } from "./metrics";
 import { BROWSE_TABS, VENUE_TABS } from "./navigation";
-import { PredictionMarketsTable } from "./table";
-import type { PredictionBrowseTab, PredictionCategoryId } from "./types";
+import type {
+  PredictionBrowseTab,
+  PredictionCategoryId,
+  PredictionColumnDef,
+  PredictionListRow,
+} from "./types";
 
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const controller = usePredictionMarketsController({ focused });
@@ -16,13 +21,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       ? colors.negative
       : colors.borderFocused;
 
-  const browseContent = (
-    <box
-      flexDirection="column"
-      width={width}
-      height={height}
-      backgroundColor={colors.panel}
-    >
+  const browseControls = (
+    <>
       {!controller.paneSettings.hideTabs ? (
         <TabBar
           tabs={VENUE_TABS.map((tab) => ({
@@ -122,28 +122,37 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           <text fg={catalogStatusColor}>{controller.catalogStatus.message}</text>
         </box>
       ) : null}
-
-      <box flexDirection="column" flexGrow={1}>
-        <PredictionMarketsTable
-          columns={controller.visibleColumns}
-          rows={controller.visibleRows}
-          selectedRowKey={controller.selectedRow?.key ?? null}
-          hoveredIdx={controller.hoveredIdx}
-          setHoveredIdx={controller.actions.setHoveredIdx}
-          onSelectRow={(rowKey) => controller.actions.setBrowseSelection(rowKey)}
-          onOpenRow={controller.actions.openSelectedRow}
-          watchlist={controller.watchlistSet}
-          onToggleWatchlist={controller.actions.toggleWatchlist}
-          sortPreference={controller.sortPreference}
-          onHeaderClick={controller.actions.handleSortHeaderClick}
-          headerScrollRef={controller.headerScrollRef}
-          scrollRef={controller.scrollRef}
-          syncHeaderScroll={controller.layout.syncHeaderScroll}
-          onBodyScrollActivity={controller.layout.onBodyScrollActivity}
-        />
-      </box>
-    </box>
+    </>
   );
+
+  const selectedRowIndex = controller.visibleRows.findIndex(
+    (row) => row.key === controller.selectedRow?.key,
+  );
+
+  const renderCell = (
+    row: PredictionListRow,
+    column: PredictionColumnDef,
+  ) => {
+    const watchlisted = row.watchMarketKeys.some((marketKey) =>
+      controller.watchlistSet.has(marketKey),
+    );
+    const value = getPredictionColumnValue(column, row, watchlisted);
+    if (column.id === "watch") {
+      return {
+        text: value.text,
+        color: value.color,
+        onMouseDown: (event: any) => {
+          event.preventDefault();
+          event.stopPropagation?.();
+          controller.actions.toggleWatchlist(row);
+        },
+      };
+    }
+    return {
+      text: value.text,
+      color: value.color,
+    };
+  };
 
   const detailContent =
     controller.selectedSummary && controller.selectedRow ? (
@@ -178,12 +187,40 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     );
 
   return (
-    <PageStackView
+    <DataTableStackView<PredictionListRow, PredictionColumnDef>
       focused={focused}
+      keyboardNavigation={!controller.searchFocused}
       detailOpen={controller.detailOpen && !!controller.selectedSummary}
       onBack={controller.actions.closeDetail}
-      rootContent={browseContent}
       detailContent={detailContent}
+      rootBefore={browseControls}
+      rootWidth={width}
+      rootHeight={height}
+      rootBackgroundColor={colors.panel}
+      selectedIndex={selectedRowIndex}
+      onSelectIndex={(_index, row) =>
+        controller.actions.setBrowseSelection(row.key, {
+          debounceDetail: true,
+        })}
+      onActivateIndex={(_index, row) =>
+        controller.actions.openSelectedRow(row.key)}
+      columns={controller.visibleColumns}
+      items={controller.visibleRows}
+      sortColumnId={controller.sortPreference.columnId}
+      sortDirection={controller.sortPreference.direction}
+      onHeaderClick={controller.actions.handleSortHeaderClick}
+      headerScrollRef={controller.headerScrollRef}
+      scrollRef={controller.scrollRef}
+      hoveredIdx={controller.hoveredIdx}
+      setHoveredIdx={controller.actions.setHoveredIdx}
+      getItemKey={(row) => row.key}
+      isSelected={(row) => controller.selectedRow?.key === row.key}
+      onSelect={(row) => controller.actions.setBrowseSelection(row.key)}
+      onActivate={(row) => controller.actions.openSelectedRow(row.key)}
+      virtualize
+      renderCell={renderCell}
+      emptyStateTitle="No markets matched."
+      emptyStateHint="Change the venue, browse tab, or search query."
     />
   );
 }

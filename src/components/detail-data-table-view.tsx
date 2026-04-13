@@ -1,16 +1,10 @@
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { colors } from "../theme/colors";
 import { formatTimeAgo } from "../utils/format";
 import { toTimestampMillis } from "../utils/timestamp";
-import {
-  DataTable,
-  ExternalLink,
-  PageStackView,
-  type DataTableCell,
-  type DataTableColumn,
-} from "./ui";
+import { DataTableStackView } from "./data-table-stack-view";
+import { ExternalLink, type DataTableCell, type DataTableColumn } from "./ui";
 
 export interface DataTableDetailItem {
   id: string;
@@ -214,10 +208,7 @@ export function DataTableDetailView({
     columnId: "time",
     direction: "desc",
   });
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const detailTextWidth = Math.max(width - 2, 12);
   const detailHeight = Math.max(height - 1, 4);
@@ -247,19 +238,6 @@ export function DataTableDetailView({
     [items, openItemId],
   );
 
-  const syncHeaderScroll = useCallback(() => {
-    const body = scrollRef.current;
-    const header = headerScrollRef.current;
-    if (!body || !header) return;
-    if (header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    queueMicrotask(syncHeaderScroll);
-  }, [syncHeaderScroll]);
-
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
     if (!scrollBox?.viewport) return;
@@ -278,20 +256,6 @@ export function DataTableDetailView({
     setOpenItemId(row.item.id);
   }, []);
 
-  const selectRow = useCallback((rowIndex: number) => {
-    const row = sortedRows[rowIndex];
-    if (!row) return;
-    onSelect(row.itemIndex);
-  }, [onSelect, sortedRows]);
-
-  const handleSelectRow = useCallback((row: DetailRow) => {
-    if (row.itemIndex === selectedIdx) {
-      openRow(row);
-      return;
-    }
-    onSelect(row.itemIndex);
-  }, [onSelect, openRow, selectedIdx]);
-
   useEffect(() => {
     if (openItemId && !openItem) {
       setOpenItemId(null);
@@ -309,58 +273,6 @@ export function DataTableDetailView({
       onSelect(Math.max(0, items.length - 1));
     }
   }, [items.length, onSelect, selectedIdx]);
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox?.viewport || activeRowIndex < 0) return;
-    const viewportHeight = Math.max(scrollBox.viewport.height, 1);
-    if (activeRowIndex < scrollBox.scrollTop) {
-      scrollBox.scrollTo(activeRowIndex);
-    } else if (activeRowIndex >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(activeRowIndex - viewportHeight + 1);
-    }
-  }, [activeRowIndex, sortedRows.length]);
-
-  useKeyboard((event) => {
-    if (!focused || items.length === 0) return;
-
-    if (openItem) {
-      if (event.name === "j" || event.name === "down") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        scrollDetailBy(1);
-      } else if (event.name === "k" || event.name === "up") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        scrollDetailBy(-1);
-      }
-      return;
-    }
-
-    if (event.name === "j" || event.name === "down") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      selectRow(
-        activeRowIndex >= 0
-          ? Math.min(activeRowIndex + 1, sortedRows.length - 1)
-          : 0,
-      );
-      return;
-    }
-
-    if (event.name === "k" || event.name === "up") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      selectRow(activeRowIndex > 0 ? activeRowIndex - 1 : 0);
-      return;
-    }
-
-    if (event.name === "enter" || event.name === "return") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      openRow(sortedRows[activeRowIndex]);
-    }
-  });
 
   const renderCell = useCallback((
     row: DetailRow,
@@ -391,34 +303,25 @@ export function DataTableDetailView({
     }
   }, []);
 
-  const rootContent = (
-    <DataTable<DetailRow, DetailColumn>
-      columns={columns}
-      items={sortedRows}
-      sortColumnId={sortPreference.columnId}
-      sortDirection={sortPreference.direction}
-      onHeaderClick={(columnId) =>
-        setSortPreference((current) =>
-          nextSortPreference(current, columnId as DetailColumnId)
-        )}
-      headerScrollRef={headerScrollRef}
-      scrollRef={scrollRef}
-      syncHeaderScroll={syncHeaderScroll}
-      onBodyScrollActivity={handleBodyScrollActivity}
-      hoveredIdx={hoveredIdx}
-      setHoveredIdx={setHoveredIdx}
-      getItemKey={(row) => row.item.id}
-      isSelected={(row, index) =>
-        row.itemIndex === selectedIdx || (selectedIdx < 0 && index === 0)
-      }
-      onSelect={handleSelectRow}
-      onActivate={openRow}
-      renderCell={renderCell}
-      emptyStateTitle={emptyStateTitle}
-      emptyStateHint={emptyStateHint}
-      showHorizontalScrollbar={false}
-    />
-  );
+  const handleDetailKeyDown = useCallback((event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    if (event.name === "j" || event.name === "down") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollDetailBy(1);
+      return true;
+    }
+    if (event.name === "k" || event.name === "up") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollDetailBy(-1);
+      return true;
+    }
+    return false;
+  }, [scrollDetailBy]);
 
   const detailContent = openItem ? (
     <box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -482,12 +385,33 @@ export function DataTableDetailView({
   );
 
   return (
-    <PageStackView
+    <DataTableStackView<DetailRow, DetailColumn>
       focused={focused}
       detailOpen={!!openItem}
       onBack={() => setOpenItemId(null)}
-      rootContent={rootContent}
       detailContent={detailContent}
+      selectedIndex={activeRowIndex}
+      onSelectIndex={(_index, row) => onSelect(row.itemIndex)}
+      onActivateIndex={(_index, row) => openRow(row)}
+      onDetailKeyDown={handleDetailKeyDown}
+      columns={columns}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) =>
+        setSortPreference((current) =>
+          nextSortPreference(current, columnId as DetailColumnId)
+        )}
+      getItemKey={(row) => row.item.id}
+      isSelected={(row, index) =>
+        row.itemIndex === selectedIdx || (selectedIdx < 0 && index === 0)
+      }
+      onSelect={(row) => onSelect(row.itemIndex)}
+      onActivate={openRow}
+      renderCell={renderCell}
+      emptyStateTitle={emptyStateTitle}
+      emptyStateHint={emptyStateHint}
+      showHorizontalScrollbar={false}
     />
   );
 }

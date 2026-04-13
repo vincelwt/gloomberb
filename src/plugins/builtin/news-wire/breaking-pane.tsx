@@ -3,14 +3,13 @@ import { TextAttributes } from "@opentui/core";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useBreakingNews } from "../../../news/hooks";
-import { PageStackView } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../ai/providers";
 import { runAiPrompt } from "../ai/runner";
 import { getDigest, setDigest, isDigestInFlight, markDigestInFlight, clearDigestInFlight } from "./digest-store";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
-import { NewsArticleTable, type NewsSortPreference } from "./news-table";
+import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
 
 const DIGEST_PROMPT = `You are a financial news wire editor. Condense this headline and summary into a single concise actionable bullet point for a professional trader. Include why it matters and potential market impact. Keep it under 120 characters. Respond with ONLY the bullet text, nothing else.
 
@@ -98,8 +97,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     getDigest(article.id) ?? article.title
   ), [digestVersion]);
 
-  const rootContent = (
-    <box flexDirection="column" width={width} height={height}>
+  const rootBefore = (
       <box height={1} flexDirection="row" paddingX={1}>
         <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Breaking News</text>
         <box marginLeft={1}>
@@ -121,21 +119,6 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
           </box>
         )}
       </box>
-      <NewsArticleTable
-        articles={articles}
-        focused={focused}
-        width={width}
-        selectedArticleId={selectedArticleId}
-        setSelectedArticleId={setSelectedArticleId}
-        sortPreference={sortPreference}
-        setSortPreference={setSortPreference}
-        onOpenArticle={openArticle}
-        columns={["time", "source", "title", "tickers", "importance"]}
-        emptyStateTitle="No breaking news"
-        emptyStateHint="Breaking stories appear when high-priority headlines arrive."
-        titleForArticle={titleForArticle}
-      />
-    </box>
   );
 
   const detailContent = detailArticle ? (
@@ -145,12 +128,24 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   );
 
   return (
-    <PageStackView
+    <NewsArticleStackView
+      articles={articles}
       focused={focused}
+      width={width}
+      rootHeight={height}
+      selectedArticleId={selectedArticleId}
+      setSelectedArticleId={setSelectedArticleId}
+      sortPreference={sortPreference}
+      setSortPreference={setSortPreference}
+      onOpenArticle={openArticle}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
-      rootContent={rootContent}
       detailContent={detailContent}
+      rootBefore={rootBefore}
+      columns={["time", "source", "title", "tickers", "importance"]}
+      emptyStateTitle="No breaking news"
+      emptyStateHint="Breaking stories appear when high-priority headlines arrive."
+      titleForArticle={titleForArticle}
     />
   );
 }

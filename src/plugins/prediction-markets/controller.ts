@@ -131,22 +131,6 @@ export function usePredictionMarketsController({
     watchlistSet,
   });
 
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (
-      bodyScrollBox &&
-      headerScrollBox &&
-      headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft
-    ) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const onBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
-
   useEffect(() => {
     if (paneSettings.hideTabs && venueScope !== paneSettings.lockedVenueScope) {
       setVenueScope(paneSettings.lockedVenueScope);
@@ -396,36 +380,10 @@ export function usePredictionMarketsController({
     ],
   );
 
-  const clearSelection = useCallback(() => {
-    data.actions.setNextDetailLoadDelay(0);
-    setDetailOpen(false);
-    setSelectedRowKey(null);
-    setSelectedDetailMarketKey(null);
-  }, [
-    data.actions,
-    setDetailOpen,
-    setSelectedDetailMarketKey,
-    setSelectedRowKey,
-  ]);
-
   const closeDetail = useCallback(() => {
     setDetailOpen(false);
     setSearchFocused(false);
   }, []);
-
-  const openDetail = useCallback(() => {
-    if (!data.selectedRow) return;
-    if (
-      !selectedDetailMarketKey ||
-      !data.selectedRow.markets.some(
-        (market) => market.key === selectedDetailMarketKey,
-      )
-    ) {
-      setSelectedDetailMarketKey(data.selectedRow.focusMarketKey);
-    }
-    setDetailOpen(true);
-    setSearchFocused(false);
-  }, [data.selectedRow, selectedDetailMarketKey, setSelectedDetailMarketKey]);
 
   const setVenue = useCallback(
     (nextVenueScope: string) => {
@@ -512,8 +470,6 @@ export function usePredictionMarketsController({
     }) => {
       if (!focused) return;
       const command = resolvePredictionKeyboardCommand(event);
-      const key = event.name?.toLowerCase();
-      const isEnter = key === "enter" || key === "return";
 
       if (searchFocused) {
         if (command === "escape") {
@@ -568,39 +524,6 @@ export function usePredictionMarketsController({
         event.stopPropagation?.();
         event.preventDefault?.();
         focusSearch();
-        return;
-      }
-
-      if (isEnter && data.selectedRow) {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        openDetail();
-        return;
-      }
-
-      if (command === "move-down") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        if (data.visibleRows.length === 0) return;
-        const nextIndex =
-          data.selectedIndex >= 0
-            ? Math.min(data.selectedIndex + 1, data.visibleRows.length - 1)
-            : 0;
-        setBrowseSelection(data.visibleRows[nextIndex]!.key, {
-          debounceDetail: true,
-        });
-        return;
-      }
-
-      if (command === "move-up") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        if (data.visibleRows.length === 0) return;
-        const nextIndex =
-          data.selectedIndex >= 0 ? Math.max(data.selectedIndex - 1, 0) : 0;
-        setBrowseSelection(data.visibleRows[nextIndex]!.key, {
-          debounceDetail: true,
-        });
         return;
       }
 
@@ -662,21 +585,17 @@ export function usePredictionMarketsController({
       categoryId,
       cycleDetailOutcome,
       detailOpen,
-      data.selectedIndex,
       data.selectedRow,
       data.sortedOutcomeMarkets.length,
-      data.visibleRows,
       detailTab,
       effectiveVenueScope,
       focusSearch,
       focused,
-      openDetail,
       paneSettings.hideTabs,
       scrollDetailBy,
       searchFocused,
       selectBrowseTab,
       selectCategory,
-      setBrowseSelection,
       setVenue,
       toggleWatchlist,
     ],
@@ -720,10 +639,8 @@ export function usePredictionMarketsController({
     actions: {
       blurSearch,
       closeDetail,
-      clearSelection,
       focusSearch,
       handleSortHeaderClick,
-      openDetail,
       openSelectedRow,
       previewOrder,
       selectBrowseTab,
@@ -736,10 +653,6 @@ export function usePredictionMarketsController({
       setSearchQuery,
       setVenue,
       toggleWatchlist,
-    },
-    layout: {
-      onBodyScrollActivity,
-      syncHeaderScroll,
     },
   };
 }
