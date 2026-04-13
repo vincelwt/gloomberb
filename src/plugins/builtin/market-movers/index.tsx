@@ -567,7 +567,7 @@ export const marketMoversPlugin: GloomPlugin = {
       label: "Market Movers",
       description: "Top gainers, losers, most active, and trending tickers.",
       keywords: ["movers", "gainers", "losers", "active", "trending", "screener", "top"],
-      shortcut: { prefix: "TOP" },
+      shortcut: { prefix: "MOST" },
     },
   ],
 };

@@ -1726,22 +1726,22 @@ describe("CommandBar", () => {
 
   test("shows pane templates that share the same shortcut", async () => {
     testSetup = await testRender(<CommandBarHarness
-      query="TOP"
+      query="DUP"
       configurePluginRegistry={(pluginRegistry) => {
         const paneTemplates = pluginRegistry.paneTemplates as Map<string, any>;
-        paneTemplates.set("market-movers-pane", {
-          id: "market-movers-pane",
-          paneId: "market-movers",
-          label: "Market Movers",
-          description: "Track market gainers and losers",
-          shortcut: { prefix: "TOP" },
+        paneTemplates.set("first-duplicate-pane", {
+          id: "first-duplicate-pane",
+          paneId: "first-duplicate",
+          label: "First Duplicate",
+          description: "First pane using a shared shortcut",
+          shortcut: { prefix: "DUP" },
         });
-        paneTemplates.set("news-top-pane", {
-          id: "news-top-pane",
-          paneId: "news-top",
-          label: "Top News",
-          description: "Curated top market stories ranked by importance",
-          shortcut: { prefix: "TOP" },
+        paneTemplates.set("second-duplicate-pane", {
+          id: "second-duplicate-pane",
+          paneId: "second-duplicate",
+          label: "Second Duplicate",
+          description: "Second pane using a shared shortcut",
+          shortcut: { prefix: "DUP" },
         });
       }}
     />, {
@@ -1752,8 +1752,8 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Market Movers");
-    expect(frame).toContain("Top News");
+    expect(frame).toContain("First Duplicate");
+    expect(frame).toContain("Second Duplicate");
   });
 
   test("does not treat no-argument shortcut prefixes as typed pane names", async () => {
@@ -1771,7 +1771,7 @@ describe("CommandBar", () => {
           paneId: "market-movers",
           label: "Market Movers",
           description: "Track market gainers and losers",
-          shortcut: { prefix: "TOP" },
+          shortcut: { prefix: "MOST" },
         });
         paneTemplates.set("news-top-pane", {
           id: "news-top-pane",
