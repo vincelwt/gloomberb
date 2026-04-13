@@ -6,6 +6,11 @@ import { normalizeTimestamp } from "./timestamp";
 const DEFAULT_API_URL = "https://api.gloom.sh";
 const SESSION_COOKIE_NAMES = ["__Secure-gloomberb.session_token", "gloomberb.session_token"] as const;
 const cloudApiLog = debugLog.createLogger("cloud-api");
+const HARD_SESSION_INVALID_PATTERNS = [
+  /\b(user|account)\b.*\b(not found|deleted|removed|disabled|deactivated|suspended)\b/i,
+  /\b(user|account)\b.*\bdoes(?:\s+not|n't)\s+exist\b/i,
+  /\b(no|unknown|missing)\s+(user|account)\b/i,
+];
 
 export interface ChatMessage {
   id: string;
@@ -129,6 +134,22 @@ class ApiRequestError extends Error {
     super(message);
     this.name = "ApiRequestError";
   }
+}
+
+function parseApiErrorMessage(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const parts = [parsed.message, parsed.error, parsed.code, parsed.reason]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    return parts.join(" ") || body;
+  } catch {
+    return body;
+  }
+}
+
+function isHardSessionInvalidMessage(message: string): boolean {
+  const normalized = message.replace(/[_-]+/g, " ");
+  return HARD_SESSION_INVALID_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 class GloomApiClient {
@@ -262,12 +283,7 @@ class GloomApiClient {
 
     if (!res.ok) {
       const body = await res.text();
-      let msg: string;
-      try {
-        msg = JSON.parse(body).message ?? body;
-      } catch {
-        msg = body;
-      }
+      const msg = parseApiErrorMessage(body);
       throw new ApiRequestError(msg, res.status);
     }
 
@@ -300,10 +316,11 @@ class GloomApiClient {
 
     const socketToken = this.getSocketAuthToken();
     if (!socketToken) return;
+    const usingWebSocketToken = !!this.websocketToken;
     const url = `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`;
     cloudApiLog.info("open websocket", {
       hasToken: !!socketToken,
-      tokenSource: this.websocketToken ? "websocket" : "session",
+      tokenSource: usingWebSocketToken ? "websocket" : "session",
       quoteTargets: this.quoteTargets.size,
       channelTargets: this.channelListeners.size,
     });
@@ -321,11 +338,24 @@ class GloomApiClient {
       void this.handleSocketMessage(String(event.data));
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      const activeSocket = this.ws === ws;
       if (this.ws === ws) {
         this.ws = null;
       }
-      cloudApiLog.warn("websocket closed", { quoteTargets: this.quoteTargets.size, channelTargets: this.channelListeners.size });
+      const closeEvent = event as CloseEvent | undefined;
+      cloudApiLog.warn("websocket closed", {
+        quoteTargets: this.quoteTargets.size,
+        channelTargets: this.channelListeners.size,
+        code: closeEvent?.code,
+        reason: closeEvent?.reason,
+        tokenSource: usingWebSocketToken ? "websocket" : "session",
+      });
+      if (activeSocket && usingWebSocketToken && this.sessionToken) {
+        this.websocketToken = null;
+        this.reconnectDelayMs = 1000;
+        cloudApiLog.warn("cleared websocket token after socket close; falling back to session token");
+      }
       if (!this.shouldKeepSocketOpen()) return;
       this.scheduleReconnect();
     };
@@ -410,6 +440,14 @@ class GloomApiClient {
 
     if (parsed?.type === "auth.unverified") {
       cloudApiLog.warn("websocket marked unverified");
+      if (this.websocketToken && this.sessionToken) {
+        this.websocketToken = null;
+        this.reconnectDelayMs = 1000;
+        cloudApiLog.warn("cleared websocket token after auth rejection; falling back to session token");
+        this.teardownSocket();
+        this.scheduleReconnect();
+        return;
+      }
       if (this.currentUser) {
         this.currentUser = { ...this.currentUser, emailVerified: false };
       }
@@ -464,9 +502,11 @@ class GloomApiClient {
   }
 
   async signOut(): Promise<void> {
-    await this.request("/api/auth/api/auth/sign-out", { method: "POST" });
-    this.sessionToken = null;
-    this.setCurrentUser(null);
+    try {
+      await this.request("/api/auth/api/auth/sign-out", { method: "POST" });
+    } finally {
+      this.setSessionToken(null);
+    }
   }
 
   async getSession(): Promise<AuthUser | null> {
@@ -478,11 +518,11 @@ class GloomApiClient {
       this.setCurrentUser(user);
       return user;
     } catch (error) {
-      if (!(error instanceof ApiRequestError) || (error.status !== 401 && error.status !== 403)) {
-        throw error;
+      if (error instanceof ApiRequestError && isHardSessionInvalidMessage(error.message)) {
+        this.setSessionToken(null);
+        return null;
       }
-      this.setCurrentUser(null);
-      return null;
+      throw error;
     }
   }
 
