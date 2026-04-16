@@ -16,12 +16,14 @@ const verifiedUser: AuthUser = {
 const originalEnsureVerifiedSession = apiClient.ensureVerifiedSession.bind(apiClient);
 const originalGetCloudHistory = apiClient.getCloudHistory.bind(apiClient);
 const originalGetCloudQuote = apiClient.getCloudQuote.bind(apiClient);
+const originalGetCloudNews = apiClient.getCloudNews.bind(apiClient);
 const originalSubscribeQuotes = apiClient.subscribeQuotes.bind(apiClient);
 
 afterEach(() => {
   apiClient.ensureVerifiedSession = originalEnsureVerifiedSession;
   apiClient.getCloudHistory = originalGetCloudHistory;
   apiClient.getCloudQuote = originalGetCloudQuote;
+  apiClient.getCloudNews = originalGetCloudNews;
   apiClient.subscribeQuotes = originalSubscribeQuotes;
 });
 
@@ -34,9 +36,9 @@ describe("GloomberbCloudProvider", () => {
   test("fetches detailed intraday chart history with Twelve Data intervals", async () => {
     apiClient.ensureVerifiedSession = async () => verifiedUser;
 
-    let requestArgs: { symbol: string; exchange: string; params: Record<string, string | number | undefined> } | null = null;
+    const requestArgs: { current: { symbol: string; exchange: string; params: Record<string, string | number | undefined> } | null } = { current: null };
     apiClient.getCloudHistory = async (symbol, exchange, params = {}) => {
-      requestArgs = { symbol, exchange, params };
+      requestArgs.current = { symbol, exchange, params };
       return {
         status: "success",
         data: [{
@@ -55,7 +57,7 @@ describe("GloomberbCloudProvider", () => {
       "15m",
     );
 
-    expect(requestArgs).toEqual({
+    expect(requestArgs.current).toEqual({
       symbol: "AAPL",
       exchange: "NASDAQ",
       params: {
@@ -71,9 +73,9 @@ describe("GloomberbCloudProvider", () => {
   test("normalizes daily detailed history requests to 1day", async () => {
     apiClient.ensureVerifiedSession = async () => verifiedUser;
 
-    let requestArgs: Record<string, string | number | undefined> | null = null;
+    const requestArgs: { current: Record<string, string | number | undefined> | null } = { current: null };
     apiClient.getCloudHistory = async (_symbol, _exchange, params = {}) => {
-      requestArgs = params;
+      requestArgs.current = params;
       return {
         status: "success",
         data: [],
@@ -89,7 +91,7 @@ describe("GloomberbCloudProvider", () => {
       "1d",
     );
 
-    expect(requestArgs).toEqual({
+    expect(requestArgs.current).toEqual({
       interval: "1day",
       startDate: "2026-01-01",
       endDate: "2026-03-27",
@@ -99,9 +101,9 @@ describe("GloomberbCloudProvider", () => {
   test("fetches fixed-resolution chart history with the requested interval", async () => {
     apiClient.ensureVerifiedSession = async () => verifiedUser;
 
-    let requestArgs: Record<string, string | number | undefined> | null = null;
+    const requestArgs: { current: Record<string, string | number | undefined> | null } = { current: null };
     apiClient.getCloudHistory = async (_symbol, _exchange, params = {}) => {
-      requestArgs = params;
+      requestArgs.current = params;
       return {
         status: "success",
         data: [{
@@ -114,9 +116,9 @@ describe("GloomberbCloudProvider", () => {
     const provider = new GloomberbCloudProvider();
     const history = await provider.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "1wk");
 
-    expect(requestArgs?.interval).toBe("1week");
-    expect(requestArgs?.startDate).toBeDefined();
-    expect(requestArgs?.endDate).toBeDefined();
+    expect(requestArgs.current?.interval).toBe("1week");
+    expect(requestArgs.current?.startDate).toBeDefined();
+    expect(requestArgs.current?.endDate).toBeDefined();
     expect(history[0]?.close).toBe(250.12);
   });
 
@@ -224,5 +226,77 @@ describe("GloomberbCloudProvider", () => {
 
     unsubscribe();
     expect(unsubscribeCalled).toBe(true);
+  });
+
+  test("maps backend news stories without requiring verified market-data access", async () => {
+    type CloudNewsRequest = NonNullable<Parameters<typeof apiClient.getCloudNews>[0]>;
+    let verifyCalled = false;
+    const requestArgs: { current: CloudNewsRequest | null } = { current: null };
+    apiClient.ensureVerifiedSession = async () => {
+      verifyCalled = true;
+      return verifiedUser;
+    };
+    apiClient.getCloudNews = async (params = {}) => {
+      requestArgs.current = params;
+      return {
+        items: [{
+          id: "story-1",
+          headline: "Apple raises guidance",
+          summary: "Apple lifted its outlook after stronger iPhone demand.",
+          topic: "guidance",
+          topics: ["guidance"],
+          category: "guidance",
+          sentiment: "positive",
+          sectors: ["information_technology"],
+          firstPublishedAt: "2026-04-01T10:00:00.000Z",
+          lastPublishedAt: "2026-04-01T10:05:00.000Z",
+          firstSeenAt: "2026-04-01T10:00:10.000Z",
+          lastSeenAt: "2026-04-01T10:05:10.000Z",
+          primaryUrl: "https://example.com/aapl-guidance",
+          primarySource: "example-wire",
+          scores: {
+            importance: 91,
+            urgency: 74,
+            marketImpact: 88,
+            novelty: 86,
+            confidence: 95,
+          },
+          flags: {
+            breaking: true,
+            developing: false,
+            stale: false,
+          },
+          variantCount: 1,
+          sourceCount: 1,
+          sources: ["example-wire"],
+          entities: [],
+          tickerLinks: [{
+            symbol: "AAPL",
+            exchange: "XNAS",
+            canonicalTicker: "AAPL:XNAS",
+            relationType: "direct",
+            displayTier: "primary",
+            confidence: 0.98,
+            relevanceScore: 95,
+            impactScore: 93,
+            sentiment: "positive",
+          }],
+        }],
+        nextCursor: null,
+      };
+    };
+
+    const provider = new GloomberbCloudProvider();
+    const news = await provider.getNews("AAPL", 10, "NASDAQ");
+
+    expect(verifyCalled).toBe(false);
+    expect(requestArgs.current).toEqual({ feed: "ticker", ticker: "AAPL", exchange: "XNAS", tickerTier: "primary", limit: 10 });
+    expect(news).toEqual([{
+      title: "Apple raises guidance",
+      url: "https://example.com/aapl-guidance",
+      source: "example-wire",
+      publishedAt: new Date("2026-04-01T10:05:00.000Z"),
+      summary: "Apple lifted its outlook after stronger iPhone demand.",
+    }]);
   });
 });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import { useBreakingNews } from "../../../news/hooks";
+import { useNewsArticles } from "../../../news/hooks";
 import { usePluginPaneState } from "../../plugin-runtime";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../ai/providers";
@@ -10,6 +10,7 @@ import { runAiPrompt } from "../ai/runner";
 import { getDigest, setDigest, isDigestInFlight, markDigestInFlight, clearDigestInFlight } from "./digest-store";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
+import { NEWS_QUERY_PRESETS } from "./news-query-presets";
 
 const DIGEST_PROMPT = `You are a financial news wire editor. Condense this headline and summary into a single concise actionable bullet point for a professional trader. Include why it matters and potential market impact. Keep it under 120 characters. Respond with ONLY the bullet text, nothing else.
 
@@ -26,7 +27,7 @@ function buildDigestPrompt(item: MarketNewsItem): string {
 }
 
 export function BreakingPane({ focused, width, height }: PaneProps) {
-  const articles = useBreakingNews(50);
+  const articles = useNewsArticles(NEWS_QUERY_PRESETS.breaking).articles;
   const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("breaking:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("breaking:sort", DEFAULT_SORT);
   const [digestVersion, setDigestVersion] = useState(0);

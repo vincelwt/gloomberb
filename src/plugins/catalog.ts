@@ -22,7 +22,6 @@ import { predictionMarketsPlugin } from "./prediction-markets";
 import { correlationPlugin } from "./builtin/correlation";
 import { analyticsPlugin } from "./builtin/analytics";
 import { insiderPlugin } from "./builtin/insider";
-import { newsWirePlugin } from "./builtin/news-wire";
 import { alertsPlugin } from "./builtin/alerts";
 import { fxMatrixPlugin } from "./builtin/fx-matrix";
 import { yieldCurvePlugin } from "./builtin/yield-curve";
@@ -58,7 +57,6 @@ export const builtinPlugins: GloomPlugin[] = [
   econCalendarPlugin,
   worldIndicesPlugin,
   marketMoversPlugin,
-  newsWirePlugin,
   alertsPlugin,
   fxMatrixPlugin,
   yieldCurvePlugin,

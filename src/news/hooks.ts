@@ -1,41 +1,62 @@
-import { useSyncExternalStore } from "react";
-import type { NewsAggregator } from "./aggregator";
-import type { MarketNewsItem } from "../types/news-source";
+import { useEffect, useSyncExternalStore } from "react";
+import { buildNewsQueryKey, type NewsService } from "./aggregator";
+import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 
-let sharedAggregator: NewsAggregator | null = null;
+let sharedService: NewsService | null = null;
 
-export function setSharedNewsAggregator(agg: NewsAggregator): void {
-  sharedAggregator = agg;
+export function setSharedNewsService(service: NewsService | null): void {
+  sharedService = service;
 }
 
-export function getSharedNewsAggregator(): NewsAggregator | null {
-  return sharedAggregator;
+export function getSharedNewsService(): NewsService | null {
+  return sharedService;
 }
 
-function useAggregatorVersion(): number {
-  if (!sharedAggregator) return 0;
+export const setSharedNewsAggregator = setSharedNewsService;
+export const getSharedNewsAggregator = getSharedNewsService;
+
+function idleState(): NewsQueryState {
+  return {
+    phase: "idle",
+    articles: [],
+    error: null,
+    updatedAt: null,
+    sourceIds: [],
+  };
+}
+
+function useNewsServiceVersion(): number {
+  if (!sharedService) return 0;
   return useSyncExternalStore(
-    (cb) => sharedAggregator!.subscribe(cb),
-    () => sharedAggregator!.getVersion(),
+    (cb) => sharedService!.subscribe(cb),
+    () => sharedService!.getVersion(),
   );
 }
 
-export function useTopStories(count = 20): MarketNewsItem[] {
-  useAggregatorVersion();
-  return sharedAggregator?.getTopStories(count) ?? [];
+export function useNewsArticles(query: NewsQuery | null | undefined): NewsQueryState {
+  const key = query ? buildNewsQueryKey(query) : null;
+  useNewsServiceVersion();
+
+  useEffect(() => {
+    if (!query || !sharedService) return;
+    void sharedService.load(query);
+  }, [key]);
+
+  return query && sharedService ? sharedService.getQueryState(query) : idleState();
 }
 
-export function useFirehose(count = 100): MarketNewsItem[] {
-  useAggregatorVersion();
-  return sharedAggregator?.getFirehose(undefined, count) ?? [];
+export function useTopStories(count = 20): NewsArticle[] {
+  return useNewsArticles({ feed: "top", limit: Math.max(count, 50) }).articles.slice(0, count);
 }
 
-export function useSectorNews(sector: string, count = 50): MarketNewsItem[] {
-  useAggregatorVersion();
-  return sharedAggregator?.getBySector(sector, count) ?? [];
+export function useFirehose(count = 100): NewsArticle[] {
+  return useNewsArticles({ feed: "latest", limit: count }).articles.slice(0, count);
 }
 
-export function useBreakingNews(count = 20): MarketNewsItem[] {
-  useAggregatorVersion();
-  return sharedAggregator?.getBreaking(count) ?? [];
+export function useSectorNews(sector: string, count = 50): NewsArticle[] {
+  return useNewsArticles({ feed: "sector", sectors: [sector], limit: Math.max(count, 100) }).articles.slice(0, count);
+}
+
+export function useBreakingNews(count = 20): NewsArticle[] {
+  return useNewsArticles({ feed: "breaking", breaking: true, limit: Math.max(count, 50) }).articles.slice(0, count);
 }

@@ -1398,7 +1398,7 @@ describe("ProviderRouter", () => {
   test("drops cached premarket cloud quotes that lack an active-session price", () => {
     const dbPath = createTempDbPath("stale-cloud-premarket-cache");
     const persistence = new AppPersistence(dbPath);
-    const now = Date.parse("2026-04-08T10:55:00Z");
+    const now = Date.now();
 
     persistence.resources.set(
       {

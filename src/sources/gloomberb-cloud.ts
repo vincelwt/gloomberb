@@ -12,10 +12,13 @@ import {
   type CloudCompanyProfile,
   type CloudFundamentals,
   type CloudMarketResponse,
+  type CloudNewsPayload,
   type CloudPricePointPayload,
   type CloudQuotePayload,
 } from "../utils/api-client";
+import type { NewsArticle, NewsQuery, NewsSource } from "../types/news-source";
 import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
+import { canonicalTickerKey, publicExchange } from "../utils/exchanges";
 import { createProviderMiss } from "./provider-errors";
 
 const providerId = "gloomberb-cloud" as const;
@@ -94,10 +97,92 @@ function mapPricePoint(point: CloudPricePointPayload, divisor = 1): PricePoint {
   };
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): NewsArticle {
+  const publishedAt = new Date(item.lastPublishedAt || item.firstPublishedAt || item.lastSeenAt);
+  const topic = item.topic ?? item.category ?? "general";
+  const topics = uniqueStrings([topic, ...normalizeStringArray(item.topics)]);
+  const sectors = normalizeStringArray(item.sectors);
+  const scores = {
+    importance: item.scores?.importance ?? 0,
+    urgency: item.scores?.urgency ?? 0,
+    marketImpact: item.scores?.marketImpact ?? 0,
+    novelty: item.scores?.novelty ?? 0,
+    confidence: item.scores?.confidence ?? 0,
+  };
+  const tickers = uniqueStrings([
+    ...item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
+    ...item.entities.flatMap((entity) => [entity.symbol, entity.canonicalTicker].filter((value): value is string => typeof value === "string")),
+  ]);
+  if (fallbackTicker && !tickers.includes(fallbackTicker.trim().toUpperCase())) {
+    tickers.push(fallbackTicker.trim().toUpperCase());
+  }
+  return {
+    id: item.id,
+    title: item.headline,
+    url: item.primaryUrl,
+    source: item.primarySource,
+    publishedAt: Number.isNaN(publishedAt.getTime()) ? new Date(0) : publishedAt,
+    summary: item.summary,
+    topic,
+    topics,
+    sectors,
+    categories: uniqueStrings([...topics, ...sectors]),
+    tickers,
+    sentiment: item.sentiment,
+    scores,
+    importance: scores.importance,
+    isBreaking: !!item.flags?.breaking,
+    isDeveloping: !!item.flags?.developing,
+  };
+}
+
+function mapCloudNewsItem(item: CloudNewsPayload): NewsItem {
+  const article = mapCloudNewsArticle(item);
+  return {
+    title: article.title,
+    url: article.url,
+    source: article.source,
+    publishedAt: article.publishedAt,
+    summary: article.summary,
+  };
+}
+
+function cloudNewsParams(query: NewsQuery): Parameters<typeof apiClient.getCloudNews>[0] {
+  const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+  return {
+    feed,
+    ticker: feed === "ticker" ? query.ticker : undefined,
+    exchange: feed === "ticker" ? publicExchange(query.exchange) : undefined,
+    tickerTier: feed === "ticker" ? query.tickerTier ?? "primary" : query.tickerTier,
+    tickerRelations: query.tickerRelations,
+    limit: query.limit,
+    topics: query.topics,
+    categories: query.topics ? undefined : query.categories,
+    sectors: query.sectors,
+    sources: query.sources,
+    excludeSources: query.excludeSources,
+    sentiment: query.sentiment,
+    minImportance: query.minImportance,
+    minUrgency: query.minUrgency,
+    breaking: query.breaking,
+    since: query.since,
+    until: query.until,
+    cursor: query.cursor,
+  };
+}
+
 function quoteTargetKey(symbol: string, exchange?: string): string {
-  const normalizedSymbol = symbol.trim().toUpperCase();
-  const normalizedExchange = (exchange ?? "").trim().toUpperCase();
-  return normalizedExchange ? `${normalizedSymbol}:${normalizedExchange}` : normalizedSymbol;
+  return canonicalTickerKey(symbol, exchange);
 }
 
 function toCloudInterval(interval: string): string {
@@ -295,8 +380,18 @@ export class GloomberbCloudProvider implements DataProvider {
     );
   }
 
-  async getNews(_ticker: string, _count?: number, _exchange?: string, _context?: MarketDataRequestContext): Promise<NewsItem[]> {
-    throw createProviderMiss("Cloud news is not available");
+  async getNews(ticker: string, count?: number, exchange?: string, _context?: MarketDataRequestContext): Promise<NewsItem[]> {
+    const response = await withCloudFallback(
+      () => apiClient.getCloudNews({
+        feed: "ticker",
+        ticker,
+        exchange: exchange ? publicExchange(exchange) : undefined,
+        tickerTier: "primary",
+        limit: count,
+      }),
+      `Cloud news is unavailable for ${ticker}`,
+    );
+    return response.items.map(mapCloudNewsItem);
   }
 
   async getSecFilings(_ticker: string, _count?: number, _exchange?: string, _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
@@ -411,4 +506,23 @@ export class GloomberbCloudProvider implements DataProvider {
 
 export function createGloomberbCloudProvider(): DataProvider {
   return new GloomberbCloudProvider();
+}
+
+export function createGloomberbCloudNewsSource(): NewsSource {
+  return {
+    id: providerId,
+    name: "Gloomberb Cloud",
+    priority: 10,
+    supports(query: NewsQuery): boolean {
+      const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+      return feed === "ticker" ? !!query.ticker : true;
+    },
+    async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
+      const response = await withCloudFallback(
+        () => apiClient.getCloudNews(cloudNewsParams(query)),
+        "Cloud news is unavailable",
+      );
+      return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
+    },
+  };
 }
