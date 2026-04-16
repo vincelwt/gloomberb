@@ -13,7 +13,7 @@ import type {
 } from "./workflow-types";
 import type { CollectionKind, CollectionMembershipAction } from "./workflow-ops";
 
-export type RouteCommandId = "search-ticker" | "theme" | "plugins" | "layout" | "new-pane";
+export type RouteCommandId = "security-description" | "theme" | "plugins" | "layout" | "new-pane";
 export type CollectionCommandId = "add-watchlist" | "add-portfolio" | "remove-watchlist" | "remove-portfolio";
 
 export function summarizeError(error: unknown): Record<string, string> {
@@ -28,7 +28,7 @@ export function summarizeError(error: unknown): Record<string, string> {
 }
 
 export function isRouteCommandId(commandId: string): commandId is RouteCommandId {
-  return commandId === "search-ticker"
+  return commandId === "security-description"
     || commandId === "theme"
     || commandId === "plugins"
     || commandId === "layout"
@@ -239,7 +239,7 @@ export function normalizeWizardFields(steps: WizardStep[]): {
 
 export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-search" | "themes" | "plugins" | "layout" | "new-pane" {
   switch (commandId) {
-    case "search-ticker":
+    case "security-description":
       return "ticker-search";
     case "theme":
       return "themes";
@@ -341,7 +341,7 @@ export function getScreenFooterRight(route: CommandBarRoute | null): string {
 }
 
 export function isRootParsedCommand(commandId: string): boolean {
-  return commandId === "search-ticker"
+  return commandId === "security-description"
     || commandId === "add-watchlist"
     || commandId === "add-portfolio"
     || commandId === "remove-watchlist"

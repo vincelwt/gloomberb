@@ -128,6 +128,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | Shortcut | Opens |
 |----------|-------|
 | `PF` | Collection Pane |
+| `DES <ticker>` | Ticker Detail |
 | `QQ <ticker>` | Quote Monitor |
 | `CHAT` | New Chat Pane |
 | `IBKR` | New IBKR Trading Pane |
