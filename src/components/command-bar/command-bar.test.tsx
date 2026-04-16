@@ -754,7 +754,7 @@ describe("CommandBar", () => {
   });
 
   test("keeps typed prefixes in the root query until a result is activated", async () => {
-    testSetup = await testRender(<CommandBarHarness query="T " />, {
+    testSetup = await testRender(<CommandBarHarness query="DES " />, {
       width: 80,
       height: 24,
     });
@@ -763,7 +763,7 @@ describe("CommandBar", () => {
 
     let frame = testSetup.captureCharFrame();
     expect(frame).toContain("Commands");
-    expect(frame).toContain("T");
+    expect(frame).toContain("DES");
     expect(frame).toContain("Type a ticker symbol");
     expect(frame).not.toContain("Back");
   });
@@ -785,7 +785,7 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Back");
-    expect(frame).toContain("Search Ticker");
+    expect(frame).toContain("Security Description");
   });
 
   test("QQ with an active ticker shows ghost completion and tab inserts the symbol", async () => {
@@ -845,13 +845,13 @@ describe("CommandBar", () => {
   });
 
   test("clears the root query with cmd-backspace", async () => {
-    testSetup = await testRender(<CommandBarHarness query="T AMD" />, {
+    testSetup = await testRender(<CommandBarHarness query="DES AMD" />, {
       width: 80,
       height: 24,
     });
 
     await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("T AMD");
+    expect(testSetup.captureCharFrame()).toContain("DES AMD");
 
     await act(async () => {
       testSetup!.mockInput.pressKey("backspace", { meta: true });
@@ -861,7 +861,7 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Commands");
     expect(frame).toContain("Search");
-    expect(frame).not.toContain("T AMD");
+    expect(frame).not.toContain("DES AMD");
   });
 
   test("pressing the close shortcut at the root closes the command bar", async () => {
@@ -883,7 +883,7 @@ describe("CommandBar", () => {
   test("loads provider-backed ticker search results in the root command results", async () => {
     testSetup = await testRender(
       <CommandBarHarness
-        query="T appl"
+        query="DES appl"
         dataProvider={makeDataProvider(async () => [
           { providerId: "yahoo", symbol: "IVSX", name: "Invsivx Holdings", exchange: "NYSE", type: "ETF" },
           { providerId: "yahoo", symbol: "AAPL", name: "Apple Inc", exchange: "NASDAQ", type: "EQUITY" },
@@ -903,12 +903,12 @@ describe("CommandBar", () => {
     expect(frame).toContain("AAOI");
   });
 
-  test("T MSFT opens an exact ticker directly", async () => {
+  test("DES MSFT opens an exact ticker directly", async () => {
     const pinned: string[] = [];
 
     testSetup = await testRender(
       <CommandBarHarness
-        query="T MSFT"
+        query="DES MSFT"
         configurePluginRegistry={(pluginRegistry) => {
           pluginRegistry.pinTickerFn = (symbol) => {
             pinned.push(symbol);
@@ -2476,7 +2476,7 @@ describe("CommandBar", () => {
   test("groups ticker search sections and keeps saved matches above looser provider results", async () => {
     testSetup = await testRender(
       <CommandBarHarness
-        query="T appl"
+        query="DES appl"
         dataProvider={makeDataProvider(async () => [
           { providerId: "yahoo", symbol: "IVSX", name: "Invsivx Holdings", exchange: "NYSE", type: "ETF" },
           { providerId: "yahoo", symbol: "AAPL", name: "Apple Inc", exchange: "NASDAQ", type: "EQUITY" },

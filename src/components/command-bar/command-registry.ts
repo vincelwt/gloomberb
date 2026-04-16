@@ -10,10 +10,10 @@ export interface CommandContext {
 
 export interface Command {
   id: string;
-  prefix: string;        // e.g., "T", "AW", "RP"
+  prefix: string;        // e.g., "DES", "AW", "RP"
   label: string;
   description: string;
-  hasArg?: boolean;       // true if prefix takes an argument (e.g., "T AMD")
+  hasArg?: boolean;       // true if prefix takes an argument (e.g., "DES AMD")
   argPlaceholder?: string;
   shortcut?: string;
   category: string;
@@ -21,14 +21,14 @@ export interface Command {
 }
 
 export const commands: Command[] = [
-  // Ticker search
+  // Security description
   {
-    id: "search-ticker",
-    prefix: "T",
-    label: "Search Ticker",
-    description: "Search Yahoo Finance for a ticker",
+    id: "security-description",
+    prefix: "DES",
+    label: "Description",
+    description: "Open security details for a ticker",
     hasArg: true,
-    argPlaceholder: "symbol or name",
+    argPlaceholder: "ticker",
     category: "Search",
     execute: () => {}, // handled specially by command bar
   },
