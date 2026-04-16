@@ -1,20 +1,9 @@
-export interface MarketNewsItem {
-  id: string;
-  title: string;
-  url: string;
-  source: string;
-  publishedAt: Date;
-  summary?: string;
-  imageUrl?: string;
-  categories: string[];
-  tickers: string[];
-  importance: number;
-  isBreaking: boolean;
-}
+export type {
+  NewsArticle,
+  NewsQuery,
+  NewsQueryPhase,
+  NewsQueryState,
+  NewsSource,
+} from "../news/types";
 
-export interface NewsSource {
-  readonly id: string;
-  readonly name: string;
-  getCachedMarketNews?(): MarketNewsItem[];
-  fetchMarketNews(): Promise<MarketNewsItem[]>;
-}
+export type { NewsArticle as MarketNewsItem } from "../news/types";

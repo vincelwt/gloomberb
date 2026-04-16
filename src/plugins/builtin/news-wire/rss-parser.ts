@@ -109,10 +109,21 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
       publishedAt,
       summary,
       imageUrl,
+      topic: categories[0] ?? "general",
+      topics: categories,
+      sectors: [],
       categories,
       tickers: [],
+      scores: {
+        importance: 0,
+        urgency: 0,
+        marketImpact: 0,
+        novelty: 0,
+        confidence: 0,
+      },
       importance: 0,
       isBreaking: false,
+      isDeveloping: false,
     });
   }
 
@@ -166,10 +177,21 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
       publishedAt,
       summary,
       imageUrl,
+      topic: categories[0] ?? "general",
+      topics: categories,
+      sectors: [],
       categories,
       tickers: [],
+      scores: {
+        importance: 0,
+        urgency: 0,
+        marketImpact: 0,
+        novelty: 0,
+        confidence: 0,
+      },
       importance: 0,
       isBreaking: false,
+      isDeveloping: false,
     });
   }
 

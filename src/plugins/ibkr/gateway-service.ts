@@ -43,6 +43,7 @@ import type {
   BrokerOrderRequest,
 } from "../../types/trading";
 import { debugLog } from "../../utils/debug-log";
+import { canonicalExchange, normalizeSymbol } from "../../utils/exchanges";
 import { parseReportSnapshot, parseFinStatements } from "./fundamental-parser";
 import { getIbkrPriceDivisor, normalizeIbkrPriceValue } from "./price-normalization";
 
@@ -365,12 +366,12 @@ export function parseIbkrHistoricalBarTime(value: string | number): Date {
 }
 
 function normalizeQuoteStreamTarget(target: QuoteSubscriptionTarget): QuoteSubscriptionTarget | null {
-  const symbol = target.symbol.trim().toUpperCase();
+  const symbol = normalizeSymbol(target.symbol);
   if (!symbol) return null;
   return {
     ...target,
     symbol,
-    exchange: (target.exchange ?? "").trim().toUpperCase(),
+    exchange: canonicalExchange(target.exchange),
   };
 }
 

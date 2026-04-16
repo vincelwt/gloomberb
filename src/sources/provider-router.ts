@@ -24,6 +24,7 @@ import {
 } from "../components/chart/chart-resolution";
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { debugLog } from "../utils/debug-log";
+import { canonicalExchange } from "../utils/exchanges";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 import {
@@ -72,10 +73,6 @@ function shouldLogProviderError(error: unknown): boolean {
 
 function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
-}
-
-function normalizeExchange(exchange?: string): string {
-  return (exchange ?? "").trim().toUpperCase();
 }
 
 function sanitizeCachedFinancials(financials: TickerFinancials): TickerFinancials {
@@ -420,7 +417,7 @@ export class ProviderRouter implements DataProvider {
   async getNews(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<NewsItem[]> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]),
+      buildVariantKey([["exchange", canonicalExchange(exchange)], ["count", count]]),
       buildVariantKey([["count", count]]),
       "",
     ];
@@ -432,13 +429,9 @@ export class ProviderRouter implements DataProvider {
       return cached.value;
     }
 
-    const result = await this.firstProvider((provider) => provider.getNews(ticker, count, exchange, context));
+    const result = await this.fetchProviderNews(ticker, count, exchange, context);
     if (!result) {
       throw new Error(`No news provider available for ${ticker}`);
-    }
-    const provider = this.resolveProviderBySourceKey(result.sourceKey);
-    if (provider) {
-      this.cacheResource("news", entityKey, variantKeys[0] ?? "", result.sourceKey, result.value, this.resolveProviderPolicy("news", provider));
     }
     return result.value;
   }
@@ -446,7 +439,7 @@ export class ProviderRouter implements DataProvider {
   async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]),
+      buildVariantKey([["exchange", canonicalExchange(exchange)], ["count", count]]),
       buildVariantKey([["count", count]]),
       "",
     ];
@@ -506,7 +499,7 @@ export class ProviderRouter implements DataProvider {
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<PricePoint[]> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", range]]),
+      buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]),
       buildVariantKey([["range", range]]),
     ];
     const sourceKeys = [
@@ -543,7 +536,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<PricePoint[]> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]),
+      buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]),
       buildVariantKey([["range", bufferRange], ["resolution", resolution]]),
     ];
     const sourceKeys = [
@@ -603,7 +596,7 @@ export class ProviderRouter implements DataProvider {
   ): Promise<PricePoint[]> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
+      buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
       buildVariantKey([["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]),
     ];
     const sourceKeys = [
@@ -630,7 +623,7 @@ export class ProviderRouter implements DataProvider {
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = [
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["expiration", expirationDate ?? "default"]]),
+      buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]),
       buildVariantKey([["expiration", expirationDate ?? "default"]]),
       "",
     ];
@@ -682,7 +675,7 @@ export class ProviderRouter implements DataProvider {
   }
 
   private getTickerVariantCandidates(exchange?: string): string[] {
-    const normalizedExchange = normalizeExchange(exchange);
+    const normalizedExchange = canonicalExchange(exchange);
     return [
       buildVariantKey([["exchange", normalizedExchange]]),
       "",
@@ -1090,7 +1083,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", range]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistory) continue;
       try {
@@ -1125,7 +1118,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getPriceHistoryForResolution) continue;
       try {
@@ -1160,7 +1153,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", range]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", range]]);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
     for (const provider of this.providersInPriorityOrder()) {
@@ -1197,7 +1190,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["range", bufferRange], ["resolution", resolution]]);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
     for (const provider of this.providersInPriorityOrder()) {
@@ -1293,7 +1286,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getDetailedPriceHistory) continue;
       try {
@@ -1331,7 +1324,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<PricePoint[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["start", compactDate(startDate)], ["end", compactDate(endDate)], ["bar", barSize]]);
     let firstEmptyResult: SourceResult<PricePoint[]> | null = null;
 
     for (const provider of this.providersInPriorityOrder()) {
@@ -1368,7 +1361,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<OptionsChain> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
     for (const candidate of this.getBrokerCandidatesForContext(context, false)) {
       if (!candidate.broker.getOptionsChain) continue;
       try {
@@ -1402,7 +1395,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<OptionsChain> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["expiration", expirationDate ?? "default"]]);
     const result = await this.firstProvider(async (provider) => {
       if (!provider.getOptionsChain) return null;
       return provider.getOptionsChain(ticker, exchange, expirationDate, context);
@@ -1422,7 +1415,7 @@ export class ProviderRouter implements DataProvider {
     context?: MarketDataRequestContext,
   ): Promise<SourceResult<SecFilingItem[]> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
-    const variantKey = buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["count", count]]);
     let lastError: unknown = null;
 
     for (const provider of this.providersInPriorityOrder()) {
@@ -1442,6 +1435,35 @@ export class ProviderRouter implements DataProvider {
 
     if (lastError) throw lastError;
     return null;
+  }
+
+  private async fetchProviderNews(
+    ticker: string,
+    count = 15,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<NewsItem[]> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = buildVariantKey([["exchange", canonicalExchange(exchange)], ["count", count]]);
+    let firstEmptyResult: SourceResult<NewsItem[]> | null = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      try {
+        const value = await provider.getNews(ticker, count, exchange, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("news", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("news", provider));
+        if (value.length > 0) {
+          return { sourceKey, value };
+        }
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    return firstEmptyResult;
   }
 
   private async fetchProviderSecFilingContent(filing: SecFilingItem): Promise<SourceResult<string | null> | null> {
@@ -1499,18 +1521,7 @@ export class ProviderRouter implements DataProvider {
   }
 
   private async revalidateNews(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
-    const result = await this.firstProvider((provider) => provider.getNews(ticker, count, exchange, context));
-    if (!result) return;
-    const provider = this.resolveProviderBySourceKey(result.sourceKey);
-    if (!provider) return;
-    this.cacheResource(
-      "news",
-      this.getEntityKey(ticker, exchange, context?.instrument),
-      buildVariantKey([["exchange", normalizeExchange(exchange)], ["count", count]]),
-      result.sourceKey,
-      result.value,
-      this.resolveProviderPolicy("news", provider),
-    );
+    await this.fetchProviderNews(ticker, count, exchange, context);
   }
 
   private async revalidateSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {

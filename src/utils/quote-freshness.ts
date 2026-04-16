@@ -1,50 +1,16 @@
 import type { MarketState, Quote } from "../types/financials";
+import { canonicalExchange, EXCHANGE_TIME_ZONES } from "./exchanges";
 
 const US_EXTENDED_HOURS_EXCHANGES = new Set(["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"]);
-const EXCHANGE_TIME_ZONES: Record<string, string> = {
-  NASDAQ: "America/New_York",
-  NYSE: "America/New_York",
-  ARCA: "America/New_York",
-  AMEX: "America/New_York",
-  BATS: "America/New_York",
-  FWB: "Europe/Berlin",
-  FWB2: "Europe/Berlin",
-  XETRA: "Europe/Berlin",
-  SWX: "Europe/Zurich",
-  SFB: "Europe/Stockholm",
-  HKEX: "Asia/Hong_Kong",
-  JPX: "Asia/Tokyo",
-  TPEX: "Asia/Taipei",
-  NSE: "Asia/Kolkata",
-  BSE: "Asia/Kolkata",
-  LSE: "Europe/London",
-};
-const EXCHANGE_ALIASES: Record<string, string> = {
-  NMS: "NASDAQ",
-  NGM: "NASDAQ",
-  NCM: "NASDAQ",
-  NAS: "NASDAQ",
-  NYQ: "NYSE",
-  NYS: "NYSE",
-  PCX: "AMEX",
-  ASE: "AMEX",
-  HKG: "HKEX",
-  GER: "XETRA",
-};
 
 type UsSessionState = Exclude<MarketState, never>;
 
-function normalizeExchange(exchange?: string): string {
-  const normalized = (exchange ?? "").trim().toUpperCase();
-  return EXCHANGE_ALIASES[normalized] ?? normalized;
-}
-
 function isUsExtendedHoursExchange(exchange?: string): boolean {
-  return US_EXTENDED_HOURS_EXCHANGES.has(normalizeExchange(exchange));
+  return US_EXTENDED_HOURS_EXCHANGES.has(canonicalExchange(exchange));
 }
 
 function exchangeLocalDate(exchange: string, timestampMs: number): string | null {
-  const timeZone = EXCHANGE_TIME_ZONES[normalizeExchange(exchange)];
+  const timeZone = EXCHANGE_TIME_ZONES[canonicalExchange(exchange)];
   if (!timeZone) return null;
 
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -97,7 +63,7 @@ export function isQuoteStaleForCurrentSession(quote: Quote | null | undefined, n
   if (!quote) return false;
   if (isQuoteMissingActiveSessionPrice(quote)) return true;
 
-  const exchange = normalizeExchange(quote.listingExchangeName || quote.exchangeName);
+  const exchange = canonicalExchange(quote.listingExchangeName || quote.exchangeName);
   if (!exchange || !Number.isFinite(quote.lastUpdated)) return false;
 
   const quoteDate = exchangeLocalDate(exchange, quote.lastUpdated);

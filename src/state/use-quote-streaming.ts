@@ -2,17 +2,18 @@ import { useEffect } from "react";
 import { useAppActive } from "./app-activity";
 import type { QuoteSubscriptionTarget } from "../types/data-provider";
 import { debugLog } from "../utils/debug-log";
+import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
 import { getSharedMarketDataCoordinator } from "../market-data/coordinator";
 
 const quoteStreamLog = debugLog.createLogger("quote-stream");
 
 function normalizeTarget(target: QuoteSubscriptionTarget): QuoteSubscriptionTarget | null {
-  const symbol = target.symbol.trim().toUpperCase();
+  const symbol = normalizeSymbol(target.symbol);
   if (!symbol) return null;
   return {
     ...target,
     symbol,
-    exchange: target.exchange?.trim().toUpperCase() ?? "",
+    exchange: canonicalExchange(target.exchange),
   };
 }
 

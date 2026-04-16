@@ -222,8 +222,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
       ...pane,
       component: (props) => createElement(
         PluginRenderProvider,
-        { pluginId, runtime: this },
-        createElement(pane.component as any, props),
+        {
+          pluginId,
+          runtime: this,
+          children: createElement(pane.component as any, props),
+        },
       ),
     };
   }
@@ -233,8 +236,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
       ...tab,
       component: (props) => createElement(
         PluginRenderProvider,
-        { pluginId, runtime: this },
-        createElement(tab.component as any, props),
+        {
+          pluginId,
+          runtime: this,
+          children: createElement(tab.component as any, props),
+        },
       ),
     };
   }
@@ -418,9 +424,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getState: (key, options) => this.getResumeState(pluginId, key, options?.schemaVersion),
       setState: (key, value, options) => this.setResumeState(pluginId, key, value, options?.schemaVersion),
       deleteState: (key) => this.deleteResumeState(pluginId, key),
-      getPaneState: (paneId, key) => (
-        this.getPaneRuntimeStateFn(paneId)?.pluginState?.[pluginId]?.[key] ?? null
-      ),
+      getPaneState: <T = unknown>(paneId: string, key: string): T | null => {
+        const value = this.getPaneRuntimeStateFn(paneId)?.pluginState?.[pluginId]?.[key];
+        return value === undefined ? null : value as T;
+      },
       setPaneState: (paneId, key, value) => {
         const currentPaneState = this.getPaneRuntimeStateFn(paneId) ?? {};
         const pluginState = {
@@ -496,7 +503,19 @@ export class PluginRegistry implements PluginRuntimeAccess {
       },
       registerTickerAction: (action) => { this.tickerActionsMap.set(action.id, action); items.tickerActions.push(action.id); },
       registerNewsSource: (source) => {
-        const dispose = this.registerNewsSourceFn(source);
+        const ownedSource: import("../types/news-source").NewsSource = {
+          id: source.id,
+          name: source.name,
+          priority: source.priority,
+          isEnabled: () => {
+            const disabled = this.getConfigFn().disabledPlugins.includes(pluginId);
+            return !disabled && (source.isEnabled?.() ?? true);
+          },
+          supports: (query) => source.supports?.(query) ?? true,
+          getCachedNews: (query) => source.getCachedNews?.(query) ?? [],
+          fetchNews: (query) => source.fetchNews(query),
+        };
+        const dispose = this.registerNewsSourceFn(ownedSource);
         items.newsSourceDisposers.push(dispose);
         return dispose;
       },
@@ -590,8 +609,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
         if (renderer) {
           corePlugin.slots[slotName] = (_ctx: unknown, props: unknown) => createElement(
             PluginRenderProvider,
-            { pluginId: plugin.id, runtime: this },
-            (renderer as any)(props),
+            {
+              pluginId: plugin.id,
+              runtime: this,
+              children: (renderer as any)(props),
+            },
           );
         }
       }

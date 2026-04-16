@@ -1,5 +1,5 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
-import type { MarketNewsItem, NewsSource } from "../../../types/news-source";
+import type { NewsQuery, MarketNewsItem, NewsSource } from "../../../types/news-source";
 import type { PluginPersistence } from "../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./rss-parser";
 import { enrichNewsItem } from "./categories";
@@ -34,6 +34,11 @@ export interface RssNewsSourceOptions {
   fetchText?: (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>;
 }
 
+function supportsQuery(query: NewsQuery): boolean {
+  const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+  return feed === "latest" || feed === "top";
+}
+
 function serializeItem(item: MarketNewsItem): CachedNewsItem {
   return {
     ...item,
@@ -57,14 +62,33 @@ function deserializeItem(item: unknown): MarketNewsItem | null {
     publishedAt,
     summary: typeof record.summary === "string" ? record.summary : undefined,
     imageUrl: typeof record.imageUrl === "string" ? record.imageUrl : undefined,
+    topic: typeof record.topic === "string" ? record.topic : "general",
+    topics: Array.isArray(record.topics)
+      ? record.topics.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    sectors: Array.isArray(record.sectors)
+      ? record.sectors.filter((entry): entry is string => typeof entry === "string")
+      : [],
     categories: Array.isArray(record.categories)
       ? record.categories.filter((entry): entry is string => typeof entry === "string")
       : [],
     tickers: Array.isArray(record.tickers)
       ? record.tickers.filter((entry): entry is string => typeof entry === "string")
       : [],
-    importance: typeof record.importance === "number" ? record.importance : 0,
+    sentiment:
+      record.sentiment === "positive" || record.sentiment === "negative" || record.sentiment === "neutral"
+        ? record.sentiment
+        : undefined,
+    scores: {
+      importance: typeof record.importance === "number" ? record.importance : 0,
+      urgency: record.isBreaking === true ? 80 : 0,
+      marketImpact: typeof record.importance === "number" ? record.importance : 0,
+      novelty: 0,
+      confidence: 0,
+    },
     isBreaking: record.isBreaking === true,
+    isDeveloping: record.isDeveloping === true,
+    importance: typeof record.importance === "number" ? record.importance : 0,
   };
 }
 
@@ -127,11 +151,15 @@ export function createRssNewsSource(
   return {
     id: "rss",
     name: "RSS Feeds",
-    getCachedMarketNews(): MarketNewsItem[] {
+    priority: 2000,
+    supports: supportsQuery,
+    getCachedNews(query: NewsQuery): MarketNewsItem[] {
+      if (!supportsQuery(query)) return [];
       const enabledFeeds = getFeeds().filter((feed) => feed.enabled);
       return enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []);
     },
-    async fetchMarketNews(): Promise<MarketNewsItem[]> {
+    async fetchNews(query: NewsQuery): Promise<MarketNewsItem[]> {
+      if (!supportsQuery(query)) return [];
       const enabledFeeds = getFeeds().filter((f) => f.enabled);
       const results = await Promise.allSettled(
         enabledFeeds.map(fetchFeed),

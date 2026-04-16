@@ -10,7 +10,7 @@ import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
 import { chatController, type ChatController } from "./chat-controller";
-import { createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
+import { createGloomberbCloudNewsSource, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 
 interface ChatContentProps {
   width: number;
@@ -842,6 +842,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
   setup(ctx) {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
     chatController.setNotifier(ctx.notify);
+    ctx.registerNewsSource?.(createGloomberbCloudNewsSource());
 
     ctx.registerPane({
       id: "chat",

@@ -98,8 +98,8 @@ import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-
 import { instrumentFromTicker } from "./market-data/request-types";
 import { syncBrokerInstance } from "./brokers/sync-broker-instance";
 import { createAppNotifier } from "./notifications/app-notifier";
-import { NewsAggregator } from "./news/aggregator";
-import { setSharedNewsAggregator } from "./news/hooks";
+import { NewsService } from "./news/aggregator";
+import { setSharedNewsService } from "./news/hooks";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -1373,14 +1373,14 @@ export function App({
     pluginRegistry.getConfigFn = () => config;
     pluginRegistry.getLayoutFn = () => config.layout;
 
-    const newsAggregator = new NewsAggregator();
-    setSharedNewsAggregator(newsAggregator);
-    pluginRegistry.registerNewsSourceFn = (source) => newsAggregator.register(source);
+    const newsService = new NewsService();
+    setSharedNewsService(newsService);
+    pluginRegistry.registerNewsSourceFn = (source) => newsService.register(source);
 
     for (const plugin of getLoadablePlugins(externalPlugins)) {
       pluginRegistry.register(plugin);
     }
-    newsAggregator.start();
+    newsService.start();
 
     return {
       persistence,
@@ -1389,7 +1389,7 @@ export function App({
       dataProvider,
       marketData,
       pluginRegistry,
-      newsAggregator,
+      newsService,
     };
   }, [config.dataDir, externalPlugins, renderer]);
 
@@ -1400,7 +1400,8 @@ export function App({
   useEffect(() => {
     return () => {
       setSharedMarketDataCoordinator(null);
-      services.newsAggregator.stop();
+      setSharedNewsService(null);
+      services.newsService.stop();
       services.pluginRegistry.destroy();
       services.persistence.close();
     };
