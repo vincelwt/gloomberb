@@ -1,20 +1,20 @@
-import { Box, Input, ScrollBox, Span, Text } from "../../../ui";
+import { Box, Input, ScrollBox, Text } from "../../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
 import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import type { DetailTabProps } from "../../../types/plugin";
-import { useAppState, usePaneTicker } from "../../../state/app-context";
+import { useAppSelector, usePaneTicker } from "../../../state/app-context";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePluginState } from "../../../plugins/plugin-runtime";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 import { MarkdownText } from "../../../components/markdown-text";
+import { usePaneFooter } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { Spinner } from "../../../components/spinner";
 import { buildTickerAiContext } from "./ticker-context";
 import { detectProviders, getAvailableProviders, resolveDefaultAiProviderId, __setDetectedProvidersForTests, type AiProvider } from "./providers";
 import { runAiPrompt } from "./runner";
-import { truncateWithEllipsis } from "./utils";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -42,38 +42,19 @@ export function __resetAskAiHistoryForTests(): void {
   chatHistories.clear();
 }
 
-function getProviderHeaderParts(providerName: string, canSwitch: boolean, width: number): { prefix: string; label: string } {
-  if (width <= 0) return { prefix: "", label: "" };
-
-  const variants = [
-    { prefix: "Provider: ", label: canSwitch ? `${providerName} (t to switch)` : providerName },
-    { prefix: "Provider: ", label: canSwitch ? `${providerName} (t)` : providerName },
-    { prefix: "", label: canSwitch ? `${providerName} (t to switch)` : providerName },
-    { prefix: "", label: canSwitch ? `${providerName} (t)` : providerName },
-    { prefix: "", label: providerName },
-  ];
-
-  for (const variant of variants) {
-    if (variant.prefix.length + variant.label.length <= width) {
-      return variant;
-    }
-  }
-
-  return { prefix: "", label: truncateWithEllipsis(providerName, width) };
-}
-
 export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabProps) {
-  const { state } = useAppState();
+  const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
+  const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
   const { ticker, financials } = usePaneTicker();
   const exchangeRates = useFxRatesMap([
-    state.config.baseCurrency,
+    baseCurrency,
     ticker?.metadata.currency,
     financials?.quote?.currency,
     ...(ticker?.metadata.positions.map((position) => position.currency) ?? []),
   ]);
-  const effectiveExchangeRates = exchangeRates.size > 1 || state.exchangeRates.size === 0
+  const effectiveExchangeRates = exchangeRates.size > 1 || cachedExchangeRates.size === 0
     ? exchangeRates
-    : state.exchangeRates;
+    : cachedExchangeRates;
   const [providers] = useState(() => detectProviders());
   const defaultProviderId = resolveDefaultAiProviderId(providers);
   const [providerId, setProviderId] = usePluginState<string>("providerId", defaultProviderId);
@@ -171,7 +152,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     const context = buildTickerAiContext(
       ticker,
       financials,
-      state.config.baseCurrency,
+      baseCurrency,
       effectiveExchangeRates,
     );
     const fullPrompt = `You are a financial analyst assistant. Here is the current financial data for the company being discussed:\n\n${context}\n\nUser question: ${text}`;
@@ -212,7 +193,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     } finally {
       runRef.current = null;
     }
-  }, [currentProvider, effectiveExchangeRates, financials, state.config.baseCurrency, ticker]);
+  }, [baseCurrency, currentProvider, effectiveExchangeRates, financials, ticker]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -239,6 +220,24 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   }, []);
 
   const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
+  const thinking = messages.some((message) => message.loading);
+
+  usePaneFooter("ask-ai", () => ({
+    info: [
+      ...(currentProvider ? [{
+        id: "provider",
+        parts: [
+          { text: "Provider", tone: "label" as const },
+          { text: currentProvider.name, tone: currentProvider.available ? "value" as const : "warning" as const, bold: true },
+        ],
+      }] : []),
+      { id: "messages", parts: [{ text: `${messages.length} messages`, tone: "muted" }] },
+      ...(thinking ? [{ id: "thinking", parts: [{ text: "thinking", tone: "muted" as const }] }] : []),
+    ],
+    hints: availableProviders.length > 1
+      ? [{ id: "provider", key: "t", label: "provider", onPress: cycleProvider }]
+      : [],
+  }), [availableProviders.length, currentProvider?.available, currentProvider?.name, cycleProvider, messages.length, thinking]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to ask AI.</Text>;
 
@@ -261,23 +260,11 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   const contentWidth = Math.max(width - 2, 0);
   const dividerWidth = Math.max(contentWidth, 0);
   const chatHeight = Math.max(height - 7, 4);
-  const providerHeader = getProviderHeaderParts(
-    currentProvider?.name || "None",
-    availableProviders.length > 1,
-    Math.max(contentWidth - "Ask AI".length - 1, 0),
-  );
 
   return (
     <Box flexDirection="column" paddingX={1} paddingTop={1} height={height - 2}>
       <Box flexDirection="row" height={1}>
         <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</Text>
-        <Box flexGrow={1} />
-        <Box onMouseDown={cycleProvider}>
-          <Text fg={colors.textMuted}>
-            {providerHeader.prefix}
-            <Span fg={colors.textBright}>{providerHeader.label}</Span>
-          </Text>
-        </Box>
       </Box>
 
       <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
@@ -330,7 +317,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
         <Box flexGrow={1}>
           <Input
             ref={inputRef}
-            placeholder={inputFocused ? "Ask a question..." : "Enter to start typing"}
+            placeholder="Ask a question..."
             focused={inputFocused && focused}
             textColor={colors.text}
             placeholderColor={colors.textDim}

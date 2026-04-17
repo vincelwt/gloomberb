@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Default desktop permissions for the Gloomberb Tauri renderer.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging"
+  ]
 }

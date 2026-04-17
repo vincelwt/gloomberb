@@ -4,6 +4,7 @@ import { TextAttributes, type BoxRenderable, type NativeRendererHost as CliRende
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
+import { usePaneFooter, type PaneHint } from "../layout/pane-footer";
 import { saveConfig } from "../../data/config-store";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { colors } from "../../theme/colors";
@@ -164,6 +165,7 @@ interface StockChartProps {
   indicatorConfig?: IndicatorConfig;
   showVolume?: boolean;
   footerControls?: ReactNode;
+  footerHints?: PaneHint[];
 }
 
 interface ResolvedStockChartProps extends StockChartProps {
@@ -1483,6 +1485,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   indicatorConfig: indicatorConfigOverride,
   showVolume: showVolumeOverride,
   footerControls,
+  footerHints,
   symbol,
   ticker,
   financials,
@@ -1753,11 +1756,14 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     (value) => Array.isArray(value) && value.length > 0,
     "No price history available.",
   );
-  const boundsBodyState = !compact && !boundsChartEntry && fallbackPriceHistory.length > 0
+  const shouldUseBoundsFallback = !compact
+    && fallbackPriceHistory.length > 0
+    && (!boundsChartEntry || (rawBoundsBodyState.blocking && !rawBoundsBodyState.data?.length));
+  const boundsBodyState = shouldUseBoundsFallback
     ? {
       data: fallbackPriceHistory,
       blocking: false,
-      updating: false,
+      updating: !!boundsChartEntry && rawBoundsBodyState.blocking,
       emptyMessage: null,
       errorMessage: null,
     }
@@ -1771,7 +1777,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const minChartWidth = compact ? 12 : 20;
   const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
   const headerRows = compact ? 0 : 4;
-  const helpRow = compact ? 0 : 1;
+  const helpRow = compact ? 1 : 0;
   const timeAxisRow = 1;
   const volumeHeight = showVolume && !compact ? 3 : 0;
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
@@ -3448,6 +3454,102 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     ? (renderBodyState.errorMessage ?? renderBodyState.emptyMessage)
     : null;
   const isUpdating = !compact && (renderBodyState.updating || boundsBodyState.updating);
+  const timeAxisLabel = selectionScene?.timeLabels ?? staticResult.timeLabels;
+  const chartFooterHints = useMemo<PaneHint[]>(() => {
+    if (compact) return [];
+
+    const cycleMode = () => {
+      setViewState((current) => {
+        const activeMode = current.renderMode ?? "area";
+        const index = CHART_RENDER_MODES.indexOf(activeMode);
+        const nextMode = CHART_RENDER_MODES[(index + 1) % CHART_RENDER_MODES.length]!;
+        persistDefaultRenderMode(nextMode);
+        return { ...current, renderMode: nextMode };
+      });
+    };
+    const cycleResolution = () => {
+      const currentIndex = resolutionChips.indexOf(selectedResolution);
+      const nextResolution = resolutionChips[(currentIndex + 1) % resolutionChips.length] ?? "auto";
+      setResolution(nextResolution);
+    };
+    const zoomIn = () => {
+      if (effectiveResolution === "auto") {
+        requestAutoWindow(resolveAutoZoomWindow({
+          historyPoints: history,
+          boundsDates: boundsHistoryDates,
+          currentWindow: navigableDateWindow,
+          direction: "in",
+          anchorRatio: RIGHT_EDGE_ANCHOR_RATIO,
+        }));
+        return;
+      }
+      setViewState((current) => applyZoomAroundAnchor(current, current.zoomLevel * 1.5, RIGHT_EDGE_ANCHOR_RATIO, boundsHistory));
+    };
+    const resetView = () => {
+      if (effectiveResolution === "auto") {
+        pendingAutoWindowRef.current = null;
+        setPendingAutoWindowOverride(null);
+        setRenderedAutoView(null);
+        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+        setViewState((current) => clearAutoViewportState(current));
+        return;
+      }
+      pendingCanonicalResetRef.current += 1;
+      updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+      setViewState((current) => {
+        const nextState = resolveViewportResolutionSelection(
+          current,
+          effectiveResolution,
+          selectionSupportMap,
+          visibleDateWindow,
+        ) ?? current;
+        return {
+          ...nextState,
+          panOffset: 0,
+          zoomLevel: 1,
+          cursorX: null,
+          cursorY: null,
+        };
+      });
+    };
+    const cycleRange = () => {
+      const currentIndex = activePreset ? TIME_RANGES.indexOf(activePreset) : -1;
+      const nextRange = TIME_RANGES[(currentIndex + 1) % TIME_RANGES.length] ?? TIME_RANGES[0]!;
+      setRange(nextRange);
+    };
+
+    return [
+      { id: "mode", key: "m", label: "ode", onPress: cycleMode },
+      ...(footerHints ?? []),
+      { id: "resolution", key: "r", label: "es", onPress: cycleResolution },
+      { id: "zoom", key: "+/-", label: "zoom", onPress: zoomIn },
+      { id: "reset", key: "0", label: "reset", onPress: resetView },
+      ...(width >= 72 ? [{ id: "range", key: "1-7", label: "range", onPress: cycleRange }] : []),
+    ];
+  }, [
+    activePreset,
+    boundsHistory,
+    boundsHistoryDates,
+    compact,
+    effectiveResolution,
+    footerHints,
+    history,
+    navigableDateWindow,
+    resolutionChips,
+    selectedResolution,
+    selectionSupportMap,
+    visibleDateWindow,
+    width,
+  ]);
+
+  usePaneFooter("stock-chart", () => (
+    compact
+      ? null
+      : {
+          order: 10,
+          hints: chartFooterHints,
+        }
+  ), [chartFooterHints, compact]);
 
   useEffect(() => {
     queueMicrotask(() => renderer.requestRender());
@@ -3977,17 +4079,21 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       </Box>
 
       <Box height={1}>
-        <Text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</Text>
+        <Text fg={colors.textDim}>{timeAxisLabel}</Text>
       </Box>
 
-      <Box height={1} flexDirection="row" gap={1}>
-        <ChartControlHint hotkey="m" label="ode" />
-        {footerControls}
-        <ChartControlHint hotkey="r" label="es" />
-        <ChartControlHint hotkey="+/-" label="zoom" />
-        <ChartControlHint hotkey="0" label="reset" />
-        {width >= 72 && <ChartControlHint hotkey="1-7" label="range" />}
-      </Box>
+      {compact && (
+        <>
+          <Box height={1} flexDirection="row" gap={1}>
+            <ChartControlHint hotkey="m" label="ode" />
+            {footerControls}
+            <ChartControlHint hotkey="r" label="es" />
+            <ChartControlHint hotkey="+/-" label="zoom" />
+            <ChartControlHint hotkey="0" label="reset" />
+            {width >= 72 && <ChartControlHint hotkey="1-7" label="range" />}
+          </Box>
+        </>
+      )}
     </Box>
   );
 });

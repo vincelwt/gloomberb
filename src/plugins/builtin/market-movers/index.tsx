@@ -2,9 +2,9 @@ import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { colors, priceColor, blendHex } from "../../../theme/colors";
+import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
 import { usePluginTickerActions } from "../../plugin-runtime";
 import { getSharedDataProvider } from "../../registry";
@@ -284,7 +284,7 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(interval);
   }, []);
 
-  const loadTab = async (tab: TabId) => {
+  const loadTab = useCallback(async (tab: TabId) => {
     const cached = cacheRef.current.get(tab);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
       setQuotes(cached.data);
@@ -354,9 +354,9 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
     finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
-  };
+  }, [resetTableScroll]);
 
-  useEffect(() => { loadTab(activeTab); }, [activeTab]);
+  useEffect(() => { loadTab(activeTab); }, [activeTab, loadTab]);
 
   const openSymbol = useCallback((symbol: string) => {
     pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
@@ -468,28 +468,31 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
-  const summaryBg = blendHex(colors.bg, colors.border, 0.2);
+  const refreshActiveTab = useCallback(() => {
+    cacheRef.current.delete(activeTab);
+    void loadTab(activeTab);
+  }, [activeTab, loadTab]);
+
+  usePaneFooter("market-movers", () => ({
+    info: [
+      ...summaryQuotes.map((idx) => {
+        const short = INDEX_SHORT[idx.symbol] ?? idx.symbol;
+        return {
+          id: `summary:${idx.symbol}`,
+          parts: [
+            { text: short, tone: "label" as const },
+            { text: formatPercentRaw(idx.changePercent), tone: "value" as const, color: priceColor(idx.changePercent), bold: true },
+          ],
+        };
+      }),
+      { id: "count", parts: [{ text: `${quotes.length} stocks`, tone: "muted" }] },
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+    ],
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab }],
+  }), [loading, quotes.length, refreshActiveTab, summaryQuotes]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Market Summary Bar */}
-      {summaryQuotes.length > 0 ? (
-        <Box flexDirection="row" height={1} backgroundColor={summaryBg} paddingX={1} gap={2}>
-          {summaryQuotes.map((idx) => {
-            const short = INDEX_SHORT[idx.symbol] ?? idx.symbol;
-            const chgColor = priceColor(idx.changePercent);
-            return (
-              <Box key={idx.symbol} flexDirection="row" gap={1}>
-                <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{short}</Text>
-                <Text fg={colors.text}>{formatCurrency(idx.price, "USD")}</Text>
-                <Text fg={chgColor}>{formatPercentRaw(idx.changePercent)}</Text>
-              </Box>
-            );
-          })}
-          {loading && <Text fg={colors.textMuted}> loading…</Text>}
-        </Box>
-      ) : null}
-
       {/* Tab bar */}
       <Box flexDirection="row" height={1} paddingX={1}>
         {TABS.map((tab) => {
@@ -515,8 +518,6 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
             </Box>
           );
         })}
-        <Box flexGrow={1} />
-        <Text fg={colors.textMuted}>{quotes.length} stocks</Text>
       </Box>
 
       <DataTable<MarketMoverRow, MarketMoverColumn>

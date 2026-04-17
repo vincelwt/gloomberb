@@ -17,7 +17,7 @@ import { getSharedRegistry } from "../../registry";
 import { EmptyState } from "../../../components";
 import { TabBar } from "../../../components/tab-bar";
 import { getConfiguredIbkrGatewayInstances } from "../../ibkr/instance-selection";
-import { useOptionsAvailability } from "../options-availability";
+import { resolveOptionsTarget } from "../../../utils/options";
 import { ChartTab } from "./chart-tab";
 import { ResolvedFinancialsTab } from "./financials-tab";
 import { OverviewTab } from "./overview-tab";
@@ -41,7 +41,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
   const paneSettings = getTickerDetailPaneSettings(paneInstance?.settings);
-  const hasOptionsChain = useOptionsAvailability(ticker);
+  const hasOptionsChain = !!resolveOptionsTarget(ticker)?.effectiveTicker;
   const collectionTickerCount = useAppSelector((state) => getCollectionTickerCount(state, collectionId));
   const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
 
@@ -64,6 +64,8 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     ? resolveLockedTabId(paneSettings, allTabs)
     : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
   const activePluginTab = pluginTabs.find((tab) => tab.id === resolvedTabId && allTabs.some((visibleTab) => visibleTab.id === tab.id)) ?? null;
+  const tabBarHeight = paneSettings.hideTabs ? 0 : 2;
+  const contentHeight = Math.max(1, height - tabBarHeight);
 
   const allTabsRef = useRef(allTabs);
   allTabsRef.current = allTabs;
@@ -178,7 +180,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       {resolvedTabId === "chart" && (
         <ChartTab
           width={width}
-          height={height}
+          height={contentHeight}
           focused={focused}
           interactive={chartInteractive}
           axisMode={paneSettings.chartAxisMode}
@@ -192,7 +194,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       {activePluginTab && (
         <activePluginTab.component
           width={width}
-          height={height}
+          height={contentHeight}
           focused={focused}
           onCapture={handlePluginCapture}
         />

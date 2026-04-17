@@ -229,6 +229,9 @@ function PortfolioHarness({
 
 async function flushFrame() {
   await act(async () => {
+    await Promise.resolve();
+    await testSetup!.renderOnce();
+    await Promise.resolve();
     await testSetup!.renderOnce();
   });
 }
@@ -272,15 +275,17 @@ describe("PortfolioListPane cash and margin UI", () => {
     );
 
     await flushFrame();
+    const rowY = testSetup.captureCharFrame().split("\n").findIndex((line) => line.includes("AAPL"));
+    expect(rowY).toBeGreaterThanOrEqual(0);
 
     await act(async () => {
-      await testSetup!.mockMouse.click(2, 3);
+      await testSetup!.mockMouse.click(2, rowY);
       await testSetup!.renderOnce();
     });
     expect(navigated).toEqual([]);
 
     await act(async () => {
-      await testSetup!.mockMouse.click(2, 3);
+      await testSetup!.mockMouse.click(2, rowY);
       await testSetup!.renderOnce();
     });
     expect(navigated).toEqual(["AAPL"]);
@@ -314,7 +319,11 @@ describe("PortfolioListPane cash and margin UI", () => {
 
   test("keeps native price and avg cost while converting market value and pnl to base currency", async () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
-    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+    const config = createPortfolioConfigWithColumns(
+      portfolioId,
+      ["ticker", "price", "change_pct", "shares", "avg_cost", "cost_basis", "mkt_value", "pnl"],
+      [createBrokerInstance("flex")],
+    );
 
     testSetup = await testRender(
       <PortfolioHarness
@@ -398,7 +407,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Val 1.3k");
+    expect(frame).toContain("1.3k");
     expect(frame).toContain("125");
     expect(frame).toContain("+250");
     expect(frame).toContain("25.00%");
@@ -623,7 +632,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(harnessState?.paneState[TEST_PANE_ID]?.cashDrawerExpanded).toBe(true);
   });
 
-  test("renders the summary on its own row below the tabs", async () => {
+  test("renders the table directly below tabs when the footer owns the summary", async () => {
     const config = {
       ...createPortfolioConfig("broker:ibkr-flex:DU12345", [createBrokerInstance("flex")]),
       watchlists: [
@@ -659,11 +668,10 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     const lines = testSetup.captureCharFrame().split("\n");
     const tabsRow = lines.findIndex((line) => line.includes("Main Portfolio"));
-    const summaryRow = lines.findIndex((line) => line.includes("Net Liq 125k  Val 1.3k  Cash -50k"));
+    const tableHeaderRow = lines.findIndex((line) => line.includes("TICKER"));
 
     expect(tabsRow).toBeGreaterThanOrEqual(0);
-    expect(summaryRow).toBeGreaterThan(tabsRow);
-    expect(lines[summaryRow + 1]).toContain("TICKER");
+    expect(tableHeaderRow).toBe(tabsRow + 1);
   });
 
   test("renders bid ask and spread when those columns are enabled", async () => {
@@ -750,6 +758,9 @@ describe("PortfolioListPane cash and margin UI", () => {
     );
 
     await flushFrame();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 380));
+    });
     await act(async () => {
       resolveFinancials({
         annualStatements: [],

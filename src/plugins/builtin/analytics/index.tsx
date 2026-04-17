@@ -15,7 +15,6 @@ import {
   usePaneInstance,
   usePaneStateValue,
 } from "../../../state/app-context";
-import { getCollectionTickers } from "../../../state/selectors";
 import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { instrumentFromTicker, type ChartRequest } from "../../../market-data/request-types";
 import { buildChartKey } from "../../../market-data/selectors";
@@ -251,10 +250,15 @@ function nextSectorSortPreference(current: SectorSortPreference, columnId: strin
 }
 
 export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
-  const state = useAppSelector((s) => s);
+  const focusedCollectionId = useAppSelector((state) => getFocusedCollectionId(state));
+  const portfolios = useAppSelector((state) => state.config.portfolios);
+  const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
+  const tickersBySymbol = useAppSelector((state) => state.tickers);
+  const cachedFinancials = useAppSelector((state) => state.financials);
+  const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
+  const brokerAccounts = useAppSelector((state) => state.brokerAccounts);
+  const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
-  const focusedCollectionId = getFocusedCollectionId(state);
-  const portfolios = state.config.portfolios;
   const requestedPortfolioId = paneInstance?.params?.portfolioId ?? paneInstance?.params?.collectionId;
   const fallbackPortfolioId = useMemo(
     () => (
@@ -293,9 +297,10 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
 
   const portfolioTickers = useMemo(() => {
     if (!activePortfolioId) return [];
-    return getCollectionTickers(state, activePortfolioId)
+    return [...tickersBySymbol.values()]
+      .filter((ticker) => ticker.metadata.portfolios.includes(activePortfolioId))
       .filter((ticker) => hasPortfolioPosition(ticker, activePortfolioId));
-  }, [activePortfolioId, state]);
+  }, [activePortfolioId, tickersBySymbol]);
 
   const chartTargets = useMemo<PortfolioChartTarget[]>(
     () => portfolioTickers.flatMap((ticker) => {
@@ -331,36 +336,37 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
 
   const marketFinancials = useTickerFinancialsMap(portfolioTickers);
   const financials = useMemo(() => {
-    const merged = new Map(state.financials);
+    const merged = new Map(cachedFinancials);
     for (const [symbol, data] of marketFinancials) {
       merged.set(symbol, data);
     }
     return merged;
-  }, [marketFinancials, state.financials]);
-  const accountState = usePortfolioAccountState(activePortfolio, state);
+  }, [cachedFinancials, marketFinancials]);
+  const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
+  const accountState = usePortfolioAccountState(activePortfolio, accountStateInput);
   const trackedCurrencies = useMemo(
-    () => buildTrackedCurrencies(portfolioTickers, financials, state.config.baseCurrency),
-    [financials, portfolioTickers, state.config.baseCurrency],
+    () => buildTrackedCurrencies(portfolioTickers, financials, baseCurrency),
+    [baseCurrency, financials, portfolioTickers],
   );
   const fetchedExchangeRates = useFxRatesMap(trackedCurrencies);
-  const effectiveExchangeRates = selectEffectiveExchangeRates(fetchedExchangeRates, state.exchangeRates);
+  const effectiveExchangeRates = selectEffectiveExchangeRates(fetchedExchangeRates, cachedExchangeRates);
   const columnContext = useMemo<ColumnContext>(() => ({
     activeTab: activePortfolioId || undefined,
-    baseCurrency: state.config.baseCurrency,
+    baseCurrency,
     exchangeRates: effectiveExchangeRates,
     now: Date.now(),
-  }), [activePortfolioId, effectiveExchangeRates, state.config.baseCurrency]);
+  }), [activePortfolioId, baseCurrency, effectiveExchangeRates]);
 
   const portfolioStats = useMemo(
     () => calculatePortfolioSummaryTotals(
       portfolioTickers,
       financials,
-      state.config.baseCurrency,
+      baseCurrency,
       effectiveExchangeRates,
       true,
       activePortfolioId || null,
     ),
-    [activePortfolioId, effectiveExchangeRates, financials, portfolioTickers, state.config.baseCurrency],
+    [activePortfolioId, baseCurrency, effectiveExchangeRates, financials, portfolioTickers],
   );
 
   const portfolioReturnSeries = useMemo(() => {

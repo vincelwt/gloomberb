@@ -1,7 +1,12 @@
 import type { PluginPersistence } from "../../../types/plugin";
-import { createThrottledFetch } from "../../../utils/throttled-fetch";
+import { measurePerf } from "../../../utils/perf-marks";
+import {
+  createThrottledFetch,
+  type ThrottledFetchTransport,
+} from "../../../utils/throttled-fetch";
 
 const DEFAULT_SOURCE_KEY = "remote";
+let predictionMarketsFetchTransport: ThrottledFetchTransport | null = null;
 const PREDICTION_FETCH = createThrottledFetch({
   requestsPerMinute: 120,
   maxRetries: 2,
@@ -12,6 +17,10 @@ const PREDICTION_FETCH = createThrottledFetch({
     Accept: "application/json",
     "User-Agent": "gloomberb-prediction-markets",
   },
+  transport: (url, init) =>
+    predictionMarketsFetchTransport
+      ? predictionMarketsFetchTransport(url, init)
+      : globalThis.fetch(url, init),
 });
 
 export const PREDICTION_CACHE_POLICIES = {
@@ -39,12 +48,26 @@ export function getPredictionMarketsPersistence(): PluginPersistence | null {
   return predictionMarketsPersistence;
 }
 
+export function setPredictionMarketsFetchTransport(
+  transport: ThrottledFetchTransport | null,
+): void {
+  predictionMarketsFetchTransport = transport;
+}
+
 export async function fetchJson<T>(url: string): Promise<T> {
   const response = await PREDICTION_FETCH.fetch(url);
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}) for ${url}`);
   }
-  return (await response.json()) as T;
+  const body = await response.text();
+  return measurePerf(
+    "prediction.fetch.parse-json",
+    () => JSON.parse(body) as T,
+    {
+      sizeBytes: body.length,
+      url: summarizePredictionFetchUrl(url),
+    },
+  );
 }
 
 export function getCachedPredictionResource<T>(
@@ -81,6 +104,9 @@ export async function loadCachedPredictionResource<T>(
   const cached = predictionMarketsPersistence?.getResource<T>(kind, key, {
     sourceKey: DEFAULT_SOURCE_KEY,
   });
+  if (cached && cached.stale !== true && cached.staleAt > Date.now()) {
+    return cached.value;
+  }
   try {
     const nextValue = await fetcher();
     setCachedPredictionResource(kind, key, nextValue, cachePolicy);
@@ -88,6 +114,15 @@ export async function loadCachedPredictionResource<T>(
   } catch (error) {
     if (cached) return cached.value;
     throw error;
+  }
+}
+
+function summarizePredictionFetchUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    return url.slice(0, 120);
   }
 }
 

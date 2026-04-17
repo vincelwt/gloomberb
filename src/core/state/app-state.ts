@@ -272,7 +272,14 @@ function clearTickerBindings(layout: LayoutConfig, symbol: string): LayoutConfig
 
 function nextRecentTickers(current: string[], symbol: string | null): string[] {
   if (!symbol) return current;
-  return [symbol, ...current.filter((entry) => entry !== symbol)].slice(0, 50);
+  if (current[0] === symbol && !current.slice(1).includes(symbol)) {
+    return current;
+  }
+  const next = [symbol, ...current.filter((entry) => entry !== symbol)].slice(0, 50);
+  if (next.length === current.length && next.every((entry, index) => entry === current[index])) {
+    return current;
+  }
+  return next;
 }
 
 function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: LayoutConfig): SavedLayout[] {
@@ -385,6 +392,30 @@ function bringFloatingToFront(layout: LayoutConfig, paneId: string): LayoutConfi
     floating: layout.floating.map((e) =>
       e.instanceId === paneId ? { ...e, zIndex: maxZ + 1 } : e,
     ),
+  };
+}
+
+function focusPaneState(state: AppState, paneId: string): AppState {
+  const layout = bringFloatingToFront(state.config.layout, paneId);
+  const config = layout !== state.config.layout
+    ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
+    : state.config;
+  const recentTickers = nextRecentTickers(
+    state.recentTickers,
+    resolveTickerForPane(state, paneId),
+  );
+  if (
+    config === state.config &&
+    state.focusedPaneId === paneId &&
+    recentTickers === state.recentTickers
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    config,
+    focusedPaneId: paneId,
+    recentTickers,
   };
 }
 
@@ -712,48 +743,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "FOCUS_PANE": {
-      const layout = bringFloatingToFront(state.config.layout, action.paneId);
-      const config = layout !== state.config.layout
-        ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
-        : state.config;
-      return {
-        ...state,
-        config,
-        focusedPaneId: action.paneId,
-        recentTickers: nextRecentTickers(state.recentTickers, resolveTickerForPane(state, action.paneId)),
-      };
+      return focusPaneState(state, action.paneId);
     }
 
     case "FOCUS_NEXT": {
       if (action.paneOrder.length === 0) return state;
       const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : -1;
       const nextPaneId = action.paneOrder[(currentIndex + 1) % action.paneOrder.length]!;
-      const layout = bringFloatingToFront(state.config.layout, nextPaneId);
-      const config = layout !== state.config.layout
-        ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
-        : state.config;
-      return {
-        ...state,
-        config,
-        focusedPaneId: nextPaneId,
-        recentTickers: nextRecentTickers(state.recentTickers, resolveTickerForPane(state, nextPaneId)),
-      };
+      return focusPaneState(state, nextPaneId);
     }
 
     case "FOCUS_PREV": {
       if (action.paneOrder.length === 0) return state;
       const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : 0;
       const nextPaneId = action.paneOrder[(currentIndex - 1 + action.paneOrder.length) % action.paneOrder.length]!;
-      const layout = bringFloatingToFront(state.config.layout, nextPaneId);
-      const config = layout !== state.config.layout
-        ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
-        : state.config;
-      return {
-        ...state,
-        config,
-        focusedPaneId: nextPaneId,
-        recentTickers: nextRecentTickers(state.recentTickers, resolveTickerForPane(state, nextPaneId)),
-      };
+      return focusPaneState(state, nextPaneId);
     }
 
     case "UPDATE_PANE_STATE": {

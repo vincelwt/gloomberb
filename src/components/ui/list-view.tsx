@@ -131,7 +131,9 @@ export function ListView({
         height={1}
         backgroundColor={rowBg}
         onMouseMove={() => {
-          if (!disabled) setHoveredIndex(index);
+          if (!disabled) {
+            setHoveredIndex((current) => (current === index ? current : index));
+          }
         }}
         onMouseDown={() => {
           if (disabled) return;

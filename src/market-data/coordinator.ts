@@ -26,10 +26,19 @@ import { traceMarketData } from "./trace";
 import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { hasFreshQuoteForCurrentSession, isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 import { TIME_RANGE_ORDER } from "../components/chart/chart-resolution";
+import { measurePerf } from "../utils/perf-marks";
 
 const EMPTY_MESSAGE = "No data available";
 const EXPECTED_EMPTY = /no data|not found|delisted|unavailable|unsupported/i;
 const TIME_RANGE_INDEX = new Map(TIME_RANGE_ORDER.map((range, index) => [range, index]));
+const SNAPSHOT_CACHE_TTL_MS = 5 * 60_000;
+const CHART_CACHE_TTL_MS = 10 * 60_000;
+const NEWS_CACHE_TTL_MS = 2 * 60_000;
+const OPTIONS_CACHE_TTL_MS = 10 * 60_000;
+const SEC_FILINGS_CACHE_TTL_MS = 10 * 60_000;
+const SEC_CONTENT_CACHE_TTL_MS = 24 * 60 * 60_000;
+const ARTICLE_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60_000;
+const FX_CACHE_TTL_MS = 30 * 60_000;
 
 function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
   return {
@@ -67,6 +76,15 @@ function classifyError(error: unknown): { reasonCode: ProviderReasonCode; messag
   if (/mapping|symbol/i.test(message)) return { reasonCode: "BAD_MAPPING", message };
   if (/not found|no data|unavailable|delisted/i.test(message)) return { reasonCode: "NOT_FOUND", message };
   return { reasonCode: "UPSTREAM_ERROR", message };
+}
+
+function hasFreshEntryData<T>(entry: QueryEntry<T>, ttlMs: number, now = Date.now()): boolean {
+  if (resolveEntryData(entry) == null) return false;
+  return entry.fetchedAt != null && now - entry.fetchedAt < ttlMs;
+}
+
+function hasFreshReadyEntry<T>(entry: QueryEntry<T>, ttlMs: number, now = Date.now()): boolean {
+  return entry.phase === "ready" && entry.fetchedAt != null && now - entry.fetchedAt < ttlMs;
 }
 
 function createAttempt(
@@ -147,28 +165,55 @@ function errorEntry<T>(current: QueryEntry<T>, attempt: ProviderAttempt): QueryE
 
 export class MarketDataCoordinator {
   private version = 0;
+  private pendingVersionBump = false;
+  private pendingChangedKeys = new Set<string>();
   private readonly listeners = new Set<() => void>();
+  private readonly keyListeners = new Map<string, Set<() => void>>();
+  private readonly keyVersions = new Map<string, number>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly chartRequests = new Map<string, ChartRequest>();
 
-  private readonly quoteStore = new QueryStore<Quote>(() => this.bump());
-  private readonly snapshotStore = new QueryStore<TickerFinancials>(() => this.bump());
-  private readonly profileStore = new QueryStore<TickerFinancials["profile"]>(() => this.bump());
-  private readonly fundamentalsStore = new QueryStore<TickerFinancials["fundamentals"]>(() => this.bump());
-  private readonly statementsStore = new QueryStore<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>(() => this.bump());
-  private readonly chartStore = new QueryStore<PricePoint[]>(() => this.bump());
-  private readonly newsStore = new QueryStore<NewsItem[]>(() => this.bump());
-  private readonly optionsStore = new QueryStore<OptionsChain>(() => this.bump());
-  private readonly secFilingsStore = new QueryStore<SecFilingItem[]>(() => this.bump());
-  private readonly secContentStore = new QueryStore<string | null>(() => this.bump());
-  private readonly articleSummaryStore = new QueryStore<string | null>(() => this.bump());
-  private readonly fxStore = new QueryStore<number>(() => this.bump());
+  private readonly quoteStore = new QueryStore<Quote>((key) => this.bump(key));
+  private readonly snapshotStore = new QueryStore<TickerFinancials>((key) => this.bump(key));
+  private readonly profileStore = new QueryStore<TickerFinancials["profile"]>((key) => this.bump(key));
+  private readonly fundamentalsStore = new QueryStore<TickerFinancials["fundamentals"]>((key) => this.bump(key));
+  private readonly statementsStore = new QueryStore<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>((key) => this.bump(key));
+  private readonly chartStore = new QueryStore<PricePoint[]>((key) => this.bump(key));
+  private readonly newsStore = new QueryStore<NewsItem[]>((key) => this.bump(key));
+  private readonly optionsStore = new QueryStore<OptionsChain>((key) => this.bump(key));
+  private readonly secFilingsStore = new QueryStore<SecFilingItem[]>((key) => this.bump(key));
+  private readonly secContentStore = new QueryStore<string | null>((key) => this.bump(key));
+  private readonly articleSummaryStore = new QueryStore<string | null>((key) => this.bump(key));
+  private readonly fxStore = new QueryStore<number>((key) => this.bump(key));
 
   constructor(private readonly dataProvider: DataProvider) {}
 
-  private bump(): void {
-    this.version += 1;
-    for (const listener of this.listeners) listener();
+  private bump(changeKey?: string): void {
+    if (changeKey) this.pendingChangedKeys.add(changeKey);
+    if (this.pendingVersionBump) return;
+    this.pendingVersionBump = true;
+    queueMicrotask(() => this.flushBump());
+  }
+
+  private flushBump(): void {
+    this.pendingVersionBump = false;
+    const changedKeys = this.pendingChangedKeys;
+    this.pendingChangedKeys = new Set();
+    measurePerf("market-data.bump", () => {
+      this.version += 1;
+      for (const key of changedKeys) {
+        this.keyVersions.set(key, (this.keyVersions.get(key) ?? 0) + 1);
+      }
+      const keyListeners = new Set<() => void>();
+      for (const key of changedKeys) {
+        for (const listener of this.keyListeners.get(key) ?? []) {
+          keyListeners.add(listener);
+        }
+      }
+
+      for (const listener of this.listeners) listener();
+      for (const listener of keyListeners) listener();
+    }, { changedKeyCount: changedKeys.size });
   }
 
   subscribe(listener: () => void): () => void {
@@ -178,8 +223,33 @@ export class MarketDataCoordinator {
     };
   }
 
+  subscribeKeys(keys: readonly string[], listener: () => void): () => void {
+    const uniqueKeys = [...new Set(keys)];
+    for (const key of uniqueKeys) {
+      if (!this.keyListeners.has(key)) this.keyListeners.set(key, new Set());
+      this.keyListeners.get(key)!.add(listener);
+    }
+    return () => {
+      for (const key of uniqueKeys) {
+        const listeners = this.keyListeners.get(key);
+        listeners?.delete(listener);
+        if (listeners?.size === 0) {
+          this.keyListeners.delete(key);
+        }
+      }
+    };
+  }
+
   getVersion(): number {
     return this.version;
+  }
+
+  getKeysVersion(keys: readonly string[]): number {
+    let version = 0;
+    for (const key of new Set(keys)) {
+      version += this.keyVersions.get(key) ?? 0;
+    }
+    return version;
   }
 
   getQuoteEntry(instrument: InstrumentRef): QueryEntry<Quote> {
@@ -354,6 +424,10 @@ export class MarketDataCoordinator {
     options: { forceRefresh?: boolean } = {},
   ): Promise<QueryEntry<TickerFinancials>> {
     const key = buildSnapshotKey(instrument);
+    const current = this.snapshotStore.get(key);
+    if (!options.forceRefresh && hasFreshEntryData(current, SNAPSHOT_CACHE_TTL_MS)) {
+      return current;
+    }
     const flightKey = options.forceRefresh ? `${key}|refresh` : key;
     return this.runSingleFlight(flightKey, async () => {
       this.snapshotStore.update(key, loadingEntry);
@@ -448,6 +522,10 @@ export class MarketDataCoordinator {
   ): Promise<QueryEntry<PricePoint[]>> {
     const key = buildChartKey(request);
     this.chartRequests.set(key, request);
+    const current = this.chartStore.get(key);
+    if (!options.forceRefresh && hasFreshEntryData(current, CHART_CACHE_TTL_MS)) {
+      return current;
+    }
     const flightKey = options.forceRefresh ? `${key}|refresh` : key;
     return this.runSingleFlight(flightKey, async () => {
       this.chartStore.update(key, (current) => this.createChartLoadingEntry(key, request, current));
@@ -500,6 +578,10 @@ export class MarketDataCoordinator {
 
   async loadNews(request: NewsRequest): Promise<QueryEntry<NewsItem[]>> {
     const key = buildNewsKey(request);
+    const current = this.newsStore.get(key);
+    if (hasFreshReadyEntry(current, NEWS_CACHE_TTL_MS)) {
+      return current;
+    }
     return this.runSingleFlight(key, async () => {
       this.newsStore.update(key, loadingEntry);
       const startedAt = Date.now();
@@ -522,6 +604,10 @@ export class MarketDataCoordinator {
 
   async loadOptions(request: OptionsRequest): Promise<QueryEntry<OptionsChain>> {
     const key = buildOptionsKey(request);
+    const current = this.optionsStore.get(key);
+    if (hasFreshReadyEntry(current, OPTIONS_CACHE_TTL_MS)) {
+      return current;
+    }
     return this.runSingleFlight(key, async () => {
       this.optionsStore.update(key, loadingEntry);
       const startedAt = Date.now();
@@ -548,6 +634,10 @@ export class MarketDataCoordinator {
 
   async loadSecFilings(request: SecFilingsRequest): Promise<QueryEntry<SecFilingItem[]>> {
     const key = buildSecFilingsKey(request);
+    const current = this.secFilingsStore.get(key);
+    if (hasFreshReadyEntry(current, SEC_FILINGS_CACHE_TTL_MS)) {
+      return current;
+    }
     return this.runSingleFlight(key, async () => {
       this.secFilingsStore.update(key, loadingEntry);
       const startedAt = Date.now();
@@ -574,6 +664,10 @@ export class MarketDataCoordinator {
 
   async loadSecFilingContent(filing: SecFilingItem): Promise<QueryEntry<string | null>> {
     const key = buildSecContentKey(filing.accessionNumber);
+    const current = this.secContentStore.get(key);
+    if (hasFreshReadyEntry(current, SEC_CONTENT_CACHE_TTL_MS)) {
+      return current;
+    }
     return this.runSingleFlight(key, async () => {
       this.secContentStore.update(key, loadingEntry);
       const startedAt = Date.now();
@@ -596,6 +690,10 @@ export class MarketDataCoordinator {
 
   async loadArticleSummary(url: string): Promise<QueryEntry<string | null>> {
     const key = buildArticleSummaryKey(url);
+    const current = this.articleSummaryStore.get(key);
+    if (hasFreshReadyEntry(current, ARTICLE_SUMMARY_CACHE_TTL_MS)) {
+      return current;
+    }
     return this.runSingleFlight(key, async () => {
       this.articleSummaryStore.update(key, loadingEntry);
       const startedAt = Date.now();
@@ -614,6 +712,10 @@ export class MarketDataCoordinator {
 
   async loadFxRate(currency: string): Promise<QueryEntry<number>> {
     const key = buildFxKey(currency);
+    const current = this.fxStore.get(key);
+    if (hasFreshEntryData(current, FX_CACHE_TTL_MS)) {
+      return current;
+    }
     return this.runSingleFlight(key, async () => {
       this.fxStore.update(key, loadingEntry);
       const startedAt = Date.now();

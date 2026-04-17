@@ -12,10 +12,12 @@ import {
   reconcileAppSessionSnapshot,
 } from "../../../core/state/session-persistence";
 import { encodeRpcValue, decodeRpcValue } from "../web/rpc-codec";
+import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
 
 console.log = (...args) => console.error(...args);
 console.info = (...args) => console.error(...args);
 console.warn = (...args) => console.error(...args);
+startMainThreadMonitor("tauri.backend", { mirrorToConsole: true });
 
 setConfigStoreHost(nodeConfigStoreHost);
 
@@ -40,6 +42,57 @@ function requireServices(): AppServices {
 function requireConfig(): AppConfig {
   if (!currentConfig) throw new Error("Backend config has not been initialized.");
   return currentConfig;
+}
+
+function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(headers as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+async function handleHttpFetch(payload: Record<string, unknown>) {
+  if (typeof payload.url !== "string") {
+    throw new Error("http.fetch requires a URL.");
+  }
+
+  const url = new URL(payload.url);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Unsupported http.fetch protocol: ${url.protocol}`);
+  }
+
+  const init =
+    payload.init && typeof payload.init === "object" && !Array.isArray(payload.init)
+      ? payload.init as Record<string, unknown>
+      : {};
+  const method =
+    typeof init.method === "string" && init.method.trim().length > 0
+      ? init.method.trim().toUpperCase()
+      : "GET";
+  const body =
+    typeof init.body === "string" && method !== "GET" && method !== "HEAD"
+      ? init.body
+      : undefined;
+
+  const response = await fetch(url, {
+    method,
+    headers: normalizeHttpFetchHeaders(init.headers),
+    body,
+  });
+  const responseHeaders: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    responseHeaders[key] = value;
+  });
+
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders,
+    body: await response.text(),
+  };
 }
 
 function syncConfigAccessors() {
@@ -152,6 +205,8 @@ async function handleRequest(method: string, rawPayload: unknown) {
   const payload = decodeRpcValue<Record<string, unknown>>(rawPayload ?? {});
 
   if (method === "init") return initialize();
+
+  if (method === "http.fetch") return handleHttpFetch(payload);
 
   if (method.startsWith("data.")) {
     return handleDataProvider(method, payload);

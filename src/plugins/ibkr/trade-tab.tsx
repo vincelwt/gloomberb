@@ -3,9 +3,14 @@ import { TextAttributes } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { useDialog } from "../../ui/dialog";
 import { useCallback, useEffect, useState } from "react";
-import { PriceSelectorDialog } from "../../components";
+import { PriceSelectorDialog, usePaneFooter } from "../../components";
 import { Button } from "../../components/ui/button";
-import { useAppState, usePaneCollection, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
+import {
+  useAppSelector,
+  usePaneCollection,
+  usePaneInstanceId,
+  usePaneTicker,
+} from "../../state/app-context";
 import { colors, hoverBg } from "../../theme/colors";
 import type { DetailTabProps } from "../../types/plugin";
 import type { BrokerOrderRequest, BrokerOrderType } from "../../types/trading";
@@ -44,7 +49,8 @@ import {
 } from "./trade-utils";
 
 export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
-  const { state } = useAppState();
+  const config = useAppSelector((state) => state.config);
+  const brokerAccounts = useAppSelector((state) => state.brokerAccounts);
   const paneId = usePaneInstanceId();
   const { collectionId } = usePaneCollection(paneId);
   const { ticker, financials } = usePaneTicker(paneId);
@@ -69,14 +75,14 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     availableAccounts,
     gatewayRequiredMessage,
   } = useIbkrGatewaySelection(
-    state.config,
-    state.brokerAccounts,
+    config,
+    brokerAccounts,
     collectionId,
     preferredInstanceId,
   );
   const inferredAccountId = selectedInstance
     ? inferDraftAccountId(
-      state.config,
+      config,
       collectionId,
       availableAccounts,
       selectedInstance.id,
@@ -139,7 +145,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
   useEffect(() => {
     if (!symbol || !ticker || !isGatewayMode || availableAccounts.length === 0 || ticketState.draft.accountId || !selectedInstance) return;
     const inferred = inferDraftAccountId(
-      state.config,
+      config,
       collectionId,
       availableAccounts,
       selectedInstance.id,
@@ -155,7 +161,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     availableAccounts,
     ticketState.draft.accountId,
     selectedInstance,
-    state.config,
+    config,
     collectionId,
     tradeState.accountId,
   ]);
@@ -171,7 +177,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       setTradeTicketBusy(symbol, true, ticker);
       await refreshGatewayData(selectedInstance);
       const inferred = inferDraftAccountId(
-        state.config,
+        config,
         collectionId,
         availableAccounts,
         selectedInstance.id,
@@ -193,7 +199,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     normalizedConfig,
     isGatewayMode,
     gatewayRequiredMessage,
-    state.config,
+    config,
     collectionId,
     availableAccounts,
     tradeState.accountId,
@@ -230,7 +236,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     });
     if (!selected) return;
 
-    const instance = getBrokerInstance(state.config.brokerInstances, selected);
+    const instance = getBrokerInstance(config.brokerInstances, selected);
     if (!instance) return;
     updateTradingPaneState({
       brokerInstanceId: instance.id,
@@ -254,7 +260,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       lastError: undefined,
       lastInfo: undefined,
     }));
-  }, [symbol, ticker, lockedBrokerInstanceId, gatewayInstances, dialog, state.config.brokerInstances]);
+  }, [symbol, ticker, lockedBrokerInstanceId, gatewayInstances, dialog, config.brokerInstances]);
 
   const chooseInstrument = useCallback(async () => {
     if (!symbol || !ticker) return;
@@ -323,7 +329,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     }
 
     const nextAccounts = getKnownIbkrAccounts(
-      state.brokerAccounts,
+      brokerAccounts,
       selectedInstance.id,
       gatewayService.getSnapshot().accounts,
     );
@@ -356,6 +362,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     gatewayService,
     isGatewayMode,
     availableAccounts,
+    brokerAccounts,
     refresh,
     dialog,
   ]);
@@ -496,7 +503,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       updateTradingPaneState({ accountId: request.accountId });
       setTradeTicketDraft(symbol, { brokerInstanceId: selectedInstance.id, accountId: request.accountId }, ticker);
       setTradeTicketPreview(symbol, preview, ticker);
-      setTradeTicketMessage(symbol, "Review the what-if preview, then press Enter again to submit.", undefined, ticker);
+      setTradeTicketMessage(symbol, "Review the what-if preview, then submit when ready.", undefined, ticker);
     } catch (error: any) {
       const message = error?.message || "Failed to preview order.";
       setTradeTicketMessage(symbol, undefined, message.replace("Timeout has occurred", "Preview timed out — try again."), ticker);
@@ -606,14 +613,6 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     }
   });
 
-  if (!ticker || !symbol) {
-    return (
-      <Box flexGrow={1} alignItems="center" justifyContent="center">
-        <Text fg={colors.textDim}>Select a ticker to draft an IBKR trade.</Text>
-      </Box>
-    );
-  }
-
   const showLimit = isLimitOrder(ticketState.draft.orderType);
   const showStop = isStopOrder(ticketState.draft.orderType);
   const hasProfile = Boolean(selectedInstance);
@@ -629,14 +628,16 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     ? Math.max(16, Math.floor((ticketPanelWidth - 5) / 4))
     : fieldWidth;
   const fieldTextWidth = Math.max(8, fieldWidth - 3);
-  const activeContract = ticketState.draft.contract.symbol ? ticketState.draft.contract : normalizeContract(ticker);
+  const activeContract = ticketState.draft.contract.symbol
+    ? ticketState.draft.contract
+    : ticker ? normalizeContract(ticker) : ticketState.draft.contract;
   const hasContract = Boolean(activeContract.symbol);
   const hasAccount = Boolean(currentAccountId);
   const hasPreview = Boolean(ticketState.preview);
   const previewTextWidth = Math.max(18, (previewPanelWidth ?? Math.max(34, width - 6)) - 4);
   const contractValue = truncateText(formatContractLabel(activeContract), fieldTextWidth);
   const contractMeta = truncateText(
-    ticketState.contractName || ticker.metadata.name || "Using current ticker",
+    ticketState.contractName || ticker?.metadata.name || "Using current ticker",
     Math.max(fieldTextWidth * Math.max(2, fieldsPerRow), 18),
   );
   const connectionTone: TradeTone = gatewaySnapshot.status.state === "connected"
@@ -655,7 +656,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       || ticketState.lastInfo
       || gatewaySnapshot.status.message
       || gatewaySnapshot.lastError
-      || "Click a workflow step or field to activate the ticket, then preview before submit.";
+      || "Choose a workflow step or field, then preview before submit.";
   const previewTone: TradeTone = !ticketState.preview
     ? "neutral"
     : ticketState.preview.warningText
@@ -684,8 +685,56 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       ? "accent"
       : "neutral";
   const ticketHint = interactive
-    ? "Esc releases the ticket. Field shortcuts stay active while captured."
-    : "Click a field or press Enter to edit. Shortcuts are shown inline.";
+    ? "Field shortcuts stay active while captured."
+    : "Click a field to edit. Shortcuts are in the pane footer.";
+
+  usePaneFooter("ibkr-trade", () => ({
+    info: [
+      { id: "next", parts: [{ text: nextStep, tone: workflowTone === "positive" ? "positive" : workflowTone === "accent" ? "value" : "muted", bold: workflowTone !== "neutral" }] },
+      { id: "ticket", parts: [{ text: interactive ? "captured" : "standby", tone: interactive ? "positive" : "muted" }] },
+      ...(statusText ? [{ id: "status", parts: [{ text: statusText, tone: statusTone === "negative" ? "negative" as const : statusTone === "positive" ? "positive" as const : "muted" as const }] }] : []),
+    ],
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: () => refresh().catch(() => {}), disabled: ticketState.busy },
+      { id: "profile", key: "i", label: "profile", onPress: () => chooseBrokerInstance().catch(() => {}), disabled: ticketState.busy },
+      { id: "instrument", key: "s", label: "symbol", onPress: () => chooseInstrument().catch(() => {}), disabled: ticketState.busy },
+      { id: "account", key: "a", label: "account", onPress: () => chooseAccount().catch(() => {}), disabled: ticketState.busy },
+      { id: "side", key: "b/v", label: "side", onPress: symbol && ticker ? () => setTradeTicketDraft(symbol, { action: ticketState.draft.action === "BUY" ? "SELL" : "BUY" }, ticker) : undefined, disabled: ticketState.busy || !symbol || !ticker },
+      { id: "quantity", key: "q", label: "qty", onPress: () => editNumericField("Quantity", ticketState.draft.quantity, (value) => { if (value != null && symbol && ticker) setTradeTicketDraft(symbol, { quantity: value }, ticker); }).catch(() => {}), disabled: ticketState.busy || !symbol || !ticker },
+      { id: "type", key: "t", label: "type", onPress: () => editOrderType().catch(() => {}), disabled: ticketState.busy },
+      { id: "limit", key: "l", label: "limit", onPress: () => editPriceField("Limit Price", ticketState.draft.limitPrice, (value) => { if (symbol && ticker) setTradeTicketDraft(symbol, { limitPrice: value }, ticker); }).catch(() => {}), disabled: ticketState.busy || !showLimit || !symbol || !ticker },
+      { id: "stop", key: "x", label: "stop", onPress: () => editPriceField("Stop Price", ticketState.draft.stopPrice, (value) => { if (symbol && ticker) setTradeTicketDraft(symbol, { stopPrice: value }, ticker); }).catch(() => {}), disabled: ticketState.busy || !showStop || !symbol || !ticker },
+      { id: "preview", key: "p", label: "preview", onPress: () => previewOrder().catch(() => {}), disabled: ticketState.busy || !symbol || !ticker },
+    ],
+  }), [
+    chooseAccount,
+    chooseBrokerInstance,
+    chooseInstrument,
+    editNumericField,
+    editOrderType,
+    editPriceField,
+    interactive,
+    nextStep,
+    previewOrder,
+    refresh,
+    showLimit,
+    showStop,
+    statusText,
+    statusTone,
+    symbol,
+    ticketState.busy,
+    ticketState.draft,
+    ticker,
+    workflowTone,
+  ]);
+
+  if (!ticker || !symbol) {
+    return (
+      <Box flexGrow={1} alignItems="center" justifyContent="center">
+        <Text fg={colors.textDim}>Select a ticker to draft an IBKR trade.</Text>
+      </Box>
+    );
+  }
 
   const renderFieldPill = ({
     id,
@@ -742,7 +791,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
         paddingX={1}
         marginRight={1}
         onMouseMove={() => {
-          if (!disabled) setHoveredField(id);
+          if (!disabled) setHoveredField((current) => (current === id ? current : id));
         }}
         onMouseDown={disabled ? undefined : () => {
           enterInteractive();
@@ -867,7 +916,6 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
           })}
           <Button
             label="Refresh"
-            shortcut="r"
             variant="ghost"
             disabled={ticketState.busy}
             onPress={() => refresh().catch(() => {})}
@@ -894,7 +942,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Ticket</Text>
               <Box flexGrow={1} />
               <Text fg={interactive ? colors.positive : colors.textMuted}>
-                {interactive ? "Captured" : "Click field / Enter"}
+                {interactive ? "Captured" : "Ready"}
               </Text>
             </Box>
             <Text fg={colors.textMuted}>{truncateText(ticketHint, Math.max(ticketPanelWidth - 4, 24))}</Text>
@@ -930,7 +978,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
             <Box flexDirection="row" flexWrap="wrap">
               {renderFieldPill({
                 id: "action",
-                label: "Side [b/v]",
+                label: "Side",
                 value: ticketState.draft.action,
                 valueColor: ticketState.draft.action === "BUY" ? colors.positive : colors.negative,
                 valueAttributes: TextAttributes.BOLD,
@@ -941,14 +989,14 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               })}
               {renderFieldPill({
                 id: "orderType",
-                label: "Type [t]",
+                label: "Type",
                 value: ticketState.draft.orderType,
                 widthOverride: orderFieldWidth,
                 onPress: () => editOrderType().catch(() => {}),
               })}
               {renderFieldPill({
                 id: "quantity",
-                label: "Qty [q]",
+                label: "Qty",
                 value: formatMarketQuantity(ticketState.draft.quantity, {
                   assetCategory: ticker.metadata.assetCategory,
                   contractSecType: activeContract.secType,
@@ -963,7 +1011,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               })}
               {showLimit && renderFieldPill({
                 id: "limitPrice",
-                label: "Limit [l]",
+                label: "Limit",
                 value: ticketState.draft.limitPrice != null
                   ? formatMarketPrice(ticketState.draft.limitPrice, {
                     assetCategory: ticker.metadata.assetCategory,
@@ -980,7 +1028,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               })}
               {showStop && renderFieldPill({
                 id: "stopPrice",
-                label: "Stop [x]",
+                label: "Stop",
                 value: ticketState.draft.stopPrice != null
                   ? formatMarketPrice(ticketState.draft.stopPrice, {
                     assetCategory: ticker.metadata.assetCategory,
@@ -1047,7 +1095,6 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
             <Box flexDirection="row" flexWrap="wrap">
               <Button
                 label="Preview"
-                shortcut="p"
                 variant="secondary"
                 disabled={ticketState.busy}
                 onPress={() => previewOrder().catch(() => {})}
@@ -1055,7 +1102,6 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               <Box width={1} />
               <Button
                 label={ticketState.editingOrderId ? "Submit Change" : "Submit Order"}
-                shortcut="Enter"
                 variant="primary"
                 disabled={!ticketState.preview || ticketState.busy}
                 onPress={() => submitOrder().catch(() => {})}

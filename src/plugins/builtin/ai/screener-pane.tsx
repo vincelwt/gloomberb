@@ -8,14 +8,19 @@ import type { ColumnConfig } from "../../../types/config";
 import type { InstrumentSearchResult } from "../../../types/instrument";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { useAppState, usePaneInstance, usePaneInstanceId } from "../../../state/app-context";
+import {
+  useAppDispatch,
+  useAppSelector,
+  usePaneInstance,
+  usePaneInstanceId,
+} from "../../../state/app-context";
 import { usePluginPaneState, usePluginState } from "../../../plugins/plugin-runtime";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { TickerListTable } from "../../../components/ticker-list-table";
-import { Button, EmptyState, Spinner } from "../../../components";
+import { Button, EmptyState, Spinner, usePaneFooter } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { canonicalExchange } from "../../../utils/exchanges";
 import { formatTimeAgo } from "../../../utils/format";
@@ -345,7 +350,10 @@ function ActionChip({
 export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const tickers = useAppSelector((state) => state.tickers);
+  const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
+  const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
   const [providers] = useState(() => detectProviders());
   const availableProviders = providers.filter((provider) => provider.available);
   const selectableProviders = availableProviders.length > 0 ? availableProviders : providers;
@@ -423,25 +431,25 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
 
   const screenerTickers = useMemo(() => (
     (activeTab?.results ?? [])
-      .map((result) => state.tickers.get(result.symbol) ?? null)
+      .map((result) => tickers.get(result.symbol) ?? null)
       .filter((ticker): ticker is TickerRecord => ticker != null)
-  ), [activeTab?.results, state.tickers]);
+  ), [activeTab?.results, tickers]);
   const financialsMap = useTickerFinancialsMap(screenerTickers);
 
   const trackedCurrencies = useMemo(() => [
-    state.config.baseCurrency,
+    baseCurrency,
     ...screenerTickers.map((ticker) => ticker.metadata.currency),
     ...screenerTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote?.currency ?? null),
-  ], [financialsMap, screenerTickers, state.config.baseCurrency]);
+  ], [baseCurrency, financialsMap, screenerTickers]);
   const exchangeRates = useFxRatesMap(trackedCurrencies);
-  const effectiveExchangeRates = exchangeRates.size > 1 || state.exchangeRates.size === 0
+  const effectiveExchangeRates = exchangeRates.size > 1 || cachedExchangeRates.size === 0
     ? exchangeRates
-    : state.exchangeRates;
+    : cachedExchangeRates;
   const columnContext: ColumnContext = useMemo(() => ({
-    baseCurrency: state.config.baseCurrency,
+    baseCurrency,
     exchangeRates: effectiveExchangeRates,
     now,
-  }), [effectiveExchangeRates, now, state.config.baseCurrency]);
+  }), [baseCurrency, effectiveExchangeRates, now]);
 
   const sortedTickers = useMemo(
     () => sortScreenerRows(screenerTickers, resultMap, financialsMap, activeSort, columnContext, columns),
@@ -670,7 +678,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       rawOutput = await run.done;
 
       const parsed = parseScreenerResponse(rawOutput);
-      const validated = await validateScreenerResults(parsed.tickers, state.tickers, dispatch);
+      const validated = await validateScreenerResults(parsed.tickers, tickers, dispatch);
       const nextResults = !samePrompt || mode === "force"
         ? validated.results
         : mergeScreenerResults(tab.results, validated.results);
@@ -699,7 +707,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       }
       setRunState((current) => (current?.tabId === tab.id ? null : current));
     }
-  }, [dispatch, providers, setForceConfirmTabId, state.tickers, tabs, upsertTab]);
+  }, [dispatch, providers, setForceConfirmTabId, tabs, tickers, upsertTab]);
 
   useEffect(() => {
     if (!pendingInitialRunRef.current) return;
@@ -890,11 +898,70 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       ]
       : activeTab
         ? ["No validated results yet."]
-        : ["Press t to create an AI screener tab."];
+        : ["Create an AI screener tab to begin."];
   const paddedDetailLines = [...detailLines];
   while (paddedDetailLines.length < DETAIL_FOOTER_LINES) {
     paddedDetailLines.push("");
   }
+  const activeProvider = activeTab ? getAiProvider(activeTab.providerId, providers) : null;
+  const refreshActiveTab = useCallback(() => {
+    if (!activeTab || isRunningActiveTab) return;
+    void runTab(activeTab.id, "refresh");
+  }, [activeTab, isRunningActiveTab, runTab]);
+  const forceRefreshActiveTab = useCallback(() => {
+    if (!activeTab || isRunningActiveTab) return;
+    if (forceRunArmed) {
+      setForceConfirmTabId(null);
+      void runTab(activeTab.id, "force");
+      return;
+    }
+    setForceConfirmTabId(activeTab.id);
+  }, [activeTab, forceRunArmed, isRunningActiveTab, runTab, setForceConfirmTabId]);
+
+  usePaneFooter("ai-screener", () => ({
+    info: [
+      ...(editorState ? [{
+        id: "provider",
+        parts: [{ text: editorProvider?.name ?? editorState.providerId, tone: editorProvider?.available === false ? "warning" as const : "value" as const, bold: true }],
+      }] : activeTab ? [{
+        id: "provider",
+        parts: [{ text: activeProvider?.name ?? activeTab.providerId, tone: activeProvider?.available === false ? "warning" as const : "value" as const, bold: true }],
+      }] : []),
+      { id: "status", parts: [{ text: statusText, tone: isRunningActiveTab ? "muted" : "value" }] },
+      ...(activeTab ? [{ id: "count", parts: [{ text: `${activeTab.results.length} tickers`, tone: "muted" as const }] }] : []),
+      ...(forceRunArmed ? [{ id: "force", parts: [{ text: "force refresh armed", tone: "warning" as const }] }] : []),
+    ],
+    hints: editorState
+      ? [
+          { id: "save", key: "Ctrl+S", label: "save", onPress: saveEditor },
+          { id: "provider", key: "Ctrl+P", label: "provider", onPress: () => cycleEditorProvider(1), disabled: selectableProviders.length <= 1 },
+        ]
+      : [
+          { id: "new", key: "t", label: "new", onPress: addTab },
+          { id: "close", key: "w", label: "close", onPress: activeTab ? () => removeTab(activeTab.id) : undefined, disabled: !activeTab },
+          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab, disabled: !activeTab || isRunningActiveTab },
+          { id: "force-refresh", key: "Shift+R", label: "force refresh", onPress: forceRefreshActiveTab, disabled: !activeTab || isRunningActiveTab },
+          { id: "edit", key: "e", label: "edit", onPress: editActiveTab, disabled: !activeTab },
+        ],
+  }), [
+    activeProvider?.available,
+    activeProvider?.name,
+    activeTab,
+    addTab,
+    cycleEditorProvider,
+    editActiveTab,
+    editorProvider?.available,
+    editorProvider?.name,
+    editorState,
+    forceRefreshActiveTab,
+    forceRunArmed,
+    isRunningActiveTab,
+    refreshActiveTab,
+    removeTab,
+    saveEditor,
+    selectableProviders.length,
+    statusText,
+  ]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -937,50 +1004,33 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
           );
         })}
         <Text fg={colors.textMuted} onMouseDown={() => { if (!editorState) addTab(); }}>{` + `}</Text>
-        <Box flexGrow={1} />
-        <Text fg={colors.textMuted}>
-          {editorState
-            ? editorState.mode === "create" ? "creating new screener" : "editing prompt"
-            : activeTab
-            ? `${activeTab.results.length} tickers`
-            : "t new"}
-        </Text>
       </Box>
 
       <Box flexDirection="row" height={1} gap={1}>
         {editorState ? (
           <>
-            <Button label="Save" variant="primary" shortcut="Ctrl+S" onPress={saveEditor} />
-            <Button label="Cancel" variant="ghost" shortcut="Esc" onPress={closeEditor} />
+            <Button label="Save" variant="primary" onPress={saveEditor} />
+            <Button label="Cancel" variant="ghost" onPress={closeEditor} />
           </>
         ) : (
           <>
             {isRunningActiveTab ? (
               <>
                 <Button label={runState?.mode === "force" ? "Force Refreshing..." : "Refreshing..."} variant="secondary" disabled />
-                <Button label="Stop" variant="ghost" shortcut="Esc" onPress={cancelRun} />
+                <Button label="Stop" variant="ghost" onPress={cancelRun} />
               </>
             ) : (
               <>
                 <Button
                   label={primaryRunLabel}
                   variant="primary"
-                  shortcut="r"
-                  onPress={activeTab ? () => { void runTab(activeTab.id, "refresh"); } : undefined}
+                  onPress={refreshActiveTab}
                   disabled={!activeTab}
                 />
                 <Button
                   label={forceRunArmed ? "Confirm Force Refresh" : "Force Refresh"}
                   variant={forceRunArmed ? "danger" : "ghost"}
-                  shortcut="Shift+R"
-                  onPress={activeTab ? () => {
-                    if (forceRunArmed) {
-                      setForceConfirmTabId(null);
-                      void runTab(activeTab.id, "force");
-                      return;
-                    }
-                    setForceConfirmTabId(activeTab.id);
-                  } : undefined}
+                  onPress={forceRefreshActiveTab}
                   disabled={!activeTab}
                 />
               </>
@@ -988,20 +1038,11 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
             <Button
               label="Edit Prompt"
               variant={promptDirty ? "primary" : "secondary"}
-              shortcut="e"
               onPress={editActiveTab}
               disabled={!activeTab}
             />
           </>
         )}
-        <Box flexGrow={1} />
-        <Text fg={colors.textMuted}>
-          {editorState
-            ? `${editorProvider?.name ?? editorState.providerId} · Ctrl+S save · Esc cancel`
-            : activeTab
-              ? `${getAiProvider(activeTab.providerId, providers)?.name ?? activeTab.providerId} · ${forceRunArmed ? "Force refresh armed. Click again to confirm." : statusText}`
-              : statusText}
-        </Text>
       </Box>
 
       {availableProviders.length === 0 && (
@@ -1036,7 +1077,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
               <Text fg={colors.negative}>{editorState.error}</Text>
             ) : (
               <Text fg={colors.textDim}>
-                The AI will return validated ticker ideas with a short reason for each one. Ctrl+P cycles providers.
+                The AI will return validated ticker ideas with a short reason for each one.
               </Text>
             )}
           </Box>
@@ -1058,7 +1099,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
             <Text fg={colors.textDim}>
               {editorProvider?.available === false
                 ? `${editorProvider.name} is not currently installed. Save and switch later.`
-                : "Click a provider chip or press Ctrl+P to switch. Save to keep the draft."}
+                : "Click a provider chip to switch. Save to keep the draft."}
             </Text>
           </Box>
         </>
@@ -1097,7 +1138,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
           <Box flexGrow={1} minHeight={contentHeight}>
             {!activeTab ? (
               <Box padding={1} flexGrow={1}>
-                <EmptyState title="No AI screeners yet." hint="Press t or click + to create one." />
+                <EmptyState title="No AI screeners yet." hint="Click + to create one." />
               </Box>
             ) : isRunningActiveTab && activeTab.results.length === 0 ? (
               <Box padding={1} flexGrow={1}>
@@ -1136,7 +1177,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                   getSharedRegistry()?.pinTickerFn(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
                 }}
                 emptyTitle="No matches yet."
-                emptyHint={promptDirty ? "Prompt changed. Refresh to rerun." : "Press r to run this screener. Use PS to customize columns."}
+                emptyHint={promptDirty ? "Prompt changed. Refresh to rerun." : "Run this screener. Use PS to customize columns."}
               />
             )}
           </Box>

@@ -3,11 +3,13 @@ import { act, type ReactElement } from "react";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import {
   AppContext,
   createInitialState,
   PaneInstanceProvider,
 } from "../../state/app-context";
+import { Box } from "../../ui";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
@@ -148,13 +150,20 @@ function createComparisonHarness(
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <ComparisonPane
-          paneId={TEST_PANE_ID}
-          paneType="comparison-chart"
-          focused
-          width={120}
-          height={20}
-        />
+        <PaneFooterProvider>
+          {(footer) => (
+            <Box flexDirection="column" width={120} height={20}>
+              <ComparisonPane
+                paneId={TEST_PANE_ID}
+                paneType="comparison-chart"
+                focused
+                width={120}
+                height={19}
+              />
+              <PaneFooterBar footer={footer} focused width={120} />
+            </Box>
+          )}
+        </PaneFooterProvider>
       </PaneInstanceProvider>
     </AppContext>
   );
@@ -291,7 +300,7 @@ describe("comparisonChartPlugin", () => {
     expect(frame).toContain("view:");
     expect(frame).toContain("[m]ode");
     expect(frame).toContain("[r]es");
-    expect(frame).toContain("[up/down]legend");
+    expect(frame).not.toContain("[up/down]legend");
     expect(frame).not.toContain("arrows legend");
     expect(frame).not.toContain("wheel pan");
     expect(frame).not.toContain("wheel zoom");

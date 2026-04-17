@@ -11,12 +11,33 @@ export interface LogEntry {
 }
 
 type LogListener = (entry: LogEntry) => void;
+type ConsoleMethod = (...args: unknown[]) => void;
+
+interface ConsoleMirror {
+  sources: Set<string> | null;
+  minLevel: LogLevel;
+  methods: {
+    log: ConsoleMethod;
+    info: ConsoleMethod;
+    warn: ConsoleMethod;
+    error: ConsoleMethod;
+  };
+}
+
+const LOG_LEVEL_RANK: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
 
 class DebugLog {
   private entries: LogEntry[] = [];
   private listeners = new Set<LogListener>();
   private nextId = 1;
   private maxEntries = 5000;
+  private consoleMirror: ConsoleMirror | null = null;
+  private mirroringToConsole = false;
 
   /** Create a logger scoped to a source (plugin id, module name, etc.) */
   createLogger(source: string) {
@@ -41,8 +62,54 @@ class DebugLog {
     if (this.entries.length > this.maxEntries) {
       this.entries = this.entries.slice(-Math.floor(this.maxEntries * 0.8));
     }
+    this.mirrorEntryToConsole(entry);
     for (const listener of this.listeners) {
       try { listener(entry); } catch { /* ignore */ }
+    }
+  }
+
+  /** Mirror selected debug-log sources to the real console for DevTools diagnostics. */
+  mirrorToConsole(options: { sources?: readonly string[]; minLevel?: LogLevel } = {}): () => void {
+    const mirror: ConsoleMirror = {
+      sources: options.sources ? new Set(options.sources) : null,
+      minLevel: options.minLevel ?? "debug",
+      methods: {
+        log: console.log.bind(console),
+        info: console.info.bind(console),
+        warn: console.warn.bind(console),
+        error: console.error.bind(console),
+      },
+    };
+    this.consoleMirror = mirror;
+    return () => {
+      if (this.consoleMirror === mirror) this.consoleMirror = null;
+    };
+  }
+
+  private mirrorEntryToConsole(entry: LogEntry) {
+    const mirror = this.consoleMirror;
+    if (this.mirroringToConsole) return;
+    if (!mirror) return;
+    if (mirror.sources && !mirror.sources.has(entry.source)) return;
+    if (LOG_LEVEL_RANK[entry.level] < LOG_LEVEL_RANK[mirror.minLevel]) return;
+
+    const ts = new Date(entry.timestamp).toISOString().slice(11, 23);
+    const prefix = `[gloom:${entry.source}] ${ts} ${entry.message}`;
+    const method =
+      entry.level === "error" ? mirror.methods.error
+      : entry.level === "warn" ? mirror.methods.warn
+      : entry.level === "info" ? mirror.methods.info
+      : mirror.methods.log;
+
+    try {
+      this.mirroringToConsole = true;
+      if (entry.data === undefined) {
+        method(prefix);
+      } else {
+        method(prefix, entry.data);
+      }
+    } finally {
+      this.mirroringToConsole = false;
     }
   }
 

@@ -8,7 +8,7 @@ import { useArticleSummary, useResolvedEntryValue } from "../../market-data/hook
 import { instrumentFromTicker } from "../../market-data/request-types";
 import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
-import { FeedDataTableStackView, type FeedDataTableItem } from "../../components";
+import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../components";
 import { useNewsArticles } from "../../news/hooks";
 import { registerNewsWireFeatures } from "./news-wire";
 
@@ -99,6 +99,16 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
       setSelectedIdx(Math.max(0, news.length - 1));
     }
   }, [news.length, selectedIdx, setSelectedIdx]);
+
+  usePaneFooter("news", () => ({
+    info: [
+      ...(ticker ? [{ id: "ticker", parts: [{ text: ticker.metadata.ticker, tone: "value" as const, bold: true }] }] : []),
+      { id: "count", parts: [{ text: `${news.length} headlines`, tone: "muted" }] },
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
+    ],
+  }), [error, loading, loadingSummary, news.length, ticker?.metadata.ticker]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view news.</Text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;

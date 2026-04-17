@@ -77,6 +77,29 @@ describe("pane selectors", () => {
     expect(testSetup.captureCharFrame()).toContain("AAPL:1");
   });
 
+  test("does not rerender pane-scoped ticker consumers when another pane receives focus", async () => {
+    testSetup = await testRender(
+      <AppProvider config={createTickerDetailConfig("AAPL")}>
+        <PaneInstanceProvider paneId={TEST_PANE_ID}>
+          <DispatchCapture />
+          <PaneTickerHarness />
+        </PaneInstanceProvider>
+      </AppProvider>,
+      { width: 24, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("AAPL:1");
+
+    await act(() => {
+      capturedDispatch?.({ type: "FOCUS_PANE", paneId: "portfolio-list:main" });
+    });
+
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("AAPL:1");
+  });
+
   test("rerenders selector consumers when the theme changes", async () => {
     testSetup = await testRender(
       <AppProvider config={createTickerDetailConfig("AAPL")}>

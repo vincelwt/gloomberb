@@ -1,10 +1,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
+    future::Future,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
+    pin::Pin,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::Mutex,
+    sync::{mpsc, Arc, Mutex},
+    task::{Context, Poll, Waker},
+    thread,
+    time::Instant,
 };
 use tauri::{AppHandle, State};
 
@@ -35,8 +41,6 @@ struct BackendLineResponse {
 struct BackendProcess {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    next_id: u64,
 }
 
 impl Drop for BackendProcess {
@@ -47,7 +51,80 @@ impl Drop for BackendProcess {
 }
 
 struct BackendState {
-    process: Mutex<Option<BackendProcess>>,
+    client: BackendClient,
+}
+
+#[derive(Clone)]
+struct BackendClient {
+    tx: mpsc::Sender<BackendActorMessage>,
+}
+
+struct BackendCommand {
+    method: String,
+    payload: Value,
+    response: AsyncResponseSender,
+}
+
+enum BackendActorMessage {
+    Request(BackendCommand),
+    Response(Result<BackendLineResponse, String>),
+    BackendExited(String),
+}
+
+struct AsyncResponseState {
+    result: Option<Result<Value, String>>,
+    waker: Option<Waker>,
+}
+
+struct AsyncResponseSender {
+    state: Arc<Mutex<AsyncResponseState>>,
+}
+
+struct AsyncResponseReceiver {
+    state: Arc<Mutex<AsyncResponseState>>,
+}
+
+fn async_response_channel() -> (AsyncResponseSender, AsyncResponseReceiver) {
+    let state = Arc::new(Mutex::new(AsyncResponseState {
+        result: None,
+        waker: None,
+    }));
+    (
+        AsyncResponseSender {
+            state: Arc::clone(&state),
+        },
+        AsyncResponseReceiver { state },
+    )
+}
+
+impl AsyncResponseSender {
+    fn send(self, result: Result<Value, String>) {
+        let waker = {
+            let mut state = self.state.lock().unwrap();
+            if state.result.is_some() {
+                return;
+            }
+            state.result = Some(result);
+            state.waker.take()
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+    }
+}
+
+impl Future for AsyncResponseReceiver {
+    type Output = Result<Value, String>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = self.state.lock().unwrap();
+        if let Some(result) = state.result.take() {
+            Poll::Ready(result)
+        } else {
+            state.waker = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
 }
 
 fn backend_entry() -> Result<PathBuf, String> {
@@ -62,7 +139,33 @@ fn backend_entry() -> Result<PathBuf, String> {
         .ok_or_else(|| "Could not locate Tauri backend entrypoint.".to_string())
 }
 
-fn spawn_backend() -> Result<BackendProcess, String> {
+fn read_backend_stdout(stdout: ChildStdout, tx: mpsc::Sender<BackendActorMessage>) {
+    let mut reader = BufReader::new(stdout);
+    loop {
+        let mut response_line = String::new();
+        match reader.read_line(&mut response_line) {
+            Ok(0) => {
+                let _ = tx.send(BackendActorMessage::BackendExited(
+                    "Backend exited without a response.".to_string(),
+                ));
+                return;
+            }
+            Ok(_) => {
+                let response = serde_json::from_str::<BackendLineResponse>(&response_line)
+                    .map_err(|err| format!("Invalid backend response: {err}"));
+                let _ = tx.send(BackendActorMessage::Response(response));
+            }
+            Err(err) => {
+                let _ = tx.send(BackendActorMessage::BackendExited(format!(
+                    "Failed to read backend response: {err}",
+                )));
+                return;
+            }
+        }
+    }
+}
+
+fn spawn_backend(tx: mpsc::Sender<BackendActorMessage>) -> Result<BackendProcess, String> {
     let entry = backend_entry()?;
     let mut child = Command::new("bun")
         .arg(entry)
@@ -81,61 +184,148 @@ fn spawn_backend() -> Result<BackendProcess, String> {
         .take()
         .ok_or_else(|| "Backend stdout was unavailable.".to_string())?;
 
-    Ok(BackendProcess {
-        child,
-        stdin,
-        stdout: BufReader::new(stdout),
-        next_id: 1,
-    })
+    thread::spawn(move || read_backend_stdout(stdout, tx));
+
+    Ok(BackendProcess { child, stdin })
 }
 
-fn backend_request(state: &BackendState, method: &str, payload: &Value) -> Result<Value, String> {
-    let mut process_guard = state
-        .process
-        .lock()
-        .map_err(|_| "Backend process lock was poisoned.".to_string())?;
-
-    if process_guard.is_none() {
-        *process_guard = Some(spawn_backend()?);
+fn reject_pending(pending: &mut HashMap<u64, AsyncResponseSender>, error: &str) {
+    for (_, response) in pending.drain() {
+        response.send(Err(error.to_string()));
     }
+}
 
-    let process = process_guard.as_mut().unwrap();
-    let id = process.next_id;
-    process.next_id += 1;
-
-    let line = serde_json::to_string(&BackendLineRequest {
-        id,
-        method,
-        payload,
-    })
-    .map_err(|err| err.to_string())?;
-
-    process
-        .stdin
-        .write_all(line.as_bytes())
-        .and_then(|_| process.stdin.write_all(b"\n"))
-        .and_then(|_| process.stdin.flush())
-        .map_err(|err| format!("Failed to write backend request: {err}"))?;
-
-    let mut response_line = String::new();
-    process
-        .stdout
-        .read_line(&mut response_line)
-        .map_err(|err| format!("Failed to read backend response: {err}"))?;
-    if response_line.trim().is_empty() {
-        return Err("Backend exited without a response.".to_string());
-    }
-
-    let response: BackendLineResponse =
-        serde_json::from_str(&response_line).map_err(|err| format!("Invalid backend response: {err}"))?;
-    if response.id != id {
-        return Err(format!("Backend response id mismatch: expected {id}, got {}", response.id));
-    }
-    if response.ok {
+fn deliver_backend_response(
+    pending: &mut HashMap<u64, AsyncResponseSender>,
+    response: BackendLineResponse,
+) -> bool {
+    let Some(sender) = pending.remove(&response.id) else {
+        return false;
+    };
+    let result = if response.ok {
         Ok(response.result)
     } else {
         Err(response.error)
+    };
+    sender.send(result);
+    true
+}
+
+fn fail_backend(
+    process: &mut Option<BackendProcess>,
+    pending: &mut HashMap<u64, AsyncResponseSender>,
+    error: String,
+) {
+    reject_pending(pending, &error);
+    if let Some(mut existing) = process.take() {
+        let _ = existing.child.kill();
+        let _ = existing.child.wait();
     }
+}
+
+fn run_backend_actor(
+    rx: mpsc::Receiver<BackendActorMessage>,
+    tx: mpsc::Sender<BackendActorMessage>,
+) {
+    let mut process: Option<BackendProcess> = None;
+    let mut pending: HashMap<u64, AsyncResponseSender> = HashMap::new();
+    let mut next_id = 1_u64;
+
+    for message in rx {
+        match message {
+            BackendActorMessage::Request(command) => {
+                if process.is_none() {
+                    match spawn_backend(tx.clone()) {
+                        Ok(next_process) => {
+                            process = Some(next_process);
+                        }
+                        Err(error) => {
+                            let _ = command.response.send(Err(error));
+                            continue;
+                        }
+                    }
+                }
+
+                let id = next_id;
+                next_id += 1;
+                let line = match serde_json::to_string(&BackendLineRequest {
+                    id,
+                    method: &command.method,
+                    payload: &command.payload,
+                }) {
+                    Ok(line) => line,
+                    Err(error) => {
+                        let _ = command.response.send(Err(error.to_string()));
+                        continue;
+                    }
+                };
+
+                let write_result = if let Some(existing) = process.as_mut() {
+                    existing
+                        .stdin
+                        .write_all(line.as_bytes())
+                        .and_then(|_| existing.stdin.write_all(b"\n"))
+                        .and_then(|_| existing.stdin.flush())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "backend process missing",
+                    ))
+                };
+
+                if let Err(error) = write_result {
+                    let message = format!("Failed to write backend request: {error}");
+                    let _ = command.response.send(Err(message.clone()));
+                    fail_backend(&mut process, &mut pending, message);
+                    continue;
+                }
+
+                pending.insert(id, command.response);
+            }
+            BackendActorMessage::Response(response) => match response {
+                Ok(response) => {
+                    deliver_backend_response(&mut pending, response);
+                }
+                Err(error) => {
+                    fail_backend(&mut process, &mut pending, error);
+                }
+            },
+            BackendActorMessage::BackendExited(error) => {
+                fail_backend(&mut process, &mut pending, error);
+            }
+        }
+    }
+}
+
+fn create_backend_client() -> BackendClient {
+    let (tx, rx) = mpsc::channel::<BackendActorMessage>();
+    let actor_tx = tx.clone();
+    thread::spawn(move || run_backend_actor(rx, actor_tx));
+    BackendClient { tx }
+}
+
+async fn backend_request(
+    client: BackendClient,
+    method: String,
+    payload: Value,
+) -> Result<Value, String> {
+    let started_at = Instant::now();
+    let (response_tx, response_rx) = async_response_channel();
+    client
+        .tx
+        .send(BackendActorMessage::Request(BackendCommand {
+            method: method.clone(),
+            payload,
+            response: response_tx,
+        }))
+        .map_err(|err| format!("Backend request channel is closed: {err}"))?;
+
+    let result = response_rx.await;
+    let duration_ms = started_at.elapsed().as_millis();
+    if duration_ms >= 50 {
+        eprintln!("perf backend.request method={method} duration_ms={duration_ms}");
+    }
+    result
 }
 
 fn open_external(url: &str) -> Result<Value, String> {
@@ -171,16 +361,24 @@ fn copy_text(text: &str) -> Result<Value, String> {
             .write_all(text.as_bytes())
             .map_err(|err| err.to_string())?;
         let status = child.wait().map_err(|err| err.to_string())?;
-        return if status.success() { Ok(Value::Null) } else { Err(format!("pbcopy exited with {status}")) };
+        return if status.success() {
+            Ok(Value::Null)
+        } else {
+            Err(format!("pbcopy exited with {status}"))
+        };
     }
     Err("Clipboard copy is not implemented for this platform yet.".to_string())
 }
 
 fn read_text() -> Result<Value, String> {
     if cfg!(target_os = "macos") {
-        let output = Command::new("pbpaste").output().map_err(|err| err.to_string())?;
+        let output = Command::new("pbpaste")
+            .output()
+            .map_err(|err| err.to_string())?;
         if output.status.success() {
-            return Ok(Value::String(String::from_utf8_lossy(&output.stdout).to_string()));
+            return Ok(Value::String(
+                String::from_utf8_lossy(&output.stdout).to_string(),
+            ));
         }
         return Err(format!("pbpaste exited with {}", output.status));
     }
@@ -213,7 +411,7 @@ fn handle_host_request(app: &AppHandle, request: &BackendRequest) -> Option<Resu
 }
 
 #[tauri::command]
-fn tauri_backend_request(
+async fn tauri_backend_request(
     app: AppHandle,
     state: State<'_, BackendState>,
     request: BackendRequest,
@@ -221,15 +419,82 @@ fn tauri_backend_request(
     if let Some(result) = handle_host_request(&app, &request) {
         return result;
     }
-    backend_request(&state, &request.method, &request.payload)
+    let client = state.client.clone();
+    backend_request(client, request.method, request.payload).await
 }
 
 fn main() {
     tauri::Builder::default()
         .manage(BackendState {
-            process: Mutex::new(None),
+            client: create_backend_client(),
         })
         .invoke_handler(tauri::generate_handler![tauri_backend_request])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn routes_backend_responses_by_id_out_of_order() {
+        let (first_tx, first_rx) = async_response_channel();
+        let (second_tx, second_rx) = async_response_channel();
+        let mut pending = HashMap::new();
+        pending.insert(1, first_tx);
+        pending.insert(2, second_tx);
+
+        assert!(deliver_backend_response(
+            &mut pending,
+            BackendLineResponse {
+                id: 2,
+                ok: true,
+                result: json!({ "value": "second" }),
+                error: String::new(),
+            },
+        ));
+        assert!(deliver_backend_response(
+            &mut pending,
+            BackendLineResponse {
+                id: 1,
+                ok: true,
+                result: json!({ "value": "first" }),
+                error: String::new(),
+            },
+        ));
+
+        assert_eq!(
+            tauri::async_runtime::block_on(second_rx).unwrap(),
+            json!({ "value": "second" })
+        );
+        assert_eq!(
+            tauri::async_runtime::block_on(first_rx).unwrap(),
+            json!({ "value": "first" })
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn routes_backend_errors_by_id() {
+        let (response_tx, response_rx) = async_response_channel();
+        let mut pending = HashMap::new();
+        pending.insert(7, response_tx);
+
+        assert!(deliver_backend_response(
+            &mut pending,
+            BackendLineResponse {
+                id: 7,
+                ok: false,
+                result: Value::Null,
+                error: "failed".to_string(),
+            },
+        ));
+
+        assert_eq!(
+            tauri::async_runtime::block_on(response_rx).unwrap_err(),
+            "failed"
+        );
+    }
 }

@@ -1,8 +1,8 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
@@ -291,16 +291,18 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
+  usePaneFooter("sectors", () => ({
+    info: [
+      {
+        id: "updated",
+        parts: [{ text: lastRefresh ? formatTime(lastRefresh) : "loading", tone: lastRefresh ? "value" : "muted" }],
+      },
+    ],
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchAll }],
+  }), [fetchAll, lastRefresh]);
+
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="row" height={1} paddingX={1}>
-        {lastRefresh ? (
-          <Text fg={colors.textMuted}>{formatTime(lastRefresh)}</Text>
-        ) : (
-          <Text fg={colors.textMuted}>loading…</Text>
-        )}
-      </Box>
-
       <DataTable<SectorRow, SectorColumn>
         columns={columns}
         items={sortedRows}
@@ -320,10 +322,6 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
         emptyStateTitle="No sector data available"
         showHorizontalScrollbar={false}
       />
-
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textMuted}>[r]efresh</Text>
-      </Box>
     </Box>
   );
 }

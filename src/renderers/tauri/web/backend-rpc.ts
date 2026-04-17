@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
+import { measurePerfAsync } from "../../../utils/perf-marks";
 import { decodeRpcValue, encodeRpcValue } from "./rpc-codec";
 
 export interface TauriBackendInit {
@@ -13,12 +14,12 @@ export interface TauriBackendInit {
 let initSnapshot: TauriBackendInit | null = null;
 
 export async function backendRequest<T = unknown>(method: string, payload: unknown = null): Promise<T> {
-  const result = await invoke<unknown>("tauri_backend_request", {
+  const result = await measurePerfAsync(`tauri.rpc.${method}`, () => invoke<unknown>("tauri_backend_request", {
     request: {
       method,
       payload: encodeRpcValue(payload),
     },
-  });
+  }), { method });
   return decodeRpcValue<T>(result);
 }
 

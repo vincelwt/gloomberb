@@ -1,8 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import type { BrokerAccount } from "../../types/trading";
+import type { TickerRecord } from "../../types/ticker";
 import type { PortfolioSummaryTotals } from "./portfolio-list/metrics";
 import { buildPortfolioSummarySegments } from "./portfolio-list/summary";
 import { shouldToggleCashMarginDrawer } from "./portfolio-list";
+import { selectStreamTickers } from "./portfolio-list/pane";
+
+function ticker(symbol: string): TickerRecord {
+  return {
+    metadata: {
+      ticker: symbol,
+      exchange: "NASDAQ",
+      currency: "USD",
+      name: symbol,
+      portfolios: [],
+      watchlists: [],
+      positions: [],
+      custom: {},
+      tags: [],
+    },
+  };
+}
 
 describe("buildPortfolioSummarySegments", () => {
   const totals: PortfolioSummaryTotals = {
@@ -70,5 +88,22 @@ describe("buildPortfolioSummarySegments", () => {
     expect(shouldToggleCashMarginDrawer("c", true)).toBe(true);
     expect(shouldToggleCashMarginDrawer("c", false)).toBe(false);
     expect(shouldToggleCashMarginDrawer("j", true)).toBe(false);
+  });
+});
+
+describe("selectStreamTickers", () => {
+  test("includes visible rows with overscan and clamps boundaries", () => {
+    const tickers = Array.from({ length: 20 }, (_, index) => ticker(`T${index}`));
+    expect(selectStreamTickers(tickers, { start: 3, end: 7 }).map((entry) => entry.metadata.ticker)).toEqual(
+      tickers.slice(0, 13).map((entry) => entry.metadata.ticker),
+    );
+    expect(selectStreamTickers(tickers, { start: 18, end: 20 }).map((entry) => entry.metadata.ticker)).toEqual(
+      tickers.slice(12, 20).map((entry) => entry.metadata.ticker),
+    );
+  });
+
+  test("includes selected ticker outside the visible streaming window", () => {
+    const tickers = Array.from({ length: 20 }, (_, index) => ticker(`T${index}`));
+    expect(selectStreamTickers(tickers, { start: 3, end: 7 }, "T19").map((entry) => entry.metadata.ticker)).toContain("T19");
   });
 });

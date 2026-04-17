@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import { usePaneFooter } from "../../components";
 import { colors, hoverBg } from "../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../utils/debug-log";
 import { writeFileSync } from "fs";
@@ -92,25 +93,39 @@ function DebugPane({ focused, width, height }: PaneProps) {
     debugLog.clear();
     setEntries([]);
   }, []);
+  const cycleLevelFilter = useCallback(() => {
+    const currentIdx = filterLevel ? ALL_LEVELS.indexOf(filterLevel) : -1;
+    const nextIdx = currentIdx + 1;
+    setFilterLevel(nextIdx >= ALL_LEVELS.length ? null : ALL_LEVELS[nextIdx] ?? null);
+  }, [filterLevel]);
+  const cycleSourceFilter = useCallback(() => {
+    const sources = sourcesRef.current;
+    if (sources.length === 0) return;
+    const currentIdx = filterSource ? sources.indexOf(filterSource) : -1;
+    const nextIdx = currentIdx + 1;
+    setFilterSource(nextIdx >= sources.length ? null : sources[nextIdx] ?? null);
+  }, [filterSource]);
+  const jumpTop = useCallback(() => {
+    setSelectedIdx(0);
+    setAutoScroll(false);
+  }, []);
+  const jumpBottom = useCallback(() => {
+    setSelectedIdx(entries.length - 1);
+    setAutoScroll(true);
+  }, [entries.length]);
 
   useShortcut((event) => {
     if (!focused) return;
 
     // Level filter cycling
     if (event.name === "l") {
-      const currentIdx = filterLevel ? ALL_LEVELS.indexOf(filterLevel) : -1;
-      const nextIdx = currentIdx + 1;
-      setFilterLevel(nextIdx >= ALL_LEVELS.length ? null : ALL_LEVELS[nextIdx] ?? null);
+      cycleLevelFilter();
       return;
     }
 
     // Source filter cycling
     if (event.name === "s") {
-      const sources = sourcesRef.current;
-      if (sources.length === 0) return;
-      const currentIdx = filterSource ? sources.indexOf(filterSource) : -1;
-      const nextIdx = currentIdx + 1;
-      setFilterSource(nextIdx >= sources.length ? null : sources[nextIdx] ?? null);
+      cycleSourceFilter();
       return;
     }
 
@@ -151,13 +166,11 @@ function DebugPane({ focused, width, height }: PaneProps) {
     }
 
     if (event.name === "g" && !event.shift) {
-      setSelectedIdx(0);
-      setAutoScroll(false);
+      jumpTop();
       return;
     }
     if (event.name === "g" && event.shift) {
-      setSelectedIdx(entries.length - 1);
-      setAutoScroll(true);
+      jumpBottom();
       return;
     }
 
@@ -167,9 +180,8 @@ function DebugPane({ focused, width, height }: PaneProps) {
     }
   });
 
-  const headerHeight = 2;
   const contentWidth = Math.max(1, width - 2);
-  const messageAreaHeight = Math.max(1, height - headerHeight);
+  const messageAreaHeight = Math.max(1, height);
 
   // Compute visible window
   const visibleCount = showDetail ? Math.max(1, messageAreaHeight - 4) : messageAreaHeight;
@@ -191,29 +203,25 @@ function DebugPane({ focused, width, height }: PaneProps) {
 
   const selectedEntry = selectedIdx >= 0 && selectedIdx < entries.length ? entries[selectedIdx] : null;
 
+  usePaneFooter("debug-log", () => ({
+    info: [
+      { id: "count", parts: [{ text: `${totalEntries} entries`, tone: "value", bold: true }] },
+      ...(filterLevel ? [{ id: "level", parts: [{ text: filterLevel.toUpperCase(), tone: "value" as const, color: levelColor(filterLevel), bold: true }] }] : []),
+      ...(filterSource ? [{ id: "source", parts: [{ text: filterSource, tone: "positive" as const }] }] : []),
+      ...(autoScroll ? [{ id: "auto", parts: [{ text: "AUTO", tone: "muted" as const }] }] : []),
+    ],
+    hints: [
+      { id: "level", key: "l", label: "evel", onPress: cycleLevelFilter },
+      { id: "source", key: "s", label: "ource", onPress: cycleSourceFilter },
+      { id: "export", key: "e", label: "xport", onPress: exportLogs },
+      { id: "clear", key: "x", label: "clear", onPress: clearLogs },
+      { id: "auto", key: "a", label: "uto", onPress: () => setAutoScroll((prev) => !prev) },
+      { id: "jump", key: "g/G", label: "jump", onPress: jumpBottom },
+    ],
+  }), [autoScroll, clearLogs, cycleLevelFilter, cycleSourceFilter, exportLogs, filterLevel, filterSource, jumpBottom, totalEntries]);
+
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Header */}
-      <Box height={1} width={contentWidth} flexDirection="row" paddingLeft={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Debug Log</Text>
-        <Text fg={colors.textDim}> ({totalEntries})</Text>
-        <Box flexGrow={1} />
-        {filterLevel && (
-          <Text fg={levelColor(filterLevel)} attributes={TextAttributes.BOLD}>
-            {" "}{filterLevel.toUpperCase()}{" "}
-          </Text>
-        )}
-        {filterSource && (
-          <Text fg={colors.positive}>
-            {" "}{filterSource}{" "}
-          </Text>
-        )}
-        {autoScroll && <Text fg={colors.textDim}> AUTO </Text>}
-      </Box>
-      <Box height={1} width={contentWidth}>
-        <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
-      </Box>
-
       {/* Log entries */}
       <Box
         height={visibleCount}
@@ -255,7 +263,7 @@ function DebugPane({ focused, width, height }: PaneProps) {
               width={contentWidth}
               flexDirection="row"
               backgroundColor={bgColor}
-              onMouseMove={() => setHoveredIdx(globalIdx)}
+              onMouseMove={() => setHoveredIdx((current) => (current === globalIdx ? current : globalIdx))}
               onMouseDown={() => { setSelectedIdx(globalIdx); setAutoScroll(false); }}
             >
               <Text fg={colors.textMuted}> {ts} </Text>

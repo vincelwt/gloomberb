@@ -1,7 +1,8 @@
 import { Box, ScrollBox, Text } from "../../../ui";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
+import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
 import { getSharedDataProvider } from "../../registry";
@@ -24,7 +25,7 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
   const [now, setNow] = useState(Date.now());
   const fetchGenRef = useRef(0);
 
-  const fetchRates = async () => {
+  const fetchRates = useCallback(async () => {
     const provider = getSharedDataProvider();
     if (!provider) return;
 
@@ -54,13 +55,13 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
     } finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchRates();
     const interval = setInterval(fetchRates, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchRates]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 5_000);
@@ -86,16 +87,16 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
 
   const ageText = lastRefreshed ? `updated ${formatAge(now - lastRefreshed)}` : loading ? "loading…" : "";
 
+  usePaneFooter("fx-matrix", () => ({
+    info: ageText ? [{ id: "updated", parts: [{ text: ageText, tone: loading ? "muted" : "value" }] }] : [],
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchRates }],
+  }), [ageText, fetchRates, loading]);
+
   // Row header: just the 3-letter code, no emoji (keeps width predictable)
   // Rates use flexGrow so they fill available space dynamically
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Header */}
-      <Box flexDirection="row" height={1} paddingX={1}>
-        <Text fg={colors.textMuted}>{ageText}</Text>
-      </Box>
-
       {/* Column header row */}
       <Box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
         <Box width={5} flexShrink={0} />
@@ -139,10 +140,6 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
           )}
         </Box>
       </ScrollBox>
-
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textMuted}>[r]efresh</Text>
-      </Box>
     </Box>
   );
 }

@@ -5,7 +5,8 @@ import { useShortcut } from "../../react/input";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useChartQueries } from "../../market-data/hooks";
 import { buildChartKey } from "../../market-data/selectors";
-import { useAppState, usePaneSettingValue } from "../../state/app-context";
+import { useAppSelector, usePaneSettingValue } from "../../state/app-context";
+import { usePaneFooter, type PaneHint } from "../layout/pane-footer";
 import { blendHex, colors, getComparisonSeriesColor, priceColor } from "../../theme/colors";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
@@ -93,7 +94,6 @@ import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
 import { syncCachedNativeSurface } from "./native/surface-sync";
 import { formatAxisCell, formatDateShort, resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
-import { ChartControlHint } from "./chart-control-hint";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -601,7 +601,7 @@ function ComparisonStockChartView({
   const headerRows = 1;
   const controlRows = 2;
   const timeAxisRows = 1;
-  const helpRows = 1;
+  const helpRows = 0;
   const legendColumns = getLegendColumns(width);
   const legendNeededRows = symbols.length > 0 ? Math.ceil(symbols.length / legendColumns) : 0;
   const legendRows = legendNeededRows > 0
@@ -1099,6 +1099,63 @@ function ComparisonStockChartView({
   ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, useCanvasChart, viewState.selectedSymbol]);
 
   const result = effectiveRenderer === "kitty" || useCanvasChart ? staticResult : interactiveResult!;
+  const timeAxisLabel = result.timeLabels || staticResult.timeLabels;
+  const footerHints = useMemo<PaneHint[]>(() => {
+    const zoomIn = () => {
+      setViewState((current) => applyComparisonZoomAroundAnchor(
+        clearActivePreset(current),
+        current.zoomLevel * 1.5,
+        RIGHT_EDGE_ANCHOR_RATIO,
+        series,
+      ));
+    };
+    const resetView = () => {
+      pendingCanonicalResetRef.current += 1;
+      updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+      setViewState((current) => ({
+        ...(resolveResolutionSelection(current, effectiveResolution, supportMap, visibleDateWindow) ?? current),
+        panOffset: 0,
+        zoomLevel: 1,
+        cursorX: null,
+        cursorY: null,
+      }));
+    };
+    const cycleRange = () => {
+      const currentIndex = TIME_RANGES.indexOf(viewState.presetRange);
+      setRangePreset(TIME_RANGES[(currentIndex + 1) % TIME_RANGES.length] ?? TIME_RANGES[0]!);
+    };
+
+    return [
+      {
+        id: "mode",
+        key: "m",
+        label: "ode",
+        onPress: () => setViewState((current) => ({
+          ...current,
+          renderMode: current.renderMode === "line" ? "area" : "line",
+        })),
+      },
+      {
+        id: "resolution",
+        key: "r",
+        label: "es",
+        onPress: () => {
+          const currentIndex = resolutionChips.indexOf(effectiveResolution);
+          const nextResolution = resolutionChips[(currentIndex + 1) % resolutionChips.length] ?? "auto";
+          setResolution(nextResolution);
+        },
+      },
+      { id: "zoom", key: "+/-", label: "zoom", onPress: zoomIn },
+      { id: "reset", key: "0", label: "reset", onPress: resetView },
+      ...(width >= 72 ? [{ id: "range", key: "1-7", label: "range", onPress: cycleRange }] : []),
+    ];
+  }, [effectiveResolution, resolutionChips, series, supportMap, viewState.presetRange, visibleDateWindow, width]);
+
+  usePaneFooter("comparison-chart", () => ({
+    order: 10,
+    hints: footerHints,
+  }), [footerHints]);
+
   const liveScene = useMemo(() => (
     effectiveRenderer === "kitty"
       ? staticScene
@@ -1901,8 +1958,8 @@ function ComparisonStockChartView({
         {axisBox}
       </Box>
 
-      <Box height={1}>
-        <Text fg={colors.textDim}>{result.timeLabels || staticResult.timeLabels}</Text>
+      <Box height={timeAxisRows}>
+        <Text fg={colors.textDim}>{timeAxisLabel}</Text>
       </Box>
 
       {legendRows > 0 && (
@@ -1950,16 +2007,6 @@ function ComparisonStockChartView({
         </ScrollBox>
       )}
 
-      <Box height={1}>
-        <Box flexDirection="row" gap={1}>
-          <ChartControlHint hotkey="m" label="ode" />
-          <ChartControlHint hotkey="r" label="es" />
-          <ChartControlHint hotkey="+/-" label="zoom" />
-          <ChartControlHint hotkey="0" label="reset" />
-          {width >= 72 && <ChartControlHint hotkey="1-7" label="range" />}
-          {width >= 88 && <ChartControlHint hotkey="up/down" label="legend" />}
-        </Box>
-      </Box>
     </Box>
   );
 }
@@ -1967,30 +2014,32 @@ function ComparisonStockChartView({
 const MemoizedComparisonStockChartView = memo(ComparisonStockChartView);
 
 export function ComparisonStockChart(props: ComparisonStockChartProps) {
-  const { state } = useAppState();
+  const tickers = useAppSelector((state) => state.tickers);
+  const financials = useAppSelector((state) => state.financials);
+  const chartPreferences = useAppSelector((state) => state.config.chartPreferences);
   const symbolsKey = props.symbols.join("|");
   const stableSymbols = useMemo(() => props.symbols, [symbolsKey]);
   const symbolSources = useMemo<ComparisonChartSymbolSource[]>(() => stableSymbols.map((symbol) => {
-    const ticker = state.tickers.get(symbol) ?? null;
-    const financials = state.financials.get(symbol) ?? null;
+    const ticker = tickers.get(symbol) ?? null;
+    const financial = financials.get(symbol) ?? null;
     const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
     return {
       symbol,
-      currency: financials?.quote?.currency ?? ticker?.metadata.currency,
+      currency: financial?.quote?.currency ?? ticker?.metadata.currency,
       exchange: ticker?.metadata.exchange ?? "",
       brokerId: instrument?.brokerId,
       brokerInstanceId: instrument?.brokerInstanceId,
       instrument,
-      priceHistory: financials?.priceHistory ?? [],
+      priceHistory: financial?.priceHistory ?? [],
     };
-  }), [stableSymbols, state.financials, state.tickers]);
+  }), [financials, stableSymbols, tickers]);
 
   return (
     <MemoizedComparisonStockChartView
       {...props}
       symbols={stableSymbols}
-      defaultRenderMode={state.config.chartPreferences.defaultRenderMode}
-      preferredRenderer={state.config.chartPreferences.renderer}
+      defaultRenderMode={chartPreferences.defaultRenderMode}
+      preferredRenderer={chartPreferences.renderer}
       symbolSources={symbolSources}
     />
   );

@@ -470,6 +470,9 @@ import {
   SkeletonRow,
   LoadingBlock,
   PriceSelectorDialog,
+  PaneFooterBar,
+  usePaneFooter,
+  usePaneHints,
   colors,
   priceColor,
   hoverBg,
@@ -503,6 +506,9 @@ Available components:
 - `Section`, `FieldRow`, `DialogFrame` — shared framing/layout helpers
 - `Spinner`, `ProgressBar`, `SkeletonRow`, `LoadingBlock` — loading states
 - `PriceSelectorDialog` — ticker price picker dialog
+- `PaneFooterBar` — shared pane footer renderer used by the shell
+- `usePaneFooter(registrationId, factory, deps)` — register pane footer info and action hints from a pane or detail tab
+- `usePaneHints(registrationId, factory, deps)` — register only footer hints
 - `colors` — theme color palette
 - `priceColor(change)` — returns green/red/neutral color for a price change
 - `hoverBg` — standard hover background color
@@ -511,6 +517,22 @@ Available components:
 - `useFocusedTicker()` — get the currently focused ticker
 - `useSelectedTicker()` — alias for `usePaneTicker()`
 - `formatCurrency`, `formatCompact`, `formatPercent`, `formatPercentRaw`, `formatNumber`, `padTo` — number formatting utilities
+
+Pane footers are the shared place for pane status and non-obvious keyboard actions. Register informational segments on the left and hints on the right:
+
+```typescript
+usePaneFooter("my-pane", () => ({
+  info: [
+    { id: "status", parts: [{ text: "12 rows", tone: "muted" }] },
+  ],
+  hints: [
+    { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    { id: "filter", key: "f", label: "ilter", onPress: openFilter },
+  ],
+}), [refresh, openFilter]);
+```
+
+Do not register basic navigation hints. Pane hints must omit `Esc`, `Enter`, arrows, `up/down`, `left/right`, `j`, `k`, `j/k`, and tab-switching hints such as `h/l`. Keep only pane-specific actions such as `[r]efresh`, `[/]search`, `[f]ilter`, `[Ctrl+S]save`, `[Shift+R]force refresh`, or chart controls.
 
 ### Plugin runtime hooks
 
@@ -624,6 +646,7 @@ export default {
 
 - Prefer `ListView`, `Tabs`, `Button`, `Checkbox`, and `Notice` before custom rows.
 - Support both mouse and keyboard for anything interactive.
+- Put pane status and non-obvious shortcuts in `usePaneFooter()` / `usePaneHints()` instead of ad hoc body rows.
 - Use `colors` and the shared components instead of hard-coded palette values when possible.
 - Use `usePaneTicker()` inside pane/tab components so multi-pane layouts keep working correctly.
 

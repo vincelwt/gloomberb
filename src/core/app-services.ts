@@ -10,6 +10,10 @@ import { PluginRegistry } from "../plugins/registry";
 import { ProviderRouter } from "../sources/provider-router";
 import type { AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
+import { debugLog } from "../utils/debug-log";
+import { measurePerf } from "../utils/perf-marks";
+
+const servicesLog = debugLog.createLogger("services");
 
 export interface AppServices {
   persistence: AppPersistence;
@@ -29,10 +33,14 @@ export function createAppServices({
   config: AppConfig;
   externalPlugins: LoadedExternalPlugin[];
 }): AppServices {
+  servicesLog.info("create services start", {
+    externalPluginCount: externalPlugins.length,
+    brokerInstanceCount: config.brokerInstances.length,
+  });
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
-  const persistence = new AppPersistence(dbPath);
-  const tickerRepository = new TickerRepository(persistence.tickers);
-  const providerRouter = new ProviderRouter(null, [], persistence.resources);
+  const persistence = measurePerf("startup.services.persistence", () => new AppPersistence(dbPath));
+  const tickerRepository = measurePerf("startup.services.ticker-repository", () => new TickerRepository(persistence.tickers));
+  const providerRouter = measurePerf("startup.services.provider-router", () => new ProviderRouter(null, [], persistence.resources));
   const dataProvider: DataProvider = providerRouter;
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence);
@@ -46,10 +54,16 @@ export function createAppServices({
   setSharedNewsService(newsService);
   setSharedMarketDataCoordinator(marketData);
 
-  for (const plugin of getLoadablePlugins(externalPlugins)) {
-    pluginRegistry.register(plugin);
+  const plugins = getLoadablePlugins(externalPlugins);
+  for (const plugin of plugins) {
+    measurePerf("startup.services.register-plugin", () => {
+      void pluginRegistry.register(plugin);
+    }, { pluginId: plugin.id });
   }
-  newsService.start();
+  measurePerf("startup.services.news-start", () => {
+    newsService.start();
+  });
+  servicesLog.info("create services complete", { pluginCount: plugins.length });
 
   return {
     persistence,

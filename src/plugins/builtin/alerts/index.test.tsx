@@ -10,6 +10,8 @@ import {
 } from "../../../state/app-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { Box } from "../../../ui";
 import { setSharedRegistryForTests } from "../../registry";
 import { deserializeAlerts, serializeAlerts } from "./alert-engine";
 import { AlertsPane, alertsPlugin } from "./index";
@@ -150,7 +152,14 @@ function AlertsHarness({
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PluginRenderProvider pluginId="alerts" runtime={makeRuntime()}>
-          <AlertsPane focused width={width} height={height} />
+          <PaneFooterProvider>
+            {(footer) => (
+              <Box flexDirection="column" width={width} height={height}>
+                <AlertsPane focused width={width} height={Math.max(1, height - 1)} />
+                <PaneFooterBar footer={footer} focused width={width} />
+              </Box>
+            )}
+          </PaneFooterProvider>
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>

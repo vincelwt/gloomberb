@@ -1,8 +1,8 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../../types/plugin";
 import type { AlertCondition, AlertRule } from "./types";
 import { colors } from "../../../theme/colors";
@@ -194,6 +194,29 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     syncHeaderScroll();
   }, [syncHeaderScroll]);
 
+  usePaneFooter("alerts", () => ({
+    info: [
+      {
+        id: "active",
+        parts: [
+          { text: String(activeCount), tone: "value", bold: true },
+          { text: "active", tone: "label" },
+        ],
+      },
+      ...(triggeredCount > 0 ? [{
+        id: "triggered",
+        parts: [
+          { text: String(triggeredCount), tone: "warning" as const, bold: true },
+          { text: "triggered", tone: "label" as const },
+        ],
+      }] : []),
+    ],
+    hints: [
+      { id: "add", key: "a", label: "dd alert", onPress: openSetAlertCommand },
+      { id: "delete", key: "d", label: "elete", onPress: deleteSelectedAlert, disabled: rows.length === 0 },
+    ],
+  }), [activeCount, deleteSelectedAlert, openSetAlertCommand, rows.length, triggeredCount]);
+
   useEffect(() => {
     setSelectedIdx((prev) => (rows.length === 0 ? 0 : Math.min(prev, rows.length - 1)));
   }, [rows.length]);
@@ -300,20 +323,6 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       height={height}
       backgroundColor={colors.bg}
     >
-      <Box
-        flexDirection="row"
-        height={1}
-        paddingX={1}
-        backgroundColor={colors.bg}
-      >
-        <Text fg={colors.textDim}>{activeCount} active</Text>
-        {triggeredCount > 0 && (
-          <Box marginLeft={1}>
-            <Text fg={colors.textMuted}>{triggeredCount} triggered</Text>
-          </Box>
-        )}
-      </Box>
-
       <DataTable<AlertRule, AlertColumn>
         columns={ALERT_COLUMNS}
         items={rows}
@@ -338,32 +347,6 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         showHorizontalScrollbar={showHorizontalScrollbar}
       />
 
-      <Box
-        flexDirection="row"
-        height={1}
-        paddingX={1}
-        backgroundColor={colors.panel}
-      >
-        <Box
-          onMouseDown={(event: any) => {
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            openSetAlertCommand();
-          }}
-        >
-          <Text fg={colors.textDim}>[a]dd alert</Text>
-        </Box>
-        <Box width={2} />
-        <Box
-          onMouseDown={(event: any) => {
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            deleteSelectedAlert();
-          }}
-        >
-          <Text fg={rows.length > 0 ? colors.textDim : colors.textMuted}>[d]elete</Text>
-        </Box>
-      </Box>
     </Box>
   );
 }

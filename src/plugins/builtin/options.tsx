@@ -187,8 +187,8 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
           return (
             <Box
               key={ts}
-              onMouseMove={() => setHoveredExpIdx(realIdx)}
-              onMouseOut={() => setHoveredExpIdx(null)}
+              onMouseMove={() => setHoveredExpIdx((current) => (current === realIdx ? current : realIdx))}
+              onMouseOut={() => setHoveredExpIdx((current) => (current === realIdx ? null : current))}
               onMouseDown={() => { enterInteractive(); setExpIdx(realIdx); }}
             >
               <Text
@@ -302,15 +302,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
           </Text>
         </Box>
       )}
-
-      {/* Help */}
-      <Box height={1}>
-        <Text fg={colors.textMuted}>
-          {interactive
-            ? "j/k/\u2191\u2193 strike  h/l/\u2190\u2192 expiration  Esc exit"
-            : "Enter to interact"}
-        </Text>
-      </Box>
     </Box>
   );
 }

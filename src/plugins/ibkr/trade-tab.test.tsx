@@ -176,7 +176,7 @@ test("renders the compact trade tab layout", async () => {
   const frame = testSetup.captureCharFrame();
   expect(frame).toContain("Next Submit order");
   expect(frame).toContain("Ticket Standby");
-  expect(frame).toContain("Side [b/v]");
+  expect(frame).toContain("Shortcuts are in the pane footer.");
   expect(frame).toContain("What-if: init");
   expect(frame).not.toContain("1 Profile");
   expect(frame).not.toContain("Activate Ticket");

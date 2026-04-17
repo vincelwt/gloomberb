@@ -23,6 +23,7 @@ import {
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "./fetch";
+import { measurePerf } from "../../../utils/perf-marks";
 
 interface PolymarketEventRecord {
   id: string;
@@ -334,6 +335,25 @@ function sortPolymarketMarkets(
   );
 }
 
+function normalizePolymarketCatalog(
+  events: PolymarketEventRecord[],
+  searchQuery: string,
+  categoryId: PredictionCategoryId,
+): PredictionMarketSummary[] {
+  return measurePerf(
+    "prediction.catalog.polymarket.normalize",
+    () =>
+      sortPolymarketMarkets(
+        flattenPolymarketEvents(events, searchQuery, categoryId),
+      ),
+    {
+      categoryId,
+      eventCount: events.length,
+      search: searchQuery.trim().length > 0,
+    },
+  );
+}
+
 function reconcilePolymarketSearchEvents(
   searchEvents: PolymarketEventRecord[],
   hydratedEvents: PolymarketEventRecord[],
@@ -369,12 +389,10 @@ export async function loadPolymarketCatalog(
           searchEvents,
           hydratedEvents,
         );
-        return sortPolymarketMarkets(
-          flattenPolymarketEvents(
-            resolvedEvents,
-            normalizedQuery,
-            categoryId,
-          ),
+        return normalizePolymarketCatalog(
+          resolvedEvents,
+          normalizedQuery,
+          categoryId,
         );
       }
 
@@ -388,8 +406,10 @@ export async function loadPolymarketCatalog(
             ).catch(() => []),
           ),
         );
-        const categorized = sortPolymarketMarkets(
-          flattenPolymarketEvents(categoryPages.flat(), "", categoryId),
+        const categorized = normalizePolymarketCatalog(
+          categoryPages.flat(),
+          "",
+          categoryId,
         );
         if (categorized.length > 0) return categorized;
       }
@@ -397,9 +417,7 @@ export async function loadPolymarketCatalog(
       const pages = await loadPolymarketCatalogPages(
         POLYMARKET_CATALOG_OFFSETS,
       );
-      return sortPolymarketMarkets(
-        flattenPolymarketEvents(pages, "", categoryId),
-      );
+      return normalizePolymarketCatalog(pages, "", categoryId);
     },
     PREDICTION_CACHE_POLICIES.catalog,
   );

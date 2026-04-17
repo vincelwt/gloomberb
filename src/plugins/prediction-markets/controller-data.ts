@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { measurePerf } from "../../utils/perf-marks";
 import {
   buildPredictionCatalogCacheKey,
   buildPredictionCatalogResourceKey,
   buildPredictionDetailCacheKey,
   buildPredictionDetailResourceKey,
+  samePredictionCatalogSummaries,
   updatePredictionCatalogCacheEntries,
   updatePredictionDetailCacheEntries,
   updatePredictionErrorState,
@@ -140,6 +142,9 @@ export function usePredictionMarketsDataState({
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
 
   const selectedSummaryRef = useRef<PredictionMarketSummary | null>(null);
+  const activeCatalogRef = useRef<Record<string, PredictionMarketSummary[]>>(
+    {},
+  );
   const detailLoadDelayRef = useRef(0);
   const currentDetailCacheKeyRef = useRef<string | null>(null);
 
@@ -195,6 +200,10 @@ export function usePredictionMarketsDataState({
   const polymarketCatalog =
     catalogCache[polymarketCatalogKey] ?? persistedPolymarketCatalog;
   const kalshiCatalog = catalogCache[kalshiCatalogKey] ?? persistedKalshiCatalog;
+  activeCatalogRef.current = {
+    [polymarketCatalogKey]: polymarketCatalog,
+    [kalshiCatalogKey]: kalshiCatalog,
+  };
   const activeCatalogKeys = useMemo(
     () =>
       [
@@ -290,25 +299,38 @@ export function usePredictionMarketsDataState({
   }, [includeKalshi, includePolymarket, kalshiCatalog, polymarketCatalog]);
 
   const allRows = useMemo(
-    () => buildPredictionListRows(allMarkets),
+    () =>
+      measurePerf("prediction.rows.build", () => buildPredictionListRows(allMarkets), {
+        marketCount: allMarkets.length,
+      }),
     [allMarkets],
   );
 
   const visibleRows = useMemo(() => {
-    const filtered = filterPredictionMarkets(
-      allRows,
+    return measurePerf("prediction.rows.filter-sort", () => {
+      const filtered = filterPredictionMarkets(
+        allRows,
+        browseTab,
+        effectiveVenueScope,
+        categoryId,
+        debouncedSearchQuery,
+        watchlistSet,
+      );
+      return sortPredictionMarkets(
+        filtered,
+        sortPreference.columnId
+          ? sortPreference
+          : getDefaultPredictionSort(browseTab),
+      );
+    }, {
       browseTab,
-      effectiveVenueScope,
       categoryId,
-      debouncedSearchQuery,
-      watchlistSet,
-    );
-    return sortPredictionMarkets(
-      filtered,
-      sortPreference.columnId
-        ? sortPreference
-        : getDefaultPredictionSort(browseTab),
-    );
+      rowCount: allRows.length,
+      search: debouncedSearchQuery.trim(),
+      sortColumnId: sortPreference.columnId,
+      sortDirection: sortPreference.direction,
+      venueScope: effectiveVenueScope,
+    });
   }, [
     allRows,
     browseTab,
@@ -319,28 +341,51 @@ export function usePredictionMarketsDataState({
     watchlistSet,
   ]);
 
-  const selectedRow = useMemo(
-    () => visibleRows.find((row) => row.key === selectedRowKey) ?? null,
-    [selectedRowKey, visibleRows],
+  const visibleRowLookup = useMemo(
+    () =>
+      measurePerf("prediction.rows.index", () => {
+        const byKey = new Map<
+          string,
+          { row: PredictionListRow; index: number }
+        >();
+        for (let index = 0; index < visibleRows.length; index += 1) {
+          const row = visibleRows[index];
+          if (row) byKey.set(row.key, { row, index });
+        }
+        return byKey;
+      }, {
+        rowCount: visibleRows.length,
+      }),
+    [visibleRows],
   );
-  const selectedSummary = useMemo(
-    () => {
-      if (!detailOpen || !selectedRow) {
-        return null;
+
+  const selectedRowState = useMemo(() => {
+    if (selectedRowKey == null) {
+      return { row: null as PredictionListRow | null, index: -1 };
+    }
+    return (
+      visibleRowLookup.get(selectedRowKey) ?? {
+        row: null as PredictionListRow | null,
+        index: -1,
       }
-      return (
-      selectedRow?.markets.find(
+    );
+  }, [selectedRowKey, visibleRowLookup]);
+  const selectedRow = selectedRowState.row;
+  const selectedSummary = useMemo(() => {
+    if (!detailOpen || !selectedRow) {
+      return null;
+    }
+    return (
+      selectedRow.markets.find(
         (market) => market.key === selectedDetailMarketKey,
       ) ??
-      selectedRow?.markets.find(
+      selectedRow.markets.find(
         (market) => market.key === selectedRow.focusMarketKey,
       ) ??
-      selectedRow?.representative ??
+      selectedRow.representative ??
       null
-      );
-    },
-    [detailOpen, selectedDetailMarketKey, selectedRow],
-  );
+    );
+  }, [detailOpen, selectedDetailMarketKey, selectedRow]);
   const selectedSummaryKey = selectedSummary?.key ?? null;
   const selectedSummaryVenue = selectedSummary?.venue ?? null;
   const selectedYesTokenId = selectedSummary?.yesTokenId ?? null;
@@ -366,9 +411,7 @@ export function usePredictionMarketsDataState({
     : null;
   const detailLoadCount = detailCacheKey ? detailPending[detailCacheKey] ?? 0 : 0;
   const detailError = detailCacheKey ? detailErrors[detailCacheKey] ?? null : null;
-  const selectedIndex = selectedRow
-    ? visibleRows.findIndex((row) => row.key === selectedRow.key)
-    : -1;
+  const selectedIndex = selectedRowState.index;
   const sortedOutcomeMarkets = useMemo(
     () =>
       selectedRow?.kind === "group"
@@ -378,20 +421,36 @@ export function usePredictionMarketsDataState({
   );
 
   const loadPolymarket = useCallback(
-    async (cacheKey: string, search: string, category: PredictionCategoryId) => {
-      setCatalogPending((current) =>
-        updatePredictionPendingCounts(current, cacheKey, 1),
-      );
+    async (
+      cacheKey: string,
+      search: string,
+      category: PredictionCategoryId,
+      options?: { showPending?: boolean },
+    ) => {
+      const showPending =
+        options?.showPending ??
+        (search.trim().length > 0 ||
+          (activeCatalogRef.current[cacheKey]?.length ?? 0) === 0);
+      if (showPending) {
+        setCatalogPending((current) =>
+          updatePredictionPendingCounts(current, cacheKey, 1),
+        );
+      }
       try {
         const next = await loadPolymarketCatalog(search, category);
-        setCatalogCache((current) => ({
-          ...current,
-          [cacheKey]: next,
-        }));
+        setCatalogCache((current) => {
+          const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
+          if (samePredictionCatalogSummaries(previous, next)) {
+            return current;
+          }
+          return {
+            ...current,
+            [cacheKey]: next,
+          };
+        });
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
         );
-        setLastRefreshAt(Date.now());
       } catch (error) {
         setCatalogErrors((current) =>
           updatePredictionErrorState(
@@ -401,29 +460,47 @@ export function usePredictionMarketsDataState({
           ),
         );
       } finally {
-        setCatalogPending((current) =>
-          updatePredictionPendingCounts(current, cacheKey, -1),
-        );
+        if (showPending) {
+          setCatalogPending((current) =>
+            updatePredictionPendingCounts(current, cacheKey, -1),
+          );
+        }
       }
     },
     [],
   );
 
   const loadKalshi = useCallback(
-    async (cacheKey: string, search: string, category: PredictionCategoryId) => {
-      setCatalogPending((current) =>
-        updatePredictionPendingCounts(current, cacheKey, 1),
-      );
+    async (
+      cacheKey: string,
+      search: string,
+      category: PredictionCategoryId,
+      options?: { showPending?: boolean },
+    ) => {
+      const showPending =
+        options?.showPending ??
+        (search.trim().length > 0 ||
+          (activeCatalogRef.current[cacheKey]?.length ?? 0) === 0);
+      if (showPending) {
+        setCatalogPending((current) =>
+          updatePredictionPendingCounts(current, cacheKey, 1),
+        );
+      }
       try {
         const next = await loadKalshiCatalog(search, category);
-        setCatalogCache((current) => ({
-          ...current,
-          [cacheKey]: next,
-        }));
+        setCatalogCache((current) => {
+          const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
+          if (samePredictionCatalogSummaries(previous, next)) {
+            return current;
+          }
+          return {
+            ...current,
+            [cacheKey]: next,
+          };
+        });
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
         );
-        setLastRefreshAt(Date.now());
       } catch (error) {
         setCatalogErrors((current) =>
           updatePredictionErrorState(
@@ -433,9 +510,11 @@ export function usePredictionMarketsDataState({
           ),
         );
       } finally {
-        setCatalogPending((current) =>
-          updatePredictionPendingCounts(current, cacheKey, -1),
-        );
+        if (showPending) {
+          setCatalogPending((current) =>
+            updatePredictionPendingCounts(current, cacheKey, -1),
+          );
+        }
       }
     },
     [],
@@ -597,25 +676,6 @@ export function usePredictionMarketsDataState({
       {
         onBestBidAsk: (assetId, bestBid, bestAsk, spread) => {
           setTransportState("live");
-          setCatalogCache((current) =>
-            updatePredictionCatalogCacheEntries(current, marketKey, (summary) => {
-              const isYes = assetId === summary.yesTokenId;
-              if (isYes) {
-                return {
-                  ...summary,
-                  yesBid: bestBid,
-                  yesAsk: bestAsk,
-                  spread: spread ?? summary.spread,
-                };
-              }
-              return {
-                ...summary,
-                noBid: bestBid,
-                noAsk: bestAsk,
-                spread: spread ?? summary.spread,
-              };
-            }),
-          );
           setDetailCache((current) =>
             updatePredictionDetailCacheEntries(current, marketKey, (detailEntry) => {
               const isYes = assetId === detailEntry.summary.yesTokenId;
@@ -633,7 +693,7 @@ export function usePredictionMarketsDataState({
                       noBid: bestBid,
                       noAsk: bestAsk,
                       spread: spread ?? detailEntry.summary.spread,
-                    },
+                },
               };
             }),
           );
@@ -688,20 +748,6 @@ export function usePredictionMarketsDataState({
                   },
                   ...detailEntry.trades,
                 ].slice(0, 40),
-              };
-            }),
-          );
-          setCatalogCache((current) =>
-            updatePredictionCatalogCacheEntries(current, marketKey, (summary) => {
-              const isYes = assetId === summary.yesTokenId;
-              const normalizedYesPrice = isYes
-                ? trade.price
-                : Math.max(0, 1 - trade.price);
-              return {
-                ...summary,
-                lastTradePrice: normalizedYesPrice,
-                yesPrice: normalizedYesPrice,
-                noPrice: Math.max(0, 1 - normalizedYesPrice),
               };
             }),
           );

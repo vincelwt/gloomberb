@@ -32,14 +32,14 @@ export function PageStackView({
 
   if (!detailOpen) {
     return (
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
         {rootContent}
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" flexGrow={1} overflow="hidden">
       <Box height={1} flexDirection="row">
         <Box
           onMouseDown={(event) => {
@@ -53,7 +53,7 @@ export function PageStackView({
         <Box flexGrow={1} />
         {backHint ? <Text fg={colors.textMuted}>{backHint}</Text> : null}
       </Box>
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
         {detailContent}
       </Box>
     </Box>

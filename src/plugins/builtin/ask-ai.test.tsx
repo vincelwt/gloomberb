@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
+import { Box } from "../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
 import { AskAiTab, __resetAskAiHistoryForTests, __setAskAiHistoryForTests, __setDetectedProvidersForTests, type AiProvider } from "./ask-ai";
@@ -98,7 +100,14 @@ function createAskAiHarness(
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={PANE_ID}>
         <PluginRenderProvider pluginId="ai" runtime={makeRuntime()}>
-          <AskAiTab width={width} height={height} focused onCapture={onCapture} />
+          <PaneFooterProvider>
+            {(footer) => (
+              <Box flexDirection="column" width={width} height={height}>
+                <AskAiTab width={width} height={Math.max(1, height - 1)} focused onCapture={onCapture} />
+                <PaneFooterBar footer={footer} focused width={width} />
+              </Box>
+            )}
+          </PaneFooterProvider>
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
@@ -155,8 +164,8 @@ describe("AskAiTab", () => {
 
     await act(async () => {
       testSetup = await testRender(
-        createAskAiHarness(24, 12),
-        { width: 24, height: 12 },
+        createAskAiHarness(46, 12),
+        { width: 46, height: 12 },
       );
     });
 
@@ -164,8 +173,10 @@ describe("AskAiTab", () => {
 
     const headerLine = testSetup.captureCharFrame().split("\n").find((line) => line.includes("Ask AI")) ?? "";
     expect(headerLine).toContain("Ask AI");
-    expect(headerLine).toContain("Claude (t)");
     expect(headerLine).not.toContain("t to switch");
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Provider Claude");
+    expect(frame).toContain("[t]provider");
   });
 
   test("focuses the input when the prompt row is clicked", async () => {
@@ -183,8 +194,8 @@ describe("AskAiTab", () => {
     await flushFrame();
 
     const frameBeforeClick = testSetup.captureCharFrame().split("\n");
-    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Enter to start typing"));
-    const inputCol = frameBeforeClick[inputRow]?.indexOf("Enter to start typing") ?? -1;
+    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Ask a question..."));
+    const inputCol = frameBeforeClick[inputRow]?.indexOf("Ask a question...") ?? -1;
 
     expect(inputRow).toBeGreaterThanOrEqual(0);
     expect(inputCol).toBeGreaterThanOrEqual(0);

@@ -4,7 +4,7 @@ import { createIdleEntry } from "./result-types";
 export class QueryStore<T> {
   private readonly entries = new Map<string, QueryEntry<T>>();
 
-  constructor(private readonly onChange: () => void) {}
+  constructor(private readonly onChange: (key: string) => void) {}
 
   get(key: string): QueryEntry<T> {
     return this.entries.get(key) ?? createIdleEntry<T>();
@@ -12,13 +12,13 @@ export class QueryStore<T> {
 
   set(key: string, entry: QueryEntry<T>): void {
     this.entries.set(key, entry);
-    this.onChange();
+    this.onChange(key);
   }
 
   update(key: string, updater: (current: QueryEntry<T>) => QueryEntry<T>): QueryEntry<T> {
     const next = updater(this.get(key));
     this.entries.set(key, next);
-    this.onChange();
+    this.onChange(key);
     return next;
   }
 

@@ -171,10 +171,36 @@ export interface SpinnerMarkProps extends BoxProps {
   color?: string;
 }
 
+export interface HostTabItem {
+  label: string;
+  value: string;
+  disabled?: boolean;
+}
+
+export interface HostTabsPalette {
+  activeFg: string;
+  inactiveFg: string;
+  disabledFg: string;
+  hoverFg: string;
+  activeUnderline: string;
+  inactiveUnderline: string;
+  hoverUnderline: string;
+  hoverBg: string;
+}
+
+export interface HostTabsProps {
+  tabs: HostTabItem[];
+  activeValue: string;
+  onSelect: (value: string) => void;
+  compact?: boolean;
+  palette: HostTabsPalette;
+}
+
 export interface UiHost {
   kind?: "opentui" | "tauri-web";
   capabilities?: {
     nativePaneChrome?: boolean;
+    titleBarOverlay?: boolean;
     precisePointer?: boolean;
     fractionalViewport?: boolean;
     cellWidthPx?: number;
@@ -193,12 +219,15 @@ export interface UiHost {
   ChartSurface: ComponentType<ChartSurfaceProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;
+  Tabs?: ComponentType<HostTabsProps>;
+  DataTable?: ComponentType<any>;
   createSyntaxStyle?(): SyntaxStyleLike;
   colorFromHex?(hex: string): unknown;
 }
 
 export interface RendererHost {
   requestExit(): void;
+  startWindowDrag?(): Promise<void> | void;
   openExternal(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
   readText(): Promise<string>;

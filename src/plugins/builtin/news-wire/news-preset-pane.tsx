@@ -1,8 +1,8 @@
-import { Box, Text, TextAttributes } from "../../../ui";
+import { Box } from "../../../ui";
 import type { NewsQuery } from "../../../news/types";
 import { useNewsArticles } from "../../../news/hooks";
 import type { PaneProps } from "../../../types/plugin";
-import { colors } from "../../../theme/colors";
+import { usePaneFooter } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import {
@@ -42,14 +42,12 @@ export function NewsPresetPane({
   );
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
 
-  const rootBefore = (
-    <Box height={1} flexDirection="row" paddingX={1}>
-      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</Text>
-      <Box marginLeft={1}>
-        <Text fg={colors.textMuted}>{articles.length} stories</Text>
-      </Box>
-    </Box>
-  );
+  usePaneFooter(`news-wire:${paneKey}`, () => ({
+    info: [
+      { id: "title", parts: [{ text: title, tone: "value", bold: true }] },
+      { id: "count", parts: [{ text: `${articles.length} stories`, tone: "muted" }] },
+    ],
+  }), [articles.length, paneKey, title]);
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
@@ -71,7 +69,6 @@ export function NewsPresetPane({
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
-      rootBefore={rootBefore}
       columns={columns}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}

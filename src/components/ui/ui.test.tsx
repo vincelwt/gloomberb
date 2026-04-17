@@ -150,6 +150,37 @@ function DataTableNoHorizontalScrollHarness() {
   );
 }
 
+function DataTableVirtualizationHarness() {
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    id: `row-${index}`,
+    name: `Row ${index}`,
+  }));
+
+  return (
+    <DataTable
+      columns={[{ id: "name", label: "NAME", width: 12, align: "left" }]}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      syncHeaderScroll={() => {}}
+      onBodyScrollActivity={() => {}}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      getItemKey={(row) => row.id}
+      isSelected={() => false}
+      onSelect={() => {}}
+      renderCell={(row) => ({ text: row.name })}
+      emptyStateTitle="No rows."
+    />
+  );
+}
+
 function MultiSelectChipsHarness() {
   const [values, setValues] = useState(["sma"]);
   selectedChips = values;
@@ -229,6 +260,42 @@ describe("shared UI kit", () => {
     expect(frame).toContain("Save");
     expect(frame).toContain("Syncing");
     expect(frame).toContain("Connected");
+  });
+
+  test("scrolls overflowing tabs horizontally with the mouse wheel", async () => {
+    testSetup = await testRender(
+      <Tabs
+        tabs={[
+          { label: "Overview", value: "overview" },
+          { label: "Financials", value: "financials" },
+          { label: "Chart", value: "chart" },
+          { label: "Options", value: "options" },
+          { label: "Insider", value: "insider" },
+        ]}
+        activeValue="overview"
+        onSelect={() => {}}
+      />,
+      { width: 24, height: 4 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Overview");
+    expect(frame).not.toContain("Insider");
+
+    await act(async () => {
+      for (let i = 0; i < 40; i++) {
+        await testSetup!.mockMouse.scroll(1, 0, "down");
+      }
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Options");
+    expect(frame).toContain("Insider");
   });
 
   test("renders toggle lists with selection and descriptions", async () => {
@@ -472,5 +539,25 @@ describe("shared UI kit", () => {
     });
 
     expect(tableHorizontalScrollbarVisible).toBe(false);
+  });
+
+  test("virtualizes data table rows by default", async () => {
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="portfolio-list:main">
+          <DataTableVirtualizationHarness />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 32, height: 6 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Row 0");
+    expect(frame).not.toContain("Row 99");
   });
 });

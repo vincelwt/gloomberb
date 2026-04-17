@@ -137,6 +137,25 @@ describe("createThrottledFetch", () => {
     const client = createThrottledFetch({ maxRetries: 0 });
     await expect(client.fetchJson("https://api.example.com/test")).rejects.toThrow("Rate limited");
   });
+
+  test("uses a client-specific fetch transport", async () => {
+    const transportMock = mock((url: string, init?: RequestInit) => {
+      expect(url).toBe("https://api.example.com/proxied");
+      expect((init?.headers as Record<string, string>)["X-Transport"]).toBe("1");
+      return Promise.resolve(new Response("proxied", { status: 202 }));
+    });
+
+    const client = createThrottledFetch({
+      defaultHeaders: { "X-Transport": "1" },
+      transport: transportMock,
+    });
+    const resp = await client.fetch("https://api.example.com/proxied");
+
+    expect(resp.status).toBe(202);
+    expect(await resp.text()).toBe("proxied");
+    expect(transportMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 // Restore

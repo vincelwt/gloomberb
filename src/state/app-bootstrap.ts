@@ -8,6 +8,8 @@ import type { TickerMetadata, TickerRecord } from "../types/ticker";
 import type { AppAction, PaneRuntimeState } from "./app-context";
 import type { AppSessionSnapshot } from "../core/state/session-persistence";
 import { getDockedPaneIds } from "../plugins/pane-manager";
+import { debugLog } from "../utils/debug-log";
+import { measurePerf, measurePerfAsync } from "../utils/perf-marks";
 
 const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [
   { ticker: "AAPL", exchange: "NASDAQ", currency: "USD", name: "Apple Inc." },
@@ -41,6 +43,7 @@ const PORTFOLIO_FINANCIAL_COLUMN_IDS = new Set([
   "forward_pe",
   "dividend_yield",
 ]);
+const startupLog = debugLog.createLogger("startup");
 
 export interface InitializeAppStateArgs {
   config: AppConfig;
@@ -252,57 +255,128 @@ export async function initializeAppState({
   autoImportBrokerPositions,
   persistedBrokerAccounts = {},
 }: InitializeAppStateArgs): Promise<void> {
-  let tickers = await tickerRepository.loadAllTickers();
+  startupLog.info("initialize start", {
+    layoutPaneCount: config.layout.instances.length,
+    dockedPaneCount: getDockedPaneIds(config.layout).length,
+    floatingPaneCount: config.layout.floating.length,
+    brokerInstanceCount: config.brokerInstances.length,
+    sessionHydrationTargetCount: sessionSnapshot?.hydrationTargets.length ?? 0,
+    recentTickerCount: config.recentTickers.length,
+  });
+
+  let tickers = await measurePerfAsync("startup.load-tickers", () => tickerRepository.loadAllTickers());
+  startupLog.info("tickers loaded", { count: tickers.length });
 
   // Seed default watchlist tickers on first run
   if (tickers.length === 0) {
     const defaultWatchlistId = config.watchlists[0]?.id ?? "watchlist";
-    for (const entry of DEFAULT_WATCHLIST_TICKERS) {
-      await tickerRepository.createTicker({
-        ...entry,
-        portfolios: [],
-        watchlists: [defaultWatchlistId],
-        positions: [],
-        broker_contracts: [],
-        custom: {},
-        tags: [],
+    await measurePerfAsync("startup.seed-default-tickers", async () => {
+      for (const entry of DEFAULT_WATCHLIST_TICKERS) {
+        await tickerRepository.createTicker({
+          ...entry,
+          portfolios: [],
+          watchlists: [defaultWatchlistId],
+          positions: [],
+          broker_contracts: [],
+          custom: {},
+          tags: [],
+        });
+      }
+    }, { count: DEFAULT_WATCHLIST_TICKERS.length });
+    tickers = await measurePerfAsync("startup.reload-default-tickers", () => tickerRepository.loadAllTickers());
+    startupLog.info("default tickers seeded", {
+      defaultWatchlistId,
+      count: tickers.length,
+    });
+  }
+
+  const tickerMap = measurePerf("startup.build-ticker-map", () => {
+    const nextTickerMap = new Map<string, TickerRecord>();
+    for (const ticker of tickers) {
+      nextTickerMap.set(ticker.metadata.ticker, ticker);
+    }
+    return nextTickerMap;
+  }, { tickerCount: tickers.length });
+  measurePerf("startup.dispatch-set-tickers", () => {
+    dispatch({ type: "SET_TICKERS", tickers: tickerMap });
+  }, { tickerCount: tickerMap.size });
+
+  measurePerf("startup.dispatch-broker-accounts", () => {
+    for (const [instanceId, accounts] of Object.entries(persistedBrokerAccounts)) {
+      dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
+    }
+  }, {
+    instanceCount: Object.keys(persistedBrokerAccounts).length,
+    accountCount: Object.values(persistedBrokerAccounts).reduce((sum, accounts) => sum + accounts.length, 0),
+  });
+
+  const paneStateSeed = measurePerf(
+    "startup.build-pane-state-seed",
+    () => buildPaneStateSeed(config, tickers, tickerMap, sessionSnapshot),
+    { paneCount: config.layout.instances.length },
+  );
+  measurePerf("startup.dispatch-pane-state-seed", () => {
+    for (const [paneId, patch] of Object.entries(paneStateSeed) as Array<[string, PaneRuntimeState]>) {
+      dispatch({ type: "UPDATE_PANE_STATE", paneId, patch });
+    }
+  }, { paneStateSeedCount: Object.keys(paneStateSeed).length });
+
+  const refreshPlan = measurePerf(
+    "startup.build-refresh-plan",
+    () => buildRefreshPlan(config, tickerMap, paneStateSeed, sessionSnapshot),
+    {
+      tickerCount: tickerMap.size,
+      sessionHydrationTargetCount: sessionSnapshot?.hydrationTargets.length ?? 0,
+      recentTickerCount: config.recentTickers.length,
+    },
+  );
+  startupLog.info("refresh plan built", {
+    count: refreshPlan.length,
+    financials: refreshPlan.filter((entry) => entry.mode === "financials").length,
+    quotes: refreshPlan.filter((entry) => entry.mode === "quote").length,
+    priority0: refreshPlan.filter((entry) => entry.priority === 0).length,
+    priority1: refreshPlan.filter((entry) => entry.priority === 1).length,
+    priority2: refreshPlan.filter((entry) => entry.priority === 2).length,
+    symbols: refreshPlan.map((entry) => `${entry.mode}:${entry.ticker.metadata.ticker}`),
+  });
+
+  if (primeCachedFinancials) {
+    const cachedPrimeEntries = measurePerf(
+      "startup.resolve-cached-financial-prime",
+      () => resolveCachedFinancialPrimeEntries(refreshPlan, sessionSnapshot, dataProvider),
+      { financialRefreshCount: refreshPlan.filter((entry) => entry.mode === "financials").length },
+    );
+    if (cachedPrimeEntries.length > 0) {
+      measurePerf("startup.prime-cached-financials", () => {
+        primeCachedFinancials(cachedPrimeEntries);
+      }, { count: cachedPrimeEntries.length });
+      startupLog.info("cached financials primed", {
+        count: cachedPrimeEntries.length,
+        symbols: cachedPrimeEntries.map((entry) => entry.ticker.metadata.ticker),
       });
     }
-    tickers = await tickerRepository.loadAllTickers();
   }
 
-  const tickerMap = new Map<string, TickerRecord>();
-  for (const ticker of tickers) {
-    tickerMap.set(ticker.metadata.ticker, ticker);
-  }
-  dispatch({ type: "SET_TICKERS", tickers: tickerMap });
+  measurePerf("startup.dispatch-initialized", () => {
+    dispatch({ type: "SET_INITIALIZED" });
+  });
 
-  for (const [instanceId, accounts] of Object.entries(persistedBrokerAccounts)) {
-    dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
-  }
-
-  const paneStateSeed = buildPaneStateSeed(config, tickers, tickerMap, sessionSnapshot);
-  for (const [paneId, patch] of Object.entries(paneStateSeed) as Array<[string, PaneRuntimeState]>) {
-    dispatch({ type: "UPDATE_PANE_STATE", paneId, patch });
-  }
-
-  const refreshPlan = buildRefreshPlan(config, tickerMap, paneStateSeed, sessionSnapshot);
-  if (primeCachedFinancials) {
-    const cachedPrimeEntries = resolveCachedFinancialPrimeEntries(refreshPlan, sessionSnapshot, dataProvider);
-    if (cachedPrimeEntries.length > 0) {
-      primeCachedFinancials(cachedPrimeEntries);
+  measurePerf("startup.enqueue-refresh-plan", () => {
+    for (const entry of refreshPlan) {
+      if (entry.mode === "financials") {
+        refreshTicker(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
+      } else {
+        refreshQuote(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
+      }
     }
-  }
+  }, { count: refreshPlan.length });
 
-  dispatch({ type: "SET_INITIALIZED" });
-
-  for (const entry of refreshPlan) {
-    if (entry.mode === "financials") {
-      refreshTicker(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
-    } else {
-      refreshQuote(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
-    }
-  }
-
-  void autoImportBrokerPositions(tickerMap);
+  void measurePerfAsync("startup.auto-import-broker-positions", () => autoImportBrokerPositions(tickerMap), {
+    brokerInstanceCount: config.brokerInstances.length,
+  }).catch((error) => {
+    startupLog.warn("auto import broker positions failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  });
+  startupLog.info("initialize complete");
 }

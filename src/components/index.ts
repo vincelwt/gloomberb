@@ -17,6 +17,13 @@ export { DataTableStackView } from "./data-table-stack-view";
 export type { DataTableStackViewProps } from "./data-table-stack-view";
 export { FeedDataTableStackView } from "./feed-data-table-stack-view";
 export type { FeedDataTableItem } from "./feed-data-table-stack-view";
+export { PaneFooterBar, usePaneFooter, usePaneHints } from "./layout/pane-footer";
+export type {
+  PaneFooterRegistration,
+  PaneFooterSegment,
+  PaneFooterPart,
+  PaneHint,
+} from "./layout/pane-footer";
 
 // Theme
 export { colors, priceColor, hoverBg } from "../theme/colors";

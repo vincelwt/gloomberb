@@ -1,10 +1,23 @@
 import { createElement, forwardRef, type ReactNode } from "react";
 import { useUiHost, useRendererHost } from "./host";
-export { RGBA, StyledText, TextAttributes, UiHostProvider, useNativeRenderer, useRendererHost, useSyntaxStyleFactory, useUiCapabilities } from "./host";
+export {
+  RGBA,
+  StyledText,
+  TextAttributes,
+  UiHostProvider,
+  useNativeRenderer,
+  useRendererHost,
+  useSyntaxStyleFactory,
+  useUiCapabilities,
+  useUiHost,
+} from "./host";
 export type {
   BoxRenderable,
   BoxProps,
   ChartSurfaceProps,
+  HostTabItem,
+  HostTabsPalette,
+  HostTabsProps,
   Highlight,
   ImageSurfaceProps,
   InputRenderable,

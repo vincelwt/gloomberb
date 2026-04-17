@@ -19,6 +19,7 @@ import {
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "./fetch";
+import { measurePerf } from "../../../utils/perf-marks";
 
 interface KalshiMarketRecord {
   ticker: string;
@@ -257,6 +258,24 @@ function sortKalshiMarkets(
   );
 }
 
+function normalizeKalshiCatalog(
+  events: KalshiEventRecord[],
+  searchQuery: string,
+  categoryId: PredictionCategoryId,
+): PredictionMarketSummary[] {
+  return measurePerf(
+    "prediction.catalog.kalshi.normalize",
+    () => sortKalshiMarkets(
+      flattenKalshiEvents(events, searchQuery, categoryId),
+    ),
+    {
+      categoryId,
+      eventCount: events.length,
+      search: searchQuery.trim().length > 0,
+    },
+  );
+}
+
 async function fetchKalshiCatalogEvents(
   maxPages = DEFAULT_KALSHI_EVENT_MAX_PAGES,
 ): Promise<KalshiEventRecord[]> {
@@ -363,9 +382,7 @@ export async function loadKalshiCatalog(
         categoryId === "all"
           ? await fetchKalshiCatalogEvents(maxPages)
           : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
-      return sortKalshiMarkets(
-        flattenKalshiEvents(events, normalizedQuery, categoryId),
-      );
+      return normalizeKalshiCatalog(events, normalizedQuery, categoryId);
     },
     PREDICTION_CACHE_POLICIES.catalog,
   );

@@ -13,7 +13,6 @@ import {
   type ReactNode,
 } from "react";
 import type { SessionStore } from "../data/session-store";
-import { saveConfig } from "../data/config-store";
 import { syncTheme } from "../theme/colors";
 import { findPaneInstance, type AppConfig, type PaneInstanceConfig } from "../types/config";
 import { setPaneSetting } from "../pane-settings";
@@ -32,6 +31,7 @@ import {
   resolveTickerForPane,
 } from "../core/state/app-state";
 import type { AppAction, AppState } from "../core/state/app-state";
+import { scheduleConfigSave } from "./config-save-scheduler";
 
 export {
   appReducer,
@@ -80,6 +80,11 @@ function useRequiredAppContext(): AppContextValue {
   return context;
 }
 
+function sameStringList(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
 export function useAppState(): AppContextLegacyValue {
   const context = useRequiredAppContext();
   if (!isAppStoreContextValue(context)) {
@@ -88,6 +93,25 @@ export function useAppState(): AppContextLegacyValue {
 
   const state = useSyncExternalStore(context.subscribe, context.getState, context.getState);
   return useMemo(() => ({ state, dispatch: context.dispatch }), [context.dispatch, state]);
+}
+
+export function useAppStateRef() {
+  const context = useRequiredAppContext();
+  const stateRef = useRef(isAppStoreContextValue(context) ? context.getState() : context.state);
+
+  useLayoutEffect(() => {
+    if (!isAppStoreContextValue(context)) {
+      stateRef.current = context.state;
+      return;
+    }
+
+    stateRef.current = context.getState();
+    return context.subscribe(() => {
+      stateRef.current = context.getState();
+    });
+  }, [context]);
+
+  return stateRef;
 }
 
 export function useAppDispatch(): Dispatch<AppAction> {
@@ -146,7 +170,8 @@ export function usePaneInstance(): PaneInstanceConfig | null {
 
 export function usePaneTicker(paneId?: string) {
   const paneContextId = useContext(PaneContext);
-  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const needsFocusedPane = paneId == null && paneContextId == null;
+  const focusedPaneId = useAppSelector((state) => (needsFocusedPane ? state.focusedPaneId : null));
   const scopedPaneId = paneId ?? paneContextId ?? focusedPaneId;
   const symbol = useAppSelector((state) => (
     scopedPaneId ? resolveTickerForPane(state, scopedPaneId) : null
@@ -189,7 +214,8 @@ export function useFocusedTicker() {
 
 export function usePaneCollection(paneId?: string) {
   const paneContextId = useContext(PaneContext);
-  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const needsFocusedPane = paneId == null && paneContextId == null;
+  const focusedPaneId = useAppSelector((state) => (needsFocusedPane ? state.focusedPaneId : null));
   const scopedPaneId = paneId ?? paneContextId ?? focusedPaneId;
   const collectionId = useAppSelector((state) => (
     scopedPaneId ? resolveCollectionForPane(state, scopedPaneId) : null
@@ -222,24 +248,26 @@ export function usePaneSettingValue<T>(
   fallback: T,
   paneId?: string,
 ): [T, (value: SetStateAction<T>) => void] {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
   const scopedPaneId = paneId ?? usePaneInstanceId();
-  const instance = findPaneInstance(state.config.layout, scopedPaneId);
+  const instance = useAppSelector((state) => findPaneInstance(state.config.layout, scopedPaneId) ?? null);
   const value = (instance?.settings?.[key] as T | undefined) ?? fallback;
 
-  const setValue = (nextValue: SetStateAction<T>) => {
-    const currentValue = (findPaneInstance(state.config.layout, scopedPaneId)?.settings?.[key] as T | undefined) ?? fallback;
+  const setValue = useCallback((nextValue: SetStateAction<T>) => {
+    const currentState = stateRef.current;
+    const currentValue = (findPaneInstance(currentState.config.layout, scopedPaneId)?.settings?.[key] as T | undefined) ?? fallback;
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
-    const layout = setPaneSetting(state.config.layout, scopedPaneId, key, resolved);
-    const layouts = state.config.layouts.map((savedLayout, index) => (
-      index === state.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+    const layout = setPaneSetting(currentState.config.layout, scopedPaneId, key, resolved);
+    const layouts = currentState.config.layouts.map((savedLayout, index) => (
+      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
     ));
-    const nextConfig = { ...state.config, layout, layouts };
+    const nextConfig = { ...currentState.config, layout, layouts };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    saveConfig(nextConfig).catch(() => {});
-  };
+    scheduleConfigSave(nextConfig);
+  }, [dispatch, fallback, key, scopedPaneId, stateRef]);
 
   return [value, setValue];
 }
@@ -281,10 +309,9 @@ export function AppProvider({
   }
 
   useEffect(() => {
-    if (previousRecentTickers.current !== state.recentTickers) {
-      previousRecentTickers.current = state.recentTickers;
-      saveConfig({ ...state.config, recentTickers: state.recentTickers }).catch(() => {});
-    }
+    if (sameStringList(previousRecentTickers.current, state.recentTickers)) return;
+    previousRecentTickers.current = state.recentTickers;
+    scheduleConfigSave({ ...state.config, recentTickers: state.recentTickers });
   }, [state.config, state.recentTickers]);
 
   useLayoutEffect(() => {

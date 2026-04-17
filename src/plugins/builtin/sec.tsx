@@ -8,7 +8,7 @@ import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { Spinner } from "../../components/spinner";
-import { FeedDataTableStackView, type FeedDataTableItem } from "../../components";
+import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../components";
 import { isUsEquityTicker } from "../../utils/sec";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { parseForm4Xml, transactionTypeLabel } from "./insider/insider-data";
@@ -305,6 +305,15 @@ function SecTab({ width, height, focused }: DetailTabProps) {
       }
     })();
   }, [filings]);
+
+  usePaneFooter("sec", () => ({
+    info: [
+      ...(ticker ? [{ id: "ticker", parts: [{ text: ticker.metadata.ticker, tone: "value" as const, bold: true }] }] : []),
+      { id: "count", parts: [{ text: `${filings.length} filings`, tone: "muted" }] },
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+    ],
+  }), [error, filings.length, loading, ticker?.metadata.ticker]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
   if (!eligibleTicker) return renderNotice("SEC filings are only shown for US equities.", width);

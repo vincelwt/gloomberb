@@ -1,11 +1,9 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useEffect, useMemo } from "react";
-import { TextAttributes } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
 import type { MarketNewsItem } from "../../../types/news-source";
-import { colors } from "../../../theme/colors";
 import { useNewsArticles } from "../../../news/hooks";
-import { TabBar } from "../../../components";
+import { TabBar, usePaneFooter } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
@@ -71,23 +69,23 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     return true;
   };
 
+  usePaneFooter("news-wire:industry", () => ({
+    info: [
+      { id: "title", parts: [{ text: "Sector News", tone: "value", bold: true }] },
+      { id: "category", parts: [{ text: sectorNewsLabel(category), tone: category === "all" ? "muted" : "value" }] },
+      { id: "count", parts: [{ text: `${articles.length} stories`, tone: "muted" }] },
+    ],
+  }), [articles.length, category]);
+
   const rootBefore = (
-    <>
-      <Box height={1} flexDirection="row" paddingX={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Sector News</Text>
-        <Box marginLeft={1}>
-          <Text fg={colors.textMuted}>{articles.length} stories</Text>
-        </Box>
-      </Box>
-      <Box height={1} flexShrink={0} overflow="hidden">
-        <TabBar
-          tabs={tabs}
-          activeValue={category}
-          onSelect={(value) => setCategory(value as SectorNewsSelection)}
-          compact
-        />
-      </Box>
-    </>
+    <Box height={1} flexShrink={0} overflow="hidden">
+      <TabBar
+        tabs={tabs}
+        activeValue={category}
+        onSelect={(value) => setCategory(value as SectorNewsSelection)}
+        compact
+      />
+    </Box>
   );
 
   const detailContent = detailArticle ? (
