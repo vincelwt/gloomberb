@@ -1,16 +1,17 @@
+import { Box, Text } from "../../../ui";
 import { colors } from "../../../theme/colors";
 
 export function PredictionMarketRulesView({ rules }: { rules: string[] }) {
   return (
-    <box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={1}>
       {rules.map((rule, index) => (
-        <box key={`${index}:${rule.slice(0, 24)}`} flexDirection="column">
-          <text fg={colors.text}>{rule}</text>
-        </box>
+        <Box key={`${index}:${rule.slice(0, 24)}`} flexDirection="column">
+          <Text fg={colors.text}>{rule}</Text>
+        </Box>
       ))}
       {rules.length === 0 && (
-        <text fg={colors.textDim}>No rule text returned by the venue.</text>
+        <Text fg={colors.textDim}>No rule text returned by the venue.</Text>
       )}
-    </box>
+    </Box>
   );
 }

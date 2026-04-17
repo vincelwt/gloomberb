@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, ScrollBox, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
@@ -7,11 +8,11 @@ import { getSharedRegistry } from "../registry";
 
 function ShortcutBadge({ label }: { label: string }) {
   return (
-    <box backgroundColor={colors.selected}>
-      <text fg={colors.selectedText} attributes={TextAttributes.BOLD}>
+    <Box backgroundColor={colors.selected}>
+      <Text fg={colors.selectedText} attributes={TextAttributes.BOLD}>
         {` ${label} `}
-      </text>
-    </box>
+      </Text>
+    </Box>
   );
 }
 
@@ -25,24 +26,24 @@ function ShortcutRow({
   compact: boolean;
 }) {
   return (
-    <box flexDirection={compact ? "column" : "row"} gap={1}>
-      <box flexDirection="row" gap={1} flexShrink={0}>
+    <Box flexDirection={compact ? "column" : "row"} gap={1}>
+      <Box flexDirection="row" gap={1} flexShrink={0}>
         {badges.map((badge) => <ShortcutBadge key={badge} label={badge} />)}
-      </box>
-      <box flexGrow={1}>
-        <text fg={colors.text}>{description}</text>
-      </box>
-    </box>
+      </Box>
+      <Box flexGrow={1}>
+        <Text fg={colors.text}>{description}</Text>
+      </Box>
+    </Box>
   );
 }
 
 function HelpSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <box flexDirection="column">
-      <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</text>
-      <box height={1} />
+    <Box flexDirection="column">
+      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</Text>
+      <Box height={1} />
       {children}
-    </box>
+    </Box>
   );
 }
 
@@ -60,7 +61,7 @@ function ActionButton({
   onPress: () => void;
 }) {
   return (
-    <box
+    <Box
       backgroundColor={hovered ? hoverBg() : colors.panel}
       onMouseMove={() => onHover(id)}
       onMouseOut={() => onHover(null)}
@@ -70,8 +71,8 @@ function ActionButton({
         onPress();
       }}
     >
-      <text fg={hovered ? colors.textBright : colors.text}>{` ${label} `}</text>
-    </box>
+      <Text fg={hovered ? colors.textBright : colors.text}>{` ${label} `}</Text>
+    </Box>
   );
 }
 
@@ -125,18 +126,18 @@ export function HelpPane({ width, height }: PaneProps) {
   };
 
   return (
-    <box flexDirection="column" width={width} height={height}>
-      <scrollbox flexGrow={1} scrollY>
-        <box flexDirection="column" padding={1}>
-          <box flexDirection="column" gap={1}>
-            <text fg={colors.textBright} attributes={TextAttributes.BOLD}>How To Use Gloomberb</text>
-            <box flexDirection="column">
-              <text fg={colors.textDim}>Gloomberb is command-bar first.</text>
-              <text fg={colors.textDim}>Use the keyboard for speed, and the mouse for windows.</text>
-            </box>
-          </box>
+    <Box flexDirection="column" width={width} height={height}>
+      <ScrollBox flexGrow={1} scrollY>
+        <Box flexDirection="column" padding={1}>
+          <Box flexDirection="column" gap={1}>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>How To Use Gloomberb</Text>
+            <Box flexDirection="column">
+              <Text fg={colors.textDim}>Gloomberb is command-bar first.</Text>
+              <Text fg={colors.textDim}>Use the keyboard for speed, and the mouse for windows.</Text>
+            </Box>
+          </Box>
 
-          <box flexDirection={compact ? "column" : "row"} gap={1}>
+          <Box flexDirection={compact ? "column" : "row"} gap={1}>
             <ActionButton
               id="debug"
               label="Open Debug Log"
@@ -158,7 +159,7 @@ export function HelpPane({ width, height }: PaneProps) {
               onHover={setHoveredAction}
               onPress={openPluginManager}
             />
-          </box>
+          </Box>
 
           <HelpSection title="Command Bar">
             <ShortcutRow
@@ -192,7 +193,7 @@ export function HelpPane({ width, height }: PaneProps) {
                 compact={compact}
               />
             )) : (
-              <text fg={colors.textDim}>No shortcut window templates are currently registered.</text>
+              <Text fg={colors.textDim}>No shortcut window templates are currently registered.</Text>
             )}
           </HelpSection>
 
@@ -225,24 +226,24 @@ export function HelpPane({ width, height }: PaneProps) {
               description="Open layout actions."
               compact={compact}
             />
-            <text fg={colors.text}>Docked panes stay in the saved layout.</text>
-            <box flexDirection="column">
-              <text fg={colors.text}>Floating panes can be dragged by the title bar</text>
-              <text fg={colors.text}>and resized from the lower-right corner.</text>
-            </box>
-            <text fg={colors.text}>Run Gridlock All Windows if the layout gets messy.</text>
+            <Text fg={colors.text}>Docked panes stay in the saved layout.</Text>
+            <Box flexDirection="column">
+              <Text fg={colors.text}>Floating panes can be dragged by the title bar</Text>
+              <Text fg={colors.text}>and resized from the lower-right corner.</Text>
+            </Box>
+            <Text fg={colors.text}>Run Gridlock All Windows if the layout gets messy.</Text>
           </HelpSection>
 
           <HelpSection title="If There Is A Bug">
-            <text fg={colors.text}>Open Debug Log, then run Export Debug Log from the command bar.</text>
-            <box flexDirection="column">
-              <text fg={colors.text}>The file lands in ~/Downloads. Include steps, ticker or layout, plugin,</text>
-              <text fg={colors.text}>and a screenshot if it is visual.</text>
-            </box>
+            <Text fg={colors.text}>Open Debug Log, then run Export Debug Log from the command bar.</Text>
+            <Box flexDirection="column">
+              <Text fg={colors.text}>The file lands in ~/Downloads. Include steps, ticker or layout, plugin,</Text>
+              <Text fg={colors.text}>and a screenshot if it is visual.</Text>
+            </Box>
           </HelpSection>
-        </box>
-      </scrollbox>
-    </box>
+        </Box>
+      </ScrollBox>
+    </Box>
   );
 }
 

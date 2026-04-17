@@ -214,9 +214,9 @@ export interface CliLaunchRequest<TLaunchState = unknown> {
   applyConfig(config: AppConfig, env: CliLaunchEnvironment): CliLaunchConfigResult<TLaunchState>;
   applySessionSnapshot?(
     config: AppConfig,
-    snapshot: import("../state/session-persistence").AppSessionSnapshot | null,
+    snapshot: import("../core/state/session-persistence").AppSessionSnapshot | null,
     launchState: TLaunchState | undefined,
-  ): import("../state/session-persistence").AppSessionSnapshot;
+  ): import("../core/state/session-persistence").AppSessionSnapshot;
 }
 
 export type CliDispatchResult =

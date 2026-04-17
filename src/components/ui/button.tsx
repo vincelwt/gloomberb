@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -46,7 +47,7 @@ export function Button({
   const palette = resolveButtonColors(variant, active, disabled);
 
   return (
-    <box
+    <Box
       width={width}
       height={1}
       flexDirection="row"
@@ -55,15 +56,15 @@ export function Button({
         if (!disabled) onPress?.();
       }}
     >
-      <text fg={palette.fg} attributes={active ? TextAttributes.BOLD : 0}>
+      <Text fg={palette.fg} attributes={active ? TextAttributes.BOLD : 0}>
         {` ${label} `}
-      </text>
+      </Text>
       {shortcut && (
-        <text fg={disabled ? colors.textMuted : colors.textDim}>
+        <Text fg={disabled ? colors.textMuted : colors.textDim}>
           {` ${shortcut}`}
-        </text>
+        </Text>
       )}
-    </box>
+    </Box>
   );
 }
 

@@ -1,3 +1,4 @@
+import { Box } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { ExternalLinkText } from "../../../components/ui/external-link";
 
@@ -18,12 +19,12 @@ export function SummaryLink({
   maxLength: number;
 }) {
   return (
-    <box height={1}>
+    <Box height={1}>
       <ExternalLinkText
         url={url}
         label={truncatePredictionText(url, maxLength)}
         color={colors.textBright}
       />
-    </box>
+    </Box>
   );
 }

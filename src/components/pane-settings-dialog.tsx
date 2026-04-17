@@ -1,5 +1,6 @@
-import { TextAttributes } from "@opentui/core";
-import { useDialog, useDialogKeyboard, type AlertContext } from "@opentui-ui/dialog/react";
+import { Box, Text } from "../ui";
+import { TextAttributes } from "../ui";
+import { type AlertContext, useDialog, useDialogKeyboard } from "../ui/dialog";
 import { useEffect, useRef, useState } from "react";
 import type {
   PaneSettingField,
@@ -143,7 +144,7 @@ function TextFieldDialog({
       title={field.label}
       footer="Enter to apply · esc cancel"
     >
-      <box flexDirection="column" gap={1}>
+      <Box flexDirection="column" gap={1}>
         <TextField
           inputRef={inputRef}
           value={value}
@@ -153,20 +154,20 @@ function TextFieldDialog({
           onSubmit={() => { void submit(); }}
         />
         {error && (
-          <box height={1}>
-            <text fg={colors.negative}>{error}</text>
-          </box>
+          <Box height={1}>
+            <Text fg={colors.negative}>{error}</Text>
+          </Box>
         )}
         {field.description && (
-          <box height={1}>
-            <text fg={colors.textDim}>{field.description}</text>
-          </box>
+          <Box height={1}>
+            <Text fg={colors.textDim}>{field.description}</Text>
+          </Box>
         )}
-        <box flexDirection="row" gap={1}>
+        <Box flexDirection="row" gap={1}>
           <Button label="Apply" variant="primary" onPress={() => { void submit(); }} />
           <Button label="Cancel" variant="ghost" onPress={dismiss} />
-        </box>
-      </box>
+        </Box>
+      </Box>
     </DialogFrame>
   );
 }
@@ -277,7 +278,7 @@ export function PaneSettingsDialogContent({
   if (!descriptor) {
     return (
       <DialogFrame title="Pane Settings" footer="Press esc to cancel">
-        <text fg={colors.textDim}>This pane is no longer configurable.</text>
+        <Text fg={colors.textDim}>This pane is no longer configurable.</Text>
       </DialogFrame>
     );
   }
@@ -301,28 +302,28 @@ export function PaneSettingsDialogContent({
           void openFieldEditor(fields[index]).catch(() => {});
         }}
         renderRow={(item, rowState) => (
-          <box flexDirection="row" justifyContent="space-between" width="100%">
-            <box flexDirection="row">
-              <text fg={rowState.selected ? colors.selectedText : colors.textDim}>
+          <Box flexDirection="row" justifyContent="space-between" width="100%">
+            <Box flexDirection="row">
+              <Text fg={rowState.selected ? colors.selectedText : colors.textDim}>
                 {rowState.selected ? "\u25b8 " : "  "}
-              </text>
-              <text
+              </Text>
+              <Text
                 fg={rowState.selected ? colors.text : colors.textDim}
                 attributes={rowState.selected ? TextAttributes.BOLD : 0}
               >
                 {item.label}
-              </text>
-            </box>
-            <text fg={rowState.selected ? colors.textMuted : colors.textMuted}>
+              </Text>
+            </Box>
+            <Text fg={rowState.selected ? colors.textMuted : colors.textMuted}>
               {item.detail}
-            </text>
-          </box>
+            </Text>
+          </Box>
         )}
       />
       {fields.length === 0 && state.focusedPaneId === paneId && (
-        <box height={1}>
-          <text fg={colors.textDim}>No settings available.</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textDim}>No settings available.</Text>
+        </Box>
       )}
     </DialogFrame>
   );

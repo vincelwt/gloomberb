@@ -1,3 +1,4 @@
+
 export type MarketState = "PRE" | "REGULAR" | "POST" | "PREPRE" | "POSTPOST" | "CLOSED";
 export type SessionConfidence = "explicit" | "derived" | "unknown";
 export type QuoteDataSource = "live" | "delayed" | "yahoo";

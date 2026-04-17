@@ -1,6 +1,7 @@
+import { Box, ScrollBox, Text } from "../../../ui";
 import { useEffect, useRef, useState } from "react";
-import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
 import { getSharedDataProvider } from "../../registry";
@@ -66,7 +67,7 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(interval);
   }, []);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
     if (event.name === "r") {
       fetchRates();
@@ -89,60 +90,60 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
   // Rates use flexGrow so they fill available space dynamically
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {/* Header */}
-      <box flexDirection="row" height={1} paddingX={1}>
-        <text fg={colors.textMuted}>{ageText}</text>
-      </box>
+      <Box flexDirection="row" height={1} paddingX={1}>
+        <Text fg={colors.textMuted}>{ageText}</Text>
+      </Box>
 
       {/* Column header row */}
-      <box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
-        <box width={5} flexShrink={0} />
+      <Box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
+        <Box width={5} flexShrink={0} />
         {MAJOR_CURRENCIES.map((col) => (
-          <box key={col} flexGrow={1} justifyContent="flex-end" paddingRight={1}>
-            <text fg={colors.textDim} attributes={TextAttributes.BOLD}>{col}</text>
-          </box>
+          <Box key={col} flexGrow={1} justifyContent="flex-end" paddingRight={1}>
+            <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>{col}</Text>
+          </Box>
         ))}
-      </box>
+      </Box>
 
       {/* Matrix rows */}
-      <scrollbox flexGrow={1} scrollY focusable={false}>
-        <box flexDirection="column">
+      <ScrollBox flexGrow={1} scrollY focusable={false}>
+        <Box flexDirection="column">
           {loading && rates.size === 0 ? (
-            <box paddingX={1} paddingY={1}>
-              <text fg={colors.textMuted}>Fetching rates…</text>
-            </box>
+            <Box paddingX={1} paddingY={1}>
+              <Text fg={colors.textMuted}>Fetching rates…</Text>
+            </Box>
           ) : (
             MAJOR_CURRENCIES.map((row) => (
-              <box key={row} flexDirection="row" paddingX={1}>
-                <box width={5} flexShrink={0}>
-                  <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{row}</text>
-                </box>
+              <Box key={row} flexDirection="row" paddingX={1}>
+                <Box width={5} flexShrink={0}>
+                  <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{row}</Text>
+                </Box>
                 {MAJOR_CURRENCIES.map((col) => {
                   const rate = crossRate(row, col);
                   const isDiag = row === col;
                   return (
-                    <box key={col} flexGrow={1} justifyContent="flex-end" paddingRight={1}>
+                    <Box key={col} flexGrow={1} justifyContent="flex-end" paddingRight={1}>
                       {rate == null ? (
-                        <text fg={colors.textDim}>—</text>
+                        <Text fg={colors.textDim}>—</Text>
                       ) : (
-                        <text fg={isDiag ? colors.textDim : colors.text}>
+                        <Text fg={isDiag ? colors.textDim : colors.text}>
                           {formatRate(rate, col)}
-                        </text>
+                        </Text>
                       )}
-                    </box>
+                    </Box>
                   );
                 })}
-              </box>
+              </Box>
             ))
           )}
-        </box>
-      </scrollbox>
+        </Box>
+      </ScrollBox>
 
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>[r]efresh</text>
-      </box>
-    </box>
+      <Box height={1} paddingX={1}>
+        <Text fg={colors.textMuted}>[r]efresh</Text>
+      </Box>
+    </Box>
   );
 }
 

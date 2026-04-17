@@ -1,3 +1,4 @@
+
 /** Simple fuzzy matching: all query chars must appear in order in target */
 export function fuzzyMatch(query: string, target: string): { match: boolean; score: number } {
   const q = query.toLowerCase();

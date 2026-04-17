@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
-import type { AppSessionSnapshot } from "../../state/session-persistence";
+import type { AppSessionSnapshot } from "../../core/state/session-persistence";
 import {
   applyPredictionLaunchIntentToConfig,
   applyPredictionLaunchIntentToSessionSnapshot,

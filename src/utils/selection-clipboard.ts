@@ -1,7 +1,15 @@
-import type { CliRenderer, KeyEvent } from "@opentui/core";
+import { type NativeRendererHost as CliRenderer } from "../ui";
+import { type KeyEventLike as KeyEvent } from "../react/input";
+
+function isDarwinWithBunSpawnSync(): boolean {
+  return typeof process !== "undefined"
+    && process.platform === "darwin"
+    && typeof Bun !== "undefined"
+    && typeof Bun.spawnSync === "function";
+}
 
 function readTextFromSystemClipboard(): string | null {
-  if (process.platform !== "darwin") {
+  if (!isDarwinWithBunSpawnSync()) {
     return null;
   }
 
@@ -20,7 +28,7 @@ function readTextFromSystemClipboard(): string | null {
 }
 
 function copyTextToSystemClipboard(text: string): boolean {
-  if (text.length === 0 || process.platform !== "darwin") {
+  if (text.length === 0 || !isDarwinWithBunSpawnSync()) {
     return false;
   }
 
@@ -80,7 +88,7 @@ export function pasteSystemClipboard(
   renderer: Pick<CliRenderer, "keyInput">,
 ): boolean {
   const text = readTextFromSystemClipboard();
-  if (!text) {
+  if (!text || !renderer.keyInput?.processPaste) {
     return false;
   }
   renderer.keyInput.processPaste(new TextEncoder().encode(text));

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { PaneTemplateTextareaStep } from "./pane-template-wizard";
 

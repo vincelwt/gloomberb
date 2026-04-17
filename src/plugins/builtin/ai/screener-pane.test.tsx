@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, useState } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../../state/app-context";
 import { createDefaultConfig } from "../../../types/config";
@@ -285,7 +285,7 @@ describe("AiScreenerPane", () => {
       await testSetup!.renderOnce();
     });
 
-    const frame = testSetup.captureCharFrame();
+    const frame = await waitForFrameToContain("Save");
     expect(frame).toContain("Save");
     expect(frame).toContain("Cancel");
     expect(frame).toContain("Find quality compounders.");

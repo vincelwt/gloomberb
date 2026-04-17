@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { TextAttributes } from "@opentui/core";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import type { ReactNode } from "react";
 import { act, useReducer } from "react";

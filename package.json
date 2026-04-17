@@ -17,6 +17,8 @@
     "start": "bun src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
+    "tauri:web:build": "bun run scripts/build-tauri-web.ts",
+    "tauri:dev": "tauri dev",
     "test": "bun test",
     "release": "./scripts/release.sh"
   },
@@ -34,7 +36,10 @@
     "finance"
   ],
   "devDependencies": {
-    "@types/bun": "latest"
+    "@tauri-apps/cli": "^2",
+    "@types/bun": "latest",
+    "@types/react-dom": "^19.2.3",
+    "react-dom": "19.2.5"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -45,9 +50,10 @@
     "@opentui/core": "^0.1.90",
     "@opentui/react": "^0.1.90",
     "@stoqey/ib": "^1.5.3",
+    "@tauri-apps/api": "^2",
     "gray-matter": "^4.0.3",
     "opentui-spinner": "^0.0.6",
-    "react": "^19.2.4",
+    "react": "19.2.5",
     "yahoo-finance2": "^3.13.2"
   },
   "patchedDependencies": {

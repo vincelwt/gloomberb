@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../renderers/opentui/test-utils";
 import type { ColumnConfig } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";

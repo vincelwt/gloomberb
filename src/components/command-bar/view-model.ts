@@ -1,4 +1,5 @@
 import { matchPrefix } from "./command-registry";
+
 export { rankTickerSearchItems } from "../../utils/ticker-search";
 
 export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "layout" | "new-pane" | "direct-command";

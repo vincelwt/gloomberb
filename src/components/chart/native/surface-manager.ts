@@ -1,4 +1,4 @@
-import type { CliRenderer } from "@opentui/core";
+import { type NativeRendererHost as CliRenderer } from "../../../ui";
 import {
   computeNativePlacements,
   excludeCellRects,

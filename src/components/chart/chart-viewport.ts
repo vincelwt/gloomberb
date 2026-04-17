@@ -1,3 +1,4 @@
+
 const MIN_VISIBLE_POINTS = 2;
 export const RIGHT_EDGE_ANCHOR_RATIO = 1;
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { appReducer, createInitialState, resolveCollectionForPane, resolveTickerForPane } from "./app-context";
 import { cloneLayout, createDefaultConfig, createPaneInstance } from "../types/config";
-import type { AppSessionSnapshot } from "./session-persistence";
+import type { AppSessionSnapshot } from "../core/state/session-persistence";
 import { buildBrokerPortfolioId } from "../utils/broker-instances";
 
 describe("resolveTickerForPane", () => {

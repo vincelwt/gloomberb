@@ -1,5 +1,6 @@
+import { Box, ScrollBox, Text } from "../../../ui";
 import { useMemo } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../../../ui";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { getSharedRegistry } from "../../registry";
@@ -228,18 +229,18 @@ export function CorrelationMatrixPane({ paneId, width, height }: PaneProps) {
 
   if (settings.symbolsError) {
     return (
-      <box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
-        <text fg={colors.negative}>Invalid CORR tickers: {settings.symbolsError}</text>
-        <text fg={colors.textMuted}>Open pane settings and enter tickers like AAPL, MSFT, NVDA.</text>
-      </box>
+      <Box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
+        <Text fg={colors.negative}>Invalid CORR tickers: {settings.symbolsError}</Text>
+        <Text fg={colors.textMuted}>Open pane settings and enter tickers like AAPL, MSFT, NVDA.</Text>
+      </Box>
     );
   }
 
   if (symbols.length < 2) {
     return (
-      <box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
-        <text fg={colors.textMuted}>Enter at least 2 tickers in pane settings</text>
-      </box>
+      <Box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
+        <Text fg={colors.textMuted}>Enter at least 2 tickers in pane settings</Text>
+      </Box>
     );
   }
 
@@ -252,46 +253,46 @@ export function CorrelationMatrixPane({ paneId, width, height }: PaneProps) {
   const cellWidth = Math.max(MIN_MATRIX_CELL_WIDTH, Math.min(MATRIX_CELL_WIDTH, availableCellWidth));
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {/* Title */}
-      <box flexDirection="row" height={1} paddingX={1}>
-        <text fg={colors.textMuted}>{symbols.length} tickers · {settings.rangePreset} daily returns</text>
-      </box>
-      <box flexDirection="row" height={1} paddingX={1}>
-        <text fg={colors.textDim}>{statusSummary}</text>
-      </box>
+      <Box flexDirection="row" height={1} paddingX={1}>
+        <Text fg={colors.textMuted}>{symbols.length} tickers · {settings.rangePreset} daily returns</Text>
+      </Box>
+      <Box flexDirection="row" height={1} paddingX={1}>
+        <Text fg={colors.textDim}>{statusSummary}</Text>
+      </Box>
 
       {/* Column header row */}
-      <box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
-        <box width={rowHeaderWidth} flexShrink={0} />
+      <Box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
+        <Box width={rowHeaderWidth} flexShrink={0} />
         {symbols.map((sym) => (
-          <box key={sym} width={cellWidth} justifyContent="flex-end" paddingRight={1} overflow="hidden">
-            <text fg={colors.textDim} attributes={TextAttributes.BOLD}>
+          <Box key={sym} width={cellWidth} justifyContent="flex-end" paddingRight={1} overflow="hidden">
+            <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
               {displaySymbol(sym)}
-            </text>
-          </box>
+            </Text>
+          </Box>
         ))}
-      </box>
+      </Box>
 
       {/* Matrix rows */}
-      <scrollbox flexGrow={1} scrollY focusable={false}>
-        <box flexDirection="column">
+      <ScrollBox flexGrow={1} scrollY focusable={false}>
+        <Box flexDirection="column">
           {symbols.map((rowSym, rowIndex) => (
-            <box key={rowSym} flexDirection="row" paddingX={1} backgroundColor={rowIndex % 2 === 0 ? colors.bg : undefined}>
+            <Box key={rowSym} flexDirection="row" paddingX={1} backgroundColor={rowIndex % 2 === 0 ? colors.bg : undefined}>
               {/* Row header */}
-              <box
+              <Box
                 width={rowHeaderWidth}
                 flexShrink={0}
                 overflow="hidden"
                 onMouseDown={() => getSharedRegistry()?.navigateTickerFn(rowSym)}
               >
-                <text
+                <Text
                   fg={rowHeaderColor(seriesBySymbol.get(rowSym)?.status ?? "loading")}
                   attributes={TextAttributes.BOLD | TextAttributes.UNDERLINE}
                 >
                   {displaySymbol(rowSym)}
-                </text>
-              </box>
+                </Text>
+              </Box>
               {/* Cells */}
               {symbols.map((colSym) => {
                 const isDiag = rowSym === colSym;
@@ -306,23 +307,23 @@ export function CorrelationMatrixPane({ paneId, width, height }: PaneProps) {
                   : correlationColor(r, colors.positive, colors.negative, colors.textMuted);
                 const text = isDiag ? " 1.00" : formatCorrelation(r);
                 return (
-                  <box
+                  <Box
                     key={colSym}
                     width={cellWidth}
                     justifyContent="flex-end"
                     paddingRight={1}
                     backgroundColor={isDiag ? headerBg : undefined}
                   >
-                    <text fg={cellColor}>{text}</text>
-                  </box>
+                    <Text fg={cellColor}>{text}</Text>
+                  </Box>
                 );
               })}
-            </box>
+            </Box>
           ))}
-        </box>
-      </scrollbox>
+        </Box>
+      </ScrollBox>
 
-    </box>
+    </Box>
   );
 }
 

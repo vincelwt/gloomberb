@@ -1,5 +1,6 @@
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ScrollBox, Text } from "../ui";
+import { TextAttributes, type ScrollBoxRenderable } from "../ui";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { colors } from "../theme/colors";
 import { formatTimeAgo } from "../utils/format";
 import { toTimestampMillis } from "../utils/timestamp";
@@ -38,6 +39,13 @@ interface FeedDataTableStackViewProps {
   items: FeedDataTableItem[];
   selectedIdx: number;
   onSelect: (index: number) => void;
+  rootBefore?: ReactNode;
+  rootAfter?: ReactNode;
+  onRootKeyDown?: (event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => boolean | void;
   sourceLabel?: string;
   titleLabel?: string;
   emptyStateTitle?: string;
@@ -199,6 +207,9 @@ export function FeedDataTableStackView({
   items,
   selectedIdx,
   onSelect,
+  rootBefore,
+  rootAfter,
+  onRootKeyDown,
   sourceLabel = "Source",
   titleLabel = "Headline",
   emptyStateTitle = "No items.",
@@ -324,64 +335,64 @@ export function FeedDataTableStackView({
   }, [scrollDetailBy]);
 
   const detailContent = openItem ? (
-    <box flexDirection="column" flexGrow={1} paddingX={1}>
-      <scrollbox
+    <Box flexDirection="column" flexGrow={1} paddingX={1}>
+      <ScrollBox
         ref={detailScrollRef}
         height={detailHeight}
         scrollY
         focusable={false}
       >
-        <box flexDirection="column">
+        <Box flexDirection="column">
           {wrapTextLines(
             openItem.detailTitle ?? openItem.title,
             detailTextWidth,
             4,
           ).map((line, index) => (
-            <box key={`title-${index}`} height={1}>
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+            <Box key={`title-${index}`} height={1}>
+              <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
                 {line}
-              </text>
-            </box>
+              </Text>
+            </Box>
           ))}
 
           {(openItem.detailMeta ?? [])
             .flatMap((entry) => wrapTextLines(entry, detailTextWidth, 2))
             .map((line, index) => (
-              <box key={`meta-${index}`} height={1}>
-                <text fg={colors.textMuted}>{line}</text>
-              </box>
+              <Box key={`meta-${index}`} height={1}>
+                <Text fg={colors.textMuted}>{line}</Text>
+              </Box>
             ))}
 
-          <box height={1} />
+          <Box height={1} />
 
           {wrapTextLines(openItem.detailBody ?? "", detailTextWidth).map(
             (line, index) => (
-              <box key={`body-${index}`} height={1}>
-                <text fg={colors.text}>{line}</text>
-              </box>
+              <Box key={`body-${index}`} height={1}>
+                <Text fg={colors.text}>{line}</Text>
+              </Box>
             ),
           )}
 
           {openItem.detailNote ? (
             <>
-              <box height={1} />
+              <Box height={1} />
               {wrapTextLines(openItem.detailNote, detailTextWidth).map(
                 (line, index) =>
                   /^https?:\/\/\S+$/.test(line.trim()) ? (
                     <ExternalLink key={`note-${index}`} url={line.trim()} />
                   ) : (
-                    <box key={`note-${index}`} height={1}>
-                      <text fg={colors.textDim}>{line}</text>
-                    </box>
+                    <Box key={`note-${index}`} height={1}>
+                      <Text fg={colors.textDim}>{line}</Text>
+                    </Box>
                   ),
               )}
             </>
           ) : null}
-        </box>
-      </scrollbox>
-    </box>
+        </Box>
+      </ScrollBox>
+    </Box>
   ) : (
-    <box flexGrow={1} />
+    <Box flexGrow={1} />
   );
 
   return (
@@ -393,6 +404,11 @@ export function FeedDataTableStackView({
       selectedIndex={activeRowIndex}
       onSelectIndex={(_index, row) => onSelect(row.itemIndex)}
       onActivateIndex={(_index, row) => openRow(row)}
+      rootBefore={rootBefore}
+      rootAfter={rootAfter}
+      rootWidth={width}
+      rootHeight={height}
+      onRootKeyDown={onRootKeyDown}
       onDetailKeyDown={handleDetailKeyDown}
       columns={columns}
       items={sortedRows}

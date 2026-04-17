@@ -5,6 +5,7 @@ import {
   formatPercentRaw,
 } from "../utils/format";
 import { formatMarketPriceWithCurrency } from "../utils/market-format";
+
 export { slugifyName } from "../utils/slugify";
 import type { AppConfig } from "../types/config";
 import type { Watchlist, TickerRecord } from "../types/ticker";

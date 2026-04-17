@@ -1,6 +1,7 @@
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { DataTable, TabBar, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { ColumnConfig } from "../../../types/config";
@@ -566,7 +567,7 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     setSectorSort((current) => nextSectorSortPreference(current, columnId));
   }, []);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     const key = event.name;
@@ -617,75 +618,75 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   }, [selectedSectorIdx]);
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {portfolioTabs.length === 0 ? (
-        <box paddingX={1} paddingY={1}>
-          <text fg={colors.textMuted}>No portfolios found</text>
-        </box>
+        <Box paddingX={1} paddingY={1}>
+          <Text fg={colors.textMuted}>No portfolios found</Text>
+        </Box>
       ) : (
         <>
-          <box flexDirection="row" height={1}>
-            <box flexShrink={1} overflow="hidden">
+          <Box flexDirection="row" height={1}>
+            <Box flexShrink={1} overflow="hidden">
               <TabBar
                 tabs={portfolioTabs}
                 activeValue={activePortfolioId}
                 onSelect={handlePortfolioSelect}
                 compact
               />
-            </box>
-          </box>
+            </Box>
+          </Box>
 
           {!hasPositions ? (
-            <box paddingX={1} paddingY={1}>
-              <text fg={colors.textMuted}>
+            <Box paddingX={1} paddingY={1}>
+              <Text fg={colors.textMuted}>
                 No positions found for {activePortfolio?.name ?? "this portfolio"}
-              </text>
-            </box>
+              </Text>
+            </Box>
           ) : (
             <>
-              <box flexDirection="column" height={metricsHeight} paddingX={1} paddingTop={1}>
-                <box height={1}>
-                  <text fg={colors.textDim} attributes={TextAttributes.BOLD}>
+              <Box flexDirection="column" height={metricsHeight} paddingX={1} paddingTop={1}>
+                <Box height={1}>
+                  <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
                     Summary
-                  </text>
-                </box>
+                  </Text>
+                </Box>
                 {summaryRows.map((row) => (
-                  <box key={row.id} flexDirection="row" height={1}>
-                    <box width={14} flexShrink={0}>
-                      <text fg={colors.textDim}>{row.label}</text>
-                    </box>
-                    <text fg={row.color ?? colors.text} attributes={TextAttributes.BOLD}>
+                  <Box key={row.id} flexDirection="row" height={1}>
+                    <Box width={14} flexShrink={0}>
+                      <Text fg={colors.textDim}>{row.label}</Text>
+                    </Box>
+                    <Text fg={row.color ?? colors.text} attributes={TextAttributes.BOLD}>
                       {row.value}
-                    </text>
-                    {row.detail && <text fg={colors.textDim}>{`  ${row.detail}`}</text>}
-                  </box>
+                    </Text>
+                    {row.detail && <Text fg={colors.textDim}>{`  ${row.detail}`}</Text>}
+                  </Box>
                 ))}
 
-                <box height={1} />
-                <box height={1}>
-                  <text fg={colors.textDim} attributes={TextAttributes.BOLD}>
+                <Box height={1} />
+                <Box height={1}>
+                  <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
                     Risk / Return
-                  </text>
-                </box>
+                  </Text>
+                </Box>
                 {riskRows.map((row) => (
-                  <box key={row.id} flexDirection="row" height={1}>
-                    <box width={14} flexShrink={0}>
-                      <text fg={colors.textDim}>{row.label}</text>
-                    </box>
-                    <text fg={row.color ?? colors.text} attributes={TextAttributes.BOLD}>
+                  <Box key={row.id} flexDirection="row" height={1}>
+                    <Box width={14} flexShrink={0}>
+                      <Text fg={colors.textDim}>{row.label}</Text>
+                    </Box>
+                    <Text fg={row.color ?? colors.text} attributes={TextAttributes.BOLD}>
                       {row.value}
-                    </text>
-                    {row.detail && <text fg={colors.textDim}>{`  ${row.detail}`}</text>}
-                  </box>
+                    </Text>
+                    {row.detail && <Text fg={colors.textDim}>{`  ${row.detail}`}</Text>}
+                  </Box>
                 ))}
-                <box height={1} />
-              </box>
+                <Box height={1} />
+              </Box>
 
-              <box height={1} paddingX={1}>
-                <text fg={colors.textDim} attributes={TextAttributes.BOLD}>
+              <Box height={1} paddingX={1}>
+                <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
                   Sector Allocation
-                </text>
-              </box>
+                </Text>
+              </Box>
 
               <DataTable<SectorTableRow, SectorTableColumn>
                 columns={sectorColumns}
@@ -734,7 +735,7 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
           )}
         </>
       )}
-    </box>
+    </Box>
   );
 }
 

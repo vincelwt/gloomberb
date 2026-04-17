@@ -1,3 +1,4 @@
+import { Box } from "../../ui";
 import { useCallback, useMemo } from "react";
 import { EmptyState } from "../../components";
 import { ComparisonStockChart } from "../../components/chart/comparison-stock-chart";
@@ -111,14 +112,14 @@ function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
 
   if (settings.symbols.length === 0) {
     return (
-      <box flexDirection="column" flexGrow={1} padding={1}>
+      <Box flexDirection="column" flexGrow={1} padding={1}>
         <EmptyState title="No comparison tickers configured." message="Open pane settings to add up to 10 tickers." />
-      </box>
+      </Box>
     );
   }
 
   return (
-    <box flexDirection="column" flexGrow={1} paddingX={1} backgroundColor={colors.panel}>
+    <Box flexDirection="column" flexGrow={1} paddingX={1} backgroundColor={colors.panel}>
       <ComparisonStockChart
         paneId={paneId}
         width={Math.max(width - 2, 20)}
@@ -128,7 +129,7 @@ function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
         axisMode={settings.axisMode}
         onOpenSymbol={openTicker}
       />
-    </box>
+    </Box>
   );
 }
 

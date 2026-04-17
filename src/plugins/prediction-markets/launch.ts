@@ -8,7 +8,7 @@ import {
   type SavedLayout,
 } from "../../types/config";
 import type { CliLaunchRequest, PaneDef } from "../../types/plugin";
-import type { AppSessionSnapshot } from "../../state/session-persistence";
+import type { AppSessionSnapshot } from "../../core/state/session-persistence";
 import { PREDICTION_CATEGORY_OPTIONS, type PredictionCategoryId } from "./categories";
 import { BROWSE_TABS } from "./navigation";
 import type { PredictionBrowseTab, PredictionVenueScope } from "./types";

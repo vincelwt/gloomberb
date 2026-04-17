@@ -1,5 +1,7 @@
-import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
-import { useKeyboard, useRenderer } from "@opentui/react";
+import { Box, ChartSurface, ScrollBox, Text } from "../../ui";
+import { TextAttributes, type BoxRenderable, type NativeRendererHost as CliRenderer } from "../../ui";
+import { useNativeRenderer, useUiCapabilities } from "../../ui";
+import { useShortcut } from "../../react/input";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useChartQueries } from "../../market-data/hooks";
 import { buildChartKey } from "../../market-data/selectors";
@@ -552,7 +554,8 @@ function ComparisonStockChartView({
   symbolSources,
   onOpenSymbol,
 }: ComparisonStockChartViewProps) {
-  const renderer = useRenderer();
+  const renderer = useNativeRenderer();
+  const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
   const [storedRangePreset] = usePaneSettingValue("rangePreset", DEFAULT_COMPARISON_CHART_RANGE_PRESET);
   const [storedResolution] = usePaneSettingValue<ChartResolution>("chartResolution", DEFAULT_COMPARISON_CHART_RESOLUTION);
@@ -573,6 +576,7 @@ function ComparisonStockChartView({
   const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
+  const [canvasBaseBitmapState, setCanvasBaseBitmapState] = useState<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const plotRef = useRef<BoxRenderable | null>(null);
   const nativeBaseSurfaceIdRef = useRef(`comparison-chart-surface:${paneId}:base`);
   const nativeCrosshairSurfaceIdRef = useRef(`comparison-chart-surface:${paneId}:crosshair`);
@@ -580,6 +584,7 @@ function ComparisonStockChartView({
   const lastNativeGeometryRef = useRef<{ rect: CellRect; visibleRect: CellRect | null } | null>(null);
   const lastNativeBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const lastNativeCrosshairBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
+  const lastCanvasBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const displayCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
@@ -1009,13 +1014,19 @@ function ComparisonStockChartView({
     setViewState(nextState);
   };
 
+  const projectionViewState = useMemo(() => ({
+    panOffset: viewState.panOffset,
+    zoomLevel: viewState.zoomLevel,
+    renderMode: viewState.renderMode,
+  }), [viewState.panOffset, viewState.renderMode, viewState.zoomLevel]);
+
   const visibleWindow = useMemo(() => (
-    getVisibleComparisonWindow(series, viewState, chartWidth)
-  ), [chartWidth, series, viewState]);
+    getVisibleComparisonWindow(series, projectionViewState, chartWidth)
+  ), [chartWidth, projectionViewState, series]);
 
   const projection = useMemo(() => (
-    projectComparisonChartData(series, chartWidth, viewState, axisMode)
-  ), [axisMode, chartWidth, series, viewState]);
+    projectComparisonChartData(series, chartWidth, projectionViewState, axisMode)
+  ), [axisMode, chartWidth, projectionViewState, series]);
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;
@@ -1054,6 +1065,7 @@ function ComparisonStockChartView({
 
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
+  const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
 
   const staticScene = useMemo(() => buildComparisonChartScene(projection, {
     width: chartWidth,
@@ -1074,7 +1086,7 @@ function ComparisonStockChartView({
   }), [chartColors, chartHeight, chartWidth, projection, viewState.selectedSymbol]);
 
   const interactiveResult = useMemo(() => (
-    effectiveRenderer === "kitty"
+    effectiveRenderer === "kitty" || useCanvasChart
       ? null
       : renderComparisonChart(projection, {
         width: chartWidth,
@@ -1084,9 +1096,9 @@ function ComparisonStockChartView({
         selectedSymbol: viewState.selectedSymbol,
         colors: chartColors,
       })
-  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, viewState.selectedSymbol]);
+  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, useCanvasChart, viewState.selectedSymbol]);
 
-  const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
+  const result = effectiveRenderer === "kitty" || useCanvasChart ? staticResult : interactiveResult!;
   const liveScene = useMemo(() => (
     effectiveRenderer === "kitty"
       ? staticScene
@@ -1309,7 +1321,7 @@ function ComparisonStockChartView({
     rendererState.nativeReady,
   ]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused || symbols.length === 0) return;
 
     switch (event.name) {
@@ -1575,12 +1587,13 @@ function ComparisonStockChartView({
   };
 
   if (symbols.length === 0) {
-    return <text fg={colors.textDim}>No comparison tickers configured.</text>;
+    return <Text fg={colors.textDim}>No comparison tickers configured.</Text>;
   }
 
   const hasChartData = series.some((entry) => entry.points.length > 0);
-  const selectedSeries = hasChartData ? (result.selectedSeries ?? staticResult.selectedSeries) : null;
-  const selectedPoint = hasChartData ? (result.selectedPoint ?? staticResult.selectedPoint) : null;
+  const cursorScene = effectiveRenderer === "kitty" ? staticScene : liveScene;
+  const selectedSeries = hasChartData ? (cursorScene?.selectedSeries ?? staticResult.selectedSeries) : null;
+  const selectedPoint = hasChartData ? (cursorScene?.selectedPoint ?? staticResult.selectedPoint) : null;
   const selectedRawValue = selectedPoint?.rawValue ?? selectedSeries?.latestRawValue ?? null;
   const selectedBaseValue = selectedSeries?.baseValue ?? null;
   const selectedChange = selectedRawValue !== null && selectedBaseValue !== null
@@ -1590,12 +1603,14 @@ function ComparisonStockChartView({
     ? (selectedChange / selectedBaseValue) * 100
     : null;
   const selectedCurrency = selectedSeries?.currency ?? "USD";
-  const displayDate = result.activeDate ?? staticResult.activeDate;
+  const displayDate = cursorScene?.activeDate ?? staticResult.activeDate;
   const visiblePriceRange = result.priceRange ?? staticResult.priceRange ?? undefined;
   const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
-  const cursorAxisLabel = result.cursorRow !== null && result.crosshairValue !== null
+  const cursorRow = useCanvasChart ? cursorScene?.cursorRow ?? null : result.cursorRow;
+  const crosshairValue = useCanvasChart ? cursorScene?.crosshairValue ?? null : result.crosshairValue;
+  const cursorAxisLabel = cursorRow !== null && crosshairValue !== null
     ? formatComparisonCursorAxisValue(
-      result.crosshairValue,
+      crosshairValue,
       projection.effectiveAxisMode,
       visiblePriceRange,
     )
@@ -1605,57 +1620,183 @@ function ComparisonStockChartView({
     end: visibleWindow.dates[visibleWindow.dates.length - 1] ?? null,
   });
 
+  const canvasBitmapSize = useMemo(() => {
+    if (!canvasCharts) return null;
+    const resolutionScale = Math.max(1, pixelRatio);
+    return {
+      pixelWidth: Math.max(1, Math.round(chartWidth * cellWidthPx * resolutionScale)),
+      pixelHeight: Math.max(1, Math.round(chartHeight * cellHeightPx * resolutionScale)),
+    };
+  }, [canvasCharts, cellHeightPx, cellWidthPx, chartHeight, chartWidth, pixelRatio]);
+
+  const canvasProjection = useMemo(() => (
+    canvasBitmapSize
+      ? projectComparisonChartData(
+        series,
+        Math.max(chartWidth, canvasBitmapSize.pixelWidth),
+        projectionViewState,
+        axisMode,
+      )
+      : null
+  ), [axisMode, canvasBitmapSize, chartWidth, projectionViewState, series]);
+
+  const canvasBaseScene = useMemo(() => (
+    canvasProjection
+      ? buildComparisonChartScene(canvasProjection, {
+        width: Math.max(chartWidth, canvasBitmapSize?.pixelWidth ?? chartWidth),
+        height: chartHeight,
+        cursorX: null,
+        cursorY: null,
+        selectedSymbol: viewState.selectedSymbol,
+        colors: chartColors,
+      })
+      : null
+  ), [canvasBitmapSize?.pixelWidth, canvasProjection, chartColors, chartHeight, chartWidth, viewState.selectedSymbol]);
+
+  const canvasBaseBitmapKey = useMemo(() => {
+    if (!canvasBitmapSize || !canvasProjection || !hasChartData || isBlockingBody || bodyMessage) return null;
+    return buildComparisonNativeBitmapKey(
+      symbols.length,
+      canvasProjection,
+      viewState.selectedSymbol,
+      canvasBitmapSize.pixelWidth,
+      canvasBitmapSize.pixelHeight,
+      [chartColors.bgColor, chartColors.gridColor, chartColors.crosshairColor].join(","),
+    );
+  }, [
+    bodyMessage,
+    canvasBitmapSize,
+    canvasProjection,
+    chartColors.bgColor,
+    chartColors.crosshairColor,
+    chartColors.gridColor,
+    hasChartData,
+    isBlockingBody,
+    symbols.length,
+    viewState.selectedSymbol,
+  ]);
+
+  const canvasBaseBitmap = useMemo<NativeChartBitmap | null>(() => {
+    return canvasBaseBitmapKey && canvasBaseBitmapState?.key === canvasBaseBitmapKey
+      ? canvasBaseBitmapState.bitmap
+      : null;
+  }, [canvasBaseBitmapKey, canvasBaseBitmapState]);
+
+  useEffect(() => {
+    if (!canvasBitmapSize || !canvasBaseBitmapKey || !canvasBaseScene) {
+      lastCanvasBaseBitmapRef.current = null;
+      setCanvasBaseBitmapState((current) => (current === null ? current : null));
+      return;
+    }
+
+    const cachedBitmap = lastCanvasBaseBitmapRef.current?.key === canvasBaseBitmapKey
+      ? lastCanvasBaseBitmapRef.current.bitmap
+      : null;
+    if (cachedBitmap) {
+      setCanvasBaseBitmapState((current) => (
+        current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap: cachedBitmap }
+      ));
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const bitmap = renderNativeComparisonChartBase(canvasBaseScene, canvasBitmapSize.pixelWidth, canvasBitmapSize.pixelHeight);
+      if (cancelled) return;
+      lastCanvasBaseBitmapRef.current = { key: canvasBaseBitmapKey, bitmap };
+      setCanvasBaseBitmapState((current) => (
+        current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap }
+      ));
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [canvasBaseBitmapKey, canvasBaseScene, canvasBitmapSize]);
+
+  const canvasCrosshair = useMemo(() => {
+    if (!canvasBitmapSize || !canvasBaseBitmap || !nativeCrosshair) return null;
+    const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
+    const overlayPixelX = scaleLocalPixelCoordinate(
+      nativeCrosshair.pixelX,
+      renderablePixelSize?.pixelWidth ?? canvasBitmapSize.pixelWidth,
+      canvasBitmapSize.pixelWidth,
+    );
+    const overlayPixelY = scaleLocalPixelCoordinate(
+      nativeCrosshair.pixelY,
+      renderablePixelSize?.pixelHeight ?? canvasBitmapSize.pixelHeight,
+      canvasBitmapSize.pixelHeight,
+    );
+    if (overlayPixelX === null || overlayPixelY === null) return null;
+    return {
+      pixelX: overlayPixelX,
+      pixelY: overlayPixelY,
+      color: nativeCrosshair.colors.crosshairColor,
+    };
+  }, [canvasBaseBitmap, canvasBitmapSize, nativeCrosshair, renderer]);
+
+  const plotBitmaps = useMemo(() => {
+    if (!canvasBaseBitmap) return null;
+    return [canvasBaseBitmap];
+  }, [canvasBaseBitmap]);
+
   const plotLines: Array<string | StyledContent> = effectiveRenderer === "kitty"
     ? blankPlotLines
     : result.lines;
-  const plotContent = plotLines.map((line, index) => (
-    <text key={index} content={line as unknown as string} />
-  ));
+  const plotContent = plotBitmaps || (useCanvasChart && canvasBaseBitmapKey)
+    ? null
+    : plotLines.map((line, index) => (
+      <Text key={index} content={line as unknown as string} />
+    ));
 
   const plotBox = (
-    <box
+    <ChartSurface
       ref={plotRef}
       width={chartWidth}
       height={chartHeight}
       flexDirection="column"
       backgroundColor={chartColors.bgColor}
+      bitmaps={plotBitmaps}
+      crosshair={canvasCrosshair}
       onMouseMove={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotMove : undefined}
       onMouseDown={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotDown : undefined}
       onMouseUp={hasChartData && !isBlockingBody && !bodyMessage ? () => { dragRef.current = null; } : undefined}
       onMouseDrag={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotDrag : undefined}
       onMouseDragEnd={hasChartData && !isBlockingBody && !bodyMessage ? () => { dragRef.current = null; } : undefined}
+      onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
       onMouseOut={hasChartData && !isBlockingBody && !bodyMessage ? () => {
         dragRef.current = null;
       } : undefined}
     >
       {isBlockingBody
         ? (
-          <box flexGrow={1} alignItems="center" justifyContent="center">
-            <text fg={colors.textDim}>Loading chart...</text>
-          </box>
+          <Box flexGrow={1} alignItems="center" justifyContent="center">
+            <Text fg={colors.textDim}>Loading chart...</Text>
+          </Box>
         )
         : bodyMessage
           ? (
-            <box flexGrow={1} alignItems="center" justifyContent="center">
-              <text fg={colors.textDim}>{bodyMessage}</text>
-            </box>
+            <Box flexGrow={1} alignItems="center" justifyContent="center">
+              <Text fg={colors.textDim}>{bodyMessage}</Text>
+            </Box>
           )
           : plotContent}
-    </box>
+    </ChartSurface>
   );
 
   const axisBox = (
-    <box width={axisSectionWidth} height={chartHeight} flexDirection="column">
+    <Box width={axisSectionWidth} height={chartHeight} flexDirection="column">
       {Array.from({ length: chartHeight }, (_, row) => {
-        const isCursorRow = cursorAxisLabel !== null && result.cursorRow === row;
+        const isCursorRow = cursorAxisLabel !== null && cursorRow === row;
         const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
         return (
-          <text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
+          <Text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
             {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
-          </text>
+          </Text>
         );
       })}
-    </box>
+    </Box>
   );
 
   const legendRowsData = Array.from({ length: Math.ceil(symbols.length / legendColumns) }, (_, rowIndex) => (
@@ -1663,17 +1804,17 @@ function ComparisonStockChartView({
   ));
 
   return (
-    <box
+    <Box
       flexDirection="column"
       flexGrow={1}
       onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
     >
-      <box flexDirection="row" gap={2} height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+      <Box flexDirection="row" gap={2} height={1}>
+        <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
           {viewState.selectedSymbol ?? "Compare"} - {getChartResolutionLabel(effectiveResolution)}
-        </text>
-        <text fg={colors.textDim}>{visibleLabel}</text>
-        <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
+        </Text>
+        <Text fg={colors.textDim}>{visibleLabel}</Text>
+        <Text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
           {selectedRawValue !== null
             ? formatMarketPriceWithCurrency(selectedRawValue, selectedCurrency, {
               minimumFractionDigits: 2,
@@ -1681,8 +1822,8 @@ function ComparisonStockChartView({
               priceRange: visiblePriceRange,
             })
             : "—"}
-        </text>
-        <text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
+        </Text>
+        <Text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
           {selectedChange !== null && selectedChangePct !== null
             ? `${formatSignedMarketPrice(selectedChange, {
               minimumFractionDigits: 2,
@@ -1690,14 +1831,14 @@ function ComparisonStockChartView({
               priceRange: visiblePriceRange,
             })} (${formatPercentRaw(selectedChangePct)})`
             : "Waiting for data"}
-        </text>
-        {displayDate && <text fg={colors.textDim}>{formatDateShort(displayDate)}</text>}
-      </box>
+        </Text>
+        {displayDate && <Text fg={colors.textDim}>{formatDateShort(displayDate)}</Text>}
+      </Box>
 
-      <box flexDirection="row" height={1}>
-        <box flexDirection="row" gap={1}>
+      <Box flexDirection="row" height={1}>
+        <Box flexDirection="row" gap={1}>
           {TIME_RANGES.map((range, index) => (
-            <text
+            <Text
               key={range}
               fg={activePreset === range ? colors.textBright : (isRangePresetSupported(range, availableManualResolutions) ? colors.textDim : colors.textMuted)}
               attributes={activePreset === range ? TextAttributes.BOLD : 0}
@@ -1708,49 +1849,49 @@ function ComparisonStockChartView({
               }}
             >
               {`${index + 1}:${range}`}
-            </text>
+            </Text>
           ))}
-        </box>
-      </box>
+        </Box>
+      </Box>
 
-      <box flexDirection="row" height={1}>
-        <box flexDirection="row" gap={1}>
+      <Box flexDirection="row" height={1}>
+        <Box flexDirection="row" gap={1}>
           {resolutionChips.map((resolution) => (
-            <text
+            <Text
               key={resolution}
               fg={effectiveResolution === resolution ? colors.textBright : colors.textDim}
               attributes={effectiveResolution === resolution ? TextAttributes.BOLD : 0}
               onMouseDown={() => setResolution(resolution)}
             >
               {getChartResolutionLabel(resolution)}
-            </text>
+            </Text>
           ))}
           {isUpdating && (
-            <text fg={colors.textDim}>updating</text>
+            <Text fg={colors.textDim}>updating</Text>
           )}
-        </box>
-        <box flexGrow={1} />
-        <box flexDirection="row" gap={1}>
+        </Box>
+        <Box flexGrow={1} />
+        <Box flexDirection="row" gap={1}>
           {COMPARISON_RENDER_MODES.map((mode) => (
-            <text
+            <Text
               key={mode}
               fg={viewState.renderMode === mode ? colors.textBright : colors.textDim}
               attributes={viewState.renderMode === mode ? TextAttributes.BOLD : 0}
               onMouseDown={() => setViewState((current) => ({ ...current, renderMode: mode }))}
             >
               {MODE_CHIPS[mode]}
-            </text>
+            </Text>
           ))}
           {projection.warning && (
-            <text fg={colors.textDim}>{projection.warning}</text>
+            <Text fg={colors.textDim}>{projection.warning}</Text>
           )}
           {rendererState.nativeUnavailable && (
-            <text fg={colors.textDim}>native unavailable</text>
+            <Text fg={colors.textDim}>native unavailable</Text>
           )}
-        </box>
-      </box>
+        </Box>
+      </Box>
 
-      <box
+      <Box
         flexDirection="row"
         height={chartHeight}
         gap={axisGap}
@@ -1758,17 +1899,17 @@ function ComparisonStockChartView({
       >
         {plotBox}
         {axisBox}
-      </box>
+      </Box>
 
-      <box height={1}>
-        <text fg={colors.textDim}>{result.timeLabels || staticResult.timeLabels}</text>
-      </box>
+      <Box height={1}>
+        <Text fg={colors.textDim}>{result.timeLabels || staticResult.timeLabels}</Text>
+      </Box>
 
       {legendRows > 0 && (
-        <scrollbox height={legendRows} scrollY>
-          <box flexDirection="column">
+        <ScrollBox height={legendRows} scrollY>
+          <Box flexDirection="column">
             {legendRowsData.map((legendRow, rowIndex) => (
-              <box key={`legend-row:${rowIndex}`} flexDirection="row" gap={1}>
+              <Box key={`legend-row:${rowIndex}`} flexDirection="row" gap={1}>
                 {legendRow.map((symbol) => {
                   const item = projection.series.find((entry) => entry.symbol === symbol) ?? null;
                   const isSelected = viewState.selectedSymbol === symbol;
@@ -1787,7 +1928,7 @@ function ComparisonStockChartView({
                     : `${symbol} waiting`;
 
                   return (
-                    <box
+                    <Box
                       key={symbol}
                       width={legendItemWidth}
                       backgroundColor={isSelected ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel}
@@ -1797,29 +1938,29 @@ function ComparisonStockChartView({
                         onOpenSymbol(symbol);
                       }}
                     >
-                      <text fg={item?.color ?? colors.textDim} attributes={isSelected ? TextAttributes.BOLD : 0}>
+                      <Text fg={item?.color ?? colors.textDim} attributes={isSelected ? TextAttributes.BOLD : 0}>
                         {clipText(`${isSelected ? ">" : " "} ${summary}`, legendItemWidth)}
-                      </text>
-                    </box>
+                      </Text>
+                    </Box>
                   );
                 })}
-              </box>
+              </Box>
             ))}
-          </box>
-        </scrollbox>
+          </Box>
+        </ScrollBox>
       )}
 
-      <box height={1}>
-        <box flexDirection="row" gap={1}>
+      <Box height={1}>
+        <Box flexDirection="row" gap={1}>
           <ChartControlHint hotkey="m" label="ode" />
           <ChartControlHint hotkey="r" label="es" />
           <ChartControlHint hotkey="+/-" label="zoom" />
           <ChartControlHint hotkey="0" label="reset" />
           {width >= 72 && <ChartControlHint hotkey="1-7" label="range" />}
           {width >= 88 && <ChartControlHint hotkey="up/down" label="legend" />}
-        </box>
-      </box>
-    </box>
+        </Box>
+      </Box>
+    </Box>
   );
 }
 

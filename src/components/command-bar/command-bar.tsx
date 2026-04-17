@@ -1,7 +1,9 @@
+import { Box, Input, Text, Textarea } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { TextAttributes, type InputRenderable, type TextareaRenderable } from "@opentui/core";
-import { useRenderer, useTerminalDimensions } from "@opentui/react";
+import { TextAttributes, type InputRenderable, type TextareaRenderable } from "../../ui";
+import { useNativeRenderer } from "../../ui";
+import { useViewport } from "../../react/input";
 import { Spinner } from "../spinner";
 import { Button, NumberField, TextField } from "../ui";
 import { ToggleList } from "../toggle-list";
@@ -180,6 +182,11 @@ type WorkflowStringValues = Record<string, string>;
 
 const commandBarLog = debugLog.createLogger("command-bar");
 
+function getDefaultConfigBackupPath(): string {
+  const home = typeof process !== "undefined" ? process.env.HOME : undefined;
+  return `${home || "~"}/gloomberb-config-backup.json`;
+}
+
 function getInputRef(
   store: Record<string, RefObject<InputRenderable | TextareaRenderable | null>>,
   fieldId: string,
@@ -237,8 +244,8 @@ export function CommandBar({
   const stateRef = useRef(state);
   stateRef.current = state;
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
-  const renderer = useRenderer();
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const renderer = useNativeRenderer();
+  const { width: termWidth, height: termHeight } = useViewport();
   const [rootQuery, setRootQueryValue] = useState(state.commandBarQuery);
   const rootQueryRef = useRef(rootQuery);
   rootQueryRef.current = rootQuery;
@@ -2304,7 +2311,7 @@ export function CommandBar({
         });
         return;
       case "export-config": {
-        const exportPath = `${process.env.HOME || "~"}/gloomberb-config-backup.json`;
+        const exportPath = getDefaultConfigBackupPath();
         void exportConfig(state.config, exportPath)
           .then(() => {
             notify(`Config exported to ${exportPath}`, { type: "success" });
@@ -2316,7 +2323,7 @@ export function CommandBar({
         return;
       }
       case "import-config": {
-        const importPath = `${process.env.HOME || "~"}/gloomberb-config-backup.json`;
+        const importPath = getDefaultConfigBackupPath();
         void importConfig(state.config.dataDir, importPath)
           .then((imported) => {
             dispatch({ type: "SET_CONFIG", config: imported });
@@ -4907,36 +4914,36 @@ export function CommandBar({
     }
 
     return (
-      <box
+      <Box
         flexDirection="column"
         height={bodyHeight}
         onMouseScroll={handleListScroll}
       >
         {visibleRows.map((row) => {
           if (row.kind === "filler" || row.kind === "spacer") {
-            return <box key={row.id} height={1} />;
+            return <Box key={row.id} height={1} />;
           }
           if (row.kind === "spinner") {
             return (
-              <box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
+              <Box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
                 <Spinner label={row.label} />
-              </box>
+              </Box>
             );
           }
           if (row.kind === "message") {
             return (
-              <box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
-                <text fg={paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</text>
-              </box>
+              <Box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
+                <Text fg={paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</Text>
+              </Box>
             );
           }
           if (row.kind === "heading") {
             return (
-              <box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
-                <text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
+              <Box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
+                <Text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
                   {truncateText(row.label, barWidth - contentPadding * 2)}
-                </text>
-              </box>
+                </Text>
+              </Box>
             );
           }
 
@@ -4946,7 +4953,7 @@ export function CommandBar({
           const label = truncateText(presentation.label, labelWidth);
           const trailing = truncateText(presentation.trailing, trailingWidth);
           return (
-            <box
+            <Box
               key={row.item.id}
               flexDirection="row"
               height={1}
@@ -4970,18 +4977,18 @@ export function CommandBar({
                 activateListSelection({ item: row.item });
               }}
             >
-              <box width={labelWidth}>
-                <text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
+              <Box width={labelWidth}>
+                <Text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
                   {label}
-                </text>
-              </box>
-              <box width={trailingWidth}>
-                <text fg={isSelected ? paletteSelectedText : paletteSubtleText}>{trailing}</text>
-              </box>
-            </box>
+                </Text>
+              </Box>
+              <Box width={trailingWidth}>
+                <Text fg={isSelected ? paletteSelectedText : paletteSubtleText}>{trailing}</Text>
+              </Box>
+            </Box>
           );
         })}
-      </box>
+      </Box>
     );
   };
 
@@ -4989,24 +4996,24 @@ export function CommandBar({
     if (currentRoute?.kind !== "workflow") return null;
     const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
     return (
-      <box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
+      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
         {currentRoute.subtitle && (
-          <box height={1}>
-            <text fg={paletteSubtleText}>{truncateText(currentRoute.subtitle, barWidth - contentPadding * 2)}</text>
-          </box>
+          <Box height={1}>
+            <Text fg={paletteSubtleText}>{truncateText(currentRoute.subtitle, barWidth - contentPadding * 2)}</Text>
+          </Box>
         )}
         {currentRoute.description?.map((line, index) => (
-          <box key={`workflow-desc:${index}`} height={1}>
-            <text fg={paletteSubtleText}>{truncateText(line, barWidth - contentPadding * 2)}</text>
-          </box>
+          <Box key={`workflow-desc:${index}`} height={1}>
+            <Text fg={paletteSubtleText}>{truncateText(line, barWidth - contentPadding * 2)}</Text>
+          </Box>
         ))}
-        {currentRoute.subtitle || (currentRoute.description?.length ?? 0) > 0 ? <box height={1} /> : null}
+        {currentRoute.subtitle || (currentRoute.description?.length ?? 0) > 0 ? <Box height={1} /> : null}
         {visibleFields.map((field) => {
           const active = field.id === currentRoute.activeFieldId;
           const value = currentRoute.values[field.id];
           const borderColor = active ? paletteSelectedBg : paletteBg;
           return (
-            <box
+            <Box
               key={field.id}
               flexDirection="column"
               marginBottom={1}
@@ -5022,11 +5029,11 @@ export function CommandBar({
                 }
               }}
             >
-              <box height={1}>
-                <text fg={active ? paletteText : paletteSubtleText} attributes={active ? TextAttributes.BOLD : 0}>
+              <Box height={1}>
+                <Text fg={active ? paletteText : paletteSubtleText} attributes={active ? TextAttributes.BOLD : 0}>
                   {field.label}
-                </text>
-              </box>
+                </Text>
+              </Box>
               {isWorkflowTextField(field) ? (
                 field.type === "number" ? (
                   <NumberField
@@ -5045,7 +5052,7 @@ export function CommandBar({
                     }}
                   />
                 ) : field.type === "textarea" ? (
-                  <box
+                  <Box
                     minHeight={6}
                     height={6}
                     border
@@ -5053,7 +5060,7 @@ export function CommandBar({
                     backgroundColor={active ? colors.panel : paletteBg}
                   >
                     {active ? (
-                      <textarea
+                      <Textarea
                         key={field.id}
                         ref={getInputRef(workflowInputRefs.current, field.id) as RefObject<TextareaRenderable | null>}
                         initialValue={coerceFieldString(value)}
@@ -5066,7 +5073,7 @@ export function CommandBar({
                         wrapText
                       />
                     ) : (
-                      <box flexDirection="column" paddingX={1} paddingY={0}>
+                      <Box flexDirection="column" paddingX={1} paddingY={0}>
                         {(() => {
                           const preview = coerceFieldString(value).trim();
                           const lines = (preview || field.placeholder || "Unset")
@@ -5074,14 +5081,14 @@ export function CommandBar({
                             .flatMap((line) => line.match(new RegExp(`.{1,${Math.max(1, barWidth - contentPadding * 2 - 8)}}`, "g")) ?? [""])
                             .slice(0, 4);
                           return lines.map((line, index) => (
-                            <box key={`${field.id}:preview:${index}`} height={1}>
-                              <text fg={preview ? paletteText : paletteSubtleText}>{line || " "}</text>
-                            </box>
+                            <Box key={`${field.id}:preview:${index}`} height={1}>
+                              <Text fg={preview ? paletteText : paletteSubtleText}>{line || " "}</Text>
+                            </Box>
                           ));
                         })()}
-                      </box>
+                      </Box>
                     )}
-                  </box>
+                  </Box>
                 ) : (
                   <TextField
                     inputRef={getInputRef(workflowInputRefs.current, field.id) as RefObject<InputRenderable | null>}
@@ -5101,7 +5108,7 @@ export function CommandBar({
                   />
                 )
               ) : (
-                <box
+                <Box
                   height={1}
                   backgroundColor={borderColor}
                   onMouseDown={(event: any) => {
@@ -5109,74 +5116,74 @@ export function CommandBar({
                     openWorkflowFieldPicker(currentRoute, field);
                   }}
                 >
-                  <text fg={active ? paletteText : paletteSubtleText}>
+                  <Text fg={active ? paletteText : paletteSubtleText}>
                     {truncateText(summarizeWorkflowFieldValue(field, value), barWidth - contentPadding * 2)}
-                  </text>
-                </box>
+                  </Text>
+                </Box>
               )}
               {field.description && (
-                <box height={1}>
-                  <text fg={paletteSubtleText}>
+                <Box height={1}>
+                  <Text fg={paletteSubtleText}>
                     {truncateText(
                       field.type === "textarea" && active
                         ? `${field.description} Ctrl+S submits.`
                         : field.description,
                       barWidth - contentPadding * 2,
                     )}
-                  </text>
-                </box>
+                  </Text>
+                </Box>
               )}
-            </box>
+            </Box>
           );
         })}
         {currentRoute.error && (
-          <box height={1}>
-            <text fg={colors.negative}>{truncateText(currentRoute.error, barWidth - contentPadding * 2)}</text>
-          </box>
+          <Box height={1}>
+            <Text fg={colors.negative}>{truncateText(currentRoute.error, barWidth - contentPadding * 2)}</Text>
+          </Box>
         )}
         {currentRoute.pendingLabel && currentRoute.pending && (
-          <box height={1}>
+          <Box height={1}>
             <Spinner label={currentRoute.pendingLabel} />
-          </box>
+          </Box>
         )}
-        <box flexGrow={1} />
-        <box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
+        <Box flexGrow={1} />
+        <Box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
           <Button label={currentRoute.submitLabel} variant="primary" onPress={() => { void submitWorkflowRoute(currentRoute); }} disabled={currentRoute.pending} />
-        </box>
-      </box>
+        </Box>
+      </Box>
     );
   };
 
   const renderConfirmBody = () => {
     if (currentRoute?.kind !== "confirm") return null;
     return (
-      <box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
+      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
         {currentRoute.body.map((line, index) => (
-          <box key={`confirm:${index}`} height={1}>
-            <text fg={paletteText}>{truncateText(line, barWidth - contentPadding * 2)}</text>
-          </box>
+          <Box key={`confirm:${index}`} height={1}>
+            <Text fg={paletteText}>{truncateText(line, barWidth - contentPadding * 2)}</Text>
+          </Box>
         ))}
-        <box height={1} />
+        <Box height={1} />
         {currentRoute.error && (
-          <box height={1}>
-            <text fg={colors.negative}>{truncateText(currentRoute.error, barWidth - contentPadding * 2)}</text>
-          </box>
+          <Box height={1}>
+            <Text fg={colors.negative}>{truncateText(currentRoute.error, barWidth - contentPadding * 2)}</Text>
+          </Box>
         )}
         {currentRoute.pending && (
-          <box height={1}>
+          <Box height={1}>
             <Spinner label="Working…" />
-          </box>
+          </Box>
         )}
-        <box flexGrow={1} />
-        <box flexDirection="row" gap={1}>
+        <Box flexGrow={1} />
+        <Box flexDirection="row" gap={1}>
           <Button
             label={currentRoute.confirmLabel}
             variant={currentRoute.tone === "danger" ? "danger" : "primary"}
             onPress={() => { void confirmCurrentRoute(); }}
             disabled={currentRoute.pending}
           />
-        </box>
-      </box>
+        </Box>
+      </Box>
     );
   };
 
@@ -5194,7 +5201,7 @@ export function CommandBar({
       ? 0
       : Math.max(0, Math.min(currentRoute.selectedIdx, items.length - 1));
     return (
-      <box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
+      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
         <ToggleList
           items={items}
           selectedIdx={selectedIdx}
@@ -5209,15 +5216,15 @@ export function CommandBar({
           onToggle={(id) => handleMultiSelectToggle(id)}
           bgColor={paletteBg}
         />
-        <box flexDirection="row" gap={1}>
+        <Box flexDirection="row" gap={1}>
           <Button label="Done" variant="primary" onPress={commitMultiSelectPicker} />
-        </box>
-      </box>
+        </Box>
+      </Box>
     );
   };
 
   return (
-    <box
+    <Box
       position="absolute"
       top={0}
       left={0}
@@ -5230,7 +5237,7 @@ export function CommandBar({
         closeAll();
       }}
     >
-      <box
+      <Box
         position="absolute"
         top={barTop}
         left={barLeft}
@@ -5243,16 +5250,16 @@ export function CommandBar({
           event.stopPropagation?.();
         }}
       >
-        <box height={1} />
+        <Box height={1} />
 
-        <box height={1} paddingX={contentPadding} flexDirection="row" alignItems="center">
+        <Box height={1} paddingX={contentPadding} flexDirection="row" alignItems="center">
           {currentRoute && (
-            <box marginRight={1}>
+            <Box marginRight={1}>
               <Button label="Back" variant="ghost" onPress={popRoute} />
-            </box>
+            </Box>
           )}
-          <box flexGrow={1}>
-            <text fg={paletteText} attributes={TextAttributes.BOLD}>
+          <Box flexGrow={1}>
+            <Text fg={paletteText} attributes={TextAttributes.BOLD}>
               {currentRoute?.kind === "mode"
                 ? currentRoute.screen === "themes" ? "Change Theme"
                   : currentRoute.screen === "plugins" ? "Manage Plugins"
@@ -5264,16 +5271,16 @@ export function CommandBar({
                     : currentRoute?.kind === "workflow" ? currentRoute.title
                     : currentRoute?.kind === "confirm" ? currentRoute.title
                         : "Commands"}
-            </text>
-          </box>
-        </box>
+            </Text>
+          </Box>
+        </Box>
 
-        <box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={paletteBg}>
+        <Box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={paletteBg}>
           {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
             <>
-              <box height={1} paddingX={contentPadding}>
-                <box width={queryDisplayWidth} height={1} position="relative">
-                  <input
+              <Box height={1} paddingX={contentPadding}>
+                <Box width={queryDisplayWidth} height={1} position="relative">
+                  <Input
                     value={visibleListState.query}
                     onInput={setActiveListQuery}
                     onChange={setActiveListQuery}
@@ -5288,32 +5295,32 @@ export function CommandBar({
                     cursorColor={colors.textBright}
                   />
                   {visibleListState.kind === "root" && rootGhostSuffix && (
-                    <box
+                    <Box
                       position="absolute"
                       top={0}
                       left={Math.max(0, Math.min(rootQuery.length, queryDisplayWidth - 1))}
                       width={Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1))}
                       height={1}
                     >
-                      <text fg={paletteSubtleText}>
+                      <Text fg={paletteSubtleText}>
                         {truncateText(
                           rootGhostSuffix,
                           Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1)),
                         )}
-                      </text>
-                    </box>
+                      </Text>
+                    </Box>
                   )}
-                </box>
-              </box>
-              <box height={1} paddingX={contentPadding}>
+                </Box>
+              </Box>
+              <Box height={1} paddingX={contentPadding}>
                 {visibleListState.kind === "root" && rootShortcutFeedback
                   ? (
-                    <text fg={paletteSubtleText}>
+                    <Text fg={paletteSubtleText}>
                       {truncateText(rootShortcutFeedback, barWidth - contentPadding * 2)}
-                    </text>
+                    </Text>
                   )
                   : null}
-              </box>
+              </Box>
             </>
           )}
 
@@ -5321,10 +5328,10 @@ export function CommandBar({
           {currentRoute?.kind === "workflow" && renderWorkflowBody()}
           {currentRoute?.kind === "confirm" && renderConfirmBody()}
           {showCustomMultiSelectPicker && renderMultiSelectBody()}
-        </box>
+        </Box>
 
-        <box flexGrow={1} />
-      </box>
-    </box>
+        <Box flexGrow={1} />
+      </Box>
+    </Box>
   );
 }

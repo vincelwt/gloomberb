@@ -1,0 +1,54 @@
+import type { GloomPlugin } from "../types/plugin";
+import { portfolioListPlugin } from "./builtin/portfolio-list";
+import { tickerDetailPlugin } from "./builtin/ticker-detail";
+import { manualEntryPlugin } from "./builtin/manual-entry";
+import { newsPlugin } from "./builtin/news";
+import { secPlugin } from "./builtin/sec";
+import { optionsPlugin } from "./builtin/options";
+import { notesPlugin } from "./builtin/notes";
+import { aiPlugin } from "./builtin/ai";
+import { gloomberbCloudPlugin } from "./builtin/chat";
+import { helpPlugin } from "./builtin/help";
+import { comparisonChartPlugin } from "./builtin/comparison-chart";
+import { econCalendarPlugin } from "./builtin/econ";
+import { worldIndicesPlugin } from "./builtin/world-indices";
+import { marketMoversPlugin } from "./builtin/market-movers";
+import { layoutManagerPlugin } from "./builtin/layout-manager";
+import { predictionMarketsPlugin } from "./prediction-markets";
+import { correlationPlugin } from "./builtin/correlation";
+import { analyticsPlugin } from "./builtin/analytics";
+import { insiderPlugin } from "./builtin/insider";
+import { newsWirePlugin } from "./builtin/news-wire";
+import { alertsPlugin } from "./builtin/alerts";
+import { fxMatrixPlugin } from "./builtin/fx-matrix";
+import { yieldCurvePlugin } from "./builtin/yield-curve";
+import { sectorsPlugin } from "./builtin/sectors";
+import { earningsPlugin } from "./builtin/earnings";
+
+export const uiBuiltinPlugins: GloomPlugin[] = [
+  gloomberbCloudPlugin,
+  portfolioListPlugin,
+  tickerDetailPlugin,
+  manualEntryPlugin,
+  layoutManagerPlugin,
+  newsPlugin,
+  secPlugin,
+  optionsPlugin,
+  notesPlugin,
+  aiPlugin,
+  helpPlugin,
+  comparisonChartPlugin,
+  predictionMarketsPlugin,
+  correlationPlugin,
+  analyticsPlugin,
+  insiderPlugin,
+  econCalendarPlugin,
+  worldIndicesPlugin,
+  marketMoversPlugin,
+  newsWirePlugin,
+  alertsPlugin,
+  fxMatrixPlugin,
+  yieldCurvePlugin,
+  sectorsPlugin,
+  earningsPlugin,
+];

@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
 import {
@@ -26,29 +27,29 @@ export function PredictionMarketOutcomesView({
   const labelWidth = Math.max(detailWidth - 22, 12);
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+    <Box flexDirection="column">
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           Outcomes
-        </text>
-      </box>
+        </Text>
+      </Box>
 
-      <box flexDirection="row" height={1}>
-        <box width={labelWidth + 1}>
-          <text fg={colors.textDim}>{padTo("TARGET", labelWidth)}</text>
-        </box>
-        <box width={8}>
-          <text fg={colors.textDim}>{padTo("ODDS", 7, "right")}</text>
-        </box>
-        <box width={13}>
-          <text fg={colors.textDim}>{padTo("24H VOL", 12, "right")}</text>
-        </box>
-      </box>
+      <Box flexDirection="row" height={1}>
+        <Box width={labelWidth + 1}>
+          <Text fg={colors.textDim}>{padTo("TARGET", labelWidth)}</Text>
+        </Box>
+        <Box width={8}>
+          <Text fg={colors.textDim}>{padTo("ODDS", 7, "right")}</Text>
+        </Box>
+        <Box width={13}>
+          <Text fg={colors.textDim}>{padTo("24H VOL", 12, "right")}</Text>
+        </Box>
+      </Box>
 
       {sortedOutcomes.map((market, index) => {
         const selected = market.key === selectedMarketKey;
         return (
-          <box
+          <Box
             key={market.key}
             flexDirection="row"
             height={1}
@@ -58,16 +59,16 @@ export function PredictionMarketOutcomesView({
               onSelectMarket(market.key);
             }}
           >
-            <box width={labelWidth + 1}>
-              <text
+            <Box width={labelWidth + 1}>
+              <Text
                 fg={selected ? colors.selectedText : colors.text}
                 attributes={selected ? TextAttributes.BOLD : 0}
               >
                 {padTo(market.marketLabel, labelWidth)}
-              </text>
-            </box>
-            <box width={8}>
-              <text
+              </Text>
+            </Box>
+            <Box width={8}>
+              <Text
                 fg={
                   selected
                     ? colors.selectedText
@@ -76,10 +77,10 @@ export function PredictionMarketOutcomesView({
                 }
               >
                 {padTo(formatPredictionPercent(market.yesPrice), 7, "right")}
-              </text>
-            </box>
-            <box width={13}>
-              <text fg={selected ? colors.selectedText : colors.textDim}>
+              </Text>
+            </Box>
+            <Box width={13}>
+              <Text fg={selected ? colors.selectedText : colors.textDim}>
                 {padTo(
                   formatPredictionMetric(
                     market.volume24h,
@@ -88,11 +89,11 @@ export function PredictionMarketOutcomesView({
                   12,
                   "right",
                 )}
-              </text>
-            </box>
-          </box>
+              </Text>
+            </Box>
+          </Box>
         );
       })}
-    </box>
+    </Box>
   );
 }

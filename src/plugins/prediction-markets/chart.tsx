@@ -1,5 +1,6 @@
+import { Box, Text } from "../../ui";
 import { useMemo } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../../ui";
 import { StockChart } from "../../components/chart/stock-chart";
 import { EmptyState } from "../../components/ui/status";
 import { colors } from "../../theme/colors";
@@ -43,27 +44,27 @@ function PredictionRangeTabs({
   onRangeSelect: (range: PredictionHistoryRange) => void;
 }) {
   return (
-    <box flexDirection="row" gap={1}>
+    <Box flexDirection="row" gap={1}>
       {RANGES.map((entry) => {
         const active = entry === activeRange;
         return (
-          <box
+          <Box
             key={entry}
             onMouseDown={(event) => {
               event.preventDefault();
               onRangeSelect(entry);
             }}
           >
-            <text
+            <Text
               fg={active ? colors.textBright : colors.textDim}
               attributes={active ? TextAttributes.BOLD : 0}
             >
               {entry}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
-    </box>
+    </Box>
   );
 }
 
@@ -84,20 +85,20 @@ export function PredictionMarketChart({
 
   if (pricePoints.length === 0) {
     return (
-      <box flexDirection="column" height={height}>
-        <box flexDirection="row" height={1}>
+      <Box flexDirection="column" height={height}>
+        <Box flexDirection="row" height={1}>
           <PredictionRangeTabs
             activeRange={range}
             onRangeSelect={onRangeSelect}
           />
-        </box>
-        <box flexGrow={1} justifyContent="center">
+        </Box>
+        <Box flexGrow={1} justifyContent="center">
           <EmptyState
             title="No chart history."
             hint="This venue did not return price history for the selected market."
           />
-        </box>
-      </box>
+        </Box>
+      </Box>
     );
   }
 
@@ -108,14 +109,14 @@ export function PredictionMarketChart({
   const chartHeight = Math.max(height - 1, 2);
 
   return (
-    <box flexDirection="column" height={height}>
-      <box flexDirection="row" height={1}>
+    <Box flexDirection="column" height={height}>
+      <Box flexDirection="row" height={1}>
         <PredictionRangeTabs
           activeRange={range}
           onRangeSelect={onRangeSelect}
         />
-        <box flexGrow={1} />
-        <text
+        <Box flexGrow={1} />
+        <Text
           fg={
             delta > 0
               ? colors.positive
@@ -125,8 +126,8 @@ export function PredictionMarketChart({
           }
         >
           {`${formatNumber(last?.close ?? 0, 3)}  ${formatPercentRaw(deltaPct)}`}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
       <StockChart
         width={width}
@@ -136,6 +137,6 @@ export function PredictionMarketChart({
         historyOverride={pricePoints}
         currencyOverride="USD"
       />
-    </box>
+    </Box>
   );
 }

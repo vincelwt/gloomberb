@@ -1,3 +1,4 @@
+import { Box, Text } from "../../ui";
 import { useEffect, useRef, useState } from "react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { SecFilingItem } from "../../types/data-provider";
@@ -85,13 +86,13 @@ function wrapMessageLines(text: string, width: number): string[] {
 function renderNotice(message: string, width: number) {
   const lines = wrapMessageLines(message, width - 4);
   return (
-    <box flexDirection="column" paddingX={1} paddingY={1}>
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
       {lines.map((line, index) => (
-        <box key={index} height={1}>
-          <text fg={colors.textDim}>{line}</text>
-        </box>
+        <Box key={index} height={1}>
+          <Text fg={colors.textDim}>{line}</Text>
+        </Box>
       ))}
-    </box>
+    </Box>
   );
 }
 
@@ -305,7 +306,7 @@ function SecTab({ width, height, focused }: DetailTabProps) {
     })();
   }, [filings]);
 
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view SEC filings.</text>;
+  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
   if (!eligibleTicker) return renderNotice("SEC filings are only shown for US equities.", width);
   if (loading && filings.length === 0) return <Spinner label="Loading SEC filings..." />;
   if (error) return renderNotice(`Error: ${error}`, width);

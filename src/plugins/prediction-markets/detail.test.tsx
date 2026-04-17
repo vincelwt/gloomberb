@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import {
   ChartHarness,
   GroupedDetailHarness,

@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Input, ScrollBox, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { DataTableStackView, TabBar } from "../../components";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
@@ -35,16 +36,16 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         />
       ) : null}
 
-      <box flexDirection="row" height={1} paddingX={1} gap={2}>
-        <box
+      <Box flexDirection="row" height={1} paddingX={1} gap={2}>
+        <Box
           flexDirection="row"
           onMouseDown={controller.actions.focusSearch}
           width={Math.max(18, Math.floor(width * 0.32))}
         >
-          <text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</text>
-          <box width={1} />
+          <Text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</Text>
+          <Box width={1} />
           {controller.searchFocused ? (
-            <input
+            <Input
               ref={controller.searchInputRef}
               value={controller.searchQuery}
               focused={focused}
@@ -58,8 +59,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
               onSubmit={controller.actions.blurSearch}
             />
           ) : (
-            <box flexGrow={1}>
-              <text
+            <Box flexGrow={1}>
+              <Text
                 fg={
                   controller.searchQuery.trim().length > 0
                     ? colors.text
@@ -69,12 +70,12 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
                 {controller.searchQuery.trim().length > 0
                   ? controller.searchQuery
                   : "search markets"}
-              </text>
-            </box>
+              </Text>
+            </Box>
           )}
-        </box>
+        </Box>
 
-        <box flexGrow={1}>
+        <Box flexGrow={1}>
           <TabBar
             tabs={BROWSE_TABS.map((tab) => ({
               label: tab.label,
@@ -86,16 +87,16 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
             }
             compact
           />
-        </box>
-      </box>
+        </Box>
+      </Box>
 
       {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
-        <scrollbox height={1} scrollX focusable={false}>
-          <box flexDirection="row" paddingX={1} gap={2}>
+        <ScrollBox height={1} scrollX focusable={false}>
+          <Box flexDirection="row" paddingX={1} gap={2}>
             {PREDICTION_CATEGORY_OPTIONS.map((category) => {
               const active = category.id === controller.categoryId;
               return (
-                <box
+                <Box
                   key={category.id}
                   onMouseDown={(event) => {
                     event.preventDefault();
@@ -104,23 +105,23 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
                     );
                   }}
                 >
-                  <text
+                  <Text
                     fg={active ? colors.textBright : colors.textDim}
                     attributes={active ? TextAttributes.BOLD : 0}
                   >
                     {category.label}
-                  </text>
-                </box>
+                  </Text>
+                </Box>
               );
             })}
-          </box>
-        </scrollbox>
+          </Box>
+        </ScrollBox>
       ) : null}
 
       {controller.catalogStatus ? (
-        <box height={1} paddingX={1} width={width} backgroundColor={colors.panel}>
-          <text fg={catalogStatusColor}>{controller.catalogStatus.message}</text>
-        </box>
+        <Box height={1} paddingX={1} width={width} backgroundColor={colors.panel}>
+          <Text fg={catalogStatusColor}>{controller.catalogStatus.message}</Text>
+        </Box>
       ) : null}
     </>
   );
@@ -156,7 +157,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
 
   const detailContent =
     controller.selectedSummary && controller.selectedRow ? (
-      <box
+      <Box
         flexDirection="column"
         flexGrow={1}
         width={width}
@@ -181,9 +182,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           selectedRow={controller.selectedRow}
           selectedSummary={controller.selectedSummary}
         />
-      </box>
+      </Box>
     ) : (
-      <box flexGrow={1} backgroundColor={colors.panel} />
+      <Box flexGrow={1} backgroundColor={colors.panel} />
     );
 
   return (

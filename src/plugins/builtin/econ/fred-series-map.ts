@@ -1,3 +1,4 @@
+
 interface FredMapping {
   seriesId: string;
   /** How to display the value: "level" shows the raw number, "change" shows month-over-month or quarter-over-quarter percent change */

@@ -1,3 +1,4 @@
+
 export type AlertCondition = "above" | "below" | "crosses";
 export type AlertStatus = "active" | "triggered" | "expired";
 

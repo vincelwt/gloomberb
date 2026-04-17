@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gloomberb",
+  "version": "0.5.1",
+  "identifier": "com.gloomberb.desktop",
+  "build": {
+    "beforeDevCommand": "bun run tauri:web:build",
+    "beforeBuildCommand": "bun run tauri:web:build",
+    "frontendDist": "../dist/tauri"
+  },
+  "app": {
+    "security": {
+      "csp": null,
+      "devCsp": null,
+      "dangerousDisableAssetCspModification": true
+    },
+    "windows": [
+      {
+        "title": "Gloomberb",
+        "width": 1200,
+        "height": 800
+      }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}

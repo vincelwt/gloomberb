@@ -1,6 +1,7 @@
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../../types/plugin";
 import type { AlertCondition, AlertRule } from "./types";
@@ -197,7 +198,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     setSelectedIdx((prev) => (rows.length === 0 ? 0 : Math.min(prev, rows.length - 1)));
   }, [rows.length]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     if (event.name === "j" || event.name === "down") {
@@ -293,25 +294,25 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   }, [rearmAlert]);
 
   return (
-    <box
+    <Box
       flexDirection="column"
       width={width}
       height={height}
       backgroundColor={colors.bg}
     >
-      <box
+      <Box
         flexDirection="row"
         height={1}
         paddingX={1}
         backgroundColor={colors.bg}
       >
-        <text fg={colors.textDim}>{activeCount} active</text>
+        <Text fg={colors.textDim}>{activeCount} active</Text>
         {triggeredCount > 0 && (
-          <box marginLeft={1}>
-            <text fg={colors.textMuted}>{triggeredCount} triggered</text>
-          </box>
+          <Box marginLeft={1}>
+            <Text fg={colors.textMuted}>{triggeredCount} triggered</Text>
+          </Box>
         )}
-      </box>
+      </Box>
 
       <DataTable<AlertRule, AlertColumn>
         columns={ALERT_COLUMNS}
@@ -337,33 +338,33 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         showHorizontalScrollbar={showHorizontalScrollbar}
       />
 
-      <box
+      <Box
         flexDirection="row"
         height={1}
         paddingX={1}
         backgroundColor={colors.panel}
       >
-        <box
+        <Box
           onMouseDown={(event: any) => {
             event.preventDefault?.();
             event.stopPropagation?.();
             openSetAlertCommand();
           }}
         >
-          <text fg={colors.textDim}>[a]dd alert</text>
-        </box>
-        <box width={2} />
-        <box
+          <Text fg={colors.textDim}>[a]dd alert</Text>
+        </Box>
+        <Box width={2} />
+        <Box
           onMouseDown={(event: any) => {
             event.preventDefault?.();
             event.stopPropagation?.();
             deleteSelectedAlert();
           }}
         >
-          <text fg={rows.length > 0 ? colors.textDim : colors.textMuted}>[d]elete</text>
-        </box>
-      </box>
-    </box>
+          <Text fg={rows.length > 0 ? colors.textDim : colors.textMuted}>[d]elete</Text>
+        </Box>
+      </Box>
+    </Box>
   );
 }
 

@@ -1,3 +1,4 @@
+
 export const TERMINAL_MOUSE_RESET_SEQUENCE = "\x1B[?1016l\x1B[?1006l\x1B[?1005l\x1B[?1015l\x1B[?1003l\x1B[?1002l\x1B[?1000l";
 
 interface TerminalResetStdin {

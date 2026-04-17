@@ -1,4 +1,4 @@
-import "opentui-spinner/react";
+import { Box, SpinnerMark, Text } from "../../ui";
 import { colors } from "../../theme/colors";
 
 export interface SpinnerProps {
@@ -7,10 +7,10 @@ export interface SpinnerProps {
 
 export function Spinner({ label }: SpinnerProps) {
   return (
-    <box flexDirection="row" gap={1}>
-      <spinner name="dots" color={colors.textDim} />
-      {label && <text fg={colors.textDim}>{label}</text>}
-    </box>
+    <Box flexDirection="row" gap={1}>
+      <SpinnerMark name="dots" color={colors.textDim} />
+      {label && <Text fg={colors.textDim}>{label}</Text>}
+    </Box>
   );
 }
 
@@ -32,12 +32,12 @@ export function ProgressBar({
   const bar = `${"\u2588".repeat(filled)}${"\u2591".repeat(Math.max(0, width - filled))}`;
 
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text fg={colors.borderFocused}>{bar}</text>
-        {label && <text fg={colors.textDim}>{` ${label}`}</text>}
-      </box>
-    </box>
+    <Box flexDirection="column">
+      <Box height={1}>
+        <Text fg={colors.borderFocused}>{bar}</Text>
+        {label && <Text fg={colors.textDim}>{` ${label}`}</Text>}
+      </Box>
+    </Box>
   );
 }
 
@@ -47,9 +47,9 @@ export interface SkeletonRowProps {
 
 export function SkeletonRow({ width = 24 }: SkeletonRowProps) {
   return (
-    <box height={1}>
-      <text fg={colors.textMuted}>{"\u2592".repeat(width)}</text>
-    </box>
+    <Box height={1}>
+      <Text fg={colors.textMuted}>{"\u2592".repeat(width)}</Text>
+    </Box>
   );
 }
 
@@ -60,11 +60,11 @@ export interface LoadingBlockProps {
 
 export function LoadingBlock({ label, lines = 2 }: LoadingBlockProps) {
   return (
-    <box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={1}>
       <Spinner label={label} />
       {Array.from({ length: lines }, (_, index) => (
         <SkeletonRow key={index} width={24 - index * 3} />
       ))}
-    </box>
+    </Box>
   );
 }

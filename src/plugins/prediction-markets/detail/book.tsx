@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { formatNumber, padTo } from "../../../utils/format";
 import { formatPredictionProbability } from "../metrics";
@@ -18,19 +19,19 @@ function BookTable({
   onSelect: (level: PredictionBookLevel) => void;
 }) {
   return (
-    <box flexDirection="column" flexGrow={1}>
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+    <Box flexDirection="column" flexGrow={1}>
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           {title}
-        </text>
-      </box>
-      <box height={1}>
-        <text fg={colors.textDim}>
+        </Text>
+      </Box>
+      <Box height={1}>
+        <Text fg={colors.textDim}>
           {padTo("PRICE", 8)} {padTo("SIZE", 10)}
-        </text>
-      </box>
+        </Text>
+      </Box>
       {levels.slice(0, 10).map((level) => (
-        <box
+        <Box
           key={`${title}:${level.price}:${level.size}`}
           height={1}
           onMouseDown={(event) => {
@@ -38,13 +39,13 @@ function BookTable({
             onSelect(level);
           }}
         >
-          <text fg={colors.text}>
+          <Text fg={colors.text}>
             {`${padTo(formatPredictionProbability(level.price), 8)} ${padTo(formatNumber(level.size, 0), 10, "right")}`}
-          </text>
-        </box>
+          </Text>
+        </Box>
       ))}
-      {levels.length === 0 && <text fg={colors.textDim}>No levels.</text>}
-    </box>
+      {levels.length === 0 && <Text fg={colors.textDim}>No levels.</Text>}
+    </Box>
   );
 }
 
@@ -56,8 +57,8 @@ export function PredictionMarketBookView({
   onPreviewOrder: (intent: PredictionOrderPreviewIntent) => void;
 }) {
   return (
-    <box flexDirection="column" gap={1}>
-      <box flexDirection="row" gap={2}>
+    <Box flexDirection="column" gap={1}>
+      <Box flexDirection="row" gap={2}>
         <BookTable
           title="YES Bids"
           levels={detail.book.yesBids}
@@ -84,8 +85,8 @@ export function PredictionMarketBookView({
             })
           }
         />
-      </box>
-      <box flexDirection="row" gap={2}>
+      </Box>
+      <Box flexDirection="row" gap={2}>
         <BookTable
           title="NO Bids"
           levels={detail.book.noBids}
@@ -112,7 +113,7 @@ export function PredictionMarketBookView({
             })
           }
         />
-      </box>
-    </box>
+      </Box>
+    </Box>
   );
 }

@@ -1,4 +1,4 @@
-import { CliRenderEvents, type CliRenderer } from "@opentui/core";
+import { type NativeRendererHost as CliRenderer } from "../ui";
 import { useSyncExternalStore } from "react";
 import { debugLog } from "../utils/debug-log";
 
@@ -36,15 +36,15 @@ class AppActivityController {
     };
     const handleDestroy = () => this.reset();
 
-    renderer.on(CliRenderEvents.FOCUS, handleFocus);
-    renderer.on(CliRenderEvents.BLUR, handleBlur);
-    renderer.on(CliRenderEvents.DESTROY, handleDestroy);
+    renderer.on("focus", handleFocus);
+    renderer.on("blur", handleBlur);
+    renderer.on("destroy", handleDestroy);
 
     this.boundRenderer = renderer;
     this.teardownRenderer = () => {
-      renderer.off(CliRenderEvents.FOCUS, handleFocus);
-      renderer.off(CliRenderEvents.BLUR, handleBlur);
-      renderer.off(CliRenderEvents.DESTROY, handleDestroy);
+      renderer.off("focus", handleFocus);
+      renderer.off("blur", handleBlur);
+      renderer.off("destroy", handleDestroy);
       if (this.boundRenderer === renderer) {
         this.boundRenderer = null;
         this.teardownRenderer = null;

@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
 import type { AppState } from "../../../state/app-context";
 import type { Portfolio } from "../../../types/ticker";
@@ -217,24 +218,24 @@ export function buildPortfolioSummarySegments({
 export function renderSummarySegments(segments: PortfolioSummarySegment[], width: number) {
   if (segments.length === 0) return null;
   return (
-    <box flexDirection="row" width={width} justifyContent="flex-start" overflow="hidden">
+    <Box flexDirection="row" width={width} justifyContent="flex-start" overflow="hidden">
       {segments.map((segment, segmentIndex) => (
-        <box key={segment.id} flexDirection="row">
-          {segmentIndex > 0 && <text fg={colors.textDim}>{"  "}</text>}
+        <Box key={segment.id} flexDirection="row">
+          {segmentIndex > 0 && <Text fg={colors.textDim}>{"  "}</Text>}
           {segment.parts.map((part, partIndex) => (
-            <box key={`${segment.id}:${partIndex}`} flexDirection="row">
-              {partIndex > 0 && <text fg={colors.textDim}>{" "}</text>}
-              <text
+            <Box key={`${segment.id}:${partIndex}`} flexDirection="row">
+              {partIndex > 0 && <Text fg={colors.textDim}>{" "}</Text>}
+              <Text
                 fg={part.color ?? (part.tone === "label" || part.tone === "muted" ? colors.textDim : colors.text)}
                 attributes={part.bold ? TextAttributes.BOLD : 0}
               >
                 {part.text}
-              </text>
-            </box>
+              </Text>
+            </Box>
           ))}
-        </box>
+        </Box>
       ))}
-    </box>
+    </Box>
   );
 }
 

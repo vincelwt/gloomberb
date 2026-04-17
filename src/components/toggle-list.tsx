@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../ui";
+import { TextAttributes } from "../ui";
 import { colors } from "../theme/colors";
 import { ListView, type ListViewItem } from "./ui/list-view";
 
@@ -64,22 +65,22 @@ export function ToggleList({
           onToggle?.(item.id);
         };
         return (
-          <box
+          <Box
             id={rowIdPrefix ? `${rowIdPrefix}:${item.id}` : undefined}
             flexDirection="row"
             onMouseDown={activate}
           >
-            <text fg={state.selected ? colors.selectedText : colors.textDim}>
+            <Text fg={state.selected ? colors.selectedText : colors.textDim}>
               {state.selected ? "\u25b8 " : "  "}
-            </text>
-            <text
+            </Text>
+            <Text
               fg={state.selected ? colors.text : colors.textDim}
               attributes={state.selected ? TextAttributes.BOLD : 0}
               onMouseDown={activate}
             >
               {`[${checked}] ${item.label}`}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       }}
     />

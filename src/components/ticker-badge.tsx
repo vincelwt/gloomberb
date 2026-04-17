@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../ui";
+import { TextAttributes } from "../ui";
 import { colors, priceColor } from "../theme/colors";
 import { formatMarketPriceWithCurrency } from "../utils/market-format";
 import type { Quote } from "../types/financials";
@@ -62,8 +63,8 @@ export function TickerBadge({
   const interactive = status === "ready";
 
   return (
-    <box paddingRight={1}>
-      <box
+    <Box paddingRight={1}>
+      <Box
         paddingX={1}
         backgroundColor={backgroundColor}
         onMouseOver={() => {
@@ -79,10 +80,10 @@ export function TickerBadge({
           onOpen(symbol);
         }}
       >
-        <text fg={color} attributes={TextAttributes.BOLD}>
+        <Text fg={color} attributes={TextAttributes.BOLD}>
           {text}
-        </text>
-      </box>
-    </box>
+        </Text>
+      </Box>
+    </Box>
   );
 }

@@ -1,11 +1,13 @@
+import { Box, ScrollBox, Text } from "../../ui";
 import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
 import { useAppDispatch, usePaneInstance } from "../../state/app-context";
 import { padTo } from "../../utils/format";
 import { useDoubleClickActivation } from "../use-double-click-activation";
 import { EmptyState } from "./status";
+import { tableContentWidthProps, useMeasuredTableContentWidth } from "./table-layout";
 
 export type DataTableColumn = Pick<
   ColumnConfig,
@@ -106,6 +108,11 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
     () => items.slice(startIndex, endIndex),
     [endIndex, items, scrollVersion, startIndex],
   );
+  const tableWidth = useMemo(
+    () => columns.reduce((sum, column) => sum + column.width + 1, 2),
+    [columns],
+  );
+  const { contentWidth, measureContentWidth } = useMeasuredTableContentWidth(tableWidth, headerScrollRef, scrollRef);
   const handleRowMouseDown =
     useDoubleClickActivation<DataTableRowPointerTarget<T>>({
       onSelect: ({ item, index }) => {
@@ -145,12 +152,25 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   }, [columns.length, headerScrollRef, items.length, scrollRef, showHorizontalScrollbar]);
 
   return (
-    <>
-      <scrollbox ref={headerScrollRef} height={1} scrollX={showHorizontalScrollbar} focusable={false}>
-        <box
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      width="100%"
+      backgroundColor={colors.bg}
+    >
+      <ScrollBox
+        ref={headerScrollRef}
+        width="100%"
+        height={1}
+        backgroundColor={colors.panel}
+        scrollX={showHorizontalScrollbar}
+        focusable={false}
+        onSizeChange={measureContentWidth}
+      >
+        <Box
           flexDirection="row"
           height={1}
-          width="100%"
+          {...tableContentWidthProps(contentWidth)}
           paddingX={1}
           backgroundColor={colors.panel}
         >
@@ -167,7 +187,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
               column.align,
             );
             return (
-              <box
+              <Box
                 key={column.id}
                 width={column.width + 1}
                 backgroundColor={colors.panel}
@@ -177,21 +197,23 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                   onHeaderClick(column.id);
                 }}
               >
-                <text
+                <Text
                   attributes={TextAttributes.BOLD}
                   fg={isSorted ? colors.text : colors.textDim}
                 >
                   {labelText}
-                </text>
-              </box>
+                </Text>
+              </Box>
             );
           })}
-        </box>
-      </scrollbox>
+        </Box>
+      </ScrollBox>
 
-      <scrollbox
+      <ScrollBox
         ref={scrollRef}
+        width="100%"
         flexGrow={1}
+        backgroundColor={colors.bg}
         scrollX={showHorizontalScrollbar}
         scrollY
         focusable={false}
@@ -202,25 +224,26 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
         onMouseUp={() => queueMicrotask(handleBodyScrollActivity)}
         onMouseDrag={() => queueMicrotask(handleBodyScrollActivity)}
         onMouseScroll={() => queueMicrotask(handleBodyScrollActivity)}
+        onSizeChange={measureContentWidth}
       >
         {items.length === 0 ? (
-          <box paddingX={1} paddingY={1}>
+          <Box width="100%" paddingX={1} paddingY={1}>
             <EmptyState title={emptyStateTitle} hint={emptyStateHint} />
-          </box>
+          </Box>
         ) : (
           <>
-            {virtualize && startIndex > 0 && <box height={startIndex} />}
+            {virtualize && startIndex > 0 && <Box height={startIndex} />}
             {visibleItems.map((item, visibleIndex) => {
               const index = startIndex + visibleIndex;
               const sectionHeader = renderSectionHeader?.(item, index) ?? null;
 
               if (sectionHeader) {
                 return (
-                  <box
+                  <Box
                     key={getItemKey(item, index)}
                     flexDirection="row"
                     height={1}
-                    width="100%"
+                    {...tableContentWidthProps(contentWidth)}
                     paddingX={1}
                     backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
                     onMouseDown={(event) => {
@@ -228,13 +251,13 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                       event.preventDefault();
                     }}
                   >
-                    <text
+                    <Text
                       attributes={sectionHeader.attributes ?? TextAttributes.BOLD}
                       fg={sectionHeader.color ?? colors.textBright}
                     >
                       {sectionHeader.text}
-                    </text>
-                  </box>
+                    </Text>
+                  </Box>
                 );
               }
 
@@ -247,10 +270,11 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                   : colors.bg;
 
               return (
-                <box
+                <Box
                   key={getItemKey(item, index)}
                   flexDirection="row"
                   height={1}
+                  {...tableContentWidthProps(contentWidth)}
                   paddingX={1}
                   backgroundColor={rowBg}
                   onMouseMove={() => setHoveredIdx(index)}
@@ -260,7 +284,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                     handleRowMouseDown(getItemKey(item, index), {
                       item,
                       index,
-                    });
+                    }, event);
                   }}
                 >
                   {columns.map((column) => {
@@ -269,7 +293,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                       hovered,
                     });
                     return (
-                      <box
+                      <Box
                         key={column.id}
                         width={column.width + 1}
                         onMouseDown={(event) => {
@@ -283,10 +307,10 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                           handleRowMouseDown(getItemKey(item, index), {
                             item,
                             index,
-                          });
+                          }, event);
                         }}
                       >
-                        <text
+                        <Text
                           attributes={cell.attributes ?? TextAttributes.NONE}
                           fg={
                             cell.color ??
@@ -294,19 +318,19 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                           }
                         >
                           {padTo(cell.text, column.width, column.align)}
-                        </text>
-                      </box>
+                        </Text>
+                      </Box>
                     );
                   })}
-                </box>
+                </Box>
               );
             })}
             {virtualize && endIndex < items.length && (
-              <box height={Math.max(items.length - endIndex, 0)} />
+              <Box height={Math.max(items.length - endIndex, 0)} />
             )}
           </>
         )}
-      </scrollbox>
-    </>
+      </ScrollBox>
+    </Box>
   );
 }

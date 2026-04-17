@@ -1,7 +1,8 @@
+import { Box, Text } from "../ui";
 import { useState, useRef, useEffect } from "react";
-import { TextAttributes } from "@opentui/core";
-import type { InputRenderable } from "@opentui/core";
-import { useDialogKeyboard, type PromptContext } from "@opentui-ui/dialog/react";
+import { TextAttributes } from "../ui";
+import { type InputRenderable } from "../ui";
+import { type PromptContext, useDialogKeyboard } from "../ui/dialog";
 import type { Quote } from "../types/financials";
 import { colors } from "../theme/colors";
 import { formatMarketPrice } from "../utils/market-format";
@@ -139,9 +140,9 @@ export function PriceSelectorDialog({
           : "Type a price · Enter confirm · ↑ or Tab back to presets · Esc cancel"
       }
     >
-      <box flexDirection="column">
-        <text fg={colors.textDim}>{formatMarketContext(quote, assetCategory)}</text>
-        <box height={1} />
+      <Box flexDirection="column">
+        <Text fg={colors.textDim}>{formatMarketContext(quote, assetCategory)}</Text>
+        <Box height={1} />
 
         {presets.length > 0 && (
           <>
@@ -160,31 +161,31 @@ export function PriceSelectorDialog({
               renderRow={(item, state) => {
                 const preset = presets.find((entry) => entry.label === item.id);
                 return (
-                  <box flexDirection="row">
-                    <text fg={state.selected ? colors.selectedText : colors.textDim}>
+                  <Box flexDirection="row">
+                    <Text fg={state.selected ? colors.selectedText : colors.textDim}>
                       {state.selected ? "▸ " : "  "}
-                    </text>
-                    <text fg={state.selected ? colors.text : colors.textDim} attributes={state.selected ? TextAttributes.BOLD : 0}>
+                    </Text>
+                    <Text fg={state.selected ? colors.text : colors.textDim} attributes={state.selected ? TextAttributes.BOLD : 0}>
                       {padTo(item.label, presetWidth)}
-                    </text>
-                    <text fg={state.selected ? colors.text : colors.textMuted}>
+                    </Text>
+                    <Text fg={state.selected ? colors.text : colors.textMuted}>
                       {preset ? formatMarketPrice(preset.value, { assetCategory }) : ""}
-                    </text>
+                    </Text>
                     {preset?.detail && (
-                      <text fg={colors.textDim}>{`  ${preset.detail}`}</text>
+                      <Text fg={colors.textDim}>{`  ${preset.detail}`}</Text>
                     )}
-                  </box>
+                  </Box>
                 );
               }}
             />
-            <box height={1} />
+            <Box height={1} />
           </>
         )}
 
-        <box flexDirection="row" onMouseDown={() => { setMode("input"); setIndex(CUSTOM_INDEX); }}>
-          <text fg={mode === "input" ? colors.text : colors.textDim}>
+        <Box flexDirection="row" onMouseDown={() => { setMode("input"); setIndex(CUSTOM_INDEX); }}>
+          <Text fg={mode === "input" ? colors.text : colors.textDim}>
             {mode === "input" ? "▸ " : "  "}Custom:{" "}
-          </text>
+          </Text>
           <NumberField
             inputRef={inputRef}
             focused={mode === "input"}
@@ -193,8 +194,8 @@ export function PriceSelectorDialog({
             onChange={setCustomValue}
             onSubmit={(submittedValue) => resolve(submittedValue.trim())}
           />
-        </box>
-      </box>
+        </Box>
+      </Box>
     </DialogFrame>
   );
 }

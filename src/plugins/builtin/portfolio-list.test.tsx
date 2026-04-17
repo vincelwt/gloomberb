@@ -3,7 +3,7 @@ import { existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { act, useReducer } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import { AppPersistence } from "../../data/app-persistence";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider, type AppAction } from "../../state/app-context";
 import { ProviderRouter } from "../../sources/provider-router";
@@ -254,6 +254,36 @@ describe("PortfolioListPane cash and margin UI", () => {
     const paneDef = portfolioListPlugin.panes?.find((entry) => entry.id === "portfolio-list");
 
     expect(paneDef?.defaultMode).toBe("floating");
+  });
+
+  test("opens the selected ticker on a second row click", async () => {
+    const portfolioId = "broker:ibkr-flex:DU12345";
+    const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
+    const navigated: string[] = [];
+    setSharedRegistryForTests({
+      navigateTickerFn: (symbol: string) => {
+        navigated.push(symbol);
+      },
+    } as any);
+
+    testSetup = await testRender(
+      <PortfolioHarness config={config} collectionId={portfolioId} />,
+      { width: 100, height: 24 },
+    );
+
+    await flushFrame();
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 3);
+      await testSetup!.renderOnce();
+    });
+    expect(navigated).toEqual([]);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 3);
+      await testSetup!.renderOnce();
+    });
+    expect(navigated).toEqual(["AAPL"]);
   });
 
   test("keeps non-broker portfolios unchanged", async () => {

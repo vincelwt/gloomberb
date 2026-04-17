@@ -1,3 +1,4 @@
+
 export const MAJOR_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD"] as const;
 export type MajorCurrency = typeof MAJOR_CURRENCIES[number];
 

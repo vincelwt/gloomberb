@@ -1,7 +1,8 @@
-import { TextAttributes } from "@opentui/core";
-import type { InputRenderable } from "@opentui/core";
+import { Box, Input, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
+import { type InputRenderable } from "../../ui";
 import { useEffect, useRef, useState } from "react";
-import { useDialogKeyboard, type PromptContext } from "@opentui-ui/dialog/react";
+import { type PromptContext, useDialogKeyboard } from "../../ui/dialog";
 import type { WizardStep } from "../../types/plugin";
 import { colors } from "../../theme/colors";
 
@@ -14,14 +15,14 @@ export function InputDialog({ resolve, step }: PromptContext<string> & { step: W
   }, []);
 
   return (
-    <box flexDirection="column">
-      <text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</text>
-      <box height={1} />
+    <Box flexDirection="column">
+      <Text attributes={TextAttributes.BOLD} fg={colors.text}>{step.label}</Text>
+      <Box height={1} />
       {step.body?.map((line, index) => (
-        <text key={index} fg={colors.textDim}>{line || " "}</text>
+        <Text key={index} fg={colors.textDim}>{line || " "}</Text>
       ))}
-      <box height={1} />
-      <input
+      <Box height={1} />
+      <Input
         ref={inputRef}
         focused
         placeholder={step.placeholder || ""}
@@ -32,7 +33,7 @@ export function InputDialog({ resolve, step }: PromptContext<string> & { step: W
         onChange={(nextValue) => setValue(nextValue)}
         onSubmit={() => resolve(value.trim())}
       />
-    </box>
+    </Box>
   );
 }
 
@@ -53,13 +54,13 @@ export function ChoiceDialog({
   }, dialogId);
 
   return (
-    <box flexDirection="column">
-      <text attributes={TextAttributes.BOLD} fg={colors.text}>{title}</text>
-      <box height={1} />
+    <Box flexDirection="column">
+      <Text attributes={TextAttributes.BOLD} fg={colors.text}>{title}</Text>
+      <Box height={1} />
       {choices.map((choice, choiceIndex) => {
         const selected = choiceIndex === index;
         return (
-          <box
+          <Box
             key={choice.id}
             flexDirection="row"
             height={1}
@@ -67,17 +68,17 @@ export function ChoiceDialog({
             onMouseMove={() => setIndex(choiceIndex)}
             onMouseDown={() => resolve(choice.id)}
           >
-            <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "▸ " : "  "}</text>
-            <text fg={selected ? colors.text : colors.textDim} attributes={selected ? TextAttributes.BOLD : 0}>
+            <Text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "▸ " : "  "}</Text>
+            <Text fg={selected ? colors.text : colors.textDim} attributes={selected ? TextAttributes.BOLD : 0}>
               {choice.label}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
-      <box height={1} />
-      <text fg={colors.textDim}>{choices[index]?.desc || ""}</text>
-      <box height={1} />
-      <text fg={colors.textMuted}>↑↓ choose · Enter/click select · Esc cancel</text>
-    </box>
+      <Box height={1} />
+      <Text fg={colors.textDim}>{choices[index]?.desc || ""}</Text>
+      <Box height={1} />
+      <Text fg={colors.textMuted}>↑↓ choose · Enter/click select · Esc cancel</Text>
+    </Box>
   );
 }

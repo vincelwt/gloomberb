@@ -1,6 +1,7 @@
-import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import { useDialog, useDialogKeyboard, type AlertContext } from "@opentui-ui/dialog/react";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
+import { useShortcut } from "../../react/input";
+import { type AlertContext, useDialog, useDialogKeyboard } from "../../ui/dialog";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { colors } from "../../theme/colors";
 import { ToggleList } from "../toggle-list";
@@ -159,7 +160,7 @@ export function MultiSelectDialogContent({
 
   return (
     <DialogFrame title={title}>
-      <box flexDirection="column" gap={1}>
+      <Box flexDirection="column" gap={1}>
         <ToggleList
           items={toggleItems}
           selectedIdx={selectedIndex}
@@ -174,7 +175,7 @@ export function MultiSelectDialogContent({
             void toggleOption(optionByValue.get(id)).catch(() => {});
           }}
         />
-        <box flexDirection="row" gap={1}>
+        <Box flexDirection="row" gap={1}>
           {ordered && (
             <>
               <Button label="Move Up" variant="ghost" disabled={!canMoveUp} onPress={() => { void moveOption("up").catch(() => {}); }} />
@@ -182,8 +183,8 @@ export function MultiSelectDialogContent({
             </>
           )}
           <Button label="Done" variant="primary" onPress={dismiss} />
-        </box>
-      </box>
+        </Box>
+      </Box>
     </DialogFrame>
   );
 }
@@ -226,7 +227,7 @@ export function MultiSelectDialogButton({
     }).catch(() => {});
   };
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!shortcutActive || disabled || !matchesShortcut(event, shortcutKey)) return;
     openDialog(event);
   });
@@ -243,7 +244,7 @@ export function MultiSelectDialogButton({
   }
 
   return (
-    <box
+    <Box
       id={idPrefix ? `${idPrefix}:button` : undefined}
       height={1}
       width={buttonText.length}
@@ -252,15 +253,15 @@ export function MultiSelectDialogButton({
       onMouseDown={stopMouseEvent}
       onMouseUp={openDialog}
     >
-      <text
+      <Text
         fg={disabled ? colors.textMuted : colors.selectedText}
         attributes={TextAttributes.BOLD}
         onMouseDown={stopMouseEvent}
         onMouseUp={openDialog}
       >
         {buttonText}
-      </text>
-    </box>
+      </Text>
+    </Box>
   );
 }
 

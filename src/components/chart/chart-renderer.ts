@@ -1,4 +1,4 @@
-import { RGBA } from "@opentui/core";
+import { RGBA } from "../../ui";
 import type { ChartAxisMode, ChartColors, ChartIndicatorOverlays, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
 import type { ProjectedChartPoint } from "./chart-data";
 import { formatCompactMarketPriceWithCurrency, formatMarketPrice, resolveAssetDisplayKind } from "../../utils/market-format";

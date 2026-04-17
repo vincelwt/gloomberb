@@ -1,9 +1,9 @@
-import { writeFileSync, renameSync, unlinkSync, chmodSync, realpathSync } from "fs";
-import { basename } from "path";
-import { gunzipSync } from "zlib";
-
 const REPO = "vincelwt/gloomberb";
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+
+function getRuntimeProcess(): Pick<NodeJS.Process, "platform" | "arch" | "argv" | "execPath"> | null {
+  return (globalThis as { process?: NodeJS.Process }).process ?? null;
+}
 
 export interface ReleaseInfo {
   version: string;
@@ -41,9 +41,10 @@ function compareSemver(a: string, b: string): number {
 }
 
 function getAssetBaseName(): string {
-  const os = process.platform === "darwin" ? "darwin" : "linux";
+  const runtimeProcess = getRuntimeProcess();
+  const os = runtimeProcess?.platform === "darwin" ? "darwin" : "linux";
   // macOS x64 uses arm64 binary (runs via Rosetta 2)
-  const arch = os === "darwin" || process.arch === "arm64" ? "arm64" : "x64";
+  const arch = os === "darwin" || runtimeProcess?.arch === "arm64" ? "arm64" : "x64";
   return `gloomberb-${os}-${arch}`;
 }
 
@@ -69,12 +70,12 @@ function normalizePath(value: string): string {
 }
 
 function tryRealpath(value: string): string {
-  if (!value) return value;
-  try {
-    return realpathSync.native(value);
-  } catch {
-    return value;
-  }
+  return value;
+}
+
+function basename(value: string): string {
+  const normalized = value.replace(/\\/g, "/");
+  return normalized.slice(normalized.lastIndexOf("/") + 1);
 }
 
 function resolveEntrypointPath(argv = process.argv): string {
@@ -88,8 +89,8 @@ function isSourceEntrypoint(entrypoint: string): boolean {
 }
 
 export function resolveSelfUpdateTargetPath(
-  execPath = process.execPath,
-  argv = process.argv,
+  execPath = getRuntimeProcess()?.execPath ?? "",
+  argv = getRuntimeProcess()?.argv ?? [],
 ): string | null {
   const resolvedExecPath = tryRealpath(execPath);
   const normalizedExecPath = normalizePath(resolvedExecPath);
@@ -105,8 +106,8 @@ export function resolveSelfUpdateTargetPath(
 }
 
 export function detectUpdateAction(
-  execPath = process.execPath,
-  argv = process.argv,
+  execPath = getRuntimeProcess()?.execPath ?? "",
+  argv = getRuntimeProcess()?.argv ?? [],
 ): UpdateAction | null {
   if (resolveSelfUpdateTargetPath(execPath, argv)) {
     return { kind: "self" };
@@ -245,6 +246,16 @@ export async function performUpdate(
   const oldPath = execPath + ".old";
 
   try {
+    const fsModulePath = "fs";
+    const zlibModulePath = "zlib";
+    const {
+      writeFileSync,
+      renameSync,
+      unlinkSync,
+      chmodSync,
+    } = await import(fsModulePath) as typeof import("fs");
+    const { gunzipSync } = await import(zlibModulePath) as typeof import("zlib");
+
     onProgress({ phase: "downloading", percent: 0 });
 
     const res = await fetch(release.downloadUrl);

@@ -1,6 +1,6 @@
+import { Box, SpinnerMark, Text } from "../../ui";
 import { useState, useEffect } from "react";
-import { TextAttributes } from "@opentui/core";
-import "opentui-spinner/react";
+import { TextAttributes } from "../../ui";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppActive } from "../../state/app-activity";
 import { useAppState } from "../../state/app-context";
@@ -29,56 +29,56 @@ function UpdateStatus() {
   if (updateProgress) {
     if (updateProgress.phase === "downloading") {
       return (
-        <box flexDirection="row" gap={1}>
-          <spinner name="dots" color={colors.headerText} />
-          <text fg={colors.headerText}>
+        <Box flexDirection="row" gap={1}>
+          <SpinnerMark name="dots" color={colors.headerText} />
+          <Text fg={colors.headerText}>
             Downloading v{updateAvailable?.version}: {updateProgress.percent ?? 0}%
-          </text>
-        </box>
+          </Text>
+        </Box>
       );
     }
     if (updateProgress.phase === "replacing") {
       return (
-        <box flexDirection="row" gap={1}>
-          <spinner name="dots" color={colors.headerText} />
-          <text fg={colors.headerText}>Installing update...</text>
-        </box>
+        <Box flexDirection="row" gap={1}>
+          <SpinnerMark name="dots" color={colors.headerText} />
+          <Text fg={colors.headerText}>Installing update...</Text>
+        </Box>
       );
     }
     if (updateProgress.phase === "done") {
-      return <text fg={colors.headerText}>Update installed, restart to apply</text>;
+      return <Text fg={colors.headerText}>Update installed, restart to apply</Text>;
     }
     if (updateProgress.phase === "error") {
-      return <text fg={colors.headerText}>Update failed: {updateProgress.error}</text>;
+      return <Text fg={colors.headerText}>Update failed: {updateProgress.error}</Text>;
     }
   }
 
   if (updateCheckInProgress) {
     return (
-      <box flexDirection="row" gap={1}>
-        <spinner name="dots" color={colors.headerText} />
-        <text fg={colors.headerText}>Checking for updates...</text>
-      </box>
+      <Box flexDirection="row" gap={1}>
+        <SpinnerMark name="dots" color={colors.headerText} />
+        <Text fg={colors.headerText}>Checking for updates...</Text>
+      </Box>
     );
   }
 
   if (updateAvailable) {
     if (updateAvailable.updateAction.kind === "manual") {
       return (
-        <text fg={colors.headerText}>
+        <Text fg={colors.headerText}>
           v{updateAvailable.version} available — run {updateAvailable.updateAction.command}
-        </text>
+        </Text>
       );
     }
     return (
-      <text fg={colors.headerText}>
+      <Text fg={colors.headerText}>
         v{updateAvailable.version} available — starting download...
-      </text>
+      </Text>
     );
   }
 
   if (updateNotice) {
-    return <text fg={colors.headerText}>{updateNotice}</text>;
+    return <Text fg={colors.headerText}>{updateNotice}</Text>;
   }
 
   return null;
@@ -116,37 +116,37 @@ export function Header() {
   const mktColor = mktState ? marketStateColor(mktState) : colors.headerText;
 
   return (
-    <box
+    <Box
       flexDirection="row"
       height={1}
       backgroundColor={colors.header}
     >
-      <box paddingLeft={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.headerText}>
+      <Box paddingLeft={1}>
+        <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
           Gloomberb v{VERSION}
-        </text>
-      </box>
-      <box flexGrow={1} paddingLeft={2}>
+        </Text>
+      </Box>
+      <Box flexGrow={1} paddingLeft={2}>
         <UpdateStatus />
-      </box>
+      </Box>
       {mktLabel && (
-        <box paddingRight={1}>
-          <text fg={mktColor}>{mktLabel}</text>
-        </box>
+        <Box paddingRight={1}>
+          <Text fg={mktColor}>{mktLabel}</Text>
+        </Box>
       )}
-      <box paddingRight={extText ? 0 : 1}>
-        <text fg={spyColor}>{spyText}</text>
-      </box>
+      <Box paddingRight={extText ? 0 : 1}>
+        <Text fg={spyColor}>{spyText}</Text>
+      </Box>
       {extText && (
-        <box paddingRight={1} paddingLeft={1}>
-          <text fg={extText.color}>{extText.text}</text>
-        </box>
+        <Box paddingRight={1} paddingLeft={1}>
+          <Text fg={extText.color}>{extText.text}</Text>
+        </Box>
       )}
-      <box paddingRight={1}>
-        <text fg={colors.headerText}>
+      <Box paddingRight={1}>
+        <Text fg={colors.headerText}>
           {state.config.baseCurrency}
-        </text>
-      </box>
-    </box>
+        </Text>
+      </Box>
+    </Box>
   );
 }

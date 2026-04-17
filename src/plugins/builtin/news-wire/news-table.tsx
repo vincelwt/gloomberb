@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
   type DataTableCell,

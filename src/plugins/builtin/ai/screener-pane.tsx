@@ -1,7 +1,8 @@
+import { Box, Text, Textarea } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import type { PaneProps } from "../../../types/plugin";
 import type { ColumnConfig } from "../../../types/config";
 import type { InstrumentSearchResult } from "../../../types/instrument";
@@ -125,14 +126,14 @@ function ScreenerPromptEditor({
   }, [editorKey, focused]);
 
   return (
-    <box
+    <Box
       flexGrow={1}
       minHeight={10}
       border
       borderColor={colors.border}
       backgroundColor={colors.panel}
     >
-      <textarea
+      <Textarea
         key={editorKey}
         ref={textareaRef}
         initialValue={initialValue}
@@ -144,7 +145,7 @@ function ScreenerPromptEditor({
         flexGrow={1}
         wrapText
       />
-    </box>
+    </Box>
   );
 }
 
@@ -325,7 +326,7 @@ function ActionChip({
   disabled?: boolean;
 }) {
   return (
-    <box
+    <Box
       backgroundColor={active ? colors.selected : colors.panel}
       onMouseDown={!disabled && onPress ? (event: any) => {
         event.stopPropagation?.();
@@ -333,10 +334,10 @@ function ActionChip({
         onPress();
       } : undefined}
     >
-      <text fg={disabled ? colors.textDim : active ? colors.selectedText : colors.text}>
+      <Text fg={disabled ? colors.textDim : active ? colors.selectedText : colors.text}>
         {` ${label} `}
-      </text>
-    </box>
+      </Text>
+    </Box>
   );
 }
 
@@ -768,7 +769,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     });
   }, [activeTab, setSorts, sorts]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     if (editorState) {
@@ -895,14 +896,14 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   }
 
   return (
-    <box flexDirection="column" width={width} height={height}>
-      <box flexDirection="row" height={1}>
+    <Box flexDirection="column" width={width} height={height}>
+      <Box flexDirection="row" height={1}>
         {displayTabs.map((tab) => {
           const isDraft = tab.draft === true;
           const isActive = isDraft ? editorState?.mode === "create" : tab.id === activeTab?.id;
           return (
-            <box key={tab.id} flexDirection="row">
-              <box
+            <Box key={tab.id} flexDirection="row">
+              <Box
                 onMouseDown={() => {
                   if (editorState) return;
                   if (isDraft) return;
@@ -918,34 +919,34 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                   lastTabClickRef.current = { tabId: tab.id, at: now };
                 }}
               >
-                <text
+                <Text
                   fg={isActive ? colors.textBright : colors.textDim}
                   bg={isActive ? colors.selected : undefined}
                   attributes={isActive ? TextAttributes.BOLD : 0}
                 >
                   {` ${truncateWithEllipsis(tab.title, isDraft ? 20 : 18)} `}
-                </text>
-              </box>
+                </Text>
+              </Box>
               {isActive && !isDraft ? (
-                <text fg={colors.textMuted} onMouseDown={() => { if (!editorState) removeTab(tab.id); }}>{`x `}</text>
+                <Text fg={colors.textMuted} onMouseDown={() => { if (!editorState) removeTab(tab.id); }}>{`x `}</Text>
               ) : (
-                <text>{` `}</text>
+                <Text>{` `}</Text>
               )}
-            </box>
+            </Box>
           );
         })}
-        <text fg={colors.textMuted} onMouseDown={() => { if (!editorState) addTab(); }}>{` + `}</text>
-        <box flexGrow={1} />
-        <text fg={colors.textMuted}>
+        <Text fg={colors.textMuted} onMouseDown={() => { if (!editorState) addTab(); }}>{` + `}</Text>
+        <Box flexGrow={1} />
+        <Text fg={colors.textMuted}>
           {editorState
             ? editorState.mode === "create" ? "creating new screener" : "editing prompt"
             : activeTab
             ? `${activeTab.results.length} tickers`
             : "t new"}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
-      <box flexDirection="row" height={1} gap={1}>
+      <Box flexDirection="row" height={1} gap={1}>
         {editorState ? (
           <>
             <Button label="Save" variant="primary" shortcut="Ctrl+S" onPress={saveEditor} />
@@ -992,31 +993,31 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
             />
           </>
         )}
-        <box flexGrow={1} />
-        <text fg={colors.textMuted}>
+        <Box flexGrow={1} />
+        <Text fg={colors.textMuted}>
           {editorState
             ? `${editorProvider?.name ?? editorState.providerId} · Ctrl+S save · Esc cancel`
             : activeTab
               ? `${getAiProvider(activeTab.providerId, providers)?.name ?? activeTab.providerId} · ${forceRunArmed ? "Force refresh armed. Click again to confirm." : statusText}`
               : statusText}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
       {availableProviders.length === 0 && (
-        <box flexDirection="column" paddingX={1} paddingTop={1}>
-          <text fg={colors.textDim}>No AI CLI tools detected. Install `claude`, `gemini`, or `codex` to run screeners.</text>
-        </box>
+        <Box flexDirection="column" paddingX={1} paddingTop={1}>
+          <Text fg={colors.textDim}>No AI CLI tools detected. Install `claude`, `gemini`, or `codex` to run screeners.</Text>
+        </Box>
       )}
 
       {editorState ? (
         <>
-          <box flexDirection="column" paddingX={1} paddingTop={1} gap={1}>
-            <text fg={colors.textDim}>
+          <Box flexDirection="column" paddingX={1} paddingTop={1} gap={1}>
+            <Text fg={colors.textDim}>
               {editorState.mode === "create"
                 ? "Describe the companies or setups you want this screener to discover."
                 : "Update the screener prompt or provider. Saving does not rerun it automatically."}
-            </text>
-            <box flexDirection="row" gap={1} flexWrap="wrap">
+            </Text>
+            <Box flexDirection="row" gap={1} flexWrap="wrap">
               {selectableProviders.map((provider) => (
                 <ActionChip
                   key={provider.id}
@@ -1029,78 +1030,78 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                   active={editorState.providerId === provider.id}
                 />
               ))}
-            </box>
+            </Box>
             {editorState.error ? (
-              <text fg={colors.negative}>{editorState.error}</text>
+              <Text fg={colors.negative}>{editorState.error}</Text>
             ) : (
-              <text fg={colors.textDim}>
+              <Text fg={colors.textDim}>
                 The AI will return validated ticker ideas with a short reason for each one. Ctrl+P cycles providers.
-              </text>
+              </Text>
             )}
-          </box>
+          </Box>
 
-          <box flexGrow={1} minHeight={contentHeight} padding={1}>
+          <Box flexGrow={1} minHeight={contentHeight} padding={1}>
             <ScreenerPromptEditor
               editorKey={editorState.key}
               initialValue={editorState.prompt}
               focused={focused}
               textareaRef={editorTextareaRef}
             />
-          </box>
+          </Box>
 
-          <box height={1} paddingX={1}>
-            <text fg={colors.textDim}>{"\u2500".repeat(Math.max(width - 2, 0))}</text>
-          </box>
+          <Box height={1} paddingX={1}>
+            <Text fg={colors.textDim}>{"\u2500".repeat(Math.max(width - 2, 0))}</Text>
+          </Box>
 
-          <box flexDirection="column" paddingX={1}>
-            <text fg={colors.textDim}>
+          <Box flexDirection="column" paddingX={1}>
+            <Text fg={colors.textDim}>
               {editorProvider?.available === false
                 ? `${editorProvider.name} is not currently installed. Save and switch later.`
                 : "Click a provider chip or press Ctrl+P to switch. Save to keep the draft."}
-            </text>
-          </box>
+            </Text>
+          </Box>
         </>
       ) : (
         <>
           {activeTab?.lastError && (
-            <box flexDirection="column" paddingX={1} paddingTop={1}>
+            <Box flexDirection="column" paddingX={1} paddingTop={1}>
               {wrapTextLines(activeTab.lastError, detailTextWidth, 2).map((line, index) => (
-                <box key={`error:${index}`} height={1}>
-                  <text fg={colors.negative}>{line || " "}</text>
-                </box>
+                <Box key={`error:${index}`} height={1}>
+                  <Text fg={colors.negative}>{line || " "}</Text>
+                </Box>
               ))}
-            </box>
+            </Box>
           )}
 
           {activeTab?.lastWarning && !activeTab.lastError && (
-            <box flexDirection="column" paddingX={1} paddingTop={1}>
+            <Box flexDirection="column" paddingX={1} paddingTop={1}>
               {wrapTextLines(activeTab.lastWarning, detailTextWidth, 2).map((line, index) => (
-                <box key={`warning:${index}`} height={1}>
-                  <text fg={warningColor}>{line || " "}</text>
-                </box>
+                <Box key={`warning:${index}`} height={1}>
+                  <Text fg={warningColor}>{line || " "}</Text>
+                </Box>
               ))}
-            </box>
+            </Box>
           )}
 
           {summaryLines.length > 0 && !activeTab.lastError && (
-            <box flexDirection="column" paddingX={1} paddingTop={activeTab.lastWarning ? 0 : 1}>
+            <Box flexDirection="column" paddingX={1} paddingTop={activeTab.lastWarning ? 0 : 1}>
               {summaryLines.map((line, index) => (
-                <box key={`summary:${index}`} height={1}>
-                  <text fg={colors.textDim}>{line || " "}</text>
-                </box>
+                <Box key={`summary:${index}`} height={1}>
+                  <Text fg={colors.textDim}>{line || " "}</Text>
+                </Box>
               ))}
-            </box>
+            </Box>
           )}
 
-          <box flexGrow={1} minHeight={contentHeight}>
+          <Box flexGrow={1} minHeight={contentHeight}>
             {!activeTab ? (
-              <box padding={1} flexGrow={1}>
+              <Box padding={1} flexGrow={1}>
                 <EmptyState title="No AI screeners yet." hint="Press t or click + to create one." />
-              </box>
+              </Box>
             ) : isRunningActiveTab && activeTab.results.length === 0 ? (
-              <box padding={1} flexGrow={1}>
+              <Box padding={1} flexGrow={1}>
                 <Spinner label="Running AI screener..." />
-              </box>
+              </Box>
             ) : (
               <TickerListTable
                 columns={columns}
@@ -1137,26 +1138,26 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                 emptyHint={promptDirty ? "Prompt changed. Refresh to rerun." : "Press r to run this screener. Use PS to customize columns."}
               />
             )}
-          </box>
+          </Box>
 
-          <box height={1} paddingX={1}>
-            <text fg={colors.textDim}>{"\u2500".repeat(Math.max(width - 2, 0))}</text>
-          </box>
+          <Box height={1} paddingX={1}>
+            <Text fg={colors.textDim}>{"\u2500".repeat(Math.max(width - 2, 0))}</Text>
+          </Box>
 
-          <box flexDirection="column" paddingX={1} minHeight={DETAIL_FOOTER_LINES}>
+          <Box flexDirection="column" paddingX={1} minHeight={DETAIL_FOOTER_LINES}>
             {paddedDetailLines.map((line, index) => (
-              <box key={`detail:${index}`} height={1}>
-                <text
+              <Box key={`detail:${index}`} height={1}>
+                <Text
                   fg={promptDirty ? warningColor : index === 0 && selectedResult ? colors.text : colors.textDim}
                   attributes={index === 0 && selectedResult ? TextAttributes.BOLD : 0}
                 >
                   {line || " "}
-                </text>
-              </box>
+                </Text>
+              </Box>
             ))}
-          </box>
+          </Box>
         </>
       )}
-    </box>
+    </Box>
   );
 }

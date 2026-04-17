@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
 import { createDefaultConfig } from "../../types/config";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";

@@ -1,3 +1,4 @@
+
 export function truncateWithEllipsis(text: string, width: number): string {
   if (width <= 0) return "";
   if (text.length <= width) return text;

@@ -1,4 +1,3 @@
-import { hostname } from "os";
 import type { SecFilingItem } from "../types/data-provider";
 
 const LOOKUP_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
@@ -19,14 +18,28 @@ function extractEmail(value: string | undefined): string | null {
   return match?.[0] ?? null;
 }
 
+function getEnv(name: string): string | undefined {
+  return typeof process !== "undefined" ? process.env[name] : undefined;
+}
+
+function getRuntimeHostName(): string {
+  const maybeLocation = (globalThis as { location?: { hostname?: string } }).location;
+  if (maybeLocation?.hostname) {
+    return maybeLocation.hostname;
+  }
+  return "localhost";
+}
+
+const runtimeHostName = getRuntimeHostName();
+
 const DEFAULT_SEC_FROM =
-  process.env.SEC_FROM_EMAIL?.trim()
-  || extractEmail(process.env.SEC_USER_AGENT)
-  || `${sanitizeIdentityPart(process.env.USER ?? "gloomberb", "gloomberb")}@${sanitizeIdentityPart(`${hostname()}.local`, "localhost.localdomain")}`;
+  getEnv("SEC_FROM_EMAIL")?.trim()
+  || extractEmail(getEnv("SEC_USER_AGENT"))
+  || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${sanitizeIdentityPart(`${runtimeHostName}.local`, "localhost.localdomain")}`;
 
 export const DEFAULT_SEC_USER_AGENT =
-  process.env.SEC_USER_AGENT?.trim()
-  || `Gloomberb/0.1 (${sanitizeIdentityPart(hostname(), "localhost")}; contact=${DEFAULT_SEC_FROM})`;
+  getEnv("SEC_USER_AGENT")?.trim()
+  || `Gloomberb/0.1 (${sanitizeIdentityPart(runtimeHostName, "localhost")}; contact=${DEFAULT_SEC_FROM})`;
 
 type LookupEntry = {
   cik: string;

@@ -457,8 +457,9 @@ describe("KittyImageManager", () => {
   test("reuses placement ids across multiple fragments and deletes the previous image on swap", () => {
     const writes: string[] = [];
     const renderer = {
-      writeOut(payload: string | Uint8Array) {
+      write(payload: string | Uint8Array) {
         writes.push(typeof payload === "string" ? payload : Buffer.from(payload).toString("utf8"));
+        return true;
       },
     } as unknown as CliRenderer;
 
@@ -586,8 +587,9 @@ describe("NativeSurfaceManager", () => {
       resolution: { width: 1200, height: 800 },
       terminalWidth: 120,
       terminalHeight: 40,
-      writeOut(payload: string | Uint8Array) {
+      write(payload: string | Uint8Array) {
         writes.push(typeof payload === "string" ? payload : Buffer.from(payload).toString("utf8"));
+        return true;
       },
     } as unknown as CliRenderer;
 
@@ -617,7 +619,7 @@ describe("NativeSurfaceManager", () => {
       resolution: { width: 1200, height: 800 },
       terminalWidth: 120,
       terminalHeight: 40,
-      writeOut() {},
+      write() { return true; },
     } as unknown as CliRenderer;
     const manager = new NativeSurfaceManager(renderer);
     const originalRender = KittyImageManager.prototype.render;
@@ -657,7 +659,7 @@ describe("NativeSurfaceManager", () => {
       resolution: { width: 1200, height: 800 },
       terminalWidth: 120,
       terminalHeight: 40,
-      writeOut() {},
+      write() { return true; },
     } as unknown as CliRenderer;
     const manager = new NativeSurfaceManager(renderer);
     const originalRender = KittyImageManager.prototype.render;

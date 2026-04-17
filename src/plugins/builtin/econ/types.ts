@@ -1,3 +1,4 @@
+
 export type EconImpact = "high" | "medium" | "low";
 
 export interface EconEvent {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type InputRenderable, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { type InputRenderable, type ScrollBoxRenderable } from "../../ui";
+import { useShortcut } from "../../react/input";
 import { usePaneInstance } from "../../state/app-context";
 import { usePluginPaneState, usePluginState } from "../plugin-runtime";
 import { getAdjacentPredictionCategoryId } from "./categories";
@@ -601,7 +601,7 @@ export function usePredictionMarketsController({
     ],
   );
 
-  useKeyboard(handleKeyboard);
+  useShortcut(handleKeyboard);
 
   const searchPending = searchQuery.trim() !== data.debouncedSearchQuery.trim();
   const searchLoading =

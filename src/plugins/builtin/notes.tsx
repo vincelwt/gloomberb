@@ -1,7 +1,8 @@
+import { Box, Input, Text } from "../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
-import { useKeyboard } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
-import type { TextareaRenderable, InputRenderable } from "@opentui/core";
+import { useShortcut } from "../../react/input";
+import { TextAttributes } from "../../ui";
+import { type InputRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, DetailTabProps, PaneProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
@@ -57,7 +58,7 @@ function createNotesTab(notesFiles: NotesFiles) {
       }
     }, [tickerSymbol, saveNotesFor, notesFiles]);
 
-    useKeyboard((event) => {
+    useShortcut((event) => {
       if (!focused) return;
       const isEnter = event.name === "enter" || event.name === "return";
       if (isEnter && !notesFocused) {
@@ -70,19 +71,19 @@ function createNotesTab(notesFiles: NotesFiles) {
       }
     });
 
-    if (!ticker) return <text fg={colors.textDim}>Select a ticker to view notes.</text>;
+    if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view notes.</Text>;
 
     return (
-      <box flexDirection="column" padding={1} flexGrow={1}>
-        <box flexDirection="row" height={1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</text>
-          <box flexGrow={1} />
-          <text fg={colors.textMuted}>
+      <Box flexDirection="column" padding={1} flexGrow={1}>
+        <Box flexDirection="row" height={1}>
+          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</Text>
+          <Box flexGrow={1} />
+          <Text fg={colors.textMuted}>
             {notesFocused ? "editing (Esc to stop)" : "Enter to edit"}
-          </text>
-        </box>
-        <box height={1} />
-        <box flexGrow={1} onMouseDown={() => { if (!notesFocused) setNotesFocusedAndCapture(true); }}>
+          </Text>
+        </Box>
+        <Box height={1} />
+        <Box flexGrow={1} onMouseDown={() => { if (!notesFocused) setNotesFocusedAndCapture(true); }}>
           <MarkdownEditor
             textareaKey={tickerSymbol ?? "none"}
             focused={notesFocused}
@@ -90,8 +91,8 @@ function createNotesTab(notesFiles: NotesFiles) {
             placeholder="Write notes about this ticker..."
             onRef={(ref) => { textareaRef.current = ref; }}
           />
-        </box>
-      </box>
+        </Box>
+      </Box>
     );
   };
 }
@@ -218,7 +219,7 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
       setRenaming(false);
     }, [activeTabId, renameValue]);
 
-    useKeyboard((event) => {
+    useShortcut((event) => {
       if (!focused) return;
 
       if (renaming) {
@@ -270,14 +271,14 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
     });
 
     return (
-      <box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1}>
         {/* Tab bar */}
-        <box flexDirection="row" height={1}>
+        <Box flexDirection="row" height={1}>
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
             return (
-              <box key={tab.id} flexDirection="row">
-                <text
+              <Box key={tab.id} flexDirection="row">
+                <Text
                   fg={isActive ? colors.textBright : colors.textDim}
                   bg={isActive ? colors.selected : undefined}
                   attributes={isActive ? TextAttributes.BOLD : 0}
@@ -294,38 +295,38 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
                   }}
                 >
                   {` ${tab.title} `}
-                </text>
+                </Text>
                 {isActive && tabs.length > 1 ? (
-                  <text
+                  <Text
                     fg={colors.textMuted}
                     onMouseDown={() => removeTab(tab.id)}
                   >
                     {`x `}
-                  </text>
-                ) : <text>{` `}</text>}
-              </box>
+                  </Text>
+                ) : <Text>{` `}</Text>}
+              </Box>
             );
           })}
-          <text
+          <Text
             fg={colors.textMuted}
             onMouseDown={addTab}
           >
             {` + `}
-          </text>
-          <box flexGrow={1} />
-          <text fg={colors.textMuted}>
+          </Text>
+          <Box flexGrow={1} />
+          <Text fg={colors.textMuted}>
             {renaming
               ? "type name, Enter to confirm"
               : editing
                 ? "editing (Esc to stop)"
                 : "Enter edit | t new | w close | r rename"}
-          </text>
-        </box>
+          </Text>
+        </Box>
         {/* Rename input */}
         {renaming && (
-          <box height={1} flexDirection="row" paddingLeft={1}>
-            <text fg={colors.textDim}>{"Rename: "}</text>
-            <input
+          <Box height={1} flexDirection="row" paddingLeft={1}>
+            <Text fg={colors.textDim}>{"Rename: "}</Text>
+            <Input
               ref={renameInputRef}
               initialValue={renameValue}
               focused={renaming}
@@ -334,18 +335,18 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
               flexGrow={1}
               onChange={(val: string) => setRenameValue(val)}
             />
-          </box>
+          </Box>
         )}
         {/* Editor */}
-        <box flexGrow={1} padding={1} onMouseDown={() => { if (!editing && !renaming) setEditing(true); }}>
+        <Box flexGrow={1} padding={1} onMouseDown={() => { if (!editing && !renaming) setEditing(true); }}>
           <MarkdownEditor
             textareaKey={activeTabId ?? "none"}
             focused={editing && !renaming}
             placeholder="Write notes..."
             onRef={(ref) => { textareaRef.current = ref; }}
           />
-        </box>
-      </box>
+        </Box>
+      </Box>
     );
   };
 }

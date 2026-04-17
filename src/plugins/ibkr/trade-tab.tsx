@@ -1,6 +1,7 @@
-import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import { useDialog } from "@opentui-ui/dialog/react";
+import { Box, ScrollBox, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
+import { useShortcut } from "../../react/input";
+import { useDialog } from "../../ui/dialog";
 import { useCallback, useEffect, useState } from "react";
 import { PriceSelectorDialog } from "../../components";
 import { Button } from "../../components/ui/button";
@@ -534,7 +535,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     }
   }, [draftRequest, symbol, ticker, selectedInstance, normalizedConfig, gatewayService, ticketState.preview, ticketState.editingOrderId, previewOrder, refresh]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused || !symbol || !ticker) return;
 
     const isEnter = event.name === "enter" || event.name === "return";
@@ -607,9 +608,9 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
 
   if (!ticker || !symbol) {
     return (
-      <box flexGrow={1} alignItems="center" justifyContent="center">
-        <text fg={colors.textDim}>Select a ticker to draft an IBKR trade.</text>
-      </box>
+      <Box flexGrow={1} alignItems="center" justifyContent="center">
+        <Text fg={colors.textDim}>Select a ticker to draft an IBKR trade.</Text>
+      </Box>
     );
   }
 
@@ -731,7 +732,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
         : valueColor ?? (disabled ? colors.textMuted : colors.text);
 
     return (
-      <box
+      <Box
         key={id}
         width={itemWidth}
         minWidth={16}
@@ -748,11 +749,11 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
           onPress?.();
         }}
       >
-        <text fg={labelColor}>{label}</text>
-        <text fg={resolvedValueColor} attributes={valueAttributes}>
+        <Text fg={labelColor}>{label}</Text>
+        <Text fg={resolvedValueColor} attributes={valueAttributes}>
           {` ${truncateText(value, valueWidth)}`}
-        </text>
-      </box>
+        </Text>
+      </Box>
     );
   };
 
@@ -772,7 +773,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
     const palette = getTradeTonePalette(tone);
 
     return (
-      <box
+      <Box
         key={id}
         height={1}
         flexDirection="row"
@@ -781,14 +782,14 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
         marginRight={1}
         onMouseDown={onPress}
       >
-        <text fg={tone === "neutral" ? colors.textDim : palette.text}>{label}</text>
-        <text fg={palette.text} attributes={TextAttributes.BOLD}>{` ${value}`}</text>
-      </box>
+        <Text fg={tone === "neutral" ? colors.textDim : palette.text}>{label}</Text>
+        <Text fg={palette.text} attributes={TextAttributes.BOLD}>{` ${value}`}</Text>
+      </Box>
     );
   };
 
   const renderPreviewMetric = (label: string, value: string, tone: TradeTone = "neutral") => (
-    <box
+    <Box
       key={label}
       width={previewMetricWidth}
       height={1}
@@ -796,35 +797,35 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       paddingX={1}
       marginRight={1}
     >
-      <text fg={tone === "negative" ? colors.negative : tone === "positive" ? colors.positive : colors.text}>
+      <Text fg={tone === "negative" ? colors.negative : tone === "positive" ? colors.positive : colors.text}>
         {truncateText(`${label} ${value}`, Math.max(6, previewMetricWidth - 2))}
-      </text>
-    </box>
+      </Text>
+    </Box>
   );
 
   return (
-    <scrollbox flexGrow={1} scrollY>
-      <box
+    <ScrollBox flexGrow={1} scrollY>
+      <Box
         flexDirection="column"
         paddingX={1}
         paddingBottom={1}
         gap={1}
         onMouseDown={!interactive ? enterInteractive : undefined}
       >
-        <box flexDirection="row" flexWrap="wrap" justifyContent="space-between">
-          <box flexDirection="column" marginBottom={1}>
-            <box height={1} flexDirection="row">
-              <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.metadata.ticker}`}</text>
+        <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between">
+          <Box flexDirection="column" marginBottom={1}>
+            <Box height={1} flexDirection="row">
+              <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>{`Trade ${ticker.metadata.ticker}`}</Text>
               {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
-                <text fg={colors.textDim}>{` · ${ticker.metadata.name}`}</text>
+                <Text fg={colors.textDim}>{` · ${ticker.metadata.name}`}</Text>
               )}
-            </box>
-            <box height={1}>
-              <text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote, { assetCategory: ticker.metadata.assetCategory })}</text>
-            </box>
-          </box>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textMuted}>{formatQuoteSummary(financials?.quote, { assetCategory: ticker.metadata.assetCategory })}</Text>
+            </Box>
+          </Box>
 
-          <box flexDirection="row" flexWrap="wrap" justifyContent="flex-end">
+          <Box flexDirection="row" flexWrap="wrap" justifyContent="flex-end">
             <TradeBadge
               label="Broker"
               value={selectedInstance ? `${selectedInstance.label} ${isGatewayMode ? "Gateway" : "Flex"}` : "Select profile"}
@@ -852,10 +853,10 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
                 chooseAccount().catch(() => {});
               }}
             />
-          </box>
-        </box>
+          </Box>
+        </Box>
 
-        <box flexDirection="row" flexWrap="wrap">
+        <Box flexDirection="row" flexWrap="wrap">
           {renderSummaryPill({ id: "next", label: "Next", value: nextStep, tone: workflowTone })}
           {renderSummaryPill({
             id: "ticket",
@@ -871,16 +872,16 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
             disabled={ticketState.busy}
             onPress={() => refresh().catch(() => {})}
           />
-        </box>
+        </Box>
 
-        <box backgroundColor={getTradeTonePalette(statusTone).background} paddingX={1}>
-          <text fg={ticketState.lastError ? colors.negative : ticketState.isSuccess ? colors.positive : colors.text}>
+        <Box backgroundColor={getTradeTonePalette(statusTone).background} paddingX={1}>
+          <Text fg={ticketState.lastError ? colors.negative : ticketState.isSuccess ? colors.positive : colors.text}>
             {statusText}
-          </text>
-        </box>
+          </Text>
+        </Box>
 
-        <box flexDirection={wideLayout ? "row" : "column"} alignItems="stretch" gap={1}>
-          <box
+        <Box flexDirection={wideLayout ? "row" : "column"} alignItems="stretch" gap={1}>
+          <Box
             flexDirection="column"
             flexGrow={1}
             width={wideLayout ? ticketPanelWidth : undefined}
@@ -889,17 +890,17 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
             borderColor={interactive ? colors.borderFocused : colors.border}
             paddingX={1}
           >
-            <box height={1} flexDirection="row">
-              <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Ticket</text>
-              <box flexGrow={1} />
-              <text fg={interactive ? colors.positive : colors.textMuted}>
+            <Box height={1} flexDirection="row">
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Ticket</Text>
+              <Box flexGrow={1} />
+              <Text fg={interactive ? colors.positive : colors.textMuted}>
                 {interactive ? "Captured" : "Click field / Enter"}
-              </text>
-            </box>
-            <text fg={colors.textMuted}>{truncateText(ticketHint, Math.max(ticketPanelWidth - 4, 24))}</text>
-            <box height={1} />
+              </Text>
+            </Box>
+            <Text fg={colors.textMuted}>{truncateText(ticketHint, Math.max(ticketPanelWidth - 4, 24))}</Text>
+            <Box height={1} />
 
-            <box flexDirection="row" flexWrap="wrap">
+            <Box flexDirection="row" flexWrap="wrap">
               {renderFieldPill({
                 id: "profile",
                 label: "Profile",
@@ -924,9 +925,9 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
                 widthOverride: coreFieldWidth,
                 onPress: () => chooseAccount().catch(() => {}),
               })}
-            </box>
-            <box height={1} />
-            <box flexDirection="row" flexWrap="wrap">
+            </Box>
+            <Box height={1} />
+            <Box flexDirection="row" flexWrap="wrap">
               {renderFieldPill({
                 id: "action",
                 label: "Side [b/v]",
@@ -1007,12 +1008,12 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
                 valueColor: colors.textBright,
                 widthOverride: orderFieldWidth,
               })}
-            </box>
-            <box height={1} />
-            <text fg={colors.textMuted}>{contractMeta}</text>
-          </box>
+            </Box>
+            <Box height={1} />
+            <Text fg={colors.textMuted}>{contractMeta}</Text>
+          </Box>
 
-          <box
+          <Box
             flexDirection="column"
             width={previewPanelWidth}
             minWidth={34}
@@ -1021,16 +1022,16 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
             borderColor={getTradeTonePalette(previewTone).border}
             paddingX={1}
           >
-            <box height={1} flexDirection="row">
-              <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Preview</text>
-              <box flexGrow={1} />
-              <text fg={getTradeTonePalette(previewTone).text}>{previewHeading}</text>
-            </box>
-            <text fg={ticketState.preview?.warningText ? colors.negative : colors.textMuted}>
+            <Box height={1} flexDirection="row">
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Preview</Text>
+              <Box flexGrow={1} />
+              <Text fg={getTradeTonePalette(previewTone).text}>{previewHeading}</Text>
+            </Box>
+            <Text fg={ticketState.preview?.warningText ? colors.negative : colors.textMuted}>
               {truncateText(formatPreviewSummary(ticketState.preview), previewTextWidth)}
-            </text>
+            </Text>
 
-            <box flexDirection="row" flexWrap="wrap">
+            <Box flexDirection="row" flexWrap="wrap">
               {renderPreviewMetric(
                 "Fee",
                 ticketState.preview?.commission != null
@@ -1041,9 +1042,9 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
               {renderPreviewMetric("Maint", formatPreviewMetric(ticketState.preview?.maintMarginBefore, ticketState.preview?.maintMarginAfter))}
               {renderPreviewMetric("Equity", formatPreviewMetric(ticketState.preview?.equityWithLoanBefore, ticketState.preview?.equityWithLoanAfter))}
               {ticketState.preview?.warningText && renderPreviewMetric("Warn", ticketState.preview.warningText, "negative")}
-            </box>
+            </Box>
 
-            <box flexDirection="row" flexWrap="wrap">
+            <Box flexDirection="row" flexWrap="wrap">
               <Button
                 label="Preview"
                 shortcut="p"
@@ -1051,7 +1052,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
                 disabled={ticketState.busy}
                 onPress={() => previewOrder().catch(() => {})}
               />
-              <box width={1} />
+              <Box width={1} />
               <Button
                 label={ticketState.editingOrderId ? "Submit Change" : "Submit Order"}
                 shortcut="Enter"
@@ -1059,10 +1060,10 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
                 disabled={!ticketState.preview || ticketState.busy}
                 onPress={() => submitOrder().catch(() => {})}
               />
-            </box>
-          </box>
-        </box>
-      </box>
-    </scrollbox>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+    </ScrollBox>
   );
 }

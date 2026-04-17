@@ -12,6 +12,13 @@ const HARD_SESSION_INVALID_PATTERNS = [
   /\b(no|unknown|missing)\s+(user|account)\b/i,
 ];
 
+function getCloudApiBaseUrl(): string {
+  if (typeof process === "undefined") {
+    return DEFAULT_API_URL;
+  }
+  return process.env.GLOOMBERB_API_URL ?? DEFAULT_API_URL;
+}
+
 export interface ChatMessage {
   id: string;
   channelId: string;
@@ -168,7 +175,7 @@ class GloomApiClient {
   private readonly quoteTargets = new Map<string, QuoteStreamTarget>();
 
   constructor() {
-    this.baseUrl = process.env.GLOOMBERB_API_URL ?? DEFAULT_API_URL;
+    this.baseUrl = getCloudApiBaseUrl();
   }
 
   getSessionToken(): string | null {

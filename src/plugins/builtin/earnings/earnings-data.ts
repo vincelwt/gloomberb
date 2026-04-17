@@ -1,3 +1,4 @@
+
 export function parseEarningsDate(raw: any): Date | null {
   if (!raw?.raw) return null;
   return new Date(raw.raw * 1000);

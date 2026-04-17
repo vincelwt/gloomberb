@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import { PredictionMarketChart } from "../chart";
@@ -31,7 +32,7 @@ export function PredictionMarketOverviewView({
   summary: PredictionMarketSummary;
 }) {
   return (
-    <box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={1}>
       {selectedRow?.kind === "group" && (
         <PredictionMarketOutcomesView
           detailWidth={detailWidth}
@@ -52,22 +53,22 @@ export function PredictionMarketOverviewView({
         maxLength={Math.max(detailWidth - 8, 12)}
       />
       {summary.description && (
-        <box flexDirection="column">
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+        <Box flexDirection="column">
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             Description
-          </text>
-          <text fg={colors.text}>{summary.description}</text>
-        </box>
+          </Text>
+          <Text fg={colors.text}>{summary.description}</Text>
+        </Box>
       )}
-      <box height={1}>
-        <text fg={colors.textDim}>
+      <Box height={1}>
+        <Text fg={colors.textDim}>
           {detail?.history &&
           detail.history.length > 1 &&
           summary.yesPrice != null
             ? `Range move ${formatPercentRaw((((detail.history[detail.history.length - 1]?.close ?? summary.yesPrice) - (detail.history[0]?.close ?? summary.yesPrice)) / Math.max(detail.history[0]?.close ?? summary.yesPrice, 0.0001)) * 100)}`
             : "No extended move data."}
-        </text>
-      </box>
-    </box>
+        </Text>
+      </Box>
+    </Box>
   );
 }

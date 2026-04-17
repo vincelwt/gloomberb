@@ -1,4 +1,3 @@
-import { spawn, type Subprocess } from "bun";
 import type { AiProvider } from "./providers";
 
 export class AiRunCancelledError extends Error {
@@ -13,14 +12,29 @@ export interface AiRunController {
   cancel: () => void;
 }
 
+export interface AiRunHost {
+  run(options: {
+    provider: AiProvider;
+    prompt: string;
+    cwd?: string;
+    onChunk?: (output: string) => void;
+  }): AiRunController;
+}
+
+let configuredHost: AiRunHost | null = null;
+
+export function setAiRunHost(host: AiRunHost | null): void {
+  configuredHost = host;
+}
+
 export function isAiRunCancelled(error: unknown): boolean {
   return error instanceof AiRunCancelledError;
 }
 
-export function runAiPrompt({
+function runWithBun({
   provider,
   prompt,
-  cwd = process.cwd(),
+  cwd = typeof process !== "undefined" ? process.cwd() : ".",
   onChunk,
 }: {
   provider: AiProvider;
@@ -28,11 +42,19 @@ export function runAiPrompt({
   cwd?: string;
   onChunk?: (output: string) => void;
 }): AiRunController {
+  type BunSubprocess = ReturnType<typeof Bun.spawn>;
+  if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") {
+    return {
+      done: Promise.reject(new Error("AI execution requires a native Bun host.")),
+      cancel: () => {},
+    };
+  }
+
   let cancelled = false;
-  let processRef: Subprocess | null = null;
+  let processRef: BunSubprocess | null = null;
 
   const done = (async () => {
-    const proc = spawn([provider.command, ...provider.buildArgs(prompt)], {
+    const proc = Bun.spawn([provider.command, ...provider.buildArgs(prompt)], {
       cwd,
       stdout: "pipe",
       stderr: "pipe",
@@ -79,4 +101,18 @@ export function runAiPrompt({
       }
     },
   };
+}
+
+export function runAiPrompt({
+  provider,
+  prompt,
+  cwd,
+  onChunk,
+}: {
+  provider: AiProvider;
+  prompt: string;
+  cwd?: string;
+  onChunk?: (output: string) => void;
+}): AiRunController {
+  return (configuredHost ?? { run: runWithBun }).run({ provider, prompt, cwd, onChunk });
 }

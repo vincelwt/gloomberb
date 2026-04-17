@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useRef, type Dispatch } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../renderers/opentui/test-utils";
 import { AppProvider, PaneInstanceProvider, useAppDispatch, useAppSelector, usePaneTicker, type AppAction } from "./app-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../types/config";
 import { applyTheme, getCurrentThemeId } from "../theme/colors";

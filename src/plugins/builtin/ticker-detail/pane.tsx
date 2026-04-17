@@ -1,4 +1,5 @@
-import { useKeyboard } from "@opentui/react";
+import { Box } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DetailTabDef, PaneProps } from "../../../types/plugin";
 import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
@@ -140,7 +141,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     }
   }, [setActiveTabId, setChartInteractiveEager]);
 
-  useKeyboard(handleKeyboard);
+  useShortcut(handleKeyboard);
 
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
@@ -149,14 +150,14 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       : "No ticker selected.";
 
     return (
-      <box flexDirection="column" flexGrow={1} paddingX={1}>
+      <Box flexDirection="column" flexGrow={1} paddingX={1}>
         <EmptyState title={message} />
-      </box>
+      </Box>
     );
   }
 
   return (
-    <box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" flexGrow={1}>
       {!paneSettings.hideTabs && (
         <TabBar
           tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
@@ -196,6 +197,6 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
           onCapture={handlePluginCapture}
         />
       )}
-    </box>
+    </Box>
   );
 }

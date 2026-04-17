@@ -1,4 +1,5 @@
-import { useKeyboard } from "@opentui/react";
+import { Box, Text } from "../../ui";
+import { useShortcut } from "../../react/input";
 import type { ReactNode } from "react";
 import { colors } from "../../theme/colors";
 import { isDetailBackNavigationKey } from "../../utils/back-navigation";
@@ -22,7 +23,7 @@ export function PageStackView({
   backLabel = "Back",
   backHint,
 }: PageStackViewProps) {
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused || !detailOpen || !isDetailBackNavigationKey(event)) return;
     event.stopPropagation?.();
     event.preventDefault?.();
@@ -31,30 +32,30 @@ export function PageStackView({
 
   if (!detailOpen) {
     return (
-      <box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1}>
         {rootContent}
-      </box>
+      </Box>
     );
   }
 
   return (
-    <box flexDirection="column" flexGrow={1}>
-      <box height={1} flexDirection="row">
-        <box
+    <Box flexDirection="column" flexGrow={1}>
+      <Box height={1} flexDirection="row">
+        <Box
           onMouseDown={(event) => {
             event.preventDefault?.();
             event.stopPropagation?.();
             onBack();
           }}
         >
-          <text fg={colors.textBright}>{`<- ${backLabel}`}</text>
-        </box>
-        <box flexGrow={1} />
-        {backHint ? <text fg={colors.textMuted}>{backHint}</text> : null}
-      </box>
-      <box flexDirection="column" flexGrow={1}>
+          <Text fg={colors.textBright}>{`<- ${backLabel}`}</Text>
+        </Box>
+        <Box flexGrow={1} />
+        {backHint ? <Text fg={colors.textMuted}>{backHint}</Text> : null}
+      </Box>
+      <Box flexDirection="column" flexGrow={1}>
         {detailContent}
-      </box>
-    </box>
+      </Box>
+    </Box>
   );
 }

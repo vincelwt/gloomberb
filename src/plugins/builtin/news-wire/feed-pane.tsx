@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useFirehose } from "../../../news/hooks";
@@ -15,18 +16,18 @@ export function FeedPane({ focused, width, height }: PaneProps) {
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
 
   const rootBefore = (
-      <box height={1} flexDirection="row" paddingX={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>News Feed</text>
-        <box marginLeft={1}>
-          <text fg={colors.textMuted}>{articles.length} stories</text>
-        </box>
-      </box>
+      <Box height={1} flexDirection="row" paddingX={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>News Feed</Text>
+        <Box marginLeft={1}>
+          <Text fg={colors.textMuted}>{articles.length} stories</Text>
+        </Box>
+      </Box>
   );
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
   ) : (
-    <box flexGrow={1} />
+    <Box flexGrow={1} />
   );
 
   return (

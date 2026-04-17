@@ -6,7 +6,7 @@ import type { TickerFinancials } from "../types/financials";
 import type { BrokerAccount } from "../types/trading";
 import type { TickerMetadata, TickerRecord } from "../types/ticker";
 import type { AppAction, PaneRuntimeState } from "./app-context";
-import type { AppSessionSnapshot } from "./session-persistence";
+import type { AppSessionSnapshot } from "../core/state/session-persistence";
 import { getDockedPaneIds } from "../plugins/pane-manager";
 
 const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [

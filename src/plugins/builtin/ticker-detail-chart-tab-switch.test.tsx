@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { act, useReducer, type ReactElement } from "react";
 import {

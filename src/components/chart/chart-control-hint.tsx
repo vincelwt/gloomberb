@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Span, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 
 type HintMouseEvent = {
@@ -27,13 +28,13 @@ export function ChartControlHint({
   const interactive = !!onPress && !disabled;
 
   return (
-    <text
+    <Text
       fg={disabled ? colors.textMuted : colors.textDim}
       attributes={interactive ? TextAttributes.BOLD : 0}
       onMouseDown={interactive ? stopMouseEvent : undefined}
       onMouseUp={interactive ? onPress : undefined}
     >
-      <span fg={disabled ? colors.textMuted : colors.textBright}>[{hotkey}]</span>{label}
-    </text>
+      <Span fg={disabled ? colors.textMuted : colors.textBright}>[{hotkey}]</Span>{label}
+    </Text>
   );
 }

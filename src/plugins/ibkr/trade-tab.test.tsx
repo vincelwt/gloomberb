@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { DialogProvider } from "@opentui-ui/dialog/react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import { act } from "react";
 import {
   AppContext,

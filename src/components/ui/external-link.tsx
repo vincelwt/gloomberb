@@ -1,17 +1,27 @@
-import { TextAttributes } from "@opentui/core";
-import { spawn } from "child_process";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
+import { useRendererHost } from "../../ui";
 
 export function openUrl(url: string) {
   if (!url.trim()) return;
 
-  const child = process.platform === "darwin"
-    ? spawn("open", [url], { detached: true, stdio: "ignore" })
-    : process.platform === "win32"
-      ? spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" })
-      : spawn("xdg-open", [url], { detached: true, stdio: "ignore" });
+  const browserWindow = (globalThis as { window?: { open?: (url: string, target?: string, features?: string) => void } }).window;
+  if (typeof browserWindow?.open === "function") {
+    browserWindow.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
 
-  child.unref();
+  if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
+    const platform = typeof process !== "undefined" ? process.platform : "linux";
+    const command = platform === "darwin"
+      ? ["open", url]
+      : platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
+    const child = Bun.spawn(command, { stdio: ["ignore", "ignore", "ignore"] });
+    child.unref();
+  }
 }
 
 function handleOpen(
@@ -32,14 +42,20 @@ export function ExternalLinkText(
     onOpen?: (url: string) => void;
   },
 ) {
+  const rendererHost = useRendererHost();
+  const resolvedOpen = onOpen === openUrl
+    ? (nextUrl: string) => {
+      void rendererHost.openExternal(nextUrl);
+    }
+    : onOpen;
   return (
-    <text
+    <Text
       fg={color}
       attributes={TextAttributes.UNDERLINE}
-      onMouseDown={(event: any) => handleOpen(url, onOpen, event)}
+      onMouseDown={(event: any) => handleOpen(url, resolvedOpen, event)}
     >
       {label ?? url}
-    </text>
+    </Text>
   );
 }
 
@@ -52,8 +68,8 @@ export function ExternalLink(
   },
 ) {
   return (
-    <box height={1}>
+    <Box height={1}>
       <ExternalLinkText url={url} label={label} color={color} onOpen={onOpen} />
-    </box>
+    </Box>
   );
 }

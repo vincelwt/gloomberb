@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createDefaultConfig, createPaneInstance } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
-import { buildAppSessionSnapshot, reconcileAppSessionSnapshot } from "./session-persistence";
+import { buildAppSessionSnapshot, reconcileAppSessionSnapshot } from "../core/state/session-persistence";
 
 function createTicker(symbol: string, exchange = "NASDAQ"): TickerRecord {
   return {

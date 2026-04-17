@@ -1,6 +1,7 @@
+import { Box, ScrollBox, Span, Text, Textarea } from "../../ui";
 import { Fragment, useState, useEffect, useRef, useCallback } from "react";
-import { useKeyboard } from "@opentui/react";
-import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core";
+import { useShortcut } from "../../react/input";
+import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppState } from "../../state/app-context";
 import { useInlineTickers } from "../../state/use-inline-tickers";
@@ -140,29 +141,29 @@ function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
   const [hoveredAction, setHoveredAction] = useState<"login" | "signup" | null>(null);
 
   return (
-    <box flexDirection="row">
-      <box
+    <Box flexDirection="row">
+      <Box
         backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
         onMouseMove={() => setHoveredAction("login")}
         onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
         onMouseDown={(event: any) => openAuthCommand("Login", event)}
       >
-        <text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Login </text>
-      </box>
+        <Text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Login </Text>
+      </Box>
       {showSignup && (
         <>
-          <text fg={colors.textDim}>/</text>
-          <box
+          <Text fg={colors.textDim}>/</Text>
+          <Box
             backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
             onMouseMove={() => setHoveredAction("signup")}
             onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
             onMouseDown={(event: any) => openAuthCommand("Sign Up", event)}
           >
-            <text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </text>
-          </box>
+            <Text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </Text>
+          </Box>
         </>
       )}
-    </box>
+    </Box>
   );
 }
 
@@ -178,7 +179,7 @@ function ChatActionChip({
   onPress: () => void;
 }) {
   return (
-    <box
+    <Box
       width={width}
       height={1}
       backgroundColor={emphasized ? colors.borderFocused : colors.panel}
@@ -188,7 +189,7 @@ function ChatActionChip({
         onPress();
       }}
     >
-      <text
+      <Text
         fg={emphasized ? colors.bg : colors.text}
         attributes={emphasized ? TextAttributes.BOLD : 0}
         onMouseDown={(event: any) => {
@@ -198,8 +199,8 @@ function ChatActionChip({
         }}
       >
         {` ${label} `}
-      </text>
-    </box>
+      </Text>
+    </Box>
   );
 }
 
@@ -388,7 +389,7 @@ export function ChatContent({
     clearReplyTarget();
   }, [canSend, clearReplyTarget, replyTo]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
     const isEnterKey = event.name === "return" || event.name === "enter";
 
@@ -540,25 +541,25 @@ export function ChatContent({
 
   if (loading && messages.length === 0) {
     return (
-      <box flexGrow={1} alignItems="center" justifyContent="center">
-        <text fg={colors.textDim}>Loading...</text>
-      </box>
+      <Box flexGrow={1} alignItems="center" justifyContent="center">
+        <Text fg={colors.textDim}>Loading...</Text>
+      </Box>
     );
   }
 
   return (
-    <box flexDirection="column" width={width} height={height}>
-      <box height={1} width={contentWidth} flexDirection="row">
-        <text fg={colors.positive} attributes={TextAttributes.BOLD}> #everyone</text>
-        <box flexGrow={1} />
-        <text fg={colors.textDim}>{messages.length} messages</text>
-      </box>
+    <Box flexDirection="column" width={width} height={height}>
+      <Box height={1} width={contentWidth} flexDirection="row">
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}> #everyone</Text>
+        <Box flexGrow={1} />
+        <Text fg={colors.textDim}>{messages.length} messages</Text>
+      </Box>
 
-      <box height={1} width={contentWidth}>
-        <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
-      </box>
+      <Box height={1} width={contentWidth}>
+        <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+      </Box>
 
-      <scrollbox
+      <ScrollBox
         ref={scrollRef}
         height={messageAreaHeight}
         scrollY
@@ -567,9 +568,9 @@ export function ChatContent({
         stickyStart="bottom"
       >
         {messages.length === 0 && (
-          <box alignItems="center" justifyContent="center" flexGrow={1}>
-            <text fg={colors.textDim}>No messages yet. Be the first to say something!</text>
-          </box>
+          <Box alignItems="center" justifyContent="center" flexGrow={1}>
+            <Text fg={colors.textDim}>No messages yet. Be the first to say something!</Text>
+          </Box>
         )}
         {messages.map((msg, index) => {
           const isSelected = index === selectedIdx;
@@ -605,44 +606,44 @@ export function ChatContent({
           return (
             <Fragment key={msg.id}>
               {msg.replyTo && (
-                <box
+                <Box
                   {...messageRowProps}
                   flexDirection="row"
                   height={1}
                   paddingLeft={2}
                 >
-                  <text fg={replyMetaColor}>reply </text>
-                  <text fg={replyAuthorColor}>{msg.replyTo.user.username}: </text>
-                  <text fg={replyMetaColor}>
+                  <Text fg={replyMetaColor}>reply </Text>
+                  <Text fg={replyAuthorColor}>{msg.replyTo.user.username}: </Text>
+                  <Text fg={replyMetaColor}>
                     {formatInlinePreview(
                       msg.replyTo.content,
                       Math.max(messageBodyWidth - `reply ${msg.replyTo.user.username}: `.length, 0),
                     )}
-                  </text>
-                </box>
+                  </Text>
+                </Box>
               )}
               {!grouped && (
-                <box
+                <Box
                   {...messageRowProps}
                   flexDirection="row"
                   height={1}
                   paddingLeft={1}
                 >
-                  <text fg={authorColor} attributes={authorAttributes}>
+                  <Text fg={authorColor} attributes={authorAttributes}>
                     {msg.user.username ?? "anon"}
-                  </text>
-                  <text fg={headerStatusColor}> ({headerStatus})</text>
-                </box>
+                  </Text>
+                  <Text fg={headerStatusColor}> ({headerStatus})</Text>
+                </Box>
               )}
               {bodyLines.map((line, lineIndex) => (
-                <box
+                <Box
                   key={`${msg.id}:body:${lineIndex}`}
                   {...messageRowProps}
                   paddingLeft={3}
                   height={1}
                   flexDirection="row"
                 >
-                  <box width={messageBodyWidth} height={1}>
+                  <Box width={messageBodyWidth} height={1}>
                     <TickerBadgeText
                       text={line}
                       lineWidth={messageBodyWidth}
@@ -650,8 +651,8 @@ export function ChatContent({
                       textColor={bodyColor}
                       openTicker={openTicker}
                     />
-                  </box>
-                  <box width={MESSAGE_ACTION_WIDTH} height={1}>
+                  </Box>
+                  <Box width={MESSAGE_ACTION_WIDTH} height={1}>
                     {lineIndex === 0 && showReplyAction && (
                       <ChatActionChip
                         label="Reply"
@@ -660,40 +661,40 @@ export function ChatContent({
                         onPress={() => beginReplyTo(index)}
                       />
                     )}
-                  </box>
-                </box>
+                  </Box>
+                </Box>
               ))}
             </Fragment>
           );
         })}
-      </scrollbox>
+      </ScrollBox>
 
-      <box height={1} width={contentWidth}>
-        <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
-      </box>
+      <Box height={1} width={contentWidth}>
+        <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+      </Box>
 
       {canSend ? (
         <>
           {replyTo && (
-            <box height={1} width={contentWidth} flexDirection="row">
-              <text fg={colors.textMuted}> replying to </text>
-              <text fg={colors.positive} attributes={TextAttributes.BOLD}>{`@${replyTo.user.username}`}</text>
-              <text fg={colors.textDim}>{replyPreview ? `: ${replyPreview}` : ""}</text>
-              <box flexGrow={1} />
+            <Box height={1} width={contentWidth} flexDirection="row">
+              <Text fg={colors.textMuted}> replying to </Text>
+              <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{`@${replyTo.user.username}`}</Text>
+              <Text fg={colors.textDim}>{replyPreview ? `: ${replyPreview}` : ""}</Text>
+              <Box flexGrow={1} />
               <ChatActionChip
                 label="Cancel"
                 width={COMPOSER_ACTION_WIDTH}
                 onPress={clearReplyTarget}
               />
-            </box>
+            </Box>
           )}
 
-          <box height={composerHeight} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
-            <box width={composerPrefixWidth} height={composerHeight}>
-              <text fg={colors.textDim}> {">"} </text>
-            </box>
-            <box width={composerTextWidth} height={composerHeight}>
-              <textarea
+          <Box height={composerHeight} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
+            <Box width={composerPrefixWidth} height={composerHeight}>
+              <Text fg={colors.textDim}> {">"} </Text>
+            </Box>
+            <Box width={composerTextWidth} height={composerHeight}>
+              <Textarea
                 ref={inputRef}
                 initialValue={inputValue}
                 width={composerTextWidth}
@@ -718,30 +719,30 @@ export function ChatContent({
                 }}
                 wrapText
               />
-            </box>
-          </box>
+            </Box>
+          </Box>
         </>
       ) : (
-        <box width={contentWidth} height={2} flexDirection="column">
+        <Box width={contentWidth} height={2} flexDirection="column">
           {!user && !hasSavedSession ? (
             <>
-              <text fg={colors.textDim}>Read-only chat. Log in or sign up to send.</text>
+              <Text fg={colors.textDim}>Read-only chat. Log in or sign up to send.</Text>
               <InlineAuthActions />
             </>
           ) : !user ? (
             <>
-              <text fg={colors.positive}>Saved login found. Log in again to send.</text>
+              <Text fg={colors.positive}>Saved login found. Log in again to send.</Text>
               <InlineAuthActions showSignup={false} />
             </>
           ) : (
             <>
-              <text fg={colors.positive}>Verify your email to send messages.</text>
-              <text fg={colors.textDim}>Ctrl+P: Resend Verification Email</text>
+              <Text fg={colors.positive}>Verify your email to send messages.</Text>
+              <Text fg={colors.textDim}>Ctrl+P: Resend Verification Email</Text>
             </>
           )}
-        </box>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }
 
@@ -783,35 +784,35 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   if (state.config.disabledPlugins.includes("gloomberb-cloud")) return null;
 
   return (
-    <box flexDirection="row" paddingRight={1}>
+    <Box flexDirection="row" paddingRight={1}>
       {!username && !hasSavedSession ? (
         <>
-          <text fg={colors.textDim}>☁ </text>
+          <Text fg={colors.textDim}>☁ </Text>
           <InlineAuthActions />
         </>
       ) : (
-        <box
+        <Box
           flexDirection="row"
           backgroundColor={hovered ? hoverBg() : undefined}
           onMouseMove={() => setHovered(true)}
           onMouseOut={() => setHovered(false)}
           onMouseDown={openChat}
         >
-          <text fg={unreadMentionCount > 0 ? colors.text : colors.textDim}>
-            <span fg={colors.positive}>@</span>
+          <Text fg={unreadMentionCount > 0 ? colors.text : colors.textDim}>
+            <Span fg={colors.positive}>@</Span>
             {username ? (
               <>
                 {" "}
-                <span fg={colors.positive}>{username}</span>
+                <Span fg={colors.positive}>{username}</Span>
               </>
             ) : null}
-          </text>
+          </Text>
           {unreadMentionCount > 0 ? (
-            <text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadMentionCount}]`}</text>
+            <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadMentionCount}]`}</Text>
           ) : null}
-        </box>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }
 

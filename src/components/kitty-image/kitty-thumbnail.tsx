@@ -1,5 +1,6 @@
+import { Box, Text } from "../../ui";
 import { useCallback, useMemo, useState } from "react";
-import type { BoxRenderable } from "@opentui/core";
+import { type BoxRenderable } from "../../ui";
 import { colors } from "../../theme/colors";
 import { useKittyImage, type KittyImagePlacement } from "./use-kitty-image";
 
@@ -31,10 +32,10 @@ export function KittyThumbnail({ imageUrl, width, height, fallbackText }: KittyT
 
   // Reserve layout space; kitty renders on top
   return (
-    <box ref={refCallback} width={width} height={height}>
+    <Box ref={refCallback} width={width} height={height}>
       {fallbackText && (
-        <text fg={colors.textMuted}>{fallbackText}</text>
+        <Text fg={colors.textMuted}>{fallbackText}</Text>
       )}
-    </box>
+    </Box>
   );
 }

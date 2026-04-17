@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 import { getTradeTonePalette, type TradeTone } from "./trade-utils";
 
@@ -13,15 +14,15 @@ export function TradeBadge({ label, value, tone = "neutral", onPress }: TradeBad
   const palette = getTradeTonePalette(tone);
 
   return (
-    <box
+    <Box
       backgroundColor={palette.background}
       paddingX={1}
       marginRight={1}
       marginBottom={1}
       onMouseDown={onPress}
     >
-      <text fg={colors.textDim}>{label}</text>
-      <text fg={palette.text} attributes={TextAttributes.BOLD}>{` ${value}`}</text>
-    </box>
+      <Text fg={colors.textDim}>{label}</Text>
+      <Text fg={palette.text} attributes={TextAttributes.BOLD}>{` ${value}`}</Text>
+    </Box>
   );
 }

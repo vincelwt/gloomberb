@@ -1,9 +1,12 @@
-import { spawn } from "child_process";
 import type { AppNotificationRequest, AppNotificationType } from "../types/plugin";
 import { debugLog } from "../utils/debug-log";
 
 const DEFAULT_NOTIFICATION_TITLE = "Gloomberb";
 const notificationLog = debugLog.createLogger("notifications");
+
+function getRuntimePlatform(): NodeJS.Platform {
+  return typeof process !== "undefined" ? process.platform : "linux";
+}
 
 export interface DesktopNotificationCommand {
   command: string;
@@ -66,7 +69,7 @@ function buildWindowsBody(notification: AppNotificationRequest): string {
 
 export function buildDesktopNotificationCommand(
   notification: AppNotificationRequest,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform = getRuntimePlatform(),
 ): DesktopNotificationCommand | null {
   const title = notification.title?.trim() || DEFAULT_NOTIFICATION_TITLE;
   const body = notification.body.trim();
@@ -131,16 +134,24 @@ function defaultDesktopNotificationRunner(
   args: string[],
   handlers?: { onError?: (error: NodeJS.ErrnoException) => void },
 ): void {
-  const child = spawn(command, args, { detached: true, stdio: "ignore" });
-  child.once("error", (error) => {
-    handlers?.onError?.(error);
-  });
-  child.unref();
+  if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
+    try {
+      const child = Bun.spawn([command, ...args], { stdio: ["ignore", "ignore", "ignore"] });
+      child.unref();
+    } catch (error) {
+      handlers?.onError?.(error as NodeJS.ErrnoException);
+    }
+    return;
+  }
+
+  handlers?.onError?.(Object.assign(new Error("Desktop notifications require a native process host."), {
+    code: "ENOSYS",
+  }) as NodeJS.ErrnoException);
 }
 
 export function buildSoundCommand(
   soundName: string,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform = getRuntimePlatform(),
 ): DesktopNotificationCommand | null {
   if (platform === "darwin") {
     return {
@@ -176,7 +187,7 @@ export function createDesktopNotifier(
     runner?: DesktopNotificationRunner;
   } = {},
 ): DesktopNotificationSink {
-  const platform = options.platform ?? process.platform;
+  const platform = options.platform ?? getRuntimePlatform();
   const runner = options.runner ?? { run: defaultDesktopNotificationRunner };
   let disabledCommand: string | null = null;
 
@@ -219,7 +230,7 @@ export function createDesktopNotifier(
 export function createAppNotifier({
   isAppActive,
   renderToast,
-  desktop = createDesktopNotifier(),
+  desktop = typeof Bun !== "undefined" ? createDesktopNotifier() : null,
 }: CreateAppNotifierOptions): AppNotifier {
   return {
     notify(notification) {

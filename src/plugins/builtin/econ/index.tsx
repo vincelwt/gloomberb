@@ -1,6 +1,7 @@
+import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyledText, TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { StyledText, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { DataTableStackView, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
@@ -209,7 +210,7 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
     scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
   }, []);
 
-  useKeyboard((ev) => {
+  useShortcut((ev) => {
     if (!focused) return;
     if (ev.name === "j" || ev.name === "down") {
       ev.stopPropagation?.();
@@ -225,70 +226,70 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
   // No FRED mapping
   if (!mapping) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box height={1} paddingX={1} flexDirection="row">
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box height={1} paddingX={1} flexDirection="row">
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             {event.event}
-          </text>
-        </box>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.textMuted}>No historical data available for this indicator</text>
-        </box>
-      </box>
+          </Text>
+        </Box>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.textMuted}>No historical data available for this indicator</Text>
+        </Box>
+      </Box>
     );
   }
 
   // No API key
   if (!fredApiKey) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box height={1} paddingX={1} flexDirection="row">
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box height={1} paddingX={1} flexDirection="row">
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             {event.event}
-          </text>
-          <box flexGrow={1} />
-          <text fg={colors.textDim}>{mapping.seriesId}</text>
-        </box>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</text>
-        </box>
-      </box>
+          </Text>
+          <Box flexGrow={1} />
+          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+        </Box>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</Text>
+        </Box>
+      </Box>
     );
   }
 
   // Loading
   if (loading) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box height={1} paddingX={1} flexDirection="row">
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box height={1} paddingX={1} flexDirection="row">
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             {event.event}
-          </text>
-          <box flexGrow={1} />
-          <text fg={colors.textDim}>{mapping.seriesId}</text>
-        </box>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.textMuted}>Loading...</text>
-        </box>
-      </box>
+          </Text>
+          <Box flexGrow={1} />
+          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+        </Box>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.textMuted}>Loading...</Text>
+        </Box>
+      </Box>
     );
   }
 
   // Error
   if (error) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box height={1} paddingX={1} flexDirection="row">
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box height={1} paddingX={1} flexDirection="row">
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             {event.event}
-          </text>
-          <box flexGrow={1} />
-          <text fg={colors.textDim}>{mapping.seriesId}</text>
-        </box>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.negative}>{error}</text>
-        </box>
-      </box>
+          </Text>
+          <Box flexGrow={1} />
+          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+        </Box>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.negative}>{error}</Text>
+        </Box>
+      </Box>
     );
   }
 
@@ -360,114 +361,114 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
   const separatorLine = "─".repeat(Math.max(0, width - 2));
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {/* Header */}
-      <box height={1} paddingX={1} flexDirection="row">
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box height={1} paddingX={1} flexDirection="row">
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           {title}
-        </text>
-        <box flexGrow={1} />
-        <text fg={colors.textDim}>{mapping.seriesId}</text>
-      </box>
-      <box height={1} paddingX={1} flexDirection="row">
-        <text fg={colors.textMuted}>
+        </Text>
+        <Box flexGrow={1} />
+        <Text fg={colors.textDim}>{mapping.seriesId}</Text>
+      </Box>
+      <Box height={1} paddingX={1} flexDirection="row">
+        <Text fg={colors.textMuted}>
           {[units, info?.frequency, info?.seasonalAdjustment].filter(Boolean).join(" · ")}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
       {/* Event context — scheduled time, forecast, prior */}
-      <box paddingX={1} flexDirection="row" height={1}>
-        <text fg={colors.textDim}>Scheduled: </text>
-        <text fg={colors.text}>{event.time}</text>
+      <Box paddingX={1} flexDirection="row" height={1}>
+        <Text fg={colors.textDim}>Scheduled: </Text>
+        <Text fg={colors.text}>{event.time}</Text>
         {event.forecast ? (
           <>
-            <text fg={colors.textDim}>  Forecast: </text>
-            <text fg={colors.text}>{event.forecast}</text>
+            <Text fg={colors.textDim}>  Forecast: </Text>
+            <Text fg={colors.text}>{event.forecast}</Text>
           </>
         ) : null}
         {event.prior ? (
           <>
-            <text fg={colors.textDim}>  Prior: </text>
-            <text fg={colors.text}>{event.prior}</text>
+            <Text fg={colors.textDim}>  Prior: </Text>
+            <Text fg={colors.text}>{event.prior}</Text>
           </>
         ) : null}
-      </box>
+      </Box>
 
       {/* Scrollable content */}
-      <scrollbox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
-        <box flexDirection="column">
+      <ScrollBox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
+        <Box flexDirection="column">
           {/* Chart */}
           {chartResult ? (
-            <box flexDirection="column" paddingX={1} marginTop={1}>
-              <box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
+            <Box flexDirection="column" paddingX={1} marginTop={1}>
+              <Box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
                 {chartResult.lines.map((line, i) => (
-                  <text key={i} content={chartLineContent(line)} />
+                  <Text key={i} content={chartLineContent(line)} />
                 ))}
-              </box>
-              <text fg={colors.textDim}>{chartResult.timeLabels}</text>
-            </box>
+              </Box>
+              <Text fg={colors.textDim}>{chartResult.timeLabels}</Text>
+            </Box>
           ) : (
-            <box paddingX={1} marginTop={1}>
-              <text fg={colors.textMuted}>Not enough data for chart</text>
-            </box>
+            <Box paddingX={1} marginTop={1}>
+              <Text fg={colors.textMuted}>Not enough data for chart</Text>
+            </Box>
           )}
 
           {/* Separator */}
-          <box paddingX={1} height={1} marginTop={1}>
-            <text fg={colors.border}>{separatorLine}</text>
-          </box>
+          <Box paddingX={1} height={1} marginTop={1}>
+            <Text fg={colors.border}>{separatorLine}</Text>
+          </Box>
 
           {/* Historical readings */}
-          <box paddingX={1} height={1}>
-            <text fg={colors.textBright} attributes={TextAttributes.BOLD}>HISTORICAL READINGS</text>
-          </box>
-          <box paddingX={1} flexDirection="row" height={1}>
-            <box width={dateColWidth}>
-              <text fg={colors.textDim}>DATE</text>
-            </box>
-            <box width={valueColWidth} justifyContent="flex-end">
-              <text fg={colors.textDim}>VALUE</text>
-            </box>
-          </box>
+          <Box paddingX={1} height={1}>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>HISTORICAL READINGS</Text>
+          </Box>
+          <Box paddingX={1} flexDirection="row" height={1}>
+            <Box width={dateColWidth}>
+              <Text fg={colors.textDim}>DATE</Text>
+            </Box>
+            <Box width={valueColWidth} justifyContent="flex-end">
+              <Text fg={colors.textDim}>VALUE</Text>
+            </Box>
+          </Box>
           {tableRows.map((row) => (
-            <box key={row.date} paddingX={1} flexDirection="row" height={1}>
-              <box width={dateColWidth}>
-                <text fg={colors.textDim}>{row.date}</text>
-              </box>
-              <box width={valueColWidth} justifyContent="flex-end">
-                <text fg={valueColor(row.display)}>{row.display}</text>
-              </box>
-            </box>
+            <Box key={row.date} paddingX={1} flexDirection="row" height={1}>
+              <Box width={dateColWidth}>
+                <Text fg={colors.textDim}>{row.date}</Text>
+              </Box>
+              <Box width={valueColWidth} justifyContent="flex-end">
+                <Text fg={valueColor(row.display)}>{row.display}</Text>
+              </Box>
+            </Box>
           ))}
 
           {/* Separator */}
           {mapping.relatedTickers.length > 0 ? (
-            <box paddingX={1} height={1} marginTop={1}>
-              <text fg={colors.border}>{separatorLine}</text>
-            </box>
+            <Box paddingX={1} height={1} marginTop={1}>
+              <Text fg={colors.border}>{separatorLine}</Text>
+            </Box>
           ) : null}
 
           {/* Related tickers */}
           {mapping.relatedTickers.length > 0 ? (
-            <box paddingX={1} height={1} flexDirection="row">
-              <text fg={colors.textDim}>Related: </text>
+            <Box paddingX={1} height={1} flexDirection="row">
+              <Text fg={colors.textDim}>Related: </Text>
               {mapping.relatedTickers.map((ticker, i) => (
-                <box
+                <Box
                   key={ticker}
                   marginLeft={i > 0 ? 2 : 0}
                   onMouseDown={() => {
                     navigateTicker(ticker);
                   }}
                 >
-                  <text fg={colors.textBright} attributes={TextAttributes.UNDERLINE}>{ticker}</text>
-                </box>
+                  <Text fg={colors.textBright} attributes={TextAttributes.UNDERLINE}>{ticker}</Text>
+                </Box>
               ))}
-            </box>
+            </Box>
           ) : null}
-        </box>
-      </scrollbox>
+        </Box>
+      </ScrollBox>
 
-    </box>
+    </Box>
   );
 }
 
@@ -826,48 +827,48 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   const calendarHeader = (
     <>
       {/* Header */}
-      <box flexDirection="row" height={1} paddingX={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="row" height={1} paddingX={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           Economic Calendar
-        </text>
-        <box marginLeft={1}>
-          <text fg={colors.textDim}>[{impactFilter}]</text>
-        </box>
-        <box marginLeft={0}>
-          <text fg={colors.textDim}>[{countryFilter}]</text>
-        </box>
-        <box marginLeft={1}>
-          <text fg={colors.textMuted}>{filtered.length} events</text>
-        </box>
+        </Text>
+        <Box marginLeft={1}>
+          <Text fg={colors.textDim}>[{impactFilter}]</Text>
+        </Box>
+        <Box marginLeft={0}>
+          <Text fg={colors.textDim}>[{countryFilter}]</Text>
+        </Box>
+        <Box marginLeft={1}>
+          <Text fg={colors.textMuted}>{filtered.length} events</Text>
+        </Box>
         {nextEvent && nextCountdown && (
-          <box marginLeft={1}>
-            <text fg={colors.textMuted}>
+          <Box marginLeft={1}>
+            <Text fg={colors.textMuted}>
               Next: {nextEvent.event.length > 16 ? nextEvent.event.slice(0, 16).trimEnd() : nextEvent.event} {nextCountdown}
-            </text>
-          </box>
+            </Text>
+          </Box>
         )}
         {loading && (
-          <box marginLeft={1}>
-            <text fg={colors.textMuted}>loading…</text>
-          </box>
+          <Box marginLeft={1}>
+            <Text fg={colors.textMuted}>loading…</Text>
+          </Box>
         )}
-        <box flexGrow={1} />
-        {staleness ? <text fg={colors.textMuted}>{staleness}</text> : null}
-      </box>
+        <Box flexGrow={1} />
+        {staleness ? <Text fg={colors.textMuted}>{staleness}</Text> : null}
+      </Box>
 
       {/* Error state */}
       {error && (
-        <box paddingX={1} paddingY={1}>
-          <text fg={colors.negative}>Error: {error}</text>
-        </box>
+        <Box paddingX={1} paddingY={1}>
+          <Text fg={colors.negative}>Error: {error}</Text>
+        </Box>
       )}
     </>
   );
 
   const calendarFooter = (
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>[r]efresh</text>
-      </box>
+      <Box height={1} paddingX={1}>
+        <Text fg={colors.textMuted}>[r]efresh</Text>
+      </Box>
   );
 
   const detailContent = detailEvent ? (
@@ -878,7 +879,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
       focused={focused}
     />
   ) : (
-    <box flexGrow={1} />
+    <Box flexGrow={1} />
   );
 
   return (

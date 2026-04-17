@@ -1,5 +1,6 @@
+import { Box, ScrollBox, Text } from "../../../ui";
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../../../ui";
 import type { AppState } from "../../../state/app-context";
 import { colors, priceColor } from "../../../theme/colors";
 import type { TickerFinancials } from "../../../types/financials";
@@ -54,7 +55,7 @@ export function PortfolioCashMarginDrawer({
 
   if (!expanded) {
     return (
-      <box
+      <Box
         width={width}
         height={drawerHeight}
         flexDirection="row"
@@ -69,10 +70,10 @@ export function PortfolioCashMarginDrawer({
           event.stopPropagation();
         }}
       >
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▸ Cash & Margin"}</text>
-        <box flexGrow={1} />
-        <text fg={colors.textDim}>{padTo(previewText, Math.max(0, width - 17), "right")}</text>
-      </box>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▸ Cash & Margin"}</Text>
+        <Box flexGrow={1} />
+        <Text fg={colors.textDim}>{padTo(previewText, Math.max(0, width - 17), "right")}</Text>
+      </Box>
     );
   }
 
@@ -80,8 +81,8 @@ export function PortfolioCashMarginDrawer({
   const currencyRowsHeight = Math.max(1, drawerHeight - 2);
 
   return (
-    <box flexDirection="column" height={drawerHeight}>
-      <box
+    <Box flexDirection="column" height={drawerHeight}>
+      <Box
         width={width}
         height={1}
         flexDirection="row"
@@ -96,29 +97,29 @@ export function PortfolioCashMarginDrawer({
           event.stopPropagation();
         }}
       >
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▾ Cash & Margin"}</text>
-        <box flexGrow={1} />
-        <text fg={colors.textDim}>{accountState.sourceLabel}</text>
-      </box>
-      <box height={1} overflow="hidden">
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"▾ Cash & Margin"}</Text>
+        <Box flexGrow={1} />
+        <Text fg={colors.textDim}>{accountState.sourceLabel}</Text>
+      </Box>
+      <Box height={1} overflow="hidden">
         {renderSummarySegments(metricSegments, width)}
-      </box>
-      <scrollbox height={currencyRowsHeight} scrollY focusable={false}>
+      </Box>
+      <ScrollBox height={currencyRowsHeight} scrollY focusable={false}>
         {accountState.visibleCashBalances.length === 0 ? (
-          <text fg={colors.textDim}>No non-zero cash balances.</text>
+          <Text fg={colors.textDim}>No non-zero cash balances.</Text>
         ) : (
           accountState.visibleCashBalances.map((balance) => (
-            <box key={balance.currency} height={1} flexDirection="row">
-              <text fg={colors.textBright}>{padTo(balance.currency, 4)}</text>
-              <text fg={colors.textDim}>{" qty "}</text>
-              <text fg={colors.text}>{padTo(formatMarketQuantity(balance.quantity, { isCashBalance: true, maxWidth: 14 }), 14, "right")}</text>
-              <text fg={colors.textDim}>{"  value "}</text>
-              <text fg={colors.text}>{padTo(balance.baseValue != null ? formatCompact(balance.baseValue) : "—", 10, "right")}</text>
-            </box>
+            <Box key={balance.currency} height={1} flexDirection="row">
+              <Text fg={colors.textBright}>{padTo(balance.currency, 4)}</Text>
+              <Text fg={colors.textDim}>{" qty "}</Text>
+              <Text fg={colors.text}>{padTo(formatMarketQuantity(balance.quantity, { isCashBalance: true, maxWidth: 14 }), 14, "right")}</Text>
+              <Text fg={colors.textDim}>{"  value "}</Text>
+              <Text fg={colors.text}>{padTo(balance.baseValue != null ? formatCompact(balance.baseValue) : "—", 10, "right")}</Text>
+            </Box>
           ))
         )}
-      </scrollbox>
-    </box>
+      </ScrollBox>
+    </Box>
   );
 }
 
@@ -187,13 +188,13 @@ export const PortfolioSummaryBar = memo(function PortfolioSummaryBar({
   if (!isPortfolio) {
     if (totals.watchlistCount === 0) return null;
     return (
-      <box flexDirection="row" height={1} width={width} justifyContent="flex-start" overflow="hidden">
-        <text fg={colors.textDim}>{"Avg Day "}</text>
-        <text fg={priceColor(totals.avgWatchlistChange)} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="row" height={1} width={width} justifyContent="flex-start" overflow="hidden">
+        <Text fg={colors.textDim}>{"Avg Day "}</Text>
+        <Text fg={priceColor(totals.avgWatchlistChange)} attributes={TextAttributes.BOLD}>
           {formatPercentRaw(totals.avgWatchlistChange)}
-        </text>
-        <text fg={colors.textDim}>{`  ${refreshText}`}</text>
-      </box>
+        </Text>
+        <Text fg={colors.textDim}>{`  ${refreshText}`}</Text>
+      </Box>
     );
   }
 
@@ -206,5 +207,5 @@ export const PortfolioSummaryBar = memo(function PortfolioSummaryBar({
     refreshText: isRefreshing ? "Refreshing…" : refreshText,
   });
 
-  return <box height={1}>{renderSummarySegments(segments, width)}</box>;
+  return <Box height={1}>{renderSummarySegments(segments, width)}</Box>;
 });

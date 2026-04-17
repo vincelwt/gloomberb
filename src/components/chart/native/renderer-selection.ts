@@ -1,4 +1,4 @@
-import type { PixelResolution } from "@opentui/core";
+import { type PixelResolution } from "../../../ui";
 import type { ChartRendererPreference, ResolvedChartRenderer } from "../chart-types";
 
 export interface ResolvedChartRendererState {

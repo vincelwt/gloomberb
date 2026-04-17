@@ -1,4 +1,4 @@
-import type { PixelResolution } from "@opentui/core";
+import { type PixelResolution } from "../../../ui";
 import { computeGridLines, type ChartScene } from "../chart-renderer";
 import type { ComparisonChartScene } from "../comparison-chart-renderer";
 import type { ChartRenderMode } from "../chart-types";

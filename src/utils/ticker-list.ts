@@ -1,3 +1,4 @@
+
 export const MAX_TICKER_LIST_SIZE = 10;
 
 function normalizeTickerToken(value: string): string {

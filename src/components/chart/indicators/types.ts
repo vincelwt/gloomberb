@@ -1,3 +1,4 @@
+
 /** A single data point for an overlay line drawn on the main chart */
 export interface OverlayPoint {
   index: number;

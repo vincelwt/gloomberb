@@ -1,6 +1,7 @@
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useKeyboard } from "@opentui/react";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { useShortcut } from "../../../react/input";
+import { type ScrollBoxRenderable } from "../../../ui";
 import { TabBar } from "../../../components/tab-bar";
 import { getSharedRegistry } from "../../registry";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
@@ -276,6 +277,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setSortPreference({ columnId, direction: "asc" });
   }, [activeSort.columnId, activeSort.direction, setSortPreference]);
 
+  const handleRowActivate = useCallback((ticker: TickerRecord) => {
+    flushCursorSymbol(ticker.metadata.ticker);
+    registry?.navigateTickerFn(ticker.metadata.ticker);
+  }, [flushCursorSymbol, registry]);
+
   const handleKeyboard = useCallback((event: { name?: string; shift?: boolean }) => {
     if (!focused) return;
 
@@ -345,7 +351,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     visibleCollections,
   ]);
 
-  useKeyboard(handleKeyboard);
+  useShortcut(handleKeyboard);
 
   useEffect(() => {
     if (activeCollectionId !== currentCollectionId) {
@@ -483,22 +489,22 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   useQuoteStreaming(streamTargets);
 
   return (
-    <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="column" height={headerHeight}>
+    <Box flexDirection="column" width={width} height={height}>
+      <Box flexDirection="column" height={headerHeight}>
         {!paneSettings.hideTabs && (
-          <box flexDirection="row" height={1}>
-            <box flexShrink={1} overflow="hidden">
+          <Box flexDirection="row" height={1}>
+            <Box flexShrink={1} overflow="hidden">
               <TabBar
                 tabs={visibleCollections.map((collection) => ({ label: collection.name, value: collection.id }))}
                 activeValue={activeCollectionId}
                 onSelect={handleCollectionSelect}
                 compact
               />
-            </box>
-          </box>
+            </Box>
+          </Box>
         )}
         {!paneSettings.hideHeader && (
-          <box height={1}>
+          <Box height={1}>
             <PortfolioSummaryBar
               tickers={sortedTickers}
               financialsMap={financialsMap}
@@ -510,9 +516,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
               width={Math.max(0, width)}
               accountState={accountState}
             />
-          </box>
+          </Box>
         )}
-      </box>
+      </Box>
 
       <PortfolioTickerTable
         columns={columns}
@@ -531,10 +537,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         financialsMap={financialsMap}
         columnContext={columnContext}
         flashSymbols={flashSymbols}
+        onRowActivate={handleRowActivate}
       />
 
       {showCashDrawer && accountState && (
-        <box height={drawerHeight} paddingX={1}>
+        <Box height={drawerHeight} paddingX={1}>
           <PortfolioCashMarginDrawer
             accountState={accountState}
             expanded={cashDrawerExpanded}
@@ -542,8 +549,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
             width={Math.max(0, width - 2)}
             height={drawerHeight}
           />
-        </box>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }

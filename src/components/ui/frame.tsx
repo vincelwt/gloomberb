@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import type { ReactNode } from "react";
 import { colors } from "../../theme/colors";
 
@@ -9,17 +10,17 @@ export interface SectionProps {
 
 export function Section({ title, children }: SectionProps) {
   return (
-    <box flexDirection="column">
+    <Box flexDirection="column">
       {title && (
         <>
-          <box height={1}>
-            <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</text>
-          </box>
-          <box height={1} />
+          <Box height={1}>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</Text>
+          </Box>
+          <Box height={1} />
         </>
       )}
       {children}
-    </box>
+    </Box>
   );
 }
 
@@ -37,12 +38,12 @@ export function FieldRow({
   valueAttributes = 0,
 }: FieldRowProps) {
   return (
-    <box flexDirection="row" height={1}>
-      <box width={16}>
-        <text fg={colors.textDim}>{label}</text>
-      </box>
-      <text fg={valueColor ?? colors.text} attributes={valueAttributes}>{value}</text>
-    </box>
+    <Box flexDirection="row" height={1}>
+      <Box width={16}>
+        <Text fg={colors.textDim}>{label}</Text>
+      </Box>
+      <Text fg={valueColor ?? colors.text} attributes={valueAttributes}>{value}</Text>
+    </Box>
   );
 }
 
@@ -54,20 +55,20 @@ export interface DialogFrameProps {
 
 export function DialogFrame({ title, children, footer }: DialogFrameProps) {
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{title}</text>
-      </box>
-      <box height={1} />
+    <Box flexDirection="column">
+      <Box height={1}>
+        <Text fg={colors.text} attributes={TextAttributes.BOLD}>{title}</Text>
+      </Box>
+      <Box height={1} />
       {children}
       {footer && (
         <>
-          <box height={1} />
-          <box height={1}>
-            <text fg={colors.textMuted}>{footer}</text>
-          </box>
+          <Box height={1} />
+          <Box height={1}>
+            <Text fg={colors.textMuted}>{footer}</Text>
+          </Box>
         </>
       )}
-    </box>
+    </Box>
   );
 }

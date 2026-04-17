@@ -1,5 +1,6 @@
-import { memo, useRef, type RefObject } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { Box, ScrollBox, Text } from "../ui";
+import { memo, useMemo, useRef, type RefObject } from "react";
+import { TextAttributes, type ScrollBoxRenderable } from "../ui";
 import { EmptyState } from "./ui";
 import { colors, hoverBg } from "../theme/colors";
 import type { ColumnConfig } from "../types/config";
@@ -8,6 +9,7 @@ import type { TickerRecord } from "../types/ticker";
 import { padTo } from "../utils/format";
 import { renderChart, resolveChartPalette, type StyledContent } from "./chart/chart-renderer";
 import type { ProjectedChartPoint } from "./chart/chart-data";
+import { tableContentWidthProps, useMeasuredTableContentWidth } from "./ui/table-layout";
 
 export interface TickerTableCell {
   text: string;
@@ -71,28 +73,35 @@ interface TickerListTableProps {
 
 const TickerListHeader = memo(function TickerListHeader({
   columns,
+  contentWidth,
   headerScrollRef,
   sortColumnId,
   sortDirection,
   onHeaderClick,
+  onSizeChange,
 }: {
   columns: ColumnConfig[];
+  contentWidth: number;
   headerScrollRef?: RefObject<ScrollBoxRenderable | null>;
   sortColumnId?: string | null;
   sortDirection?: "asc" | "desc";
   onHeaderClick?: (columnId: string) => void;
+  onSizeChange?: () => void;
 }) {
   return (
-    <scrollbox
+    <ScrollBox
       ref={headerScrollRef}
+      width="100%"
       height={1}
+      backgroundColor={colors.panel}
       scrollX
       focusable={false}
+      onSizeChange={onSizeChange}
     >
-      <box
+      <Box
         flexDirection="row"
         height={1}
-        width="100%"
+        {...tableContentWidthProps(contentWidth)}
         paddingX={1}
         backgroundColor={colors.panel}
       >
@@ -101,7 +110,7 @@ const TickerListHeader = memo(function TickerListHeader({
           const indicator = isSorted ? (sortDirection === "asc" ? " \u25B2" : " \u25BC") : "";
           const labelText = column.label + indicator;
           return (
-            <box
+            <Box
               key={column.id}
               width={column.width + 1}
               backgroundColor={colors.panel}
@@ -110,14 +119,14 @@ const TickerListHeader = memo(function TickerListHeader({
                 onHeaderClick(column.id);
               } : undefined}
             >
-              <text attributes={TextAttributes.BOLD} fg={isSorted ? colors.text : colors.textDim}>
+              <Text attributes={TextAttributes.BOLD} fg={isSorted ? colors.text : colors.textDim}>
                 {padTo(labelText, column.width, column.align)}
-              </text>
-            </box>
+              </Text>
+            </Box>
           );
         })}
-      </box>
-    </scrollbox>
+      </Box>
+    </ScrollBox>
   );
 });
 
@@ -167,6 +176,7 @@ const TickerListRow = memo(function TickerListRow({
   onRowActivate,
   showSparklines,
   priceHistory,
+  contentWidth,
 }: {
   columns: ColumnConfig[];
   ticker: TickerRecord;
@@ -181,6 +191,7 @@ const TickerListRow = memo(function TickerListRow({
   onRowActivate?: (ticker: TickerRecord) => void;
   showSparklines?: boolean;
   priceHistory?: PricePoint[];
+  contentWidth: number;
 }) {
   const lastActivatedAtRef = useRef<number | null>(null);
   const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
@@ -190,9 +201,10 @@ const TickerListRow = memo(function TickerListRow({
     : null;
 
   return (
-    <box
+    <Box
       flexDirection="row"
       height={1}
+      {...tableContentWidthProps(contentWidth)}
       paddingX={1}
       backgroundColor={rowBg}
       onMouseMove={() => setHoveredIdx(index)}
@@ -200,6 +212,11 @@ const TickerListRow = memo(function TickerListRow({
         event.preventDefault();
         setCursorSymbol(ticker.metadata.ticker);
         if (!onRowActivate) return;
+        if (typeof event.detail === "number" && event.detail >= 2) {
+          lastActivatedAtRef.current = null;
+          onRowActivate(ticker);
+          return;
+        }
         const now = Date.now();
         if (lastActivatedAtRef.current != null && now - lastActivatedAtRef.current <= 350) {
           lastActivatedAtRef.current = null;
@@ -218,19 +235,19 @@ const TickerListRow = memo(function TickerListRow({
           : baseFg;
 
         return (
-          <box key={column.id} width={column.width + 1}>
-            <text fg={cellFg}>
+          <Box key={column.id} width={column.width + 1}>
+            <Text fg={cellFg}>
               {padTo(text, column.width, column.align)}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
       {sparkline && (
-        <box width={12}>
-          <text content={sparkline} />
-        </box>
+        <Box width={12}>
+          <Text content={sparkline} />
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }, (previous, next) => (
   previous.columns === next.columns
@@ -246,6 +263,7 @@ const TickerListRow = memo(function TickerListRow({
   && previous.onRowActivate === next.onRowActivate
   && previous.showSparklines === next.showSparklines
   && previous.priceHistory === next.priceHistory
+  && previous.contentWidth === next.contentWidth
 ));
 
 export function TickerListTable({
@@ -270,21 +288,43 @@ export function TickerListTable({
   emptyHint = "Press Ctrl+P to add one.",
   showSparklines,
 }: TickerListTableProps) {
+  const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
+  const internalScrollRef = useRef<ScrollBoxRenderable>(null);
+  const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
+  const effectiveScrollRef = scrollRef ?? internalScrollRef;
   const safeFlashSymbols = flashSymbols ?? new Map<string, QuoteFlashDirection>();
+  const tableWidth = useMemo(
+    () => columns.reduce((sum, column) => sum + column.width + 1, 2) + (showSparklines ? 12 : 0),
+    [columns, showSparklines],
+  );
+  const { contentWidth, measureContentWidth } = useMeasuredTableContentWidth(
+    tableWidth,
+    effectiveHeaderScrollRef,
+    effectiveScrollRef,
+  );
 
   return (
-    <>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      width="100%"
+      backgroundColor={colors.bg}
+    >
       <TickerListHeader
         columns={columns}
-        headerScrollRef={headerScrollRef}
+        contentWidth={contentWidth}
+        headerScrollRef={effectiveHeaderScrollRef}
         sortColumnId={sortColumnId}
         sortDirection={sortDirection}
         onHeaderClick={onHeaderClick}
+        onSizeChange={measureContentWidth}
       />
 
-      <scrollbox
-        ref={scrollRef}
+      <ScrollBox
+        ref={effectiveScrollRef}
+        width="100%"
         flexGrow={1}
+        backgroundColor={colors.bg}
         scrollX
         scrollY
         focusable={false}
@@ -292,11 +332,12 @@ export function TickerListTable({
         onMouseUp={onBodyScrollActivity ? () => queueMicrotask(onBodyScrollActivity) : undefined}
         onMouseDrag={onBodyScrollActivity ? () => queueMicrotask(onBodyScrollActivity) : undefined}
         onMouseScroll={onBodyScrollActivity ? () => queueMicrotask(onBodyScrollActivity) : undefined}
+        onSizeChange={measureContentWidth}
       >
         {tickers.length === 0 ? (
-          <box paddingX={1} paddingY={1}>
+          <Box width="100%" paddingX={1} paddingY={1}>
             <EmptyState title={emptyTitle} hint={emptyHint} />
-          </box>
+          </Box>
         ) : (
           tickers.map((ticker, index) => {
             return (
@@ -315,11 +356,12 @@ export function TickerListTable({
                 onRowActivate={onRowActivate}
                 showSparklines={showSparklines}
                 priceHistory={financialsMap.get(ticker.metadata.ticker)?.priceHistory}
+                contentWidth={contentWidth}
               />
             );
           })
         )}
-      </scrollbox>
-    </>
+      </ScrollBox>
+    </Box>
   );
 }

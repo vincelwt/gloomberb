@@ -1,6 +1,7 @@
+import { Box, useNativeRenderer, useRendererHost } from "./ui";
+import { ToastViewport, useToastHost } from "./ui/toast";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useKeyboard, useRenderer } from "@opentui/react";
-import type { CliRenderer } from "@opentui/core";
+import { useShortcut } from "./react/input";
 import {
   AppProvider,
   getFocusedCollectionId,
@@ -16,11 +17,9 @@ import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { CommandBar } from "./components/command-bar/command-bar";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
-import { DialogProvider, useDialog, useDialogState } from "@opentui-ui/dialog/react";
+import { useDialog, useDialogState } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
-import { AppPersistence } from "./data/app-persistence";
-import { TickerRepository } from "./data/ticker-repository";
-import { ProviderRouter } from "./sources/provider-router";
+import type { TickerRepository } from "./data/ticker-repository";
 import { colors, syncTheme } from "./theme/colors";
 import {
   createPaneInstance,
@@ -52,12 +51,9 @@ import {
 import { getIbkrConfigIdentity } from "./plugins/ibkr/config";
 import { chatController } from "./plugins/builtin/chat-controller";
 import { setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
-import { getLoadablePlugins } from "./plugins/catalog";
 import { saveConfig } from "./data/config-store";
-import { Toaster, toast } from "@opentui-ui/toast/react";
 import { canSelfUpdate, checkForUpdateDetailed, performUpdate, type ReleaseInfo } from "./updater";
 import { VERSION } from "./version";
-import { join } from "path";
 import {
   addPaneFloating,
   addPaneToLayout,
@@ -78,7 +74,7 @@ import {
   APP_SESSION_SCHEMA_VERSION,
   reconcileAppSessionSnapshot,
   type AppSessionSnapshot,
-} from "./state/session-persistence";
+} from "./core/state/session-persistence";
 import { initializeAppState } from "./state/app-bootstrap";
 import { TickerRefreshQueue } from "./state/ticker-refresh-queue";
 import { PaneSettingsDialogContent } from "./components/pane-settings-dialog";
@@ -94,12 +90,11 @@ import {
 } from "./components/command-bar/workflow-ops";
 import { getPaneTemplateDisplayLabel } from "./components/command-bar/pane-template-display";
 import { debugLog } from "./utils/debug-log";
-import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./market-data/coordinator";
+import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
 import { syncBrokerInstance } from "./brokers/sync-broker-instance";
 import { createAppNotifier } from "./notifications/app-notifier";
-import { NewsAggregator } from "./news/aggregator";
-import { setSharedNewsAggregator } from "./news/hooks";
+import { createAppServices } from "./core/app-services";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -138,8 +133,10 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   const { state, dispatch } = useAppState();
   const appActive = useAppActive();
   const appActiveRef = useRef(appActive);
-  const renderer = useRenderer();
+  const rendererHost = useRendererHost();
+  const nativeRenderer = useNativeRenderer();
   const dialog = useDialog();
+  const toast = useToastHost();
   const stateRef = useRef(state);
   stateRef.current = state;
   appActiveRef.current = appActive;
@@ -679,8 +676,11 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     await saveConfig(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
-  if (dataProvider instanceof ProviderRouter) {
-    dataProvider.setConfigAccessor(() => state.config);
+  const configurableProvider = dataProvider as DataProvider & {
+    setConfigAccessor?: (accessor: () => AppConfig) => void;
+  };
+  if (typeof configurableProvider.setConfigAccessor === "function") {
+    configurableProvider.setConfigAccessor(() => state.config);
   }
   pluginRegistry.createBrokerInstanceFn = async (brokerType, label, values) => {
     const instanceId = createBrokerInstanceId(
@@ -1218,13 +1218,13 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   const focusedDetailTab = state.focusedPaneId ? state.paneState[state.focusedPaneId]?.activeTabId : undefined;
 
   // Global keyboard shortcuts
-  useKeyboard((event) => {
-    if (isCopyShortcut(event) && copyActiveSelection(renderer)) {
+  useShortcut((event) => {
+    if (isCopyShortcut(event) && copyActiveSelection(nativeRenderer)) {
       event.preventDefault();
       event.stopPropagation();
       return;
     }
-    if (isPasteShortcut(event) && pasteSystemClipboard(renderer)) {
+    if (isPasteShortcut(event) && pasteSystemClipboard(nativeRenderer)) {
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -1235,11 +1235,15 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
     // Ctrl+P: toggle command bar (backtick handled in command-bar itself for close)
     if (event.name === "p" && event.ctrl) {
+      event.preventDefault();
+      event.stopPropagation();
       dispatch({ type: "TOGGLE_COMMAND_BAR" });
       return;
     }
     // Backtick opens command bar (close is handled in command-bar.tsx)
     if (event.name === "`" && !state.commandBarOpen) {
+      event.preventDefault();
+      event.stopPropagation();
       dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       return;
     }
@@ -1271,7 +1275,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
         dispatch({ type: "FOCUS_NEXT", paneOrder });
       }
     } else if (event.name === "q" && !(focusedPane?.paneId === "ticker-detail" && focusedDetailTab === "financials")) {
-      renderer.destroy();
+      rendererHost.requestExit();
     } else if (event.name === "r") {
       // Refresh focused ticker context.
       if (focusedTickerSymbol) {
@@ -1309,7 +1313,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   });
 
   return (
-    <box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+    <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
       <Header />
       <Shell pluginRegistry={pluginRegistry} />
       <StatusBar />
@@ -1318,28 +1322,27 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
           dataProvider={dataProvider}
           tickerRepository={tickerRepository}
           pluginRegistry={pluginRegistry}
-          quitApp={() => renderer.destroy()}
+          quitApp={() => rendererHost.requestExit()}
           onCheckForUpdates={() => runUpdateCheck(true)}
         />
       )}
-      <Toaster position="bottom-right" />
-    </box>
+      <ToastViewport position="bottom-right" />
+    </Box>
   );
 }
 
 interface AppProps {
   config: AppConfig;
-  renderer: CliRenderer;
   externalPlugins?: import("./plugins/loader").LoadedExternalPlugin[];
   cliLaunchRequest?: CliLaunchRequest | null;
 }
 
 export function App({
   config: initialConfig,
-  renderer,
   externalPlugins = [],
   cliLaunchRequest = null,
 }: AppProps) {
+  const renderer = useNativeRenderer();
   const initialCliLaunch = useMemo(() => {
     if (!cliLaunchRequest) {
       return { config: initialConfig, launchState: undefined };
@@ -1362,48 +1365,11 @@ export function App({
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
   const services = useMemo(() => {
-    const dbPath = join(config.dataDir, ".gloomberb-cache.db");
-    const persistence = new AppPersistence(dbPath);
-    const tickerRepository = new TickerRepository(persistence.tickers);
-    const providerRouter = new ProviderRouter(null, [], persistence.resources);
-    const dataProvider: DataProvider = providerRouter;
-    const marketData = new MarketDataCoordinator(dataProvider);
-    const pluginRegistry = new PluginRegistry(renderer, dataProvider, tickerRepository, persistence);
-    providerRouter.attachRegistry(pluginRegistry);
-    pluginRegistry.getConfigFn = () => config;
-    pluginRegistry.getLayoutFn = () => config.layout;
-
-    const newsAggregator = new NewsAggregator();
-    setSharedNewsAggregator(newsAggregator);
-    pluginRegistry.registerNewsSourceFn = (source) => newsAggregator.register(source);
-
-    for (const plugin of getLoadablePlugins(externalPlugins)) {
-      pluginRegistry.register(plugin);
-    }
-    newsAggregator.start();
-
-    return {
-      persistence,
-      tickerRepository,
-      providerRouter,
-      dataProvider,
-      marketData,
-      pluginRegistry,
-      newsAggregator,
-    };
-  }, [config.dataDir, externalPlugins, renderer]);
-
-  if (services.marketData !== null) {
-    setSharedMarketDataCoordinator(services.marketData);
-  }
+    return createAppServices({ config, externalPlugins });
+  }, [config.dataDir, externalPlugins]);
 
   useEffect(() => {
-    return () => {
-      setSharedMarketDataCoordinator(null);
-      services.newsAggregator.stop();
-      services.pluginRegistry.destroy();
-      services.persistence.close();
-    };
+    return () => services.destroy();
   }, [services]);
 
   const sessionSnapshot = useMemo(() => {
@@ -1434,20 +1400,13 @@ export function App({
 
   return (
     <AppProvider config={config} sessionStore={services.persistence.sessions} sessionSnapshot={sessionSnapshot}>
-      <DialogProvider
-        size="medium"
-        dialogOptions={{ style: { backgroundColor: colors.bg, borderColor: colors.borderFocused, borderStyle: "single", paddingX: 2, paddingY: 1 } }}
-        backdropColor="#000000"
-        backdropOpacity={0.8}
-      >
-        <AppInner
-          pluginRegistry={services.pluginRegistry}
-          tickerRepository={services.tickerRepository}
-          dataProvider={services.dataProvider}
-          marketData={services.marketData}
-          sessionSnapshot={sessionSnapshot}
-        />
-      </DialogProvider>
+      <AppInner
+        pluginRegistry={services.pluginRegistry}
+        tickerRepository={services.tickerRepository}
+        dataProvider={services.dataProvider}
+        marketData={services.marketData}
+        sessionSnapshot={sessionSnapshot}
+      />
     </AppProvider>
   );
 }

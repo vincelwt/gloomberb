@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
 import { act, useEffect, useReducer, useRef } from "react";
 import {
   AppContext,

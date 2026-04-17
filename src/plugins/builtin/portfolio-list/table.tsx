@@ -1,5 +1,5 @@
 import { useCallback, type RefObject } from "react";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { type ScrollBoxRenderable } from "../../../ui";
 import { TickerListTable, type QuoteFlashDirection } from "../../../components/ticker-list-table";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
@@ -26,6 +26,7 @@ export function PortfolioTickerTable({
   columnContext,
   flashSymbols,
   showSparklines,
+  onRowActivate,
 }: {
   columns: ColumnConfig[];
   sortColumnId: string | null;
@@ -44,6 +45,7 @@ export function PortfolioTickerTable({
   columnContext: ColumnContext;
   flashSymbols: Map<string, QuoteFlashDirection>;
   showSparklines?: boolean;
+  onRowActivate?: (ticker: TickerRecord) => void;
 }) {
   const resolveCell = useCallback(
     (column: ColumnConfig, ticker: TickerRecord, financials: TickerFinancials | undefined) => (
@@ -71,6 +73,7 @@ export function PortfolioTickerTable({
       sortDirection={sortDirection}
       onHeaderClick={onHeaderClick}
       showSparklines={showSparklines}
+      onRowActivate={onRowActivate}
     />
   );
 }

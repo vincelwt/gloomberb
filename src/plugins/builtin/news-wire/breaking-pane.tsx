@@ -1,5 +1,6 @@
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useBreakingNews } from "../../../news/hooks";
@@ -98,33 +99,33 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   ), [digestVersion]);
 
   const rootBefore = (
-      <box height={1} flexDirection="row" paddingX={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Breaking News</text>
-        <box marginLeft={1}>
-          <text fg={colors.textMuted}>{articles.length} stories</text>
-        </box>
+      <Box height={1} flexDirection="row" paddingX={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Breaking News</Text>
+        <Box marginLeft={1}>
+          <Text fg={colors.textMuted}>{articles.length} stories</Text>
+        </Box>
         {aiAvailable && (
-          <box marginLeft={1}>
-            <text fg={colors.textDim}>AI digest</text>
-          </box>
+          <Box marginLeft={1}>
+            <Text fg={colors.textDim}>AI digest</Text>
+          </Box>
         )}
         {aiRunning && (
-          <box marginLeft={1}>
-            <text fg={colors.positive}>{BRAILLE_FRAMES[spinFrame]}</text>
-          </box>
+          <Box marginLeft={1}>
+            <Text fg={colors.positive}>{BRAILLE_FRAMES[spinFrame]}</Text>
+          </Box>
         )}
         {aiError && (
-          <box marginLeft={1}>
-            <text fg={colors.warning}>AI paused</text>
-          </box>
+          <Box marginLeft={1}>
+            <Text fg={colors.warning}>AI paused</Text>
+          </Box>
         )}
-      </box>
+      </Box>
   );
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
   ) : (
-    <box flexGrow={1} />
+    <Box flexGrow={1} />
   );
 
   return (

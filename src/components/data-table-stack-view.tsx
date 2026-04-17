@@ -1,5 +1,6 @@
-import { useKeyboard } from "@opentui/react";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { Box } from "../ui";
+import { useShortcut } from "../react/input";
+import { type ScrollBoxRenderable } from "../ui";
 import {
   useCallback,
   useEffect,
@@ -143,7 +144,7 @@ export function DataTableStackView<
     onActivate?.(item, index);
   }, [items, onActivate, onActivateIndex]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused || !keyboardNavigation) return;
 
     if (detailOpen) {
@@ -191,7 +192,7 @@ export function DataTableStackView<
   }, [effectiveScrollRef, items.length, selectedIndex]);
 
   const rootContent = (
-    <box
+    <Box
       flexDirection="column"
       flexGrow={1}
       width={rootWidth}
@@ -224,7 +225,7 @@ export function DataTableStackView<
         showHorizontalScrollbar={showHorizontalScrollbar}
       />
       {rootAfter}
-    </box>
+    </Box>
   );
 
   return (

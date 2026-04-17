@@ -69,6 +69,10 @@ For external plugins, create a directory in `~/.gloomberb/plugins/`:
 
 Use `setup()` for interactive runtime registration, and `cliCommands` for root-level CLI commands that should be discoverable without running plugin setup.
 
+## Renderer-neutral UI
+
+Plugins should treat Gloomberb's UI APIs as the renderer contract. Official plugins may render panes, detail tabs, and slot widgets with React, but plugin UI should import shared Gloom APIs such as `gloomberb/ui`, `gloomberb/react`, or the plugin runtime hooks instead of importing OpenTUI, Tauri, DOM, or terminal renderer packages directly. Renderer-specific details like terminal keyboard events, kitty images, DOM pointer behavior, dialogs, and notifications belong in the renderer adapters.
+
 The `setup()` function receives a context object with these capabilities:
 
 ### Registration methods

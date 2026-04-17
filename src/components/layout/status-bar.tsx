@@ -1,3 +1,4 @@
+import { Box, Span, Text } from "../../ui";
 import { useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
 import { useAppState, useFocusedTicker } from "../../state/app-context";
@@ -11,6 +12,7 @@ import {
 import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
+import { PluginSlot } from "../../react/plugins/plugin-slot";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -76,12 +78,14 @@ export function StatusBar() {
   if (!state.statusBarVisible) return null;
 
   return (
-    <box
+    <Box
       flexDirection="row"
       height={1}
+      alignItems="center"
       backgroundColor={colors.panel}
+      data-gloom-role="status-bar"
     >
-      <box paddingLeft={1} flexShrink={0} flexDirection="row">
+      <Box paddingLeft={1} flexShrink={0} flexDirection="row">
         {hasMultipleLayouts ? (
           layouts.map((l, i) => {
             const isActive = i === activeLayoutIdx;
@@ -91,7 +95,7 @@ export function StatusBar() {
             const bg = isActive ? colors.header : isHovered ? hoverBg() : undefined;
             const fg = isActive ? colors.headerText : isHovered ? colors.text : colors.textDim;
             return (
-              <text
+              <Text
                 key={i}
                 fg={fg}
                 bg={bg}
@@ -102,61 +106,61 @@ export function StatusBar() {
                   dispatch({ type: "SWITCH_LAYOUT", index: i });
                 }}
               >
-                {` ^${num} `}<span fg={isActive ? colors.headerText : colors.text}>{label}</span>{" "}
-              </text>
+                {` ^${num} `}<Span fg={isActive ? colors.headerText : colors.text}>{label}</Span>{" "}
+              </Text>
             );
           })
         ) : (
-          <text fg={colors.textDim}>
-            <span fg={colors.text}>Ctrl+P</span> command bar
-          </text>
+          <Text fg={colors.textDim}>
+            <Span fg={colors.text}>Ctrl+P</Span> command bar
+          </Text>
         )}
-      </box>
+      </Box>
       {showGridlockTip && (
-        <box paddingLeft={1} flexShrink={0} flexDirection="row">
-          <text fg={colors.textDim}>Snapped a window?</text>
-          <box width={1} />
-          <box
+        <Box paddingLeft={1} flexShrink={0} flexDirection="row">
+          <Text fg={colors.textDim}>Snapped a window?</Text>
+          <Box width={1} />
+          <Box
             backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
             onMouseMove={() => setHoveredControl("gridlock-tip")}
             onMouseDown={handleGridlockTip}
           >
-            <text fg={colors.headerText}> Gridlock All </text>
-          </box>
-          <text
+            <Text fg={colors.headerText}> Gridlock All </Text>
+          </Box>
+          <Text
             fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
             onMouseMove={() => setHoveredControl("gridlock-tip-dismiss")}
             onMouseDown={dismissGridlockTip}
           >
             {" x"}
-          </text>
-        </box>
+          </Text>
+        </Box>
       )}
-      <box flexGrow={1} />
+      <Box flexGrow={1} />
       {extText && (
-        <box paddingRight={1}>
-          <text fg={extColor}>{symbol} {extText}</text>
-        </box>
+        <Box paddingRight={1}>
+          <Text fg={extColor}>{symbol} {extText}</Text>
+        </Box>
       )}
       {(exchName || mktState || q?.provenance?.session) && (
-        <box paddingRight={1}>
-          <text fg={mktState ? marketStateColor(mktState) : colors.textDim}>
+        <Box paddingRight={1}>
+          <Text fg={mktState ? marketStateColor(mktState) : colors.textDim}>
             {exchName ? `${exchName} ` : ""}{sessionLabel}
-          </text>
-        </box>
+          </Text>
+        </Box>
       )}
       {priceSourceLabel && (
-        <box paddingRight={1}>
-          <text fg={colors.textDim}>px {priceSourceLabel}</text>
-        </box>
+        <Box paddingRight={1}>
+          <Text fg={colors.textDim}>px {priceSourceLabel}</Text>
+        </Box>
       )}
       {sessionSourceLabel && sessionSourceLabel !== priceSourceLabel && (
-        <box paddingRight={1}>
-          <text fg={colors.textDim}>ses {sessionSourceLabel}</text>
-        </box>
+        <Box paddingRight={1}>
+          <Text fg={colors.textDim}>ses {sessionSourceLabel}</Text>
+        </Box>
       )}
       {/* Plugin status widgets */}
-      {registry && <registry.Slot name="status:widget" />}
-    </box>
+      <PluginSlot name="status:widget" />
+    </Box>
   );
 }

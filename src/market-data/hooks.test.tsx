@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../renderers/opentui/test-utils";
 import type { PricePoint, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./coordinator";

@@ -1,5 +1,6 @@
+import { Box, Input, Span, Text } from "../../ui";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { InputRenderable } from "@opentui/core";
+import { type InputRenderable } from "../../ui";
 import { colors } from "../../theme/colors";
 
 export interface TextFieldProps {
@@ -68,17 +69,17 @@ export function TextField({
   const maskedAfter = maskedDisplay.slice(maskedCursorOffset + (maskedCursorOffset < maskedDisplay.length ? 1 : 0));
 
   return (
-    <box flexDirection="column">
+    <Box flexDirection="column">
       {label && (
-        <box height={1}>
-          <text fg={placeholderColor}>{label}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={placeholderColor}>{label}</Text>
+        </Box>
       )}
-      <box height={1} onMouseDown={() => {
+      <Box height={1} onMouseDown={() => {
         onMouseDown?.();
         resolvedInputRef.current?.focus?.();
       }}>
-        <input
+        <Input
           ref={resolvedInputRef}
           width={width}
           value={value}
@@ -105,7 +106,7 @@ export function TextField({
           onSubmit={() => onSubmit?.(currentValueRef.current)}
         />
         {isPassword && (
-          <box
+          <Box
             position="absolute"
             left={0}
             top={0}
@@ -116,22 +117,22 @@ export function TextField({
               resolvedInputRef.current?.focus?.();
             }}
           >
-            <text fg={maskedTextColor} selectable={false}>
+            <Text fg={maskedTextColor} selectable={false}>
               {maskedBefore}
               {focused && (
-                <span bg={maskedTextColor} fg={backgroundColor}>{maskedCursorChar}</span>
+                <Span bg={maskedTextColor} fg={backgroundColor}>{maskedCursorChar}</Span>
               )}
               {focused ? maskedAfter : maskedDisplay.slice(maskedBefore.length)}
-            </text>
-          </box>
+            </Text>
+          </Box>
         )}
-      </box>
+      </Box>
       {hint && (
-        <box height={1}>
-          <text fg={colors.textMuted}>{hint}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textMuted}>{hint}</Text>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }
 

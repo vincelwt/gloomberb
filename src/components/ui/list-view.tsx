@@ -1,5 +1,6 @@
+import { Box, ScrollBox, Text } from "../../ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 
 export interface ListViewItem {
@@ -43,22 +44,22 @@ function DefaultRow({
   selected: boolean;
 }) {
   return (
-    <box flexDirection="row" justifyContent="space-between" width="100%">
-      <box flexDirection="row">
-        <text fg={selected ? colors.selectedText : colors.textDim}>
+    <Box flexDirection="row" justifyContent="space-between" width="100%">
+      <Box flexDirection="row">
+        <Text fg={selected ? colors.selectedText : colors.textDim}>
           {selected ? "\u25b8 " : "  "}
-        </text>
-        <text
+        </Text>
+        <Text
           fg={selected ? colors.text : colors.textDim}
           attributes={selected ? TextAttributes.BOLD : 0}
         >
           {item.label}
-        </text>
-      </box>
+        </Text>
+      </Box>
       {item.detail && (
-        <text fg={selected ? colors.textMuted : colors.textMuted}>{item.detail}</text>
+        <Text fg={selected ? colors.textMuted : colors.textMuted}>{item.detail}</Text>
       )}
-    </box>
+    </Box>
   );
 }
 
@@ -110,9 +111,9 @@ export function ListView({
 
   if (items.length === 0) {
     return (
-      <box height={1}>
-        <text fg={colors.textDim}>{emptyMessage}</text>
-      </box>
+      <Box height={1}>
+        <Text fg={colors.textDim}>{emptyMessage}</Text>
+      </Box>
     );
   }
 
@@ -125,7 +126,7 @@ export function ListView({
       ?? (selected ? activeBg : hovered ? rowHoverBg : baseBg);
 
     return (
-      <box
+      <Box
         key={item.id}
         height={1}
         backgroundColor={rowBg}
@@ -141,26 +142,26 @@ export function ListView({
         {renderRow
           ? renderRow(item, state, index)
           : <DefaultRow item={item} selected={selected} />}
-      </box>
+      </Box>
     );
   });
 
   return (
-    <box flexDirection="column" height={height} flexGrow={flexGrow}>
+    <Box flexDirection="column" height={height} flexGrow={flexGrow}>
       {scrollable ? (
-        <scrollbox ref={scrollRef} height={height} flexGrow={flexGrow} scrollY focusable={false}>
+        <ScrollBox ref={scrollRef} height={height} flexGrow={flexGrow} scrollY focusable={false}>
           {rows}
-        </scrollbox>
+        </ScrollBox>
       ) : rows}
 
       {showSelectedDescription && selectedItem?.description && (
         <>
-          <box height={1} />
-          <box>
-            <text fg={colors.textDim}>{"    "}{selectedItem.description}</text>
-          </box>
+          <Box height={1} />
+          <Box>
+            <Text fg={colors.textDim}>{"    "}{selectedItem.description}</Text>
+          </Box>
         </>
       )}
-    </box>
+    </Box>
   );
 }

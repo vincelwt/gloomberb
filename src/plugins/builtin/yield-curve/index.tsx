@@ -1,6 +1,7 @@
+import { Box, ScrollBox, Text } from "../../../ui";
 import { useEffect, useRef, useState } from "react";
-import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useAppSelector } from "../../../state/app-context";
@@ -63,7 +64,7 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
     load();
   }, [apiKey]);
 
-  useKeyboard((ev) => {
+  useShortcut((ev) => {
     if (!focused) return;
     if (ev.name === "r") {
       load(true);
@@ -72,40 +73,40 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
 
   if (!apiKey) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>[r]efresh</text>
-        </box>
-      </box>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</Text>
+        </Box>
+        <Box height={1} paddingX={1}>
+          <Text fg={colors.textMuted}>[r]efresh</Text>
+        </Box>
+      </Box>
     );
   }
 
   if (loading && points.length === 0) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.textMuted}>Loading...</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>[r]efresh</text>
-        </box>
-      </box>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.textMuted}>Loading...</Text>
+        </Box>
+        <Box height={1} paddingX={1}>
+          <Text fg={colors.textMuted}>[r]efresh</Text>
+        </Box>
+      </Box>
     );
   }
 
   if (error && points.length === 0) {
     return (
-      <box flexDirection="column" width={width} height={height}>
-        <box flexGrow={1} justifyContent="center" alignItems="center">
-          <text fg={colors.negative}>{error}</text>
-        </box>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textMuted}>[r]efresh</text>
-        </box>
-      </box>
+      <Box flexDirection="column" width={width} height={height}>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Text fg={colors.negative}>{error}</Text>
+        </Box>
+        <Box height={1} paddingX={1}>
+          <Text fg={colors.textMuted}>[r]efresh</Text>
+        </Box>
+      </Box>
     );
   }
 
@@ -153,52 +154,52 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
   }).join("").trimEnd();
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {/* Header */}
-      <box height={1} paddingX={1} flexDirection="row">
+      <Box height={1} paddingX={1} flexDirection="row">
         {inverted ? (
-          <text fg={colors.warning} attributes={TextAttributes.BOLD}>⚠ INVERTED</text>
+          <Text fg={colors.warning} attributes={TextAttributes.BOLD}>⚠ INVERTED</Text>
         ) : null}
         {spreadStr ? (
-          <text fg={colors.textDim}>{inverted ? spreadStr : spreadStr.trimStart()}</text>
+          <Text fg={colors.textDim}>{inverted ? spreadStr : spreadStr.trimStart()}</Text>
         ) : null}
-        <box flexGrow={1} />
-        {loading ? <text fg={colors.textDim}>updating…</text> : null}
-      </box>
+        <Box flexGrow={1} />
+        {loading ? <Text fg={colors.textDim}>updating…</Text> : null}
+      </Box>
 
       {/* Scrollable chart + table */}
-      <scrollbox flexGrow={1} scrollY focusable={false}>
-        <box flexDirection="column">
+      <ScrollBox flexGrow={1} scrollY focusable={false}>
+        <Box flexDirection="column">
           {/* Chart */}
           {chartResult && chartResult.lines.length > 0 ? (
-            <box flexDirection="column" paddingX={1} marginTop={1}>
-              <box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
+            <Box flexDirection="column" paddingX={1} marginTop={1}>
+              <Box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
                 {chartResult.lines.map((line, i) => (
-                  <text key={i} content={line} />
+                  <Text key={i} content={line} />
                 ))}
-              </box>
-            </box>
+              </Box>
+            </Box>
           ) : (
-            <box paddingX={1} marginTop={1}>
-              <text fg={colors.textMuted}>Not enough data for chart</text>
-            </box>
+            <Box paddingX={1} marginTop={1}>
+              <Text fg={colors.textMuted}>Not enough data for chart</Text>
+            </Box>
           )}
 
           {/* Maturity table */}
-          <box paddingX={1} marginTop={1} height={1}>
-            <text fg={colors.textDim}>{maturityLabels}</text>
-          </box>
-          <box paddingX={1} height={1}>
-            <text fg={colors.text}>{yieldValues}</text>
-          </box>
-        </box>
-      </scrollbox>
+          <Box paddingX={1} marginTop={1} height={1}>
+            <Text fg={colors.textDim}>{maturityLabels}</Text>
+          </Box>
+          <Box paddingX={1} height={1}>
+            <Text fg={colors.text}>{yieldValues}</Text>
+          </Box>
+        </Box>
+      </ScrollBox>
 
       {/* Footer */}
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>[r]efresh</text>
-      </box>
-    </box>
+      <Box height={1} paddingX={1}>
+        <Text fg={colors.textMuted}>[r]efresh</Text>
+      </Box>
+    </Box>
   );
 }
 

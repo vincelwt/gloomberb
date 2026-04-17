@@ -1,5 +1,3 @@
-import { execSync } from "child_process";
-
 export interface AiProvider {
   id: string;
   name: string;
@@ -39,15 +37,9 @@ function commandExists(command: string): boolean {
       return !!Bun.which(command);
     }
   } catch {
-    // Fall back to shell lookup when Bun.which is unavailable.
-  }
-
-  try {
-    execSync(`command -v ${command}`, { stdio: "ignore" });
-    return true;
-  } catch {
     return false;
   }
+  return false;
 }
 
 export function detectProviders(): AiProvider[] {

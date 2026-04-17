@@ -1,3 +1,4 @@
+
 export interface InsiderTransaction {
   filingDate: Date;
   reportedName: string;

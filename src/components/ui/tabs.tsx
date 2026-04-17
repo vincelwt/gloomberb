@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 
 export interface TabItem {
@@ -16,13 +17,13 @@ export interface TabsProps {
 
 export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps) {
   return (
-    <box flexDirection="row" height={compact ? 1 : 2}>
+    <Box flexDirection="row" height={compact ? 1 : 2}>
       {tabs.map((tab) => {
         const active = tab.value === activeValue;
         const tabWidth = tab.label.length + 2;
 
         return (
-          <box
+          <Box
             key={tab.value}
             width={tabWidth + 2}
             flexDirection="column"
@@ -32,16 +33,16 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
               if (!tab.disabled) onSelect(tab.value);
             }}
           >
-            <text
+            <Text
               fg={tab.disabled ? colors.textMuted : active ? colors.text : colors.textDim}
               attributes={active ? TextAttributes.BOLD : 0}
             >
               {tab.label}
-            </text>
-            {!compact && <text fg={active ? colors.borderFocused : colors.bg}>{"▔".repeat(tabWidth)}</text>}
-          </box>
+            </Text>
+            {!compact && <Text fg={active ? colors.borderFocused : colors.bg}>{"▔".repeat(tabWidth)}</Text>}
+          </Box>
         );
       })}
-    </box>
+    </Box>
   );
 }

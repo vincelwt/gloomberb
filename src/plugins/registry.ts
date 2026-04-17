@@ -1,6 +1,4 @@
-import type { CliRenderer } from "@opentui/core";
-import { createReactSlotRegistry, createSlot } from "@opentui/react";
-import { createElement } from "react";
+import { Fragment, createElement, type ReactNode } from "react";
 import type { AppPersistence } from "../data/app-persistence";
 import type { TickerRepository } from "../data/ticker-repository";
 import type { BrokerAdapter } from "../types/broker";
@@ -36,12 +34,16 @@ import {
   resolveCollectionForPane,
   resolveTickerForPane,
   type PaneRuntimeState,
-} from "../state/app-context";
+} from "../core/state/app-state";
 import { deletePaneSetting, getPaneSettings, setPaneSetting } from "../pane-settings";
 
 let sharedDataProvider: DataProvider | undefined;
 let sharedRegistry: PluginRegistry | undefined;
-const SLOT_REGISTRY_CONTEXT: Record<string, never> = {};
+type SlotEntry = {
+  pluginId: string;
+  order: number;
+  render: (props: unknown) => ReactNode;
+};
 
 export function getSharedDataProvider(): DataProvider | undefined { return sharedDataProvider; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
@@ -67,7 +69,7 @@ interface PluginItems {
 }
 
 export class PluginRegistry implements PluginRuntimeAccess {
-  private slotRegistry;
+  private slotEntries = new Map<string, SlotEntry[]>();
   private plugins = new Map<string, GloomPlugin>();
   private unregisterFns = new Map<string, () => void>();
   private pluginItems = new Map<string, PluginItems>();
@@ -141,7 +143,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   readonly Slot;
 
-  constructor(renderer: CliRenderer, dataProvider: DataProvider, tickerRepository: TickerRepository, persistence: AppPersistence) {
+  constructor(dataProvider: DataProvider, tickerRepository: TickerRepository, persistence: AppPersistence) {
     this.dataProvider = dataProvider;
     this.tickerRepository = tickerRepository;
     this.persistence = persistence;
@@ -150,9 +152,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
     sharedDataProvider = dataProvider;
     sharedRegistry = this;
     (globalThis as any).__gloomRegistry = this;
-
-    this.slotRegistry = createReactSlotRegistry<GloomSlots & Record<string, object>>(renderer, SLOT_REGISTRY_CONTEXT);
-    this.Slot = createSlot(this.slotRegistry) as any;
+    this.Slot = ({ name, ...props }: { name: keyof GloomSlots } & Record<string, unknown>) => (
+      this.renderSlot(name, props as unknown)
+    );
   }
 
   get panes(): ReadonlyMap<string, PaneDef> { return this.panesMap; }
@@ -194,6 +196,20 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   notify(notification: AppNotificationRequest): void {
     this.notifyFn(notification);
+  }
+
+  renderSlot<K extends keyof GloomSlots>(name: K, props: GloomSlots[K]): ReactNode {
+    const entries = this.slotEntries.get(name as string) ?? [];
+    if (entries.length === 0) return null;
+    return createElement(
+      Fragment,
+      null,
+      ...entries.map((entry) => createElement(
+        Fragment,
+        { key: entry.pluginId },
+        entry.render(props),
+      )),
+    );
   }
 
   private getOrCreatePluginItems(pluginId: string): PluginItems {
@@ -580,23 +596,37 @@ export class PluginRegistry implements PluginRuntimeAccess {
     }
 
     if (plugin.slots) {
-      const corePlugin = {
-        id: plugin.id,
-        order: plugin.order,
-        slots: {} as Record<string, unknown>,
-      };
-
+      const registeredSlotNames: string[] = [];
       for (const [slotName, renderer] of Object.entries(plugin.slots)) {
         if (renderer) {
-          corePlugin.slots[slotName] = (_ctx: unknown, props: unknown) => createElement(
-            PluginRenderProvider,
-            { pluginId: plugin.id, runtime: this },
-            (renderer as any)(props),
-          );
+          const entries = this.slotEntries.get(slotName) ?? [];
+          entries.push({
+            pluginId: plugin.id,
+            order: plugin.order ?? 0,
+            render: (props: unknown) => createElement(
+              PluginRenderProvider,
+              { pluginId: plugin.id, runtime: this },
+              (renderer as any)(props),
+            ),
+          });
+          entries.sort((left, right) => left.order - right.order || left.pluginId.localeCompare(right.pluginId));
+          this.slotEntries.set(slotName, entries);
+          registeredSlotNames.push(slotName);
         }
       }
 
-      const unregister = this.slotRegistry.register(corePlugin as any);
+      const unregister = () => {
+        for (const slotName of registeredSlotNames) {
+          const entries = this.slotEntries.get(slotName);
+          if (!entries) continue;
+          const nextEntries = entries.filter((entry) => entry.pluginId !== plugin.id);
+          if (nextEntries.length === 0) {
+            this.slotEntries.delete(slotName);
+          } else {
+            this.slotEntries.set(slotName, nextEntries);
+          }
+        }
+      };
       this.unregisterFns.set(plugin.id, unregister);
     }
 

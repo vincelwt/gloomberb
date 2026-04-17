@@ -1,4 +1,4 @@
-import type { CliRenderer } from "@opentui/core";
+import { type NativeRendererHost as CliRenderer } from "../../../ui";
 import type { NativeChartBitmap, NativePlacement } from "./chart-rasterizer";
 import { writeRendererRaw } from "./kitty-adapter";
 import { encodeKittyDeleteImage, encodeKittyPlacement, encodeKittyTransmitRgba } from "./kitty-protocol";

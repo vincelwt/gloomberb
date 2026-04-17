@@ -1,6 +1,7 @@
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { EarningsEvent } from "../../../types/data-provider";
@@ -190,7 +191,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     setSelectedIdx(Math.min(Math.max(index, 0), eventCount - 1));
   }, [eventCount, setSelectedIdx]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
     if (event.name === "j" || event.name === "down") {
       selectEventIndex(activeEventIdx + 1);
@@ -256,17 +257,17 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   }, []);
 
   return (
-    <box flexDirection="column" width={width} height={height}>
-      <box height={1} paddingX={1} flexDirection="row">
-        <text fg={colors.textDim}>
+    <Box flexDirection="column" width={width} height={height}>
+      <Box height={1} paddingX={1} flexDirection="row">
+        <Text fg={colors.textDim}>
           {loading ? "loading..." : `${eventCount} upcoming`}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
       {error ? (
-        <box paddingX={1}>
-          <text fg={colors.negative}>{error}</text>
-        </box>
+        <Box paddingX={1}>
+          <Text fg={colors.negative}>{error}</Text>
+        </Box>
       ) : null}
 
       <DataTable<DisplayRow, EarningsColumn>
@@ -290,10 +291,10 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
         showHorizontalScrollbar={false}
       />
 
-      <box height={1} paddingX={1}>
-        <text fg={colors.textMuted}>[r]efresh</text>
-      </box>
-    </box>
+      <Box height={1} paddingX={1}>
+        <Text fg={colors.textMuted}>[r]efresh</Text>
+      </Box>
+    </Box>
   );
 }
 

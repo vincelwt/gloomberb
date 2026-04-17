@@ -3,7 +3,7 @@ import type { SessionStore } from "../data/session-store";
 import {
   buildAppSessionSnapshot,
   type AppSessionSnapshot,
-} from "./session-persistence";
+} from "../core/state/session-persistence";
 import type { AppState } from "./app-context";
 
 export function usePersistSessionSnapshot(

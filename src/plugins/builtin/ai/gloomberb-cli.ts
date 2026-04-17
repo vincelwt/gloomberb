@@ -1,7 +1,3 @@
-import { existsSync } from "fs";
-import { resolve } from "path";
-import { execSync } from "child_process";
-
 export interface GloomberbCliCommand {
   argv: string[];
   display: string;
@@ -14,21 +10,26 @@ function commandExists(command: string): boolean {
       return !!Bun.which(command);
     }
   } catch {
-    // Fall back to shell lookup when Bun.which is unavailable.
-  }
-
-  try {
-    execSync(`command -v ${command}`, { stdio: "ignore" });
-    return true;
-  } catch {
     return false;
   }
+  return false;
+}
+
+function resolvePath(cwd: string, ...parts: string[]): string {
+  const joined = [cwd, ...parts].join("/");
+  const segments: string[] = [];
+  for (const part of joined.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") segments.pop();
+    else segments.push(part);
+  }
+  return joined.startsWith("/") ? `/${segments.join("/")}` : segments.join("/");
 }
 
 export function resolveGloomberbCliCommand({
-  cwd = process.cwd(),
+  cwd = typeof process !== "undefined" ? process.cwd() : ".",
   hasCommand = commandExists,
-  fileExists = existsSync,
+  fileExists = () => false,
 }: {
   cwd?: string;
   hasCommand?: (command: string) => boolean;
@@ -42,7 +43,7 @@ export function resolveGloomberbCliCommand({
     };
   }
 
-  const sourceEntry = resolve(cwd, "src", "index.tsx");
+  const sourceEntry = resolvePath(cwd, "src", "index.tsx");
   if (fileExists(sourceEntry)) {
     return {
       argv: ["bun", sourceEntry],

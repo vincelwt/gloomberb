@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { CommandBar } from "./command-bar";
 import { AppContext, type AppState, appReducer, createInitialState } from "../../state/app-context";

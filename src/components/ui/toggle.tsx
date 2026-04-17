@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 
 export interface CheckboxProps {
@@ -20,19 +21,19 @@ export function Checkbox({
   const marker = checked ? "x" : " ";
 
   return (
-    <box
+    <Box
       height={1}
       onMouseDown={() => {
         if (!disabled) onChange?.(!checked);
       }}
     >
-      <text fg={selected ? colors.selectedText : colors.textDim}>
+      <Text fg={selected ? colors.selectedText : colors.textDim}>
         {selected ? "\u25b8 " : "  "}
-      </text>
-      <text fg={fg} attributes={selected ? TextAttributes.BOLD : 0}>
+      </Text>
+      <Text fg={fg} attributes={selected ? TextAttributes.BOLD : 0}>
         {`[${marker}] ${label}`}
-      </text>
-    </box>
+      </Text>
+    </Box>
   );
 }
 
@@ -54,18 +55,18 @@ export function Switch({
   const stateText = checked ? " ON " : " OFF ";
 
   return (
-    <box
+    <Box
       flexDirection="row"
       height={1}
       onMouseDown={() => {
         if (!disabled) onChange?.(!checked);
       }}
     >
-      <text fg={fg}>{`${label} `}</text>
-      <box backgroundColor={stateBg}>
-        <text fg={checked ? colors.bg : colors.textDim}>{stateText}</text>
-      </box>
-    </box>
+      <Text fg={fg}>{`${label} `}</Text>
+      <Box backgroundColor={stateBg}>
+        <Text fg={checked ? colors.bg : colors.textDim}>{stateText}</Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -89,35 +90,35 @@ export function RadioGroup({
   onChange,
 }: RadioGroupProps) {
   return (
-    <box flexDirection="column">
+    <Box flexDirection="column">
       {label && (
-        <box height={1}>
-          <text fg={colors.textDim}>{label}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textDim}>{label}</Text>
+        </Box>
       )}
       {options.map((option) => {
         const checked = option.value === value;
         return (
-          <box
+          <Box
             key={option.value}
             height={1}
             onMouseDown={() => {
               if (!option.disabled) onChange?.(option.value);
             }}
           >
-            <text fg={option.disabled ? colors.textMuted : checked ? colors.text : colors.textDim}>
+            <Text fg={option.disabled ? colors.textMuted : checked ? colors.text : colors.textDim}>
               {checked ? "(•) " : "( ) "}
-            </text>
-            <text
+            </Text>
+            <Text
               fg={option.disabled ? colors.textMuted : checked ? colors.text : colors.textDim}
               attributes={checked ? TextAttributes.BOLD : 0}
             >
               {option.label}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
-    </box>
+    </Box>
   );
 }
 
@@ -139,26 +140,26 @@ export function SegmentedControl({
   onChange,
 }: SegmentedControlProps) {
   return (
-    <box flexDirection="row">
+    <Box flexDirection="row">
       {options.map((option) => {
         const active = option.value === value;
         return (
-          <box
+          <Box
             key={option.value}
             backgroundColor={active ? colors.selected : colors.panel}
             onMouseDown={() => {
               if (!option.disabled) onChange?.(option.value);
             }}
           >
-            <text
+            <Text
               fg={option.disabled ? colors.textMuted : active ? colors.selectedText : colors.textDim}
               attributes={active ? TextAttributes.BOLD : 0}
             >
               {` ${option.label} `}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
-    </box>
+    </Box>
   );
 }

@@ -4,6 +4,7 @@ import type {
   PaneTemplateDef,
   WizardStep,
 } from "../../types/plugin";
+
 export { slugifyName } from "../../utils/slugify";
 import type {
   CommandBarFieldOption,

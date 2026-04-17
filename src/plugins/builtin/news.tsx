@@ -1,3 +1,4 @@
+import { Text } from "../../ui";
 import { useRef, useEffect, useState } from "react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
@@ -91,10 +92,10 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     }
   }, [news.length, selectedIdx, setSelectedIdx]);
 
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view news.</text>;
+  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view news.</Text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;
-  if (error) return <text fg={colors.textDim}>Error: {error}</text>;
-  if (news.length === 0) return <text fg={colors.textDim}>No news available for {ticker.metadata.ticker}.</text>;
+  if (error) return <Text fg={colors.textDim}>Error: {error}</Text>;
+  if (news.length === 0) return <Text fg={colors.textDim}>No news available for {ticker.metadata.ticker}.</Text>;
 
   const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary);
 

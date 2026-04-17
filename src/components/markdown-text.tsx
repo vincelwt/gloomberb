@@ -1,5 +1,6 @@
+import { Box, Span, Text } from "../ui";
 import { useState } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../ui";
 import { TickerBadge } from "./ticker-badge";
 import { tokenizeTickerText } from "../utils/ticker-tokenizer";
 import type { InlineTickerCatalogEntry } from "../state/use-inline-tickers";
@@ -88,19 +89,19 @@ function parseLine(line: string): ParsedLine {
 
 function SegmentSpan({ segment }: { segment: StyledSegment }) {
   if (segment.code) {
-    return <span fg={colors.textDim}>{segment.text}</span>;
+    return <Span fg={colors.textDim}>{segment.text}</Span>;
   }
   const attrs =
     (segment.bold ? TextAttributes.BOLD : 0) |
     (segment.italic ? TextAttributes.ITALIC : 0) |
     (segment.dim ? TextAttributes.DIM : 0);
   return (
-    <span
+    <Span
       fg={segment.color ?? undefined}
       attributes={attrs || undefined}
     >
       {segment.text}
-    </span>
+    </Span>
   );
 }
 
@@ -132,37 +133,37 @@ function MarkdownLine({
   if (!hasTickers) {
     // Simple case: no tickers, render as styled text
     return (
-      <text fg={textColor}>
+      <Text fg={textColor}>
         {indentStr}
         {parsed.segments.map((segment, i) => (
           <SegmentSpan key={i} segment={segment} />
         ))}
-      </text>
+      </Text>
     );
   }
 
   // Complex case: need to handle tickers within styled segments
   // Render as a flex row to allow badge elements
   return (
-    <box flexDirection="row" flexWrap="wrap" width={lineWidth}>
-      {indentStr ? <text fg={textColor}>{indentStr}</text> : null}
+    <Box flexDirection="row" flexWrap="wrap" width={lineWidth}>
+      {indentStr ? <Text fg={textColor}>{indentStr}</Text> : null}
       {parsed.segments.map((segment, segIdx) => {
         const tokens = tokenizeTickerText(segment.text);
         return tokens.map((token, tokIdx) => {
           if (token.kind === "text") {
             if (!token.value) return null;
             return (
-              <text key={`${segIdx}:${tokIdx}`} fg={textColor}>
+              <Text key={`${segIdx}:${tokIdx}`} fg={textColor}>
                 <SegmentSpan segment={{ ...segment, text: token.value }} />
-              </text>
+              </Text>
             );
           }
           const entry = catalog[token.symbol];
           if (!entry || entry.status === "missing") {
             return (
-              <text key={`${segIdx}:${tokIdx}`} fg={textColor}>
+              <Text key={`${segIdx}:${tokIdx}`} fg={textColor}>
                 <SegmentSpan segment={{ ...segment, text: token.value }} />
-              </text>
+              </Text>
             );
           }
           return (
@@ -179,7 +180,7 @@ function MarkdownLine({
           );
         });
       })}
-    </box>
+    </Box>
   );
 }
 
@@ -194,10 +195,10 @@ export function MarkdownText({
   const lines = text.split("\n");
 
   return (
-    <box flexDirection="column" width={lineWidth}>
+    <Box flexDirection="column" width={lineWidth}>
       {lines.map((line, index) => {
         if (line.trim() === "") {
-          return <text key={index}>{" "}</text>;
+          return <Text key={index}>{" "}</Text>;
         }
         const parsed = parseLine(line);
         return (
@@ -213,6 +214,6 @@ export function MarkdownText({
           />
         );
       })}
-    </box>
+    </Box>
   );
 }

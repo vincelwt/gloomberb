@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 import { toggleMultiSelectValue, type MultiSelectOption } from "./multi-select";
 
@@ -26,9 +27,9 @@ export function MultiSelectChips({
   const selectedSet = new Set(selectedValues);
 
   return (
-    <box flexDirection="row" height={1} gap={1}>
-      {label && <text fg={colors.textDim}>{`${label}:`}</text>}
-      {options.length === 0 && <text fg={colors.textMuted}>{emptyLabel}</text>}
+    <Box flexDirection="row" height={1} gap={1}>
+      {label && <Text fg={colors.textDim}>{`${label}:`}</Text>}
+      {options.length === 0 && <Text fg={colors.textMuted}>{emptyLabel}</Text>}
       {options.map((option) => {
         const selected = selectedSet.has(option.value);
         const optionDisabled = disabled || option.disabled;
@@ -46,7 +47,7 @@ export function MultiSelectChips({
         };
 
         return (
-          <box
+          <Box
             key={option.value}
             id={idPrefix ? `${idPrefix}:${option.value}` : undefined}
             height={1}
@@ -54,16 +55,16 @@ export function MultiSelectChips({
             backgroundColor={bg}
             onMouseDown={toggle}
           >
-            <text
+            <Text
               fg={fg}
               attributes={selected ? TextAttributes.BOLD : 0}
               onMouseDown={toggle}
             >
               {text}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
-    </box>
+    </Box>
   );
 }

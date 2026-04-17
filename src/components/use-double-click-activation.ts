@@ -4,6 +4,10 @@ interface LastClickState {
   targetKey: string;
 }
 
+interface ClickEventLike {
+  detail?: number;
+}
+
 export function useDoubleClickActivation<T>({
   onSelect,
   onActivate,
@@ -13,12 +17,13 @@ export function useDoubleClickActivation<T>({
 }) {
   const lastClickRef = useRef<LastClickState | null>(null);
 
-  return useCallback((targetKey: string, value: T) => {
+  return useCallback((targetKey: string, value: T, event?: ClickEventLike) => {
     const lastClick = lastClickRef.current;
 
     onSelect?.(value);
 
-    if (lastClick && lastClick.targetKey === targetKey) {
+    if ((typeof event?.detail === "number" && event.detail >= 2)
+        || (lastClick && lastClick.targetKey === targetKey)) {
       lastClickRef.current = null;
       onActivate?.(value);
       return;

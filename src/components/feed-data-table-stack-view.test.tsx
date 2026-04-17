@@ -1,18 +1,20 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../renderers/opentui/test-utils";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../state/app-context";
 import { createDefaultConfig } from "../types/config";
 import {
   FeedDataTableStackView,
   type FeedDataTableItem,
 } from "./feed-data-table-stack-view";
+import { Box, Text } from "../ui";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setHarnessItems:
   | ((items: FeedDataTableItem[]) => void)
   | undefined;
 let harnessSelectedIdx = 0;
+let rootKeyHits = 0;
 
 const items: FeedDataTableItem[] = [
   {
@@ -49,14 +51,17 @@ afterEach(async () => {
   }
   setHarnessItems = undefined;
   harnessSelectedIdx = 0;
+  rootKeyHits = 0;
 });
 
 function Harness({
   width,
   height,
+  withRootControls = false,
 }: {
   width: number;
   height: number;
+  withRootControls?: boolean;
 }) {
   const [activeItems, setActiveItems] = useState(items);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -78,6 +83,16 @@ function Harness({
           items={activeItems}
           selectedIdx={selectedIdx}
           onSelect={setSelectedIdx}
+          rootBefore={withRootControls ? (
+            <Box height={1}>
+              <Text>Feed controls</Text>
+            </Box>
+          ) : undefined}
+          onRootKeyDown={withRootControls ? (event) => {
+            if (event.name !== "f") return false;
+            rootKeyHits += 1;
+            return true;
+          } : undefined}
           sourceLabel="Source"
           titleLabel="Headline"
         />
@@ -97,6 +112,23 @@ async function clickAt(x: number, y: number) {
   await act(async () => {
     await testSetup!.mockMouse.click(x, y);
     await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
+}
+
+async function emitKeypress(event: { name?: string; sequence?: string }) {
+  await act(async () => {
+    testSetup!.renderer.keyInput.emit("keypress", {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      ...event,
+    } as any);
     await testSetup!.renderOnce();
   });
 }
@@ -173,5 +205,18 @@ describe("FeedDataTableStackView", () => {
     expect(nextFrame).toContain("Fresh item after source change");
     expect(nextFrame).not.toContain("<- Back");
     expect(nextFrame).not.toContain("Replacement detail");
+  });
+
+  test("renders root controls and delegates root key handling", async () => {
+    testSetup = await testRender(<Harness width={90} height={16} withRootControls />, {
+      width: 90,
+      height: 16,
+    });
+
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("Feed controls");
+
+    await emitKeypress({ name: "f", sequence: "f" });
+    expect(rootKeyHits).toBe(1);
   });
 });

@@ -1,6 +1,7 @@
-import { TextAttributes } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import { useDialog } from "@opentui-ui/dialog/react";
+import { Box, ScrollBox, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
+import { useShortcut } from "../../react/input";
+import { useDialog } from "../../ui/dialog";
 import { useCallback, useEffect } from "react";
 import { resolveTickerFinancialsForInstrument } from "../../market-data/coordinator";
 import { instrumentFromTicker } from "../../market-data/request-types";
@@ -250,7 +251,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     registry?.switchPanelFn("right");
   }, [selectedOrder, state.tickers, paneId]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
     event.stopPropagation?.();
 
@@ -298,10 +299,10 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   }, [state.tickers]);
 
   return (
-    <box flexDirection="column" flexGrow={1} paddingX={1}>
-      <box flexDirection="row" height={1}>
-        <box flexGrow={1}>
-          <text fg={
+    <Box flexDirection="column" flexGrow={1} paddingX={1}>
+      <Box flexDirection="row" height={1}>
+        <Box flexGrow={1}>
+          <Text fg={
             displayStatusState === "connected"
               ? colors.positive
               : displayStatusState === "error"
@@ -311,13 +312,13 @@ export function TradingPane({ focused, width, height }: PaneProps) {
             {selectedInstance
               ? `${selectedInstance.label} · ${isGatewayMode ? "Gateway" : "Flex"} · ${displayStatusState}`
               : "IBKR · no profile selected"}
-          </text>
-        </box>
-        {tradeState.busy && <text fg={colors.textDim}>Working…</text>}
-      </box>
+          </Text>
+        </Box>
+        {tradeState.busy && <Text fg={colors.textDim}>Working…</Text>}
+      </Box>
 
-      <box height={1}>
-        <text fg={colors.textDim}>
+      <Box height={1}>
+        <Text fg={colors.textDim}>
           {activeAccount
             ? `${selectedInstance?.label || "IBKR"} → ${activeAccount.accountId} · ${formatCurrency(activeAccount.netLiquidation || 0, activeAccount.currency || "USD")} net liq`
             : isGatewayMode
@@ -327,29 +328,29 @@ export function TradingPane({ focused, width, height }: PaneProps) {
               : gatewayInstances.length > 0
                 ? "Choose a Gateway / TWS profile"
                 : "Connect an IBKR profile"}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
-      <box height={1}>
-        <text fg={tradeState.lastError ? colors.negative : colors.textDim}>
+      <Box height={1}>
+        <Text fg={tradeState.lastError ? colors.negative : colors.textDim}>
           {tradeState.lastError
             || gatewaySnapshot.status.message
             || gatewaySnapshot.lastError
             || tradeState.lastInfo
             || "Use this console for profile status, accounts, open orders, and executions."}
-        </text>
-      </box>
+        </Text>
+      </Box>
 
-      <box height={1}>
-        <text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</text>
-      </box>
+      <Box height={1}>
+        <Text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</Text>
+      </Box>
 
-      <box flexDirection="row" height={listHeight}>
-        <box width={orderPanelWidth} flexDirection="column">
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Open Orders</text>
-          <scrollbox flexGrow={1} scrollY>
+      <Box flexDirection="row" height={listHeight}>
+        <Box width={orderPanelWidth} flexDirection="column">
+          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Open Orders</Text>
+          <ScrollBox flexGrow={1} scrollY>
             {gatewaySnapshot.openOrders.length === 0 ? (
-              <text fg={colors.textDim}>No open IBKR orders.</text>
+              <Text fg={colors.textDim}>No open IBKR orders.</Text>
             ) : (
               gatewaySnapshot.openOrders.map((order, index) => {
                 const selected = index === tradeState.selectedOpenOrderIndex;
@@ -363,7 +364,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                     ? formatMarketPrice(order.stopPrice, { contractSecType: order.contract.secType, maxWidth: 9 })
                     : "MKT";
                 return (
-                  <box
+                  <Box
                     key={order.orderId}
                     backgroundColor={selected ? colors.selected : colors.bg}
                     onMouseDown={() => {
@@ -374,7 +375,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                       }
                     }}
                   >
-                    <text fg={selected ? colors.text : colors.textDim}>
+                    <Text fg={selected ? colors.text : colors.textDim}>
                       {selected ? "▸ " : "  "}
                       {padTo(String(order.orderId), 6)}
                       {padTo(order.action, 5)}
@@ -385,26 +386,26 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                       {padTo(orderPrice, 9)}
                       {padTo(`B:${bidStr}`, 10)}
                       {`A:${askStr}`}
-                    </text>
-                  </box>
+                    </Text>
+                  </Box>
                 );
               })
             )}
-          </scrollbox>
-        </box>
+          </ScrollBox>
+        </Box>
 
-        <box width={1}>
-          <text fg={colors.border}>│</text>
-        </box>
+        <Box width={1}>
+          <Text fg={colors.border}>│</Text>
+        </Box>
 
-        <box width={listPanelWidth} flexDirection="column">
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Executions</text>
-          <scrollbox flexGrow={1} scrollY>
+        <Box width={listPanelWidth} flexDirection="column">
+          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Executions</Text>
+          <ScrollBox flexGrow={1} scrollY>
             {gatewaySnapshot.executions.length === 0 ? (
-              <text fg={colors.textDim}>No recent executions.</text>
+              <Text fg={colors.textDim}>No recent executions.</Text>
             ) : (
               gatewaySnapshot.executions.slice(0, 20).map((execution) => (
-                <box
+                <Box
                   key={execution.execId}
                   onMouseDown={() => {
                     const symbol = execution.contract.symbol;
@@ -413,27 +414,27 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                     }
                   }}
                 >
-                  <text fg={priceColor(execution.side.toUpperCase() === "BOT" ? 1 : -1)}>
+                  <Text fg={priceColor(execution.side.toUpperCase() === "BOT" ? 1 : -1)}>
                     {padTo(execution.side, 5)}
                     {padTo(execution.contract.localSymbol || execution.contract.symbol, 18)}
                     {padTo(formatMarketQuantity(execution.shares, { contractSecType: execution.contract.secType, maxWidth: 6 }), 6, "right")}
                     {" "}
                     {formatMarketPrice(execution.price, { contractSecType: execution.contract.secType })}
-                  </text>
-                </box>
+                  </Text>
+                </Box>
               ))
             )}
-          </scrollbox>
-        </box>
-      </box>
+          </ScrollBox>
+        </Box>
+      </Box>
 
-      <box flexDirection="row" height={1}>
-        <text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</text>
-        <text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</text>
-        <text fg={colors.textMuted} onMouseDown={() => openSelectedOrder()}>{" [Enter] Open "}</text>
-        <text fg={colors.textMuted} onMouseDown={() => cancelSelectedOrder().catch(() => {})}>{" [c] Cancel "}</text>
-        <text fg={colors.textMuted} onMouseDown={() => refresh().catch(() => {})}>{" [r] Refresh "}</text>
-      </box>
-    </box>
+      <Box flexDirection="row" height={1}>
+        <Text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</Text>
+        <Text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</Text>
+        <Text fg={colors.textMuted} onMouseDown={() => openSelectedOrder()}>{" [Enter] Open "}</Text>
+        <Text fg={colors.textMuted} onMouseDown={() => cancelSelectedOrder().catch(() => {})}>{" [c] Cancel "}</Text>
+        <Text fg={colors.textMuted} onMouseDown={() => refresh().catch(() => {})}>{" [r] Refresh "}</Text>
+      </Box>
+    </Box>
   );
 }

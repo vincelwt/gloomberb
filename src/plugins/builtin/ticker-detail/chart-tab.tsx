@@ -1,4 +1,5 @@
-import { useTerminalDimensions } from "@opentui/react";
+import { Box } from "../../../ui";
+import { useViewport } from "../../../react/input";
 import { useCallback, useMemo } from "react";
 import { saveConfig } from "../../../data/config-store";
 import { ChartIndicatorSelector } from "../../../components/chart/chart-indicator-selector";
@@ -41,7 +42,7 @@ export function ChartTab({
   ticker: TickerRecord | null;
   financials: TickerFinancials | null;
 }) {
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useViewport();
   const { state, dispatch } = useAppState();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
@@ -77,12 +78,12 @@ export function ChartTab({
   }, [dispatch, state.config]);
 
   return (
-    <box
+    <Box
       flexDirection="column"
       paddingX={1}
       flexGrow={1}
     >
-      <box
+      <Box
         flexDirection="column"
         flexGrow={1}
         onMouseDown={() => {
@@ -110,7 +111,7 @@ export function ChartTab({
             />
           )}
         />
-      </box>
-    </box>
+      </Box>
+    </Box>
   );
 }

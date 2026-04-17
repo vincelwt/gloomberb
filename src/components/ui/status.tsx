@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core";
+import { Box, Text } from "../../ui";
+import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
 
 export type StatusTone = "info" | "success" | "warning" | "danger" | "muted";
@@ -27,9 +28,9 @@ export interface StatusBadgeProps {
 export function StatusBadge({ label, tone = "info" }: StatusBadgeProps) {
   const palette = toneColors(tone);
   return (
-    <box backgroundColor={palette.bg}>
-      <text fg={palette.fg}>{` ${label} `}</text>
-    </box>
+    <Box backgroundColor={palette.bg}>
+      <Text fg={palette.fg}>{` ${label} `}</Text>
+    </Box>
   );
 }
 
@@ -43,16 +44,16 @@ export function Notice({ title, message, tone = "info" }: NoticeProps) {
   const palette = toneColors(tone);
 
   return (
-    <box flexDirection="column">
+    <Box flexDirection="column">
       {title && (
-        <box height={1}>
-          <text fg={palette.fg} attributes={TextAttributes.BOLD}>{title}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={palette.fg} attributes={TextAttributes.BOLD}>{title}</Text>
+        </Box>
       )}
-      <box height={1}>
-        <text fg={tone === "muted" ? colors.textDim : colors.text}>{message}</text>
-      </box>
-    </box>
+      <Box height={1}>
+        <Text fg={tone === "muted" ? colors.textDim : colors.text}>{message}</Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -64,20 +65,20 @@ export interface EmptyStateProps {
 
 export function EmptyState({ title, message, hint }: EmptyStateProps) {
   return (
-    <box flexDirection="column">
-      <box height={1}>
-        <text fg={colors.textDim}>{title}</text>
-      </box>
+    <Box flexDirection="column">
+      <Box height={1}>
+        <Text fg={colors.textDim}>{title}</Text>
+      </Box>
       {message && (
-        <box height={1}>
-          <text fg={colors.textMuted}>{message}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textMuted}>{message}</Text>
+        </Box>
       )}
       {hint && (
-        <box height={1}>
-          <text fg={colors.textMuted}>{hint}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textMuted}>{hint}</Text>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }

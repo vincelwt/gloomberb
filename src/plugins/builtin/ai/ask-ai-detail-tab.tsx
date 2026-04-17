@@ -1,7 +1,8 @@
+import { Box, Input, ScrollBox, Span, Text } from "../../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
-import { useKeyboard } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
-import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
+import { useShortcut } from "../../../react/input";
+import { TextAttributes } from "../../../ui";
+import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import type { DetailTabProps } from "../../../types/plugin";
 import { useAppState, usePaneTicker } from "../../../state/app-context";
 import { useFxRatesMap } from "../../../market-data/hooks";
@@ -213,7 +214,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     }
   }, [currentProvider, effectiveExchangeRates, financials, state.config.baseCurrency, ticker]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     const isEnter = event.name === "enter" || event.name === "return";
@@ -239,21 +240,21 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
 
   const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
 
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to ask AI.</text>;
+  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to ask AI.</Text>;
 
   if (availableProviders.length === 0) {
     return (
-      <box flexDirection="column" padding={1} flexGrow={1}>
-        <box height={1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</text>
-        </box>
-        <box height={1} />
-        <text fg={colors.textDim}>No AI CLI tools detected. Install one of:</text>
-        <box height={1} />
-        <text fg={colors.text}>  claude  - Claude Code (claude.ai/claude-code)</text>
-        <text fg={colors.text}>  gemini  - Gemini CLI (github.com/google-gemini/gemini-cli)</text>
-        <text fg={colors.text}>  codex   - OpenAI Codex (github.com/openai/codex)</text>
-      </box>
+      <Box flexDirection="column" padding={1} flexGrow={1}>
+        <Box height={1}>
+          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</Text>
+        </Box>
+        <Box height={1} />
+        <Text fg={colors.textDim}>No AI CLI tools detected. Install one of:</Text>
+        <Box height={1} />
+        <Text fg={colors.text}>  claude  - Claude Code (claude.ai/claude-code)</Text>
+        <Text fg={colors.text}>  gemini  - Gemini CLI (github.com/google-gemini/gemini-cli)</Text>
+        <Text fg={colors.text}>  codex   - OpenAI Codex (github.com/openai/codex)</Text>
+      </Box>
     );
   }
 
@@ -267,39 +268,39 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   );
 
   return (
-    <box flexDirection="column" paddingX={1} paddingTop={1} height={height - 2}>
-      <box flexDirection="row" height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</text>
-        <box flexGrow={1} />
-        <box onMouseDown={cycleProvider}>
-          <text fg={colors.textMuted}>
+    <Box flexDirection="column" paddingX={1} paddingTop={1} height={height - 2}>
+      <Box flexDirection="row" height={1}>
+        <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</Text>
+        <Box flexGrow={1} />
+        <Box onMouseDown={cycleProvider}>
+          <Text fg={colors.textMuted}>
             {providerHeader.prefix}
-            <span fg={colors.textBright}>{providerHeader.label}</span>
-          </text>
-        </box>
-      </box>
+            <Span fg={colors.textBright}>{providerHeader.label}</Span>
+          </Text>
+        </Box>
+      </Box>
 
-      <scrollbox ref={scrollRef} height={chatHeight} scrollY>
-        <box flexDirection="column">
+      <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
+        <Box flexDirection="column">
           {messages.length === 0 ? (
-            <box paddingTop={1}>
-              <text fg={colors.textDim}>
+            <Box paddingTop={1}>
+              <Text fg={colors.textDim}>
                 Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
-              </text>
-            </box>
+              </Text>
+            </Box>
           ) : (
             messages.map((message, index) => (
-              <box key={index} flexDirection="column" paddingTop={index > 0 ? 1 : 0}>
-                <box height={1}>
-                  <text
+              <Box key={index} flexDirection="column" paddingTop={index > 0 ? 1 : 0}>
+                <Box height={1}>
+                  <Text
                     attributes={TextAttributes.BOLD}
                     fg={message.role === "user" ? colors.textBright : colors.positive}
                   >
                     {message.role === "user" ? "You" : currentProvider?.name || "AI"}
                     {message.loading ? " (thinking...)" : ""}
-                  </text>
-                </box>
-                <box>
+                  </Text>
+                </Box>
+                <Box>
                   {message.content ? (
                     <MarkdownText
                       text={message.content}
@@ -311,23 +312,23 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
                   ) : message.loading ? (
                     <Spinner label="Generating..." />
                   ) : (
-                    <text fg={colors.text}>{""}</text>
+                    <Text fg={colors.text}>{""}</Text>
                   )}
-                </box>
-              </box>
+                </Box>
+              </Box>
             ))
           )}
-        </box>
-      </scrollbox>
+        </Box>
+      </ScrollBox>
 
-      <box height={1}>
-        <text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</text>
-      </box>
+      <Box height={1}>
+        <Text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</Text>
+      </Box>
 
-      <box flexDirection="row" height={1} onMouseDown={focusInput}>
-        <text fg={colors.textMuted}>{"> "}</text>
-        <box flexGrow={1}>
-          <input
+      <Box flexDirection="row" height={1} onMouseDown={focusInput}>
+        <Text fg={colors.textMuted}>{"> "}</Text>
+        <Box flexGrow={1}>
+          <Input
             ref={inputRef}
             placeholder={inputFocused ? "Ask a question..." : "Enter to start typing"}
             focused={inputFocused && focused}
@@ -343,8 +344,8 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
               (inputRef.current as any)?.editBuffer?.setText?.("");
             }}
           />
-        </box>
-      </box>
-    </box>
+        </Box>
+      </Box>
+    </Box>
   );
 }

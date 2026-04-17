@@ -1,5 +1,6 @@
-import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { Box, ScrollBox, Text } from "../../../ui";
+import { TextAttributes } from "../../../ui";
+import { useViewport } from "../../../react/input";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { useAppSelector } from "../../../state/app-context";
 import { colors, priceColor, blendHex } from "../../../theme/colors";
@@ -55,26 +56,26 @@ function RangeBar({
   const fillChar = "━";
 
   return (
-    <box flexDirection="column">
-      <box flexDirection="row" height={1}>
-        <box width={12}>
-          <text fg={colors.textDim}>{label}</text>
-        </box>
-        <text fg={colors.textDim}>
+    <Box flexDirection="column">
+      <Box flexDirection="row" height={1}>
+        <Box width={12}>
+          <Text fg={colors.textDim}>{label}</Text>
+        </Box>
+        <Text fg={colors.textDim}>
           {formatMarketPriceWithCurrency(low, currency, { assetCategory })}
-        </text>
-        <box marginLeft={1} marginRight={1} flexDirection="row">
-          <text fg={fillColor}>{fillChar.repeat(filledWidth)}</text>
-          <text fg={colors.border}>{trackChar.repeat(emptyWidth)}</text>
-        </box>
-        <text fg={colors.textDim}>
+        </Text>
+        <Box marginLeft={1} marginRight={1} flexDirection="row">
+          <Text fg={fillColor}>{fillChar.repeat(filledWidth)}</Text>
+          <Text fg={colors.border}>{trackChar.repeat(emptyWidth)}</Text>
+        </Box>
+        <Text fg={colors.textDim}>
           {formatMarketPriceWithCurrency(high, currency, { assetCategory })}
-        </text>
-        <box marginLeft={1}>
-          <text fg={fillColor}>{pctLabel}</text>
-        </box>
-      </box>
-    </box>
+        </Text>
+        <Box marginLeft={1}>
+          <Text fg={fillColor}>{pctLabel}</Text>
+        </Box>
+      </Box>
+    </Box>
   );
 }
 
@@ -89,20 +90,20 @@ function VolumeBar({ volume, avgVolume, barWidth }: { volume: number; avgVolume:
   const ratioColor = ratio >= 2 ? colors.textBright : ratio >= 1 ? colors.text : colors.textDim;
 
   return (
-    <box flexDirection="row" height={1}>
-      <box width={12}>
-        <text fg={colors.textDim}>Volume</text>
-      </box>
-      <text fg={colors.textDim}>{formatCompact(volume)}</text>
-      <box marginLeft={1} marginRight={1} flexDirection="row">
-        <text fg={ratioColor}>{"━".repeat(volWidth)}</text>
-        <text fg={colors.border}>{"─".repeat(Math.max(0, barWidth - volWidth))}</text>
-      </box>
-      <text fg={colors.textDim}>avg {formatCompact(avgVolume)}</text>
-      <box marginLeft={1}>
-        <text fg={ratioColor}>{ratio.toFixed(1)}x</text>
-      </box>
-    </box>
+    <Box flexDirection="row" height={1}>
+      <Box width={12}>
+        <Text fg={colors.textDim}>Volume</Text>
+      </Box>
+      <Text fg={colors.textDim}>{formatCompact(volume)}</Text>
+      <Box marginLeft={1} marginRight={1} flexDirection="row">
+        <Text fg={ratioColor}>{"━".repeat(volWidth)}</Text>
+        <Text fg={colors.border}>{"─".repeat(Math.max(0, barWidth - volWidth))}</Text>
+      </Box>
+      <Text fg={colors.textDim}>avg {formatCompact(avgVolume)}</Text>
+      <Box marginLeft={1}>
+        <Text fg={ratioColor}>{ratio.toFixed(1)}x</Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -122,23 +123,23 @@ function StatGrid({ fields, width }: { fields: StatField[]; width: number }) {
   }
 
   return (
-    <box flexDirection="column">
+    <Box flexDirection="column">
       {rows.map((row, i) => (
-        <box key={i} flexDirection="row" height={1}>
+        <Box key={i} flexDirection="row" height={1}>
           {row.map((field, j) => {
-            if (!field) return <box key={j} width={colWidth} />;
+            if (!field) return <Box key={j} width={colWidth} />;
             return (
-              <box key={j} width={colWidth} flexDirection="row">
-                <box width={14}>
-                  <text fg={colors.textDim}>{field.label}</text>
-                </box>
-                <text fg={field.valueColor ?? colors.text}>{field.value}</text>
-              </box>
+              <Box key={j} width={colWidth} flexDirection="row">
+                <Box width={14}>
+                  <Text fg={colors.textDim}>{field.label}</Text>
+                </Box>
+                <Text fg={field.valueColor ?? colors.text}>{field.value}</Text>
+              </Box>
             );
           })}
-        </box>
+        </Box>
       ))}
-    </box>
+    </Box>
   );
 }
 
@@ -146,9 +147,9 @@ function StatGrid({ fields, width }: { fields: StatField[]; width: number }) {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <box height={1}>
-      <text attributes={TextAttributes.BOLD} fg={colors.textBright}>{title}</text>
-    </box>
+    <Box height={1}>
+      <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>{title}</Text>
+    </Box>
   );
 }
 
@@ -167,7 +168,7 @@ export function OverviewTab({
 }) {
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useViewport();
 
   if (!ticker) return <EmptyState title="No ticker selected." />;
 
@@ -273,65 +274,65 @@ export function OverviewTab({
   const hasBidAsk = quote?.bid != null || quote?.ask != null;
 
   return (
-    <scrollbox flexGrow={1} scrollY>
-      <box flexDirection="column" paddingX={1} paddingBottom={1} gap={1}>
+    <ScrollBox flexGrow={1} scrollY>
+      <Box flexDirection="column" paddingX={1} paddingBottom={1} gap={1}>
         {/* Ticker header */}
-        <box flexDirection="row">
-          <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+        <Box flexDirection="row">
+          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
             {ticker.metadata.ticker}
-          </text>
+          </Text>
           {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
-            <text fg={colors.textDim}>
+            <Text fg={colors.textDim}>
               {" "}- {ticker.metadata.name || quote?.name || ""}
-            </text>
+            </Text>
           )}
           {listingVenue && (
-            <text fg={colors.textDim}>{" "}({listingVenue})</text>
+            <Text fg={colors.textDim}>{" "}({listingVenue})</Text>
           )}
           {quote?.marketState && (
-            <text fg={marketStateColor(quote.marketState)}>
+            <Text fg={marketStateColor(quote.marketState)}>
               {" "}{marketStateLabel(quote.marketState)}
-            </text>
+            </Text>
           )}
-        </box>
+        </Box>
 
         {/* Price block */}
         {quote && (
-          <box flexDirection="column" gap={0}>
-            <box flexDirection="row" gap={2}>
-              <text attributes={TextAttributes.BOLD} fg={priceColor(quote.change)}>
+          <Box flexDirection="column" gap={0}>
+            <Box flexDirection="row" gap={2}>
+              <Text attributes={TextAttributes.BOLD} fg={priceColor(quote.change)}>
                 {formatMarketPriceWithCurrency(quote.price, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
-              </text>
-              <text fg={priceColor(quote.change)}>
+              </Text>
+              <Text fg={priceColor(quote.change)}>
                 {formatSignedMarketPrice(quote.change, { assetCategory: ticker.metadata.assetCategory })} ({formatPercentRaw(quote.changePercent)})
-              </text>
-            </box>
+              </Text>
+            </Box>
             {(quote.marketState === "PRE" || quote.marketState === "PREPRE") && quote.preMarketPrice != null && (
-              <box flexDirection="row" gap={2}>
-                <text fg={colors.textDim}>Pre-Market:</text>
-                <text fg={priceColor(quote.preMarketChange ?? 0)}>
+              <Box flexDirection="row" gap={2}>
+                <Text fg={colors.textDim}>Pre-Market:</Text>
+                <Text fg={priceColor(quote.preMarketChange ?? 0)}>
                   {formatMarketPriceWithCurrency(quote.preMarketPrice, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
-                </text>
-                <text fg={priceColor(quote.preMarketChange ?? 0)}>
+                </Text>
+                <Text fg={priceColor(quote.preMarketChange ?? 0)}>
                   {formatSignedMarketPrice(quote.preMarketChange ?? 0, { assetCategory: ticker.metadata.assetCategory })} ({formatPercentRaw(quote.preMarketChangePercent ?? 0)})
-                </text>
-              </box>
+                </Text>
+              </Box>
             )}
             {(quote.marketState === "POST" || quote.marketState === "POSTPOST") && quote.postMarketPrice != null && (
-              <box flexDirection="row" gap={2}>
-                <text fg={colors.textDim}>After-Hours:</text>
-                <text fg={priceColor(quote.postMarketChange ?? 0)}>
+              <Box flexDirection="row" gap={2}>
+                <Text fg={colors.textDim}>After-Hours:</Text>
+                <Text fg={priceColor(quote.postMarketChange ?? 0)}>
                   {formatMarketPriceWithCurrency(quote.postMarketPrice, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
-                </text>
-                <text fg={priceColor(quote.postMarketChange ?? 0)}>
+                </Text>
+                <Text fg={priceColor(quote.postMarketChange ?? 0)}>
                   {formatSignedMarketPrice(quote.postMarketChange ?? 0, { assetCategory: ticker.metadata.assetCategory })} ({formatPercentRaw(quote.postMarketChangePercent ?? 0)})
-                </text>
-              </box>
+                </Text>
+              </Box>
             )}
             {metadataParts.length > 0 && (
-              <text fg={colors.textDim}>{metadataParts.join(" | ")}</text>
+              <Text fg={colors.textDim}>{metadataParts.join(" | ")}</Text>
             )}
-          </box>
+          </Box>
         )}
 
         {/* Range bars */}
@@ -380,43 +381,43 @@ export function OverviewTab({
 
         {/* Bid/Ask */}
         {hasBidAsk && quote && (
-          <box flexDirection="row" height={1} gap={3}>
-            <box flexDirection="row">
-              <text fg={colors.textDim}>Bid: </text>
-              <text fg={colors.text}>
+          <Box flexDirection="row" height={1} gap={3}>
+            <Box flexDirection="row">
+              <Text fg={colors.textDim}>Bid: </Text>
+              <Text fg={colors.text}>
                 {quote.bid != null ? formatMarketPriceWithCurrency(quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"}
                 {quote.bidSize != null ? ` ×${quote.bidSize}` : ""}
-              </text>
-            </box>
-            <box flexDirection="row">
-              <text fg={colors.textDim}>Ask: </text>
-              <text fg={colors.text}>
+              </Text>
+            </Box>
+            <Box flexDirection="row">
+              <Text fg={colors.textDim}>Ask: </Text>
+              <Text fg={colors.text}>
                 {quote.ask != null ? formatMarketPriceWithCurrency(quote.ask, quote.currency, { assetCategory: ticker.metadata.assetCategory }) : "—"}
                 {quote.askSize != null ? ` ×${quote.askSize}` : ""}
-              </text>
-            </box>
+              </Text>
+            </Box>
             {quote.bid != null && quote.ask != null && (
-              <box flexDirection="row">
-                <text fg={colors.textDim}>Spread: </text>
-                <text fg={colors.text}>
+              <Box flexDirection="row">
+                <Text fg={colors.textDim}>Spread: </Text>
+                <Text fg={colors.text}>
                   {formatMarketPriceWithCurrency(quote.ask - quote.bid, quote.currency, { assetCategory: ticker.metadata.assetCategory })}
-                </text>
-              </box>
+                </Text>
+              </Box>
             )}
-          </box>
+          </Box>
         )}
 
         {/* Two-column stats grid */}
         {stats.length > 0 && (
-          <box flexDirection="column">
+          <Box flexDirection="column">
             <SectionHeader title="Fundamentals" />
             <StatGrid fields={stats} width={contentWidth} />
-          </box>
+          </Box>
         )}
 
         {/* Positions */}
         {ticker.metadata.positions.length > 0 && (
-          <box flexDirection="column">
+          <Box flexDirection="column">
             <SectionHeader title="Positions" />
             {ticker.metadata.positions.map((position, index) => {
               const costBasis = position.shares * position.avgCost * (position.multiplier || 1);
@@ -439,75 +440,75 @@ export function OverviewTab({
                 : "";
 
               return (
-                <box key={index} flexDirection="column">
-                  <box flexDirection="row" height={1}>
-                    <text fg={colors.textDim}>{position.portfolio}</text>
-                    <text fg={colors.textMuted}>{" via "}{position.broker}</text>
-                    {position.side === "short" && <text fg={colors.negative}>{" SHORT"}</text>}
-                  </box>
-                  <box flexDirection="row" height={1}>
-                    <text fg={colors.text}>
+                <Box key={index} flexDirection="column">
+                  <Box flexDirection="row" height={1}>
+                    <Text fg={colors.textDim}>{position.portfolio}</Text>
+                    <Text fg={colors.textMuted}>{" via "}{position.broker}</Text>
+                    {position.side === "short" && <Text fg={colors.negative}>{" SHORT"}</Text>}
+                  </Box>
+                  <Box flexDirection="row" height={1}>
+                    <Text fg={colors.text}>
                       {formatMarketQuantity(position.shares, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })} {position.multiplier && position.multiplier > 1 ? "contracts" : "shares"} @ {formatMarketCostWithCurrency(position.avgCost, positionCurrency, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })}
                       {" = "}{formatCurrency(costBasisBase, baseCurrency)}
-                    </text>
+                    </Text>
                     {pnlText && (
-                      <text fg={priceColor(pnlValue ?? 0)}>{pnlText}</text>
+                      <Text fg={priceColor(pnlValue ?? 0)}>{pnlText}</Text>
                     )}
-                  </box>
+                  </Box>
                   {position.markPrice != null && (
-                    <box flexDirection="row" height={1}>
-                      <text fg={colors.textDim}>Mark: {formatMarketPriceWithCurrency(position.markPrice, positionCurrency, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })}</text>
+                    <Box flexDirection="row" height={1}>
+                      <Text fg={colors.textDim}>Mark: {formatMarketPriceWithCurrency(position.markPrice, positionCurrency, { assetCategory: ticker.metadata.assetCategory, multiplier: position.multiplier })}</Text>
                       {marketValueBase != null && (
-                        <text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(marketValueBase, baseCurrency)}</text>
+                        <Text fg={colors.textDim}>{" "}Mkt Value: {formatCurrency(marketValueBase, baseCurrency)}</Text>
                       )}
-                    </box>
+                    </Box>
                   )}
-                </box>
+                </Box>
               );
             })}
-          </box>
+          </Box>
         )}
 
         {/* Sector / Industry / Type */}
         {(sector || industry || ticker.metadata.assetCategory) && (
-          <box flexDirection="row" height={1} gap={3}>
+          <Box flexDirection="row" height={1} gap={3}>
             {ticker.metadata.assetCategory && (
-              <box flexDirection="row">
-                <text fg={colors.textDim}>Type: </text>
-                <text fg={colors.text}>{ticker.metadata.assetCategory}</text>
-              </box>
+              <Box flexDirection="row">
+                <Text fg={colors.textDim}>Type: </Text>
+                <Text fg={colors.text}>{ticker.metadata.assetCategory}</Text>
+              </Box>
             )}
             {sector && (
-              <box flexDirection="row">
-                <text fg={colors.textDim}>Sector: </text>
-                <text fg={colors.text}>{sector}</text>
-              </box>
+              <Box flexDirection="row">
+                <Text fg={colors.textDim}>Sector: </Text>
+                <Text fg={colors.text}>{sector}</Text>
+              </Box>
             )}
             {industry && (
-              <box flexDirection="row">
-                <text fg={colors.textDim}>Industry: </text>
-                <text fg={colors.text}>{industry}</text>
-              </box>
+              <Box flexDirection="row">
+                <Text fg={colors.textDim}>Industry: </Text>
+                <Text fg={colors.text}>{industry}</Text>
+              </Box>
             )}
-          </box>
+          </Box>
         )}
 
         {/* ISIN */}
         {ticker.metadata.isin && (
-          <box flexDirection="row" height={1}>
-            <text fg={colors.textDim}>ISIN: </text>
-            <text fg={colors.text}>{ticker.metadata.isin}</text>
-          </box>
+          <Box flexDirection="row" height={1}>
+            <Text fg={colors.textDim}>ISIN: </Text>
+            <Text fg={colors.text}>{ticker.metadata.isin}</Text>
+          </Box>
         )}
 
         {/* Description — last, collapsed */}
         {description && (
-          <box flexDirection="column">
+          <Box flexDirection="column">
             <SectionHeader title="Description" />
-            <text fg={colors.text}>{description}</text>
-          </box>
+            <Text fg={colors.text}>{description}</Text>
+          </Box>
         )}
-      </box>
-    </scrollbox>
+      </Box>
+    </ScrollBox>
   );
 }

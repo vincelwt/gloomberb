@@ -1,3 +1,4 @@
+import { Box, Text } from "../ui";
 import { useState } from "react";
 import { TickerBadge } from "./ticker-badge";
 import { ExternalLinkText, openUrl } from "./ui";
@@ -25,7 +26,7 @@ export function TickerBadgeText({
   const tokens = tokenizeInlineContent(text);
 
   return (
-    <box
+    <Box
       flexDirection="row"
       flexWrap="wrap"
       width={lineWidth}
@@ -33,7 +34,7 @@ export function TickerBadgeText({
       {tokens.map((token, index) => {
         if (token.kind === "text") {
           if (!token.value) return null;
-          return <text key={`text:${index}`} fg={textColor}>{token.value}</text>;
+          return <Text key={`text:${index}`} fg={textColor}>{token.value}</Text>;
         }
 
         if (token.kind === "link") {
@@ -50,7 +51,7 @@ export function TickerBadgeText({
 
         const entry = catalog[token.symbol];
         if (!entry || entry.status === "missing") {
-          return <text key={`raw:${index}`} fg={textColor}>{token.value}</text>;
+          return <Text key={`raw:${index}`} fg={textColor}>{token.value}</Text>;
         }
 
         return (
@@ -68,6 +69,6 @@ export function TickerBadgeText({
           />
         );
       })}
-    </box>
+    </Box>
   );
 }

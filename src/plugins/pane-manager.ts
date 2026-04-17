@@ -81,6 +81,11 @@ export interface DockDividerLayout {
   ratio: number;
 }
 
+export interface DockGeometryOptions {
+  precise?: boolean;
+  dividerSize?: number;
+}
+
 export interface LayoutSimulation {
   layout: LayoutConfig;
   previewRect: LayoutBounds | null;
@@ -373,7 +378,19 @@ function scoreDirectionalCandidate(
   return primaryDelta * 1000 + secondaryDelta;
 }
 
-function resolveSplitSizes(total: number, ratio: number, minSize: number): [number, number] {
+function resolveSplitSizes(total: number, ratio: number, minSize: number, precise = false): [number, number] {
+  if (precise) {
+    if (total <= 0) return [0, 0];
+    if (total <= 1) return [total, 0];
+    if (total < minSize * 2) {
+      const first = total / 2;
+      return [first, total - first];
+    }
+    const preferred = total * clampRatio(ratio);
+    const first = Math.max(minSize, Math.min(total - minSize, preferred));
+    return [first, total - first];
+  }
+
   if (total <= 1) return [1, 0];
   if (total < minSize * 2) {
     const first = Math.max(1, Math.floor(total / 2));
@@ -390,6 +407,7 @@ function collectDockGeometry(
   path: Array<0 | 1> = [],
   leaves: DockLeafLayout[] = [],
   dividers: DockDividerLayout[] = [],
+  options: DockGeometryOptions = {},
 ): { leaves: DockLeafLayout[]; dividers: DockDividerLayout[] } {
   if (!node) return { leaves, dividers };
   if (node.kind === "pane") {
@@ -397,8 +415,11 @@ function collectDockGeometry(
     return { leaves, dividers };
   }
 
+  const precise = options.precise === true;
+  const dividerSize = options.dividerSize ?? 1;
+
   if (node.axis === "horizontal") {
-    const [firstWidth, secondWidth] = resolveSplitSizes(bounds.width, node.ratio, MIN_PANE_WIDTH);
+    const [firstWidth, secondWidth] = resolveSplitSizes(bounds.width, node.ratio, MIN_PANE_WIDTH, precise);
     const firstBounds = { x: bounds.x, y: bounds.y, width: firstWidth, height: bounds.height };
     const secondBounds = { x: bounds.x + firstWidth, y: bounds.y, width: secondWidth, height: bounds.height };
     dividers.push({
@@ -407,18 +428,18 @@ function collectDockGeometry(
       bounds: { ...bounds },
       ratio: node.ratio,
       rect: {
-        x: bounds.x + firstWidth - 1,
+        x: precise ? bounds.x + firstWidth - (dividerSize / 2) : bounds.x + firstWidth - 1,
         y: bounds.y,
-        width: 1,
+        width: dividerSize,
         height: bounds.height,
       },
     });
-    collectDockGeometry(node.first, firstBounds, [...path, 0], leaves, dividers);
-    collectDockGeometry(node.second, secondBounds, [...path, 1], leaves, dividers);
+    collectDockGeometry(node.first, firstBounds, [...path, 0], leaves, dividers, options);
+    collectDockGeometry(node.second, secondBounds, [...path, 1], leaves, dividers, options);
     return { leaves, dividers };
   }
 
-  const [firstHeight, secondHeight] = resolveSplitSizes(bounds.height, node.ratio, MIN_DOCKED_HEIGHT);
+  const [firstHeight, secondHeight] = resolveSplitSizes(bounds.height, node.ratio, MIN_DOCKED_HEIGHT, precise);
   const firstBounds = { x: bounds.x, y: bounds.y, width: bounds.width, height: firstHeight };
   const secondBounds = { x: bounds.x, y: bounds.y + firstHeight, width: bounds.width, height: secondHeight };
   dividers.push({
@@ -428,13 +449,13 @@ function collectDockGeometry(
     ratio: node.ratio,
     rect: {
       x: bounds.x,
-      y: bounds.y + firstHeight - 1,
+      y: precise ? bounds.y + firstHeight - (dividerSize / 2) : bounds.y + firstHeight - 1,
       width: bounds.width,
-      height: 1,
+      height: dividerSize,
     },
   });
-  collectDockGeometry(node.first, firstBounds, [...path, 0], leaves, dividers);
-  collectDockGeometry(node.second, secondBounds, [...path, 1], leaves, dividers);
+  collectDockGeometry(node.first, firstBounds, [...path, 0], leaves, dividers, options);
+  collectDockGeometry(node.second, secondBounds, [...path, 1], leaves, dividers, options);
   return { leaves, dividers };
 }
 
@@ -593,12 +614,12 @@ export function findDockLeaf(layout: LayoutConfig, instanceId: string): DockLeaf
   return traverseDockLeaves(layout).find((entry) => entry.instanceId === instanceId) ?? null;
 }
 
-export function getDockLeafLayouts(layout: LayoutConfig, bounds: LayoutBounds): DockLeafLayout[] {
-  return collectDockGeometry(layout.dockRoot, bounds).leaves;
+export function getDockLeafLayouts(layout: LayoutConfig, bounds: LayoutBounds, options?: DockGeometryOptions): DockLeafLayout[] {
+  return collectDockGeometry(layout.dockRoot, bounds, [], [], [], options).leaves;
 }
 
-export function getDockDividerLayouts(layout: LayoutConfig, bounds: LayoutBounds): DockDividerLayout[] {
-  return collectDockGeometry(layout.dockRoot, bounds).dividers;
+export function getDockDividerLayouts(layout: LayoutConfig, bounds: LayoutBounds, options?: DockGeometryOptions): DockDividerLayout[] {
+  return collectDockGeometry(layout.dockRoot, bounds, [], [], [], options).dividers;
 }
 
 export function getLeafRect(layout: LayoutConfig, instanceId: string, bounds: LayoutBounds): LayoutBounds | null {

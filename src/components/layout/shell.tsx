@@ -1,6 +1,8 @@
+import { Box, Text } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { useDialogState } from "@opentui-ui/dialog/react";
+import { useNativeRenderer, useUiCapabilities } from "../../ui";
+import { useShortcut, useViewport } from "../../react/input";
+import { useDialogState } from "../../ui/dialog";
 import { saveConfig } from "../../data/config-store";
 import {
   MIN_FLOAT_HEIGHT,
@@ -140,16 +142,27 @@ type DragMode =
     origRect: FloatingRect;
   };
 
+interface ShellMouseEvent {
+  type: string;
+  x: number;
+  y: number;
+  preciseX?: number;
+  preciseY?: number;
+  stopPropagation: () => void;
+  preventDefault: () => void;
+}
+
 const HEADER_HEIGHT = 1;
 const MENU_WIDTH = 18;
 const PANE_DRAG_THRESHOLD = 2;
+const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
 
 function pointInRect(rect: LayoutBounds, x: number, y: number): boolean {
   return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
 }
 
-function isMeaningfulPaneDrag(startX: number, startY: number, currentX: number, currentY: number): boolean {
-  return Math.max(Math.abs(currentX - startX), Math.abs(currentY - startY)) >= PANE_DRAG_THRESHOLD;
+function isMeaningfulPaneDrag(startX: number, startY: number, currentX: number, currentY: number, threshold = PANE_DRAG_THRESHOLD): boolean {
+  return Math.max(Math.abs(currentX - startX), Math.abs(currentY - startY)) >= threshold;
 }
 
 function positionFloatingRectUnderPointer(
@@ -498,11 +511,12 @@ function menuForPane(
 
 export function Shell({ pluginRegistry }: ShellProps) {
   const { state, dispatch } = useAppState();
-  const renderer = useRenderer();
-  const { width, height } = useTerminalDimensions();
+  const renderer = useNativeRenderer();
+  const { nativePaneChrome, precisePointer } = useUiCapabilities();
+  const { width, height } = useViewport();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
-  const contentHeight = height - (state.statusBarVisible ? 2 : 1);
+  const contentHeight = Math.max(1, height - (state.statusBarVisible ? 2 : 1));
   pluginRegistry.getTermSizeFn = () => ({ width, height: contentHeight });
 
   const layout = state.config.layout;
@@ -516,16 +530,34 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(null);
   const [dividerPreview, setDividerPreview] = useState<DividerPreviewState | null>(null);
   const [dockPreview, setDockPreview] = useState<DragPreview | null>(null);
+  const dragFloatingRectRef = useRef<{ paneId: string; rect: FloatingRect } | null>(null);
+  const dividerPreviewRef = useRef<DividerPreviewState | null>(null);
+  const dockPreviewRef = useRef<DragPreview | null>(null);
+
+  const updateDragFloatingRect = useCallback((next: { paneId: string; rect: FloatingRect } | null) => {
+    dragFloatingRectRef.current = next;
+    setDragFloatingRect(next);
+  }, []);
+
+  const updateDividerPreview = useCallback((next: DividerPreviewState | null) => {
+    dividerPreviewRef.current = next;
+    setDividerPreview(next);
+  }, []);
+
+  const updateDockPreview = useCallback((next: DragPreview | null) => {
+    dockPreviewRef.current = next;
+    setDockPreview(next);
+  }, []);
 
   const cancelActiveDrag = useCallback(() => {
     dragRef.current = null;
-    setDragFloatingRect(null);
+    updateDragFloatingRect(null);
     setDragCursor(null);
-    setDividerPreview(null);
-    setDockPreview(null);
-  }, []);
+    updateDividerPreview(null);
+    updateDockPreview(null);
+  }, [updateDividerPreview, updateDockPreview, updateDragFloatingRect]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (event.name === "escape") {
       if (!dragRef.current) return;
       cancelActiveDrag();
@@ -597,8 +629,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
     [disabledPaneIds, pluginRegistry.panes, visibleLayout],
   );
   const paneMap = useMemo(() => new Map([...dockedPanes, ...floatingPanes].map((pane) => [pane.instance.instanceId, pane])), [dockedPanes, floatingPanes]);
-  const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
-  const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds), [bounds, visibleLayout]);
+  const dockGeometryOptions = useMemo(() => (nativePaneChrome ? { precise: true } : undefined), [nativePaneChrome]);
+  const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
+  const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
   const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
   const activeHoverOverlay = activePaneDrag && dragCursor
@@ -710,14 +743,163 @@ export function Shell({ pluginRegistry }: ShellProps) {
     persistLayout(removePane(visibleLayout, paneId));
   }, [persistLayout, visibleLayout]);
 
-  const handleMouse = useCallback((event: {
-    type: string;
-    x: number;
-    y: number;
-    stopPropagation: () => void;
-    preventDefault: () => void;
-  }) => {
+  const handleActiveDrag = useCallback((event: ShellMouseEvent) => {
     const shellY = event.y - HEADER_HEIGHT;
+    const preciseX = event.preciseX ?? event.x;
+    const preciseShellY = (event.preciseY ?? event.y) - HEADER_HEIGHT;
+    const hitX = precisePointer ? preciseX : event.x;
+    const hitShellY = precisePointer ? preciseShellY : shellY;
+    const dragThreshold = precisePointer ? PRECISE_PANE_DRAG_THRESHOLD : PANE_DRAG_THRESHOLD;
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    if (event.type === "drag") {
+      if (drag.type === "divider") {
+        const total = drag.axis === "horizontal" ? drag.bounds.width : drag.bounds.height;
+        const delta = drag.axis === "horizontal" ? preciseX - drag.startX : preciseShellY - drag.startY;
+        const nextRatio = Math.max(0.1, Math.min(0.9, drag.startRatio + (delta / Math.max(1, total))));
+        const offset = drag.axis === "horizontal"
+          ? drag.bounds.width * nextRatio
+          : drag.bounds.height * nextRatio;
+        const nextRect = drag.axis === "horizontal"
+          ? {
+            x: nativePaneChrome ? drag.bounds.x + offset - 0.5 : drag.bounds.x + Math.round(offset) - 1,
+            y: drag.bounds.y,
+            width: 1,
+            height: drag.bounds.height,
+          }
+          : {
+            x: drag.bounds.x,
+            y: nativePaneChrome ? drag.bounds.y + offset - 0.5 : drag.bounds.y + Math.round(offset) - 1,
+            width: drag.bounds.width,
+            height: 1,
+          };
+        updateDividerPreview({ pathKey: drag.path.join("."), rect: nextRect, ratio: nextRatio });
+      } else if (drag.type === "pane-drag") {
+        if (!isMeaningfulPaneDrag(drag.startX, drag.startY, preciseX, preciseShellY, dragThreshold)) {
+          updateDockPreview(null);
+          setDragCursor(null);
+          if (drag.mode === "floating") {
+            updateDragFloatingRect({ paneId: drag.paneId, rect: drag.origRect });
+          }
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+
+        const pane = paneMap.get(drag.paneId);
+        const nextRect = drag.mode === "docked"
+          ? positionFloatingRectUnderPointer(
+              getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def),
+              drag,
+              preciseX,
+              preciseShellY,
+              width,
+              contentHeight,
+            )
+          : {
+              x: Math.max(0, Math.min(width - drag.origRect.width, drag.origRect.x + (preciseX - drag.startX))),
+              y: Math.max(0, Math.min(contentHeight - drag.origRect.height, drag.origRect.y + (preciseShellY - drag.startY))),
+              width: drag.origRect.width,
+              height: drag.origRect.height,
+            };
+        updateDragFloatingRect({ paneId: drag.paneId, rect: nextRect });
+        setDragCursor({ x: hitX, y: hitShellY });
+
+        const hoveredOverlay = resolveHoverOverlay(hitX, hitShellY, dockLeafLayouts, drag.paneId);
+        if (hoveredOverlay) {
+          const hoveredCell = hoveredOverlay.cells.find((cell) => pointInRect(cell.rect, hitX, hitShellY));
+          if (hoveredCell) {
+            const target: DropTarget = { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position };
+            const simulation = simulateDrop(visibleLayout, drag.paneId, target, bounds);
+            if (simulation.previewRect) {
+              updateDockPreview({ kind: "dock", target, rect: simulation.previewRect });
+            } else {
+              updateDockPreview(null);
+            }
+          } else {
+            updateDockPreview(null);
+          }
+        } else {
+          const snapGuide = resolveSnapGuide(hitX, hitShellY, snapGuides);
+          updateDockPreview(snapGuide ? { kind: "snap", position: snapGuide.position, rect: snapGuide.previewRect } : null);
+        }
+      } else if (drag.type === "float-resize") {
+        updateDragFloatingRect({
+          paneId: drag.paneId,
+          rect: {
+            x: drag.origRect.x,
+            y: drag.origRect.y,
+            width: Math.max(MIN_FLOAT_WIDTH, Math.min(width - drag.origRect.x, drag.origRect.width + (preciseX - drag.startX))),
+            height: Math.max(MIN_FLOAT_HEIGHT, Math.min(contentHeight - drag.origRect.y, drag.origRect.height + (preciseShellY - drag.startY))),
+          },
+        });
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
+
+    if (event.type === "up" || event.type === "drag-end") {
+      if (drag.type === "divider") {
+        const preview = dividerPreviewRef.current;
+        if (preview) {
+          persistLayout(resizeSplitAtPath(visibleLayout, drag.path, preview.ratio));
+        }
+        updateDividerPreview(null);
+      } else if (drag.type === "pane-drag") {
+        const movedEnough = isMeaningfulPaneDrag(drag.startX, drag.startY, preciseX, preciseShellY, dragThreshold);
+        const preview = dragFloatingRectRef.current;
+        const previewRect = preview?.paneId === drag.paneId ? preview.rect : drag.origRect;
+        if (!movedEnough) {
+          updateDockPreview(null);
+          setDragCursor(null);
+          updateDragFloatingRect(null);
+        } else {
+          const releaseResult = finalizePaneDragRelease(visibleLayout, drag.paneId, previewRect, dockPreviewRef.current);
+          persistLayout(releaseResult.nextLayout);
+          focusPane(drag.paneId);
+          if (releaseResult.shouldShowGridlockTip) {
+            dispatch({ type: "SHOW_GRIDLOCK_TIP" });
+          }
+          updateDockPreview(null);
+          setDragCursor(null);
+          updateDragFloatingRect(null);
+        }
+      } else if (drag.type === "float-resize") {
+        const preview = dragFloatingRectRef.current;
+        if (preview?.paneId === drag.paneId) {
+          persistLayout(floatAtRect(visibleLayout, drag.paneId, preview.rect));
+        }
+        updateDragFloatingRect(null);
+        setDragCursor(null);
+      }
+      dragRef.current = null;
+      event.stopPropagation();
+      event.preventDefault();
+    }
+  }, [
+    bounds,
+    contentHeight,
+    dockLeafLayouts,
+    dispatch,
+    focusPane,
+    nativePaneChrome,
+    paneMap,
+    persistLayout,
+    precisePointer,
+    snapGuides,
+    updateDividerPreview,
+    updateDockPreview,
+    updateDragFloatingRect,
+    visibleLayout,
+    width,
+  ]);
+
+  const handleMouse = useCallback((event: ShellMouseEvent) => {
+    const shellY = event.y - HEADER_HEIGHT;
+    const preciseX = event.preciseX ?? event.x;
+    const preciseShellY = (event.preciseY ?? event.y) - HEADER_HEIGHT;
     if (shellY < 0) return;
 
     if (event.type === "down") {
@@ -756,11 +938,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
           dragRef.current = {
             type: "float-resize",
             paneId: pane.instance.instanceId,
-            startX: event.x,
-            startY: shellY,
+            startX: preciseX,
+            startY: preciseShellY,
             origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           };
-          setDragFloatingRect({ paneId: pane.instance.instanceId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+          updateDragFloatingRect({ paneId: pane.instance.instanceId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -770,11 +952,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
             type: "pane-drag",
             paneId: pane.instance.instanceId,
             mode: "floating",
-            startX: event.x,
-            startY: shellY,
+            startX: preciseX,
+            startY: preciseShellY,
             origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           };
-          setDragFloatingRect({ paneId: pane.instance.instanceId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+          updateDragFloatingRect({ paneId: pane.instance.instanceId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -790,12 +972,12 @@ export function Shell({ pluginRegistry }: ShellProps) {
           type: "divider",
           path: divider.path,
           axis: divider.axis,
-          startX: event.x,
-          startY: shellY,
+          startX: preciseX,
+          startY: preciseShellY,
           startRatio: divider.ratio,
           bounds: divider.bounds,
         };
-        setDividerPreview({
+        updateDividerPreview({
           pathKey: divider.path.join("."),
           rect: divider.rect,
           ratio: divider.ratio,
@@ -830,8 +1012,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
             type: "pane-drag",
             paneId: leaf.instanceId,
             mode: "docked",
-            startX: event.x,
-            startY: shellY,
+            startX: preciseX,
+            startY: preciseShellY,
             origRect: { x: leaf.rect.x, y: leaf.rect.y, width: leaf.rect.width, height: leaf.rect.height },
           };
           event.stopPropagation();
@@ -846,118 +1028,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       return;
     }
 
-    const drag = dragRef.current;
-    if (!drag) return;
-
-    if (event.type === "drag") {
-      if (drag.type === "divider") {
-        const total = drag.axis === "horizontal" ? drag.bounds.width : drag.bounds.height;
-        const delta = drag.axis === "horizontal" ? event.x - drag.startX : shellY - drag.startY;
-        const nextRatio = Math.max(0.1, Math.min(0.9, drag.startRatio + (delta / Math.max(1, total))));
-        const nextRect = drag.axis === "horizontal"
-          ? { x: drag.bounds.x + Math.round(drag.bounds.width * nextRatio) - 1, y: drag.bounds.y, width: 1, height: drag.bounds.height }
-          : { x: drag.bounds.x, y: drag.bounds.y + Math.round(drag.bounds.height * nextRatio) - 1, width: drag.bounds.width, height: 1 };
-        setDividerPreview({ pathKey: drag.path.join("."), rect: nextRect, ratio: nextRatio });
-      } else if (drag.type === "pane-drag") {
-        if (!isMeaningfulPaneDrag(drag.startX, drag.startY, event.x, shellY)) {
-          setDockPreview(null);
-          setDragCursor(null);
-          if (drag.mode === "floating") {
-            setDragFloatingRect({ paneId: drag.paneId, rect: drag.origRect });
-          }
-          event.stopPropagation();
-          event.preventDefault();
-          return;
-        }
-
-        const pane = paneMap.get(drag.paneId);
-        const nextRect = drag.mode === "docked"
-          ? positionFloatingRectUnderPointer(
-              getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def),
-              drag,
-              event.x,
-              shellY,
-              width,
-              contentHeight,
-            )
-          : {
-              x: Math.max(0, Math.min(width - drag.origRect.width, drag.origRect.x + (event.x - drag.startX))),
-              y: Math.max(0, Math.min(contentHeight - drag.origRect.height, drag.origRect.y + (shellY - drag.startY))),
-              width: drag.origRect.width,
-              height: drag.origRect.height,
-            };
-        setDragFloatingRect({ paneId: drag.paneId, rect: nextRect });
-        setDragCursor({ x: event.x, y: shellY });
-
-        const hoveredOverlay = resolveHoverOverlay(event.x, shellY, dockLeafLayouts, drag.paneId);
-        if (hoveredOverlay) {
-          const hoveredCell = hoveredOverlay.cells.find((cell) => pointInRect(cell.rect, event.x, shellY));
-          if (hoveredCell) {
-            const target: DropTarget = { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position };
-            const simulation = simulateDrop(visibleLayout, drag.paneId, target, bounds);
-            if (simulation.previewRect) {
-              setDockPreview({ kind: "dock", target, rect: simulation.previewRect });
-            } else {
-              setDockPreview(null);
-            }
-          } else {
-            setDockPreview(null);
-          }
-        } else {
-          const snapGuide = resolveSnapGuide(event.x, shellY, snapGuides);
-          setDockPreview(snapGuide ? { kind: "snap", position: snapGuide.position, rect: snapGuide.previewRect } : null);
-        }
-      } else if (drag.type === "float-resize") {
-        setDragFloatingRect({
-          paneId: drag.paneId,
-          rect: {
-            x: drag.origRect.x,
-            y: drag.origRect.y,
-            width: Math.max(MIN_FLOAT_WIDTH, Math.min(width - drag.origRect.x, drag.origRect.width + (event.x - drag.startX))),
-            height: Math.max(MIN_FLOAT_HEIGHT, Math.min(contentHeight - drag.origRect.y, drag.origRect.height + (shellY - drag.startY))),
-          },
-        });
-      }
-      event.stopPropagation();
-      event.preventDefault();
-      return;
-    }
-
-    if (event.type === "up" || event.type === "drag-end") {
-      if (drag.type === "divider") {
-        if (dividerPreview) {
-          persistLayout(resizeSplitAtPath(visibleLayout, drag.path, dividerPreview.ratio));
-        }
-        setDividerPreview(null);
-      } else if (drag.type === "pane-drag") {
-        const movedEnough = isMeaningfulPaneDrag(drag.startX, drag.startY, event.x, shellY);
-        const previewRect = dragFloatingRect?.paneId === drag.paneId ? dragFloatingRect.rect : drag.origRect;
-        if (!movedEnough) {
-          setDockPreview(null);
-          setDragCursor(null);
-          setDragFloatingRect(null);
-        } else {
-          const releaseResult = finalizePaneDragRelease(visibleLayout, drag.paneId, previewRect, dockPreview);
-          persistLayout(releaseResult.nextLayout);
-          focusPane(drag.paneId);
-          if (releaseResult.shouldShowGridlockTip) {
-            dispatch({ type: "SHOW_GRIDLOCK_TIP" });
-          }
-          setDockPreview(null);
-          setDragCursor(null);
-          setDragFloatingRect(null);
-        }
-      } else if (drag.type === "float-resize") {
-        if (dragFloatingRect?.paneId === drag.paneId) {
-          persistLayout(floatAtRect(visibleLayout, drag.paneId, dragFloatingRect.rect));
-        }
-        setDragFloatingRect(null);
-        setDragCursor(null);
-      }
-      dragRef.current = null;
-      event.stopPropagation();
-      event.preventDefault();
-    }
+    handleActiveDrag(event);
   }, [
     bounds,
     closeFocusedPane,
@@ -969,27 +1040,133 @@ export function Shell({ pluginRegistry }: ShellProps) {
     dragFloatingRect,
     floatingPanes,
     focusPane,
+    handleActiveDrag,
     handleFloatingClose,
     menuState,
+    nativePaneChrome,
     openPaneMenu,
     paneMap,
     persistLayout,
+    precisePointer,
     snapGuides,
+    updateDividerPreview,
+    updateDockPreview,
+    updateDragFloatingRect,
     visibleLayout,
     width,
   ]);
 
+  const getShellPointer = useCallback((event: ShellMouseEvent) => ({
+    x: event.preciseX ?? event.x,
+    y: (event.preciseY ?? event.y) - HEADER_HEIGHT,
+  }), []);
+
+  const focusNativePane = useCallback((paneId: string) => {
+    if (menuState) setMenuState(null);
+    focusPane(paneId);
+  }, [focusPane, menuState]);
+
+  const startNativeFloatingDrag = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
+    if (!nativePaneChrome) return;
+    const pointer = getShellPointer(event);
+    focusNativePane(paneId);
+    dragRef.current = {
+      type: "pane-drag",
+      paneId,
+      mode: "floating",
+      startX: pointer.x,
+      startY: pointer.y,
+      origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    };
+    updateDragFloatingRect({ paneId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    event.preventDefault();
+  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect]);
+
+  const startNativeDockedDrag = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    if (!nativePaneChrome) return;
+    const pointer = getShellPointer(event);
+    focusNativePane(paneId);
+    dragRef.current = {
+      type: "pane-drag",
+      paneId,
+      mode: "docked",
+      startX: pointer.x,
+      startY: pointer.y,
+      origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    };
+    event.preventDefault();
+  }, [focusNativePane, getShellPointer, nativePaneChrome]);
+
+  const startNativeFloatResize = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
+    if (!nativePaneChrome) return;
+    const pointer = getShellPointer(event);
+    focusNativePane(paneId);
+    dragRef.current = {
+      type: "float-resize",
+      paneId,
+      startX: pointer.x,
+      startY: pointer.y,
+      origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    };
+    updateDragFloatingRect({ paneId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    event.preventDefault();
+  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect]);
+
+  const startNativeDividerDrag = useCallback((divider: DockDividerLayout, event: ShellMouseEvent) => {
+    if (!nativePaneChrome) return;
+    const pointer = getShellPointer(event);
+    if (menuState) setMenuState(null);
+    dragRef.current = {
+      type: "divider",
+      path: divider.path,
+      axis: divider.axis,
+      startX: pointer.x,
+      startY: pointer.y,
+      startRatio: divider.ratio,
+      bounds: divider.bounds,
+    };
+    updateDividerPreview({
+      pathKey: divider.path.join("."),
+      rect: divider.rect,
+      ratio: divider.ratio,
+    });
+    event.preventDefault();
+  }, [getShellPointer, menuState, nativePaneChrome, updateDividerPreview]);
+
+  const handleNativeDrag = useCallback((event: ShellMouseEvent) => {
+    handleActiveDrag(event);
+  }, [handleActiveDrag]);
+
+  const handleNativePaneAction = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    openPaneMenu(paneId, rect);
+  }, [openPaneMenu]);
+
+  const handleNativeFloatingClose = useCallback((paneId: string, event: ShellMouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    handleFloatingClose(paneId);
+  }, [handleFloatingClose]);
+
   return (
-    <box flexDirection="row" flexGrow={1} height={contentHeight} onMouse={handleMouse}>
+    <Box
+      flexDirection="row"
+      flexGrow={1}
+      height={nativePaneChrome ? undefined : contentHeight}
+      position={nativePaneChrome ? "relative" : undefined}
+      overflow="hidden"
+      {...(!nativePaneChrome ? { onMouse: handleMouse } : {})}
+    >
       {dockLeafLayouts.map((leaf) => {
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) return null;
         const focused = state.focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
-        const bodyHeight = getPaneBodyHeight(leaf.rect.height);
-        const bodyWidth = getPaneBodyWidth(leaf.rect.width, focused);
+        const bodyHeight = nativePaneChrome ? Math.max(1, Math.floor(leaf.rect.height - 1)) : getPaneBodyHeight(leaf.rect.height);
+        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(leaf.rect.width)) : getPaneBodyWidth(leaf.rect.width, focused);
         return (
-          <box
+          <Box
             key={`dock:${leaf.instanceId}`}
             position="absolute"
             left={leaf.rect.x}
@@ -1003,7 +1180,12 @@ export function Shell({ pluginRegistry }: ShellProps) {
               width={leaf.rect.width}
               height={leaf.rect.height}
               showActions={showActions}
+              onMouseDown={nativePaneChrome ? () => focusNativePane(leaf.instanceId) : undefined}
               onMouseMove={() => setHoveredPaneId(leaf.instanceId)}
+              onHeaderMouseDown={nativePaneChrome ? (event) => startNativeDockedDrag(leaf.instanceId, leaf.rect, event) : undefined}
+              onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+              onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+              onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(leaf.instanceId, leaf.rect, event) : undefined}
             >
               <PaneInstanceProvider paneId={leaf.instanceId}>
                 <pane.def.component
@@ -1015,7 +1197,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                 />
               </PaneInstanceProvider>
             </PaneWrapper>
-          </box>
+          </Box>
         );
       })}
 
@@ -1023,8 +1205,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
         const preview = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
         const focused = state.focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
-        const bodyHeight = getPaneBodyHeight(preview.height);
-        const bodyWidth = getPaneBodyWidth(preview.width, focused);
+        const bodyHeight = nativePaneChrome ? Math.max(1, Math.floor(preview.height - 1)) : getPaneBodyHeight(preview.height);
+        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(preview.width)) : getPaneBodyWidth(preview.width, focused);
         return (
           <FloatingPaneWrapper
             key={`float:${pane.instance.instanceId}`}
@@ -1036,7 +1218,16 @@ export function Shell({ pluginRegistry }: ShellProps) {
             zIndex={pane.floating?.zIndex ?? 50}
             focused={focused}
             showActions={showActions}
+            onMouseDown={nativePaneChrome ? () => focusNativePane(pane.instance.instanceId) : undefined}
             onMouseMove={() => setHoveredPaneId(pane.instance.instanceId)}
+            onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
+            onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+            onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+            onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(pane.instance.instanceId, preview, event) : undefined}
+            onCloseMouseDown={nativePaneChrome ? (event) => handleNativeFloatingClose(pane.instance.instanceId, event) : undefined}
+            onResizeMouseDown={nativePaneChrome ? (event) => startNativeFloatResize(pane.instance.instanceId, preview, event) : undefined}
+            onResizeMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+            onResizeMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
           >
             <PaneInstanceProvider paneId={pane.instance.instanceId}>
               <pane.def.component
@@ -1053,16 +1244,16 @@ export function Shell({ pluginRegistry }: ShellProps) {
       })}
 
       {dockLeafLayouts.length === 0 && floatingPanes.length === 0 && (
-        <box flexGrow={1} alignItems="center" justifyContent="center">
-          <text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</text>
-        </box>
+        <Box flexGrow={1} alignItems="center" justifyContent="center">
+          <Text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</Text>
+        </Box>
       )}
 
       {dockDividerLayouts.map((divider) => {
         const active = dividerPreview?.pathKey === divider.path.join(".");
         const rect = active ? dividerPreview.rect : divider.rect;
         return (
-          <box
+          <Box
             key={`divider:${divider.path.join(".")}`}
             position="absolute"
             left={rect.x}
@@ -1071,6 +1262,15 @@ export function Shell({ pluginRegistry }: ShellProps) {
             height={rect.height}
             zIndex={active ? 2 : 1}
             backgroundColor={active ? colors.borderFocused : colors.border}
+            {...(nativePaneChrome ? {
+              "data-gloom-role": "dock-divider",
+              "data-axis": divider.axis,
+              "data-active": active ? "true" : "false",
+              style: { "--divider-color": active ? colors.borderFocused : colors.border } as any,
+            } : {})}
+            onMouseDown={nativePaneChrome ? (event) => startNativeDividerDrag(divider, event) : undefined}
+            onMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+            onMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
           />
         );
       })}
@@ -1078,6 +1278,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       {/* Focus border overlay — rendered on top of the focused pane */}
       {(() => {
         if (!state.focusedPaneId) return null;
+        if (nativePaneChrome) return null;
         // Hide border when command bar or dialog is open, but keep it when just the pane menu is open
         if (overlayOpen && !menuState) return null;
         let rect: { x: number; y: number; width: number; height: number } | null = null;
@@ -1105,23 +1306,23 @@ export function Shell({ pluginRegistry }: ShellProps) {
           <>
             {/* Left edge — body only */}
             {bodyH > 0 && (
-              <box key="focus-l" position="absolute" left={rect.x} top={bodyTop} width={1} height={bodyH} zIndex={z}>
-                <text fg={bc} selectable={false}>{"│".repeat(bodyH)}</text>
-              </box>
+              <Box key="focus-l" position="absolute" left={rect.x} top={bodyTop} width={1} height={bodyH} zIndex={z}>
+                <Text fg={bc} selectable={false}>{"│".repeat(bodyH)}</Text>
+              </Box>
             )}
             {/* Right edge — body only */}
             {bodyH > 0 && (
-              <box key="focus-r" position="absolute" left={rect.x + rect.width - 1} top={bodyTop} width={1} height={bodyH} zIndex={z}>
-                <text fg={bc} selectable={false}>{"│".repeat(bodyH)}</text>
-              </box>
+              <Box key="focus-r" position="absolute" left={rect.x + rect.width - 1} top={bodyTop} width={1} height={bodyH} zIndex={z}>
+                <Text fg={bc} selectable={false}>{"│".repeat(bodyH)}</Text>
+              </Box>
             )}
             {/* Bottom edge — for floating, leave last 2 chars for resize handle (rendered by FloatingPaneWrapper) */}
-            <box key="focus-b" position="absolute" left={rect.x} top={rect.y + rect.height - 1} width={isFloating ? Math.max(0, rect.width - 2) : rect.width} height={1} zIndex={z}>
-              <text fg={bc} selectable={false}>{isFloating
+            <Box key="focus-b" position="absolute" left={rect.x} top={rect.y + rect.height - 1} width={isFloating ? Math.max(0, rect.width - 2) : rect.width} height={1} zIndex={z}>
+              <Text fg={bc} selectable={false}>{isFloating
                 ? `└${"─".repeat(Math.max(0, rect.width - 4))}─`
                 : `└${"─".repeat(Math.max(0, rect.width - 2))}┘`
-              }</text>
-            </box>
+              }</Text>
+            </Box>
           </>
         );
       })()}
@@ -1132,7 +1333,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
           && dockPreview.target.targetId === activeHoverOverlay.targetId
           && dockPreview.target.position === cell.position;
         return (
-          <box
+          <Box
             key={`cell:${activeHoverOverlay.targetId}:${cell.position}`}
             position="absolute"
             left={cell.rect.x}
@@ -1153,7 +1354,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         && dragFloatingRect?.paneId === activePaneDrag.paneId
         && !dockPreview
         && (
-          <box
+          <Box
             position="absolute"
             left={dragFloatingRect.rect.x}
             top={dragFloatingRect.rect.y}
@@ -1168,7 +1369,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         )}
 
       {dockPreview && (
-        <box
+        <Box
           position="absolute"
           left={dockPreview.rect.x}
           top={dockPreview.rect.y}
@@ -1183,7 +1384,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       )}
 
       {menuState && (
-        <box
+        <Box
           position="absolute"
           left={menuState.x}
           top={menuState.y}
@@ -1197,7 +1398,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
           flexDirection="column"
         >
           {menuState.items.map((item) => (
-            <box
+            <Box
               key={item.id}
               height={1}
               paddingLeft={1}
@@ -1208,11 +1409,11 @@ export function Shell({ pluginRegistry }: ShellProps) {
                 item.action();
               }}
             >
-              <text fg={colors.text}>{item.label}</text>
-            </box>
+              <Text fg={colors.text}>{item.label}</Text>
+            </Box>
           ))}
-        </box>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }

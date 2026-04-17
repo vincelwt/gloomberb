@@ -1,3 +1,4 @@
+
 export interface IndexEntry {
   symbol: string;
   name: string;

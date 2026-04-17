@@ -1,3 +1,4 @@
+
 export type CliAlign = "left" | "right" | "center";
 
 export interface CliTableColumn {

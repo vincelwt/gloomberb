@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { CliRenderer } from "@opentui/core";
-import { useRenderer } from "@opentui/react";
+import { useNativeRenderer } from "../../ui";
 import { writeRendererRaw } from "../chart/native/kitty-adapter";
 import { getCachedKittySupport } from "../chart/native/kitty-support";
 import {
@@ -23,7 +22,7 @@ export function useKittyImage(
   imageUrl: string | undefined,
   placement: KittyImagePlacement | null,
 ): void {
-  const renderer = useRenderer() as CliRenderer;
+  const renderer = useNativeRenderer();
   const imageIdRef = useRef<number | null>(null);
 
   useEffect(() => {

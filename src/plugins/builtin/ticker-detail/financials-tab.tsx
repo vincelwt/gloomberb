@@ -1,5 +1,6 @@
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { Box, ScrollBox, Text } from "../../../ui";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePaneTicker } from "../../../state/app-context";
 import { colors, priceColor } from "../../../theme/colors";
@@ -255,7 +256,7 @@ export function ResolvedFinancialsTab({
     }
   }, []);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
     if (event.name === "a" && hasAnnualStatements) setPeriod("annual");
     else if (event.name === "q" && hasQuarterlyStatements) setPeriod("quarterly");
@@ -273,7 +274,7 @@ export function ResolvedFinancialsTab({
   }, [hasAnnualStatements, hasQuarterlyStatements, period]);
 
   if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
-    return <text fg={colors.textDim}>No financial data available.</text>;
+    return <Text fg={colors.textDim}>No financial data available.</Text>;
   }
 
   const subTab = FINANCIAL_SUB_TABS[subTabIdx]!;
@@ -310,52 +311,52 @@ export function ResolvedFinancialsTab({
   }, [displayStatements.length, isAnnual, subTabIdx, subTab.metrics.length]);
 
   return (
-    <box flexDirection="column" flexGrow={1} paddingX={2} paddingBottom={1}>
-      <box flexDirection="row" height={1}>
+    <Box flexDirection="column" flexGrow={1} paddingX={2} paddingBottom={1}>
+      <Box flexDirection="row" height={1}>
         {FINANCIAL_SUB_TABS.map((tab, index) => (
-          <box key={tab.key} flexDirection="row" onMouseDown={() => setSubTabIdx(index)}>
-            <text
+          <Box key={tab.key} flexDirection="row" onMouseDown={() => setSubTabIdx(index)}>
+            <Text
               fg={index === subTabIdx ? colors.textBright : colors.textDim}
               attributes={index === subTabIdx ? TextAttributes.BOLD : 0}
             >
               {`${index + 1}:${tab.name}`}
-            </text>
-            {index < FINANCIAL_SUB_TABS.length - 1 && <text fg={colors.textMuted}>{" │ "}</text>}
-          </box>
+            </Text>
+            {index < FINANCIAL_SUB_TABS.length - 1 && <Text fg={colors.textMuted}>{" │ "}</Text>}
+          </Box>
         ))}
-        <box flexGrow={1} />
-        <box onMouseDown={() => setPeriod("annual")}>
-          <text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</text>
-        </box>
-        <text fg={colors.textMuted}>/</text>
-        <box onMouseDown={() => setPeriod("quarterly")}>
-          <text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</text>
-        </box>
-      </box>
-      <box height={1} />
+        <Box flexGrow={1} />
+        <Box onMouseDown={() => setPeriod("annual")}>
+          <Text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</Text>
+        </Box>
+        <Text fg={colors.textMuted}>/</Text>
+        <Box onMouseDown={() => setPeriod("quarterly")}>
+          <Text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</Text>
+        </Box>
+      </Box>
+      <Box height={1} />
 
-      <scrollbox id={headerScrollId} ref={headerScrollRef} height={1} scrollX focusable={false}>
-        <box flexDirection="row" width={tableWidth} height={1}>
-          <box width={FINANCIAL_LABEL_W}>
-            <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+      <ScrollBox id={headerScrollId} ref={headerScrollRef} height={1} scrollX focusable={false}>
+        <Box flexDirection="row" width={tableWidth} height={1}>
+          <Box width={FINANCIAL_LABEL_W}>
+            <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>
               {isAnnual ? "Annual" : "Quarterly"}
-            </text>
-          </box>
+            </Text>
+          </Box>
           {displayStatements.map((statement) => (
-            <box key={statement.date} width={FINANCIAL_COL_W}>
-              <text
+            <Box key={statement.date} width={FINANCIAL_COL_W}>
+              <Text
                 attributes={TextAttributes.BOLD}
                 fg={statement.date === "TTM" ? colors.textBright : colors.textDim}
               >
                 {formatFinancialHeader(statement.date)}
-              </text>
-            </box>
+              </Text>
+            </Box>
           ))}
-        </box>
-      </scrollbox>
-      <box height={1} />
+        </Box>
+      </ScrollBox>
+      <Box height={1} />
 
-      <scrollbox
+      <ScrollBox
         id={bodyScrollId}
         ref={bodyScrollRef}
         flexGrow={1}
@@ -367,7 +368,7 @@ export function ResolvedFinancialsTab({
         onMouseDrag={() => queueMicrotask(syncHeaderScroll)}
         onMouseScroll={() => queueMicrotask(syncHeaderScroll)}
       >
-        <box flexDirection="column" width={tableWidth} paddingBottom={1}>
+        <Box flexDirection="column" width={tableWidth} paddingBottom={1}>
           {subTab.metrics.map(({ label, key, format }, index) => {
             const isEps = format === "eps";
             const allValues = displayStatements.map((statement) => statement[key] as number | undefined);
@@ -375,12 +376,12 @@ export function ResolvedFinancialsTab({
             const unitLabel = suffix ? `${label} (${suffix})` : label;
 
             return (
-              <box key={key} flexDirection="column" width={tableWidth}>
-                {index > 0 && index % 4 === 0 && <box height={1} width={tableWidth} />}
-                <box flexDirection="row" width={tableWidth} height={1}>
-                  <box width={FINANCIAL_LABEL_W}>
-                    <text fg={colors.textDim}>{unitLabel}</text>
-                  </box>
+              <Box key={key} flexDirection="column" width={tableWidth}>
+                {index > 0 && index % 4 === 0 && <Box height={1} width={tableWidth} />}
+                <Box flexDirection="row" width={tableWidth} height={1}>
+                  <Box width={FINANCIAL_LABEL_W}>
+                    <Text fg={colors.textDim}>{unitLabel}</Text>
+                  </Box>
                   {displayStatements.map((statement) => {
                     const value = statement[key] as number | undefined;
                     const previous = previousStatementMap.get(statement.date);
@@ -394,18 +395,18 @@ export function ResolvedFinancialsTab({
                     const cell = formatFinancialCell(formattedValue, growth);
 
                     return (
-                      <box key={statement.date} width={FINANCIAL_COL_W} flexDirection="row">
-                        <text fg={colors.text}>{cell.valueText}</text>
-                        <text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</text>
-                      </box>
+                      <Box key={statement.date} width={FINANCIAL_COL_W} flexDirection="row">
+                        <Text fg={colors.text}>{cell.valueText}</Text>
+                        <Text fg={growth != null ? priceColor(growth) : colors.text}>{cell.growthText}</Text>
+                      </Box>
                     );
                   })}
-                </box>
-              </box>
+                </Box>
+              </Box>
             );
           })}
-        </box>
-      </scrollbox>
-    </box>
+        </Box>
+      </ScrollBox>
+    </Box>
   );
 }

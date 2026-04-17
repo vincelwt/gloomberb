@@ -1,7 +1,8 @@
+import { Box, Input, Span, Strong, Text, Underline } from "../../ui";
 import { useState, useCallback, useEffect, useRef, useMemo, type RefObject } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
-import type { InputRenderable } from "@opentui/core";
+import { useShortcut, useViewport } from "../../react/input";
+import { TextAttributes } from "../../ui";
+import { type InputRenderable } from "../../ui";
 import { colors, applyTheme } from "../../theme/colors";
 import { themes, getThemeIds } from "../../theme/themes";
 import { saveConfig } from "../../data/config-store";
@@ -107,7 +108,7 @@ function focusPortfolioListCollection(config: AppConfig, collectionId: string): 
 }
 
 export function OnboardingWizard({ config, pluginRegistry, onComplete }: OnboardingWizardProps) {
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useViewport();
   const [step, setStep] = useState<Step>("welcome");
   const [themeIdx, setThemeIdx] = useState(0);
 
@@ -378,7 +379,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     }));
   }, [resetBrokerSync]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (isFinishing) {
       return;
     }
@@ -623,7 +624,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     : null;
 
   return (
-    <box
+    <Box
       position="absolute"
       top={0}
       left={0}
@@ -632,7 +633,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
       backgroundColor={colors.bg}
       zIndex={200}
     >
-      <box
+      <Box
         position="absolute"
         top={contentTop}
         left={contentLeft}
@@ -687,20 +688,20 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         )}
 
         {/* Bottom: progress + nav hints */}
-        <box height={1} />
-        <box height={1} flexDirection="row" width={contentWidth}>
-          <box flexGrow={1}>
-            <text fg={colors.textMuted}>{progressDots}</text>
-          </box>
-        </box>
-        <box height={1} flexDirection="row" width={contentWidth}>
-          <box flexGrow={1} />
-          <box>
-            <text fg={colors.textMuted}>{hintText}</text>
-          </box>
-        </box>
-      </box>
-    </box>
+        <Box height={1} />
+        <Box height={1} flexDirection="row" width={contentWidth}>
+          <Box flexGrow={1}>
+            <Text fg={colors.textMuted}>{progressDots}</Text>
+          </Box>
+        </Box>
+        <Box height={1} flexDirection="row" width={contentWidth}>
+          <Box flexGrow={1} />
+          <Box>
+            <Text fg={colors.textMuted}>{hintText}</Text>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
   );
 }
 
@@ -708,24 +709,24 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
 function WelcomeStep() {
   return (
-    <box flexDirection="column" paddingX={2}>
-      <box height={1} />
+    <Box flexDirection="column" paddingX={2}>
+      <Box height={1} />
       {LOGO.map((line, i) => (
-        <box key={i} height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{line}</text>
-        </box>
+        <Box key={i} height={1}>
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{line}</Text>
+        </Box>
       ))}
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"The open terminal for modern finance."}</text>
-      </box>
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textMuted}>{"Let's set things up (~30s)."}</text>
-      </box>
-      <box height={2} />
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.textDim}>{"The open terminal for modern finance."}</Text>
+      </Box>
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.textMuted}>{"Let's set things up (~30s)."}</Text>
+      </Box>
+      <Box height={2} />
 
-    </box>
+    </Box>
   );
 }
 
@@ -737,30 +738,30 @@ function ThemeStep({ themeIds, selectedIdx, height }: { themeIds: string[]; sele
   const windowEnd = Math.min(themeIds.length, windowStart + maxVisible);
 
   return (
-    <box flexDirection="column" paddingX={2}>
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Theme"}</text>
-      </box>
-      <box height={1} />
-      <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"Change it later from the command bar with "}</text>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{"TH"}</text>
-      </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.positive}>{" \u2588\u2588 "}</text>
-        <text fg={colors.negative}>{" \u2588\u2588 "}</text>
-        <text fg={colors.text}>{" \u2588\u2588 "}</text>
-        <text fg={colors.textBright}>{" \u2588\u2588 "}</text>
-        <text fg={colors.borderFocused}>{" \u2588\u2588 "}</text>
-        <text fg={colors.textDim}>{" \u2588\u2588 "}</text>
-      </box>
-      <box height={1} />
+    <Box flexDirection="column" paddingX={2}>
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Theme"}</Text>
+      </Box>
+      <Box height={1} />
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.textDim}>{"Change it later from the command bar with "}</Text>
+        <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"TH"}</Text>
+      </Box>
+      <Box height={1} />
+      <Box height={1}>
+        <Text fg={colors.positive}>{" \u2588\u2588 "}</Text>
+        <Text fg={colors.negative}>{" \u2588\u2588 "}</Text>
+        <Text fg={colors.text}>{" \u2588\u2588 "}</Text>
+        <Text fg={colors.textBright}>{" \u2588\u2588 "}</Text>
+        <Text fg={colors.borderFocused}>{" \u2588\u2588 "}</Text>
+        <Text fg={colors.textDim}>{" \u2588\u2588 "}</Text>
+      </Box>
+      <Box height={1} />
 
       {windowStart > 0 && (
-        <box height={1}>
-          <text fg={colors.textMuted}>{"\u2191 more"}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textMuted}>{"\u2191 more"}</Text>
+        </Box>
       )}
 
       {themeIds.slice(windowStart, windowEnd).map((id, i) => {
@@ -768,28 +769,28 @@ function ThemeStep({ themeIds, selectedIdx, height }: { themeIds: string[]; sele
         const globalIdx = windowStart + i;
         const isSel = globalIdx === selectedIdx;
         return (
-          <box key={id} height={1} backgroundColor={isSel ? colors.selected : colors.bg}>
-            <text fg={isSel ? colors.selectedText : colors.textDim}>
+          <Box key={id} height={1} backgroundColor={isSel ? colors.selected : colors.bg}>
+            <Text fg={isSel ? colors.selectedText : colors.textDim}>
               {isSel ? "\u25b8 " : "  "}
-            </text>
-            <text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
+            </Text>
+            <Text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
               {theme.name}
-            </text>
-          </box>
+            </Text>
+          </Box>
         );
       })}
 
       {windowEnd < themeIds.length && (
-        <box height={1}>
-          <text fg={colors.textMuted}>{"\u2193 more"}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textMuted}>{"\u2193 more"}</Text>
+        </Box>
       )}
 
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textMuted}>{"Use \u2191\u2193 to browse"}</text>
-      </box>
-    </box>
+      <Box height={1} />
+      <Box height={1}>
+        <Text fg={colors.textMuted}>{"Use \u2191\u2193 to browse"}</Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -828,62 +829,62 @@ function PortfolioStep({
 }) {
   if (sub === "choose") {
     return (
-      <box flexDirection="column" paddingX={2}>
-        <box height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Set up a portfolio"}</text>
-        </box>
-        <box height={1} />
-        <box height={1}>
-          <text fg={colors.textDim}>{"How would you like to get started?"}</text>
-        </box>
-        <box height={2} />
+      <Box flexDirection="column" paddingX={2}>
+        <Box height={1}>
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Set up a portfolio"}</Text>
+        </Box>
+        <Box height={1} />
+        <Box height={1}>
+          <Text fg={colors.textDim}>{"How would you like to get started?"}</Text>
+        </Box>
+        <Box height={2} />
 
         {choices.map((opt, i) => {
           const isSel = i === optionIdx;
           return (
-            <box key={opt.id} height={1} backgroundColor={isSel ? colors.selected : colors.bg}>
-              <text fg={isSel ? colors.selectedText : colors.textDim}>
+            <Box key={opt.id} height={1} backgroundColor={isSel ? colors.selected : colors.bg}>
+              <Text fg={isSel ? colors.selectedText : colors.textDim}>
                 {isSel ? "\u25b8 " : "  "}
-              </text>
-              <text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
+              </Text>
+              <Text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
                 {opt.label}
-              </text>
-            </box>
+              </Text>
+            </Box>
           );
         })}
 
-        <box height={1} />
-        <box height={1}>
-          <text fg={colors.textDim}>{choices[optionIdx]?.desc}</text>
-        </box>
+        <Box height={1} />
+        <Box height={1}>
+          <Text fg={colors.textDim}>{choices[optionIdx]?.desc}</Text>
+        </Box>
 
-        <box height={1} />
-        <box height={1}>
-          <text fg={colors.textDim}>{"Edits later from the command bar."}</text>
-        </box>
-        <box height={1} />
-        <box height={1}>
-          <text fg={colors.textMuted}>{"Use \u2191\u2193 to choose"}</text>
-        </box>
-      </box>
+        <Box height={1} />
+        <Box height={1}>
+          <Text fg={colors.textDim}>{"Edits later from the command bar."}</Text>
+        </Box>
+        <Box height={1} />
+        <Box height={1}>
+          <Text fg={colors.textMuted}>{"Use \u2191\u2193 to choose"}</Text>
+        </Box>
+      </Box>
     );
   }
 
   if (sub === "manual-name") {
     return (
-      <box flexDirection="column" paddingX={2}>
-        <box height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Name your portfolio"}</text>
-        </box>
-        <box height={1} />
-        <box height={1}>
-          <text fg={colors.textDim}>{"Create watchlists later."}</text>
-        </box>
-        <box height={2} />
-        <box height={1}>
-          <text fg={colors.text}>{"Portfolio name:"}</text>
-        </box>
-        <box height={1}>
+      <Box flexDirection="column" paddingX={2}>
+        <Box height={1}>
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Name your portfolio"}</Text>
+        </Box>
+        <Box height={1} />
+        <Box height={1}>
+          <Text fg={colors.textDim}>{"Create watchlists later."}</Text>
+        </Box>
+        <Box height={2} />
+        <Box height={1}>
+          <Text fg={colors.text}>{"Portfolio name:"}</Text>
+        </Box>
+        <Box height={1}>
           {editing ? (
             <TextField
               inputRef={inputRef}
@@ -897,23 +898,23 @@ function PortfolioStep({
               onSubmit={() => {}}
             />
           ) : (
-            <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
               {`> ${portfolioName}`}
-            </text>
+            </Text>
           )}
-        </box>
-        <box height={2} />
-        <box height={1} flexDirection="row">
-          <text fg={colors.textDim}>{"After setup, use the command bar ("}</text>
-          <text fg={colors.text}>{"Ctrl+P"}</text>
-          <text fg={colors.textDim}>{") and"}</text>
-        </box>
-        <box height={1} flexDirection="row">
-          <text fg={colors.textDim}>{"type "}</text>
-          <text fg={colors.text} attributes={TextAttributes.BOLD}>{"T AAPL"}</text>
-          <text fg={colors.textDim}>{" to search and add any stock or ETF."}</text>
-        </box>
-      </box>
+        </Box>
+        <Box height={2} />
+        <Box height={1} flexDirection="row">
+          <Text fg={colors.textDim}>{"After setup, use the command bar ("}</Text>
+          <Text fg={colors.text}>{"Ctrl+P"}</Text>
+          <Text fg={colors.textDim}>{") and"}</Text>
+        </Box>
+        <Box height={1} flexDirection="row">
+          <Text fg={colors.textDim}>{"type "}</Text>
+          <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"T AAPL"}</Text>
+          <Text fg={colors.textDim}>{" to search and add any stock or ETF."}</Text>
+        </Box>
+      </Box>
     );
   }
 
@@ -923,110 +924,110 @@ function PortfolioStep({
     const isGateway = connectionMode === "gateway";
 
     return (
-      <box flexDirection="column" paddingX={2}>
-        <box height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+      <Box flexDirection="column" paddingX={2}>
+        <Box height={1}>
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             {`Setup Guide — ${brokerLabel}`}
-          </text>
-        </box>
-        <box height={1} />
+          </Text>
+        </Box>
+        <Box height={1} />
 
         {selectedBrokerId === "ibkr" && !isGateway && (
           <>
-            <box height={1}>
-              <text fg={colors.textDim}>{"You'll need 2 things from IBKR Account Management:"}</text>
-            </box>
-            <box height={2} />
-            <box height={1}>
-              <text fg={colors.textDim}>{"1. Go to "}<u><span fg={colors.text}>{"Reports > Flex Queries"}</span></u></text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"2. Create a Flex Query that includes positions data"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"3. Note the "}<strong><span fg={colors.text}>{"Query ID"}</span></strong>{" (numeric)"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"4. Under "}<u><span fg={colors.text}>{"Reports > Settings"}</span></u>{", generate a "}<strong><span fg={colors.text}>{"Flex Web Service Token"}</span></strong></text>
-            </box>
-            <box height={2} />
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"You'll need 2 things from IBKR Account Management:"}</Text>
+            </Box>
+            <Box height={2} />
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"1. Go to "}<Underline><Span fg={colors.text}>{"Reports > Flex Queries"}</Span></Underline></Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"2. Create a Flex Query that includes positions data"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"3. Note the "}<Strong><Span fg={colors.text}>{"Query ID"}</Span></Strong>{" (numeric)"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"4. Under "}<Underline><Span fg={colors.text}>{"Reports > Settings"}</Span></Underline>{", generate a "}<Strong><Span fg={colors.text}>{"Flex Web Service Token"}</Span></Strong></Text>
+            </Box>
+            <Box height={2} />
             <ExternalLink url="https://www.ibkrguides.com/orgportal/performanceandstatements/flex.htm" />
           </>
         )}
 
         {selectedBrokerId === "ibkr" && isGateway && (
           <>
-            <box height={1}>
-              <text fg={colors.textDim}>{"You'll need IB Gateway or TWS running locally:"}</text>
-            </box>
-            <box height={2} />
-            <box height={1}>
-              <text fg={colors.textDim}>{"1. Download and install "}<strong><span fg={colors.text}>{"IB Gateway"}</span></strong>{" (or use TWS)"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"2. Log in with your IBKR credentials"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"3. In "}<u><span fg={colors.text}>{"Configuration > API > Settings"}</span></u>{":"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"   Enable \"ActiveX and Socket Clients\""}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"   Gloomberb can auto-detect local API ports (4001, 4002, 7496, 7497)"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"   Use Manual setup only if you need a custom host or exact socket port"}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"4. Keep it running while using Gloomberb"}</text>
-            </box>
-            <box height={2} />
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"You'll need IB Gateway or TWS running locally:"}</Text>
+            </Box>
+            <Box height={2} />
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"1. Download and install "}<Strong><Span fg={colors.text}>{"IB Gateway"}</Span></Strong>{" (or use TWS)"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"2. Log in with your IBKR credentials"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"3. In "}<Underline><Span fg={colors.text}>{"Configuration > API > Settings"}</Span></Underline>{":"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"   Enable \"ActiveX and Socket Clients\""}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"   Gloomberb can auto-detect local API ports (4001, 4002, 7496, 7497)"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"   Use Manual setup only if you need a custom host or exact socket port"}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"4. Keep it running while using Gloomberb"}</Text>
+            </Box>
+            <Box height={2} />
             <ExternalLink url="https://www.interactivebrokers.com/en/trading/ibgateway-stable.php" />
           </>
         )}
 
         {selectedBrokerId !== "ibkr" && (
           <>
-            <box height={1}>
-              <text fg={colors.textDim}>{`You'll need your ${brokerLabel} API credentials.`}</text>
-            </box>
-            <box height={1}>
-              <text fg={colors.textDim}>{"Check your broker's documentation for setup instructions."}</text>
-            </box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{`You'll need your ${brokerLabel} API credentials.`}</Text>
+            </Box>
+            <Box height={1}>
+              <Text fg={colors.textDim}>{"Check your broker's documentation for setup instructions."}</Text>
+            </Box>
           </>
         )}
 
-        <box height={2} />
+        <Box height={2} />
 
-      </box>
+      </Box>
     );
   }
 
   if (sub === "broker-sync" && selectedBrokerId) {
     const brokerLabel = choices.find((choice) => choice.id === selectedBrokerId)?.label.replace("Connect ", "") ?? selectedBrokerId;
     return (
-      <box flexDirection="column" paddingX={2}>
-        <box height={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{`Connect ${brokerLabel}`}</text>
-        </box>
-        <box height={1} />
-        <box height={1}>
-          <text fg={brokerSyncing ? colors.text : colors.negative}>
+      <Box flexDirection="column" paddingX={2}>
+        <Box height={1}>
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{`Connect ${brokerLabel}`}</Text>
+        </Box>
+        <Box height={1} />
+        <Box height={1}>
+          <Text fg={brokerSyncing ? colors.text : colors.negative}>
             {brokerSyncing
               ? `Connecting to ${brokerLabel} and importing accounts and positions...`
               : brokerSyncError || `Unable to sync ${brokerLabel}.`}
-          </text>
-        </box>
-        <box height={2} />
-        <box height={1}>
-          <text fg={colors.textDim}>
+          </Text>
+        </Box>
+        <Box height={2} />
+        <Box height={1}>
+          <Text fg={colors.textDim}>
             {brokerSyncing
               ? "This happens now so your portfolio is ready before onboarding finishes."
               : "Press Enter to retry, or Backspace to edit the broker settings."}
-          </text>
-        </box>
-      </box>
+          </Text>
+        </Box>
+      </Box>
     );
   }
 
@@ -1036,13 +1037,13 @@ function PortfolioStep({
   const values = brokerValues[selectedBrokerId] ?? {};
 
   return (
-    <box flexDirection="column" paddingX={2}>
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+    <Box flexDirection="column" paddingX={2}>
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           {"Connect "}{choices.find((c) => c.id === selectedBrokerId)?.label.replace("Connect ", "") ?? selectedBrokerId}
-        </text>
-      </box>
-      <box height={1} />
+        </Text>
+      </Box>
+      <Box height={1} />
 
       {/* Show completed fields */}
       {brokerFields.map((field, i) => {
@@ -1055,10 +1056,10 @@ function PortfolioStep({
             ? field.options?.find((option) => option.value === val)?.label ?? val
             : field.type === "password" ? PASSWORD_MASK_CHAR.repeat(val.length) : val;
           return (
-            <box key={field.key} height={1}>
-              <text fg={colors.positive}>{"\u2713 "}</text>
-              <text fg={colors.text}>{`${field.label}: ${selectedLabel}`}</text>
-            </box>
+            <Box key={field.key} height={1}>
+              <Text fg={colors.positive}>{"\u2713 "}</Text>
+              <Text fg={colors.text}>{`${field.label}: ${selectedLabel}`}</Text>
+            </Box>
           );
         }
 
@@ -1066,15 +1067,15 @@ function PortfolioStep({
           const activeSelectValue = field.options?.[brokerSelectIdx]?.value ?? values[field.key] ?? "";
           const effectiveValue = val || field.defaultValue || "";
           return (
-            <box key={field.key} flexDirection="column">
-              {i > 0 && <box height={1} />}
-              <box height={1}>
-                <text fg={colors.text} attributes={TextAttributes.BOLD}>
+            <Box key={field.key} flexDirection="column">
+              {i > 0 && <Box height={1} />}
+              <Box height={1}>
+                <Text fg={colors.text} attributes={TextAttributes.BOLD}>
                   {`Step ${i + 1}: `}
-                </text>
-                <text fg={colors.text}>{field.label}</text>
-              </box>
-              <box height={1}>
+                </Text>
+                <Text fg={colors.text}>{field.label}</Text>
+              </Box>
+              <Box height={1}>
                 {field.type !== "select" && (editing ? (
                   <TextField
                     inputRef={inputRef}
@@ -1089,68 +1090,68 @@ function PortfolioStep({
                     onSubmit={() => {}}
                   />
                 ) : (
-                  <text fg={effectiveValue ? colors.positive : colors.textMuted}>
+                  <Text fg={effectiveValue ? colors.positive : colors.textMuted}>
                     {effectiveValue
                       ? `\u2713 ${field.label}: ${field.type === "password" ? PASSWORD_MASK_CHAR.repeat(effectiveValue.length) : effectiveValue}`
                       : "Press enter to type..."}
-                  </text>
+                  </Text>
                 ))}
-              </box>
+              </Box>
               {field.type !== "select" && !val && field.defaultValue && (
-                <box height={1}>
-                  <text fg={colors.textMuted}>{`Press enter to use ${field.defaultValue}`}</text>
-                </box>
+                <Box height={1}>
+                  <Text fg={colors.textMuted}>{`Press enter to use ${field.defaultValue}`}</Text>
+                </Box>
               )}
               {field.type === "select" && (
-                <box flexDirection="column">
+                <Box flexDirection="column">
                   {(field.options ?? []).map((option, optionIdx) => {
                     const selected = optionIdx === brokerSelectIdx;
                     return (
-                      <box key={option.value} flexDirection="column" backgroundColor={selected ? colors.selected : colors.bg}>
-                        <box height={1}>
-                          <text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "\u25b8 " : "  "}</text>
-                          <text
+                      <Box key={option.value} flexDirection="column" backgroundColor={selected ? colors.selected : colors.bg}>
+                        <Box height={1}>
+                          <Text fg={selected ? colors.selectedText : colors.textDim}>{selected ? "\u25b8 " : "  "}</Text>
+                          <Text
                             fg={selected ? colors.text : colors.textDim}
                             attributes={selected ? TextAttributes.BOLD : 0}
                           >
                             {option.label}
-                          </text>
-                        </box>
+                          </Text>
+                        </Box>
                         {option.description && (
-                          <box height={1}>
-                            <text fg={colors.textMuted}>{`  ${option.description}`}</text>
-                          </box>
+                          <Box height={1}>
+                            <Text fg={colors.textMuted}>{`  ${option.description}`}</Text>
+                          </Box>
                         )}
-                      </box>
+                      </Box>
                     );
                   })}
-                </box>
+                </Box>
               )}
               {field.type === "select" && (
-                <box height={1}>
-                  <text fg={colors.textMuted}>
+                <Box height={1}>
+                  <Text fg={colors.textMuted}>
                     {activeSelectValue ? `Selected: ${field.options?.find((option) => option.value === activeSelectValue)?.label ?? activeSelectValue}` : "Use \u2191\u2193 to choose"}
-                  </text>
-                </box>
+                  </Text>
+                </Box>
               )}
-            </box>
+            </Box>
           );
         }
 
         return null;
       })}
 
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Credentials are saved locally."}</text>
-      </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textMuted}>
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.textDim}>{"Credentials are saved locally."}</Text>
+      </Box>
+      <Box height={1} />
+      <Box height={1}>
+        <Text fg={colors.textMuted}>
           {`Field ${brokerFieldIdx + 1} of ${brokerFields.length}`}
-        </text>
-      </box>
-    </box>
+        </Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -1175,12 +1176,12 @@ function PluginsStep({
   }));
 
   return (
-    <box flexDirection="column" paddingX={2}>
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Select plugins to enable"}</text>
-      </box>
+    <Box flexDirection="column" paddingX={2}>
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Select plugins to enable"}</Text>
+      </Box>
 
-      <box height={2} />
+      <Box height={2} />
 
       <ToggleList
         items={items}
@@ -1189,20 +1190,20 @@ function PluginsStep({
         onSelect={onSelect}
       />
 
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textMuted}>{"Use \u2191\u2193 to navigate \u00b7 space to toggle"}</text>
-      </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Toggle plugins anytime from the command bar"}</text>
-      </box>
-      <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"with the "}</text>
-        <text fg={colors.text} attributes={TextAttributes.BOLD}>{"PL"}</text>
-        <text fg={colors.textDim}>{" prefix."}</text>
-      </box>
-    </box>
+      <Box height={1} />
+      <Box height={1}>
+        <Text fg={colors.textMuted}>{"Use \u2191\u2193 to navigate \u00b7 space to toggle"}</Text>
+      </Box>
+      <Box height={1} />
+      <Box height={1}>
+        <Text fg={colors.textDim}>{"Toggle plugins anytime from the command bar"}</Text>
+      </Box>
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.textDim}>{"with the "}</Text>
+        <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"PL"}</Text>
+        <Text fg={colors.textDim}>{" prefix."}</Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -1252,41 +1253,41 @@ function ShortcutsStep({
   const COL = 14;
 
   return (
-    <box flexDirection="column" paddingX={2}>
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Useful shortcuts"}</text>
-      </box>
-      <box height={1} />
+    <Box flexDirection="column" paddingX={2}>
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Useful shortcuts"}</Text>
+      </Box>
+      <Box height={1} />
 
       {keyboardShortcuts.map((s) => (
-        <box key={s.key} height={1} flexDirection="row">
-          <text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key.padEnd(COL)}</text>
-          <text fg={colors.textDim}>{s.desc}</text>
-        </box>
+        <Box key={s.key} height={1} flexDirection="row">
+          <Text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key.padEnd(COL)}</Text>
+          <Text fg={colors.textDim}>{s.desc}</Text>
+        </Box>
       ))}
 
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Command-bar prefixes"}</text>
-      </box>
-      <box height={1} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Type these in the command bar ("}<span fg={colors.text}><strong>{"Ctrl+P"}</strong></span>{" or "}<span fg={colors.text}><strong>{"`"}</strong></span>{"):"}</text>
-      </box>
-      <box height={1} />
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Command-bar prefixes"}</Text>
+      </Box>
+      <Box height={1} />
+      <Box height={1}>
+        <Text fg={colors.textDim}>{"Type these in the command bar ("}<Span fg={colors.text}><Strong>{"Ctrl+P"}</Strong></Span>{" or "}<Span fg={colors.text}><Strong>{"`"}</Strong></Span>{"):"}</Text>
+      </Box>
+      <Box height={1} />
 
       {commandPrefixes.map((s) => (
-        <box key={s.key} height={1} flexDirection="row">
-          <text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key.padEnd(COL)}</text>
-          <text fg={colors.textDim}>{s.desc}</text>
-        </box>
+        <Box key={s.key} height={1} flexDirection="row">
+          <Text fg={colors.text} attributes={TextAttributes.BOLD}>{s.key.padEnd(COL)}</Text>
+          <Text fg={colors.textDim}>{s.desc}</Text>
+        </Box>
       ))}
 
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textDim}>{"Everything is searchable, just type what you want."}</text>
-      </box>
-    </box>
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.textDim}>{"Everything is searchable, just type what you want."}</Text>
+      </Box>
+    </Box>
   );
 }
 
@@ -1307,58 +1308,58 @@ function ReadyStep({
   const positionLabel = positionsImported === 1 ? "position" : "positions";
 
   return (
-    <box flexDirection="column" paddingX={2}>
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"You're all set"}</text>
-      </box>
-      <box height={2} />
-      <box height={1}>
-        <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
-        <text fg={colors.text}>{" Theme configured"}</text>
-      </box>
-      <box height={1}>
-        <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
-        <text fg={colors.text}>
+    <Box flexDirection="column" paddingX={2}>
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"You're all set"}</Text>
+      </Box>
+      <Box height={2} />
+      <Box height={1}>
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
+        <Text fg={colors.text}>{" Theme configured"}</Text>
+      </Box>
+      <Box height={1}>
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
+        <Text fg={colors.text}>
           {brokerName
             ? ` ${brokerName} connected. Imported ${positionsImported} ${positionLabel}`
             : ` Portfolio "${portfolioName}" created`}
-        </text>
-      </box>
-      <box height={1}>
-        <text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</text>
-        <text fg={colors.text}>{" Plugins selected"}</text>
-      </box>
-      <box height={2} />
+        </Text>
+      </Box>
+      <Box height={1}>
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
+        <Text fg={colors.text}>{" Plugins selected"}</Text>
+      </Box>
+      <Box height={2} />
       {brokerName ? (
-        <box height={1}>
-          <text fg={isFinishing ? colors.text : colors.textDim}>
+        <Box height={1}>
+          <Text fg={isFinishing ? colors.text : colors.textDim}>
             {isFinishing
               ? "Launching Gloomberb..."
               : positionsImported > 0
               ? "Your broker portfolio is ready and will open directly after launch."
               : "Broker sync finished. If you expected holdings, check the selected account or connection mode."}
-          </text>
-        </box>
+          </Text>
+        </Box>
       ) : (
-        <box height={1}>
-          <text fg={colors.textDim}>{"Search for broker names in the command bar to connect."}</text>
-        </box>
+        <Box height={1}>
+          <Text fg={colors.textDim}>{"Search for broker names in the command bar to connect."}</Text>
+        </Box>
       )}
       {error && (
         <>
-          <box height={1} />
-          <box height={2}>
-            <text fg={colors.negative}>{error}</text>
-          </box>
+          <Box height={1} />
+          <Box height={2}>
+            <Text fg={colors.negative}>{error}</Text>
+          </Box>
         </>
       )}
-      <box height={2} />
-      <box height={1} flexDirection="row">
-        <text fg={colors.textDim}>{"Data stored in "}</text>
-        <text fg={colors.text}>{"~/gloomberb/"}</text>
-      </box>
-      <box height={1} />
-    </box>
+      <Box height={2} />
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.textDim}>{"Data stored in "}</Text>
+        <Text fg={colors.text}>{"~/gloomberb/"}</Text>
+      </Box>
+      <Box height={1} />
+    </Box>
   );
 }

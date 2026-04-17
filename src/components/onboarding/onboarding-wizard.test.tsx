@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { act } from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "../../renderers/opentui/test-utils";
 import { OnboardingWizard } from "./onboarding-wizard";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import type { BrokerAdapter } from "../../types/broker";

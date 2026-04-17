@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { Box, Text } from "../../../ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GloomPlugin, DetailTabProps } from "../../../types/plugin";
 import type { SecFilingItem } from "../../../types/data-provider";
 import {
@@ -12,6 +11,8 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app-context";
 import { colors } from "../../../theme/colors";
 import { Spinner } from "../../../components/spinner";
+import { FeedDataTableStackView, type FeedDataTableItem } from "../../../components";
+import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { parseForm4Xml, transactionTypeLabel, type InsiderTransaction } from "./insider-data";
@@ -25,12 +26,6 @@ function formatDate(d: Date | string | number): string {
   const date = d instanceof Date ? d : new Date(d);
   if (isNaN(date.getTime())) return "—";
   return `${MONTH_NAMES[date.getMonth()]} ${String(date.getDate()).padStart(2, " ")} ${date.getFullYear()}`;
-}
-
-function transactionColor(type: InsiderTransaction["transactionType"]): string {
-  if (type === "P") return colors.positive;
-  if (type === "S") return colors.negative;
-  return colors.textDim;
 }
 
 function wrapLines(text: string, width: number): string[] {
@@ -53,19 +48,20 @@ function wrapLines(text: string, width: number): string[] {
 function renderNotice(message: string, width: number) {
   const lines = wrapLines(message, width - 4);
   return (
-    <box flexDirection="column" paddingX={1} paddingY={1}>
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
       {lines.map((line, i) => (
-        <box key={i} height={1}>
-          <text fg={colors.textDim}>{line}</text>
-        </box>
+        <Box key={i} height={1}>
+          <Text fg={colors.textDim}>{line}</Text>
+        </Box>
       ))}
-    </box>
+    </Box>
   );
 }
 
 interface ParsedFiling {
   filing: SecFilingItem;
   transaction: InsiderTransaction | null;
+  isLoading: boolean;
 }
 
 function buildSummary(parsed: ParsedFiling[]): string {
@@ -96,20 +92,97 @@ function buildSummary(parsed: ParsedFiling[]): string {
   return parts.join("  |  ");
 }
 
+function truncateText(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 3) return text.slice(0, width);
+  return `${text.slice(0, width - 3)}...`;
+}
+
+function formatFilingForm(form: string): string {
+  const value = form.trim();
+  return value ? `FORM ${value}` : "FORM 4";
+}
+
+function buildTransactionTitle(transaction: InsiderTransaction): string {
+  const type = transactionTypeLabel(transaction.transactionType);
+  const price = transaction.pricePerShare != null
+    ? ` @ ${formatCurrency(transaction.pricePerShare)}`
+    : "";
+  const value = transaction.totalValue != null
+    ? ` | ${formatCurrency(transaction.totalValue)}`
+    : "";
+  return `${type} ${formatCompact(transaction.shares)} shares${price}${value}`;
+}
+
+function buildTransactionDetailBody(transaction: InsiderTransaction): string {
+  const lines = [
+    `Transaction: ${transactionTypeLabel(transaction.transactionType)}`,
+    `Date: ${formatDate(transaction.filingDate)}`,
+    `Shares: ${formatCompact(transaction.shares)}`,
+    `Price/Share: ${transaction.pricePerShare != null ? formatCurrency(transaction.pricePerShare) : "—"}`,
+    `Total Value: ${transaction.totalValue != null ? formatCurrency(transaction.totalValue) : "—"}`,
+    `Shares Owned After: ${transaction.sharesOwned != null ? formatCompact(transaction.sharesOwned) : "—"}`,
+  ];
+  return lines.join("\n");
+}
+
+function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
+  return parsed.map(({ filing, transaction, isLoading }) => {
+    const filingMeta = [
+      `Filed ${formatDate(filing.filingDate)}`,
+      `Accession ${filing.accessionNumber}`,
+      formatFilingForm(filing.form),
+    ];
+
+    if (!transaction) {
+      return {
+        id: filing.accessionNumber,
+        eyebrow: formatFilingForm(filing.form),
+        title: isLoading ? "Loading Form 4 filing..." : "Form 4 transaction unavailable",
+        timestamp: filing.filingDate,
+        detailTitle: isLoading ? "Loading Form 4 filing..." : "Form 4 transaction unavailable",
+        detailMeta: filingMeta,
+        detailBody: isLoading
+          ? "Loading filing content..."
+          : "This Form 4 filing could not be parsed into a transaction summary.",
+        detailNote: filing.filingUrl || undefined,
+      };
+    }
+
+    return {
+      id: filing.accessionNumber,
+      eyebrow: transaction.reportedName,
+      title: buildTransactionTitle(transaction),
+      timestamp: transaction.filingDate,
+      preview: transaction.title || undefined,
+      detailTitle: transaction.reportedName,
+      detailMeta: [
+        ...(transaction.title ? [transaction.title] : []),
+        ...filingMeta,
+      ],
+      detailBody: buildTransactionDetailBody(transaction),
+      detailNote: filing.filingUrl || undefined,
+    };
+  });
+}
+
 function InsiderTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
+  const tickerKey = ticker?.metadata.ticker ?? "none";
+  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(`insider:selectedIdx:${tickerKey}`, 0);
+  const [nameFilter, setNameFilter] = usePluginPaneState<string | null>(`insider:nameFilter:${tickerKey}`, null);
   const eligibleTicker = isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
-
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const [nameFilter, setNameFilter] = useState<string | null>(null);
-  const [detailFiling, setDetailFiling] = useState<ParsedFiling | null>(null);
 
   const filingsEntry = useSecFilingsQuery(
     instrument && eligibleTicker ? { instrument, count: FORM4_LIMIT } : null,
   );
   const allFilings = useResolvedEntryValue(filingsEntry) ?? [];
-  const form4Filings = allFilings.filter((f) => f.form.trim() === "4");
+  const form4Filings = useMemo(
+    () => allFilings.filter((f) => f.form.trim() === "4"),
+    [allFilings],
+  );
 
   const loading =
     filingsEntry?.phase === "loading" ||
@@ -121,12 +194,10 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
 
   // Fetch content for each Form 4 filing sequentially via an index pointer
   const [contentMap, setContentMap] = useState<Map<string, string | null>>(new Map());
-  const fetchIndexRef = useRef(0);
   const [fetchPointer, setFetchPointer] = useState(0);
 
   // Reset when ticker changes
   useEffect(() => {
-    fetchIndexRef.current += 1;
     setContentMap(new Map());
     setFetchPointer(0);
   }, [ticker?.metadata.ticker]);
@@ -150,64 +221,50 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentValue, contentEntry?.phase, nextToFetch?.accessionNumber, fetchPointer]);
 
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-
-  const allParsed: ParsedFiling[] = form4Filings.map((filing) => {
+  const allParsed: ParsedFiling[] = useMemo(() => form4Filings.map((filing) => {
+    const hasContent = contentMap.has(filing.accessionNumber);
     const xml = contentMap.get(filing.accessionNumber) ?? null;
     return {
       filing,
       transaction: xml ? parseForm4Xml(xml) : null,
+      isLoading: !hasContent,
     };
-  });
+  }), [contentMap, form4Filings]);
 
   // Apply name filter
-  const parsed = nameFilter
-    ? allParsed.filter((p) => p.transaction?.reportedName === nameFilter)
-    : allParsed;
+  const parsed = useMemo(() => (
+    nameFilter
+      ? allParsed.filter((p) => p.transaction?.reportedName === nameFilter)
+      : allParsed
+  ), [allParsed, nameFilter]);
+  const feedItems = useMemo(() => toFeedItems(parsed), [parsed]);
+  const summary = useMemo(() => buildSummary(allParsed), [allParsed]);
+  const pendingCount = form4Filings.filter((f) => !contentMap.has(f.accessionNumber)).length;
+  const selectedTransaction = parsed[selectedIdx]?.transaction ?? null;
 
-  // Keyboard handling
-  useKeyboard((event) => {
-    if (!focused) return;
+  const toggleNameFilter = useCallback((reportedName: string) => {
+    setNameFilter((current) => current === reportedName ? null : reportedName);
+    setSelectedIdx(0);
+  }, [setNameFilter, setSelectedIdx]);
+  const clearNameFilter = useCallback(() => {
+    setNameFilter(null);
+    setSelectedIdx(0);
+  }, [setNameFilter, setSelectedIdx]);
 
-    if (event.name === "escape") {
-      if (detailFiling) { setDetailFiling(null); return; }
-      if (nameFilter) { setNameFilter(null); setSelectedIdx(0); return; }
-      return;
-    }
+  const handleRootKeyDown = useCallback((event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    if (event.name !== "f") return false;
+    if (!selectedTransaction) return false;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    toggleNameFilter(selectedTransaction.reportedName);
+    return true;
+  }, [selectedTransaction, toggleNameFilter]);
 
-    if (detailFiling) return; // No navigation in detail view
-
-    if (event.name === "j" || event.name === "down") {
-      setSelectedIdx((prev) => Math.min(prev + 1, parsed.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      setSelectedIdx((prev) => Math.max(prev - 1, 0));
-    } else if (event.name === "return") {
-      const item = parsed[selectedIdx];
-      if (item?.transaction) setDetailFiling(item);
-    } else if (event.name === "f") {
-      // Toggle name filter on selected row's insider
-      const item = parsed[selectedIdx];
-      if (item?.transaction) {
-        if (nameFilter === item.transaction.reportedName) {
-          setNameFilter(null);
-        } else {
-          setNameFilter(item.transaction.reportedName);
-        }
-        setSelectedIdx(0);
-      }
-    }
-  });
-
-  // Scroll to follow selection
-  useEffect(() => {
-    const sb = scrollRef.current;
-    if (!sb?.viewport || parsed.length === 0 || selectedIdx < 0) return;
-    const viewportHeight = Math.max(sb.viewport.height, 1);
-    if (selectedIdx < sb.scrollTop) sb.scrollTo(selectedIdx);
-    else if (selectedIdx >= sb.scrollTop + viewportHeight) sb.scrollTo(selectedIdx - viewportHeight + 1);
-  }, [selectedIdx, parsed.length]);
-
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view insider activity.</text>;
+  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view insider activity.</Text>;
   if (!eligibleTicker) return renderNotice("Insider transactions are only shown for US equities.", width);
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
   if (error) return renderNotice(`Error: ${error}`, width);
@@ -215,187 +272,59 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
     return renderNotice(`No Form 4 filings found for ${ticker.metadata.ticker}.`, width);
   }
 
-  // Detail view
-  if (detailFiling?.transaction) {
-    const tx = detailFiling.transaction;
-    const filing = detailFiling.filing;
-    return (
-      <box flexDirection="column" width={width} height={height}>
-        <box height={1} paddingX={1}>
-          <text fg={colors.textBright} attributes={TextAttributes.BOLD}>◂ {tx.reportedName}</text>
-          {tx.title && <text fg={colors.textDim}> — {tx.title}</text>}
-        </box>
-        <scrollbox flexGrow={1} scrollY focusable={false}>
-          <box flexDirection="column" paddingX={1} paddingY={1} gap={1}>
-            <box flexDirection="column">
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Transaction</text></box>
-                <text fg={transactionColor(tx.transactionType)} attributes={TextAttributes.BOLD}>
-                  {transactionTypeLabel(tx.transactionType)}
-                </text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Date</text></box>
-                <text fg={colors.text}>{formatDate(tx.filingDate)}</text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Shares</text></box>
-                <text fg={colors.text}>{formatCompact(tx.shares)}</text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Price/Share</text></box>
-                <text fg={colors.text}>
-                  {tx.pricePerShare != null ? formatCurrency(tx.pricePerShare) : "—"}
-                </text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Total Value</text></box>
-                <text fg={transactionColor(tx.transactionType)}>
-                  {tx.totalValue != null ? formatCurrency(tx.totalValue) : "—"}
-                </text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Shares Owned</text></box>
-                <text fg={colors.text}>
-                  {tx.sharesOwned != null ? formatCompact(tx.sharesOwned) : "—"}
-                </text>
-              </box>
-            </box>
-            <box flexDirection="column">
-              <box height={1}>
-                <text fg={colors.textDim} attributes={TextAttributes.BOLD}>Filing</text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Accession</text></box>
-                <text fg={colors.text}>{filing.accessionNumber}</text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Filed</text></box>
-                <text fg={colors.text}>{formatDate(filing.filingDate)}</text>
-              </box>
-              <box flexDirection="row" height={1}>
-                <box width={16}><text fg={colors.textDim}>Form</text></box>
-                <text fg={colors.text}>{filing.form}</text>
-              </box>
-            </box>
-          </box>
-        </scrollbox>
-      </box>
-    );
-  }
-
-  const summary = buildSummary(allParsed);
-  const dateW = 12;
-  const typeW = 7;
-  const sharesW = 10;
-  const priceW = 10;
-  const valueW = 12;
-  const nameW = Math.max(10, width - dateW - typeW - sharesW - priceW - valueW - 2);
-  const pendingCount = form4Filings.filter((f) => !contentMap.has(f.accessionNumber)).length;
+  const selectedFilterName = selectedTransaction?.reportedName ?? null;
+  const filterLabel = nameFilter
+    ? `[clear filter: ${truncateText(nameFilter, 24)}]`
+    : selectedFilterName
+      ? `[f]ilter ${truncateText(selectedFilterName, 24)}`
+      : "";
+  const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
+  const summaryWidth = Math.max(
+    12,
+    width - filterLabel.length - pendingLabel.length - 6,
+  );
+  const rootBefore = (
+    <Box height={1} width={width} paddingX={1} flexDirection="row">
+      <Text fg={colors.textDim}>{truncateText(summary, summaryWidth)}</Text>
+      {filterLabel ? (
+        <Box
+          marginLeft={1}
+          onMouseDown={(event: any) => {
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            if (nameFilter) {
+              clearNameFilter();
+            } else if (selectedFilterName) {
+              toggleNameFilter(selectedFilterName);
+            }
+          }}
+        >
+          <Text fg={nameFilter ? colors.warning : colors.textMuted}>{filterLabel}</Text>
+        </Box>
+      ) : null}
+      {pendingLabel ? (
+        <>
+          <Box flexGrow={1} />
+          <Text fg={colors.textMuted}>{pendingLabel}</Text>
+        </>
+      ) : null}
+    </Box>
+  );
 
   return (
-    <box flexDirection="column" width={width} height={height}>
-      {/* Summary bar */}
-      <box height={1} paddingX={1} flexDirection="row">
-        <text fg={colors.textDim}>{summary}</text>
-        {nameFilter && (
-          <box marginLeft={1}>
-            <text fg={colors.warning}>[filtered: {nameFilter}]</text>
-          </box>
-        )}
-        {pendingCount > 0 && (
-          <>
-            <box flexGrow={1} />
-            <text fg={colors.textMuted}>loading {pendingCount}…</text>
-          </>
-        )}
-      </box>
-
-      {/* Column headers */}
-      <box height={1} paddingX={1} flexDirection="row">
-        <box width={dateW}><text fg={colors.textDim}>DATE</text></box>
-        <box width={nameW}><text fg={colors.textDim}>INSIDER</text></box>
-        <box width={typeW}><text fg={colors.textDim}>TYPE</text></box>
-        <box width={sharesW} justifyContent="flex-end"><text fg={colors.textDim}>SHARES</text></box>
-        <box width={priceW} justifyContent="flex-end"><text fg={colors.textDim}>PRICE</text></box>
-        <box width={valueW} justifyContent="flex-end"><text fg={colors.textDim}>VALUE</text></box>
-      </box>
-
-      <scrollbox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
-        <box flexDirection="column">
-          {parsed.map(({ filing, transaction }, i) => {
-            const isSelected = i === selectedIdx;
-            const bg = isSelected ? colors.selected : undefined;
-
-            if (!transaction) {
-              const isLoading = !contentMap.has(filing.accessionNumber);
-              return (
-                <box key={filing.accessionNumber} height={1} paddingX={1} flexDirection="row" backgroundColor={bg}>
-                  <box width={dateW}>
-                    <text fg={colors.textDim}>{formatDate(filing.filingDate)}</text>
-                  </box>
-                  <box flexGrow={1}>
-                    <text fg={colors.textMuted}>{isLoading ? "loading…" : "—"}</text>
-                  </box>
-                </box>
-              );
-            }
-
-            const typeLabel = transactionTypeLabel(transaction.transactionType);
-            const typeFg = isSelected ? colors.selectedText : transactionColor(transaction.transactionType);
-            const fg = isSelected ? colors.selectedText : colors.text;
-            const dimFg = isSelected ? colors.selectedText : colors.textDim;
-
-            return (
-              <box
-                key={filing.accessionNumber}
-                height={1}
-                paddingX={1}
-                flexDirection="row"
-                backgroundColor={bg}
-                onMouseDown={() => setSelectedIdx(i)}
-              >
-                <box width={dateW}>
-                  <text fg={dimFg}>{formatDate(transaction.filingDate)}</text>
-                </box>
-                <box
-                  width={nameW}
-                  onMouseDown={(ev: any) => {
-                    ev.preventDefault?.();
-                    if (nameFilter === transaction.reportedName) {
-                      setNameFilter(null);
-                    } else {
-                      setNameFilter(transaction.reportedName);
-                      setSelectedIdx(0);
-                    }
-                  }}
-                >
-                  <text fg={fg} attributes={TextAttributes.UNDERLINE}>
-                    {transaction.reportedName.slice(0, nameW - 1)}
-                  </text>
-                </box>
-                <box width={typeW}>
-                  <text fg={typeFg} attributes={TextAttributes.BOLD}>{typeLabel}</text>
-                </box>
-                <box width={sharesW} justifyContent="flex-end">
-                  <text fg={fg}>{formatCompact(transaction.shares)}</text>
-                </box>
-                <box width={priceW} justifyContent="flex-end">
-                  <text fg={fg}>
-                    {transaction.pricePerShare != null ? formatCurrency(transaction.pricePerShare) : "—"}
-                  </text>
-                </box>
-                <box width={valueW} justifyContent="flex-end">
-                  <text fg={typeFg}>
-                    {transaction.totalValue != null ? formatCompact(transaction.totalValue) : "—"}
-                  </text>
-                </box>
-              </box>
-            );
-          })}
-        </box>
-      </scrollbox>
-    </box>
+    <FeedDataTableStackView
+      width={width}
+      height={height}
+      focused={focused}
+      items={feedItems}
+      selectedIdx={selectedIdx}
+      onSelect={setSelectedIdx}
+      rootBefore={rootBefore}
+      onRootKeyDown={handleRootKeyDown}
+      sourceLabel="Insider"
+      titleLabel="Transaction"
+      emptyStateTitle={nameFilter ? "No insider transactions for this filter." : "No insider transactions."}
+    />
   );
 }
 

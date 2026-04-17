@@ -1,5 +1,6 @@
+import { Box, Text } from "../../../ui";
 import { useEffect, useMemo } from "react";
-import { TextAttributes } from "@opentui/core";
+import { TextAttributes } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
@@ -65,27 +66,27 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
 
   const rootBefore = (
     <>
-      <box height={1} flexDirection="row" paddingX={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Industry News</text>
-        <box marginLeft={1}>
-          <text fg={colors.textMuted}>{articles.length} stories</text>
-        </box>
-      </box>
-      <box height={1} flexShrink={0} overflow="hidden">
+      <Box height={1} flexDirection="row" paddingX={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Industry News</Text>
+        <Box marginLeft={1}>
+          <Text fg={colors.textMuted}>{articles.length} stories</Text>
+        </Box>
+      </Box>
+      <Box height={1} flexShrink={0} overflow="hidden">
         <TabBar
           tabs={tabs}
           activeValue={category}
           onSelect={(value) => setCategory(value as Category)}
           compact
         />
-      </box>
+      </Box>
     </>
   );
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
   ) : (
-    <box flexGrow={1} />
+    <Box flexGrow={1} />
   );
 
   return (

@@ -1,6 +1,7 @@
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { Quote } from "../../../types/financials";
@@ -249,7 +250,7 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     const currentPos = navigableIndices.indexOf(activeFlatIdx);
@@ -351,7 +352,7 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
   }, [quotes]);
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       <DataTable<WorldIndexTableRow, WorldIndexColumn>
         columns={columns}
         items={flatRows}
@@ -374,7 +375,7 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
         renderCell={renderCell}
         emptyStateTitle="No indices configured."
       />
-    </box>
+    </Box>
   );
 }
 

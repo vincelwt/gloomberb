@@ -1,6 +1,7 @@
+import { Box, Text } from "../../ui";
 import { useEffect, useState } from "react";
-import { useKeyboard } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
+import { useShortcut } from "../../react/input";
+import { TextAttributes } from "../../ui";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
@@ -108,7 +109,7 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   }, [strikes.length, parsed?.strike]);
 
   // Keyboard navigation
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused || !chain) return;
 
     const isEnter = event.name === "enter" || event.name === "return";
@@ -138,10 +139,10 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     }
   });
 
-  if (!ticker) return <text fg={colors.textDim}>Select a ticker to view options.</text>;
+  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view options.</Text>;
   if (loading && !chain) return <Spinner label="Loading options chain..." />;
-  if (error) return <text fg={colors.textDim}>{error}</text>;
-  if (!chain || chain.expirationDates.length === 0) return <text fg={colors.textDim}>No options available for {effectiveTicker}.</text>;
+  if (error) return <Text fg={colors.textDim}>{error}</Text>;
+  if (!chain || chain.expirationDates.length === 0) return <Text fg={colors.textDim}>No options available for {effectiveTicker}.</Text>;
 
   const innerWidth = Math.max(width - 4, 60);
   const callsByStrike = new Map<number, OptionContract>(chain.calls.map((c) => [c.strike, c]));
@@ -175,69 +176,69 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const hoverColor = hoverBg();
 
   return (
-    <box flexDirection="column" flexGrow={1} paddingX={1} onMouseDown={() => { if (!interactive) enterInteractive(); }}>
+    <Box flexDirection="column" flexGrow={1} paddingX={1} onMouseDown={() => { if (!interactive) enterInteractive(); }}>
       {/* Expiration selector */}
-      <box flexDirection="row" height={1} gap={1}>
-        <text fg={colors.textDim}>Exp:</text>
+      <Box flexDirection="row" height={1} gap={1}>
+        <Text fg={colors.textDim}>Exp:</Text>
         {visibleExps.map((ts, i) => {
           const realIdx = expStart + i;
           const isActive = realIdx === expIdx;
           const isHovered = realIdx === hoveredExpIdx && !isActive;
           return (
-            <box
+            <Box
               key={ts}
               onMouseMove={() => setHoveredExpIdx(realIdx)}
               onMouseOut={() => setHoveredExpIdx(null)}
               onMouseDown={() => { enterInteractive(); setExpIdx(realIdx); }}
             >
-              <text
+              <Text
                 fg={isActive ? colors.textBright : isHovered ? colors.text : colors.textMuted}
                 attributes={isActive ? TextAttributes.BOLD : isHovered ? TextAttributes.UNDERLINE : 0}
               >
                 {isActive ? `[${formatExpDate(ts)}]` : ` ${formatExpDate(ts)} `}
-              </text>
-            </box>
+              </Text>
+            </Box>
           );
         })}
         {loading && <spinner name="dots" color={colors.textDim} />}
-      </box>
+      </Box>
 
       {/* Position banner */}
       {isOpt && parsed && (
-        <box height={1}>
-          <text fg={colors.textBright}>
+        <Box height={1}>
+          <Text fg={colors.textBright}>
             {`Position: ${posShares} ${parsed.side === "C" ? "call" : "put"} contract${posShares !== 1 ? "s" : ""} @ $${parsed.strike}`}
-          </text>
-        </box>
+          </Text>
+        </Box>
       )}
 
       {/* Header labels */}
-      <box flexDirection="row" height={1}>
-        <box width={sideW}><text attributes={TextAttributes.BOLD} fg={colors.positive}>CALLS</text></box>
-        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
-        <box width={strikeW} />
-        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
-        <box width={sideW}><text attributes={TextAttributes.BOLD} fg={colors.negative}>PUTS</text></box>
-      </box>
+      <Box flexDirection="row" height={1}>
+        <Box width={sideW}><Text attributes={TextAttributes.BOLD} fg={colors.positive}>CALLS</Text></Box>
+        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
+        <Box width={strikeW} />
+        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
+        <Box width={sideW}><Text attributes={TextAttributes.BOLD} fg={colors.negative}>PUTS</Text></Box>
+      </Box>
 
       {/* Column headers */}
-      <box flexDirection="row" height={1}>
-        <box width={sideW}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+      <Box flexDirection="row" height={1}>
+        <Box width={sideW}>
+          <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>
             {padTo("Last", colW.last)} {padTo("Bid", colW.bid)} {padTo("Ask", colW.ask)} {padTo("Vol", colW.vol)} {padTo("OI", colW.oi)}
-          </text>
-        </box>
-        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
-        <box width={strikeW}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>{padTo("Strike", strikeW, "center")}</text>
-        </box>
-        <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
-        <box width={sideW}>
-          <text attributes={TextAttributes.BOLD} fg={colors.textDim}>
+          </Text>
+        </Box>
+        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
+        <Box width={strikeW}>
+          <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>{padTo("Strike", strikeW, "center")}</Text>
+        </Box>
+        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
+        <Box width={sideW}>
+          <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>
             {padTo("Last", colW.last)} {padTo("Bid", colW.bid)} {padTo("Ask", colW.ask)} {padTo("Vol", colW.vol)} {padTo("OI", colW.oi)}
-          </text>
-        </box>
-      </box>
+          </Text>
+        </Box>
+      </Box>
 
       {/* Chain rows */}
       <ListView
@@ -258,25 +259,25 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
           const putItm = put?.inTheMoney;
 
           return (
-            <box flexDirection="row">
-              <box width={sideW}>
-                <text fg={callItm ? colors.textBright : colors.text}>
+            <Box flexDirection="row">
+              <Box width={sideW}>
+                <Text fg={callItm ? colors.textBright : colors.text}>
                   {formatContractRow(call, colW)}
-                </text>
-              </box>
-              <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
-              <box width={strikeW}>
-                <text fg={isSelected ? colors.textBright : colors.neutral} attributes={isSelected ? TextAttributes.BOLD : 0}>
+                </Text>
+              </Box>
+              <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
+              <Box width={strikeW}>
+                <Text fg={isSelected ? colors.textBright : colors.neutral} attributes={isSelected ? TextAttributes.BOLD : 0}>
                   {padTo(formatStrikeLabel(strike), strikeW, "center")}
-                </text>
-              </box>
-              <box width={divW}><text fg={colors.textDim}>{"\u2502"}</text></box>
-              <box width={sideW}>
-                <text fg={putItm ? colors.textBright : colors.text}>
+                </Text>
+              </Box>
+              <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
+              <Box width={sideW}>
+                <Text fg={putItm ? colors.textBright : colors.text}>
                   {formatContractRow(put, colW)}
-                </text>
-              </box>
-            </box>
+                </Text>
+              </Box>
+            </Box>
           );
         }}
         getRowBackgroundColor={(_, state, i) => {
@@ -293,24 +294,24 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
       {/* Detail for selected row */}
       {interactive && (selectedCall || selectedPut) && (
-        <box height={1}>
-          <text fg={colors.textDim}>
+        <Box height={1}>
+          <Text fg={colors.textDim}>
             {selectedCall ? `Call IV: ${(selectedCall.impliedVolatility * 100).toFixed(1)}%` : ""}
             {selectedCall && selectedPut ? "  |  " : ""}
             {selectedPut ? `Put IV: ${(selectedPut.impliedVolatility * 100).toFixed(1)}%` : ""}
-          </text>
-        </box>
+          </Text>
+        </Box>
       )}
 
       {/* Help */}
-      <box height={1}>
-        <text fg={colors.textMuted}>
+      <Box height={1}>
+        <Text fg={colors.textMuted}>
           {interactive
             ? "j/k/\u2191\u2193 strike  h/l/\u2190\u2192 expiration  Esc exit"
             : "Enter to interact"}
-        </text>
-      </box>
-    </box>
+        </Text>
+      </Box>
+    </Box>
   );
 }
 

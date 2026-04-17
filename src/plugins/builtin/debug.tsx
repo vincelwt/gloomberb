@@ -1,6 +1,7 @@
+import { Box, Text } from "../../ui";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
-import { TextAttributes } from "@opentui/core";
+import { useShortcut } from "../../react/input";
+import { TextAttributes } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { colors, hoverBg } from "../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../utils/debug-log";
@@ -92,7 +93,7 @@ function DebugPane({ focused, width, height }: PaneProps) {
     setEntries([]);
   }, []);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     // Level filter cycling
@@ -191,30 +192,30 @@ function DebugPane({ focused, width, height }: PaneProps) {
   const selectedEntry = selectedIdx >= 0 && selectedIdx < entries.length ? entries[selectedIdx] : null;
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {/* Header */}
-      <box height={1} width={contentWidth} flexDirection="row" paddingLeft={1}>
-        <text fg={colors.textBright} attributes={TextAttributes.BOLD}>Debug Log</text>
-        <text fg={colors.textDim}> ({totalEntries})</text>
-        <box flexGrow={1} />
+      <Box height={1} width={contentWidth} flexDirection="row" paddingLeft={1}>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Debug Log</Text>
+        <Text fg={colors.textDim}> ({totalEntries})</Text>
+        <Box flexGrow={1} />
         {filterLevel && (
-          <text fg={levelColor(filterLevel)} attributes={TextAttributes.BOLD}>
+          <Text fg={levelColor(filterLevel)} attributes={TextAttributes.BOLD}>
             {" "}{filterLevel.toUpperCase()}{" "}
-          </text>
+          </Text>
         )}
         {filterSource && (
-          <text fg={colors.positive}>
+          <Text fg={colors.positive}>
             {" "}{filterSource}{" "}
-          </text>
+          </Text>
         )}
-        {autoScroll && <text fg={colors.textDim}> AUTO </text>}
-      </box>
-      <box height={1} width={contentWidth}>
-        <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
-      </box>
+        {autoScroll && <Text fg={colors.textDim}> AUTO </Text>}
+      </Box>
+      <Box height={1} width={contentWidth}>
+        <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+      </Box>
 
       {/* Log entries */}
-      <box
+      <Box
         height={visibleCount}
         flexDirection="column"
         onMouseScroll={(event: any) => {
@@ -230,9 +231,9 @@ function DebugPane({ focused, width, height }: PaneProps) {
         }}
       >
         {visibleEntries.length === 0 && (
-          <box alignItems="center" justifyContent="center" flexGrow={1}>
-            <text fg={colors.textDim}>No log entries{filterLevel || filterSource ? " matching filter" : ""}</text>
-          </box>
+          <Box alignItems="center" justifyContent="center" flexGrow={1}>
+            <Text fg={colors.textDim}>No log entries{filterLevel || filterSource ? " matching filter" : ""}</Text>
+          </Box>
         )}
         {visibleEntries.map((entry, i) => {
           const globalIdx = viewStart + i;
@@ -248,7 +249,7 @@ function DebugPane({ focused, width, height }: PaneProps) {
             : entry.message;
 
           return (
-            <box
+            <Box
               key={entry.id}
               height={1}
               width={contentWidth}
@@ -257,34 +258,34 @@ function DebugPane({ focused, width, height }: PaneProps) {
               onMouseMove={() => setHoveredIdx(globalIdx)}
               onMouseDown={() => { setSelectedIdx(globalIdx); setAutoScroll(false); }}
             >
-              <text fg={colors.textMuted}> {ts} </text>
-              <text fg={levelColor(entry.level)} attributes={TextAttributes.BOLD}>{lvl}</text>
-              <text fg={colors.textDim}> [{sourceTag}] </text>
-              <text fg={isSelected ? colors.selectedText ?? colors.textBright : colors.text}>
+              <Text fg={colors.textMuted}> {ts} </Text>
+              <Text fg={levelColor(entry.level)} attributes={TextAttributes.BOLD}>{lvl}</Text>
+              <Text fg={colors.textDim}> [{sourceTag}] </Text>
+              <Text fg={isSelected ? colors.selectedText ?? colors.textBright : colors.text}>
                 {msg}
-              </text>
-            </box>
+              </Text>
+            </Box>
           );
         })}
-      </box>
+      </Box>
 
       {/* Detail panel */}
       {showDetail && selectedEntry && (
-        <box flexDirection="column" height={4} width={contentWidth}>
-          <box height={1} width={contentWidth}>
-            <text fg={colors.border}>{"-".repeat(contentWidth)}</text>
-          </box>
-          <box paddingLeft={1} flexDirection="column">
-            <text fg={colors.text}>{selectedEntry.message}</text>
+        <Box flexDirection="column" height={4} width={contentWidth}>
+          <Box height={1} width={contentWidth}>
+            <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+          </Box>
+          <Box paddingLeft={1} flexDirection="column">
+            <Text fg={colors.text}>{selectedEntry.message}</Text>
             {selectedEntry.data !== undefined && (
-              <text fg={colors.textDim}>
+              <Text fg={colors.textDim}>
                 {JSON.stringify(selectedEntry.data, null, 2).slice(0, contentWidth * 2)}
-              </text>
+              </Text>
             )}
-          </box>
-        </box>
+          </Box>
+        </Box>
       )}
-    </box>
+    </Box>
   );
 }
 

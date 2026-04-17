@@ -1,6 +1,7 @@
+import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor, blendHex } from "../../../theme/colors";
@@ -371,7 +372,7 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused) return;
 
     const key = event.name;
@@ -470,31 +471,31 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
   const summaryBg = blendHex(colors.bg, colors.border, 0.2);
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       {/* Market Summary Bar */}
       {summaryQuotes.length > 0 ? (
-        <box flexDirection="row" height={1} backgroundColor={summaryBg} paddingX={1} gap={2}>
+        <Box flexDirection="row" height={1} backgroundColor={summaryBg} paddingX={1} gap={2}>
           {summaryQuotes.map((idx) => {
             const short = INDEX_SHORT[idx.symbol] ?? idx.symbol;
             const chgColor = priceColor(idx.changePercent);
             return (
-              <box key={idx.symbol} flexDirection="row" gap={1}>
-                <text fg={colors.textBright} attributes={TextAttributes.BOLD}>{short}</text>
-                <text fg={colors.text}>{formatCurrency(idx.price, "USD")}</text>
-                <text fg={chgColor}>{formatPercentRaw(idx.changePercent)}</text>
-              </box>
+              <Box key={idx.symbol} flexDirection="row" gap={1}>
+                <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{short}</Text>
+                <Text fg={colors.text}>{formatCurrency(idx.price, "USD")}</Text>
+                <Text fg={chgColor}>{formatPercentRaw(idx.changePercent)}</Text>
+              </Box>
             );
           })}
-          {loading && <text fg={colors.textMuted}> loading…</text>}
-        </box>
+          {loading && <Text fg={colors.textMuted}> loading…</Text>}
+        </Box>
       ) : null}
 
       {/* Tab bar */}
-      <box flexDirection="row" height={1} paddingX={1}>
+      <Box flexDirection="row" height={1} paddingX={1}>
         {TABS.map((tab) => {
           const isActive = tab.id === activeTab;
           return (
-            <box
+            <Box
               key={tab.id}
               paddingX={1}
               marginRight={1}
@@ -505,18 +506,18 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
                 resetTableScroll();
               }}
             >
-              <text
+              <Text
                 fg={isActive ? colors.textBright : colors.textDim}
                 attributes={isActive ? TextAttributes.BOLD | TextAttributes.UNDERLINE : TextAttributes.NONE}
               >
                 {tab.label}
-              </text>
-            </box>
+              </Text>
+            </Box>
           );
         })}
-        <box flexGrow={1} />
-        <text fg={colors.textMuted}>{quotes.length} stocks</text>
-      </box>
+        <Box flexGrow={1} />
+        <Text fg={colors.textMuted}>{quotes.length} stocks</Text>
+      </Box>
 
       <DataTable<MarketMoverRow, MarketMoverColumn>
         columns={columns}
@@ -537,7 +538,7 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
         renderCell={renderCell}
         emptyStateTitle={loading ? "Loading movers..." : "No data"}
       />
-    </box>
+    </Box>
   );
 }
 

@@ -1,6 +1,8 @@
+import { Box, ChartSurface, Text } from "../../ui";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type BoxRenderable, type CliRenderer } from "@opentui/core";
-import { useKeyboard, useRenderer } from "@opentui/react";
+import { TextAttributes, type BoxRenderable, type NativeRendererHost as CliRenderer } from "../../ui";
+import { useNativeRenderer, useUiCapabilities } from "../../ui";
+import { useShortcut } from "../../react/input";
 import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
 import { saveConfig } from "../../data/config-store";
 import { getSharedDataProvider } from "../../plugins/registry";
@@ -1485,7 +1487,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   ticker,
   financials,
 }: ResolvedStockChartProps) {
-  const renderer = useRenderer();
+  const renderer = useNativeRenderer();
+  const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneId = usePaneInstanceId();
@@ -1524,6 +1527,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const showVolume = showVolumeOverride ?? !compact;
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
+  const [canvasBaseBitmapState, setCanvasBaseBitmapState] = useState<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const plotRef = useRef<BoxRenderable | null>(null);
   const nativeSurfaceScope = compact ? "compact" : "full";
   const nativeBaseSurfaceId = useMemo(
@@ -1538,6 +1542,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const lastNativeGeometryRef = useRef<{ rect: CellRect; visibleRect: CellRect | null } | null>(null);
   const lastNativeBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const lastNativeCrosshairBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
+  const lastCanvasBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const displayCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
@@ -2803,7 +2808,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     return buildIndicatorRenderKey(indicators);
   }, [indicators]);
 
-  useKeyboard((event) => {
+  useShortcut((event) => {
     if (!focused || compact) return;
     const key = resolveChartKeyboardKey(event);
 
@@ -3127,6 +3132,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
+  const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
 
   const staticResult = useMemo(() => renderChart(projection.points, {
     width: chartWidth,
@@ -3145,7 +3151,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   }), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
-    effectiveRenderer === "kitty"
+    effectiveRenderer === "kitty" || useCanvasChart
       ? null
       : renderChart(projection.points, {
         width: chartWidth,
@@ -3162,20 +3168,20 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         timeAxisDates,
         indicators,
       })
-  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, useCanvasChart, volumeHeight]);
 
-  const result = effectiveRenderer === "kitty" ? staticResult : interactiveResult!;
+  const result = effectiveRenderer === "kitty" || useCanvasChart ? staticResult : interactiveResult!;
 
-  const kittyCursorRow = effectiveRenderer === "kitty" && displayCursorY !== null && nativeBaseScene
+  const rasterCursorRow = (effectiveRenderer === "kitty" || useCanvasChart) && displayCursorY !== null && nativeBaseScene
     ? Math.round(clamp(displayCursorY, 0, Math.max(nativeBaseScene.chartRows - 1, 0)))
     : null;
-  const kittyCrosshairPrice = effectiveRenderer === "kitty" && displayCursorY !== null && nativeBaseScene
+  const rasterCrosshairPrice = (effectiveRenderer === "kitty" || useCanvasChart) && displayCursorY !== null && nativeBaseScene
     ? nativeBaseScene.max
       - (clamp(displayCursorY, 0, Math.max(nativeBaseScene.chartRows - 1, 0)) / Math.max(nativeBaseScene.chartRows - 1, 1))
       * (nativeBaseScene.max - nativeBaseScene.min)
     : null;
-  const cursorRow = effectiveRenderer === "kitty" ? kittyCursorRow : result.cursorRow;
-  const crosshairPrice = effectiveRenderer === "kitty" ? kittyCrosshairPrice : result.crosshairPrice;
+  const cursorRow = effectiveRenderer === "kitty" || useCanvasChart ? rasterCursorRow : result.cursorRow;
+  const crosshairPrice = effectiveRenderer === "kitty" || useCanvasChart ? rasterCrosshairPrice : result.crosshairPrice;
 
   const nativeCrosshair = useMemo<NativeCrosshairOverlay | null>(() => {
     if (!interactive || displayCursor.cellX === null || displayCursor.cellY === null) return null;
@@ -3601,122 +3607,296 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     }));
   };
 
+  const canvasBitmapSize = useMemo(() => {
+    if (!canvasCharts) return null;
+    const resolutionScale = Math.max(1, pixelRatio);
+    return {
+      pixelWidth: Math.max(1, Math.round(chartWidth * cellWidthPx * resolutionScale)),
+      pixelHeight: Math.max(1, Math.round(chartHeight * cellHeightPx * resolutionScale)),
+    };
+  }, [canvasCharts, cellHeightPx, cellWidthPx, chartHeight, chartWidth, pixelRatio]);
+
+  const canvasProjection = useMemo(() => {
+    if (!canvasBitmapSize) return null;
+    const canvasWidth = Math.max(chartWidth, canvasBitmapSize.pixelWidth);
+    const canvasOhlcOptions = resolveStableOhlcProjectionOptions({
+      pointCount: chartWindow.points.length,
+      sourceIndexOffset: chartWindow.startIdx,
+      bucketWidth: canvasWidth,
+      navigationPointCount: navigationOhlcPointCount,
+    });
+    return projectChartData(
+      chartWindow.points,
+      canvasWidth,
+      viewState.renderMode,
+      !!compact,
+      canvasOhlcOptions,
+    );
+  }, [
+    canvasBitmapSize,
+    chartWidth,
+    chartWindow.points,
+    chartWindow.startIdx,
+    compact,
+    navigationOhlcPointCount,
+    viewState.renderMode,
+  ]);
+
+  const canvasIndicators = useMemo(() => (
+    sourceIndicatorOverlays && chartWindow.points.length && canvasProjection?.points.length
+      ? reindexIndicatorOverlaysForProjection(
+        sourceIndicatorOverlays,
+        chartWindow.points,
+        canvasProjection.points,
+        chartWindow.startIdx,
+      )
+      : null
+  ), [canvasProjection?.points, chartWindow.points, chartWindow.startIdx, sourceIndicatorOverlays]);
+
+  const canvasIndicatorRenderKey = useMemo(() => buildIndicatorRenderKey(canvasIndicators), [canvasIndicators]);
+
+  const canvasBaseScene = useMemo(() => (
+    canvasProjection
+      ? buildChartScene(canvasProjection.points, {
+        width: canvasProjection.points.length,
+        height: chartHeight,
+        showVolume: showVolume && !compact,
+        volumeHeight,
+        cursorX: null,
+        cursorY: null,
+        mode: canvasProjection.effectiveMode,
+        axisMode,
+        colors: chartColors,
+        timeAxisDates,
+        indicators: canvasIndicators,
+      })
+      : null
+  ), [axisMode, canvasIndicators, canvasProjection, chartColors, chartHeight, compact, showVolume, timeAxisDates, volumeHeight]);
+
+  const canvasBaseBitmapKey = useMemo(() => {
+    if (!canvasBitmapSize || !canvasProjection || !hasHistory || isBlockingBody || bodyMessage) return null;
+    return buildNativeBitmapKey(
+      canvasProjection.points.length,
+      canvasProjection.points,
+      canvasBitmapSize.pixelWidth,
+      canvasBitmapSize.pixelHeight,
+      canvasProjection.effectiveMode,
+      showVolume && !compact,
+      [
+        chartColors.lineColor,
+        chartColors.fillColor,
+        chartColors.gridColor,
+        chartColors.volumeUp,
+        chartColors.volumeDown,
+        chartColors.candleUp,
+        chartColors.candleDown,
+      ].join(","),
+      canvasIndicatorRenderKey,
+    );
+  }, [
+    bodyMessage,
+    canvasBitmapSize,
+    canvasIndicatorRenderKey,
+    canvasProjection,
+    chartColors.candleDown,
+    chartColors.candleUp,
+    chartColors.fillColor,
+    chartColors.gridColor,
+    chartColors.lineColor,
+    chartColors.volumeDown,
+    chartColors.volumeUp,
+    compact,
+    hasHistory,
+    isBlockingBody,
+    showVolume,
+  ]);
+
+  const canvasBaseBitmap = useMemo<NativeChartBitmap | null>(() => {
+    return canvasBaseBitmapKey && canvasBaseBitmapState?.key === canvasBaseBitmapKey
+      ? canvasBaseBitmapState.bitmap
+      : null;
+  }, [canvasBaseBitmapKey, canvasBaseBitmapState]);
+
+  useEffect(() => {
+    if (!canvasBitmapSize || !canvasBaseBitmapKey || !canvasBaseScene) {
+      lastCanvasBaseBitmapRef.current = null;
+      setCanvasBaseBitmapState((current) => (current === null ? current : null));
+      return;
+    }
+
+    const cachedBitmap = lastCanvasBaseBitmapRef.current?.key === canvasBaseBitmapKey
+      ? lastCanvasBaseBitmapRef.current.bitmap
+      : null;
+    if (cachedBitmap) {
+      setCanvasBaseBitmapState((current) => (
+        current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap: cachedBitmap }
+      ));
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const bitmap = renderNativeChartBase(canvasBaseScene, canvasBitmapSize.pixelWidth, canvasBitmapSize.pixelHeight);
+      if (cancelled) return;
+      lastCanvasBaseBitmapRef.current = { key: canvasBaseBitmapKey, bitmap };
+      setCanvasBaseBitmapState((current) => (
+        current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap }
+      ));
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [canvasBaseBitmapKey, canvasBaseScene, canvasBitmapSize]);
+
+  const canvasCrosshair = useMemo(() => {
+    if (!canvasBitmapSize || !canvasBaseBitmap || !nativeCrosshair) return null;
+    const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
+    const overlayPixelX = scaleLocalPixelCoordinate(
+      nativeCrosshair.pixelX,
+      renderablePixelSize?.pixelWidth ?? canvasBitmapSize.pixelWidth,
+      canvasBitmapSize.pixelWidth,
+    );
+    const overlayPixelY = scaleLocalPixelCoordinate(
+      nativeCrosshair.pixelY,
+      renderablePixelSize?.pixelHeight ?? canvasBitmapSize.pixelHeight,
+      canvasBitmapSize.pixelHeight,
+    );
+    if (overlayPixelX === null || overlayPixelY === null) return null;
+    return {
+      pixelX: overlayPixelX,
+      pixelY: overlayPixelY,
+      color: nativeCrosshair.colors.crosshairColor,
+    };
+  }, [canvasBaseBitmap, canvasBitmapSize, nativeCrosshair, renderer]);
+
+  const plotBitmaps = useMemo(() => {
+    if (!canvasBaseBitmap) return null;
+    return [canvasBaseBitmap];
+  }, [canvasBaseBitmap]);
+
   const plotLines: Array<string | StyledContent> = effectiveRenderer === "kitty"
     ? blankPlotLines
     : result.lines;
-  const plotContent = plotLines.map((line, index) => (
-    <text key={index} content={line as unknown as string} />
-  ));
+  const plotContent = plotBitmaps || (useCanvasChart && canvasBaseBitmapKey)
+    ? null
+    : plotLines.map((line, index) => (
+      <Text key={index} content={line as unknown as string} />
+    ));
 
   const plotBox = (
-    <box
+    <ChartSurface
       ref={plotRef}
       width={chartWidth}
       height={chartHeight}
       flexDirection="column"
       backgroundColor={chartColors.bgColor}
+      bitmaps={plotBitmaps}
+      crosshair={canvasCrosshair}
       onMouseMove={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotMove}
       onMouseDown={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotDown}
       onMouseUp={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => { dragRef.current = null; }}
       onMouseDrag={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotDrag}
       onMouseDragEnd={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => { dragRef.current = null; }}
+      onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
       onMouseOut={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => {
         dragRef.current = null;
       }}
     >
       {isBlockingBody
         ? (
-          <box flexGrow={1} alignItems="center" justifyContent="center">
-            <text fg={colors.textDim}>Loading chart...</text>
-          </box>
+          <Box flexGrow={1} alignItems="center" justifyContent="center">
+            <Text fg={colors.textDim}>Loading chart...</Text>
+          </Box>
         )
         : bodyMessage
           ? (
-            <box flexGrow={1} alignItems="center" justifyContent="center">
-              <text fg={colors.textDim}>{bodyMessage}</text>
-            </box>
+            <Box flexGrow={1} alignItems="center" justifyContent="center">
+              <Text fg={colors.textDim}>{bodyMessage}</Text>
+            </Box>
           )
           : plotContent}
-    </box>
+    </ChartSurface>
   );
 
   const axisBox = (
-    <box width={axisSectionWidth} height={chartHeight} flexDirection="column">
+    <Box width={axisSectionWidth} height={chartHeight} flexDirection="column">
       {Array.from({ length: chartHeight }, (_, row) => {
         const isCursorRow = cursorAxisLabel !== null && cursorRow === row;
         const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
         return (
-          <text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
+          <Text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
             {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
-          </text>
+          </Text>
         );
       })}
-    </box>
+    </Box>
   );
 
   if (compact) {
     return (
-      <box flexDirection="column">
-        <box flexDirection="row" height={chartHeight} gap={axisGap}>
+      <Box flexDirection="column">
+        <Box flexDirection="row" height={chartHeight} gap={axisGap}>
           {plotBox}
           {axisBox}
-        </box>
-        <box height={1}>
-          <text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</text>
-        </box>
-      </box>
+        </Box>
+        <Box height={1}>
+          <Text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</Text>
+        </Box>
+      </Box>
     );
   }
 
   return (
-    <box
+    <Box
       flexDirection="column"
       flexGrow={1}
       onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
     >
-      <box flexDirection="row" gap={2} height={1}>
-        <text attributes={TextAttributes.BOLD} fg={colors.textBright}>
+      <Box flexDirection="row" gap={2} height={1}>
+        <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
           {ticker?.metadata.ticker ?? ""} - {getChartResolutionLabel(selectedResolution)}
-        </text>
+        </Text>
         {fallbackResolutionLabel && (
-          <text fg={colors.textDim}>{fallbackResolutionLabel}</text>
+          <Text fg={colors.textDim}>{fallbackResolutionLabel}</Text>
         )}
-        {displayDate && <text fg={colors.textDim}>{displayDate}</text>}
+        {displayDate && <Text fg={colors.textDim}>{displayDate}</Text>}
         {showOhlcSummary && activePoint && (
           <>
-            <text fg={colors.textDim}>O {formatMarketPriceWithCurrency(activePoint.open, chartCurrency, {
+            <Text fg={colors.textDim}>O {formatMarketPriceWithCurrency(activePoint.open, chartCurrency, {
               assetCategory: chartAssetCategory,
               minimumFractionDigits: 2,
               precisionOffset: 1,
               priceRange: visiblePriceRange,
-            })}</text>
-            <text fg={colors.textDim}>H {formatMarketPriceWithCurrency(activePoint.high, chartCurrency, {
+            })}</Text>
+            <Text fg={colors.textDim}>H {formatMarketPriceWithCurrency(activePoint.high, chartCurrency, {
               assetCategory: chartAssetCategory,
               minimumFractionDigits: 2,
               precisionOffset: 1,
               priceRange: visiblePriceRange,
-            })}</text>
-            <text fg={colors.textDim}>L {formatMarketPriceWithCurrency(activePoint.low, chartCurrency, {
+            })}</Text>
+            <Text fg={colors.textDim}>L {formatMarketPriceWithCurrency(activePoint.low, chartCurrency, {
               assetCategory: chartAssetCategory,
               minimumFractionDigits: 2,
               precisionOffset: 1,
               priceRange: visiblePriceRange,
-            })}</text>
-            <text fg={colors.textDim}>C {formatMarketPriceWithCurrency(activePoint.close, chartCurrency, {
+            })}</Text>
+            <Text fg={colors.textDim}>C {formatMarketPriceWithCurrency(activePoint.close, chartCurrency, {
               assetCategory: chartAssetCategory,
               minimumFractionDigits: 2,
               precisionOffset: 1,
               priceRange: visiblePriceRange,
-            })}</text>
-            <text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</text>
+            })}</Text>
+            <Text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</Text>
           </>
         )}
-      </box>
+      </Box>
 
-      <box flexDirection="row" height={1}>
-        <box flexDirection="row" gap={1}>
+      <Box flexDirection="row" height={1}>
+        <Box flexDirection="row" gap={1}>
           {TIME_RANGES.map((range, index) => (
-            <text
+            <Text
               key={range}
               fg={activePreset === range ? chartColors.activeRangeColor : (isRangePresetSupported(range, availableManualResolutions) ? chartColors.inactiveRangeColor : colors.textMuted)}
               attributes={activePreset === range ? TextAttributes.BOLD : 0}
@@ -3726,15 +3906,15 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
               }}
             >
               {`${index + 1}:${range}`}
-            </text>
+            </Text>
           ))}
-        </box>
-      </box>
+        </Box>
+      </Box>
 
-      <box flexDirection="row" height={1}>
-        <box flexDirection="row" gap={1}>
+      <Box flexDirection="row" height={1}>
+        <Box flexDirection="row" gap={1}>
           {resolutionChips.map((resolution) => (
-            <text
+            <Text
               key={resolution}
               fg={selectedResolution === resolution ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
               attributes={selectedResolution === resolution ? TextAttributes.BOLD : 0}
@@ -3744,17 +3924,17 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
               }}
             >
               {getChartResolutionLabel(resolution)}
-            </text>
+            </Text>
           ))}
           {isUpdating && (
-            <text fg={colors.textDim}>updating</text>
+            <Text fg={colors.textDim}>updating</Text>
           )}
-        </box>
-        <box flexGrow={1} />
+        </Box>
+        <Box flexGrow={1} />
         {chartWidth >= 72 ? (
-          <box flexDirection="row" gap={1}>
+          <Box flexDirection="row" gap={1}>
             {CHART_RENDER_MODES.map((mode) => (
-              <text
+              <Text
                 key={mode}
                 fg={requestedMode === mode ? chartColors.activeRangeColor : chartColors.inactiveRangeColor}
                 attributes={requestedMode === mode ? TextAttributes.BOLD : 0}
@@ -3764,29 +3944,29 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
                 }}
               >
                 {MODE_CHIPS[mode]}
-              </text>
+              </Text>
             ))}
             {projection.fallbackMode && (
-              <text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</text>
+              <Text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</Text>
             )}
             {rendererState.nativeUnavailable && (
-              <text fg={colors.textDim}>native unavailable</text>
+              <Text fg={colors.textDim}>native unavailable</Text>
             )}
-          </box>
+          </Box>
         ) : (
-          <box flexDirection="row" gap={1}>
-            <text fg={colors.textDim}>mode:{MODE_LABELS[requestedMode]}</text>
+          <Box flexDirection="row" gap={1}>
+            <Text fg={colors.textDim}>mode:{MODE_LABELS[requestedMode]}</Text>
             {projection.fallbackMode && (
-              <text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</text>
+              <Text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</Text>
             )}
             {rendererState.nativeUnavailable && (
-              <text fg={colors.textDim}>native unavailable</text>
+              <Text fg={colors.textDim}>native unavailable</Text>
             )}
-          </box>
+          </Box>
         )}
-      </box>
+      </Box>
 
-      <box
+      <Box
         flexDirection="row"
         height={chartHeight}
         gap={axisGap}
@@ -3794,20 +3974,20 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       >
         {plotBox}
         {axisBox}
-      </box>
+      </Box>
 
-      <box height={1}>
-        <text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</text>
-      </box>
+      <Box height={1}>
+        <Text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</Text>
+      </Box>
 
-      <box height={1} flexDirection="row" gap={1}>
+      <Box height={1} flexDirection="row" gap={1}>
         <ChartControlHint hotkey="m" label="ode" />
         {footerControls}
         <ChartControlHint hotkey="r" label="es" />
         <ChartControlHint hotkey="+/-" label="zoom" />
         <ChartControlHint hotkey="0" label="reset" />
         {width >= 72 && <ChartControlHint hotkey="1-7" label="range" />}
-      </box>
-    </box>
+      </Box>
+    </Box>
   );
 });
