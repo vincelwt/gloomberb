@@ -1,6 +1,7 @@
 import type { CompanyProfile, Fundamentals, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { debugLog } from "./debug-log";
+import { canonicalExchange, normalizeSymbol, publicTickerKey } from "./exchanges";
 import { normalizeTimestamp } from "./timestamp";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
@@ -69,6 +70,69 @@ export interface CloudPricePointPayload {
   volume?: number;
 }
 
+export interface CloudNewsEntityPayload {
+  id: string;
+  entityType: string;
+  name: string;
+  symbol: string | null;
+  exchange: string | null;
+  canonicalTicker: string | null;
+  role: string | null;
+  confidence: number | null;
+}
+
+export interface CloudNewsTickerLinkPayload {
+  symbol: string;
+  exchange: string;
+  canonicalTicker: string;
+  relationType: string;
+  displayTier: "primary" | "related";
+  confidence: number;
+  relevanceScore: number;
+  impactScore?: number;
+  sentiment?: "positive" | "neutral" | "negative" | null;
+}
+
+export interface CloudNewsPayload {
+  id: string;
+  headline: string;
+  summary: string;
+  topic?: string;
+  topics?: string[];
+  category: string;
+  sentiment: "positive" | "neutral" | "negative";
+  sectors: string[];
+  scope?: string;
+  firstPublishedAt: string;
+  lastPublishedAt: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  primaryUrl: string;
+  primarySource: string;
+  scores?: {
+    importance?: number;
+    urgency?: number;
+    marketImpact?: number;
+    novelty?: number;
+    confidence?: number;
+  };
+  flags?: {
+    breaking?: boolean;
+    developing?: boolean;
+    stale?: boolean;
+  };
+  variantCount: number;
+  sourceCount: number;
+  sources: string[];
+  entities: CloudNewsEntityPayload[];
+  tickerLinks: CloudNewsTickerLinkPayload[];
+}
+
+export interface CloudNewsListResponse {
+  items: CloudNewsPayload[];
+  nextCursor: string | null;
+}
+
 export type CloudMarketStatus =
   | "success"
   | "partial"
@@ -107,17 +171,9 @@ export interface QuoteStreamTarget {
   exchange?: string;
 }
 
-function normalizeSymbol(value: string): string {
-  return value.trim().toUpperCase();
-}
-
-function normalizeExchange(value?: string): string {
-  return (value ?? "").trim().toUpperCase();
-}
-
 function marketKey(symbol: string, exchange?: string): string {
   const normalizedSymbolValue = normalizeSymbol(symbol);
-  const normalizedExchangeValue = normalizeExchange(exchange);
+  const normalizedExchangeValue = canonicalExchange(exchange);
   return normalizedExchangeValue ? `${normalizedSymbolValue}:${normalizedExchangeValue}` : normalizedSymbolValue;
 }
 
@@ -474,7 +530,7 @@ class GloomApiClient {
       const key = marketKey(parsed.symbol, parsed.exchange);
       const target = this.quoteTargets.get(key) ?? {
         symbol: normalizeSymbol(parsed.symbol),
-        exchange: normalizeExchange(parsed.exchange),
+        exchange: canonicalExchange(parsed.exchange),
       };
       for (const listener of this.quoteListeners.get(key) ?? []) {
         listener(target, parsed.quote as CloudQuotePayload);
@@ -623,7 +679,7 @@ class GloomApiClient {
         .map((target) => {
           const normalized = {
             symbol: normalizeSymbol(target.symbol),
-            exchange: normalizeExchange(target.exchange),
+            exchange: canonicalExchange(target.exchange),
           } satisfies QuoteStreamTarget;
           return [marketKey(normalized.symbol, normalized.exchange), normalized] as const;
         }),
@@ -766,6 +822,55 @@ class GloomApiClient {
   async getCloudExchangeRate(fromCurrency: string): Promise<CloudMarketResponse<{ rate: number }>> {
     const params = new URLSearchParams({ fromCurrency });
     return this.request<CloudMarketResponse<{ rate: number }>>(`/market/exchange-rate?${params.toString()}`);
+  }
+
+  async getCloudNews(params: {
+    feed?: "latest" | "top" | "breaking" | "ticker" | "sector" | "topic";
+    ticker?: string;
+    exchange?: string;
+    tickerTier?: "primary" | "related" | "any";
+    tickerRelations?: string[];
+    limit?: number;
+    topics?: string[];
+    categories?: string[];
+    sectors?: string[];
+    sources?: string[];
+    excludeSources?: string[];
+    sentiment?: "positive" | "neutral" | "negative";
+    minImportance?: number;
+    minUrgency?: number;
+    breaking?: boolean;
+    since?: Date;
+    until?: Date;
+    cursor?: string;
+  } = {}): Promise<CloudNewsListResponse> {
+    const search = new URLSearchParams();
+    if (params.feed) search.set("feed", params.feed);
+    if (params.ticker) {
+      const tickerFilter = params.exchange
+        ? publicTickerKey(params.ticker, params.exchange)
+        : normalizeSymbol(params.ticker);
+      search.set("tickers", tickerFilter);
+    }
+    if (params.tickerTier) search.set("tickerTier", params.tickerTier);
+    if (params.tickerRelations?.length) search.set("tickerRelations", params.tickerRelations.join(","));
+    if (params.limit != null) search.set("limit", String(params.limit));
+    if (params.topics?.length) search.set("topics", params.topics.join(","));
+    if (params.categories?.length) {
+      search.set("categories", params.categories.join(","));
+    }
+    if (params.sectors?.length) search.set("sectors", params.sectors.join(","));
+    if (params.sources?.length) search.set("sources", params.sources.join(","));
+    if (params.excludeSources?.length) search.set("excludeSources", params.excludeSources.join(","));
+    if (params.sentiment) search.set("sentiment", params.sentiment);
+    if (params.minImportance != null) search.set("minImportance", String(params.minImportance));
+    if (params.minUrgency != null) search.set("minUrgency", String(params.minUrgency));
+    if (params.breaking != null) search.set("breaking", String(params.breaking));
+    if (params.since) search.set("since", params.since.toISOString());
+    if (params.until) search.set("until", params.until.toISOString());
+    if (params.cursor) search.set("cursor", params.cursor);
+    const query = search.toString();
+    return this.request<CloudNewsListResponse>(`/news${query ? `?${query}` : ""}`);
   }
 }
 

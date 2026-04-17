@@ -2,8 +2,8 @@ import { join } from "path";
 import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../market-data/coordinator";
-import { NewsAggregator } from "../news/aggregator";
-import { setSharedNewsAggregator } from "../news/hooks";
+import { NewsService } from "../news/aggregator";
+import { setSharedNewsService } from "../news/hooks";
 import { getLoadablePlugins } from "../plugins/catalog";
 import type { LoadedExternalPlugin } from "../plugins/loader";
 import { PluginRegistry } from "../plugins/registry";
@@ -18,7 +18,7 @@ export interface AppServices {
   dataProvider: DataProvider;
   marketData: MarketDataCoordinator;
   pluginRegistry: PluginRegistry;
-  newsAggregator: NewsAggregator;
+  newsService: NewsService;
   destroy(): void;
 }
 
@@ -36,20 +36,20 @@ export function createAppServices({
   const dataProvider: DataProvider = providerRouter;
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence);
-  const newsAggregator = new NewsAggregator();
+  const newsService = new NewsService();
 
   providerRouter.attachRegistry(pluginRegistry);
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
-  pluginRegistry.registerNewsSourceFn = (source) => newsAggregator.register(source);
+  pluginRegistry.registerNewsSourceFn = (source) => newsService.register(source);
 
-  setSharedNewsAggregator(newsAggregator);
+  setSharedNewsService(newsService);
   setSharedMarketDataCoordinator(marketData);
 
   for (const plugin of getLoadablePlugins(externalPlugins)) {
     pluginRegistry.register(plugin);
   }
-  newsAggregator.start();
+  newsService.start();
 
   return {
     persistence,
@@ -58,10 +58,11 @@ export function createAppServices({
     dataProvider,
     marketData,
     pluginRegistry,
-    newsAggregator,
+    newsService,
     destroy() {
       setSharedMarketDataCoordinator(null);
-      newsAggregator.stop();
+      setSharedNewsService(null);
+      newsService.stop();
       pluginRegistry.destroy();
       persistence.close();
     },

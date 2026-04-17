@@ -911,8 +911,8 @@ function PortfolioStep({
         </Box>
         <Box height={1} flexDirection="row">
           <Text fg={colors.textDim}>{"type "}</Text>
-          <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"T AAPL"}</Text>
-          <Text fg={colors.textDim}>{" to search and add any stock or ETF."}</Text>
+          <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"DES AAPL"}</Text>
+          <Text fg={colors.textDim}>{" to open security details for a stock or ETF."}</Text>
         </Box>
       </Box>
     );
@@ -1225,7 +1225,7 @@ function ShortcutsStep({
 
   const commandPrefixes = useMemo(() => {
     const builtIn = [
-      { key: "T AAPL", desc: "Search and add any ticker" },
+      { key: "DES AAPL", desc: "Open security details" },
       { key: "TH", desc: "Switch theme" },
       { key: "PL", desc: "Toggle plugins" },
       { key: "PS", desc: "Edit the current window settings" },

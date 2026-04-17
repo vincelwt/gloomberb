@@ -3,12 +3,14 @@ import { useRef, useEffect, useState } from "react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
-import type { NewsItem } from "../../types/data-provider";
-import { useArticleSummary, useNewsQuery, useResolvedEntryValue } from "../../market-data/hooks";
+import type { NewsArticle } from "../../types/news-source";
+import { useArticleSummary, useResolvedEntryValue } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
 import { FeedDataTableStackView, type FeedDataTableItem } from "../../components";
+import { useNewsArticles } from "../../news/hooks";
+import { registerNewsWireFeatures } from "./news-wire";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
@@ -17,7 +19,7 @@ const ARTICLE_SUMMARY_CACHE_POLICY = {
 const NEWS_ITEM_LIMIT = 50;
 
 function getFeedItems(
-  news: NewsItem[],
+  news: NewsArticle[],
   selectedUrl: string | undefined,
   summaryCache: Map<string, string>,
   loadingSummary: boolean,
@@ -57,10 +59,16 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
   const summaryFetchRef = useRef(0);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
-  const newsEntry = useNewsQuery(instrument ? { instrument, count: NEWS_ITEM_LIMIT } : null);
-  const news = useResolvedEntryValue(newsEntry) ?? [];
-  const loading = newsEntry?.phase === "loading" || (newsEntry?.phase === "refreshing" && news.length === 0);
-  const error = newsEntry?.phase === "error" ? newsEntry.error?.message ?? "Failed to load news" : null;
+  const newsState = useNewsArticles(instrument ? {
+    feed: "ticker",
+    ticker: instrument.symbol,
+    exchange: instrument.exchange,
+    tickerTier: "primary",
+    limit: NEWS_ITEM_LIMIT,
+  } : null);
+  const news = newsState.articles;
+  const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
+  const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
 
   useEffect(() => {
     summaryFetchRef.current += 1;
@@ -128,5 +136,6 @@ export const newsPlugin: GloomPlugin = {
       order: 40,
       component: NewsTab,
     });
+    registerNewsWireFeatures(ctx);
   },
 };

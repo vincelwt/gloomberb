@@ -17,6 +17,7 @@ import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { TickerListTable } from "../../../components/ticker-list-table";
 import { Button, EmptyState, Spinner } from "../../../components";
 import { colors } from "../../../theme/colors";
+import { canonicalExchange } from "../../../utils/exchanges";
 import { formatTimeAgo } from "../../../utils/format";
 import { getColumnValue, getSortValue, type ColumnContext } from "../portfolio-list/metrics";
 import { getSharedDataProvider, getSharedRegistry } from "../../registry";
@@ -200,11 +201,11 @@ function resolveResultSymbol(result: InstrumentSearchResult): string {
 
 function matchesExchange(result: InstrumentSearchResult, exchange: string): boolean {
   if (!exchange) return true;
-  const normalized = exchange.toUpperCase();
-  return result.exchange.toUpperCase() === normalized
-    || (result.primaryExchange?.toUpperCase() ?? "") === normalized
-    || (result.brokerContract?.exchange?.toUpperCase() ?? "") === normalized
-    || (result.brokerContract?.primaryExchange?.toUpperCase() ?? "") === normalized;
+  const normalized = canonicalExchange(exchange);
+  return canonicalExchange(result.exchange) === normalized
+    || canonicalExchange(result.primaryExchange) === normalized
+    || canonicalExchange(result.brokerContract?.exchange) === normalized
+    || canonicalExchange(result.brokerContract?.primaryExchange) === normalized;
 }
 
 async function resolveCandidateTicker(

@@ -2,6 +2,7 @@ import { findPaneInstance, type AppConfig } from "../../types/config";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 import { getDockedPaneIds } from "../../plugins/pane-manager";
+import { canonicalExchange, normalizeSymbol } from "../../utils/exchanges";
 
 export const APP_SESSION_SCHEMA_VERSION = 1;
 export const APP_SESSION_ID = "app";
@@ -38,8 +39,8 @@ interface SessionStateInput {
 
 function normalizeHydrationTarget(target: HydrationTarget): HydrationTarget {
   return {
-    symbol: target.symbol.toUpperCase(),
-    exchange: target.exchange?.toUpperCase(),
+    symbol: normalizeSymbol(target.symbol),
+    exchange: target.exchange ? canonicalExchange(target.exchange) : undefined,
     brokerId: target.brokerId,
     brokerInstanceId: target.brokerInstanceId,
     instrument: target.instrument ?? null,

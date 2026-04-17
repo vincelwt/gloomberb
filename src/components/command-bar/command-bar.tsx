@@ -1249,7 +1249,7 @@ export function CommandBar({
     pluginRegistry,
   ]);
 
-  const runTickerSearchShortcut = useCallback(async (query?: string) => {
+  const runSecurityDescriptionShortcut = useCallback(async (query?: string) => {
     const trimmed = query?.trim() || "";
     if (!trimmed) {
       const inferred = normalizeTickerInput(activeTickerSymbol, query);
@@ -2357,8 +2357,8 @@ export function CommandBar({
         void onCheckForUpdates?.();
         closeAll({ revertThemePreview: false });
         return;
-      case "search-ticker":
-        void runTickerSearchShortcut(arg);
+      case "security-description":
+        void runSecurityDescriptionShortcut(arg);
         return;
       case "remove-watchlist":
       case "remove-portfolio": {
@@ -2391,12 +2391,12 @@ export function CommandBar({
     onCheckForUpdates,
     pluginRegistry,
     quitApp,
-    runTickerSearchShortcut,
+    runSecurityDescriptionShortcut,
     executeCollectionCommand,
   ]);
 
   const activeMatch = matchPrefix(rootQuery);
-  const rootTickerSearchArg = activeMatch?.command.id === "search-ticker" && activeMatch.arg.length >= 1
+  const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
 
@@ -2658,17 +2658,17 @@ export function CommandBar({
       }
 
       const { command } = rootShortcutIntent;
-      if (command.id === "search-ticker") {
+      if (command.id === "security-description") {
         const inferredSymbol = normalizeTickerInput(activeTickerSymbol, undefined);
         if (!rootShortcutIntent.argText && inferredSymbol) {
           return {
-            id: "search-ticker:inferred",
+            id: "security-description:inferred",
             label: inferredSymbol,
-            detail: `Open ${inferredSymbol}`,
+            detail: `Open security details for ${inferredSymbol}`,
             category: "Search",
             kind: "action",
             right: command.prefix,
-            action: () => { void runTickerSearchShortcut(inferredSymbol); },
+            action: () => { void runSecurityDescriptionShortcut(inferredSymbol); },
           };
         }
         return null;
@@ -3075,7 +3075,7 @@ export function CommandBar({
           },
         });
       });
-    } else if (match && match.command.id === "search-ticker") {
+    } else if (match && match.command.id === "security-description") {
       if (shortcutItem) {
         items.push(shortcutItem);
       }
@@ -3083,7 +3083,7 @@ export function CommandBar({
         items.push({
           id: "search-hint",
           label: "Type a ticker symbol",
-          detail: "Search Yahoo Finance and connected brokers",
+          detail: "Open security details after resolving a ticker",
           category: "Search",
           kind: "info",
           action: () => {},
@@ -3161,7 +3161,7 @@ export function CommandBar({
     rootQuery,
     rootShortcutIntent,
     runDirectCommand,
-    runTickerSearchShortcut,
+    runSecurityDescriptionShortcut,
     state,
     tickerActionItems,
   ]);
@@ -3198,7 +3198,7 @@ export function CommandBar({
       return;
     }
 
-    if (!rootTickerSearchArg) {
+    if (!rootSecurityDescriptionArg) {
       setRootSearching(false);
       setRootProviderResults(null);
       setRootProviderResultsQuery(null);
@@ -3207,7 +3207,7 @@ export function CommandBar({
       return;
     }
 
-    const searchQuery = rootTickerSearchArg;
+    const searchQuery = rootSecurityDescriptionArg;
     if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
     if (rootLastSearchedQueryRef.current === searchQuery) {
       return;
@@ -3273,18 +3273,18 @@ export function CommandBar({
     currentRoute,
     dataProvider,
     readTickerSearchCache,
-    rootTickerSearchArg,
+    rootSecurityDescriptionArg,
     state.config.portfolios,
     state.tickers,
     writeTickerSearchCache,
   ]);
 
   const rootResults = useMemo(() => {
-    if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
+    if (rootSecurityDescriptionArg && rootProviderResultsQuery === rootSecurityDescriptionArg && rootProviderResults) {
       return rootProviderResults;
     }
     return rootResultModel.items;
-  }, [rootProviderResults, rootProviderResultsQuery, rootResultModel.items, rootTickerSearchArg]);
+  }, [rootProviderResults, rootProviderResultsQuery, rootResultModel.items, rootSecurityDescriptionArg]);
 
   const rootGhostCompletion = !currentRoute && rootShortcutIntent.kind === "inferred-complete"
     ? rootShortcutIntent.completionQuery
@@ -3325,14 +3325,14 @@ export function CommandBar({
         : `Shortcut: ${rootShortcutIntent.label}`;
     }
 
-    if (rootShortcutIntent.command.id === "search-ticker") {
+    if (rootShortcutIntent.command.id === "security-description") {
       const symbol = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
       if (symbol) {
         return rootShortcutIntent.kind === "inferred-complete"
-          ? `Shortcut: Open ${symbol} · Tab to accept`
-          : `Shortcut: Open ${symbol}`;
+          ? `Shortcut: DES ${symbol} · Tab to accept`
+          : `Shortcut: DES ${symbol}`;
       }
-      return "Shortcut: Search ticker";
+      return "Shortcut: Description";
     }
 
     if (isCollectionCommand(rootShortcutIntent.command.id)) {
@@ -3404,7 +3404,7 @@ export function CommandBar({
       return false;
     }
 
-    if (intent.command.id === "search-ticker") {
+    if (intent.command.id === "security-description") {
       openModeRoute("ticker-search", intent.argText);
       return true;
     }
@@ -3453,37 +3453,37 @@ export function CommandBar({
       return null;
     }
 
-    if (match.command.id === "search-ticker") {
+    if (match.command.id === "security-description") {
       if (!match.arg) {
         const inferredTicker = normalizeTickerInput(activeTickerSymbol, undefined);
         if (inferredTicker) {
           return {
-            id: "search-ticker:inferred",
+            id: "security-description:inferred",
             label: inferredTicker,
-            detail: `Open ${inferredTicker}`,
+            detail: `Open security details for ${inferredTicker}`,
             category: "Search",
             kind: "action",
             right: match.command.prefix,
-            action: () => { void runTickerSearchShortcut(inferredTicker); },
+            action: () => { void runSecurityDescriptionShortcut(inferredTicker); },
           };
         }
         return {
-          id: "search-ticker-route",
-          label: "Search Ticker",
-          detail: "Search Yahoo Finance and connected brokers",
+          id: "security-description-route",
+          label: "Description",
+          detail: "Open security details for a ticker",
           category: "Search",
           kind: "command",
           action: () => openModeRoute("ticker-search", ""),
         };
       }
       return {
-        id: `search-ticker:${match.arg}`,
-        label: `Open ${match.arg.toUpperCase()}`,
-        detail: "Resolve the symbol exactly or open inline search",
+        id: `security-description:${match.arg}`,
+        label: `DES ${match.arg.toUpperCase()}`,
+        detail: "Open security details or resolve the ticker",
         category: "Search",
         kind: "command",
         right: match.command.prefix,
-        action: () => { void runTickerSearchShortcut(match.arg); },
+        action: () => { void runSecurityDescriptionShortcut(match.arg); },
       };
     }
 
@@ -3563,7 +3563,7 @@ export function CommandBar({
     openModeRoute,
     paneTemplateItems,
     runDirectCommand,
-    runTickerSearchShortcut,
+    runSecurityDescriptionShortcut,
   ]);
 
   const routeListState = useMemo<ListScreenState | null>(() => {
@@ -3571,7 +3571,7 @@ export function CommandBar({
       const emptyState = getEmptyState(
         rootModeInfo.kind,
         rootQuery,
-        activeMatch?.command.id === "search-ticker" ? activeMatch.arg : undefined,
+        activeMatch?.command.id === "security-description" ? activeMatch.arg : undefined,
       );
       return {
         kind: "root",
@@ -3951,8 +3951,8 @@ export function CommandBar({
           const emptyState = getEmptyState("search", currentRoute.query, currentRoute.query);
           return {
             kind: "mode",
-            title: "Search Ticker",
-            subtitle: "Search Yahoo Finance and connected brokers.",
+            title: "Security Description",
+            subtitle: "Resolve a ticker, then open its detail pane.",
             query: currentRoute.query,
             selectedIdx: currentRoute.selectedIdx,
             hoveredIdx: currentRoute.hoveredIdx,
@@ -5265,7 +5265,7 @@ export function CommandBar({
                   : currentRoute.screen === "plugins" ? "Manage Plugins"
                     : currentRoute.screen === "layout" ? "Layout Actions"
                       : currentRoute.screen === "new-pane" ? "New Pane"
-                        : "Search Ticker"
+                        : "Security Description"
                 : currentRoute?.kind === "picker" ? currentRoute.title
                   : currentRoute?.kind === "pane-settings" ? "Pane Settings"
                     : currentRoute?.kind === "workflow" ? currentRoute.title

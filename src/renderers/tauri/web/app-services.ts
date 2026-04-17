@@ -1,6 +1,6 @@
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
-import { NewsAggregator } from "../../../news/aggregator";
-import { setSharedNewsAggregator } from "../../../news/hooks";
+import { NewsService } from "../../../news/aggregator";
+import { setSharedNewsService } from "../../../news/hooks";
 import { uiBuiltinPlugins } from "../../../plugins/catalog-ui";
 import { PluginRegistry } from "../../../plugins/registry";
 import type { AppServices } from "../../../core/app-services";
@@ -202,19 +202,19 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
   const dataProvider = new RemoteDataProvider();
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository as never, persistence as never);
-  const newsAggregator = new NewsAggregator();
+  const newsService = new NewsService();
 
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
-  pluginRegistry.registerNewsSourceFn = (source) => newsAggregator.register(source);
+  pluginRegistry.registerNewsSourceFn = (source) => newsService.register(source);
 
   setSharedMarketDataCoordinator(marketData);
-  setSharedNewsAggregator(newsAggregator);
+  setSharedNewsService(newsService);
 
   for (const plugin of uiBuiltinPlugins) {
     pluginRegistry.register(plugin);
   }
-  newsAggregator.start();
+  newsService.start();
 
   return {
     persistence: persistence as never,
@@ -223,10 +223,11 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
     dataProvider,
     marketData,
     pluginRegistry,
-    newsAggregator,
+    newsService,
     destroy() {
       setSharedMarketDataCoordinator(null);
-      newsAggregator.stop();
+      setSharedNewsService(null);
+      newsService.stop();
       pluginRegistry.destroy();
     },
   };

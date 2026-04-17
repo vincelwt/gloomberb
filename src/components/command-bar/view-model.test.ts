@@ -11,7 +11,7 @@ import {
 describe("command bar view model helpers", () => {
   test("resolves prefix-driven modes", () => {
     expect(resolveCommandBarMode("")).toMatchObject({ kind: "default", badge: "BROWSE" });
-    expect(resolveCommandBarMode("T NVDA")).toMatchObject({ kind: "search", badge: "SEARCH" });
+    expect(resolveCommandBarMode("DES NVDA")).toMatchObject({ kind: "search", badge: "DES" });
     expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
     expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
     expect(resolveCommandBarMode("LAY ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
@@ -58,11 +58,11 @@ describe("command bar view model helpers", () => {
   });
 
   test("returns specific empty states", () => {
-    expect(getEmptyState("search", "T ", "")).toEqual({
+    expect(getEmptyState("search", "DES ", "")).toEqual({
       label: "Type a ticker symbol",
-      detail: "Search Yahoo Finance and connected brokers",
+      detail: "Open security details after resolving a ticker",
     });
-    expect(getEmptyState("search", "T zom", "zom")).toEqual({
+    expect(getEmptyState("search", "DES zom", "zom")).toEqual({
       label: 'No matches for "zom"',
       detail: "Try a symbol, company name, or exchange variant",
     });

@@ -1,20 +1,31 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { NewsAggregator } from "./aggregator";
+import { NewsService } from "./aggregator";
 import type { MarketNewsItem, NewsSource } from "../types/news-source";
 
 function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketNewsItem {
   return {
+    ...overrides,
     id: overrides.url,
     title: "Test headline",
     url: overrides.url,
     source: "Test",
     publishedAt: overrides.publishedAt ?? new Date(),
+    topic: overrides.topic ?? "general",
+    topics: overrides.topics ?? [overrides.topic ?? "general"],
+    sectors: overrides.sectors ?? [],
     categories: overrides.categories ?? [],
     tickers: [],
+    scores: overrides.scores ?? {
+      importance: overrides.importance ?? 50,
+      urgency: overrides.isBreaking ? 80 : 0,
+      marketImpact: overrides.importance ?? 50,
+      novelty: 0,
+      confidence: 0,
+    },
     importance: overrides.importance ?? 50,
     isBreaking: overrides.isBreaking ?? false,
+    isDeveloping: overrides.isDeveloping ?? false,
     summary: undefined,
-    ...overrides,
   };
 }
 
@@ -22,7 +33,7 @@ function makeSource(id: string, items: MarketNewsItem[]): NewsSource {
   return {
     id,
     name: id,
-    fetchMarketNews: mock(async () => items),
+    fetchNews: mock(async () => items),
   };
 }
 
@@ -30,16 +41,16 @@ function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems:
   return {
     id,
     name: id,
-    getCachedMarketNews: () => cachedItems,
-    fetchMarketNews: mock(async () => fetchItems),
+    getCachedNews: () => cachedItems,
+    fetchNews: mock(async () => fetchItems),
   };
 }
 
-describe("NewsAggregator", () => {
-  let agg: NewsAggregator;
+describe("NewsService", () => {
+  let agg: NewsService;
 
   beforeEach(() => {
-    agg = new NewsAggregator();
+    agg = new NewsService();
   });
 
   it("deduplicates by URL, keeping higher importance", async () => {
@@ -199,5 +210,19 @@ describe("NewsAggregator", () => {
     await agg.poll();
 
     expect(agg.getFirehose(undefined, 10)).toHaveLength(0);
+  });
+
+  it("ticker queries continue past empty high-priority sources", async () => {
+    const empty = makeSource("empty", []);
+    const fallbackItem = makeItem({ url: "https://fallback.example.com/1", tickers: ["AAPL"] });
+    const fallback = makeSource("fallback", [fallbackItem]);
+    agg.register({ ...empty, priority: 10, supports: (query) => query.feed === "ticker" || query.scope === "ticker" });
+    agg.register({ ...fallback, priority: 100, supports: (query) => query.feed === "ticker" || query.scope === "ticker" });
+
+    const state = await agg.load({ feed: "ticker", ticker: "AAPL", limit: 10 });
+
+    expect(state.articles).toHaveLength(1);
+    expect(state.articles[0]!.url).toBe(fallbackItem.url);
+    expect(state.sourceIds).toEqual(["fallback"]);
   });
 });

@@ -173,8 +173,8 @@ export function HelpPane({ width, height }: PaneProps) {
               compact={compact}
             />
             <ShortcutRow
-              badges={["T <ticker>"]}
-              description="Search for a ticker or company and open it."
+              badges={["DES <ticker>"]}
+              description="Open security details for a ticker."
               compact={compact}
             />
             <ShortcutRow

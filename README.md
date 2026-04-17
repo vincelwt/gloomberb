@@ -49,8 +49,7 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 | **Gloomberb Cloud** | Near-real-time data and chat |
 | **Manual Entry** | Manually add positions, saved locally |
 | **IBKR** | Import positions from Flex Query or trade with Gateway API |
-| **News** | View latest news for each ticker (via Yahoo Finance) |
-| **News Wire** | Market-wide top, feed, industry, and breaking news panes from RSS |
+| **News** | Ticker and market-wide news from Cloud, Yahoo fallback, and RSS feeds |
 | **SEC** | View recent SEC filings for supported US equities |
 | **Options** | View US equity options chains |
 | **Notes** | Write and save markdown notes, stored locally |
@@ -128,6 +127,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | Shortcut | Opens |
 |----------|-------|
 | `PF` | Collection Pane |
+| `DES <ticker>` | Ticker Detail |
 | `QQ <ticker>` | Quote Monitor |
 | `CHAT` | New Chat Pane |
 | `IBKR` | New IBKR Trading Pane |

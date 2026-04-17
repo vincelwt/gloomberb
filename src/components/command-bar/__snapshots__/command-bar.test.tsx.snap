@@ -16,7 +16,7 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
                 Quote Monitor                           QQ                      
                                                                                 
                 Search                                                          
-                Search Ticker                           T                       
+                Description                             DES                     
                                                                                 
                 Navigation                                                      
                 Help                                    HELP                    
@@ -100,7 +100,7 @@ exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
        Quote Monitor               QQ     
                                           
        Search                             
-       Search Ticker               T      
+       Description                 DES    
                                           
                                           
                                           
@@ -112,8 +112,8 @@ exports[`CommandBar groups ticker search sections and keeps saved matches above 
 "                                                                                
                                                                                 
                 Commands                                                        
-                T appl                                                          
-                Shortcut: Open APPL                                             
+                DES appl                                                        
+                Shortcut: DES APPL                                              
                 Saved                                                           
                 AAPL                                    NASDAQ                  
                                                                                 

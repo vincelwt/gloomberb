@@ -46,7 +46,7 @@ export interface CommandBarRowPresentation {
 }
 
 const MODE_STRIP_ENTRIES = [
-  { prefix: "T", label: "Search ticker", kind: "search" },
+  { prefix: "DES", label: "Description", kind: "search" },
   { prefix: "TH", label: "Change theme", kind: "themes" },
   { prefix: "PL", label: "Toggle plugins", kind: "plugins" },
   { prefix: "LAY", label: "Layout actions", kind: "layout" },
@@ -65,8 +65,8 @@ export function resolveCommandBarMode(query: string): CommandBarModeInfo {
   }
 
   switch (match.command.id) {
-    case "search-ticker":
-      return { kind: "search", badge: "SEARCH", hint: "Search Yahoo Finance and broker-backed symbols" };
+    case "security-description":
+      return { kind: "search", badge: "DES", hint: "Open security details for a ticker" };
     case "theme":
       return { kind: "themes", badge: "THEMES", hint: "Preview with arrows, Enter to save, Esc to revert" };
     case "plugins":
@@ -128,7 +128,7 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
   switch (mode) {
     case "search":
       if (!searchQuery) {
-        return { label: "Type a ticker symbol", detail: "Search Yahoo Finance and connected brokers" };
+        return { label: "Type a ticker symbol", detail: "Open security details after resolving a ticker" };
       }
       return { label: `No matches for "${searchQuery}"`, detail: "Try a symbol, company name, or exchange variant" };
     case "plugins":

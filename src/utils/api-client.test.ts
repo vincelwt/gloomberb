@@ -33,6 +33,10 @@ function createResponse(body: unknown, options: { status?: number; cookies?: str
   } as Response;
 }
 
+function mockFetch(handler: (input: Request | string | URL, init?: RequestInit) => Response | Promise<Response>): typeof fetch {
+  return handler as unknown as typeof fetch;
+}
+
 afterEach(() => {
   apiClient.dispose();
   globalThis.fetch = originalFetch;
@@ -45,7 +49,7 @@ describe("apiClient auth cookies", () => {
   test("captures secure session cookies after login and reuses them on session refresh", async () => {
     const seenCookies: Array<string | null> = [];
 
-    globalThis.fetch = (async (_input: Request | string | URL, init?: RequestInit) => {
+    globalThis.fetch = mockFetch(async (_input: Request | string | URL, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       seenCookies.push(headers.get("Cookie"));
 
@@ -57,7 +61,7 @@ describe("apiClient auth cookies", () => {
       }
 
       return createResponse({ user: verifiedUser });
-    }) as typeof fetch;
+    });
 
     await apiClient.signIn("test@example.com", "password");
     await apiClient.getSession();
@@ -74,11 +78,11 @@ describe("apiClient auth cookies", () => {
     const seenCookies: Array<string | null> = [];
     apiClient.setSessionToken("persisted-token.value");
 
-    globalThis.fetch = (async (_input: Request | string | URL, init?: RequestInit) => {
+    globalThis.fetch = mockFetch(async (_input: Request | string | URL, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       seenCookies.push(headers.get("Cookie"));
       return createResponse({ user: verifiedUser });
-    }) as typeof fetch;
+    });
 
     await apiClient.getSession();
 
@@ -91,7 +95,7 @@ describe("apiClient auth cookies", () => {
     apiClient.setSessionToken("persisted-token.value");
     apiClient.restoreCachedUser(verifiedUser);
 
-    globalThis.fetch = (async () => createResponse({ message: "Unauthorized" }, { status: 401 })) as typeof fetch;
+    globalThis.fetch = mockFetch(async () => createResponse({ message: "Unauthorized" }, { status: 401 }));
 
     await expect(apiClient.getSession()).rejects.toThrow("Unauthorized");
     expect(apiClient.getSessionToken()).toBe("persisted-token.value");
@@ -107,7 +111,7 @@ describe("apiClient auth cookies", () => {
     apiClient.setWebSocketToken("ws-token");
     apiClient.restoreCachedUser(verifiedUser);
 
-    globalThis.fetch = (async () => createResponse({ code: "USER_NOT_FOUND" }, { status: 403 })) as typeof fetch;
+    globalThis.fetch = mockFetch(async () => createResponse({ code: "USER_NOT_FOUND" }, { status: 403 }));
 
     await expect(apiClient.getSession()).resolves.toBeNull();
     expect(apiClient.getSessionToken()).toBeNull();
@@ -120,7 +124,7 @@ describe("apiClient auth cookies", () => {
     apiClient.setWebSocketToken("ws-token");
     apiClient.restoreCachedUser(verifiedUser);
 
-    globalThis.fetch = (async () => createResponse({ message: "server unavailable" }, { status: 503 })) as typeof fetch;
+    globalThis.fetch = mockFetch(async () => createResponse({ message: "server unavailable" }, { status: 503 }));
 
     await expect(apiClient.signOut()).rejects.toThrow("server unavailable");
     expect(apiClient.getSessionToken()).toBeNull();
@@ -198,7 +202,7 @@ describe("apiClient chat timestamps", () => {
       }),
     ];
 
-    globalThis.fetch = (async () => responses.shift() as Response) as typeof fetch;
+    globalThis.fetch = mockFetch(async () => responses.shift() as Response);
 
     const messages = await apiClient.getMessages("everyone", { limit: 1 });
     const sentMessage = await apiClient.sendMessage("everyone", "hello");
@@ -229,5 +233,43 @@ describe("apiClient chat timestamps", () => {
 
     expect(seenCreatedAts).toEqual(["2026-04-08T07:28:27.625Z"]);
     channel.close();
+  });
+});
+
+describe("apiClient cloud news", () => {
+  test("uses the existing /news route with backend ticker filters", async () => {
+    let seenUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      seenUrl = String(input);
+      return createResponse({ items: [], nextCursor: null });
+    });
+
+    const result = await apiClient.getCloudNews({
+      feed: "ticker",
+      ticker: "AAPL",
+      exchange: "NASDAQ",
+      tickerTier: "primary",
+      limit: 25,
+      topics: ["earnings", "mna"],
+      sectors: ["information_technology"],
+      minImportance: 60,
+      breaking: false,
+      since: new Date("2026-04-01T00:00:00.000Z"),
+      cursor: "cursor-1",
+    });
+
+    const url = new URL(seenUrl);
+    expect(url.pathname).toBe("/news");
+    expect(url.searchParams.get("feed")).toBe("ticker");
+    expect(url.searchParams.get("tickers")).toBe("AAPL:XNAS");
+    expect(url.searchParams.get("tickerTier")).toBe("primary");
+    expect(url.searchParams.get("limit")).toBe("25");
+    expect(url.searchParams.get("topics")).toBe("earnings,mna");
+    expect(url.searchParams.get("sectors")).toBe("information_technology");
+    expect(url.searchParams.get("minImportance")).toBe("60");
+    expect(url.searchParams.get("breaking")).toBe("false");
+    expect(url.searchParams.get("since")).toBe("2026-04-01T00:00:00.000Z");
+    expect(url.searchParams.get("cursor")).toBe("cursor-1");
+    expect(result).toEqual({ items: [], nextCursor: null });
   });
 });

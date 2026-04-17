@@ -90,6 +90,25 @@ export function enrichNewsItem(item: MarketNewsItem, authority = 50, knownTicker
   const tickers = extractTickers(text, knownTickers);
   const isBreaking = detectBreaking(item.title, item.publishedAt, authority);
   const importance = scoreImportance(authority, item.publishedAt, isBreaking);
+  const topic = categories[0] ?? item.topic ?? "general";
+  const scores = {
+    importance,
+    urgency: isBreaking ? 80 : Math.min(100, Math.max(0, importance - 10)),
+    marketImpact: importance,
+    novelty: item.scores?.novelty ?? 0,
+    confidence: item.scores?.confidence ?? 0,
+  };
 
-  return { ...item, categories, tickers, isBreaking, importance };
+  return {
+    ...item,
+    topic,
+    topics: [...new Set([topic, ...(item.topics ?? []), ...categories])],
+    sectors: item.sectors ?? [],
+    categories,
+    tickers,
+    scores,
+    isBreaking,
+    isDeveloping: item.isDeveloping ?? false,
+    importance,
+  };
 }
