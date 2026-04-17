@@ -3,6 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePaneTicker } from "../../../state/app-context";
+import { usePaneFooter } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import type { FinancialStatement } from "../../../types/financials";
 import {
@@ -247,6 +248,33 @@ export function ResolvedFinancialsTab({
   const [subTabIdx, setSubTabIdx] = useState(0);
   const bodyScrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const resolvedPeriodForFooter = resolveFinancialPeriod(period, hasAnnualStatements, hasQuarterlyStatements);
+
+  usePaneFooter("financials", () => ({
+    info: financials ? [
+      { id: "section", parts: [{ text: FINANCIAL_SUB_TABS[subTabIdx]?.name ?? "Financials", tone: "value", bold: true }] },
+      { id: "period", parts: [{ text: resolvedPeriodForFooter === "annual" ? "Annual" : "Quarterly", tone: "muted" }] },
+    ] : [],
+    hints: [
+      {
+        id: "section",
+        key: "1-3",
+        label: "section",
+        disabled: !financials,
+        onPress: () => setSubTabIdx((current) => (current + 1) % FINANCIAL_SUB_TABS.length),
+      },
+      {
+        id: "period",
+        key: "a/q",
+        label: "period",
+        disabled: !hasAnnualStatements && !hasQuarterlyStatements,
+        onPress: () => {
+          if (resolvedPeriodForFooter === "annual" && hasQuarterlyStatements) setPeriod("quarterly");
+          else if (hasAnnualStatements) setPeriod("annual");
+        },
+      },
+    ],
+  }), [financials, hasAnnualStatements, hasQuarterlyStatements, resolvedPeriodForFooter, subTabIdx]);
 
   const syncHeaderScroll = useCallback(() => {
     const body = bodyScrollRef.current;
@@ -319,18 +347,18 @@ export function ResolvedFinancialsTab({
               fg={index === subTabIdx ? colors.textBright : colors.textDim}
               attributes={index === subTabIdx ? TextAttributes.BOLD : 0}
             >
-              {`${index + 1}:${tab.name}`}
+              {tab.name}
             </Text>
             {index < FINANCIAL_SUB_TABS.length - 1 && <Text fg={colors.textMuted}>{" │ "}</Text>}
           </Box>
         ))}
         <Box flexGrow={1} />
         <Box onMouseDown={() => setPeriod("annual")}>
-          <Text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>a</Text>
+          <Text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>Annual</Text>
         </Box>
-        <Text fg={colors.textMuted}>/</Text>
+        <Text fg={colors.textMuted}>{" / "}</Text>
         <Box onMouseDown={() => setPeriod("quarterly")}>
-          <Text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>q</Text>
+          <Text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>Quarterly</Text>
         </Box>
       </Box>
       <Box height={1} />

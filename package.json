@@ -50,6 +50,7 @@
     "@opentui/core": "^0.1.90",
     "@opentui/react": "^0.1.90",
     "@stoqey/ib": "^1.5.3",
+    "@tanstack/react-virtual": "^3.13.23",
     "@tauri-apps/api": "^2",
     "gray-matter": "^4.0.3",
     "opentui-spinner": "^0.0.6",

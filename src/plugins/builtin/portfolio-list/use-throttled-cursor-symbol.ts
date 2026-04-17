@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export const FOLLOW_CURSOR_THROTTLE_MS = 80;
+export const FOLLOW_CURSOR_THROTTLE_MS = 300;
 
 export function useThrottledCursorSymbol(
   committedCursorSymbol: string | null,

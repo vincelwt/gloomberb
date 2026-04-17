@@ -19,6 +19,19 @@ const tickers: TickerRecord[] = [
   { metadata: { ticker: "MSFT", exchange: "NASDAQ", currency: "USD", name: "Microsoft", portfolios: [], watchlists: [], positions: [], custom: {}, tags: [] } },
   { metadata: { ticker: "NVDA", exchange: "NASDAQ", currency: "USD", name: "NVIDIA", portfolios: [], watchlists: [], positions: [], custom: {}, tags: [] } },
 ];
+const manyTickers: TickerRecord[] = Array.from({ length: 1000 }, (_, index) => ({
+  metadata: {
+    ticker: `T${index}`,
+    exchange: "NASDAQ",
+    currency: "USD",
+    name: `Ticker ${index}`,
+    portfolios: [],
+    watchlists: [],
+    positions: [],
+    custom: {},
+    tags: [],
+  },
+}));
 
 function noop(_index: number | null): void {}
 
@@ -35,6 +48,23 @@ function TickerListTableHarness() {
     <TickerListTable
       columns={columns}
       tickers={tickers}
+      cursorSymbol={cursorSymbol}
+      hoveredIdx={null}
+      setHoveredIdx={noop}
+      setCursorSymbol={setCursorSymbol}
+      resolveCell={resolveCell}
+      financialsMap={financialsMap}
+    />
+  );
+}
+
+function LargeTickerListTableHarness() {
+  const [cursorSymbol, setCursorSymbol] = useState("T0");
+
+  return (
+    <TickerListTable
+      columns={columns}
+      tickers={manyTickers}
       cursorSymbol={cursorSymbol}
       hoveredIdx={null}
       setHoveredIdx={noop}
@@ -79,5 +109,21 @@ describe("TickerListTable", () => {
 
     expect(initialCallCount).toBeGreaterThan(0);
     expect(resolveCellCallCount - initialCallCount).toBe(2);
+  });
+
+  test("renders a bounded window for large ticker lists", async () => {
+    testSetup = await testRender(
+      <LargeTickerListTableHarness />,
+      { width: 20, height: 6 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("T0");
+    expect(frame).not.toContain("T999");
+    expect(resolveCellCallCount).toBeLessThan(40);
   });
 });

@@ -212,22 +212,35 @@ export function sortPredictionMarkets(
   sortPreference: PredictionSortPreference,
 ): PredictionListRow[] {
   if (!sortPreference.columnId) return [...markets];
+  const columnId = sortPreference.columnId;
+  const direction = sortPreference.direction === "asc" ? 1 : -1;
 
-  return [...markets].sort((left, right) => {
-    const leftValue = getMarketSortValue(left, sortPreference.columnId!);
-    const rightValue = getMarketSortValue(right, sortPreference.columnId!);
+  return markets
+    .map((market, index) => ({
+      index,
+      market,
+      sortValue: getMarketSortValue(market, columnId),
+    }))
+    .sort((left, right) => {
+      const leftValue = left.sortValue;
+      const rightValue = right.sortValue;
 
-    if (leftValue == null && rightValue == null) return 0;
-    if (leftValue == null) return 1;
-    if (rightValue == null) return -1;
+      if (leftValue == null && rightValue == null) {
+        return left.index - right.index;
+      }
+      if (leftValue == null) return 1;
+      if (rightValue == null) return -1;
 
-    const comparison =
-      typeof leftValue === "string" && typeof rightValue === "string"
-        ? leftValue.localeCompare(rightValue)
-        : Number(leftValue) - Number(rightValue);
+      const comparison =
+        typeof leftValue === "string" && typeof rightValue === "string"
+          ? leftValue.localeCompare(rightValue)
+          : Number(leftValue) - Number(rightValue);
 
-    return sortPreference.direction === "asc" ? comparison : -comparison;
-  });
+      return comparison === 0
+        ? left.index - right.index
+        : comparison * direction;
+    })
+    .map((entry) => entry.market);
 }
 
 export function getPredictionColumnValue(

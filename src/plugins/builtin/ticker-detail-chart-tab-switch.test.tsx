@@ -179,7 +179,6 @@ describe("Ticker detail chart tab switching", () => {
     await flushFrames();
     const chartTabFrame = testSetup.captureCharFrame();
     expect(chartTabFrame).toContain("AAPL");
-    expect(chartTabFrame).toContain("[i]ndicators");
     expect(manager.surfaces.has("chart-surface:ticker-detail:test:full:base")).toBe(true);
 
     act(() => {

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { createDefaultConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
+import { Box } from "../../ui";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
 import { ChatContent, ChatStatusWidget, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
@@ -141,6 +143,7 @@ function createHarness(
     height?: number;
     configureState?: (state: ReturnType<typeof createInitialState>) => void;
     close?: () => void;
+    withFooter?: boolean;
   },
 ) {
   const width = options?.width ?? 60;
@@ -148,15 +151,34 @@ function createHarness(
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
   options?.configureState?.(state);
 
+  const content = options?.withFooter ? (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box flexDirection="column" width={width} height={height}>
+          <ChatContent
+            controller={controller}
+            width={width}
+            height={Math.max(1, height - 1)}
+            focused
+            close={options?.close}
+          />
+          <PaneFooterBar footer={footer} focused width={width} />
+        </Box>
+      )}
+    </PaneFooterProvider>
+  ) : (
+    <ChatContent
+      controller={controller}
+      width={width}
+      height={height}
+      focused
+      close={options?.close}
+    />
+  );
+
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
-      <ChatContent
-        controller={controller}
-        width={width}
-        height={height}
-        focused
-        close={options?.close}
-      />
+      {content}
     </AppContext>
   );
 }
@@ -880,9 +902,9 @@ describe("ChatContent", () => {
     });
 
     await act(async () => {
-      testSetup = await testRender(createHarness(controller, { width: 60, height: 12 }), {
+      testSetup = await testRender(createHarness(controller, { width: 60, height: 13, withFooter: true }), {
         width: 60,
-        height: 12,
+        height: 13,
       });
     });
 

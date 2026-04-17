@@ -2,7 +2,7 @@ import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyledText, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTableStackView, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTableStackView, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
 import {
@@ -517,7 +517,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
 
   const [fredApiKey] = usePluginConfigState<string>(FRED_API_KEY_CONFIG_KEY, "");
 
-  const load = async (force = false) => {
+  const load = useCallback(async (force = false) => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setLoading(true);
@@ -534,7 +534,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     } finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (sharedCache && Date.now() - sharedCache.fetchedAt < CACHE_TTL_MS) {
@@ -542,7 +542,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
       return;
     }
     load();
-  }, []);
+  }, [load]);
 
   // Tick every 30s to update staleness + countdown
   useEffect(() => {
@@ -694,6 +694,20 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   // Next upcoming event for countdown
   const nextEvent = nextUpcomingEventIdx >= 0 ? filtered[nextUpcomingEventIdx] : undefined;
   const nextCountdown = nextEvent ? formatCountdown(nextEvent.date.getTime() - now) : null;
+  const cycleImpactFilter = useCallback(() => {
+    setImpactFilter((prev) => {
+      const idx = FILTER_CYCLE.indexOf(prev);
+      return FILTER_CYCLE[(idx + 1) % FILTER_CYCLE.length]!;
+    });
+    setSelectedIdx(0);
+  }, []);
+  const cycleCountryFilter = useCallback(() => {
+    setCountryFilter((prev) => {
+      const idx = COUNTRY_CYCLE.indexOf(prev);
+      return COUNTRY_CYCLE[(idx + 1) % COUNTRY_CYCLE.length]!;
+    });
+    setSelectedIdx(0);
+  }, []);
 
   const handleRootKeyDown = useCallback((event: {
     name?: string;
@@ -708,24 +722,16 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     } else if (event.name === "f") {
       event.stopPropagation?.();
       event.preventDefault?.();
-      setImpactFilter((prev) => {
-        const idx = FILTER_CYCLE.indexOf(prev);
-        return FILTER_CYCLE[(idx + 1) % FILTER_CYCLE.length]!;
-      });
-      setSelectedIdx(0);
+      cycleImpactFilter();
       return true;
     } else if (event.name === "c") {
       event.stopPropagation?.();
       event.preventDefault?.();
-      setCountryFilter((prev) => {
-        const idx = COUNTRY_CYCLE.indexOf(prev);
-        return COUNTRY_CYCLE[(idx + 1) % COUNTRY_CYCLE.length]!;
-      });
-      setSelectedIdx(0);
+      cycleCountryFilter();
       return true;
     }
     return false;
-  }, [load]);
+  }, [cycleCountryFilter, cycleImpactFilter, load]);
 
   const columns = useMemo<EconCalendarColumn[]>(() => {
     const timeWidth = 6;
@@ -757,6 +763,26 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
         countryFilter !== "all" ? `country: ${countryFilter}` : null,
       ].filter(Boolean).join(" · ") || undefined
     : undefined;
+
+  usePaneFooter("econ-calendar", () => ({
+    info: [
+      { id: "impact", parts: [{ text: `impact: ${impactFilter}`, tone: impactFilter === "all" ? "muted" : "value" }] },
+      { id: "country", parts: [{ text: `country: ${countryFilter}`, tone: countryFilter === "all" ? "muted" : "value" }] },
+      { id: "count", parts: [{ text: `${filtered.length} events`, tone: "muted" }] },
+      ...(nextEvent && nextCountdown ? [{
+        id: "next",
+        parts: [{ text: `Next: ${nextEvent.event.length > 18 ? nextEvent.event.slice(0, 18).trimEnd() : nextEvent.event} ${nextCountdown}`, tone: "muted" as const }],
+      }] : []),
+      ...(staleness ? [{ id: "stale", parts: [{ text: staleness, tone: "muted" as const }] }] : []),
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+    ],
+    hints: [
+      { id: "impact", key: "f", label: "impact", onPress: cycleImpactFilter },
+      { id: "country", key: "c", label: "country", onPress: cycleCountryFilter },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
+    ],
+  }), [countryFilter, cycleCountryFilter, cycleImpactFilter, error, filtered.length, impactFilter, load, loading, nextCountdown, nextEvent?.event, staleness]);
 
   const handleHeaderClick = useCallback(() => {}, []);
   const selectDisplayRow = useCallback((row: DisplayRow) => {
@@ -824,53 +850,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
-  const calendarHeader = (
-    <>
-      {/* Header */}
-      <Box flexDirection="row" height={1} paddingX={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          Economic Calendar
-        </Text>
-        <Box marginLeft={1}>
-          <Text fg={colors.textDim}>[{impactFilter}]</Text>
-        </Box>
-        <Box marginLeft={0}>
-          <Text fg={colors.textDim}>[{countryFilter}]</Text>
-        </Box>
-        <Box marginLeft={1}>
-          <Text fg={colors.textMuted}>{filtered.length} events</Text>
-        </Box>
-        {nextEvent && nextCountdown && (
-          <Box marginLeft={1}>
-            <Text fg={colors.textMuted}>
-              Next: {nextEvent.event.length > 16 ? nextEvent.event.slice(0, 16).trimEnd() : nextEvent.event} {nextCountdown}
-            </Text>
-          </Box>
-        )}
-        {loading && (
-          <Box marginLeft={1}>
-            <Text fg={colors.textMuted}>loading…</Text>
-          </Box>
-        )}
-        <Box flexGrow={1} />
-        {staleness ? <Text fg={colors.textMuted}>{staleness}</Text> : null}
-      </Box>
-
-      {/* Error state */}
-      {error && (
-        <Box paddingX={1} paddingY={1}>
-          <Text fg={colors.negative}>Error: {error}</Text>
-        </Box>
-      )}
-    </>
-  );
-
-  const calendarFooter = (
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textMuted}>[r]efresh</Text>
-      </Box>
-  );
-
   const detailContent = detailEvent ? (
     <EconDetailView
       event={detailEvent}
@@ -888,8 +867,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
       detailOpen={!!detailEvent}
       onBack={() => setDetailEvent(null)}
       detailContent={detailContent}
-      rootBefore={calendarHeader}
-      rootAfter={calendarFooter}
       rootWidth={width}
       rootHeight={height}
       onRootKeyDown={handleRootKeyDown}

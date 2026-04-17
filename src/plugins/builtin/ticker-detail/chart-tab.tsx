@@ -1,7 +1,6 @@
 import { Box } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useCallback, useMemo } from "react";
-import { saveConfig } from "../../../data/config-store";
 import { ChartIndicatorSelector } from "../../../components/chart/chart-indicator-selector";
 import {
   buildIndicatorConfigFromSelection,
@@ -14,7 +13,8 @@ import {
 } from "../../../components/chart/indicators/options";
 import type { ChartAxisMode } from "../../../components/chart/chart-types";
 import { ResolvedStockChart } from "../../../components/chart/stock-chart";
-import { useAppState } from "../../../state/app-context";
+import { useAppDispatch, useAppSelector } from "../../../state/app-context";
+import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { getSharedRegistry } from "../../registry";
@@ -43,12 +43,13 @@ export function ChartTab({
   financials: TickerFinancials | null;
 }) {
   const { width: termWidth, height: termHeight } = useViewport();
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
   const chartHeight = Math.max((height || termHeight - 8) - 2, 10);
-  const rawIndicatorSelection = state.config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_KEY];
-  const indicatorSelectionVersion = state.config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY];
+  const rawIndicatorSelection = config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_KEY];
+  const indicatorSelectionVersion = config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY];
   const hasStoredIndicatorSelection = Array.isArray(rawIndicatorSelection);
   const selectedIndicatorIds = useMemo(
     () => resolveChartIndicatorSelection(rawIndicatorSelection, indicatorSelectionVersion),
@@ -62,20 +63,20 @@ export function ChartTab({
   const persistIndicatorSelection = useCallback((nextSelection: ChartIndicatorId[]) => {
     const normalized = normalizeChartIndicatorSelection(nextSelection);
     const nextConfig = {
-      ...state.config,
+      ...config,
       pluginConfig: {
-        ...state.config.pluginConfig,
+        ...config.pluginConfig,
         [TICKER_DETAIL_PLUGIN_ID]: {
-          ...(state.config.pluginConfig[TICKER_DETAIL_PLUGIN_ID] ?? {}),
+          ...(config.pluginConfig[TICKER_DETAIL_PLUGIN_ID] ?? {}),
           [CHART_INDICATORS_PLUGIN_CONFIG_KEY]: normalized,
           [CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY]: CURRENT_CHART_INDICATORS_CONFIG_VERSION,
         },
       },
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    saveConfig(nextConfig).catch(() => {});
+    scheduleConfigSave(nextConfig);
     getSharedRegistry()?.events.emit("config:changed", { config: nextConfig });
-  }, [dispatch, state.config]);
+  }, [config, dispatch]);
 
   return (
     <Box
@@ -90,6 +91,13 @@ export function ChartTab({
           if (!interactive) onActivate?.();
         }}
       >
+        <ChartIndicatorSelector
+          width={chartWidth}
+          selectedIds={selectedIndicatorIds}
+          onChange={persistIndicatorSelection}
+          variant="pane-hint"
+          shortcutActive={focused}
+        />
         <ResolvedStockChart
           width={chartWidth}
           height={chartHeight}
@@ -101,15 +109,6 @@ export function ChartTab({
           financials={financials}
           indicatorConfig={hasStoredIndicatorSelection ? selectedIndicatorConfig : undefined}
           showVolume={showVolume}
-          footerControls={(
-            <ChartIndicatorSelector
-              width={chartWidth}
-              selectedIds={selectedIndicatorIds}
-              onChange={persistIndicatorSelection}
-              variant="hint"
-              shortcutActive={focused}
-            />
-          )}
         />
       </Box>
     </Box>

@@ -1,8 +1,7 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TextAttributes } from "../../../ui";
 import type { PaneProps } from "../../../types/plugin";
-import { colors } from "../../../theme/colors";
+import { usePaneFooter } from "../../../components";
 import { useNewsArticles } from "../../../news/hooks";
 import { usePluginPaneState } from "../../plugin-runtime";
 import type { MarketNewsItem } from "../../../types/news-source";
@@ -99,29 +98,15 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     getDigest(article.id) ?? article.title
   ), [digestVersion]);
 
-  const rootBefore = (
-      <Box height={1} flexDirection="row" paddingX={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Breaking News</Text>
-        <Box marginLeft={1}>
-          <Text fg={colors.textMuted}>{articles.length} stories</Text>
-        </Box>
-        {aiAvailable && (
-          <Box marginLeft={1}>
-            <Text fg={colors.textDim}>AI digest</Text>
-          </Box>
-        )}
-        {aiRunning && (
-          <Box marginLeft={1}>
-            <Text fg={colors.positive}>{BRAILLE_FRAMES[spinFrame]}</Text>
-          </Box>
-        )}
-        {aiError && (
-          <Box marginLeft={1}>
-            <Text fg={colors.warning}>AI paused</Text>
-          </Box>
-        )}
-      </Box>
-  );
+  usePaneFooter("news-wire:breaking", () => ({
+    info: [
+      { id: "title", parts: [{ text: "Breaking News", tone: "value", bold: true }] },
+      { id: "count", parts: [{ text: `${articles.length} stories`, tone: "muted" }] },
+      ...(aiAvailable ? [{ id: "digest", parts: [{ text: "AI digest", tone: "muted" as const }] }] : []),
+      ...(aiRunning ? [{ id: "running", parts: [{ text: BRAILLE_FRAMES[spinFrame] ?? "running", tone: "positive" as const }] }] : []),
+      ...(aiError ? [{ id: "paused", parts: [{ text: "AI paused", tone: "warning" as const }] }] : []),
+    ],
+  }), [aiAvailable, aiError, aiRunning, articles.length, spinFrame]);
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
@@ -143,7 +128,6 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
-      rootBefore={rootBefore}
       columns={["time", "source", "title", "tickers", "importance"]}
       emptyStateTitle="No breaking news"
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."

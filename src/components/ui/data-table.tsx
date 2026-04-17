@@ -1,10 +1,13 @@
-import { Box, ScrollBox, Text } from "../../ui";
-import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
+import { Box, ScrollBox, Text, useUiHost } from "../../ui";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
 import { useAppDispatch, usePaneInstance } from "../../state/app-context";
+import { useViewport } from "../../react/input";
 import { padTo } from "../../utils/format";
+import { useRafCallback } from "../../react/use-raf-callback";
+import { measurePerf } from "../../utils/perf-marks";
 import { useDoubleClickActivation } from "../use-double-click-activation";
 import { EmptyState } from "./status";
 import { tableContentWidthProps, useMeasuredTableContentWidth } from "./table-layout";
@@ -69,7 +72,19 @@ interface DataTableRowPointerTarget<T> {
   index: number;
 }
 
-export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
+export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
+  props: DataTableProps<T, C>,
+) {
+  const HostDataTable = useUiHost().DataTable as
+    | ComponentType<DataTableProps<T, C>>
+    | undefined;
+  if (HostDataTable) {
+    return <HostDataTable {...props} />;
+  }
+  return <OpenTuiDataTable {...props} />;
+}
+
+function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   columns,
   items,
   sortColumnId,
@@ -89,24 +104,53 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
   renderSectionHeader,
   emptyStateTitle,
   emptyStateHint,
-  virtualize = false,
+  virtualize = true,
   overscan = 3,
   showHorizontalScrollbar = true,
 }: DataTableProps<T, C>) {
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
+  const appViewport = useViewport();
   const [scrollVersion, setScrollVersion] = useState(0);
   const scrollTop = virtualize ? (scrollRef.current?.scrollTop ?? 0) : 0;
+  const measuredViewportHeight = scrollRef.current?.viewport?.height;
   const viewportHeight = virtualize
-    ? (scrollRef.current?.viewport?.height ?? Math.min(items.length, 16))
+    ? Math.max(
+        1,
+        Math.min(
+          measuredViewportHeight ?? Math.min(items.length, 16),
+          Math.max(1, Math.ceil(appViewport.height)),
+        ),
+      )
     : items.length;
   const startIndex = virtualize ? Math.max(scrollTop - overscan, 0) : 0;
   const endIndex = virtualize
     ? Math.min(startIndex + viewportHeight + overscan * 2, items.length)
     : items.length;
   const visibleItems = useMemo(
-    () => items.slice(startIndex, endIndex),
-    [endIndex, items, scrollVersion, startIndex],
+    () => measurePerf(
+      "data-table.visible-rows",
+      () => items.slice(startIndex, endIndex),
+      {
+        itemCount: items.length,
+        measuredViewportHeight,
+        startIndex,
+        endIndex,
+        viewportHeight,
+        virtualize,
+      },
+    ),
+    [
+      appViewport.height,
+      endIndex,
+      items,
+      items.length,
+      measuredViewportHeight,
+      scrollVersion,
+      startIndex,
+      viewportHeight,
+      virtualize,
+    ],
   );
   const tableWidth = useMemo(
     () => columns.reduce((sum, column) => sum + column.width + 1, 2),
@@ -125,12 +169,14 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
         : undefined,
     });
 
-  const handleBodyScrollActivity = () => {
+  const handleBodyScrollActivity = useCallback(() => {
     if (virtualize) {
       setScrollVersion((current) => current + 1);
     }
     onBodyScrollActivity();
-  };
+  }, [onBodyScrollActivity, virtualize]);
+  const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
+  const scheduleHeaderScrollSync = useRafCallback(syncHeaderScroll);
   const focusPane = useCallback(() => {
     if (!paneInstanceId) return;
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
@@ -155,8 +201,10 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
     <Box
       flexDirection="column"
       flexGrow={1}
+      flexBasis={0}
       width="100%"
       backgroundColor={colors.bg}
+      overflow="hidden"
     >
       <ScrollBox
         ref={headerScrollRef}
@@ -213,17 +261,18 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
         ref={scrollRef}
         width="100%"
         flexGrow={1}
+        flexBasis={0}
         backgroundColor={colors.bg}
         scrollX={showHorizontalScrollbar}
         scrollY
         focusable={false}
         onMouseDown={() => {
           focusPane();
-          queueMicrotask(syncHeaderScroll);
+          scheduleHeaderScrollSync();
         }}
-        onMouseUp={() => queueMicrotask(handleBodyScrollActivity)}
-        onMouseDrag={() => queueMicrotask(handleBodyScrollActivity)}
-        onMouseScroll={() => queueMicrotask(handleBodyScrollActivity)}
+        onMouseUp={scheduleBodyScrollActivity}
+        onMouseDrag={scheduleBodyScrollActivity}
+        onMouseScroll={scheduleBodyScrollActivity}
         onSizeChange={measureContentWidth}
       >
         {items.length === 0 ? (
@@ -233,11 +282,44 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
         ) : (
           <>
             {virtualize && startIndex > 0 && <Box height={startIndex} />}
-            {visibleItems.map((item, visibleIndex) => {
-              const index = startIndex + visibleIndex;
-              const sectionHeader = renderSectionHeader?.(item, index) ?? null;
+            {measurePerf(
+              "data-table.render-visible-rows",
+              () => visibleItems.map((item, visibleIndex) => {
+                const index = startIndex + visibleIndex;
+                const sectionHeader = renderSectionHeader?.(item, index) ?? null;
 
-              if (sectionHeader) {
+                if (sectionHeader) {
+                  return (
+                    <Box
+                      key={getItemKey(item, index)}
+                      flexDirection="row"
+                      height={1}
+                      {...tableContentWidthProps(contentWidth)}
+                      paddingX={1}
+                      backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
+                      onMouseDown={(event) => {
+                        focusPane();
+                        event.preventDefault();
+                      }}
+                    >
+                      <Text
+                        attributes={sectionHeader.attributes ?? TextAttributes.BOLD}
+                        fg={sectionHeader.color ?? colors.textBright}
+                      >
+                        {sectionHeader.text}
+                      </Text>
+                    </Box>
+                  );
+                }
+
+                const selected = isSelected(item, index);
+                const hovered = hoveredIdx === index && !selected;
+                const rowBg = selected
+                  ? colors.selected
+                  : hovered
+                    ? hoverBg()
+                    : colors.bg;
+
                 return (
                   <Box
                     key={getItemKey(item, index)}
@@ -245,86 +327,69 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>({
                     height={1}
                     {...tableContentWidthProps(contentWidth)}
                     paddingX={1}
-                    backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
+                    backgroundColor={rowBg}
+                    onMouseMove={() => {
+                      if (hoveredIdx !== index) setHoveredIdx(index);
+                    }}
                     onMouseDown={(event) => {
                       focusPane();
                       event.preventDefault();
+                      handleRowMouseDown(getItemKey(item, index), {
+                        item,
+                        index,
+                      }, event);
                     }}
                   >
-                    <Text
-                      attributes={sectionHeader.attributes ?? TextAttributes.BOLD}
-                      fg={sectionHeader.color ?? colors.textBright}
-                    >
-                      {sectionHeader.text}
-                    </Text>
+                    {columns.map((column) => {
+                      const cell = renderCell(item, column, index, {
+                        selected,
+                        hovered,
+                      });
+                      return (
+                        <Box
+                          key={column.id}
+                          width={column.width + 1}
+                          onMouseDown={(event) => {
+                            focusPane();
+                            if (cell.onMouseDown) {
+                              cell.onMouseDown(event);
+                              return;
+                            }
+                            event.preventDefault();
+                            event.stopPropagation?.();
+                            handleRowMouseDown(getItemKey(item, index), {
+                              item,
+                              index,
+                            }, event);
+                          }}
+                        >
+                          <Text
+                            attributes={cell.attributes ?? TextAttributes.NONE}
+                            fg={
+                              cell.color ??
+                              (selected ? colors.selectedText : colors.text)
+                            }
+                          >
+                            {padTo(cell.text, column.width, column.align)}
+                          </Text>
+                        </Box>
+                      );
+                    })}
                   </Box>
                 );
-              }
-
-              const selected = isSelected(item, index);
-              const hovered = hoveredIdx === index && !selected;
-              const rowBg = selected
-                ? colors.selected
-                : hovered
-                  ? hoverBg()
-                  : colors.bg;
-
-              return (
-                <Box
-                  key={getItemKey(item, index)}
-                  flexDirection="row"
-                  height={1}
-                  {...tableContentWidthProps(contentWidth)}
-                  paddingX={1}
-                  backgroundColor={rowBg}
-                  onMouseMove={() => setHoveredIdx(index)}
-                  onMouseDown={(event) => {
-                    focusPane();
-                    event.preventDefault();
-                    handleRowMouseDown(getItemKey(item, index), {
-                      item,
-                      index,
-                    }, event);
-                  }}
-                >
-                  {columns.map((column) => {
-                    const cell = renderCell(item, column, index, {
-                      selected,
-                      hovered,
-                    });
-                    return (
-                      <Box
-                        key={column.id}
-                        width={column.width + 1}
-                        onMouseDown={(event) => {
-                          focusPane();
-                          if (cell.onMouseDown) {
-                            cell.onMouseDown(event);
-                            return;
-                          }
-                          event.preventDefault();
-                          event.stopPropagation?.();
-                          handleRowMouseDown(getItemKey(item, index), {
-                            item,
-                            index,
-                          }, event);
-                        }}
-                      >
-                        <Text
-                          attributes={cell.attributes ?? TextAttributes.NONE}
-                          fg={
-                            cell.color ??
-                            (selected ? colors.selectedText : colors.text)
-                          }
-                        >
-                          {padTo(cell.text, column.width, column.align)}
-                        </Text>
-                      </Box>
-                    );
-                  })}
-                </Box>
-              );
-            })}
+              }),
+              {
+                columnCount: columns.length,
+                endIndex,
+                itemCount: items.length,
+                measuredViewportHeight,
+                paneId: paneInstanceId,
+                startIndex,
+                viewportHeight,
+                visibleCount: visibleItems.length,
+                virtualize,
+              },
+            )}
             {virtualize && endIndex < items.length && (
               <Box height={Math.max(items.length - endIndex, 0)} />
             )}

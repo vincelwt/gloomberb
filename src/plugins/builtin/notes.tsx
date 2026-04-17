@@ -7,6 +7,7 @@ import type { GloomPlugin, DetailTabProps, PaneProps } from "../../types/plugin"
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { MarkdownEditor } from "../../components/markdown-editor";
+import { usePaneFooter } from "../../components";
 import { NotesFiles, type QuickNoteEntry } from "./notes-files";
 
 function createNotesTab(notesFiles: NotesFiles) {
@@ -71,16 +72,18 @@ function createNotesTab(notesFiles: NotesFiles) {
       }
     });
 
+    usePaneFooter("ticker-notes", () => ({
+      info: [
+        { id: "mode", parts: [{ text: notesFocused ? "editing" : "viewing", tone: "muted" }] },
+      ],
+    }), [notesFocused]);
+
     if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view notes.</Text>;
 
     return (
       <Box flexDirection="column" padding={1} flexGrow={1}>
         <Box flexDirection="row" height={1}>
           <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</Text>
-          <Box flexGrow={1} />
-          <Text fg={colors.textMuted}>
-            {notesFocused ? "editing (Esc to stop)" : "Enter to edit"}
-          </Text>
         </Box>
         <Box height={1} />
         <Box flexGrow={1} onMouseDown={() => { if (!notesFocused) setNotesFocusedAndCapture(true); }}>
@@ -270,6 +273,23 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
       }
     });
 
+    usePaneFooter("quick-notes", () => ({
+      info: [
+        ...(activeTabId ? [{
+          id: "active",
+          parts: [{ text: tabs.find((tab) => tab.id === activeTabId)?.title ?? "Note", tone: "value" as const, bold: true }],
+        }] : []),
+        { id: "mode", parts: [{ text: renaming ? "renaming" : editing ? "editing" : `${tabs.length} notes`, tone: "muted" }] },
+      ],
+      hints: renaming
+        ? []
+        : [
+            { id: "new", key: "t", label: "new", onPress: addTab },
+            { id: "close", key: "w", label: "close", onPress: () => { if (activeTabId) removeTab(activeTabId); }, disabled: !activeTabId },
+            { id: "rename", key: "r", label: "rename", onPress: startRename, disabled: !activeTabId },
+          ],
+    }), [activeTabId, addTab, editing, removeTab, renaming, startRename, tabs]);
+
     return (
       <Box flexDirection="column" flexGrow={1}>
         {/* Tab bar */}
@@ -312,14 +332,6 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
             onMouseDown={addTab}
           >
             {` + `}
-          </Text>
-          <Box flexGrow={1} />
-          <Text fg={colors.textMuted}>
-            {renaming
-              ? "type name, Enter to confirm"
-              : editing
-                ? "editing (Esc to stop)"
-                : "Enter edit | t new | w close | r rename"}
           </Text>
         </Box>
         {/* Rename input */}

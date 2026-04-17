@@ -1,5 +1,5 @@
 import { Box } from "../ui";
-import { useShortcut } from "../react/input";
+import { useShortcut, useViewport } from "../react/input";
 import { type ScrollBoxRenderable } from "../ui";
 import {
   useCallback,
@@ -90,7 +90,7 @@ export function DataTableStackView<
   renderSectionHeader,
   emptyStateTitle,
   emptyStateHint,
-  virtualize,
+  virtualize = true,
   overscan,
   showHorizontalScrollbar,
 }: DataTableStackViewProps<T, C>) {
@@ -99,6 +99,7 @@ export function DataTableStackView<
   const [internalHoveredIdx, setInternalHoveredIdx] = useState<number | null>(
     null,
   );
+  const appViewport = useViewport();
 
   const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
   const effectiveScrollRef = scrollRef ?? internalScrollRef;
@@ -183,13 +184,16 @@ export function DataTableStackView<
   useEffect(() => {
     const scrollBox = effectiveScrollRef.current;
     if (!scrollBox?.viewport || selectedIndex < 0) return;
-    const viewportHeight = Math.max(scrollBox.viewport.height, 1);
+    const viewportHeight = Math.max(
+      1,
+      Math.min(scrollBox.viewport.height, Math.ceil(appViewport.height)),
+    );
     if (selectedIndex < scrollBox.scrollTop) {
       scrollBox.scrollTo(selectedIndex);
     } else if (selectedIndex >= scrollBox.scrollTop + viewportHeight) {
       scrollBox.scrollTo(selectedIndex - viewportHeight + 1);
     }
-  }, [effectiveScrollRef, items.length, selectedIndex]);
+  }, [appViewport.height, effectiveScrollRef, items.length, selectedIndex]);
 
   const rootContent = (
     <Box
@@ -198,6 +202,7 @@ export function DataTableStackView<
       width={rootWidth}
       height={rootHeight}
       backgroundColor={rootBackgroundColor}
+      overflow="hidden"
     >
       {rootBefore}
       <DataTable<T, C>

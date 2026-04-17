@@ -2,7 +2,7 @@ import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { Quote } from "../../../types/financials";
 import type { MarketState } from "../../../types/financials";
@@ -182,7 +182,7 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
     }
   }, [flatRows, selectedFlatIdx, selectedSymbol]);
 
-  const fetchAll = () => {
+  const fetchAll = useCallback(() => {
     const provider = getSharedDataProvider();
     if (!provider) return;
 
@@ -214,13 +214,13 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
         });
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAll();
     const interval = setInterval(fetchAll, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchAll]);
 
   const syncHeaderScroll = useCallback(() => {
     const bodyScrollBox = scrollRef.current;
@@ -350,6 +350,21 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
         };
     }
   }, [quotes]);
+
+  const loadedCount = Array.from(quotes.values()).filter((state) => !!state.quote).length;
+  const loadingCount = Array.from(quotes.values()).filter((state) => state.loading).length;
+  const latestQuoteTs = Math.max(
+    0,
+    ...Array.from(quotes.values()).map((state) => state.quote?.lastUpdated ?? 0),
+  );
+  usePaneFooter("world-indices", () => ({
+    info: [
+      { id: "rows", parts: [{ text: `${navigableIndices.length} indices`, tone: "muted" }] },
+      { id: "quotes", parts: [{ text: `${loadedCount} quotes`, tone: loadedCount > 0 ? "value" : "muted" }] },
+      ...(loadingCount > 0 ? [{ id: "loading", parts: [{ text: `${loadingCount} loading`, tone: "muted" as const }] }] : []),
+      ...(latestQuoteTs > 0 ? [{ id: "fresh", parts: [{ text: new Date(latestQuoteTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), tone: "muted" as const }] }] : []),
+    ],
+  }), [latestQuoteTs, loadedCount, loadingCount, navigableIndices.length]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

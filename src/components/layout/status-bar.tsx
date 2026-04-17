@@ -1,7 +1,14 @@
 import { Box, Span, Text } from "../../ui";
 import { useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
-import { useAppState, useFocusedTicker } from "../../state/app-context";
+import { useAppDispatch, useAppSelector, useFocusedTicker } from "../../state/app-context";
+import {
+  selectActiveLayoutIndex,
+  selectGridlockTipSequence,
+  selectGridlockTipVisible,
+  selectSavedLayouts,
+  selectStatusBarVisible,
+} from "../../state/selectors-ui";
 import {
   marketStateLabel,
   marketStateColor,
@@ -25,7 +32,12 @@ function truncate(text: string, width: number): string {
 
 export function StatusBar() {
   const registry = getSharedRegistry();
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const layouts = useAppSelector(selectSavedLayouts);
+  const activeLayoutIdx = useAppSelector(selectActiveLayoutIndex);
+  const statusBarVisible = useAppSelector(selectStatusBarVisible);
+  const gridlockTipVisible = useAppSelector(selectGridlockTipVisible);
+  const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const [hoveredTab, setHoveredTab] = useState<number | null>(null);
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
@@ -44,18 +56,16 @@ export function StatusBar() {
   const extText = extInfo?.text ?? "";
   const extColor = extInfo?.color ?? colors.textDim;
 
-  const layouts = state.config.layouts ?? [];
-  const activeLayoutIdx = state.config.activeLayoutIndex ?? 0;
   const hasMultipleLayouts = layouts.length > 1;
-  const showGridlockTip = state.gridlockTipVisible && !!registry;
+  const showGridlockTip = gridlockTipVisible && !!registry;
 
   useEffect(() => {
-    if (!state.gridlockTipVisible) return;
+    if (!gridlockTipVisible) return;
     const timer = setTimeout(() => {
       dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
     }, GRIDLOCK_TIP_DURATION_MS);
     return () => clearTimeout(timer);
-  }, [dispatch, state.gridlockTipSequence, state.gridlockTipVisible]);
+  }, [dispatch, gridlockTipSequence, gridlockTipVisible]);
 
   const handleGridlockTip = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     event?.preventDefault?.();
@@ -75,7 +85,7 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
-  if (!state.statusBarVisible) return null;
+  if (!statusBarVisible) return null;
 
   return (
     <Box
@@ -99,7 +109,7 @@ export function StatusBar() {
                 key={i}
                 fg={fg}
                 bg={bg}
-                onMouseMove={() => setHoveredTab(i)}
+                onMouseMove={() => setHoveredTab((current) => (current === i ? current : i))}
                 onMouseDown={(event: any) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -122,14 +132,14 @@ export function StatusBar() {
           <Box width={1} />
           <Box
             backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
-            onMouseMove={() => setHoveredControl("gridlock-tip")}
+            onMouseMove={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
             onMouseDown={handleGridlockTip}
           >
             <Text fg={colors.headerText}> Gridlock All </Text>
           </Box>
           <Text
             fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
-            onMouseMove={() => setHoveredControl("gridlock-tip-dismiss")}
+            onMouseMove={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
             onMouseDown={dismissGridlockTip}
           >
             {" x"}

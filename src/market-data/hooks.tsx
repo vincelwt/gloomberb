@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { NewsItem, SecFilingItem } from "../types/data-provider";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
@@ -9,7 +9,19 @@ import {
   resolveEntryValue,
 } from "./coordinator";
 import type { QueryEntry } from "./result-types";
-import { buildChartKey } from "./selectors";
+import {
+  buildArticleSummaryKey,
+  buildChartKey,
+  buildFxKey,
+  buildNewsKey,
+  buildOptionsKey,
+  buildQuoteKey,
+  buildSecContentKey,
+  buildSecFilingsKey,
+  buildSnapshotKey,
+} from "./selectors";
+
+const TICKER_FINANCIALS_LOAD_DELAY_MS = 250;
 
 function useCoordinatorVersion(): number {
   const coordinator = getSharedMarketDataCoordinator();
@@ -18,6 +30,30 @@ function useCoordinatorVersion(): number {
     () => coordinator?.getVersion() ?? 0,
     () => 0,
   );
+}
+
+function useCoordinatorKeysVersion(keys: readonly string[]): number {
+  const coordinator = getSharedMarketDataCoordinator();
+  const keyString = keys.join("\u001f");
+  const stableKeys = useMemo(
+    () => (keyString ? keyString.split("\u001f") : []),
+    [keyString],
+  );
+  const subscribe = useCallback((listener: () => void) => {
+    if (!coordinator) return () => {};
+    if (typeof coordinator.subscribeKeys === "function") {
+      return coordinator.subscribeKeys(stableKeys, listener);
+    }
+    return coordinator.subscribe(listener);
+  }, [coordinator, stableKeys]);
+  const getSnapshot = useCallback(() => {
+    if (!coordinator) return 0;
+    if (typeof coordinator.getKeysVersion === "function") {
+      return coordinator.getKeysVersion(stableKeys);
+    }
+    return coordinator.getVersion();
+  }, [coordinator, stableKeys]);
+  return useSyncExternalStore(subscribe, getSnapshot, () => 0);
 }
 
 function useCoordinatorSelector<T>(selector: (coordinator: NonNullable<ReturnType<typeof getSharedMarketDataCoordinator>>) => T, fallback: T): T {
@@ -55,24 +91,52 @@ export function useTickerInstrument(symbol: string | null | undefined, ticker: T
 
 export function useTickerFinancials(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): TickerFinancials | null {
   const instrument = useTickerInstrument(symbol, ticker);
-  const financials = useCoordinatorSelector(
-    (coordinator) => (instrument ? coordinator.getTickerFinancialsSync(instrument) : null),
-    null,
-  );
+  const keys = useMemo(() => (
+    instrument
+      ? [
+        buildSnapshotKey(instrument),
+        buildQuoteKey(instrument),
+        buildChartKey({ instrument, bufferRange: "5Y", granularity: "range" }),
+      ]
+      : []
+  ), [instrument?.brokerId, instrument?.brokerInstanceId, instrument?.exchange, instrument?.instrument?.conId, instrument?.symbol]);
+  useCoordinatorKeysVersion(keys);
+  const coordinator = getSharedMarketDataCoordinator();
+  const financials = coordinator && instrument
+    ? coordinator.getTickerFinancialsSync(instrument)
+    : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !instrument) return;
-    void coordinator.loadSnapshot(instrument);
+    const timeoutId = setTimeout(() => {
+      void coordinator.loadSnapshot(instrument);
+    }, TICKER_FINANCIALS_LOAD_DELAY_MS);
+    return () => clearTimeout(timeoutId);
   }, [instrument?.brokerId, instrument?.brokerInstanceId, instrument?.exchange, instrument?.instrument?.conId, instrument?.symbol]);
 
   return financials;
 }
 
+function buildTickerFinancialsKeys(tickers: TickerRecord[]): string[] {
+  const keys: string[] = [];
+  for (const ticker of tickers) {
+    const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+    if (!instrument) continue;
+    keys.push(
+      buildSnapshotKey(instrument),
+      buildQuoteKey(instrument),
+      buildChartKey({ instrument, bufferRange: "5Y", granularity: "range" }),
+    );
+  }
+  return keys;
+}
+
 export function useTickerFinancialsMap(tickers: TickerRecord[]): Map<string, TickerFinancials> {
   const coordinator = getSharedMarketDataCoordinator();
-  const version = useCoordinatorVersion();
   const tickerKey = buildTickerFinancialsMapKey(tickers);
+  const subscriptionKeys = useMemo(() => buildTickerFinancialsKeys(tickers), [tickerKey]);
+  const keysVersion = useCoordinatorKeysVersion(subscriptionKeys);
 
   return useMemo(() => {
     if (!coordinator) return new Map<string, TickerFinancials>();
@@ -86,15 +150,18 @@ export function useTickerFinancialsMap(tickers: TickerRecord[]): Map<string, Tic
       }
     }
     return result;
-  }, [coordinator, tickerKey, version]);
+  }, [coordinator, keysVersion, tickerKey, subscriptionKeys]);
 }
 
 export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): QueryEntry<Quote> | null {
   const instrument = useTickerInstrument(symbol, ticker);
-  const entry = useCoordinatorSelector(
-    (coordinator) => (instrument ? coordinator.getQuoteEntry(instrument) : null),
-    null,
+  const keys = useMemo(
+    () => (instrument ? [buildQuoteKey(instrument)] : []),
+    [instrument?.brokerId, instrument?.brokerInstanceId, instrument?.exchange, instrument?.instrument?.conId, instrument?.symbol],
   );
+  useCoordinatorKeysVersion(keys);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && instrument ? coordinator.getQuoteEntry(instrument) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -107,10 +174,9 @@ export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerR
 
 export function useChartQuery(request: ChartRequest | null | undefined): QueryEntry<PricePoint[]> | null {
   const key = request ? buildChartKey(request) : null;
-  const entry = useCoordinatorSelector(
-    (coordinator) => (request ? coordinator.getChartEntry(request) : null),
-    null,
-  );
+  useCoordinatorKeysVersion(key ? [key] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && request ? coordinator.getChartEntry(request) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -127,9 +193,14 @@ export function useChartQueries(
 ): Map<string, QueryEntry<PricePoint[]>> {
   const requestKey = requests.map((request) => buildChartKey(request)).join(",");
   const debounceMs = Math.max(0, options.debounceMs ?? 0);
-  const entries = useCoordinatorSelector((coordinator) => (
-    requests.map((request) => [buildChartKey(request), coordinator.getChartEntry(request)] as const)
-  ), [] as Array<readonly [string, QueryEntry<PricePoint[]>]>);
+  const keys = useMemo(() => requests.map((request) => buildChartKey(request)), [requestKey]);
+  const keysVersion = useCoordinatorKeysVersion(keys);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entries = useMemo(() => (
+    coordinator
+      ? requests.map((request) => [buildChartKey(request), coordinator.getChartEntry(request)] as const)
+      : [] as Array<readonly [string, QueryEntry<PricePoint[]>]>
+  ), [coordinator, keys, keysVersion, requestKey]);
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -151,59 +222,55 @@ export function useChartQueries(
 }
 
 export function useNewsQuery(request: NewsRequest | null | undefined): QueryEntry<NewsItem[]> | null {
-  const key = request ? `${request.instrument.symbol}|${request.instrument.exchange ?? ""}|${request.count ?? 50}` : null;
-  const entry = useCoordinatorSelector(
-    (coordinator) => (request ? coordinator.getNewsEntry(request) : null),
-    null,
-  );
+  const requestKey = request ? buildNewsKey(request) : null;
+  useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && request ? coordinator.getNewsEntry(request) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
     void coordinator.loadNews(request);
-  }, [key]);
+  }, [requestKey]);
 
   return entry;
 }
 
 export function useOptionsQuery(request: OptionsRequest | null | undefined): QueryEntry<OptionsChain> | null {
-  const key = request ? `${request.instrument.symbol}|${request.instrument.exchange ?? ""}|${request.expirationDate ?? "default"}` : null;
-  const entry = useCoordinatorSelector(
-    (coordinator) => (request ? coordinator.getOptionsEntry(request) : null),
-    null,
-  );
+  const requestKey = request ? buildOptionsKey(request) : null;
+  useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && request ? coordinator.getOptionsEntry(request) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
     void coordinator.loadOptions(request);
-  }, [key]);
+  }, [requestKey]);
 
   return entry;
 }
 
 export function useSecFilingsQuery(request: SecFilingsRequest | null | undefined): QueryEntry<SecFilingItem[]> | null {
-  const key = request ? `${request.instrument.symbol}|${request.instrument.exchange ?? ""}|${request.count ?? 50}` : null;
-  const entry = useCoordinatorSelector(
-    (coordinator) => (request ? coordinator.getSecFilingsEntry(request) : null),
-    null,
-  );
+  const requestKey = request ? buildSecFilingsKey(request) : null;
+  useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && request ? coordinator.getSecFilingsEntry(request) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
     void coordinator.loadSecFilings(request);
-  }, [key]);
+  }, [requestKey]);
 
   return entry;
 }
 
 export function useSecFilingContent(filing: SecFilingItem | null | undefined): QueryEntry<string | null> | null {
-  const key = filing?.accessionNumber ?? null;
-  const entry = useCoordinatorSelector(
-    (coordinator) => (filing ? coordinator.getSecContentEntry(filing.accessionNumber) : null),
-    null,
-  );
+  const key = filing ? buildSecContentKey(filing.accessionNumber) : null;
+  useCoordinatorKeysVersion(key ? [key] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && filing ? coordinator.getSecContentEntry(filing.accessionNumber) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -215,10 +282,10 @@ export function useSecFilingContent(filing: SecFilingItem | null | undefined): Q
 }
 
 export function useArticleSummary(url: string | null | undefined): QueryEntry<string | null> | null {
-  const entry = useCoordinatorSelector(
-    (coordinator) => (url ? coordinator.getArticleSummaryEntry(url) : null),
-    null,
-  );
+  const key = url ? buildArticleSummaryKey(url) : null;
+  useCoordinatorKeysVersion(key ? [key] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && url ? coordinator.getArticleSummaryEntry(url) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -230,10 +297,10 @@ export function useArticleSummary(url: string | null | undefined): QueryEntry<st
 }
 
 export function useFxRate(currency: string | null | undefined): QueryEntry<number> | null {
-  const entry = useCoordinatorSelector(
-    (coordinator) => (currency ? coordinator.getFxEntry(currency) : null),
-    null,
-  );
+  const key = currency ? buildFxKey(currency) : null;
+  useCoordinatorKeysVersion(key ? [key] : []);
+  const coordinator = getSharedMarketDataCoordinator();
+  const entry = coordinator && currency ? coordinator.getFxEntry(currency) : null;
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -246,16 +313,17 @@ export function useFxRate(currency: string | null | undefined): QueryEntry<numbe
 
 export function useFxRatesMap(currencies: Array<string | null | undefined>): Map<string, number> {
   const coordinator = getSharedMarketDataCoordinator();
-  const version = useCoordinatorVersion();
   const normalizedCurrencyKey = stableCurrencyList(currencies).join("|");
   const normalizedCurrencies = useMemo(
     () => (normalizedCurrencyKey ? normalizedCurrencyKey.split("|") : []),
     [normalizedCurrencyKey],
   );
+  const keys = useMemo(() => normalizedCurrencies.map(buildFxKey), [normalizedCurrencies]);
+  const keysVersion = useCoordinatorKeysVersion(keys);
   const entries = useMemo(() => {
     if (!coordinator) return [] as Array<readonly [string, QueryEntry<number>]>;
     return normalizedCurrencies.map((currency) => [currency, coordinator.getFxEntry(currency)] as const);
-  }, [coordinator, normalizedCurrencies, version]);
+  }, [coordinator, keys, keysVersion, normalizedCurrencies]);
 
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();

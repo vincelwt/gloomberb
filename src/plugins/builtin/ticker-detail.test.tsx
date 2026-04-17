@@ -349,7 +349,7 @@ describe("TickerDetailPane", () => {
     expect(paneDef?.defaultMode).toBe("floating");
   });
 
-  test("shows only applicable tabs when no gateway, statements, or options are available", async () => {
+  test("shows core and lightweight plugin tabs without waiting on options preflight", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
 
@@ -368,10 +368,10 @@ describe("TickerDetailPane", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Overview");
     expect(frame).toContain("Chart");
+    expect(frame).toContain("Options");
     expect(frame).toContain("Ask AI");
     expect(frame).not.toContain("Financials");
     expect(frame).not.toContain("Trade");
-    expect(frame).not.toContain("Options");
   });
 
   test("shows Financials when statement data exists", async () => {
@@ -412,7 +412,7 @@ describe("TickerDetailPane", () => {
     expect(frame).toContain("Trade");
   });
 
-  test("shows Options after the preflight confirms a chain exists", async () => {
+  test("shows Options for option-capable tickers without a preflight round trip", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(true));
 
@@ -448,6 +448,36 @@ describe("TickerDetailPane", () => {
     await flushFrame();
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("SEC");
+  });
+
+  test("passes visible tab content height to plugin tabs", async () => {
+    let receivedHeight: number | null = null;
+    const probeTab: DetailTabDef["component"] = ({ height }) => {
+      receivedHeight = height;
+      return <text>{`height:${height}`}</text>;
+    };
+    setSharedRegistryForTests({
+      detailTabs: new Map<string, DetailTabDef>([
+        ["sec", { id: "sec", name: "SEC", order: 45, component: probeTab, isVisible: ({ ticker }) => isUsEquityTicker(ticker) }],
+      ]),
+    } as unknown as PluginRegistry);
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+        activeTabId="sec"
+        height={18}
+      />,
+      { width: 90, height: 18 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(receivedHeight).toBe(16);
+    expect(frame).toContain("height:16");
   });
 
   test("hides SEC for non-US equities", async () => {

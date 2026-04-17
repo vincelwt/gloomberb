@@ -14,6 +14,8 @@ import { OpenTuiDialogHostProvider } from "./dialog-host";
 import { openTuiToastHost } from "./toast-host";
 import { ToastHostProvider } from "../../ui/toast";
 import { colors } from "../../theme/colors";
+import { startMainThreadMonitor } from "../../utils/main-thread-monitor";
+import { measurePerfAsync } from "../../utils/perf-marks";
 
 export async function startOpenTuiApp(): Promise<void> {
   setConfigStoreHost(nodeConfigStoreHost);
@@ -23,7 +25,7 @@ export async function startOpenTuiApp(): Promise<void> {
   appLog.info("Gloomberb starting");
 
   const cliArgs = process.argv.slice(2);
-  const externalPlugins = await loadExternalPlugins();
+  const externalPlugins = await measurePerfAsync("startup.opentui.load-external-plugins", () => loadExternalPlugins());
   let cliLaunchRequest = null;
   if (cliArgs.length > 0) {
     const dispatchResult = await dispatchCli(cliArgs, { externalPlugins });
@@ -32,6 +34,7 @@ export async function startOpenTuiApp(): Promise<void> {
       cliLaunchRequest = dispatchResult.request;
     }
   }
+  startMainThreadMonitor("opentui");
 
   let dataDir = await getDataDir();
   if (!dataDir) {
@@ -42,8 +45,8 @@ export async function startOpenTuiApp(): Promise<void> {
     mkdirSync(dataDir, { recursive: true });
   }
 
-  const config = await initDataDir(dataDir);
-  const host = await createOpenTuiHost();
+  const config = await measurePerfAsync("startup.opentui.init-data-dir", () => initDataDir(dataDir));
+  const host = await measurePerfAsync("startup.opentui.create-host", () => createOpenTuiHost());
 
   host.render(
     <UiHostProvider ui={openTuiUiHost} renderer={host.rendererHost} nativeRenderer={host.nativeRenderer}>

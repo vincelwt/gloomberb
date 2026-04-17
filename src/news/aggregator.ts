@@ -175,7 +175,7 @@ export class NewsService {
     this.sources.set(source.id, source);
     this.seedCachedSource(source);
     if (this.pollTimer !== null) {
-      void this.poll();
+      void this.pollActiveQueries();
     }
     return () => this.unregister(source.id);
   }
@@ -186,7 +186,6 @@ export class NewsService {
 
   start(): void {
     if (this.pollTimer !== null) return;
-    void this.poll();
     this.pollTimer = setInterval(() => void this.pollActiveQueries(), this.pollIntervalMs);
   }
 
@@ -230,9 +229,7 @@ export class NewsService {
 
   private async pollActiveQueries(): Promise<void> {
     const queries = [...this.queryByKey.values()];
-    if (queries.length === 0) {
-      queries.push(DEFAULT_GLOBAL_QUERY);
-    }
+    if (queries.length === 0) return;
     await Promise.allSettled(queries.map((query) => this.refreshQuery(query, false)));
   }
 

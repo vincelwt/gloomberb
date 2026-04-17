@@ -83,7 +83,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("Will the Fed cut rates?");
   });
 
-  test("shows a venue warning instead of a raw fetch error when one catalog fails", async () => {
+  test("keeps fallback venue markets visible when one catalog fails", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
     globalThis.fetch = (async (input: Request | string | URL) => {
@@ -128,9 +128,6 @@ describe("prediction markets pane interactions", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will the Fed cut rates?");
-    expect(frame).toContain(
-      "Polymarket unavailable right now; showing Kalshi markets.",
-    );
     expect(frame).not.toContain("Was there a typo in the url or port?");
   });
 

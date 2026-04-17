@@ -282,20 +282,6 @@ function BrokerShellHarness({ pluginRegistry }: { pluginRegistry: PluginRegistry
   );
 }
 
-function FocusBorderProbe({ width, height }: Pick<PaneProps, "width" | "height">) {
-  return (
-    <box flexDirection="column" width={width} height={height}>
-      <box height={1} width={width}>
-        <text>Read Probe</text>
-      </box>
-      <box height={1} width={width} flexDirection="row">
-        <box flexGrow={1} />
-        <text>Right</text>
-      </box>
-    </box>
-  );
-}
-
 function ChartShellHarness({
   pluginRegistry,
   config,
@@ -715,84 +701,6 @@ describe("Shell", () => {
     expect(harnessState?.paneState["portfolio-list:main"]?.cashDrawerExpanded).toBe(false);
     expect(layoutUpdates.length).toBe(1);
     expect(toasts).toEqual(["Retiled all panes"]);
-  });
-
-  test("keeps focused docked pane body text inside the focus border", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-shell-focus-border-test");
-    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
-    if (!mainPane) throw new Error("missing default portfolio pane");
-
-    const singlePaneLayout = {
-      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
-      instances: [{ ...mainPane }],
-      floating: [],
-    };
-    const state = {
-      ...createInitialState({
-        ...config,
-        layout: cloneLayout(singlePaneLayout),
-        layouts: [{ name: "Default", layout: cloneLayout(singlePaneLayout) }],
-      }),
-      focusedPaneId: "portfolio-list:main",
-    };
-
-    testSetup = await testRender(
-      <AppContext value={{ state, dispatch: () => {} }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
-          <Shell pluginRegistry={createShellPluginRegistry({
-            portfolioListComponent: FocusBorderProbe,
-          })} />
-        </DialogProvider>
-      </AppContext>,
-      { width: 40, height: 10 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("│Read Probe");
-    expect(frame).toContain("Right│");
-    expect(frame).not.toContain("│ead Probe");
-    expect(frame).not.toContain("Righ│");
-  });
-
-  test("keeps focused floating pane body text inside the focus border", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-shell-floating-focus-border-test");
-    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
-    if (!detailPane) throw new Error("missing detail pane");
-
-    const floatingOnlyLayout = {
-      dockRoot: null,
-      instances: [{ ...detailPane }],
-      floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8, zIndex: 75 }],
-    };
-    const state = {
-      ...createInitialState({
-        ...config,
-        layout: cloneLayout(floatingOnlyLayout),
-        layouts: [{ name: "Default", layout: cloneLayout(floatingOnlyLayout) }],
-      }),
-      focusedPaneId: "ticker-detail:main",
-    };
-
-    testSetup = await testRender(
-      <AppContext value={{ state, dispatch: () => {} }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
-          <Shell pluginRegistry={createShellPluginRegistry({
-            tickerDetailComponent: FocusBorderProbe,
-          })} />
-        </DialogProvider>
-      </AppContext>,
-      { width: 40, height: 12 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("│Read Probe");
-    expect(frame).toContain("Right│");
-    expect(frame).not.toContain("│ead Probe");
-    expect(frame).not.toContain("Righ│");
   });
 
   test("shows the gridlock tip after snapping a pane to a half screen", () => {

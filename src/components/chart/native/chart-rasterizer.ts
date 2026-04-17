@@ -1,4 +1,5 @@
 import { type PixelResolution } from "../../../ui";
+import { measurePerf } from "../../../utils/perf-marks";
 import { computeGridLines, type ChartScene } from "../chart-renderer";
 import type { ComparisonChartScene } from "../comparison-chart-renderer";
 import type { ChartRenderMode } from "../chart-types";
@@ -475,32 +476,34 @@ function getOverlayPlotBottom(overlay: NativeCrosshairOverlay, pixelHeight: numb
 }
 
 export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pixelHeight: number): NativeChartBitmap {
-  const pixels = new Uint8Array(pixelWidth * pixelHeight * 4);
-  if (scene.points.length === 0 || pixelWidth <= 0 || pixelHeight <= 0) {
-    return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
-  }
+  return measurePerf("chart.native.base", () => {
+    const pixels = new Uint8Array(pixelWidth * pixelHeight * 4);
+    if (scene.points.length === 0 || pixelWidth <= 0 || pixelHeight <= 0) {
+      return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
+    }
 
-  fillBackground(pixels, pixelWidth, pixelHeight, parseHex(scene.colors.bgColor, 1));
-  const layout = getChartPixelLayout(scene, pixelWidth, pixelHeight);
-  drawPriceGrid(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
+    fillBackground(pixels, pixelWidth, pixelHeight, parseHex(scene.colors.bgColor, 1));
+    const layout = getChartPixelLayout(scene, pixelWidth, pixelHeight);
+    drawPriceGrid(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
 
-  switch (scene.mode) {
-    case "area":
-    case "line":
-      drawLineSeries(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
-      break;
-    case "candles":
-      drawCandles(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom, "candles");
-      break;
-    case "ohlc":
-      drawCandles(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom, "ohlc");
-      break;
-  }
+    switch (scene.mode) {
+      case "area":
+      case "line":
+        drawLineSeries(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
+        break;
+      case "candles":
+        drawCandles(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom, "candles");
+        break;
+      case "ohlc":
+        drawCandles(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom, "ohlc");
+        break;
+    }
 
-  drawIndicatorOverlays(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
-  drawVolume(pixels, pixelWidth, pixelHeight, scene, layout.volumeTop, layout.volumeBottom);
+    drawIndicatorOverlays(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
+    drawVolume(pixels, pixelWidth, pixelHeight, scene, layout.volumeTop, layout.volumeBottom);
 
-  return { width: pixelWidth, height: pixelHeight, pixels };
+    return { width: pixelWidth, height: pixelHeight, pixels };
+  }, { pixelWidth, pixelHeight, points: scene.points.length, mode: scene.mode });
 }
 
 interface ComparisonPathSample {
@@ -642,14 +645,16 @@ export function renderNativeCrosshairOverlay(
   pixelWidth: number,
   pixelHeight: number,
 ): NativeChartBitmap {
-  const pixels = new Uint8Array(Math.max(pixelWidth, 1) * Math.max(pixelHeight, 1) * 4);
-  if (pixelWidth <= 0 || pixelHeight <= 0) {
-    return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
-  }
+  return measurePerf("chart.native.crosshair", () => {
+    const pixels = new Uint8Array(Math.max(pixelWidth, 1) * Math.max(pixelHeight, 1) * 4);
+    if (pixelWidth <= 0 || pixelHeight <= 0) {
+      return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
+    }
 
-  const plotBottom = getOverlayPlotBottom(overlay, pixelHeight);
-  drawCrosshairOverlay(pixels, pixelWidth, pixelHeight, overlay, 0, plotBottom);
-  return { width: pixelWidth, height: pixelHeight, pixels };
+    const plotBottom = getOverlayPlotBottom(overlay, pixelHeight);
+    drawCrosshairOverlay(pixels, pixelWidth, pixelHeight, overlay, 0, plotBottom);
+    return { width: pixelWidth, height: pixelHeight, pixels };
+  }, { pixelWidth, pixelHeight });
 }
 
 export function intersectCellRects(a: CellRect, b: CellRect): CellRect | null {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
 import { act, useReducer } from "react";
+import { PaneFooterBar, PaneFooterProvider } from "../layout/pane-footer";
 import {
   AppContext,
   PaneInstanceProvider,
@@ -15,6 +16,7 @@ import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/co
 import type { DataProvider } from "../../types/data-provider";
 import type { PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
+import { Box } from "../../ui";
 import { StockChart } from "./stock-chart";
 
 const TEST_PANE_ID = "ticker-detail:test";
@@ -137,7 +139,14 @@ function ChartHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <StockChart width={84} height={16} focused />
+        <PaneFooterProvider>
+          {(footer) => (
+            <Box flexDirection="column" width={84} height={16}>
+              <StockChart width={84} height={15} focused />
+              <PaneFooterBar footer={footer} focused width={84} />
+            </Box>
+          )}
+        </PaneFooterProvider>
       </PaneInstanceProvider>
     </AppContext>
   );
@@ -276,6 +285,45 @@ describe("StockChart renderer switching", () => {
     expect(frame).toContain("1:1D");
     expect(frame).toContain("2:1W");
     expect(frame).toContain("AUTO");
+  });
+
+  test("keeps the time axis above the pane footer", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    const ticker = makeTicker(symbol);
+    const history = makeMonthlyHistory(72, new Date(Date.UTC(2019, 0, 1)));
+    const provider = makeProvider({ [symbol]: history });
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: history,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+        />,
+      );
+    });
+
+    await flushFrames(4);
+    const lines = testSetup.captureCharFrame().split("\n");
+    const chartAndFooterLines = lines.slice(0, 16);
+    const footerLine = chartAndFooterLines.at(-1) ?? "";
+
+    expect(chartAndFooterLines.join("\n")).toContain("Dec 2019");
+    expect(footerLine).toContain("[m]ode");
+    expect(footerLine).not.toContain("Dec 2019");
+    expect(footerLine).not.toContain("Dec 2024");
   });
 
   test("switches from braille to kitty without crashing text updates", async () => {
@@ -574,7 +622,7 @@ describe("StockChart renderer switching", () => {
     expect(resolutionRequests.some((request) => request.resolution === "1d")).toBe(true);
     expect(detailRequests).toHaveLength(0);
     expect(frame).not.toContain("No price history available.");
-    expect(frame).toContain("Apr");
+    expect(frame).toMatch(/\b[A-Z][a-z]{2} \d{1,2}/);
   });
 
   test("mouse scroll at the auto edge does not zoom into narrower detail windows", async () => {

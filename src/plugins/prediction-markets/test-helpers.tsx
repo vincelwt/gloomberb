@@ -1,5 +1,6 @@
 import { act, useMemo, useReducer, useRef } from "react";
 import type { ScrollBoxRenderable } from "#opentui/core";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import {
   AppContext,
   appReducer,
@@ -9,6 +10,7 @@ import {
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
+import { Box } from "../../ui";
 import {
   PluginRenderProvider,
   type PluginRuntimeAccess,
@@ -456,13 +458,20 @@ export function Harness({
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PluginRenderProvider pluginId="prediction-markets" runtime={runtime}>
-          <PredictionMarketsPane
-            paneId={TEST_PANE_ID}
-            paneType="prediction-markets"
-            focused={state.focusedPaneId === TEST_PANE_ID}
-            width={120}
-            height={34}
-          />
+          <PaneFooterProvider>
+            {(footer) => (
+              <Box flexDirection="column" width={120} height={34}>
+                <PredictionMarketsPane
+                  paneId={TEST_PANE_ID}
+                  paneType="prediction-markets"
+                  focused={state.focusedPaneId === TEST_PANE_ID}
+                  width={120}
+                  height={33}
+                />
+                <PaneFooterBar footer={footer} focused={state.focusedPaneId === TEST_PANE_ID} width={120} />
+              </Box>
+            )}
+          </PaneFooterProvider>
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>

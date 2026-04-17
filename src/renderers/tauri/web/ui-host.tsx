@@ -2,6 +2,7 @@
 /** @jsxImportSource react */
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -14,12 +15,14 @@ import {
   type Ref,
   type WheelEvent as ReactWheelEvent,
 } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   StyledText,
   TextAttributes,
   type BoxRenderable,
   type BitmapSurface,
   type ChartCrosshairOverlay,
+  type HostTabsProps,
   type InputRenderable,
   type RendererHost,
   type ScrollBoxRenderable,
@@ -30,6 +33,7 @@ import {
 } from "../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { backendRequest } from "./backend-rpc";
+import { WebDataTable } from "./data-table";
 
 function cellWidth(value: unknown): CSSProperties["width"] {
   if (typeof value === "number") return `${value * WEB_CELL_WIDTH}px`;
@@ -46,10 +50,18 @@ function cellInset(value: unknown, axis: "x" | "y"): CSSProperties["paddingLeft"
   return value as CSSProperties["paddingLeft"];
 }
 
+function allowsZeroMinSize(props: Record<string, unknown>, axis: "inline" | "block"): boolean {
+  if (props.overflow === "hidden" || props.overflow === "clip") return true;
+  if (typeof props.flexShrink === "number" && props.flexShrink > 0) return true;
+  return axis === "inline" ? props.scrollX === true : props.scrollY === true;
+}
+
 function commonStyle(props: Record<string, unknown>): CSSProperties {
   const hasFixedInlineSize = props.width != null || props.flexBasis != null;
   const hasFixedBlockSize = props.height != null;
   const gapUnit = props.flexDirection === "row" ? WEB_CELL_WIDTH : WEB_CELL_HEIGHT;
+  const zeroMinInlineSize = props.minWidth == null && allowsZeroMinSize(props, "inline");
+  const zeroMinBlockSize = props.minHeight == null && allowsZeroMinSize(props, "block");
   return {
     color: typeof props.fg === "string" ? props.fg : undefined,
     backgroundColor: typeof props.bg === "string" ? props.bg : typeof props.backgroundColor === "string" ? props.backgroundColor : undefined,
@@ -85,8 +97,8 @@ function commonStyle(props: Record<string, unknown>): CSSProperties {
     overflow: props.overflow as CSSProperties["overflow"],
     border: props.border ? `1px solid ${typeof props.borderColor === "string" ? props.borderColor : "#3a4148"}` : undefined,
     boxSizing: "border-box",
-    minInlineSize: 0,
-    minBlockSize: 0,
+    minInlineSize: zeroMinInlineSize ? 0 : undefined,
+    minBlockSize: zeroMinBlockSize ? 0 : undefined,
   };
 }
 
@@ -623,6 +635,8 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
     );
     const horizontalScrollBarVisibleRef = useRef(horizontalScrollBarVisible);
     const verticalScrollBarVisibleRef = useRef(verticalScrollBarVisible);
+    const scrollFrameRef = useRef<number | null>(null);
+    const lastWheelAtRef = useRef(0);
 
     const getElement = () => elementRef.current;
     const toCellY = (pixels: number) => Math.max(0, Math.round(pixels / WEB_CELL_HEIGHT));
@@ -659,6 +673,12 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         verticalScrollBar.visible = false;
       }
     }, [props.scrollY, verticalScrollBar]);
+
+    useEffect(() => () => {
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+      }
+    }, []);
 
     useImperativeHandle(ref, () => ({
       get scrollTop() {
@@ -709,6 +729,19 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
 
     const overflowX = props.scrollX === true ? "auto" : "hidden";
     const overflowY = props.scrollY === true ? "auto" : "hidden";
+    const handleScroll = useCallback(() => {
+      if (typeof props.onMouseScroll !== "function") return;
+      if (Date.now() - lastWheelAtRef.current < 32) return;
+      if (scrollFrameRef.current != null) return;
+      scrollFrameRef.current = requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        (props.onMouseScroll as () => void)();
+      });
+    }, [props.onMouseScroll]);
+    const handleWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+      lastWheelAtRef.current = Date.now();
+      callMouseHandler(props.onMouseScroll, event, "scroll");
+    }, [props.onMouseScroll]);
 
     return (
       <div
@@ -721,8 +754,8 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         onMouseMove={(event) => callMouseHandler(props.onMouseMove, event, "move")}
         onMouseUp={(event) => callMouseHandler(props.onMouseUp, event, "up")}
         onMouseOut={(event) => callMouseHandler(props.onMouseOut, event, "out")}
-        onScroll={typeof props.onMouseScroll === "function" ? () => (props.onMouseScroll as () => void)() : undefined}
-        onWheel={typeof props.onMouseScroll === "function" ? (event) => callMouseHandler(props.onMouseScroll, event, "scroll") : undefined}
+        onScroll={typeof props.onMouseScroll === "function" ? handleScroll : undefined}
+        onWheel={typeof props.onMouseScroll === "function" ? handleWheel : undefined}
         style={{ ...commonStyle(props), overflowX, overflowY, ...(props.style as CSSProperties | undefined) }}
       >
         {children as ReactNode}
@@ -731,10 +764,125 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
   },
 );
 
+type CssVars = CSSProperties & Record<`--${string}`, string>;
+
+function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: HostTabsProps) {
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [activeValue, tabs]);
+
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollWidth <= element.clientWidth) return;
+    if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+
+    element.scrollLeft += event.deltaY;
+    event.preventDefault();
+  };
+
+  return (
+    <div
+      data-gloom-role="tab-list"
+      role="tablist"
+      onWheel={handleWheel}
+      style={{
+        display: "flex",
+        flexDirection: "row",
+        width: "100%",
+        height: cellHeight(compact ? 1 : 2),
+        minInlineSize: 0,
+        flexShrink: 0,
+        overflowX: "auto",
+        overflowY: "hidden",
+      }}
+    >
+      {tabs.map((tab) => {
+        const active = tab.value === activeValue;
+        const disabled = tab.disabled === true;
+        const tabWidth = tab.label.length + 2;
+        const tabStyle = {
+          "--tab-fg": disabled ? palette.disabledFg : active ? palette.activeFg : palette.inactiveFg,
+          "--tab-hover-fg": palette.hoverFg,
+          "--tab-underline": active ? palette.activeUnderline : palette.inactiveUnderline,
+          "--tab-hover-underline": palette.hoverUnderline,
+          "--tab-hover-bg": palette.hoverBg,
+          color: "var(--tab-fg)",
+          width: cellWidth(tabWidth),
+          height: cellHeight(compact ? 1 : 2),
+          flex: "0 0 auto",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "stretch",
+          justifyContent: "flex-start",
+          padding: 0,
+          margin: 0,
+          border: 0,
+          background: "transparent",
+          font: "inherit",
+          lineHeight: "var(--cell-h)",
+          textAlign: "left",
+          whiteSpace: "pre",
+          cursor: disabled ? "default" : "pointer",
+        } satisfies CssVars;
+
+        return (
+          <button
+            key={tab.value}
+            ref={active ? activeTabRef : undefined}
+            data-gloom-role="tab-button"
+            data-active={active ? "true" : undefined}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-disabled={disabled || undefined}
+            disabled={disabled}
+            style={tabStyle}
+            onClick={() => {
+              if (!disabled) onSelect(tab.value);
+            }}
+          >
+            <span
+              data-gloom-role="tab-label"
+              style={{
+                display: "block",
+                height: "var(--cell-h)",
+                lineHeight: "var(--cell-h)",
+                fontWeight: active ? 700 : undefined,
+              }}
+            >
+              {` ${tab.label} `}
+            </span>
+            {!compact && (
+              <span
+                data-gloom-role="tab-underline"
+                aria-hidden="true"
+                style={{
+                  display: "block",
+                  height: "var(--cell-h)",
+                  lineHeight: "var(--cell-h)",
+                  color: "var(--tab-underline)",
+                }}
+              >
+                {"▔".repeat(tabWidth)}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export const webUiHost: UiHost = {
   kind: "tauri-web",
   capabilities: {
     nativePaneChrome: true,
+    titleBarOverlay: true,
     precisePointer: true,
     fractionalViewport: true,
     cellWidthPx: WEB_CELL_WIDTH,
@@ -771,6 +919,8 @@ export const webUiHost: UiHost = {
   ScrollBox: WebScrollBox,
   Input: WebInput,
   Textarea: WebTextarea,
+  DataTable: WebDataTable,
+  Tabs: WebTabs,
   ChartSurface: forwardRef<BoxRenderable, Record<string, unknown> & { children?: ReactNode }>(
     function WebChartSurface({ children, ...props }, ref) {
       const bitmap = (props.bitmap ?? null) as BitmapSurface | null;
@@ -820,6 +970,9 @@ export const webUiHost: UiHost = {
 export const webRendererHost: RendererHost = {
   requestExit() {
     void backendRequest("host.exit").catch(() => window.close());
+  },
+  async startWindowDrag() {
+    await getCurrentWindow().startDragging();
   },
   async openExternal(url) {
     await backendRequest("host.openExternal", { url });

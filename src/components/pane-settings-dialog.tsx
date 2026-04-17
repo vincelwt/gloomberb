@@ -7,7 +7,7 @@ import type {
   PaneSettingTextField,
 } from "../types/plugin";
 import type { PluginRegistry } from "../plugins/registry";
-import { useAppState } from "../state/app-context";
+import { useAppSelector } from "../state/app-context";
 import { colors } from "../theme/colors";
 import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
 
@@ -203,7 +203,7 @@ export function PaneSettingsDialogContent({
   pluginRegistry,
   applyFieldValue,
 }: PaneSettingsDialogContentProps) {
-  const { state } = useAppState();
+  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
   const dialog = useDialog();
   const descriptor = pluginRegistry.resolvePaneSettings(paneId);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -320,7 +320,7 @@ export function PaneSettingsDialogContent({
           </Box>
         )}
       />
-      {fields.length === 0 && state.focusedPaneId === paneId && (
+      {fields.length === 0 && focusedPaneId === paneId && (
         <Box height={1}>
           <Text fg={colors.textDim}>No settings available.</Text>
         </Box>

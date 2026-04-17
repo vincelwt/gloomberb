@@ -2,11 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, useState } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
 import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../../state/app-context";
 import { createDefaultConfig } from "../../../types/config";
 import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { createTestDataProvider } from "../../../test-support/data-provider";
+import { Box } from "../../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../../registry";
 import { AiScreenerPane } from "./screener-pane";
@@ -152,7 +154,14 @@ function ScreenerHarness({
       <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
         <PaneInstanceProvider paneId={PANE_ID}>
           <PluginRenderProvider pluginId="ai" runtime={runtime}>
-            <AiScreenerPane paneId={PANE_ID} paneType="ai-screener" focused width={96} height={18} />
+            <PaneFooterProvider>
+              {(footer) => (
+                <Box flexDirection="column" width={96} height={18}>
+                  <AiScreenerPane paneId={PANE_ID} paneType="ai-screener" focused width={96} height={17} />
+                  <PaneFooterBar footer={footer} focused width={96} />
+                </Box>
+              )}
+            </PaneFooterProvider>
           </PluginRenderProvider>
         </PaneInstanceProvider>
       </DialogProvider>
@@ -210,7 +219,8 @@ describe("AiScreenerPane", () => {
       height: 18,
     });
 
-    const frame = await waitForFrameToContain("AAPL");
+    await waitForFrameToContain("AAPL");
+    const frame = await waitForFrameToContain("1 tickers");
     expect(frame).toContain("Compounders");
     expect(frame).toContain("Initial pass");
     expect(frame).toContain("1 tickers");
@@ -248,7 +258,8 @@ describe("AiScreenerPane", () => {
       await testSetup!.renderOnce();
     });
 
-    const frame = await waitForFrameToContain("MSFT");
+    await waitForFrameToContain("MSFT");
+    const frame = await waitForFrameToContain("2 tickers");
     expect(frame).toContain("AAPL");
     expect(frame).toContain("2 tickers");
   });
@@ -323,7 +334,8 @@ describe("AiScreenerPane", () => {
       await testSetup!.renderOnce();
     });
 
-    const frame = await waitForFrameToContain("MSFT");
+    await waitForFrameToContain("MSFT");
+    const frame = await waitForFrameToContain("1 tickers");
     expect(frame).not.toContain("AAPL");
     expect(frame).toContain("1 tickers");
   });

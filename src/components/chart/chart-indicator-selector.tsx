@@ -1,4 +1,5 @@
 import { MultiSelectDialogButton } from "../ui";
+import { usePaneHints } from "../layout/pane-footer";
 import { ChartControlHint } from "./chart-control-hint";
 import {
   CHART_INDICATOR_OPTIONS,
@@ -10,8 +11,26 @@ interface ChartIndicatorSelectorProps {
   selectedIds: ChartIndicatorId[];
   onChange: (selectedIds: ChartIndicatorId[]) => void;
   width: number;
-  variant?: "button" | "hint";
+  variant?: "button" | "hint" | "pane-hint";
   shortcutActive?: boolean;
+}
+
+function ChartIndicatorPaneHint({
+  disabled,
+  openDialog,
+}: {
+  disabled?: boolean;
+  openDialog: () => void;
+}) {
+  usePaneHints("chart-indicators", () => [{
+    id: "indicators",
+    key: "i",
+    label: "ndicators",
+    disabled,
+    onPress: openDialog,
+  }], [disabled, openDialog]);
+
+  return null;
 }
 
 export function ChartIndicatorSelector({
@@ -36,9 +55,13 @@ export function ChartIndicatorSelector({
       selectedValues={selectedIds}
       onChange={(values) => onChange(normalizeChartIndicatorSelection(values))}
       idPrefix="chart-indicators"
-      shortcutKey={variant === "hint" ? "i" : undefined}
+      shortcutKey={variant === "hint" || variant === "pane-hint" ? "i" : undefined}
       shortcutActive={shortcutActive}
-      renderTrigger={variant === "hint"
+      renderTrigger={variant === "pane-hint"
+        ? ({ disabled, openDialog }) => (
+          <ChartIndicatorPaneHint disabled={disabled} openDialog={openDialog} />
+        )
+        : variant === "hint"
         ? ({ disabled, openDialog }) => (
           <ChartControlHint
             hotkey="i"

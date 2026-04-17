@@ -349,6 +349,25 @@ describe("renderChart", () => {
     expect(scene?.max).toBe(18);
   });
 
+  test("normalizes fractional web dimensions before drawing volume bars", () => {
+    const projection = projectChartData(chartFixture, 12, "area", false);
+    const result = renderChart(projection.points, {
+      width: 12.5,
+      height: 7.3,
+      showVolume: true,
+      volumeHeight: 3,
+      cursorX: null,
+      cursorY: null,
+      mode: projection.effectiveMode,
+      colors: palette,
+    });
+
+    expect(result.lines).toHaveLength(7);
+    expect(result.pixelBuffer?.width).toBe(24);
+    expect(result.pixelBuffer?.height).toBe(28);
+    expect(result.axisLabels.every((entry) => Number.isInteger(entry.row))).toBe(true);
+  });
+
   test("keeps one decimal on zoomed equity axes even when whole-dollar ticks are distinct", () => {
     const mediumRangeFixture: PricePoint[] = [
       { date: new Date("2024-01-02T09:30:00Z"), close: 233.82, volume: 100 },

@@ -1,10 +1,20 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanupPredictionTest, createConfig, installPredictionMarketMocks } from "./test-helpers";
+import {
+  cleanupPredictionTest,
+  createConfig,
+  installPredictionMarketMocks,
+  MemoryPersistence,
+} from "./test-helpers";
 import { colors } from "../../theme/colors";
 import { predictionMarketsPlugin } from "./index";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
 import { buildPredictionListRows } from "./rows";
 import { getPredictionColumnValue } from "./metrics";
+import {
+  attachPredictionMarketsPersistence,
+  loadCachedPredictionResource,
+  PREDICTION_CACHE_POLICIES,
+} from "./services/fetch";
 import {
   loadKalshiCatalog,
   loadKalshiHistory,
@@ -21,6 +31,37 @@ afterEach(async () => {
 });
 
 describe("prediction markets plugin registration and services", () => {
+  test("uses fresh prediction resource cache without refetching", async () => {
+    const persistence = new MemoryPersistence();
+    attachPredictionMarketsPersistence(persistence);
+    const cached = [
+      normalizePolymarketMarket({
+        id: "pm-cache",
+        question: "Will cached data be used?",
+        outcomes: '["Yes","No"]',
+        outcomePrices: '["0.7","0.3"]',
+      })!,
+    ];
+    persistence.setResource("catalog", "fresh", cached, {
+      cachePolicy: PREDICTION_CACHE_POLICIES.catalog,
+      sourceKey: "remote",
+    });
+    let fetchCount = 0;
+
+    const result = await loadCachedPredictionResource(
+      "catalog",
+      "fresh",
+      async () => {
+        fetchCount += 1;
+        return [];
+      },
+      PREDICTION_CACHE_POLICIES.catalog,
+    );
+
+    expect(result).toBe(cached);
+    expect(fetchCount).toBe(0);
+  });
+
   test("exposes the pane template and search command", () => {
     const commands: string[] = [];
     const ctx = {

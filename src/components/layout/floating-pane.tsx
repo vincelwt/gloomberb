@@ -2,7 +2,8 @@ import { Box, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { getPaneBodyHeight, getPaneBodyHorizontalInset } from "./pane-sizing";
+import { PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
+import { getPaneBodyHeight } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
   title: string;
@@ -23,6 +24,7 @@ interface FloatingPaneWrapperProps {
   onResizeMouseDown?: (event: any) => void;
   onResizeMouseDrag?: (event: any) => void;
   onResizeMouseDragEnd?: (event: any) => void;
+  footer?: CombinedPaneFooter | null;
   children: ReactNode;
 }
 
@@ -46,12 +48,12 @@ export function FloatingPaneWrapper({
   onResizeMouseDown,
   onResizeMouseDrag,
   onResizeMouseDragEnd,
+  footer,
   children,
 }: FloatingPaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = floatingPaneBg(focused);
-  const bodyHeight = nativePaneChrome ? Math.max(1, height - 1) : getPaneBodyHeight(height);
-  const bodyInset = nativePaneChrome ? 0 : getPaneBodyHorizontalInset(focused);
+  const bodyHeight = getPaneBodyHeight(height);
 
   return (
     <Box
@@ -63,6 +65,7 @@ export function FloatingPaneWrapper({
       zIndex={zIndex}
       backgroundColor={bg}
       flexDirection="column"
+      overflow="hidden"
       {...(nativePaneChrome ? {
         "data-gloom-role": "pane-window",
         "data-floating": "true",
@@ -86,9 +89,11 @@ export function FloatingPaneWrapper({
       />
 
       {/* Content */}
-      <Box height={bodyHeight} overflow="hidden" paddingLeft={bodyInset} paddingRight={bodyInset}>
+      <Box height={bodyHeight} overflow="hidden">
         {children}
       </Box>
+
+      <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={2} />
 
       {nativePaneChrome ? (
         <Box

@@ -2,36 +2,34 @@ import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
 import { type ScrollBoxRenderable } from "../../../ui";
-import { TabBar } from "../../../components/tab-bar";
+import { TabBar, usePaneFooter, type PaneFooterSegment } from "../../../components";
+import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import { getSharedRegistry } from "../../registry";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useAppActive } from "../../../state/app-activity";
 import {
-  useAppState,
+  useAppSelector,
   usePaneCollection,
   usePaneInstance,
-  usePaneInstanceId,
   usePaneStateValue,
   type CollectionSortPreference,
 } from "../../../state/app-context";
-import { getCollectionTickers, getCollectionType } from "../../../state/selectors";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { getActiveQuoteDisplay } from "../../../utils/market-status";
-import type { ColumnConfig } from "../../../types/config";
+import type { AppConfig, ColumnConfig } from "../../../types/config";
 import type { TickerRecord } from "../../../types/ticker";
 import type { PaneProps } from "../../../types/plugin";
 import type { TickerFinancials } from "../../../types/financials";
-import { getSortValue, resolveCollectionSortPreference, type ColumnContext } from "./metrics";
+import { calculatePortfolioSummaryTotals, getSortValue, resolveCollectionSortPreference, type ColumnContext } from "./metrics";
 import {
   PortfolioCashMarginDrawer,
-  PortfolioSummaryBar,
   shouldToggleCashMarginDrawer,
   usePortfolioAccountState,
 } from "./header";
-import type { ResolvedPortfolioAccountState } from "./summary";
+import { buildPortfolioSummarySegments, type ResolvedPortfolioAccountState } from "./summary";
 import {
   getCollectionEntries,
   getPortfolioPaneSettings,
@@ -39,10 +37,16 @@ import {
   resolveScopedCollectionEntries,
   resolveVisibleColumns,
 } from "./settings";
+import { formatPercentRaw } from "../../../utils/format";
+import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
+import { priceColor } from "../../../theme/colors";
 import { PortfolioTickerTable, type QuoteFlashDirection } from "./table";
 import { useThrottledCursorSymbol } from "./use-throttled-cursor-symbol";
 
 const VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS = 5 * 60_000;
+const VISIBLE_FINANCIAL_WARMUP_DELAY_MS = 350;
+const STREAM_OVERSCAN_ROWS = 6;
+const sortValueCache = createRowValueCache<string, ReturnType<typeof getSortValue>>(5000);
 
 function needsVisibleFinancialWarmup(ticker: TickerRecord, financials: TickerFinancials | undefined): boolean {
   if (ticker.metadata.assetCategory === "OPT") return false;
@@ -51,11 +55,19 @@ function needsVisibleFinancialWarmup(ticker: TickerRecord, financials: TickerFin
   return financials.priceHistory.length === 0;
 }
 
-function selectStreamTickers(
+export function selectStreamTickers(
   tickers: TickerRecord[],
-  _visibleRange: { start: number; end: number },
+  visibleRange: { start: number; end: number },
+  selectedSymbol?: string | null,
 ) {
-  return tickers;
+  const start = Math.max(0, visibleRange.start - STREAM_OVERSCAN_ROWS);
+  const end = Math.min(tickers.length, visibleRange.end + STREAM_OVERSCAN_ROWS);
+  const visible = tickers.slice(start, end);
+  if (!selectedSymbol || visible.some((ticker) => ticker.metadata.ticker === selectedSymbol)) {
+    return visible;
+  }
+  const selectedTicker = tickers.find((ticker) => ticker.metadata.ticker === selectedSymbol);
+  return selectedTicker ? [...visible, selectedTicker] : visible;
 }
 
 function buildTrackedCurrencies(
@@ -93,6 +105,31 @@ function buildTrackedCurrencies(
   return [...currencies];
 }
 
+function getCollectionTypeFromConfig(config: AppConfig, collectionId: string | null): "portfolio" | "watchlist" | null {
+  if (!collectionId) return null;
+  if (config.portfolios.some((portfolio) => portfolio.id === collectionId)) return "portfolio";
+  if (config.watchlists.some((watchlist) => watchlist.id === collectionId)) return "watchlist";
+  return null;
+}
+
+function getCollectionTickersFromConfig(
+  config: AppConfig,
+  tickersBySymbol: Map<string, TickerRecord>,
+  collectionId: string | null,
+): TickerRecord[] {
+  if (!collectionId) return [];
+  const isPortfolio = config.portfolios.some((portfolio) => portfolio.id === collectionId);
+  const isWatchlist = !isPortfolio && config.watchlists.some((watchlist) => watchlist.id === collectionId);
+  if (!isPortfolio && !isWatchlist) return [];
+  return [...tickersBySymbol.values()]
+    .filter((ticker) => (
+      isPortfolio
+        ? ticker.metadata.portfolios.includes(collectionId)
+        : ticker.metadata.watchlists.includes(collectionId)
+    ))
+    .sort((left, right) => left.metadata.ticker.localeCompare(right.metadata.ticker));
+}
+
 function sortTickers(
   tickers: TickerRecord[],
   financialsMap: Map<string, TickerFinancials>,
@@ -104,10 +141,37 @@ function sortTickers(
 
   const sortColumn = columns.find((column) => column.id === sortPreference.columnId);
   if (!sortColumn) return tickers;
+  const exchangeRatesVersion = [...columnContext.exchangeRates]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, rate]) => `${currency}:${rate}`)
+    .join(",");
+  const sortContextVersion = [
+    sortColumn.id,
+    columnContext.activeTab ?? "",
+    columnContext.baseCurrency,
+    exchangeRatesVersion,
+    sortColumn.id === "latency" ? columnContext.now : 0,
+  ].join("|");
+  const sortValues = new Map<string, ReturnType<typeof getSortValue>>();
+  for (const ticker of tickers) {
+    const financials = financialsMap.get(ticker.metadata.ticker);
+    const financialsVersion = [
+      financials?.quote?.lastUpdated ?? 0,
+      Object.keys(financials?.fundamentals ?? {}).length,
+      financials?.priceHistory.length ?? 0,
+    ].join(":");
+    const positionsVersion = JSON.stringify(ticker.metadata.positions);
+    const version = `${sortContextVersion}|${financialsVersion}|${positionsVersion}`;
+    sortValues.set(ticker.metadata.ticker, sortValueCache.get(
+      `${ticker.metadata.ticker}:${sortColumn.id}`,
+      version,
+      () => getSortValue(sortColumn, ticker, financials, columnContext),
+    ));
+  }
 
   return [...tickers].sort((leftTicker, rightTicker) => {
-    const leftValue = getSortValue(sortColumn, leftTicker, financialsMap.get(leftTicker.metadata.ticker), columnContext);
-    const rightValue = getSortValue(sortColumn, rightTicker, financialsMap.get(rightTicker.metadata.ticker), columnContext);
+    const leftValue = sortValues.get(leftTicker.metadata.ticker) ?? null;
+    const rightValue = sortValues.get(rightTicker.metadata.ticker) ?? null;
 
     if (leftValue == null && rightValue == null) return 0;
     if (leftValue == null) return 1;
@@ -123,10 +187,14 @@ function sortTickers(
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
-  const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
-  const { state } = useAppState();
+  const config = useAppSelector((state) => state.config);
+  const tickersBySymbol = useAppSelector((state) => state.tickers);
+  const cachedFinancials = useAppSelector((state) => state.financials);
+  const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
+  const brokerAccounts = useAppSelector((state) => state.brokerAccounts);
+  const refreshingSize = useAppSelector((state) => state.refreshing.size);
   const paneCollection = usePaneCollection();
 
   const [currentCollectionId, setCurrentCollectionId] = usePaneStateValue<string>("collectionId", paneCollection.collectionId ?? "");
@@ -157,54 +225,55 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     [paneInstance?.settings],
   );
   const collectionEntries = useMemo(
-    () => getCollectionEntries(state.config),
-    [state.config],
+    () => getCollectionEntries(config),
+    [config],
   );
   const visibleCollections = useMemo(
     () => resolveScopedCollectionEntries(collectionEntries, paneSettings),
     [collectionEntries, paneSettings],
   );
   const activeCollectionId = resolveActiveCollectionId(currentCollectionId, visibleCollections, paneSettings);
-  const isPortfolioTab = getCollectionType(state, activeCollectionId) === "portfolio";
+  const isPortfolioTab = getCollectionTypeFromConfig(config, activeCollectionId) === "portfolio";
   const currentPortfolio = useMemo(() => (
     isPortfolioTab
-      ? state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
+      ? config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
       : null
-  ), [activeCollectionId, isPortfolioTab, state.config.portfolios]);
+  ), [activeCollectionId, config.portfolios, isPortfolioTab]);
 
   const tickers = useMemo(
-    () => getCollectionTickers(state, activeCollectionId),
-    [activeCollectionId, state.config.portfolios, state.config.watchlists, state.tickers],
+    () => getCollectionTickersFromConfig(config, tickersBySymbol, activeCollectionId),
+    [activeCollectionId, config, tickersBySymbol],
   );
   const marketFinancialsMap = useTickerFinancialsMap(tickers);
   const sharedCoordinator = getSharedMarketDataCoordinator();
   const financialsMap = useMemo(() => {
-    const merged = sharedCoordinator ? new Map<string, TickerFinancials>() : new Map(state.financials);
+    const merged = sharedCoordinator ? new Map<string, TickerFinancials>() : new Map(cachedFinancials);
     for (const [symbol, financials] of marketFinancialsMap) {
       merged.set(symbol, financials);
     }
     return merged;
-  }, [marketFinancialsMap, sharedCoordinator, state.financials]);
+  }, [cachedFinancials, marketFinancialsMap, sharedCoordinator]);
 
-  const accountState = usePortfolioAccountState(currentPortfolio, state);
+  const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
+  const accountState = usePortfolioAccountState(currentPortfolio, accountStateInput);
   const columns = useMemo(
     () => resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab),
     [isPortfolioTab, paneSettings.columnIds],
   );
 
   const trackedCurrencies = useMemo(
-    () => buildTrackedCurrencies(tickers, financialsMap, accountState, state.config.baseCurrency),
-    [tickers, financialsMap, accountState, state.config.baseCurrency],
+    () => buildTrackedCurrencies(tickers, financialsMap, accountState, config.baseCurrency),
+    [accountState, config.baseCurrency, financialsMap, tickers],
   );
   const fetchedExchangeRates = useFxRatesMap(trackedCurrencies);
-  const effectiveExchangeRates = selectEffectiveExchangeRates(fetchedExchangeRates, state.exchangeRates);
+  const effectiveExchangeRates = selectEffectiveExchangeRates(fetchedExchangeRates, cachedExchangeRates);
 
   const columnContext: ColumnContext = useMemo(() => ({
     activeTab: isPortfolioTab ? activeCollectionId : undefined,
-    baseCurrency: state.config.baseCurrency,
+    baseCurrency: config.baseCurrency,
     exchangeRates: effectiveExchangeRates,
     now,
-  }), [activeCollectionId, effectiveExchangeRates, isPortfolioTab, now, state.config.baseCurrency]);
+  }), [activeCollectionId, config.baseCurrency, effectiveExchangeRates, isPortfolioTab, now]);
 
   const activeSort = resolveCollectionSortPreference(activeCollectionId, isPortfolioTab, collectionSorts);
   const sortedTickers = useMemo(
@@ -220,9 +289,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const requestedDrawerHeight = showCashDrawer
     ? (cashDrawerExpanded ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length)) : 1)
     : 0;
-  const headerHeight = paneSettings.hideHeader
-    ? (paneSettings.hideTabs ? 0 : 1)
-    : paneSettings.hideTabs ? 1 : 2;
+  const headerHeight = paneSettings.hideTabs ? 0 : 1;
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
@@ -337,7 +404,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     cashDrawerExpanded,
     currentTabIdx,
     focused,
-    paneId,
     paneSettings.hideTabs,
     registry,
     safeSelectedIdx,
@@ -347,7 +413,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     handleCollectionSelect,
     showCashDrawer,
     sortedTickers,
-    state.config.layout.instances,
     visibleCollections,
   ]);
 
@@ -433,8 +498,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [cursorSymbol, setCursorSymbol, sortedTickers]);
 
   const streamTickers = useMemo(
-    () => selectStreamTickers(sortedTickers, streamWindow),
-    [sortedTickers, streamWindow],
+    () => selectStreamTickers(sortedTickers, streamWindow, cursorSymbol),
+    [cursorSymbol, sortedTickers, streamWindow],
   );
   const streamTargets = useMemo(() => (
     streamTickers
@@ -448,6 +513,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     if (!appActive) return;
+    if (!focused) return;
     if (!sharedCoordinator) return;
 
     const nowTimestamp = Date.now();
@@ -459,7 +525,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     });
     if (queue.length === 0) return;
 
+    let cancelled = false;
     const runNext = async (): Promise<void> => {
+      if (cancelled) return;
       const nextTicker = queue.shift();
       if (!nextTicker) return;
 
@@ -477,16 +545,94 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         warmupInFlightRef.current.delete(key);
       }
 
-      if (mountedRef.current) {
+      if (mountedRef.current && !cancelled) {
         await runNext();
       }
     };
 
-    const workers = Array.from({ length: Math.min(3, queue.length) }, () => runNext());
-    void Promise.all(workers);
-  }, [appActive, financialsMap, sharedCoordinator, visibleFinancialTickers]);
+    const timeoutId = setTimeout(() => {
+      void runNext();
+    }, VISIBLE_FINANCIAL_WARMUP_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [appActive, financialsMap, focused, sharedCoordinator, visibleFinancialTickers]);
 
   useQuoteStreaming(streamTargets);
+
+  const summaryFooterInfo = useMemo<PaneFooterSegment[]>(() => {
+    if (paneSettings.hideHeader) return [];
+
+    const lastRefreshTimestamp = getMostRecentQuoteUpdate(
+      sortedTickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
+    );
+    const refreshText = refreshingSize > 0
+      ? "Refreshing..."
+      : lastRefreshTimestamp != null
+        ? new Date(lastRefreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+        : "-";
+    const totals = calculatePortfolioSummaryTotals(
+      sortedTickers,
+      financialsMap,
+      config.baseCurrency,
+      effectiveExchangeRates,
+      isPortfolioTab,
+      activeCollectionId,
+    );
+
+    if (!isPortfolioTab) {
+      if (totals.watchlistCount === 0) return [];
+      return [
+        {
+          id: "avg-day",
+          parts: [
+            { text: "Avg Day", tone: "label" },
+            { text: formatPercentRaw(totals.avgWatchlistChange), tone: "value", color: priceColor(totals.avgWatchlistChange), bold: true },
+          ],
+        },
+        {
+          id: "refresh",
+          parts: [{ text: refreshText, tone: "muted" }],
+        },
+      ];
+    }
+
+    if (!totals.hasPositions && !accountState) return [];
+    return buildPortfolioSummarySegments({
+      totals,
+      accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,
+      widthBudget: Math.max(16, width - 14),
+      refreshText,
+    }).map((segment) => ({
+      id: segment.id,
+      parts: segment.parts,
+    }));
+  }, [
+    accountState,
+    activeCollectionId,
+    effectiveExchangeRates,
+    financialsMap,
+    isPortfolioTab,
+    paneSettings.hideHeader,
+    config.baseCurrency,
+    refreshingSize,
+    sortedTickers,
+    width,
+  ]);
+
+  usePaneFooter("portfolio-list", () => ({
+    info: summaryFooterInfo,
+    hints: showCashDrawer
+      ? [{
+          id: "cash",
+          key: "c",
+          label: "ash",
+          onPress: () => setCashDrawerExpanded(!cashDrawerExpanded),
+        }]
+      : [],
+  }), [cashDrawerExpanded, setCashDrawerExpanded, showCashDrawer, summaryFooterInfo]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -501,21 +647,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
                 compact
               />
             </Box>
-          </Box>
-        )}
-        {!paneSettings.hideHeader && (
-          <Box height={1}>
-            <PortfolioSummaryBar
-              tickers={sortedTickers}
-              financialsMap={financialsMap}
-              baseCurrency={state.config.baseCurrency}
-              exchangeRates={effectiveExchangeRates}
-              refreshingCount={state.refreshing.size}
-              isPortfolio={isPortfolioTab}
-              collectionId={activeCollectionId}
-              width={Math.max(0, width)}
-              accountState={accountState}
-            />
           </Box>
         )}
       </Box>

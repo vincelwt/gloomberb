@@ -25,6 +25,8 @@ export interface ThrottledFetchOptions {
   defaultHeaders?: Record<string, string>;
   /** Share concurrent GET requests to the same URL. Default: true */
   dedupeGetRequests?: boolean;
+  /** Override the underlying request transport for this client */
+  transport?: ThrottledFetchTransport;
 }
 
 interface QueueEntry {
@@ -40,6 +42,11 @@ export interface ThrottledFetchClient {
   fetchJson<T = unknown>(url: string, init?: RequestInit): Promise<T>;
 }
 
+export type ThrottledFetchTransport = (
+  url: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
 export function createThrottledFetch(
   options: ThrottledFetchOptions = {},
 ): ThrottledFetchClient {
@@ -50,6 +57,8 @@ export function createThrottledFetch(
   const backoffBaseMs = options.backoffBaseMs ?? BACKOFF_BASE_MS;
   const defaultHeaders = options.defaultHeaders ?? {};
   const dedupeGetRequests = options.dedupeGetRequests ?? true;
+  const fetchTransport =
+    options.transport ?? ((url: string, init?: RequestInit) => globalThis.fetch(url, init));
 
   // Sliding window: track timestamps of recent requests per host
   const hostTimestamps = new Map<string, number[]>();
@@ -142,7 +151,7 @@ export function createThrottledFetch(
 
     let resp: Response;
     try {
-      resp = await fetch(url, mergedInit);
+      resp = await fetchTransport(url, mergedInit);
     } catch (error) {
       if (retriesLeft > 0 && isRetryableFetchError(error, !init?.signal)) {
         await new Promise((resolve) =>

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type InputRenderable, type ScrollBoxRenderable } from "../../ui";
-import { useShortcut } from "../../react/input";
+import { useShortcut, useViewport } from "../../react/input";
 import { usePaneInstance } from "../../state/app-context";
-import { usePluginPaneState, usePluginState } from "../plugin-runtime";
+import {
+  useDebouncedPluginPaneState,
+  usePluginPaneState,
+  usePluginState,
+} from "../plugin-runtime";
 import { getAdjacentPredictionCategoryId } from "./categories";
 import { usePredictionMarketsDataState } from "./controller-data";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
@@ -29,6 +33,7 @@ import type {
 } from "./types";
 
 const KEYBOARD_DETAIL_LOAD_DELAY_MS = 140;
+const SELECTION_PERSIST_DEBOUNCE_MS = 300;
 
 export function usePredictionMarketsController({
   focused,
@@ -71,11 +76,18 @@ export function usePredictionMarketsController({
   );
   const [historyRange, setHistoryRange] =
     usePluginPaneState<PredictionHistoryRange>("historyRange", "1M");
-  const [selectedRowKey, setSelectedRowKey] = usePluginPaneState<
-    string | null
-  >("selectedRowKey", null);
+  const [selectedRowKey, setSelectedRowKey] =
+    useDebouncedPluginPaneState<string | null>(
+      "selectedRowKey",
+      null,
+      SELECTION_PERSIST_DEBOUNCE_MS,
+    );
   const [selectedDetailMarketKey, setSelectedDetailMarketKey] =
-    usePluginPaneState<string | null>("selectedDetailMarketKey", null);
+    useDebouncedPluginPaneState<string | null>(
+      "selectedDetailMarketKey",
+      null,
+      SELECTION_PERSIST_DEBOUNCE_MS,
+    );
   const defaultSortPreference = useMemo(
     () => getDefaultPredictionSort(paneSettings.defaultBrowseTab),
     [paneSettings.defaultBrowseTab],
@@ -91,10 +103,10 @@ export function usePredictionMarketsController({
       null,
     );
 
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [initialParamsApplied, setInitialParamsApplied] = useState(false);
+  const appViewport = useViewport();
 
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
@@ -197,7 +209,6 @@ export function usePredictionMarketsController({
     if (previousFilterResetKey == null) {
       return;
     }
-    setHoveredIdx(null);
     const scrollBox = scrollRef.current;
     if (scrollBox) {
       scrollBox.scrollTop = 0;
@@ -288,18 +299,22 @@ export function usePredictionMarketsController({
     if (data.selectedIndex < 0) return;
     const scrollBox = scrollRef.current;
     if (!scrollBox?.viewport) return;
+    const viewportHeight = Math.max(
+      1,
+      Math.min(scrollBox.viewport.height, Math.ceil(appViewport.height)),
+    );
     if (data.selectedIndex < scrollBox.scrollTop) {
       scrollBox.scrollTop = data.selectedIndex;
     } else if (
       data.selectedIndex >=
-      scrollBox.scrollTop + scrollBox.viewport.height
+      scrollBox.scrollTop + viewportHeight
     ) {
       scrollBox.scrollTop = Math.max(
         0,
-        data.selectedIndex - scrollBox.viewport.height + 1,
+        data.selectedIndex - viewportHeight + 1,
       );
     }
-  }, [data.selectedIndex]);
+  }, [appViewport.height, data.selectedIndex]);
 
   useEffect(() => {
     if (!searchFocused) return;
@@ -336,9 +351,11 @@ export function usePredictionMarketsController({
       data.actions.setNextDetailLoadDelay(
         options?.debounceDetail ? KEYBOARD_DETAIL_LOAD_DELAY_MS : 0,
       );
-      setSelectedRowKey(rowKey);
+      setSelectedRowKey(rowKey, {
+        immediate: !options?.debounceDetail || selectedRowKey == null,
+      });
     },
-    [data.actions, setSelectedRowKey],
+    [data.actions, selectedRowKey, setSelectedRowKey],
   );
 
   const openSelectedRow = useCallback(
@@ -347,8 +364,8 @@ export function usePredictionMarketsController({
       if (!row) return;
       setSearchFocused(false);
       data.actions.setNextDetailLoadDelay(0);
-      setSelectedRowKey(row.key);
-      setSelectedDetailMarketKey(row.focusMarketKey);
+      setSelectedRowKey(row.key, { immediate: true });
+      setSelectedDetailMarketKey(row.focusMarketKey, { immediate: true });
       setDetailOpen(true);
     },
     [data.actions, data.visibleRows, setSelectedDetailMarketKey, setSelectedRowKey],
@@ -367,8 +384,8 @@ export function usePredictionMarketsController({
         setSelectedDetailMarketKey(null);
         return;
       }
-      setSelectedRowKey(row.key);
-      setSelectedDetailMarketKey(marketKey);
+      setSelectedRowKey(row.key, { immediate: true });
+      setSelectedDetailMarketKey(marketKey, { immediate: true });
       setDetailOpen(true);
     },
     [
@@ -622,7 +639,6 @@ export function usePredictionMarketsController({
     effectiveVenueScope,
     headerScrollRef,
     historyRange,
-    hoveredIdx,
     lastRefreshAt: data.lastRefreshAt,
     scrollRef,
     searchFocused,
@@ -630,6 +646,7 @@ export function usePredictionMarketsController({
     searchLoading,
     searchQuery,
     selectedRow: data.selectedRow,
+    selectedIndex: data.selectedIndex,
     selectedSummary: data.selectedSummary,
     sortPreference,
     transportState: data.transportState,
@@ -649,7 +666,6 @@ export function usePredictionMarketsController({
       setDetailTab,
       setBrowseSelection,
       setHistoryRange,
-      setHoveredIdx,
       setSearchQuery,
       setVenue,
       toggleWatchlist,

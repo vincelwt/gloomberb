@@ -29,6 +29,27 @@ const LAYER_DATA = 2;
 const LAYER_OVERLAY = 2;
 const LAYER_CROSSHAIR = 3;
 
+function normalizeCount(value: number, min: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(Math.floor(value), min);
+}
+
+function normalizeRenderDimensions(opts: RenderChartOptions) {
+  const width = normalizeCount(opts.width, 1);
+  const height = normalizeCount(opts.height, 1);
+  const volumeHeight = opts.showVolume
+    ? Math.min(normalizeCount(opts.volumeHeight, 0), Math.max(height - 1, 0))
+    : 0;
+  const showVolume = opts.showVolume && volumeHeight > 0;
+  return {
+    width,
+    height,
+    showVolume,
+    volumeHeight,
+    chartRows: Math.max(height - volumeHeight, 1),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Braille character mapping
 // Each terminal cell maps to a 2×4 dot grid. Unicode braille = U+2800 + bits.
@@ -125,11 +146,13 @@ export function resolveChartPalette(
 // ---------------------------------------------------------------------------
 
 export function createPixelBuffer(width: number, heightPixels: number): PixelBuffer {
+  const bufferWidth = normalizeCount(width, 0);
+  const bufferHeight = normalizeCount(heightPixels, 0);
   const pixels: (Pixel | null)[][] = [];
-  for (let y = 0; y < heightPixels; y++) {
-    pixels.push(new Array(width).fill(null));
+  for (let y = 0; y < bufferHeight; y++) {
+    pixels.push(new Array(bufferWidth).fill(null));
   }
-  return { width, height: heightPixels, pixels };
+  return { width: bufferWidth, height: bufferHeight, pixels };
 }
 
 function setPixel(buf: PixelBuffer, x: number, y: number, color: string, layer: number) {
@@ -901,24 +924,25 @@ function writeAxisLabel(axis: string[], start: number, label: string) {
 }
 
 export function buildTimeAxis(dates: Array<Date | string | number>, width: number): string {
-  if (dates.length === 0 || width <= 0) return "";
+  const axisWidth = normalizeCount(width, 0);
+  if (dates.length === 0 || axisWidth <= 0) return "";
 
   const normalizedDates = dates.map((value) => (value instanceof Date ? value : new Date(value)));
   const first = normalizedDates[0]!;
   const last = normalizedDates[normalizedDates.length - 1]!;
   const rawSpanMs = last.getTime() - first.getTime();
   const spanMs = Math.max(rawSpanMs, 1);
-  const roughLabelCount = Math.max(Math.floor(width / 10), 2);
+  const roughLabelCount = Math.max(Math.floor(axisWidth / 10), 2);
   const minGapMs = getMinPositiveGapMs(normalizedDates);
   const effectiveStepMs = Math.max(spanMs / Math.max(roughLabelCount - 1, 1), minGapMs || 0);
   const unit = resolveAxisLabelUnit(effectiveStepMs);
   const allSameTimestamp = rawSpanMs === 0 && minGapMs === 0;
-  const axis = new Array(width).fill(" ");
+  const axis = new Array(axisWidth).fill(" ");
   const minGap = unit === "year" || unit === "month" ? 2 : 1;
   const idealLabelWidth = estimateAxisLabelWidth(unit, first, last);
   const targetLabelCount = Math.min(
     normalizedDates.length,
-    Math.max(Math.floor(width / (idealLabelWidth + minGap)), 2),
+    Math.max(Math.floor(axisWidth / (idealLabelWidth + minGap)), 2),
   );
   const candidateIndices = [...new Set(
     Array.from({ length: targetLabelCount }, (_, index) => (
@@ -930,33 +954,33 @@ export function buildTimeAxis(dates: Array<Date | string | number>, width: numbe
 
   const firstLabel = formatTimeAxisBoundaryLabel(first, unit, last);
   if (allSameTimestamp) {
-    const centeredStart = resolveCenteredAxisLabelStart(firstLabel, width);
+    const centeredStart = resolveCenteredAxisLabelStart(firstLabel, axisWidth);
     writeAxisLabel(axis, centeredStart, firstLabel);
     return axis.join("");
   }
 
-  const firstStart = resolveAxisLabelStart(0, firstLabel, width);
+  const firstStart = resolveAxisLabelStart(0, firstLabel, axisWidth);
   writeAxisLabel(axis, firstStart, firstLabel);
   const placedLabels = new Set<string>([firstLabel]);
 
   let lastPlacedDate = first;
   let lastEnd = firstStart + firstLabel.length - 1;
 
-  const lastPos = width - 1;
+  const lastPos = axisWidth - 1;
   const lastLabel = normalizedDates.length === 1
     ? firstLabel
     : formatTimeAxisBoundaryLabel(last, unit, first);
-  const lastStart = resolveAxisLabelStart(lastPos, lastLabel, width);
+  const lastStart = resolveAxisLabelStart(lastPos, lastLabel, axisWidth);
   const lastFits = normalizedDates.length === 1 || lastStart > lastEnd + minGap;
 
   for (const index of candidateIndices.slice(1, -1)) {
     const date = normalizedDates[index]!;
     if (isNaN(date.getTime())) continue;
 
-    const pos = Math.round((index / (normalizedDates.length - 1)) * (width - 1));
+    const pos = Math.round((index / (normalizedDates.length - 1)) * (axisWidth - 1));
     const label = formatTimeAxisLabel(date, lastPlacedDate, unit);
     if (placedLabels.has(label)) continue;
-    const start = resolveAxisLabelStart(pos, label, width);
+    const start = resolveAxisLabelStart(pos, label, axisWidth);
     const end = start + label.length - 1;
 
     if (label === axis.slice(start, end + 1).join("")) continue;
@@ -1120,6 +1144,7 @@ export function buildChartScene(
 ): ChartScene | null {
   if (points.length === 0) return null;
 
+  const dimensions = normalizeRenderDimensions(opts);
   const dataMin = opts.mode === "candles" || opts.mode === "ohlc"
     ? Math.min(...points.map((point) => point.low))
     : Math.min(...points.map((point) => point.close));
@@ -1129,43 +1154,42 @@ export function buildChartScene(
   const indicatorValues = getIndicatorOverlayValues(opts.indicators);
   const min = indicatorValues.length > 0 ? Math.min(dataMin, ...indicatorValues) : dataMin;
   const max = indicatorValues.length > 0 ? Math.max(dataMax, ...indicatorValues) : dataMax;
-  const activeIdx = getActivePointIndex(points.length, opts.width, opts.cursorX, opts.mode);
+  const activeIdx = getActivePointIndex(points.length, dimensions.width, opts.cursorX, opts.mode);
   const activePoint = points[activeIdx]!;
   const range = max - min || 1;
-  const chartRows = opts.height - (opts.showVolume ? opts.volumeHeight : 0);
   const cursorX = opts.cursorX === null
     ? null
-    : Math.min(Math.max(opts.cursorX, 0), Math.max(opts.width - 1, 0));
+    : Math.min(Math.max(opts.cursorX, 0), Math.max(dimensions.width - 1, 0));
   const cursorColumn = cursorX === null
     ? null
     : Math.round(cursorX);
   const cursorDotX = cursorX === null
     ? null
-    : Math.round((cursorX / Math.max(opts.width - 1, 1)) * Math.max(opts.width * 2 - 1, 0));
+    : Math.round((cursorX / Math.max(dimensions.width - 1, 1)) * Math.max(dimensions.width * 2 - 1, 0));
   const cursorY = cursorX === null
     ? null
     : opts.cursorY !== null
-      ? Math.min(Math.max(opts.cursorY, 0), Math.max(chartRows - 1, 0))
+      ? Math.min(Math.max(opts.cursorY, 0), Math.max(dimensions.chartRows - 1, 0))
       : Math.min(
-        Math.max(Math.round((1 - (activePoint.close - min) / range) * Math.max(chartRows - 1, 0)), 0),
-        Math.max(chartRows - 1, 0),
+        Math.max(Math.round((1 - (activePoint.close - min) / range) * Math.max(dimensions.chartRows - 1, 0)), 0),
+        Math.max(dimensions.chartRows - 1, 0),
       );
   const cursorRow = cursorY === null
     ? null
     : Math.round(cursorY);
   const crosshairPrice = cursorY === null
     ? null
-    : max - (cursorY / Math.max(chartRows - 1, 1)) * range;
+    : max - (cursorY / Math.max(dimensions.chartRows - 1, 1)) * range;
 
   const timeAxisDates = opts.timeAxisDates ?? points.map((point) => point.date);
 
   return {
     points,
-    width: opts.width,
-    height: opts.height,
-    showVolume: opts.showVolume,
-    volumeHeight: opts.volumeHeight,
-    chartRows,
+    width: dimensions.width,
+    height: dimensions.height,
+    showVolume: dimensions.showVolume,
+    volumeHeight: dimensions.volumeHeight,
+    chartRows: dimensions.chartRows,
     mode: opts.mode,
     colors: opts.colors,
     indicators: opts.indicators ?? null,
@@ -1178,7 +1202,7 @@ export function buildChartScene(
     dateAtCursor: activePoint.date,
     changeAtCursor: activePoint.close - points[0]!.close,
     changePctAtCursor: points[0]!.close ? ((activePoint.close - points[0]!.close) / points[0]!.close) * 100 : 0,
-    timeLabels: buildTimeAxis(timeAxisDates, opts.width),
+    timeLabels: buildTimeAxis(timeAxisDates, dimensions.width),
     cursorX,
     cursorY,
     cursorColumn,
@@ -1246,16 +1270,16 @@ export function renderChart(
     };
   }
 
-  const { width, colors: palette, mode } = opts;
+  const { width, height, showVolume, volumeHeight, colors: palette, mode } = scene;
   const axisMode = opts.axisMode ?? "price";
   const currency = opts.currency ?? "USD";
   const assetCategory = opts.assetCategory;
 
   // Braille resolution: 2 dot-columns per terminal column, 4 dot-rows per terminal row
   const dotWidth = width * 2;
-  const volTermRows = opts.showVolume ? opts.volumeHeight : 0;
-  const chartTermRows = opts.height - volTermRows;
-  const totalDotH = opts.height * 4;
+  const volTermRows = showVolume ? volumeHeight : 0;
+  const chartTermRows = height - volTermRows;
+  const totalDotH = height * 4;
   const chartDotBottom = chartTermRows * 4 - 1;
   const volDotTop = chartTermRows * 4;
   const volDotBottom = totalDotH - 1;
@@ -1297,7 +1321,7 @@ export function renderChart(
       break;
   }
 
-  if (opts.showVolume && volTermRows > 0) {
+  if (showVolume && volTermRows > 0) {
     drawVolumeBars(
       buf,
       points,
@@ -1318,7 +1342,7 @@ export function renderChart(
   const { activePoint, priceAtCursor, crosshairPrice, dateAtCursor, changeAtCursor, changePctAtCursor } = scene;
 
   if (scene.cursorDotX !== null) {
-    drawCrosshair(buf, scene.cursorDotX, 0, opts.showVolume ? volDotBottom : chartDotBottom, palette.crosshairColor);
+    drawCrosshair(buf, scene.cursorDotX, 0, showVolume ? volDotBottom : chartDotBottom, palette.crosshairColor);
   }
 
   const axisLabelsByRow = new Map<number, string>();

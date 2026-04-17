@@ -8,7 +8,10 @@ import {
   getFocusedTickerSymbol,
   resolveCollectionForPane,
   resolveTickerForPane,
-  useAppState,
+  useAppDispatch,
+  useAppSelector,
+  useAppStateRef,
+  type AppState,
 } from "./state/app-context";
 import { bindAppActivity, useAppActive } from "./state/app-activity";
 import { copyActiveSelection, isCopyShortcut, isPasteShortcut, pasteSystemClipboard } from "./utils/selection-clipboard";
@@ -51,7 +54,6 @@ import {
 import { getIbkrConfigIdentity } from "./plugins/ibkr/config";
 import { chatController } from "./plugins/builtin/chat-controller";
 import { setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
-import { saveConfig } from "./data/config-store";
 import { canSelfUpdate, checkForUpdateDetailed, performUpdate, type ReleaseInfo } from "./updater";
 import { VERSION } from "./version";
 import {
@@ -95,6 +97,11 @@ import { instrumentFromTicker } from "./market-data/request-types";
 import { syncBrokerInstance } from "./brokers/sync-broker-instance";
 import { createAppNotifier } from "./notifications/app-notifier";
 import { createAppServices } from "./core/app-services";
+import {
+  saveConfigImmediately,
+  scheduleConfigSave,
+} from "./state/config-save-scheduler";
+import { measurePerf, measurePerfAsync } from "./utils/perf-marks";
 
 /** Global-level dedup: prevents concurrent refresh calls for the same symbol. */
 const refreshInFlight: Set<string> = (globalThis as any).__refreshInFlight ??= new Set<string>();
@@ -130,15 +137,49 @@ interface AppInnerProps {
 }
 
 function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, sessionSnapshot = null }: AppInnerProps) {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
+  const config = useAppSelector((state) => state.config);
+  const tickers = useAppSelector((state) => state.tickers);
+  const paneState = useAppSelector((state) => state.paneState);
+  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const initialized = useAppSelector((state) => state.initialized);
+  const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
+  const inputCaptured = useAppSelector((state) => state.inputCaptured);
+  const updateAvailable = useAppSelector((state) => state.updateAvailable);
+  const updateProgress = useAppSelector((state) => state.updateProgress);
+  const updateCheckInProgress = useAppSelector((state) => state.updateCheckInProgress);
+  const state = useMemo(() => ({
+    ...stateRef.current,
+    config,
+    tickers,
+    paneState,
+    focusedPaneId,
+    initialized,
+    commandBarOpen,
+    inputCaptured,
+    updateAvailable,
+    updateProgress,
+    updateCheckInProgress,
+  }) as AppState, [
+    commandBarOpen,
+    config,
+    focusedPaneId,
+    initialized,
+    inputCaptured,
+    paneState,
+    stateRef,
+    tickers,
+    updateAvailable,
+    updateCheckInProgress,
+    updateProgress,
+  ]);
   const appActive = useAppActive();
   const appActiveRef = useRef(appActive);
   const rendererHost = useRendererHost();
   const nativeRenderer = useNativeRenderer();
   const dialog = useDialog();
   const toast = useToastHost();
-  const stateRef = useRef(state);
-  stateRef.current = state;
   appActiveRef.current = appActive;
   const focusedCollectionId = getFocusedCollectionId(state);
   const appNotifier = useMemo(() => createAppNotifier({
@@ -292,7 +333,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
           index === state.config.activeLayoutIndex ? { ...savedLayout, layout: ensured.layout } : savedLayout
         ));
         dispatch({ type: "UPDATE_LAYOUT", layout: ensured.layout });
-        saveConfig({ ...state.config, layout: ensured.layout, layouts }).catch(() => {});
+        scheduleConfigSave({ ...state.config, layout: ensured.layout, layouts });
       }
       return ensured.instance.instanceId;
     })();
@@ -492,7 +533,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
     if (result.config !== state.config) {
       dispatch({ type: "SET_CONFIG", config: result.config });
-      await saveConfig(result.config);
+      await saveConfigImmediately(result.config);
       pluginRegistry.events.emit("config:changed", { config: result.config });
     }
 
@@ -597,7 +638,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
             state.config.brokerInstances,
           );
         } catch {}
-        await initializeAppState({
+        await measurePerfAsync("startup.app.initialize-state", () => initializeAppState({
           config: state.config,
           tickerRepository,
           dataProvider,
@@ -608,6 +649,10 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
           refreshQuote,
           autoImportBrokerPositions,
           persistedBrokerAccounts,
+        }), {
+          brokerInstanceCount: state.config.brokerInstances.length,
+          layoutPaneCount: state.config.layout.instances.length,
+          sessionHydrationTargetCount: sessionSnapshot?.hydrationTargets.length ?? 0,
         });
       } catch (err) {
         // Will show empty state
@@ -621,6 +666,10 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     if (!focusedTickerSymbol) return;
     const ticker = state.tickers.get(focusedTickerSymbol);
     if (!ticker) return;
+    appLog.info("focused ticker prefetch scheduled", {
+      symbol: ticker.metadata.ticker,
+      exchange: ticker.metadata.exchange,
+    });
     marketData.prefetchTicker(instrumentFromTicker(ticker, ticker.metadata.ticker));
   }, [focusedTickerSymbol, marketData, state.tickers]);
 
@@ -651,7 +700,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       },
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    await saveConfig(nextConfig);
+    await saveConfigImmediately(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
   pluginRegistry.deletePluginConfigValueFn = async (pluginId, key) => {
@@ -673,7 +722,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       pluginConfig: nextAllPluginConfig,
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    await saveConfig(nextConfig);
+    await saveConfigImmediately(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
   const configurableProvider = dataProvider as DataProvider & {
@@ -701,7 +750,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       brokerInstances: [...state.config.brokerInstances, instance],
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    await saveConfig(nextConfig);
+    await saveConfigImmediately(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
     return instance;
   };
@@ -728,7 +777,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       brokerInstances: nextInstances,
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
-    await saveConfig(nextConfig);
+    await saveConfigImmediately(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
   pluginRegistry.syncBrokerInstanceFn = async (instanceId) => {
@@ -795,7 +844,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     dispatch({ type: "SET_TICKERS", tickers: nextTickers });
-    await saveConfig(nextConfig);
+    await saveConfigImmediately(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
 
@@ -822,7 +871,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       dispatch({ type: "PUSH_LAYOUT_HISTORY" });
     }
     dispatch({ type: "UPDATE_LAYOUT", layout: normalizedLayout });
-    saveConfig({ ...currentState.config, layout: normalizedLayout, layouts }).catch(() => {});
+    scheduleConfigSave({ ...currentState.config, layout: normalizedLayout, layouts });
   };
   const resolvePanelForPane = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): "left" | "right" => {
     const instanceId = resolvePaneTarget(paneId, layout);
@@ -1196,7 +1245,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   useEffect(() => {
     if (state.config.layouts !== prevLayouts.current) {
       prevLayouts.current = state.config.layouts;
-      saveConfig(state.config).catch(() => {});
+      scheduleConfigSave(state.config);
     }
   }, [state.config.layouts, state.config]);
 
@@ -1365,7 +1414,13 @@ export function App({
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
   const services = useMemo(() => {
-    return createAppServices({ config, externalPlugins });
+    return measurePerf("startup.app.create-services", () => (
+      createAppServices({ config, externalPlugins })
+    ), {
+      externalPluginCount: externalPlugins.length,
+      disabledPluginCount: config.disabledPlugins.length,
+      brokerInstanceCount: config.brokerInstances.length,
+    });
   }, [config.dataDir, externalPlugins]);
 
   useEffect(() => {

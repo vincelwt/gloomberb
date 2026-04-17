@@ -1,9 +1,9 @@
 import { Box, Text } from "../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut, useViewport } from "../../react/input";
 import { useDialogState } from "../../ui/dialog";
-import { saveConfig } from "../../data/config-store";
+import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import {
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
@@ -30,17 +30,26 @@ import {
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import { removePaneInstances, type LayoutConfig } from "../../types/config";
+import type { PaneDef } from "../../types/plugin";
 import {
   PaneInstanceProvider,
   resolveCollectionForPane,
   resolveTickerForPane,
-  useAppState,
+  useAppDispatch,
+  useAppSelector,
 } from "../../state/app-context";
+import {
+  selectCommandBarOpen,
+  selectFocusedPaneId,
+  selectLayout,
+  selectStatusBarVisible,
+} from "../../state/selectors-ui";
 import { colors } from "../../theme/colors";
 import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneWrapper } from "./pane";
+import { PaneFooterProvider } from "./pane-footer";
 import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
 
 interface ShellProps {
@@ -509,21 +518,67 @@ function menuForPane(
   return baseActions;
 }
 
+interface PaneContentProps {
+  component: PaneDef["component"];
+  paneId: string;
+  paneType: string;
+  focused: boolean;
+  width: number;
+  height: number;
+  onClose?: (paneId: string) => void;
+}
+
+const PaneContent = memo(function PaneContent({
+  component: Component,
+  paneId,
+  paneType,
+  focused,
+  width,
+  height,
+  onClose,
+}: PaneContentProps) {
+  const close = useCallback(() => {
+    onClose?.(paneId);
+  }, [onClose, paneId]);
+
+  return (
+    <PaneInstanceProvider paneId={paneId}>
+      <Component
+        paneId={paneId}
+        paneType={paneType}
+        focused={focused}
+        width={width}
+        height={height}
+        close={onClose ? close : undefined}
+      />
+    </PaneInstanceProvider>
+  );
+});
+
 export function Shell({ pluginRegistry }: ShellProps) {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
+  const paneState = useAppSelector((state) => state.paneState);
+  const focusedPaneId = useAppSelector(selectFocusedPaneId);
+  const commandBarOpen = useAppSelector(selectCommandBarOpen);
+  const inputCaptured = useAppSelector((state) => state.inputCaptured);
+  const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const renderer = useNativeRenderer();
   const { nativePaneChrome, precisePointer } = useUiCapabilities();
   const { width, height } = useViewport();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
-  const contentHeight = Math.max(1, height - (state.statusBarVisible ? 2 : 1));
+  const contentHeight = Math.max(1, height - (statusBarVisible ? 2 : 1));
   pluginRegistry.getTermSizeFn = () => ({ width, height: contentHeight });
 
-  const layout = state.config.layout;
+  const layout = useAppSelector(selectLayout);
   const dialogOpen = useDialogState((dialog) => dialog.isOpen);
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null);
+  const setHoveredPaneIfChanged = useCallback((paneId: string | null) => {
+    setHoveredPaneId((current) => (current === paneId ? current : paneId));
+  }, []);
   const [menuState, setMenuState] = useState<ActionMenuState | null>(null);
-  const overlayOpen = state.commandBarOpen || dialogOpen || !!menuState;
+  const overlayOpen = commandBarOpen || dialogOpen || !!menuState;
 
   const dragRef = useRef<DragMode | null>(null);
   const [dragFloatingRect, setDragFloatingRect] = useState<{ paneId: string; rect: FloatingRect } | null>(null);
@@ -564,12 +619,12 @@ export function Shell({ pluginRegistry }: ShellProps) {
       return;
     }
     if (event.name !== "w" || !event.ctrl) return;
-    if (dragRef.current || overlayOpen || state.inputCaptured) return;
+    if (dragRef.current || overlayOpen || inputCaptured) return;
     closeFocusedPane();
   });
 
   const disabledPaneIds = useMemo(() => {
-    const disabledPlugins = new Set(state.config.disabledPlugins);
+    const disabledPlugins = new Set(config.disabledPlugins);
     const ids = new Set<string>();
     for (const pluginId of disabledPlugins) {
       for (const paneId of pluginRegistry.getPluginPaneIds(pluginId)) {
@@ -577,7 +632,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       }
     }
     return ids;
-  }, [pluginRegistry, state.config.disabledPlugins]);
+  }, [config.disabledPlugins, pluginRegistry]);
 
   const hiddenInstanceIds = useMemo(() => (
     layout.instances
@@ -591,20 +646,20 @@ export function Shell({ pluginRegistry }: ShellProps) {
   );
 
   const persistLayout = useCallback((nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => {
-    const layouts = state.config.layouts.map((savedLayout, index) => (
-      index === state.config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
+    const layouts = config.layouts.map((savedLayout, index) => (
+      index === config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
     ));
     if (options?.pushHistory !== false) {
       dispatch({ type: "PUSH_LAYOUT_HISTORY" });
     }
     dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
-    saveConfig({ ...state.config, layout: nextLayout, layouts }).catch(() => {});
-  }, [dispatch, state.config]);
+    scheduleConfigSave({ ...config, layout: nextLayout, layouts });
+  }, [config, dispatch]);
 
   const closeFocusedPane = useCallback(() => {
-    if (!state.focusedPaneId || !isPaneInLayout(visibleLayout, state.focusedPaneId)) return;
-    persistLayout(removePane(visibleLayout, state.focusedPaneId));
-  }, [persistLayout, state.focusedPaneId, visibleLayout]);
+    if (!focusedPaneId || !isPaneInLayout(visibleLayout, focusedPaneId)) return;
+    persistLayout(removePane(visibleLayout, focusedPaneId));
+  }, [focusedPaneId, persistLayout, visibleLayout]);
 
   const focusPane = useCallback((paneId: string) => {
     dispatch({ type: "FOCUS_PANE", paneId });
@@ -695,26 +750,30 @@ export function Shell({ pluginRegistry }: ShellProps) {
     nativeSurfaceManager.setWindowState(nativeWindowState);
   }, [nativeSurfaceManager, nativeWindowState]);
 
+  const titleState = useMemo(
+    () => ({ config, paneState }) as Parameters<typeof resolveTickerForPane>[0],
+    [config, paneState],
+  );
   const getPaneTitle = useCallback((pane: ResolvedPane): string => {
     if (pane.instance.paneId === "ticker-detail") {
-      const ticker = resolveTickerForPane(state, pane.instance.instanceId);
+      const ticker = resolveTickerForPane(titleState, pane.instance.instanceId);
       if (ticker) return ticker;
-      const collectionId = resolveCollectionForPane(state, pane.instance.instanceId);
-      return state.config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
-        ?? state.config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
+      const collectionId = resolveCollectionForPane(titleState, pane.instance.instanceId);
+      return config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
+        ?? config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
         ?? pane.instance.title
         ?? pane.def.name;
     }
     if (pane.instance.title) return pane.instance.title;
     if (pane.instance.paneId === "portfolio-list") {
-      const collectionId = resolveCollectionForPane(state, pane.instance.instanceId);
-      return state.config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
-        ?? state.config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
+      const collectionId = resolveCollectionForPane(titleState, pane.instance.instanceId);
+      return config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
+        ?? config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
         ?? pane.def.name;
     }
-    const ticker = resolveTickerForPane(state, pane.instance.instanceId);
+    const ticker = resolveTickerForPane(titleState, pane.instance.instanceId);
     return ticker ? `${pane.def.name}: ${ticker}` : pane.def.name;
-  }, [state]);
+  }, [config.portfolios, config.watchlists, titleState]);
 
   const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds) => {
     const pane = paneMap.get(paneId);
@@ -912,7 +971,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
         const relativeX = event.x - rect.x;
         const relativeY = shellY - rect.y;
-        const isFocused = state.focusedPaneId === pane.instance.instanceId;
+        const isFocused = focusedPaneId === pane.instance.instanceId;
         const headerAreas = resolveHeaderHitAreas(rect.width, {
           floating: true,
           focused: isFocused,
@@ -993,7 +1052,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
         if (!pane) continue;
         const relativeX = event.x - leaf.rect.x;
         const relativeY = shellY - leaf.rect.y;
-        const isFocused = state.focusedPaneId === leaf.instanceId;
+        const isFocused = focusedPaneId === leaf.instanceId;
         const headerAreas = resolveHeaderHitAreas(leaf.rect.width, {
           floating: false,
           focused: isFocused,
@@ -1039,6 +1098,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
     dockPreview,
     dragFloatingRect,
     floatingPanes,
+    focusedPaneId,
     focusPane,
     handleActiveDrag,
     handleFloatingClose,
@@ -1161,10 +1221,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
       {dockLeafLayouts.map((leaf) => {
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) return null;
-        const focused = state.focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
+        const focused = focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
-        const bodyHeight = nativePaneChrome ? Math.max(1, Math.floor(leaf.rect.height - 1)) : getPaneBodyHeight(leaf.rect.height);
-        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(leaf.rect.width)) : getPaneBodyWidth(leaf.rect.width, focused);
+        const bodyHeight = getPaneBodyHeight(leaf.rect.height);
+        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(leaf.rect.width)) : getPaneBodyWidth(leaf.rect.width);
         return (
           <Box
             key={`dock:${leaf.instanceId}`}
@@ -1174,72 +1234,79 @@ export function Shell({ pluginRegistry }: ShellProps) {
             width={leaf.rect.width}
             height={leaf.rect.height}
           >
-            <PaneWrapper
-              title={getPaneTitle(pane)}
-              focused={focused}
-              width={leaf.rect.width}
-              height={leaf.rect.height}
-              showActions={showActions}
-              onMouseDown={nativePaneChrome ? () => focusNativePane(leaf.instanceId) : undefined}
-              onMouseMove={() => setHoveredPaneId(leaf.instanceId)}
-              onHeaderMouseDown={nativePaneChrome ? (event) => startNativeDockedDrag(leaf.instanceId, leaf.rect, event) : undefined}
-              onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
-              onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
-              onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(leaf.instanceId, leaf.rect, event) : undefined}
-            >
-              <PaneInstanceProvider paneId={leaf.instanceId}>
-                <pane.def.component
-                  paneId={pane.instance.instanceId}
-                  paneType={pane.instance.paneId}
+            <PaneFooterProvider>
+              {(footer) => (
+                <PaneWrapper
+                  title={getPaneTitle(pane)}
                   focused={focused}
-                  width={bodyWidth}
-                  height={bodyHeight}
-                />
-              </PaneInstanceProvider>
-            </PaneWrapper>
+                  width={leaf.rect.width}
+                  height={leaf.rect.height}
+                  showActions={showActions}
+                  footer={footer}
+                  onMouseDown={nativePaneChrome ? () => focusNativePane(leaf.instanceId) : undefined}
+                  onMouseMove={() => setHoveredPaneIfChanged(leaf.instanceId)}
+                  onHeaderMouseDown={nativePaneChrome ? (event) => startNativeDockedDrag(leaf.instanceId, leaf.rect, event) : undefined}
+                  onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+                  onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+                  onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(leaf.instanceId, leaf.rect, event) : undefined}
+                >
+                  <PaneContent
+                    component={pane.def.component}
+                    paneId={pane.instance.instanceId}
+                    paneType={pane.instance.paneId}
+                    focused={focused}
+                    width={bodyWidth}
+                    height={bodyHeight}
+                  />
+                </PaneWrapper>
+              )}
+            </PaneFooterProvider>
           </Box>
         );
       })}
 
       {floatingPanes.map((pane) => {
         const preview = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
-        const focused = state.focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
+        const focused = focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
-        const bodyHeight = nativePaneChrome ? Math.max(1, Math.floor(preview.height - 1)) : getPaneBodyHeight(preview.height);
-        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(preview.width)) : getPaneBodyWidth(preview.width, focused);
+        const bodyHeight = getPaneBodyHeight(preview.height);
+        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(preview.width)) : getPaneBodyWidth(preview.width);
         return (
-          <FloatingPaneWrapper
-            key={`float:${pane.instance.instanceId}`}
-            title={getPaneTitle(pane)}
-            x={preview.x}
-            y={preview.y}
-            width={preview.width}
-            height={preview.height}
-            zIndex={pane.floating?.zIndex ?? 50}
-            focused={focused}
-            showActions={showActions}
-            onMouseDown={nativePaneChrome ? () => focusNativePane(pane.instance.instanceId) : undefined}
-            onMouseMove={() => setHoveredPaneId(pane.instance.instanceId)}
-            onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
-            onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
-            onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
-            onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(pane.instance.instanceId, preview, event) : undefined}
-            onCloseMouseDown={nativePaneChrome ? (event) => handleNativeFloatingClose(pane.instance.instanceId, event) : undefined}
-            onResizeMouseDown={nativePaneChrome ? (event) => startNativeFloatResize(pane.instance.instanceId, preview, event) : undefined}
-            onResizeMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
-            onResizeMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
-          >
-            <PaneInstanceProvider paneId={pane.instance.instanceId}>
-              <pane.def.component
-                paneId={pane.instance.instanceId}
-                paneType={pane.instance.paneId}
+          <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
+            {(footer) => (
+              <FloatingPaneWrapper
+                title={getPaneTitle(pane)}
+                x={preview.x}
+                y={preview.y}
+                width={preview.width}
+                height={preview.height}
+                zIndex={pane.floating?.zIndex ?? 50}
                 focused={focused}
-                width={bodyWidth}
-                height={bodyHeight}
-                close={() => handleFloatingClose(pane.instance.instanceId)}
-              />
-            </PaneInstanceProvider>
-          </FloatingPaneWrapper>
+                showActions={showActions}
+                footer={footer}
+                onMouseDown={nativePaneChrome ? () => focusNativePane(pane.instance.instanceId) : undefined}
+                onMouseMove={() => setHoveredPaneIfChanged(pane.instance.instanceId)}
+                onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
+                onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+                onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+                onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(pane.instance.instanceId, preview, event) : undefined}
+                onCloseMouseDown={nativePaneChrome ? (event) => handleNativeFloatingClose(pane.instance.instanceId, event) : undefined}
+                onResizeMouseDown={nativePaneChrome ? (event) => startNativeFloatResize(pane.instance.instanceId, preview, event) : undefined}
+                onResizeMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+                onResizeMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+              >
+                <PaneContent
+                  component={pane.def.component}
+                  paneId={pane.instance.instanceId}
+                  paneType={pane.instance.paneId}
+                  focused={focused}
+                  width={bodyWidth}
+                  height={bodyHeight}
+                  onClose={handleFloatingClose}
+                />
+              </FloatingPaneWrapper>
+            )}
+          </PaneFooterProvider>
         );
       })}
 
@@ -1277,14 +1344,14 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
       {/* Focus border overlay — rendered on top of the focused pane */}
       {(() => {
-        if (!state.focusedPaneId) return null;
+        if (!focusedPaneId) return null;
         if (nativePaneChrome) return null;
         // Hide border when command bar or dialog is open, but keep it when just the pane menu is open
         if (overlayOpen && !menuState) return null;
         let rect: { x: number; y: number; width: number; height: number } | null = null;
         let z = 3;
         // Check floating panes first (they render on top of docked panes)
-        const floatingPane = floatingPanes.find((p) => p.instance.instanceId === state.focusedPaneId);
+        const floatingPane = floatingPanes.find((p) => p.instance.instanceId === focusedPaneId);
         if (floatingPane) {
           rect = dragFloatingRect?.paneId === floatingPane.instance.instanceId
             ? dragFloatingRect.rect
@@ -1292,16 +1359,15 @@ export function Shell({ pluginRegistry }: ShellProps) {
           z = (floatingPane.floating?.zIndex ?? 50) + 1;
         } else {
           // Check docked panes
-          const dockedLeaf = dockLeafLayouts.find((l) => l.instanceId === state.focusedPaneId);
+          const dockedLeaf = dockLeafLayouts.find((l) => l.instanceId === focusedPaneId);
           if (dockedLeaf) {
             rect = dockedLeaf.rect;
           }
         }
         if (!rect || rect.height < 2) return null;
         const bc = colors.borderFocused;
-        const isFloating = !!floatingPane;
         const bodyTop = rect.y + 1; // below header (header renders its own border edges)
-        const bodyH = rect.height - 2; // rows between header and bottom edge
+        const bodyH = rect.height - 2; // rows between header and footer
         return (
           <>
             {/* Left edge — body only */}
@@ -1316,13 +1382,6 @@ export function Shell({ pluginRegistry }: ShellProps) {
                 <Text fg={bc} selectable={false}>{"│".repeat(bodyH)}</Text>
               </Box>
             )}
-            {/* Bottom edge — for floating, leave last 2 chars for resize handle (rendered by FloatingPaneWrapper) */}
-            <Box key="focus-b" position="absolute" left={rect.x} top={rect.y + rect.height - 1} width={isFloating ? Math.max(0, rect.width - 2) : rect.width} height={1} zIndex={z}>
-              <Text fg={bc} selectable={false}>{isFloating
-                ? `└${"─".repeat(Math.max(0, rect.width - 4))}─`
-                : `└${"─".repeat(Math.max(0, rect.width - 2))}┘`
-              }</Text>
-            </Box>
           </>
         );
       })()}

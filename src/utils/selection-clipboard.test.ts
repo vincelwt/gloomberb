@@ -16,6 +16,10 @@ describe("selection clipboard sync", () => {
   test("ignores empty or missing selections", () => {
     expect(copyActiveSelection({
       copyToClipboardOSC52: () => true,
+    } as any)).toBe(false);
+
+    expect(copyActiveSelection({
+      copyToClipboardOSC52: () => true,
       getSelection: () => null,
     } as any)).toBe(false);
 
@@ -25,6 +29,18 @@ describe("selection clipboard sync", () => {
         getSelectedText: () => "",
       }),
     } as any)).toBe(false);
+
+    const originalSpawnSync = Bun.spawnSync;
+    try {
+      (Bun as any).spawnSync = undefined;
+      expect(copyActiveSelection({
+        getSelection: () => ({
+          getSelectedText: () => "AAPL",
+        }),
+      } as any)).toBe(false);
+    } finally {
+      (Bun as any).spawnSync = originalSpawnSync;
+    }
   });
 
   test("matches explicit copy shortcuts only", () => {

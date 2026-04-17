@@ -1,10 +1,11 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useMemo } from "react";
 import { TextAttributes } from "../../../ui";
+import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { getSharedRegistry } from "../../registry";
-import { useAppSelector } from "../../../state/app-context";
+import { useAppSelector, usePaneInstance } from "../../../state/app-context";
 import { useChartQueries } from "../../../market-data/hooks";
 import { buildChartKey } from "../../../market-data/selectors";
 import type { PricePoint } from "../../../types/financials";
@@ -146,21 +147,21 @@ function buildCorrelationPaneTitle(symbols: string[], rangePreset: CorrelationRa
   return `${symbols.slice(0, 2).join(" · ")} +${symbols.length - 2} ${rangePreset}`;
 }
 
-export function CorrelationMatrixPane({ paneId, width, height }: PaneProps) {
-  const state = useAppSelector((s) => s);
-  const pane = state.config.layout.instances.find((instance) => instance.instanceId === paneId);
+export function CorrelationMatrixPane({ width, height }: PaneProps) {
+  const pane = usePaneInstance();
+  const tickers = useAppSelector((state) => state.tickers);
   const settings = useMemo(() => getCorrelationPaneSettings(pane?.settings), [pane?.settings]);
 
   const instruments = useMemo(() => {
     if (settings.symbolsError) return [];
     return settings.symbols.map((symbol) => {
-      const ticker = state.tickers.get(symbol);
+      const ticker = tickers.get(symbol);
       return {
         symbol,
         exchange: ticker?.metadata.exchange ?? "",
       };
     });
-  }, [state.tickers, settings.symbols.join(","), settings.symbolsError]);
+  }, [settings.symbols.join(","), settings.symbolsError, tickers]);
 
   const instrumentKey = instruments.map((instrument) => `${instrument.symbol}|${instrument.exchange}`).join(",");
 
@@ -227,6 +228,16 @@ export function CorrelationMatrixPane({ paneId, width, height }: PaneProps) {
     [symbolsKey, seriesBySymbol, matrix.sampleMin, matrix.sampleMax],
   );
 
+  usePaneFooter("correlation", () => ({
+    info: [
+      { id: "tickers", parts: [{ text: `${symbols.length} tickers`, tone: symbols.length >= 2 ? "value" : "warning", bold: symbols.length >= 2 }] },
+      { id: "range", parts: [{ text: settings.rangePreset, tone: "muted" }] },
+      ...(settings.symbolsError
+        ? [{ id: "error", parts: [{ text: settings.symbolsError, tone: "warning" as const }] }]
+        : [{ id: "status", parts: [{ text: statusSummary, tone: "muted" as const }] }]),
+    ],
+  }), [settings.rangePreset, settings.symbolsError, statusSummary, symbols.length]);
+
   if (settings.symbolsError) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
@@ -254,14 +265,6 @@ export function CorrelationMatrixPane({ paneId, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Title */}
-      <Box flexDirection="row" height={1} paddingX={1}>
-        <Text fg={colors.textMuted}>{symbols.length} tickers · {settings.rangePreset} daily returns</Text>
-      </Box>
-      <Box flexDirection="row" height={1} paddingX={1}>
-        <Text fg={colors.textDim}>{statusSummary}</Text>
-      </Box>
-
       {/* Column header row */}
       <Box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
         <Box width={rowHeaderWidth} flexShrink={0} />

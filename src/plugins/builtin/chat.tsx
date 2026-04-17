@@ -3,9 +3,10 @@ import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
-import { useAppState } from "../../state/app-context";
+import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import { useInlineTickers } from "../../state/use-inline-tickers";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
+import { usePaneFooter } from "../../components";
 import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
@@ -144,7 +145,7 @@ function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
     <Box flexDirection="row">
       <Box
         backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
-        onMouseMove={() => setHoveredAction("login")}
+        onMouseMove={() => setHoveredAction((current) => (current === "login" ? current : "login"))}
         onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
         onMouseDown={(event: any) => openAuthCommand("Login", event)}
       >
@@ -155,7 +156,7 @@ function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
           <Text fg={colors.textDim}>/</Text>
           <Box
             backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
-            onMouseMove={() => setHoveredAction("signup")}
+            onMouseMove={() => setHoveredAction((current) => (current === "signup" ? current : "signup"))}
             onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
             onMouseDown={(event: any) => openAuthCommand("Sign Up", event)}
           >
@@ -211,7 +212,7 @@ export function ChatContent({
   close,
   controller = chatController,
 }: ChatContentProps) {
-  const { dispatch } = useAppState();
+  const dispatch = useAppDispatch();
   const initialSnapshot = controller.getSnapshot();
   const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
@@ -503,6 +504,21 @@ export function ChatContent({
   const separatorHeight = 1;
   const footerSeparatorHeight = 1;
   const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - footerSeparatorHeight - inputAreaHeight);
+  const chatStatus = canSend
+    ? user?.username ? `@${user.username}` : "signed in"
+    : !user && !hasSavedSession
+      ? "read-only"
+      : !user
+        ? "login needed"
+        : "verify email";
+
+  usePaneFooter("chat", () => ({
+    info: [
+      { id: "channel", parts: [{ text: "#everyone", tone: "value", bold: true }] },
+      { id: "messages", parts: [{ text: `${messages.length} messages`, tone: "muted" }] },
+      { id: "status", parts: [{ text: chatStatus, tone: canSend ? "positive" : "warning" }] },
+    ],
+  }), [canSend, chatStatus, messages.length]);
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;
@@ -551,8 +567,6 @@ export function ChatContent({
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} width={contentWidth} flexDirection="row">
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}> #everyone</Text>
-        <Box flexGrow={1} />
-        <Text fg={colors.textDim}>{messages.length} messages</Text>
       </Box>
 
       <Box height={1} width={contentWidth}>
@@ -595,7 +609,7 @@ export function ChatContent({
           const authorAttributes = (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD;
           const bodyColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
           const bodyLines = getMessageBodyLines(msg, contentWidth);
-          const setHovered = () => setHoveredIdx(index);
+          const setHovered = () => setHoveredIdx((current) => (current === index ? current : index));
           const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
           const messageRowProps = {
             width: contentWidth,
@@ -758,7 +772,7 @@ export function ChatPane({ focused, width, height, close }: PaneProps) {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
-  const { state } = useAppState();
+  const cloudPluginDisabled = useAppSelector((state) => state.config.disabledPlugins.includes("gloomberb-cloud"));
   const initialSnapshot = controller.getSnapshot();
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
@@ -781,7 +795,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
     return unsubscribe;
   }, [controller]);
 
-  if (state.config.disabledPlugins.includes("gloomberb-cloud")) return null;
+  if (cloudPluginDisabled) return null;
 
   return (
     <Box flexDirection="row" paddingRight={1}>
@@ -794,8 +808,8 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
         <Box
           flexDirection="row"
           backgroundColor={hovered ? hoverBg() : undefined}
-          onMouseMove={() => setHovered(true)}
-          onMouseOut={() => setHovered(false)}
+          onMouseMove={() => setHovered((current) => (current ? current : true))}
+          onMouseOut={() => setHovered((current) => (current ? false : current))}
           onMouseDown={openChat}
         >
           <Text fg={unreadMentionCount > 0 ? colors.text : colors.textDim}>

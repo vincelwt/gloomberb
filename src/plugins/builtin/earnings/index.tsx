@@ -1,8 +1,8 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { EarningsEvent } from "../../../types/data-provider";
 import { colors } from "../../../theme/colors";
@@ -256,20 +256,16 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     }
   }, []);
 
+  usePaneFooter("earnings-calendar", () => ({
+    info: [
+      { id: "count", parts: [{ text: loading ? "loading" : `${eventCount} upcoming`, tone: loading ? "muted" : "value", bold: !loading }] },
+      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+    ],
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => reload(true) }],
+  }), [error, eventCount, loading, reload]);
+
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} paddingX={1} flexDirection="row">
-        <Text fg={colors.textDim}>
-          {loading ? "loading..." : `${eventCount} upcoming`}
-        </Text>
-      </Box>
-
-      {error ? (
-        <Box paddingX={1}>
-          <Text fg={colors.negative}>{error}</Text>
-        </Box>
-      ) : null}
-
       <DataTable<DisplayRow, EarningsColumn>
         columns={columns}
         items={rows}
@@ -290,10 +286,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
         emptyStateTitle={loading ? "Loading earnings..." : "No upcoming earnings found"}
         showHorizontalScrollbar={false}
       />
-
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textMuted}>[r]efresh</Text>
-      </Box>
     </Box>
   );
 }

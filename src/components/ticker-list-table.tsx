@@ -1,5 +1,5 @@
 import { Box, ScrollBox, Text } from "../ui";
-import { memo, useMemo, useRef, type RefObject } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../ui";
 import { EmptyState } from "./ui";
 import { colors, hoverBg } from "../theme/colors";
@@ -10,6 +10,9 @@ import { padTo } from "../utils/format";
 import { renderChart, resolveChartPalette, type StyledContent } from "./chart/chart-renderer";
 import type { ProjectedChartPoint } from "./chart/chart-data";
 import { tableContentWidthProps, useMeasuredTableContentWidth } from "./ui/table-layout";
+import { useViewport } from "../react/input";
+import { useRafCallback } from "../react/use-raf-callback";
+import { measurePerf } from "../utils/perf-marks";
 
 export interface TickerTableCell {
   text: string;
@@ -69,7 +72,11 @@ interface TickerListTableProps {
   emptyTitle?: string;
   emptyHint?: string;
   showSparklines?: boolean;
+  virtualize?: boolean;
+  overscan?: number;
 }
+
+const EMPTY_FLASH_SYMBOLS = new Map<string, QuoteFlashDirection>();
 
 const TickerListHeader = memo(function TickerListHeader({
   columns,
@@ -287,12 +294,18 @@ export function TickerListTable({
   emptyTitle = "No tickers.",
   emptyHint = "Press Ctrl+P to add one.",
   showSparklines,
+  virtualize = true,
+  overscan = 4,
 }: TickerListTableProps) {
   const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
   const internalScrollRef = useRef<ScrollBoxRenderable>(null);
   const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
   const effectiveScrollRef = scrollRef ?? internalScrollRef;
-  const safeFlashSymbols = flashSymbols ?? new Map<string, QuoteFlashDirection>();
+  const hoveredIdxRef = useRef(hoveredIdx);
+  const appViewport = useViewport();
+  const [scrollVersion, setScrollVersion] = useState(0);
+  hoveredIdxRef.current = hoveredIdx;
+  const safeFlashSymbols = flashSymbols ?? EMPTY_FLASH_SYMBOLS;
   const tableWidth = useMemo(
     () => columns.reduce((sum, column) => sum + column.width + 1, 2) + (showSparklines ? 12 : 0),
     [columns, showSparklines],
@@ -302,13 +315,70 @@ export function TickerListTable({
     effectiveHeaderScrollRef,
     effectiveScrollRef,
   );
+  const scrollTop = virtualize ? (effectiveScrollRef.current?.scrollTop ?? 0) : 0;
+  const measuredViewportHeight = effectiveScrollRef.current?.viewport?.height;
+  const viewportHeight = virtualize
+    ? Math.max(
+        1,
+        Math.min(
+          measuredViewportHeight ?? Math.min(tickers.length, 16),
+          Math.max(1, Math.ceil(appViewport.height)),
+        ),
+      )
+    : tickers.length;
+  const startIndex = virtualize ? Math.max(scrollTop - overscan, 0) : 0;
+  const endIndex = virtualize
+    ? Math.min(startIndex + viewportHeight + overscan * 2, tickers.length)
+    : tickers.length;
+  const visibleTickers = useMemo(
+    () => measurePerf(
+      "ticker-list-table.visible-rows",
+      () => tickers.slice(startIndex, endIndex),
+      {
+        itemCount: tickers.length,
+        measuredViewportHeight,
+        startIndex,
+        endIndex,
+        viewportHeight,
+        virtualize,
+      },
+    ),
+    [
+      appViewport.height,
+      endIndex,
+      measuredViewportHeight,
+      scrollVersion,
+      startIndex,
+      tickers,
+      tickers.length,
+      viewportHeight,
+      virtualize,
+    ],
+  );
+  const handleBodyScrollActivity = useCallback(() => {
+    if (virtualize) {
+      setScrollVersion((current) => current + 1);
+    }
+    onBodyScrollActivity?.();
+  }, [onBodyScrollActivity, virtualize]);
+  const syncHeader = useCallback(() => {
+    syncHeaderScroll?.();
+  }, [syncHeaderScroll]);
+  const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
+  const scheduleHeaderScrollSync = useRafCallback(syncHeader);
+  const setHoveredIdxIfChanged = useCallback((index: number | null) => {
+    if (hoveredIdxRef.current === index) return;
+    setHoveredIdx(index);
+  }, [setHoveredIdx]);
 
   return (
     <Box
       flexDirection="column"
       flexGrow={1}
+      flexBasis={0}
       width="100%"
       backgroundColor={colors.bg}
+      overflow="hidden"
     >
       <TickerListHeader
         columns={columns}
@@ -324,14 +394,15 @@ export function TickerListTable({
         ref={effectiveScrollRef}
         width="100%"
         flexGrow={1}
+        flexBasis={0}
         backgroundColor={colors.bg}
         scrollX
         scrollY
         focusable={false}
-        onMouseDown={syncHeaderScroll ? () => queueMicrotask(syncHeaderScroll) : undefined}
-        onMouseUp={onBodyScrollActivity ? () => queueMicrotask(onBodyScrollActivity) : undefined}
-        onMouseDrag={onBodyScrollActivity ? () => queueMicrotask(onBodyScrollActivity) : undefined}
-        onMouseScroll={onBodyScrollActivity ? () => queueMicrotask(onBodyScrollActivity) : undefined}
+        onMouseDown={scheduleHeaderScrollSync}
+        onMouseUp={scheduleBodyScrollActivity}
+        onMouseDrag={scheduleBodyScrollActivity}
+        onMouseScroll={scheduleBodyScrollActivity}
         onSizeChange={measureContentWidth}
       >
         {tickers.length === 0 ? (
@@ -339,7 +410,10 @@ export function TickerListTable({
             <EmptyState title={emptyTitle} hint={emptyHint} />
           </Box>
         ) : (
-          tickers.map((ticker, index) => {
+          <>
+            {virtualize && startIndex > 0 && <Box height={startIndex} />}
+            {visibleTickers.map((ticker, visibleIndex) => {
+              const index = startIndex + visibleIndex;
             return (
               <TickerListRow
                 key={ticker.metadata.ticker}
@@ -350,7 +424,7 @@ export function TickerListTable({
                 isHovered={index === hoveredIdx && ticker.metadata.ticker !== cursorSymbol}
                 financials={financialsMap.get(ticker.metadata.ticker)}
                 flashDirection={safeFlashSymbols.get(ticker.metadata.ticker)}
-                setHoveredIdx={setHoveredIdx}
+                setHoveredIdx={setHoveredIdxIfChanged}
                 setCursorSymbol={setCursorSymbol}
                 resolveCell={resolveCell}
                 onRowActivate={onRowActivate}
@@ -359,7 +433,11 @@ export function TickerListTable({
                 contentWidth={contentWidth}
               />
             );
-          })
+            })}
+            {virtualize && endIndex < tickers.length && (
+              <Box height={Math.max(tickers.length - endIndex, 0)} />
+            )}
+          </>
         )}
       </ScrollBox>
     </Box>

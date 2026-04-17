@@ -2,12 +2,20 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
+  useState,
   useSyncExternalStore,
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { useAppState, usePaneInstanceId, type PaneRuntimeState } from "../state/app-context";
+import {
+  useAppDispatch,
+  useAppSelector,
+  useAppStateRef,
+  usePaneInstanceId,
+  type PaneRuntimeState,
+} from "../state/app-context";
 
 export interface PluginRuntimeAccess {
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
@@ -28,6 +36,7 @@ interface PluginRenderContextValue {
 }
 
 const PluginRenderContext = createContext<PluginRenderContextValue | null>(null);
+const DEFAULT_PLUGIN_PANE_STATE_COMMIT_DELAY_MS = 300;
 
 export function PluginRenderProvider({
   pluginId,
@@ -111,12 +120,11 @@ export function deletePluginPaneStateValue(
 export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string): [T, (value: SetStateAction<T>) => void] {
   const { pluginId } = usePluginRenderContext();
   const scopedPaneId = paneId ?? usePaneInstanceId();
-  const { state, dispatch } = useAppState();
-  const stateRef = useRef(state);
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
   const fallbackRef = useRef(fallback);
-  stateRef.current = state;
   fallbackRef.current = fallback;
-  const paneState = state.paneState[scopedPaneId];
+  const paneState = useAppSelector((state) => state.paneState[scopedPaneId]);
   const value = getPluginPaneStateValue(paneState, pluginId, key, fallback);
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
@@ -145,6 +153,109 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
   }, [dispatch, key, pluginId, scopedPaneId]);
 
   return [value, setValue];
+}
+
+export function useDebouncedPluginPaneState<T>(
+  key: string,
+  fallback: T,
+  delayMs = DEFAULT_PLUGIN_PANE_STATE_COMMIT_DELAY_MS,
+  paneId?: string,
+): [
+  T,
+  (value: SetStateAction<T>, options?: { immediate?: boolean }) => void,
+  () => void,
+] {
+  const [committedValue, setCommittedValue] = usePluginPaneState<T>(key, fallback, paneId);
+  const [localValue, setLocalValueState] = useState(committedValue);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasPendingCommitRef = useRef(false);
+  const pendingValueRef = useRef(committedValue);
+  const appliedValueRef = useRef(committedValue);
+  const localValueRef = useRef(committedValue);
+
+  const clearPendingCommit = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    hasPendingCommitRef.current = false;
+  }, []);
+
+  const commitValue = useCallback((nextValue?: T) => {
+    const targetValue = nextValue ?? pendingValueRef.current;
+    clearPendingCommit();
+    pendingValueRef.current = targetValue;
+
+    if (Object.is(appliedValueRef.current, targetValue)) {
+      return;
+    }
+
+    appliedValueRef.current = targetValue;
+    setCommittedValue(targetValue);
+  }, [clearPendingCommit, setCommittedValue]);
+
+  const setLocalValue = useCallback((
+    nextValue: SetStateAction<T>,
+    options?: { immediate?: boolean },
+  ) => {
+    const currentValue = localValueRef.current;
+    const resolved = typeof nextValue === "function"
+      ? (nextValue as (previousValue: T) => T)(currentValue)
+      : nextValue;
+
+    if (Object.is(resolved, currentValue)) {
+      if (options?.immediate) {
+        commitValue(resolved);
+      }
+      return;
+    }
+
+    localValueRef.current = resolved;
+    pendingValueRef.current = resolved;
+    setLocalValueState((current) => (Object.is(current, resolved) ? current : resolved));
+
+    if (options?.immediate) {
+      commitValue(resolved);
+      return;
+    }
+
+    clearPendingCommit();
+    if (Object.is(appliedValueRef.current, resolved)) {
+      return;
+    }
+
+    hasPendingCommitRef.current = true;
+    timerRef.current = setTimeout(() => {
+      commitValue();
+    }, delayMs);
+  }, [clearPendingCommit, commitValue, delayMs]);
+
+  useEffect(() => {
+    if (hasPendingCommitRef.current && Object.is(committedValue, pendingValueRef.current)) {
+      clearPendingCommit();
+    }
+
+    if (!hasPendingCommitRef.current) {
+      appliedValueRef.current = committedValue;
+      pendingValueRef.current = committedValue;
+      localValueRef.current = committedValue;
+      setLocalValueState((current) => (Object.is(current, committedValue) ? current : committedValue));
+    }
+  }, [clearPendingCommit, committedValue]);
+
+  useEffect(() => () => {
+    const pending = hasPendingCommitRef.current;
+    const pendingValue = pendingValueRef.current;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (pending && !Object.is(appliedValueRef.current, pendingValue)) {
+      setCommittedValue(pendingValue);
+    }
+  }, [setCommittedValue]);
+
+  return [localValue, setLocalValue, commitValue];
 }
 
 export function usePluginState<T>(key: string, fallback: T, options?: { schemaVersion?: number }): [T, (value: SetStateAction<T>) => void] {
@@ -181,12 +292,12 @@ export function usePluginState<T>(key: string, fallback: T, options?: { schemaVe
 
 export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: SetStateAction<T>) => void] {
   const { pluginId, runtime } = usePluginRenderContext();
-  const { state } = useAppState();
-  const stateRef = useRef(state);
+  const stateRef = useAppStateRef();
   const fallbackRef = useRef(fallback);
-  stateRef.current = state;
   fallbackRef.current = fallback;
-  const value = (state.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback;
+  const value = useAppSelector((state) => (
+    (state.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? fallback
+  ));
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
     const currentValue =

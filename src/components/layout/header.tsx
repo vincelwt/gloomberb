@@ -1,9 +1,15 @@
-import { Box, SpinnerMark, Text } from "../../ui";
-import { useState, useEffect } from "react";
-import { TextAttributes } from "../../ui";
+import { Box, SpinnerMark, Text, TextAttributes, useRendererHost, useUiCapabilities } from "../../ui";
+import { useCallback, useEffect } from "react";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppActive } from "../../state/app-activity";
-import { useAppState } from "../../state/app-context";
+import { useAppDispatch, useAppSelector } from "../../state/app-context";
+import {
+  selectBaseCurrency,
+  selectUpdateAvailable,
+  selectUpdateCheckInProgress,
+  selectUpdateNotice,
+  selectUpdateProgress,
+} from "../../state/selectors-ui";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
@@ -13,10 +19,19 @@ import { VERSION } from "../../version";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 const UPDATE_NOTICE_DURATION_MS = 5_000;
+const TITLEBAR_TRAFFIC_LIGHT_WIDTH = 11;
+
+interface HeaderMouseEvent {
+  button?: number;
+  preventDefault?: () => void;
+}
 
 function UpdateStatus() {
-  const { state, dispatch } = useAppState();
-  const { updateAvailable, updateProgress, updateCheckInProgress, updateNotice } = state;
+  const dispatch = useAppDispatch();
+  const updateAvailable = useAppSelector(selectUpdateAvailable);
+  const updateProgress = useAppSelector(selectUpdateProgress);
+  const updateCheckInProgress = useAppSelector(selectUpdateCheckInProgress);
+  const updateNotice = useAppSelector(selectUpdateNotice);
 
   useEffect(() => {
     if (!updateNotice || updateAvailable || updateProgress || updateCheckInProgress) return;
@@ -85,8 +100,10 @@ function UpdateStatus() {
 }
 
 export function Header() {
-  const { state } = useAppState();
+  const baseCurrency = useAppSelector(selectBaseCurrency);
   const appActive = useAppActive();
+  const rendererHost = useRendererHost();
+  const { titleBarOverlay } = useUiCapabilities();
   const spyQuoteEntry = useQuoteEntry("SPY", null);
   const spyQuote = useResolvedEntryValue(spyQuoteEntry);
 
@@ -114,14 +131,23 @@ export function Header() {
   const mktState = spyQuote?.marketState;
   const mktLabel = mktState ? marketStateLabel(mktState) : "";
   const mktColor = mktState ? marketStateColor(mktState) : colors.headerText;
+  const handleMouseDown = useCallback((event: HeaderMouseEvent) => {
+    if (!titleBarOverlay || !rendererHost.startWindowDrag) return;
+    if (typeof event.button === "number" && event.button !== 0) return;
+    event.preventDefault?.();
+    void Promise.resolve(rendererHost.startWindowDrag()).catch(() => {});
+  }, [rendererHost, titleBarOverlay]);
 
   return (
     <Box
       flexDirection="row"
       height={1}
       backgroundColor={colors.header}
+      data-gloom-role="app-header"
+      data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
+      onMouseDown={handleMouseDown}
     >
-      <Box paddingLeft={1}>
+      <Box paddingLeft={titleBarOverlay ? TITLEBAR_TRAFFIC_LIGHT_WIDTH : 1}>
         <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
           Gloomberb v{VERSION}
         </Text>
@@ -144,7 +170,7 @@ export function Header() {
       )}
       <Box paddingRight={1}>
         <Text fg={colors.headerText}>
-          {state.config.baseCurrency}
+          {baseCurrency}
         </Text>
       </Box>
     </Box>

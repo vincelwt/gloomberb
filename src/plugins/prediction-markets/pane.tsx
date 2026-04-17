@@ -1,6 +1,8 @@
 import { Box, Input, ScrollBox, Text } from "../../ui";
+import { useCallback, useMemo, useRef } from "react";
 import { TextAttributes } from "../../ui";
-import { DataTableStackView, TabBar } from "../../components";
+import { DataTableStackView, TabBar, usePaneFooter } from "../../components";
+import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
 import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
@@ -15,12 +17,97 @@ import type {
   PredictionListRow,
 } from "./types";
 
+const CATEGORY_TAB_GAP = 2;
+const CATEGORY_RAIL_WIDTH = PREDICTION_CATEGORY_OPTIONS.reduce(
+  (total, category, index) =>
+    total + category.label.length + (index > 0 ? CATEGORY_TAB_GAP : 0),
+  2,
+);
+const PREDICTION_CELL_CACHE_SIZE = 12_000;
+const RELATIVE_TIME_CELL_BUCKET_MS = 60_000;
+
+const predictionRowVersions = new WeakMap<object, number>();
+let nextPredictionRowVersion = 1;
+
+function predictionRowVersion(row: PredictionListRow): number {
+  const existing = predictionRowVersions.get(row);
+  if (existing != null) return existing;
+  const next = nextPredictionRowVersion;
+  nextPredictionRowVersion += 1;
+  predictionRowVersions.set(row, next);
+  return next;
+}
+
+function predictionCellVersion(
+  row: PredictionListRow,
+  column: PredictionColumnDef,
+  watchlisted: boolean,
+  relativeTimeBucket: number,
+): string {
+  return [
+    predictionRowVersion(row),
+    column.id,
+    watchlisted ? 1 : 0,
+    column.id === "ends" || column.id === "updated" ? relativeTimeBucket : 0,
+  ].join("|");
+}
+
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const controller = usePredictionMarketsController({ focused });
+  const cellCacheRef = useRef(
+    createRowValueCache<string, ReturnType<typeof getPredictionColumnValue>>(
+      PREDICTION_CELL_CACHE_SIZE,
+    ),
+  );
+  const relativeTimeBucket = Math.floor(Date.now() / RELATIVE_TIME_CELL_BUCKET_MS);
+  const watchlistedRowKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const row of controller.visibleRows) {
+      if (row.watchMarketKeys.some((marketKey) => controller.watchlistSet.has(marketKey))) {
+        keys.add(row.key);
+      }
+    }
+    return keys;
+  }, [controller.visibleRows, controller.watchlistSet]);
   const catalogStatusColor =
     controller.catalogStatus?.tone === "danger"
       ? colors.negative
       : colors.borderFocused;
+  usePaneFooter("prediction-markets", () => ({
+    info: [
+      { id: "count", parts: [{ text: `${controller.visibleRows.length} markets`, tone: "muted" }] },
+      ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
+      ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
+      ...(controller.watchlistSet.size > 0 ? [{ id: "watch", parts: [{ text: `${controller.watchlistSet.size} watched`, tone: "muted" as const }] }] : []),
+      ...(controller.catalogStatus ? [{
+        id: "catalog",
+        parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
+      }] : []),
+    ],
+    hints: [
+      { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
+      { id: "watch", key: "w", label: "watch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
+      {
+        id: "browse",
+        key: "1-4",
+        label: "browse",
+        onPress: () => {
+          const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
+          controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
+        },
+      },
+    ],
+  }), [
+    catalogStatusColor,
+    controller.browseTab,
+    controller.catalogStatus?.message,
+    controller.catalogStatus?.tone,
+    controller.searchLoading,
+    controller.searchQuery,
+    controller.selectedRow,
+    controller.visibleRows.length,
+    controller.watchlistSet.size,
+  ]);
 
   const browseControls = (
     <>
@@ -92,12 +179,20 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
 
       {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
         <ScrollBox height={1} scrollX focusable={false}>
-          <Box flexDirection="row" paddingX={1} gap={2}>
+          <Box
+            flexDirection="row"
+            paddingX={1}
+            gap={CATEGORY_TAB_GAP}
+            width={CATEGORY_RAIL_WIDTH}
+            flexShrink={0}
+          >
             {PREDICTION_CATEGORY_OPTIONS.map((category) => {
               const active = category.id === controller.categoryId;
               return (
                 <Box
                   key={category.id}
+                  width={category.label.length}
+                  flexShrink={0}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     controller.actions.selectCategory(
@@ -118,26 +213,19 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         </ScrollBox>
       ) : null}
 
-      {controller.catalogStatus ? (
-        <Box height={1} paddingX={1} width={width} backgroundColor={colors.panel}>
-          <Text fg={catalogStatusColor}>{controller.catalogStatus.message}</Text>
-        </Box>
-      ) : null}
     </>
   );
 
-  const selectedRowIndex = controller.visibleRows.findIndex(
-    (row) => row.key === controller.selectedRow?.key,
-  );
-
-  const renderCell = (
+  const renderCell = useCallback((
     row: PredictionListRow,
     column: PredictionColumnDef,
   ) => {
-    const watchlisted = row.watchMarketKeys.some((marketKey) =>
-      controller.watchlistSet.has(marketKey),
+    const watchlisted = watchlistedRowKeys.has(row.key);
+    const value = cellCacheRef.current.get(
+      `${row.key}:${column.id}`,
+      predictionCellVersion(row, column, watchlisted, relativeTimeBucket),
+      () => getPredictionColumnValue(column, row, watchlisted),
     );
-    const value = getPredictionColumnValue(column, row, watchlisted);
     if (column.id === "watch") {
       return {
         text: value.text,
@@ -153,7 +241,11 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       text: value.text,
       color: value.color,
     };
-  };
+  }, [
+    controller.actions.toggleWatchlist,
+    relativeTimeBucket,
+    watchlistedRowKeys,
+  ]);
 
   const detailContent =
     controller.selectedSummary && controller.selectedRow ? (
@@ -198,7 +290,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       rootBackgroundColor={colors.panel}
-      selectedIndex={selectedRowIndex}
+      selectedIndex={controller.selectedIndex}
       onSelectIndex={(_index, row) =>
         controller.actions.setBrowseSelection(row.key, {
           debounceDetail: true,
@@ -212,8 +304,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       onHeaderClick={controller.actions.handleSortHeaderClick}
       headerScrollRef={controller.headerScrollRef}
       scrollRef={controller.scrollRef}
-      hoveredIdx={controller.hoveredIdx}
-      setHoveredIdx={controller.actions.setHoveredIdx}
       getItemKey={(row) => row.key}
       isSelected={(row) => controller.selectedRow?.key === row.key}
       onSelect={(row) => controller.actions.setBrowseSelection(row.key)}

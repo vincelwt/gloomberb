@@ -52,13 +52,13 @@ export function copySelectionText(
     return false;
   }
 
-  return renderer.copyToClipboardOSC52(text) || copyTextToSystemClipboard(text);
+  return renderer.copyToClipboardOSC52?.(text) === true || copyTextToSystemClipboard(text);
 }
 
 export function copyActiveSelection(
   renderer: Pick<CliRenderer, "getSelection" | "copyToClipboardOSC52">,
 ): boolean {
-  const text = renderer.getSelection()?.getSelectedText() ?? "";
+  const text = renderer.getSelection?.()?.getSelectedText() ?? "";
   return copySelectionText(renderer, text);
 }
 

@@ -5,7 +5,12 @@ import { useDialog } from "../../ui/dialog";
 import { useCallback, useEffect } from "react";
 import { resolveTickerFinancialsForInstrument } from "../../market-data/coordinator";
 import { instrumentFromTicker } from "../../market-data/request-types";
-import { useAppState, usePaneCollection, usePaneInstanceId } from "../../state/app-context";
+import {
+  useAppDispatch,
+  useAppSelector,
+  usePaneCollection,
+  usePaneInstanceId,
+} from "../../state/app-context";
 import { colors, priceColor } from "../../theme/colors";
 import type { PaneProps } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
@@ -33,7 +38,10 @@ import {
 } from "./trade-utils";
 
 export function TradingPane({ focused, width, height }: PaneProps) {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
+  const brokerAccounts = useAppSelector((state) => state.brokerAccounts);
+  const tickers = useAppSelector((state) => state.tickers);
   const paneId = usePaneInstanceId();
   const { collectionId } = usePaneCollection(paneId);
   const dialog = useDialog();
@@ -50,8 +58,8 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     availableAccounts,
     gatewayRequiredMessage,
   } = useIbkrGatewaySelection(
-    state.config,
-    state.brokerAccounts,
+    config,
+    brokerAccounts,
     collectionId,
     tradeState.brokerInstanceId,
   );
@@ -97,7 +105,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     if (!isGatewayMode || availableAccounts.length === 0 || tradeState.accountId || !selectedInstance) return;
     const inferred = inferDraftAccountId(
-      state.config,
+      config,
       collectionId,
       availableAccounts,
       selectedInstance.id,
@@ -106,7 +114,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     if (inferred) {
       updateTradingPaneState({ accountId: inferred });
     }
-  }, [isGatewayMode, availableAccounts, tradeState.accountId, state.config, collectionId, selectedInstance]);
+  }, [isGatewayMode, availableAccounts, tradeState.accountId, config, collectionId, selectedInstance]);
 
   const refresh = useCallback(async () => {
     if (!selectedInstance || !normalizedConfig || !isGatewayMode || !isGatewayConfigured(selectedInstance.config)) {
@@ -118,7 +126,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       setTradingBusy(true);
       await refreshGatewayData(selectedInstance);
       const inferred = inferDraftAccountId(
-        state.config,
+        config,
         collectionId,
         availableAccounts,
         selectedInstance.id,
@@ -137,7 +145,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     selectedInstance,
     normalizedConfig,
     isGatewayMode,
-    state.config,
+    config,
     collectionId,
     availableAccounts,
     tradeState.accountId,
@@ -172,7 +180,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       ),
     });
     if (!selected) return;
-    const instance = getBrokerInstance(state.config.brokerInstances, selected);
+    const instance = getBrokerInstance(config.brokerInstances, selected);
     if (!instance) return;
     updateTradingPaneState({
       brokerInstanceId: instance.id,
@@ -182,7 +190,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       lastError: undefined,
       lastInfo: undefined,
     });
-  }, [dialog, gatewayInstances, lockedBrokerInstanceId, state.config.brokerInstances]);
+  }, [dialog, gatewayInstances, lockedBrokerInstanceId, config.brokerInstances]);
 
   const chooseAccount = useCallback(async () => {
     if (!selectedInstance || !normalizedConfig || !gatewayService || !isGatewayMode) return;
@@ -191,7 +199,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     }
 
     const nextAccounts = getKnownIbkrAccounts(
-      state.brokerAccounts,
+      brokerAccounts,
       selectedInstance.id,
       gatewayService.getSnapshot().accounts,
     );
@@ -215,7 +223,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     });
     if (!selected) return;
     updateTradingPaneState({ accountId: selected });
-  }, [dialog, selectedInstance, normalizedConfig, gatewayService, isGatewayMode, availableAccounts, refresh]);
+  }, [availableAccounts, brokerAccounts, dialog, gatewayService, isGatewayMode, normalizedConfig, refresh, selectedInstance]);
 
   const cancelSelectedOrder = useCallback(async () => {
     if (!selectedOrder || !selectedInstance || !normalizedConfig || !gatewayService || !isGatewayMode) return;
@@ -234,7 +242,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   const openSelectedOrder = useCallback(() => {
     if (!selectedOrder) return;
     const registry = getSharedRegistry();
-    const ticker = findTickerForOrder(selectedOrder, state.tickers);
+    const ticker = findTickerForOrder(selectedOrder, tickers);
     if (!ticker) {
       setTradingMessage(undefined, `No local ticker exists for ${selectedOrder.contract.localSymbol || selectedOrder.contract.symbol}.`);
       return;
@@ -249,7 +257,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     registry?.selectTickerFn(ticker.metadata.ticker, paneId);
     registry?.switchTabFn("ibkr-trade", paneId);
     registry?.switchPanelFn("right");
-  }, [selectedOrder, state.tickers, paneId]);
+  }, [selectedOrder, tickers, paneId]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -293,10 +301,10 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   const listPanelWidth = Math.max(24, width - orderPanelWidth - 1);
   const listHeight = Math.max(4, height - 6);
   const getOrderQuote = useCallback((symbol: string): Quote | null => {
-    const ticker = state.tickers.get(symbol) ?? null;
+    const ticker = tickers.get(symbol) ?? null;
     const instrument = instrumentFromTicker(ticker, symbol);
     return instrument ? resolveTickerFinancialsForInstrument(instrument)?.quote ?? null : null;
-  }, [state.tickers]);
+  }, [tickers]);
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -409,7 +417,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                   key={execution.execId}
                   onMouseDown={() => {
                     const symbol = execution.contract.symbol;
-                    if (symbol && state.tickers.has(symbol)) {
+                    if (symbol && tickers.has(symbol)) {
                       getSharedRegistry()?.selectTickerFn(symbol, paneId);
                     }
                   }}

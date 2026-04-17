@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSharedRegistry } from "../plugins/registry";
-import { useAppState } from "./app-context";
+import { useAppDispatch, useAppSelector } from "./app-context";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "../utils/ticker-search";
 import { collectUniqueTickerSymbols } from "../utils/ticker-tokenizer";
 import { useQuoteStreaming } from "./use-quote-streaming";
@@ -28,15 +28,17 @@ export function useInlineTickers(texts: readonly string[]): {
   catalog: Record<string, InlineTickerCatalogEntry>;
   openTicker: (symbol: string) => void;
 } {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const tickers = useAppSelector((state) => state.tickers);
+  const financials = useAppSelector((state) => state.financials);
   const registry = getSharedRegistry();
   const [, setRefreshVersion] = useState(0);
   const textsKey = texts.join("\u0000");
   const symbols = useMemo(() => normalizeSymbols(texts), [textsKey]);
   const symbolsKey = symbols.join("|");
-  const latestRef = useRef({ state, dispatch, registry });
+  const latestRef = useRef({ tickers, financials, dispatch, registry });
 
-  latestRef.current = { state, dispatch, registry };
+  latestRef.current = { tickers, financials, dispatch, registry };
 
   useEffect(() => {
     let mounted = true;
@@ -46,9 +48,9 @@ export function useInlineTickers(texts: readonly string[]): {
     };
 
     for (const symbol of symbols) {
-      const currentState = latestRef.current.state;
-      const currentTicker = currentState.tickers.get(symbol) ?? null;
-      const currentQuote = currentState.financials.get(symbol)?.quote ?? null;
+      const current = latestRef.current;
+      const currentTicker = current.tickers.get(symbol) ?? null;
+      const currentQuote = current.financials.get(symbol)?.quote ?? null;
 
       if (currentTicker && currentQuote) {
         missingSymbols.delete(symbol);
@@ -66,7 +68,7 @@ export function useInlineTickers(texts: readonly string[]): {
             const resolved = await resolveTickerSearch({
               query: symbol,
               activeTicker: null,
-              tickers: current.state.tickers,
+              tickers: current.tickers,
               dataProvider: activeRegistry.dataProvider,
             });
 
@@ -106,7 +108,7 @@ export function useInlineTickers(texts: readonly string[]): {
           const activeRegistry = current.registry;
           if (!activeRegistry) return;
 
-          const latestTicker = current.state.tickers.get(symbol);
+          const latestTicker = current.tickers.get(symbol);
           if (!latestTicker) return;
 
           const instrument = latestTicker.metadata.broker_contracts?.[0] ?? null;
@@ -134,10 +136,10 @@ export function useInlineTickers(texts: readonly string[]): {
     return () => {
       mounted = false;
     };
-  }, [dispatch, registry, state.financials, state.tickers, symbols, symbolsKey]);
+  }, [dispatch, financials, registry, symbols, symbolsKey, tickers]);
 
   const streamingTargets = symbols
-    .map((symbol) => state.tickers.get(symbol))
+    .map((symbol) => tickers.get(symbol))
     .filter((ticker): ticker is TickerRecord => ticker != null)
     .map((ticker) => {
       const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
@@ -162,8 +164,8 @@ export function useInlineTickers(texts: readonly string[]): {
 
   const catalog: Record<string, InlineTickerCatalogEntry> = {};
   for (const symbol of symbols) {
-    const ticker = state.tickers.get(symbol) ?? null;
-    const quote = state.financials.get(symbol)?.quote ?? null;
+    const ticker = tickers.get(symbol) ?? null;
+    const quote = financials.get(symbol)?.quote ?? null;
     const status: InlineTickerStatus = ticker
       ? (quote ? "ready" : "loading")
       : (missingSymbols.has(symbol) ? "missing" : "loading");

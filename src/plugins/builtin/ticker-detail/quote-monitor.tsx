@@ -9,7 +9,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../../utils/market-format";
 import { getActiveQuoteDisplay } from "../../../utils/market-status";
-import { EmptyState } from "../../../components";
+import { EmptyState, usePaneFooter } from "../../../components";
 
 function getQuoteMonitorDisplay(quote: Quote | null | undefined) {
   return getActiveQuoteDisplay(quote);
@@ -19,6 +19,21 @@ export function QuoteMonitorPane({ focused, width }: PaneProps) {
   const { ticker, financials } = usePaneTicker();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
   useQuoteStreaming(streamingTarget ? [streamingTarget] : []);
+  const quote = financials?.quote;
+
+  usePaneFooter("quote-monitor", () => ({
+    info: [
+      ...(ticker ? [{ id: "ticker", parts: [{ text: ticker.metadata.ticker, tone: "value" as const, bold: true }] }] : []),
+      ...(quote?.lastUpdated ? [{
+        id: "updated",
+        parts: [{ text: `quote ${new Date(quote.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, tone: "muted" as const }],
+      }] : []),
+      ...(quote?.providerId || quote?.dataSource ? [{
+        id: "source",
+        parts: [{ text: quote.providerId ?? quote.dataSource ?? "", tone: "muted" as const }],
+      }] : []),
+    ],
+  }), [quote?.dataSource, quote?.lastUpdated, quote?.providerId, ticker?.metadata.ticker]);
 
   if (!ticker) {
     return (

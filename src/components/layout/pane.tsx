@@ -2,7 +2,8 @@ import { Box, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, paneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { getPaneBodyHeight, getPaneBodyHorizontalInset } from "./pane-sizing";
+import { PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
+import { getPaneBodyHeight } from "./pane-sizing";
 
 interface PaneWrapperProps {
   title?: string;
@@ -17,6 +18,7 @@ interface PaneWrapperProps {
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
+  footer?: CombinedPaneFooter | null;
   children: ReactNode;
 }
 
@@ -33,14 +35,14 @@ export function PaneWrapper({
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
   onActionMouseDown,
+  footer,
   children,
 }: PaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
   const bodyHeight = typeof height === "number"
-    ? title ? nativePaneChrome ? Math.max(1, height - 1) : getPaneBodyHeight(height) : height
+    ? title ? getPaneBodyHeight(height) : height
     : undefined;
-  const bodyInset = nativePaneChrome ? 0 : getPaneBodyHorizontalInset(focused);
 
   return (
     <Box
@@ -74,12 +76,18 @@ export function PaneWrapper({
       <Box
         height={bodyHeight}
         flexGrow={bodyHeight == null ? 1 : 0}
+        flexBasis={bodyHeight == null ? 0 : undefined}
         overflow="hidden"
-        paddingLeft={bodyInset}
-        paddingRight={bodyInset}
       >
         {children}
       </Box>
+      {title && (
+        <PaneFooterBar
+          footer={footer}
+          focused={focused}
+          width={typeof width === "number" ? width : undefined}
+        />
+      )}
     </Box>
   );
 }

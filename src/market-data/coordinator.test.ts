@@ -87,9 +87,78 @@ describe("MarketDataCoordinator", () => {
     const first = await coordinator.loadChart(request);
     expect(first.data?.length).toBe(2);
 
-    const second = await coordinator.loadChart(request);
+    const second = await coordinator.loadChart(request, { forceRefresh: true });
     expect(second.data).toBeNull();
     expect(second.lastGoodData?.length).toBe(2);
+  });
+
+  it("reuses fresh snapshots instead of refetching on every pane rerender", async () => {
+    let calls = 0;
+    const provider = createProvider({
+      getTickerFinancials: async () => {
+        calls += 1;
+        return {
+          quote: {
+            symbol: "AAPL",
+            price: 100 + calls,
+            currency: "USD",
+            change: 1,
+            changePercent: 1,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: { marketCap: calls },
+          profile: null,
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+        };
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    const first = await coordinator.loadSnapshot(instrument);
+    const second = await coordinator.loadSnapshot(instrument);
+    const refreshed = await coordinator.loadSnapshot(instrument, { forceRefresh: true });
+
+    expect(first.data?.quote?.price).toBe(101);
+    expect(second.data?.quote?.price).toBe(101);
+    expect(refreshed.data?.quote?.price).toBe(102);
+    expect(calls).toBe(2);
+  });
+
+  it("reuses fresh empty tab query results instead of refetching on reopen", async () => {
+    let newsCalls = 0;
+    let optionsCalls = 0;
+    const provider = createProvider({
+      getNews: async () => {
+        newsCalls += 1;
+        return [];
+      },
+      getOptionsChain: async () => {
+        optionsCalls += 1;
+        return {
+          underlyingSymbol: "AAPL",
+          expirationDates: [],
+          calls: [],
+          puts: [],
+        };
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    const firstNews = await coordinator.loadNews({ instrument, count: 20 });
+    const secondNews = await coordinator.loadNews({ instrument, count: 20 });
+    const firstOptions = await coordinator.loadOptions({ instrument });
+    const secondOptions = await coordinator.loadOptions({ instrument });
+
+    expect(firstNews.error?.reasonCode).toBe("NO_DATA");
+    expect(secondNews.error?.reasonCode).toBe("NO_DATA");
+    expect(firstOptions.error?.reasonCode).toBe("NO_DATA");
+    expect(secondOptions.error?.reasonCode).toBe("NO_DATA");
+    expect(newsCalls).toBe(1);
+    expect(optionsCalls).toBe(1);
   });
 
   it("uses cached chart data while a wider range request is loading", async () => {

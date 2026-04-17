@@ -17,7 +17,13 @@ import {
   commandBarSubtleText,
   commandBarText,
 } from "../../theme/colors";
-import { getFocusedCollectionId, useAppState, useFocusedTicker } from "../../state/app-context";
+import {
+  getFocusedCollectionId,
+  useAppDispatch,
+  useAppSelector,
+  useFocusedTicker,
+  type AppState,
+} from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, getThemeOptions, matchPrefix, type Command } from "./command-registry";
 import { applyTheme } from "../../theme/colors";
@@ -240,7 +246,52 @@ export function CommandBar({
   quitApp,
   onCheckForUpdates,
 }: CommandBarProps) {
-  const { state, dispatch } = useAppState();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
+  const paneState = useAppSelector((state) => state.paneState);
+  const tickers = useAppSelector((state) => state.tickers);
+  const financials = useAppSelector((state) => state.financials);
+  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const layoutHistory = useAppSelector((state) => state.layoutHistory);
+  const recentTickers = useAppSelector((state) => state.recentTickers);
+  const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
+  const commandBarQuery = useAppSelector((state) => state.commandBarQuery);
+  const commandBarLaunchRequest = useAppSelector((state) => state.commandBarLaunchRequest);
+  const updateAvailable = useAppSelector((state) => state.updateAvailable);
+  const updateProgress = useAppSelector((state) => state.updateProgress);
+  const updateCheckInProgress = useAppSelector((state) => state.updateCheckInProgress);
+  const updateNotice = useAppSelector((state) => state.updateNotice);
+  const state = useMemo(() => ({
+    config,
+    paneState,
+    tickers,
+    financials,
+    focusedPaneId,
+    layoutHistory,
+    recentTickers,
+    commandBarOpen,
+    commandBarQuery,
+    commandBarLaunchRequest,
+    updateAvailable,
+    updateProgress,
+    updateCheckInProgress,
+    updateNotice,
+  }) as AppState, [
+    commandBarLaunchRequest,
+    commandBarOpen,
+    commandBarQuery,
+    config,
+    financials,
+    focusedPaneId,
+    layoutHistory,
+    paneState,
+    recentTickers,
+    tickers,
+    updateAvailable,
+    updateCheckInProgress,
+    updateNotice,
+    updateProgress,
+  ]);
   const stateRef = useRef(state);
   stateRef.current = state;
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
@@ -4154,11 +4205,12 @@ export function CommandBar({
 
   const setHoveredIndex = useCallback((index: number | null) => {
     if (!currentRoute) {
-      setRootHoveredIdx(index);
+      setRootHoveredIdx((current) => (current === index ? current : index));
       return;
     }
     updateTopRoute((route) => {
       if (route.kind === "mode" || route.kind === "picker" || route.kind === "pane-settings") {
+        if (route.hoveredIdx === index) return route;
         return { ...route, hoveredIdx: index };
       }
       return route;

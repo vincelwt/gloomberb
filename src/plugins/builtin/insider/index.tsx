@@ -11,7 +11,7 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app-context";
 import { colors } from "../../../theme/colors";
 import { Spinner } from "../../../components/spinner";
-import { FeedDataTableStackView, type FeedDataTableItem } from "../../../components";
+import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
@@ -264,6 +264,27 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
     return true;
   }, [selectedTransaction, toggleNameFilter]);
 
+  const selectedFilterName = selectedTransaction?.reportedName ?? null;
+  const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
+  usePaneFooter("insider", () => ({
+    info: [
+      { id: "summary", parts: [{ text: truncateText(summary, Math.max(24, width - 20)), tone: "muted" }] },
+      ...(nameFilter ? [{ id: "filter", parts: [{ text: `filter: ${truncateText(nameFilter, 24)}`, tone: "warning" as const }] }] : []),
+      ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
+    ],
+    hints: selectedFilterName || nameFilter
+      ? [{
+          id: "filter",
+          key: "f",
+          label: "ilter",
+          onPress: () => {
+            if (nameFilter) clearNameFilter();
+            else if (selectedFilterName) toggleNameFilter(selectedFilterName);
+          },
+        }]
+      : [],
+  }), [clearNameFilter, nameFilter, pendingLabel, selectedFilterName, summary, toggleNameFilter, width]);
+
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view insider activity.</Text>;
   if (!eligibleTicker) return renderNotice("Insider transactions are only shown for US equities.", width);
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
@@ -271,45 +292,6 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   if (!loading && form4Filings.length === 0) {
     return renderNotice(`No Form 4 filings found for ${ticker.metadata.ticker}.`, width);
   }
-
-  const selectedFilterName = selectedTransaction?.reportedName ?? null;
-  const filterLabel = nameFilter
-    ? `[clear filter: ${truncateText(nameFilter, 24)}]`
-    : selectedFilterName
-      ? `[f]ilter ${truncateText(selectedFilterName, 24)}`
-      : "";
-  const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
-  const summaryWidth = Math.max(
-    12,
-    width - filterLabel.length - pendingLabel.length - 6,
-  );
-  const rootBefore = (
-    <Box height={1} width={width} paddingX={1} flexDirection="row">
-      <Text fg={colors.textDim}>{truncateText(summary, summaryWidth)}</Text>
-      {filterLabel ? (
-        <Box
-          marginLeft={1}
-          onMouseDown={(event: any) => {
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            if (nameFilter) {
-              clearNameFilter();
-            } else if (selectedFilterName) {
-              toggleNameFilter(selectedFilterName);
-            }
-          }}
-        >
-          <Text fg={nameFilter ? colors.warning : colors.textMuted}>{filterLabel}</Text>
-        </Box>
-      ) : null}
-      {pendingLabel ? (
-        <>
-          <Box flexGrow={1} />
-          <Text fg={colors.textMuted}>{pendingLabel}</Text>
-        </>
-      ) : null}
-    </Box>
-  );
 
   return (
     <FeedDataTableStackView
@@ -319,7 +301,6 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
       items={feedItems}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
-      rootBefore={rootBefore}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Insider"
       titleLabel="Transaction"

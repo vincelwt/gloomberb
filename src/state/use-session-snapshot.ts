@@ -5,6 +5,11 @@ import {
   type AppSessionSnapshot,
 } from "../core/state/session-persistence";
 import type { AppState } from "./app-context";
+import { measurePerf } from "../utils/perf-marks";
+import {
+  createPersistScheduler,
+  SESSION_SAVE_DEBOUNCE_MS,
+} from "./persist-scheduler";
 
 export function usePersistSessionSnapshot(
   sessionStore: SessionStore | undefined,
@@ -25,20 +30,33 @@ export function usePersistSessionSnapshot(
     schemaVersion,
   };
 
-  const saveSnapshotRef = useRef<() => void>(() => {});
-  saveSnapshotRef.current = () => {
+  const schedulerRef = useRef<ReturnType<typeof createPersistScheduler<AppSessionSnapshot>> | null>(null);
+  if (!schedulerRef.current) {
+    schedulerRef.current = createPersistScheduler<AppSessionSnapshot>({
+      delayMs: SESSION_SAVE_DEBOUNCE_MS,
+      save: (snapshot) => {
+        const {
+          sessionStore: currentStore,
+          sessionId: currentSessionId,
+          schemaVersion: currentSchemaVersion,
+        } = latestRef.current;
+        if (!currentStore) return;
+        measurePerf("persist.session.save", () => {
+          currentStore.set(currentSessionId, snapshot, currentSchemaVersion);
+        }, { sessionId: currentSessionId });
+      },
+    });
+  }
+
+  const buildSnapshot = (): AppSessionSnapshot | null => {
     const {
-      sessionStore: currentStore,
       state: currentState,
-      sessionId: currentSessionId,
-      schemaVersion: currentSchemaVersion,
     } = latestRef.current;
 
-    if (!currentStore) return;
-    if (!currentState.initialized && currentState.tickers.size === 0) return;
+    if (!currentState.initialized && currentState.tickers.size === 0) return null;
 
     try {
-      currentStore.set(currentSessionId, buildAppSessionSnapshot({
+      return buildAppSessionSnapshot({
         config: currentState.config,
         paneState: currentState.paneState,
         focusedPaneId: currentState.focusedPaneId,
@@ -47,21 +65,18 @@ export function usePersistSessionSnapshot(
         recentTickers: currentState.recentTickers,
         tickers: currentState.tickers,
         exchangeRates: currentState.exchangeRates,
-      }) satisfies AppSessionSnapshot, currentSchemaVersion);
+      }) satisfies AppSessionSnapshot;
     } catch {
       // Snapshot persistence is best-effort during teardown.
+      return null;
     }
   };
 
   useEffect(() => {
     if (!sessionStore) return;
     if (!state.initialized && state.tickers.size === 0) return;
-    const timer = setTimeout(() => {
-      saveSnapshotRef.current();
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-    };
+    const snapshot = buildSnapshot();
+    if (snapshot) schedulerRef.current?.schedule(snapshot);
   }, [
     sessionStore,
     sessionId,
@@ -78,7 +93,7 @@ export function usePersistSessionSnapshot(
 
   useEffect(() => {
     return () => {
-      saveSnapshotRef.current();
+      void schedulerRef.current?.flush();
     };
   }, []);
 }

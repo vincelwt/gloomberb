@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useEffect, useReducer } from "react";
+import { act, useEffect, useReducer, type SetStateAction } from "react";
 import { testRender } from "../renderers/opentui/test-utils";
 import {
   AppContext,
@@ -14,6 +14,7 @@ import {
   getPluginPaneStateValue,
   setPluginPaneStateValue,
   type PluginRuntimeAccess,
+  useDebouncedPluginPaneState,
   usePluginConfigState,
   usePluginPaneState,
   usePluginState,
@@ -51,6 +52,71 @@ describe("plugin runtime helpers", () => {
 });
 
 describe("plugin runtime hooks", () => {
+  test("debounces pane state commits", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-plugin-runtime-debounce");
+    const stateRef: { current: ReturnType<typeof createInitialState> | null } = { current: null };
+    let setSelection: ((value: SetStateAction<string>) => void) | null = null;
+
+    const runtime = {
+      pinTicker() {},
+      navigateTicker() {},
+      subscribeResumeState: () => () => {},
+      getResumeState: () => null,
+      setResumeState() {},
+      deleteResumeState() {},
+      getConfigState: () => null,
+      setConfigState: async () => {},
+      deleteConfigState: async () => {},
+      getConfigStateKeys: () => [],
+    } satisfies PluginRuntimeAccess;
+
+    function HookHarness() {
+      const [state, dispatch] = useReducer(appReducer, createInitialState(config));
+      stateRef.current = state;
+
+      return (
+        <AppContext value={{ state, dispatch }}>
+          <PaneInstanceProvider paneId="prediction-markets:main">
+            <PluginRenderProvider pluginId="prediction-markets" runtime={runtime}>
+              <HookProbe />
+            </PluginRenderProvider>
+          </PaneInstanceProvider>
+        </AppContext>
+      );
+    }
+
+    function HookProbe() {
+      const [selection, setDebouncedSelection] = useDebouncedPluginPaneState("selectedRowKey", "row-a", 20);
+      setSelection = setDebouncedSelection;
+      return <text>{selection}</text>;
+    }
+
+    testSetup = await testRender(<HookHarness />, { width: 40, height: 5 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      setSelection?.("row-b");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(
+      stateRef.current?.paneState["prediction-markets:main"]?.pluginState?.["prediction-markets"]?.selectedRowKey,
+    ).toBeUndefined();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await testSetup!.renderOnce();
+    });
+
+    expect(
+      stateRef.current?.paneState["prediction-markets:main"]?.pluginState?.["prediction-markets"]?.selectedRowKey,
+    ).toBe("row-b");
+  });
+
   test("updates pane, global resume, and config state through the plugin hooks", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-plugin-runtime");
     const stateRef: { current: ReturnType<typeof createInitialState> | null } = { current: null };
