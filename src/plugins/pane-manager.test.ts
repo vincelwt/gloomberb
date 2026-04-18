@@ -19,6 +19,7 @@ describe("pane-manager split-tree drops", () => {
       ...cloneLayout(config.layout),
       dockRoot: null,
       floating: [],
+      detached: [],
       instances: [],
     };
     const floatingOnly = addPaneFloating(layout, createPaneInstance("chat"), 120, 30);
@@ -80,6 +81,7 @@ describe("pane-manager split-tree drops", () => {
       ...cloneLayout(config.layout),
       dockRoot: null,
       floating: [],
+      detached: [],
       instances: [],
     };
     const leftPane = createPaneInstance("chat");

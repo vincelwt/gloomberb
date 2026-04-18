@@ -88,6 +88,11 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
       [data-gloom-role="pane-window"] {
         background-clip: padding-box;
       }
+      [data-gloom-role="detached-pane-window"] {
+        border: 0;
+        box-shadow: none;
+        background-clip: padding-box;
+      }
       [data-gloom-role="app-header"][data-titlebar-overlay="true"],
       .electrobun-webkit-app-region-drag {
         cursor: default;
@@ -96,20 +101,24 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
         -webkit-user-select: none;
         user-select: none;
       }
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] {
+      .electrobun-webkit-app-region-no-drag {
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
+      }
+      [data-titlebar-overlay="true"] {
         min-height: 32px;
         max-height: 32px;
         align-items: center;
       }
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] * {
+      [data-titlebar-overlay="true"] * {
         cursor: inherit;
       }
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] button,
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] input,
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] textarea,
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] a,
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] .electrobun-webkit-app-region-no-drag,
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] [data-gloom-interactive="true"] {
+      [data-titlebar-overlay="true"] button,
+      [data-titlebar-overlay="true"] input,
+      [data-titlebar-overlay="true"] textarea,
+      [data-titlebar-overlay="true"] a,
+      [data-titlebar-overlay="true"] .electrobun-webkit-app-region-no-drag,
+      [data-titlebar-overlay="true"] [data-gloom-interactive="true"] {
         -webkit-app-region: no-drag;
         app-region: no-drag;
       }

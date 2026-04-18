@@ -572,6 +572,51 @@ describe("Shell", () => {
     expect(testSetup.captureCharFrame()).toContain("Settings");
   });
 
+  test("shows a Pop Out action in the pane menu when a desktop bridge is available", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    if (!mainPane) throw new Error("missing default portfolio pane");
+
+    const singlePaneLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }],
+      floating: [],
+      detached: [],
+    };
+    const nextConfig = {
+      ...config,
+      layout: cloneLayout(singlePaneLayout),
+      layouts: [{ name: "Default", layout: cloneLayout(singlePaneLayout) }],
+    };
+    const state = createInitialState(nextConfig);
+    const pluginRegistry = createShellPluginRegistry();
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+          <Shell
+            pluginRegistry={pluginRegistry}
+            desktopWindowBridge={{
+              kind: "main",
+              popOutPane: async () => {},
+              subscribeState: () => () => {},
+              subscribeDockPreview: () => () => {},
+            }}
+          />
+        </DialogProvider>
+      </AppContext>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup!.mockMouse.click(37, 1);
+    });
+    await testSetup.renderOnce();
+
+    expect(testSetup.captureCharFrame()).toContain("Pop Out");
+  });
+
   test("applies a chart resolution chip on the first click even when the chart pane is unfocused", async () => {
     const symbol = "AAPL";
     const config = createDefaultConfig("/tmp/gloomberb-shell-chart-test");
@@ -880,6 +925,12 @@ describe("Shell", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(testSetup.captureCharFrame()).toContain("Footer Probe");
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+
+    expect(frame).toContain("Footer Probe");
+    expect(lines[8]).toContain("Footer Probe");
+    expect(lines[9]).not.toContain("Footer Probe");
+    expect(lines[9]).toContain("└───────────────────────────");
   });
 });

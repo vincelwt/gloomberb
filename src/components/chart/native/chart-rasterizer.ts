@@ -671,7 +671,7 @@ export function intersectCellRects(a: CellRect, b: CellRect): CellRect | null {
   };
 }
 
-export function subtractCellRect(rect: CellRect, cut: CellRect): CellRect[] {
+function subtractCellRect(rect: CellRect, cut: CellRect): CellRect[] {
   const intersection = intersectCellRects(rect, cut);
   if (!intersection) return [rect];
 
@@ -720,7 +720,7 @@ export function subtractCellRect(rect: CellRect, cut: CellRect): CellRect[] {
   return fragments.filter((fragment) => fragment.width > 0 && fragment.height > 0);
 }
 
-export function subtractCellRects(rects: CellRect[], cut: CellRect): CellRect[] {
+function subtractCellRects(rects: CellRect[], cut: CellRect): CellRect[] {
   return rects.flatMap((rect) => subtractCellRect(rect, cut));
 }
 

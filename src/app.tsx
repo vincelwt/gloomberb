@@ -18,6 +18,7 @@ import { copyActiveSelection, isCopyShortcut, isPasteShortcut, pasteSystemClipbo
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
+import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { CommandBar } from "./components/command-bar/command-bar";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { useDialog, useDialogState } from "./ui/dialog";
@@ -29,6 +30,7 @@ import {
   findPaneInstance,
   findPrimaryPaneInstance,
   isTickerPaneId,
+  materializeDetachedPanesAsFloating,
   normalizePaneLayout,
   resolveFollowBindingInstance,
   resolvePaneInstance,
@@ -44,6 +46,7 @@ import type { TickerRecord } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { TickerFinancials } from "./types/financials";
 import type { BrokerAccount } from "./types/trading";
+import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopWindowBridge } from "./types/desktop-window";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
 
 // Built-in plugins
@@ -134,9 +137,17 @@ interface AppInnerProps {
   dataProvider: DataProvider;
   marketData: MarketDataCoordinator;
   sessionSnapshot?: AppSessionSnapshot | null;
+  desktopWindowBridge?: DesktopWindowBridge;
 }
 
-function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, sessionSnapshot = null }: AppInnerProps) {
+function AppInner({
+  pluginRegistry,
+  tickerRepository,
+  dataProvider,
+  marketData,
+  sessionSnapshot = null,
+  desktopWindowBridge,
+}: AppInnerProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
   const config = useAppSelector((state) => state.config);
@@ -180,6 +191,9 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   const nativeRenderer = useNativeRenderer();
   const dialog = useDialog();
   const toast = useToastHost();
+  const isDetachedWindow = desktopWindowBridge?.kind === "detached";
+  const detachedPaneId = isDetachedWindow ? desktopWindowBridge.paneId ?? null : null;
+  const [desktopDockPreview, setDesktopDockPreview] = useState<DesktopDockPreviewState | null>(null);
   appActiveRef.current = appActive;
   const focusedCollectionId = getFocusedCollectionId(state);
   const appNotifier = useMemo(() => createAppNotifier({
@@ -210,6 +224,13 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   const notify = useCallback((body: string, options?: { type?: "info" | "success" | "error" }) => {
     pluginRegistry.notify({ body, ...options });
   }, [pluginRegistry]);
+
+  useEffect(() => {
+    if (desktopWindowBridge?.kind !== "main" || !desktopWindowBridge.subscribeDockPreview) return;
+    return desktopWindowBridge.subscribeDockPreview((preview) => {
+      setDesktopDockPreview(preview);
+    });
+  }, [desktopWindowBridge]);
 
   const resolvePaneTarget = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
     return resolvePaneInstance(layout, paneId)?.instanceId ?? null;
@@ -850,10 +871,17 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
 
   // Wire up navigation functions
   pluginRegistry.selectTickerFn = (symbol, paneId) => selectTickerInPane(symbol, paneId);
-  pluginRegistry.switchPanelFn = (panel) => dispatch({ type: "SET_ACTIVE_PANEL", panel });
+  pluginRegistry.switchPanelFn = (panel) => {
+    if (isDetachedWindow) return;
+    dispatch({ type: "SET_ACTIVE_PANEL", panel });
+  };
   pluginRegistry.switchTabFn = (tabId, paneId) => switchDetailTab(tabId, paneId);
-  pluginRegistry.openCommandBarFn = (query) => dispatch({ type: "SET_COMMAND_BAR", open: true, query });
+  pluginRegistry.openCommandBarFn = (query) => {
+    if (isDetachedWindow) return;
+    dispatch({ type: "SET_COMMAND_BAR", open: true, query });
+  };
   pluginRegistry.openPluginCommandWorkflowFn = (commandId) => {
+    if (isDetachedWindow) return;
     dispatch({
       type: "SET_COMMAND_BAR",
       open: true,
@@ -1073,10 +1101,17 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   }, [dataProvider, dialog, dispatch, persistLayout, pluginRegistry, resolvePaneTarget, tickerRepository]);
 
   pluginRegistry.getLayoutFn = () => state.config.layout;
-  pluginRegistry.updateLayoutFn = (layout) => persistLayout(layout);
+  pluginRegistry.updateLayoutFn = (layout) => {
+    if (isDetachedWindow) return;
+    persistLayout(layout);
+  };
   pluginRegistry.openPaneSettingsFn = (paneId) => { void openPaneSettings(paneId); };
-  pluginRegistry.showPaneFn = (paneId) => showPane(paneId);
+  pluginRegistry.showPaneFn = (paneId) => {
+    if (isDetachedWindow) return;
+    showPane(paneId);
+  };
   pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+    if (isDetachedWindow) return;
     await createPaneTemplateOrThrow(templateId, options, {
       dataProvider,
       tickerRepository,
@@ -1087,7 +1122,10 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       placePaneInstance,
     });
   };
-  pluginRegistry.createPaneFromTemplateFn = (templateId, options) => { void createPaneFromTemplate(templateId, options); };
+  pluginRegistry.createPaneFromTemplateFn = (templateId, options) => {
+    if (isDetachedWindow) return;
+    void createPaneFromTemplate(templateId, options);
+  };
   pluginRegistry.applyPaneSettingValueFn = async (paneId, field, value) => {
     await applyPaneSettingFieldValueShared(paneId, field, value, {
       dataProvider,
@@ -1099,11 +1137,18 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     });
   };
   pluginRegistry.hidePaneFn = (paneId) => {
+    if (isDetachedWindow) return;
     const instanceId = resolvePaneTarget(paneId);
     if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) return;
     persistLayout(removePane(state.config.layout, instanceId));
   };
   pluginRegistry.focusPaneFn = (paneId) => {
+    if (isDetachedWindow) {
+      if (paneId === detachedPaneId) {
+        dispatch({ type: "FOCUS_PANE", paneId });
+      }
+      return;
+    }
     const instanceId = resolvePaneTarget(paneId);
     if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) {
       showPane(paneId);
@@ -1120,6 +1165,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     activatePane(instanceId, layout);
   };
   pluginRegistry.pinTickerFn = (symbol, options) => {
+    if (isDetachedWindow) return;
     const paneType = options?.paneType ?? "ticker-detail";
     const paneDef = pluginRegistry.panes.get(paneType);
     if (!paneDef) return;
@@ -1147,6 +1193,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   };
 
   pluginRegistry.navigateTickerFn = (rawSymbol) => {
+    if (isDetachedWindow) return;
     (async () => {
       try {
       // Resolve or create the ticker in the local database
@@ -1283,21 +1330,21 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     if (dialogOpen) return;
 
     // Ctrl+P: toggle command bar (backtick handled in command-bar itself for close)
-    if (event.name === "p" && event.ctrl) {
+    if (!isDetachedWindow && event.name === "p" && event.ctrl) {
       event.preventDefault();
       event.stopPropagation();
       dispatch({ type: "TOGGLE_COMMAND_BAR" });
       return;
     }
     // Backtick opens command bar (close is handled in command-bar.tsx)
-    if (event.name === "`" && !state.commandBarOpen) {
+    if (!isDetachedWindow && event.name === "`" && !state.commandBarOpen) {
       event.preventDefault();
       event.stopPropagation();
       dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       return;
     }
     // Ctrl+1-9: switch layouts (works even when input is captured)
-    if (/^[1-9]$/.test(event.name ?? "") && event.ctrl && (state.config.layouts ?? []).length > 1) {
+    if (!isDetachedWindow && /^[1-9]$/.test(event.name ?? "") && event.ctrl && (state.config.layouts ?? []).length > 1) {
       const idx = parseInt(event.name!, 10) - 1;
       const layouts = state.config.layouts ?? [];
       if (idx < layouts.length && idx !== state.config.activeLayoutIndex) {
@@ -1323,7 +1370,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       } else {
         dispatch({ type: "FOCUS_NEXT", paneOrder });
       }
-    } else if (event.name === "q" && !(focusedPane?.paneId === "ticker-detail" && focusedDetailTab === "financials")) {
+    } else if (!isDetachedWindow && event.name === "q" && !(focusedPane?.paneId === "ticker-detail" && focusedDetailTab === "financials")) {
       rendererHost.requestExit();
     } else if (event.name === "r") {
       // Refresh focused ticker context.
@@ -1336,7 +1383,7 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
       for (const t of state.tickers.values()) {
         refreshTicker(t.metadata.ticker, t.metadata.exchange, t, 1);
       }
-    } else if (event.name === "a" && focusedTickerSymbol) {
+    } else if (!isDetachedWindow && event.name === "a" && focusedTickerSymbol) {
       // Open ticker actions
       const actions = [...pluginRegistry.tickerActions.values()];
       const ticker = state.tickers.get(focusedTickerSymbol);
@@ -1361,11 +1408,29 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
     }
   });
 
+  if (desktopWindowBridge?.kind === "detached" && desktopWindowBridge.paneId) {
+    return (
+      <ContextMenuProvider pluginRegistry={pluginRegistry}>
+        <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+          <DetachedPaneShell
+            pluginRegistry={pluginRegistry}
+            desktopWindowBridge={{ ...desktopWindowBridge, kind: "detached", paneId: desktopWindowBridge.paneId }}
+          />
+          <ToastViewport position="bottom-right" />
+        </Box>
+      </ContextMenuProvider>
+    );
+  }
+
   return (
     <ContextMenuProvider pluginRegistry={pluginRegistry}>
       <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
         <Header />
-        <Shell pluginRegistry={pluginRegistry} />
+        <Shell
+          pluginRegistry={pluginRegistry}
+          desktopWindowBridge={desktopWindowBridge}
+          desktopDockPreview={desktopDockPreview}
+        />
         <StatusBar />
         {state.commandBarOpen && (
           <CommandBar
@@ -1386,29 +1451,45 @@ interface AppProps {
   config: AppConfig;
   externalPlugins?: import("./plugins/loader").LoadedExternalPlugin[];
   cliLaunchRequest?: CliLaunchRequest | null;
+  desktopWindowBridge?: DesktopWindowBridge;
+  desktopSnapshot?: DesktopSharedStateSnapshot | null;
 }
 
 export function App({
   config: initialConfig,
   externalPlugins = [],
   cliLaunchRequest = null,
+  desktopWindowBridge,
+  desktopSnapshot = null,
 }: AppProps) {
   const renderer = useNativeRenderer();
+  const effectiveInitialConfig = useMemo(() => {
+    const baseConfig = desktopSnapshot?.config ?? initialConfig;
+    if (desktopWindowBridge) return baseConfig;
+    return {
+      ...baseConfig,
+      layout: materializeDetachedPanesAsFloating(baseConfig.layout),
+      layouts: baseConfig.layouts.map((entry) => ({
+        ...entry,
+        layout: materializeDetachedPanesAsFloating(entry.layout),
+      })),
+    };
+  }, [desktopSnapshot?.config, desktopWindowBridge, initialConfig]);
   const initialCliLaunch = useMemo(() => {
     if (!cliLaunchRequest) {
-      return { config: initialConfig, launchState: undefined };
+      return { config: effectiveInitialConfig, launchState: undefined };
     }
-    return cliLaunchRequest.applyConfig(initialConfig, {
+    return cliLaunchRequest.applyConfig(effectiveInitialConfig, {
       terminalWidth: renderer.terminalWidth,
       terminalHeight: renderer.terminalHeight,
     });
-  }, [cliLaunchRequest, initialConfig, renderer.terminalHeight, renderer.terminalWidth]);
+  }, [cliLaunchRequest, effectiveInitialConfig, renderer.terminalHeight, renderer.terminalWidth]);
   const cliLaunchStateRef = useRef(initialCliLaunch.launchState);
 
   const [config, setConfig] = useState(() => {
     return initialCliLaunch.config;
   });
-  const [showOnboarding, setShowOnboarding] = useState(!initialConfig.onboardingComplete);
+  const [showOnboarding, setShowOnboarding] = useState(!effectiveInitialConfig.onboardingComplete);
 
   // Keep the shared palette aligned before this render builds any JSX that reads `colors`.
   syncTheme(config.theme);
@@ -1430,6 +1511,30 @@ export function App({
   }, [services]);
 
   const sessionSnapshot = useMemo(() => {
+    if (desktopWindowBridge?.kind === "detached") {
+      const baseSessionSnapshot = reconcileAppSessionSnapshot(
+        config,
+        services.persistence.sessions.get<AppSessionSnapshot>(APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION)?.value ?? null,
+      ) ?? {
+        paneState: {},
+        focusedPaneId: null,
+        activePanel: "left" as const,
+        statusBarVisible: true,
+        openPaneIds: [],
+        hydrationTargets: [],
+        exchangeCurrencies: [],
+        savedAt: Date.now(),
+      };
+      return desktopSnapshot
+        ? {
+          ...baseSessionSnapshot,
+          paneState: desktopSnapshot.paneState,
+          focusedPaneId: desktopSnapshot.focusedPaneId,
+          activePanel: desktopSnapshot.activePanel,
+          statusBarVisible: desktopSnapshot.statusBarVisible,
+        }
+        : null;
+    }
     const persisted = services.persistence.sessions.get<AppSessionSnapshot>(APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION)?.value ?? null;
     const reconciled = reconcileAppSessionSnapshot(config, persisted);
     if (!cliLaunchRequest?.applySessionSnapshot) {
@@ -1440,7 +1545,7 @@ export function App({
       reconciled,
       cliLaunchStateRef.current,
     );
-  }, [cliLaunchRequest, config, services.persistence.sessions]);
+  }, [cliLaunchRequest, config, desktopSnapshot, desktopWindowBridge?.kind, services.persistence.sessions]);
 
   if (showOnboarding) {
     return (
@@ -1456,13 +1561,20 @@ export function App({
   }
 
   return (
-    <AppProvider config={config} sessionStore={services.persistence.sessions} sessionSnapshot={sessionSnapshot}>
+    <AppProvider
+      config={config}
+      sessionStore={desktopWindowBridge?.kind === "detached" ? undefined : services.persistence.sessions}
+      sessionSnapshot={sessionSnapshot}
+      desktopBridge={desktopWindowBridge}
+      desktopSnapshot={desktopSnapshot}
+    >
       <AppInner
         pluginRegistry={services.pluginRegistry}
         tickerRepository={services.tickerRepository}
         dataProvider={services.dataProvider}
         marketData={services.marketData}
         sessionSnapshot={sessionSnapshot}
+        desktopWindowBridge={desktopWindowBridge}
       />
     </AppProvider>
   );

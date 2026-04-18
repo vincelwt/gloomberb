@@ -1,9 +1,9 @@
-import { Box, Text, useUiCapabilities } from "../../ui";
+import { Box, Span, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../theme/colors";
 
-export const PANE_HEADER_HEIGHT = 1;
-export const PANE_HEADER_GRIP = ":: ";
+const PANE_HEADER_HEIGHT = 1;
+const PANE_HEADER_GRIP = ":: ";
 export const PANE_HEADER_ACTION = " ... ";
 export const PANE_HEADER_CLOSE = " x ";
 
@@ -50,7 +50,7 @@ function DesktopPaneButton({
         cursor: onMouseDown ? "pointer" : "default",
       }}
     >
-      <Box
+      <Span
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -61,7 +61,7 @@ function DesktopPaneButton({
         }}
       >
         {icon}
-      </Box>
+      </Span>
     </Box>
   );
 }

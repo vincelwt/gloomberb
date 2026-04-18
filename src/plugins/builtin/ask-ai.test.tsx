@@ -7,7 +7,13 @@ import { createDefaultConfig } from "../../types/config";
 import { Box } from "../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
-import { AskAiTab, __resetAskAiHistoryForTests, __setAskAiHistoryForTests, __setDetectedProvidersForTests, type AiProvider } from "./ask-ai";
+import {
+  AskAiDetailTab as AskAiTab,
+  __resetAskAiHistoryForTests,
+  __setAskAiHistoryForTests,
+  __setDetectedProvidersForTests,
+  type AiProvider,
+} from "./ai/ask-ai-detail-tab";
 import type { TickerRecord } from "../../types/ticker";
 
 const PANE_ID = "ticker-detail:main";

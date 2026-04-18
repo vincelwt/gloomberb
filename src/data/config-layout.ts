@@ -1,4 +1,5 @@
 import type {
+  DetachedPlacementMemory,
   FloatingPlacementMemory,
   LayoutConfig,
   PaneBinding,
@@ -42,6 +43,16 @@ function sanitizeFloatingPlacementMemory(value: unknown): FloatingPlacementMemor
   return { x, y, width, height };
 }
 
+function sanitizeDetachedPlacementMemory(value: unknown): DetachedPlacementMemory | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const x = typeof (value as DetachedPlacementMemory).x === "number" ? Math.max(0, Math.round((value as DetachedPlacementMemory).x)) : null;
+  const y = typeof (value as DetachedPlacementMemory).y === "number" ? Math.max(0, Math.round((value as DetachedPlacementMemory).y)) : null;
+  const width = typeof (value as DetachedPlacementMemory).width === "number" ? Math.max(1, Math.round((value as DetachedPlacementMemory).width)) : null;
+  const height = typeof (value as DetachedPlacementMemory).height === "number" ? Math.max(1, Math.round((value as DetachedPlacementMemory).height)) : null;
+  if (x === null || y === null || width === null || height === null) return undefined;
+  return { x, y, width, height };
+}
+
 function sanitizePlacementMemory(value: unknown): PanePlacementMemory | undefined {
   if (!value || typeof value !== "object") return undefined;
 
@@ -67,8 +78,9 @@ function sanitizePlacementMemory(value: unknown): PanePlacementMemory | undefine
   })();
 
   const floating = sanitizeFloatingPlacementMemory((value as PanePlacementMemory).floating);
-  if (!docked && !floating) return undefined;
-  return { docked, floating };
+  const detached = sanitizeDetachedPlacementMemory((value as PanePlacementMemory).detached);
+  if (!docked && !floating && !detached) return undefined;
+  return { docked, floating, detached };
 }
 
 function sanitizePaneSettings(value: unknown): Record<string, unknown> | undefined {
@@ -160,6 +172,28 @@ function sanitizeFloatingEntries(value: unknown, validInstanceIds: Set<string>):
     }));
 }
 
+function sanitizeDetachedEntries(value: unknown, validInstanceIds: Set<string>): LayoutConfig["detached"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is LayoutConfig["detached"][number] =>
+      !!entry
+      && typeof entry === "object"
+      && typeof (entry as LayoutConfig["detached"][number]).instanceId === "string"
+      && typeof (entry as LayoutConfig["detached"][number]).x === "number"
+      && typeof (entry as LayoutConfig["detached"][number]).y === "number"
+      && typeof (entry as LayoutConfig["detached"][number]).width === "number"
+      && typeof (entry as LayoutConfig["detached"][number]).height === "number",
+    )
+    .filter((entry) => validInstanceIds.has(entry.instanceId))
+    .map((entry) => ({
+      instanceId: entry.instanceId,
+      x: Math.max(0, Math.round(entry.x)),
+      y: Math.max(0, Math.round(entry.y)),
+      width: Math.max(1, Math.round(entry.width)),
+      height: Math.max(1, Math.round(entry.height)),
+    }));
+}
+
 export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutConfig {
   if (!isLayoutConfig(value)) {
     return cloneLayout(fallback);
@@ -176,11 +210,13 @@ export function sanitizeLayout(value: unknown, fallback: LayoutConfig): LayoutCo
   const validInstanceIds = new Set(instances.map((entry) => entry.instanceId));
   const dockRoot = (value as { dockRoot?: LayoutConfig["dockRoot"] }).dockRoot ?? null;
   const floating = sanitizeFloatingEntries((value as { floating?: unknown }).floating, validInstanceIds);
+  const detached = sanitizeDetachedEntries((value as { detached?: unknown }).detached, validInstanceIds);
 
   const layout: LayoutConfig = {
     dockRoot,
     instances,
     floating,
+    detached,
   };
 
   return normalizePaneLayout(layout, {

@@ -20,7 +20,7 @@ import {
 type ViewStateWithViewport = Pick<ChartViewState, "presetRange" | "bufferRange" | "activePreset" | "resolution" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">
   | Pick<ComparisonChartViewState, "presetRange" | "bufferRange" | "activePreset" | "resolution" | "panOffset" | "zoomLevel" | "cursorX" | "cursorY">;
 
-export interface VisibleDateWindow {
+interface VisibleDateWindow {
   start: Date | null;
   end: Date | null;
   dates: Date[];
@@ -243,26 +243,6 @@ export function clampDateWindowToBounds(
   };
 }
 
-export function scaleDateWindow(
-  window: DateWindowRange | null | undefined,
-  spanScale: number,
-  anchorRatio: number,
-): DateWindowRange | null {
-  const normalizedWindow = normalizeDateWindowRange(window);
-  if (!normalizedWindow) return null;
-
-  const currentSpanMs = Math.max(normalizedWindow.endMs - normalizedWindow.startMs, 1);
-  const nextSpanMs = Math.max(currentSpanMs * spanScale, 1);
-  const ratio = clamp(anchorRatio, 0, 1);
-  const anchorMs = normalizedWindow.startMs + (currentSpanMs * ratio);
-  const nextStartMs = anchorMs - (nextSpanMs * ratio);
-
-  return {
-    start: new Date(nextStartMs),
-    end: new Date(nextStartMs + nextSpanMs),
-  };
-}
-
 export function shiftDateWindow(
   window: DateWindowRange | null | undefined,
   shiftRatio: number,
@@ -279,7 +259,7 @@ export function shiftDateWindow(
   };
 }
 
-export function getCanonicalVisiblePointCount(dates: readonly Date[], presetRange: TimeRange): number {
+function getCanonicalVisiblePointCount(dates: readonly Date[], presetRange: TimeRange): number {
   if (dates.length === 0) return 0;
   if (presetRange === "ALL") return dates.length;
   const endDate = dates[dates.length - 1]!;
@@ -419,7 +399,7 @@ export function formatVisibleSpanLabel(window: Pick<VisibleDateWindow, "start" |
   return `view:${startLabel}-${endLabel}`;
 }
 
-export function isCanonicalPresetViewport(
+function isCanonicalPresetViewport(
   dates: readonly Date[],
   state: Pick<ViewStateWithViewport, "activePreset" | "panOffset" | "zoomLevel" | "resolution">,
 ): boolean {
@@ -475,7 +455,7 @@ export function resolveVisibleActivePreset(
   return needsCanonicalPresetViewportReset(dates, state) ? state.activePreset : null;
 }
 
-export function resolvePresetSelectionWithResolution<S extends ViewStateWithViewport>(
+function resolvePresetSelectionWithResolution<S extends ViewStateWithViewport>(
   state: S,
   presetRange: TimeRange,
   resolution: ManualChartResolution,

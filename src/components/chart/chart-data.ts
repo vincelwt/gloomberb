@@ -1,6 +1,5 @@
 import type { PricePoint } from "../../types/financials";
-import type { TimeRange, ChartRenderMode, ChartViewState, VisibleWindow } from "./chart-types";
-import { RANGE_DAYS } from "./chart-types";
+import type { ChartRenderMode, ChartViewState, VisibleWindow } from "./chart-types";
 import { getVisiblePointCount } from "./chart-viewport";
 
 export interface ProjectedChartPoint {
@@ -40,7 +39,7 @@ function coerceDate(value: Date | string | number): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-export function getRequestedRenderMode(mode?: ChartRenderMode, compact = false): ChartRenderMode {
+function getRequestedRenderMode(mode?: ChartRenderMode, compact = false): ChartRenderMode {
   if (compact) return "area";
   return mode ?? "area";
 }
@@ -75,16 +74,6 @@ export function resolveRenderMode(
     effectiveMode,
     fallbackMode: effectiveMode === requestedMode ? null : effectiveMode,
   };
-}
-
-/**
- * Filter price history to the selected time range.
- */
-export function filterByTimeRange(history: PricePoint[], range: TimeRange): PricePoint[] {
-  if (range === "ALL" || history.length <= RANGE_DAYS[range]) {
-    return history;
-  }
-  return history.slice(-RANGE_DAYS[range]);
 }
 
 /**
@@ -232,7 +221,7 @@ export function resolveStableOhlcProjectionOptions({
  * Downsample close-driven chart data to fit the target width.
  * Uses representative closes so line/area charts preserve the broad shape.
  */
-export function projectCloseSeries(
+function projectCloseSeries(
   points: PricePoint[],
   targetWidth: number,
 ): ProjectedChartPoint[] {

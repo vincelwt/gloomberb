@@ -18,16 +18,26 @@ import {
   type IbkrGatewayConfig,
 } from "../../../plugins/ibkr/gateway-service";
 import { type BrokerContractRef } from "../../../types/instrument";
-import type { AppConfig } from "../../../types/config";
+import { cloneLayout, findPaneInstance, type AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
+import type { PaneRuntimeState } from "../../../core/state/app-state";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
+import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { BrokerOrderRequest } from "../../../types/trading";
+import { isPaneDetached } from "../../../plugins/pane-manager";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
 import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
+import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
 
 const DEFAULT_WINDOW_FRAME = { x: 64, y: 48, width: 1440, height: 920 };
 const NOTES_INDEX_FILE = "__quick-notes-index__.json";
+const MAIN_WINDOW_RPC_KEY = "main";
+
+type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
+type WindowFrame = { x: number; y: number; width: number; height: number };
+type WindowMoveEvent = { data?: { x?: number; y?: number } };
+type WindowResizeEvent = { data?: Partial<WindowFrame> };
 
 console.log = (...args) => console.error(...args);
 console.info = (...args) => console.error(...args);
@@ -39,6 +49,18 @@ setConfigStoreHost(nodeConfigStoreHost);
 let currentConfig: AppConfig | null = null;
 let services: AppServices | null = null;
 let mainWindow: BrowserWindow | null = null;
+let desktopWorkspace: DesktopWorkspace | null = null;
+let currentDockPreview: DesktopDockPreviewState = { paneId: null, edge: null };
+
+const detachedWindows = new Map<string, BrowserWindow>();
+const detachedFrameTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const detachedDockTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const detachedClosingPanes = new Set<string>();
+const pendingDetachedMoveFlush = new Set<string>();
+const windowRpcs = new Map<string, DesktopRpc>();
+const readyWindowRpcs = new Set<string>();
+const rpcWindowKeys = new Map<DesktopRpc, string>();
+const contextMenuRequestRpcs = new Map<string, DesktopRpc>();
 
 const dataQuoteSubscriptions = new Map<string, () => void>();
 const ibkrSnapshotSubscriptions = new Map<string, () => void>();
@@ -57,6 +79,129 @@ function requireServices(): AppServices {
 function requireConfig(): AppConfig {
   if (!currentConfig) throw new Error("Backend config has not been initialized.");
   return currentConfig;
+}
+
+function requireDesktopWorkspace(): DesktopWorkspace {
+  if (!desktopWorkspace) throw new Error("Desktop workspace has not been initialized.");
+  return desktopWorkspace;
+}
+
+function detachedRpcKey(instanceId: string): string {
+  return `detached:${instanceId}`;
+}
+
+function registerWindowRpc(key: string, rpc: DesktopRpc): void {
+  windowRpcs.set(key, rpc);
+  rpcWindowKeys.set(rpc, key);
+}
+
+function unregisterWindowRpc(key: string): void {
+  const rpc = windowRpcs.get(key);
+  if (rpc) {
+    rpcWindowKeys.delete(rpc);
+  }
+  windowRpcs.delete(key);
+  readyWindowRpcs.delete(key);
+}
+
+function getRpcWindowKey(rpc: DesktopRpc): string | undefined {
+  return rpcWindowKeys.get(rpc);
+}
+
+function markWindowRpcReady(rpc: DesktopRpc): void {
+  const key = getRpcWindowKey(rpc);
+  if (key) readyWindowRpcs.add(key);
+}
+
+function forEachReadyWindowRpc(callback: (rpc: DesktopRpc) => void): void {
+  for (const key of readyWindowRpcs) {
+    const rpc = windowRpcs.get(key);
+    if (rpc) callback(rpc);
+  }
+}
+
+function scopeClientId(rpc: DesktopRpc, id: string): string {
+  return `${getRpcWindowKey(rpc) ?? "window"}:${id}`;
+}
+
+function syncActiveLayout(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    layouts: config.layouts.map((entry, index) => (
+      index === config.activeLayoutIndex ? { ...entry, layout: cloneLayout(config.layout) } : entry
+    )),
+  };
+}
+
+function normalizeInitWindowTarget(
+  rpc: DesktopRpc,
+  payload: Record<string, unknown>,
+): { kind: "main" | "detached"; paneId?: string } {
+  const rpcKey = getRpcWindowKey(rpc);
+  if (rpcKey === MAIN_WINDOW_RPC_KEY) {
+    return { kind: "main" };
+  }
+  if (rpcKey?.startsWith("detached:")) {
+    return {
+      kind: "detached",
+      paneId: rpcKey.slice("detached:".length) || undefined,
+    };
+  }
+  const kind = payload.kind === "detached" ? "detached" : "main";
+  return {
+    kind,
+    paneId: kind === "detached" && typeof payload.paneId === "string" && payload.paneId.length > 0
+      ? payload.paneId
+      : undefined,
+  };
+}
+
+function clearTimer(
+  timers: Map<string, ReturnType<typeof setTimeout>>,
+  key: string,
+): void {
+  const timer = timers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    timers.delete(key);
+  }
+}
+
+function normalizeWindowFrame(frame: Partial<WindowFrame> | null | undefined, fallback: WindowFrame = DEFAULT_WINDOW_FRAME): WindowFrame {
+  return {
+    x: typeof frame?.x === "number" ? frame.x : fallback.x,
+    y: typeof frame?.y === "number" ? frame.y : fallback.y,
+    width: typeof frame?.width === "number" ? frame.width : fallback.width,
+    height: typeof frame?.height === "number" ? frame.height : fallback.height,
+  };
+}
+
+function getWindowFrame(window: BrowserWindow | null): WindowFrame | null {
+  if (!window) return null;
+  return normalizeWindowFrame(window.frame);
+}
+
+function updateWindowFrameCache(window: BrowserWindow | null, patch: Partial<WindowFrame>): WindowFrame | null {
+  if (!window) return null;
+  const nextFrame = normalizeWindowFrame(patch, getWindowFrame(window) ?? DEFAULT_WINDOW_FRAME);
+  window.frame = nextFrame;
+  return nextFrame;
+}
+
+function applyWindowMoveEvent(window: BrowserWindow | null, event: WindowMoveEvent): WindowFrame | null {
+  return updateWindowFrameCache(window, {
+    x: event.data?.x,
+    y: event.data?.y,
+  });
+}
+
+function applyWindowResizeEvent(window: BrowserWindow | null, event: WindowResizeEvent): WindowFrame | null {
+  return updateWindowFrameCache(window, event.data ?? {});
+}
+
+function setCurrentConfig(nextConfig: AppConfig): void {
+  currentConfig = syncActiveLayout(nextConfig);
+  syncConfigAccessors();
 }
 
 function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
@@ -117,6 +262,24 @@ function normalizeContextMenuItems(value: unknown, depth = 0): unknown[] {
   }
 
   return items;
+}
+
+function getContextMenuRequestId(items: unknown[]): string | null {
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const data = record.data && typeof record.data === "object" && !Array.isArray(record.data)
+      ? record.data as Record<string, unknown>
+      : null;
+    if (record.action === ELECTROBUN_CONTEXT_MENU_ACTION && typeof data?.requestId === "string") {
+      return data.requestId;
+    }
+    if (Array.isArray(record.submenu)) {
+      const submenuRequestId = getContextMenuRequestId(record.submenu);
+      if (submenuRequestId) return submenuRequestId;
+    }
+  }
+  return null;
 }
 
 function notePath(dataDir: string, symbol: string): string {
@@ -220,6 +383,38 @@ function getSessionSnapshot(): AppSessionSnapshot | null {
   return reconcileAppSessionSnapshot(currentConfig, persisted);
 }
 
+function getDesktopSnapshot(): DesktopSharedStateSnapshot | null {
+  return desktopWorkspace?.getSnapshot() ?? null;
+}
+
+function sendDesktopState(snapshot: DesktopSharedStateSnapshot | null = getDesktopSnapshot()): void {
+  if (!snapshot) return;
+  const encodedSnapshot = encodeRpcValue(snapshot);
+  forEachReadyWindowRpc((rpc) => {
+    rpc.send["desktop.state"]({
+      snapshot: encodedSnapshot,
+    });
+  });
+}
+
+function sendDockPreview(preview: DesktopDockPreviewState): void {
+  if (currentDockPreview.paneId === preview.paneId && currentDockPreview.edge === preview.edge) {
+    return;
+  }
+  currentDockPreview = preview;
+  const encodedPreview = encodeRpcValue(preview);
+  forEachReadyWindowRpc((rpc) => {
+    rpc.send["desktop.dockPreview"]({
+      preview: encodedPreview,
+    });
+  });
+}
+
+function clearDockPreview(paneId?: string): void {
+  if (paneId && currentDockPreview.paneId && currentDockPreview.paneId !== paneId) return;
+  sendDockPreview({ paneId: null, edge: null });
+}
+
 function disposeSubscriptionMap(map: Map<string, () => void>): void {
   for (const unsubscribe of map.values()) {
     try {
@@ -231,11 +426,40 @@ function disposeSubscriptionMap(map: Map<string, () => void>): void {
   map.clear();
 }
 
+function disposeScopedSubscriptionMap(map: Map<string, () => void>, windowKey: string): void {
+  const scopedPrefix = `${windowKey}:`;
+  for (const [id, unsubscribe] of map) {
+    if (!id.startsWith(scopedPrefix)) continue;
+    try {
+      unsubscribe();
+    } catch {
+      // ignore teardown failures
+    }
+    map.delete(id);
+  }
+}
+
 function disposeAiRuns(): void {
   for (const controller of aiRuns.values()) {
     controller.cancel();
   }
   aiRuns.clear();
+}
+
+function disposeScopedAiRuns(windowKey: string): void {
+  const scopedPrefix = `${windowKey}:`;
+  for (const [id, controller] of aiRuns) {
+    if (!id.startsWith(scopedPrefix)) continue;
+    controller.cancel();
+    aiRuns.delete(id);
+  }
+}
+
+function disposeWindowScopedResources(windowKey: string): void {
+  disposeScopedSubscriptionMap(dataQuoteSubscriptions, windowKey);
+  disposeScopedSubscriptionMap(ibkrSnapshotSubscriptions, windowKey);
+  disposeScopedSubscriptionMap(ibkrQuoteSubscriptions, windowKey);
+  disposeScopedAiRuns(windowKey);
 }
 
 function teardownServices(): void {
@@ -249,12 +473,226 @@ function teardownServices(): void {
   services = null;
 }
 
-async function initialize(rpc: ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>) {
+function resolveDetachedWindowTitle(instanceId: string): string {
+  const instance = currentConfig ? findPaneInstance(currentConfig.layout, instanceId) : null;
+  if (!instance) return "Gloomberb";
+  return instance.title?.trim() || instance.paneId;
+}
+
+function resolveDetachedWindowFrame(instanceId: string): { x: number; y: number; width: number; height: number } {
+  const detachedEntry = requireConfig().layout.detached.find((entry) => entry.instanceId === instanceId);
+  if (detachedEntry) {
+    return {
+      x: detachedEntry.x,
+      y: detachedEntry.y,
+      width: detachedEntry.width,
+      height: detachedEntry.height,
+    };
+  }
+  const remembered = findPaneInstance(requireConfig().layout, instanceId)?.placementMemory?.detached;
+  if (remembered) {
+    return remembered;
+  }
+  const mainFrame = getWindowFrame(mainWindow) ?? DEFAULT_WINDOW_FRAME;
+  return {
+    x: mainFrame.x + 72,
+    y: mainFrame.y + 72,
+    width: Math.max(720, Math.floor(mainFrame.width * 0.45)),
+    height: Math.max(420, Math.floor(mainFrame.height * 0.5)),
+  };
+}
+
+function resolveDetachedDockEdge(frame: { x: number; y: number; width: number; height: number }): "left" | "right" | "top" | "bottom" | null {
+  const mainFrame = getWindowFrame(mainWindow);
+  if (!mainFrame) return null;
+  const threshold = 72;
+  const headerMidX = frame.x + (frame.width / 2);
+  const headerMidY = frame.y + 16;
+  const overlapsVertically = headerMidY >= mainFrame.y - 32 && headerMidY <= mainFrame.y + mainFrame.height + 32;
+  const overlapsHorizontally = headerMidX >= mainFrame.x - 32 && headerMidX <= mainFrame.x + mainFrame.width + 32;
+
+  if (overlapsVertically && Math.abs(headerMidX - mainFrame.x) <= threshold) return "left";
+  if (overlapsVertically && Math.abs(headerMidX - (mainFrame.x + mainFrame.width)) <= threshold) return "right";
+  if (overlapsHorizontally && Math.abs(headerMidY - mainFrame.y) <= threshold) return "top";
+  if (overlapsHorizontally && Math.abs(headerMidY - (mainFrame.y + mainFrame.height)) <= threshold) return "bottom";
+  return null;
+}
+
+function cleanupDetachedWindowState(instanceId: string): void {
+  disposeWindowScopedResources(detachedRpcKey(instanceId));
+  detachedWindows.delete(instanceId);
+  clearTimer(detachedFrameTimers, instanceId);
+  clearTimer(detachedDockTimers, instanceId);
+  pendingDetachedMoveFlush.delete(instanceId);
+  unregisterWindowRpc(detachedRpcKey(instanceId));
+}
+
+async function commitDesktopSnapshot(
+  snapshot: DesktopSharedStateSnapshot,
+  options: { persistConfig?: boolean; reconcileWindows?: boolean } = {},
+): Promise<DesktopSharedStateSnapshot> {
+  const nextConfig = syncActiveLayout(snapshot.config);
+  setCurrentConfig(nextConfig);
+  desktopWorkspace = requireDesktopWorkspace();
+  desktopWorkspace.replaceConfig(nextConfig, { layoutChanged: snapshot.layoutChanged });
+  if (options.persistConfig !== false) {
+    await saveConfig(nextConfig);
+  }
+  if (options.reconcileWindows !== false) {
+    reconcileDetachedWindows();
+  }
+  sendDesktopState(requireDesktopWorkspace().getSnapshot());
+  return requireDesktopWorkspace().getSnapshot();
+}
+
+function createDetachedWindow(
+  instanceId: string,
+  frame: { x: number; y: number; width: number; height: number },
+): BrowserWindow {
+  const rpc = createWindowRpc(detachedRpcKey(instanceId));
+  const window = new BrowserWindow({
+    title: resolveDetachedWindowTitle(instanceId),
+    frame,
+    url: "views://mainview/index.html",
+    renderer: "native",
+    rpc,
+    titleBarStyle: "hiddenInset",
+    navigationRules: JSON.stringify(["views://*"]),
+    sandbox: false,
+  });
+  updateWindowFrameCache(window, frame);
+  detachedWindows.set(instanceId, window);
+
+  (window as any).on?.("close", () => {
+    const shouldIgnore = detachedClosingPanes.delete(instanceId);
+    cleanupDetachedWindowState(instanceId);
+    if (shouldIgnore || !desktopWorkspace || !currentConfig || !isPaneDetached(currentConfig.layout, instanceId)) {
+      return;
+    }
+    void commitDesktopSnapshot(requireDesktopWorkspace().closeDetachedPane(instanceId));
+  });
+
+  (window as any).on?.("move", (event: WindowMoveEvent) => {
+    applyWindowMoveEvent(window, event);
+    scheduleDetachedWindowMove(instanceId);
+  });
+  (window as any).on?.("resize", (event: WindowResizeEvent) => {
+    applyWindowResizeEvent(window, event);
+    scheduleDetachedWindowMove(instanceId);
+  });
+
+  return window;
+}
+
+function scheduleDetachedWindowMove(instanceId: string): void {
+  if (pendingDetachedMoveFlush.has(instanceId)) return;
+  pendingDetachedMoveFlush.add(instanceId);
+  setTimeout(() => {
+    pendingDetachedMoveFlush.delete(instanceId);
+    handleDetachedWindowMove(instanceId);
+  }, 0);
+}
+
+function reconcileDetachedWindows(): void {
+  const config = currentConfig;
+  if (!config) return;
+
+  const desiredEntries = new Map(config.layout.detached.map((entry) => [entry.instanceId, entry] as const));
+  for (const [instanceId, entry] of desiredEntries) {
+    const existingWindow = detachedWindows.get(instanceId);
+    if (!existingWindow) {
+      createDetachedWindow(instanceId, entry);
+      continue;
+    }
+
+    const currentFrame = getWindowFrame(existingWindow);
+    const hasLiveFrameUpdate = pendingDetachedMoveFlush.has(instanceId)
+      || detachedFrameTimers.has(instanceId)
+      || detachedDockTimers.has(instanceId);
+    if (!hasLiveFrameUpdate
+      && currentFrame
+      && (currentFrame.x !== entry.x
+        || currentFrame.y !== entry.y
+        || currentFrame.width !== entry.width
+        || currentFrame.height !== entry.height)) {
+      existingWindow.setFrame(entry.x, entry.y, entry.width, entry.height);
+    }
+    (existingWindow as any).setTitle?.(resolveDetachedWindowTitle(instanceId));
+  }
+
+  for (const [instanceId, window] of detachedWindows) {
+    if (desiredEntries.has(instanceId)) continue;
+    detachedClosingPanes.add(instanceId);
+    cleanupDetachedWindowState(instanceId);
+    (window as any).close?.();
+  }
+}
+
+function closeAllDetachedWindows(): void {
+  for (const [instanceId, window] of detachedWindows) {
+    detachedClosingPanes.add(instanceId);
+    cleanupDetachedWindowState(instanceId);
+    (window as any).close?.();
+  }
+  currentDockPreview = { paneId: null, edge: null };
+}
+
+function handleDetachedWindowMove(
+  instanceId: string,
+): void {
+  const window = detachedWindows.get(instanceId);
+  if (!window || !desktopWorkspace || !currentConfig || !isPaneDetached(currentConfig.layout, instanceId)) {
+    return;
+  }
+
+  const frame = getWindowFrame(window);
+  if (!frame) return;
+  const edge = resolveDetachedDockEdge(frame);
+
+  clearTimer(detachedFrameTimers, instanceId);
+  detachedFrameTimers.set(instanceId, setTimeout(() => {
+    detachedFrameTimers.delete(instanceId);
+    if (!currentConfig || !desktopWorkspace || !isPaneDetached(currentConfig.layout, instanceId)) return;
+    void commitDesktopSnapshot(
+      requireDesktopWorkspace().updateDetachedFrame(instanceId, frame),
+      { reconcileWindows: false },
+    );
+  }, 120));
+
+  clearTimer(detachedDockTimers, instanceId);
+  if (!edge) {
+    clearDockPreview(instanceId);
+    return;
+  }
+
+  sendDockPreview({ paneId: instanceId, edge });
+  detachedDockTimers.set(instanceId, setTimeout(() => {
+    detachedDockTimers.delete(instanceId);
+    if (!currentConfig || !desktopWorkspace || !isPaneDetached(currentConfig.layout, instanceId)) return;
+    if (currentDockPreview.paneId !== instanceId || currentDockPreview.edge !== edge) return;
+    clearDockPreview(instanceId);
+    void commitDesktopSnapshot(requireDesktopWorkspace().dockDetachedPane(instanceId, edge));
+  }, 120));
+}
+
+async function initialize(
+  rpc: DesktopRpc,
+  payload: Record<string, unknown>,
+) {
+  const windowTarget = normalizeInitWindowTarget(rpc, payload);
+  markWindowRpcReady(rpc);
   if (services && currentConfig) {
+    if (!desktopWorkspace) {
+      desktopWorkspace = createDesktopWorkspace(currentConfig, getSessionSnapshot());
+      reconcileDetachedWindows();
+    }
     return {
       config: currentConfig,
       sessionSnapshot: getSessionSnapshot(),
+      desktopSnapshot: getDesktopSnapshot(),
       pluginState: loadPluginState(),
+      windowKind: windowTarget.kind,
+      paneId: windowTarget.paneId,
     };
   }
 
@@ -266,26 +704,35 @@ async function initialize(rpc: ReturnType<typeof BrowserView.defineRPC<Electrobu
     mkdirSync(dataDir, { recursive: true });
   }
 
-  currentConfig = await initDataDir(dataDir);
-  services = createAppServices({ config: currentConfig, externalPlugins: [] });
+  setCurrentConfig(await initDataDir(dataDir));
+  services = createAppServices({ config: requireConfig(), externalPlugins: [] });
   syncConfigAccessors();
+  desktopWorkspace = createDesktopWorkspace(requireConfig(), getSessionSnapshot());
 
   setResolvedIbkrGatewayListener((instanceId, connection) => {
-    rpc.send["ibkr.resolved"]({
-      instanceId,
-      connection: encodeRpcValue(connection),
+    const encodedConnection = encodeRpcValue(connection);
+    forEachReadyWindowRpc((currentRpc) => {
+      currentRpc.send["ibkr.resolved"]({
+        instanceId,
+        connection: encodedConnection,
+      });
     });
   });
 
+  reconcileDetachedWindows();
+
   return {
-    config: currentConfig,
+    config: requireConfig(),
     sessionSnapshot: getSessionSnapshot(),
+    desktopSnapshot: getDesktopSnapshot(),
     pluginState: loadPluginState(),
+    windowKind: windowTarget.kind,
+    paneId: windowTarget.paneId,
   };
 }
 
 async function handleDataProvider(
-  rpc: ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>,
+  rpc: DesktopRpc,
   method: string,
   payload: Record<string, unknown>,
 ) {
@@ -334,7 +781,8 @@ async function handleDataProvider(
       return provider.getOptionsChain?.(payload.ticker as string, payload.exchange as string | undefined, payload.expirationDate as number | undefined, payload.context as never) ?? null;
     case "data.subscribeQuotes": {
       const subscriptionId = payload.subscriptionId as string;
-      dataQuoteSubscriptions.get(subscriptionId)?.();
+      const scopedSubscriptionId = scopeClientId(rpc, subscriptionId);
+      dataQuoteSubscriptions.get(scopedSubscriptionId)?.();
       const unsubscribe = provider.subscribeQuotes(
         payload.targets as QuoteSubscriptionTarget[],
         (target, quote) => {
@@ -345,13 +793,13 @@ async function handleDataProvider(
           });
         },
       );
-      dataQuoteSubscriptions.set(subscriptionId, unsubscribe);
+      dataQuoteSubscriptions.set(scopedSubscriptionId, unsubscribe);
       return null;
     }
     case "data.unsubscribeQuotes": {
-      const subscriptionId = payload.subscriptionId as string;
-      dataQuoteSubscriptions.get(subscriptionId)?.();
-      dataQuoteSubscriptions.delete(subscriptionId);
+      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
+      dataQuoteSubscriptions.get(scopedSubscriptionId)?.();
+      dataQuoteSubscriptions.delete(scopedSubscriptionId);
       return null;
     }
     default:
@@ -360,7 +808,7 @@ async function handleDataProvider(
 }
 
 async function handleIbkr(
-  rpc: ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>,
+  rpc: DesktopRpc,
   method: string,
   payload: Record<string, unknown>,
 ) {
@@ -371,8 +819,9 @@ async function handleIbkr(
   switch (method) {
     case "ibkr.subscribeSnapshot": {
       const subscriptionId = payload.subscriptionId as string;
+      const scopedSubscriptionId = scopeClientId(rpc, subscriptionId);
       if (!instanceId || !service) return null;
-      ibkrSnapshotSubscriptions.get(subscriptionId)?.();
+      ibkrSnapshotSubscriptions.get(scopedSubscriptionId)?.();
       const pushSnapshot = () => {
         rpc.send["ibkr.snapshot"]({
           subscriptionId,
@@ -382,14 +831,14 @@ async function handleIbkr(
         });
       };
       const unsubscribe = service.subscribe(pushSnapshot);
-      ibkrSnapshotSubscriptions.set(subscriptionId, unsubscribe);
+      ibkrSnapshotSubscriptions.set(scopedSubscriptionId, unsubscribe);
       pushSnapshot();
       return null;
     }
     case "ibkr.unsubscribeSnapshot": {
-      const subscriptionId = payload.subscriptionId as string;
-      ibkrSnapshotSubscriptions.get(subscriptionId)?.();
-      ibkrSnapshotSubscriptions.delete(subscriptionId);
+      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
+      ibkrSnapshotSubscriptions.get(scopedSubscriptionId)?.();
+      ibkrSnapshotSubscriptions.delete(scopedSubscriptionId);
       return null;
     }
     case "ibkr.connect":
@@ -470,7 +919,8 @@ async function handleIbkr(
     case "ibkr.subscribeQuotes": {
       if (!service || !config) throw new Error("ibkr.subscribeQuotes requires an instance and config.");
       const subscriptionId = payload.subscriptionId as string;
-      ibkrQuoteSubscriptions.get(subscriptionId)?.();
+      const scopedSubscriptionId = scopeClientId(rpc, subscriptionId);
+      ibkrQuoteSubscriptions.get(scopedSubscriptionId)?.();
       const unsubscribe = service.subscribeQuotes(
         config,
         payload.targets as QuoteSubscriptionTarget[],
@@ -482,13 +932,13 @@ async function handleIbkr(
           });
         },
       );
-      ibkrQuoteSubscriptions.set(subscriptionId, unsubscribe);
+      ibkrQuoteSubscriptions.set(scopedSubscriptionId, unsubscribe);
       return null;
     }
     case "ibkr.unsubscribeQuotes": {
-      const subscriptionId = payload.subscriptionId as string;
-      ibkrQuoteSubscriptions.get(subscriptionId)?.();
-      ibkrQuoteSubscriptions.delete(subscriptionId);
+      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
+      ibkrQuoteSubscriptions.get(scopedSubscriptionId)?.();
+      ibkrQuoteSubscriptions.delete(scopedSubscriptionId);
       return null;
     }
     case "ibkr.previewOrder":
@@ -522,7 +972,7 @@ function getAiProviderAvailability(): Record<string, boolean> {
 }
 
 async function handleAi(
-  rpc: ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>,
+  rpc: DesktopRpc,
   method: string,
   payload: Record<string, unknown>,
 ) {
@@ -531,6 +981,7 @@ async function handleAi(
       return getAiProviderAvailability();
     case "ai.run": {
       const runId = payload.runId as string;
+      const scopedRunId = scopeClientId(rpc, runId);
       const providerId = payload.providerId as string;
       const prompt = payload.prompt as string;
       const providerDefinition = getAiProviderDefinitions().find((entry) => entry.id === providerId);
@@ -541,7 +992,7 @@ async function handleAi(
         throw new Error(`${providerDefinition.name} is not installed on this system.`);
       }
 
-      aiRuns.get(runId)?.cancel();
+      aiRuns.get(scopedRunId)?.cancel();
       const controller = runAiPrompt({
         provider: {
           ...providerDefinition,
@@ -553,15 +1004,15 @@ async function handleAi(
           rpc.send["ai.chunk"]({ runId, output });
         },
       });
-      aiRuns.set(runId, controller);
+      aiRuns.set(scopedRunId, controller);
       return controller.done.finally(() => {
-        aiRuns.delete(runId);
+        aiRuns.delete(scopedRunId);
       });
     }
     case "ai.cancel": {
-      const runId = payload.runId as string;
-      aiRuns.get(runId)?.cancel();
-      aiRuns.delete(runId);
+      const scopedRunId = scopeClientId(rpc, payload.runId as string);
+      aiRuns.get(scopedRunId)?.cancel();
+      aiRuns.delete(scopedRunId);
       return null;
     }
     default:
@@ -601,19 +1052,83 @@ async function handleNotes(method: string, payload: Record<string, unknown>) {
   }
 }
 
+async function handleDesktop(
+  rpc: DesktopRpc,
+  method: string,
+  payload: Record<string, unknown>,
+) {
+  const workspace = requireDesktopWorkspace();
+  switch (method) {
+    case "desktop.syncMainState": {
+      const snapshot = workspace.syncMainState(payload.snapshot as DesktopSharedStateSnapshot);
+      setCurrentConfig(snapshot.config);
+      reconcileDetachedWindows();
+      sendDesktopState(snapshot);
+      return null;
+    }
+    case "desktop.replaceDetachedPaneState":
+      if (typeof payload.paneId !== "string") {
+        throw new Error("desktop.replaceDetachedPaneState requires paneId.");
+      }
+      sendDesktopState(workspace.replaceDetachedPaneState(payload.paneId, payload.paneState as PaneRuntimeState));
+      return null;
+    case "desktop.popOutPane": {
+      if (typeof payload.paneId !== "string") {
+        throw new Error("desktop.popOutPane requires paneId.");
+      }
+      const snapshot = workspace.popOutPane(payload.paneId, resolveDetachedWindowFrame(payload.paneId));
+      await commitDesktopSnapshot(snapshot);
+      (detachedWindows.get(payload.paneId) as any)?.focus?.();
+      return null;
+    }
+    case "desktop.dockDetachedPane": {
+      if (typeof payload.paneId !== "string") {
+        throw new Error("desktop.dockDetachedPane requires paneId.");
+      }
+      clearDockPreview(payload.paneId);
+      await commitDesktopSnapshot(
+        workspace.dockDetachedPane(
+          payload.paneId,
+          payload.edge === "left" || payload.edge === "right" || payload.edge === "top" || payload.edge === "bottom"
+            ? payload.edge
+            : undefined,
+        ),
+      );
+      return null;
+    }
+    case "desktop.closeDetachedPane": {
+      if (typeof payload.paneId !== "string") {
+        throw new Error("desktop.closeDetachedPane requires paneId.");
+      }
+      clearDockPreview(payload.paneId);
+      await commitDesktopSnapshot(workspace.closeDetachedPane(payload.paneId));
+      return null;
+    }
+    case "desktop.focusDetachedPane":
+      if (typeof payload.paneId !== "string") {
+        throw new Error("desktop.focusDetachedPane requires paneId.");
+      }
+      (detachedWindows.get(payload.paneId) as any)?.focus?.();
+      return null;
+    default:
+      throw new Error(`Unknown desktop method: ${method}`);
+  }
+}
+
 async function handleBackendRequest(
-  rpc: ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>,
+  rpc: DesktopRpc,
   method: string,
   rawPayload: unknown,
 ) {
   const payload = decodeRpcValue<Record<string, unknown>>(rawPayload ?? {});
 
-  if (method === "init") return initialize(rpc);
+  if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
   if (method.startsWith("data.")) return handleDataProvider(rpc, method, payload);
   if (method.startsWith("ibkr.")) return handleIbkr(rpc, method, payload);
   if (method.startsWith("ai.")) return handleAi(rpc, method, payload);
   if (method.startsWith("notes.")) return handleNotes(method, payload);
+  if (method.startsWith("desktop.")) return handleDesktop(rpc, method, payload);
 
   switch (method) {
     case "ticker.loadAll":
@@ -625,27 +1140,40 @@ async function handleBackendRequest(
     case "ticker.delete":
       return requireServices().tickerRepository.deleteTicker(payload.symbol as string);
     case "config.save":
-      currentConfig = payload.config as AppConfig;
-      syncConfigAccessors();
-      return saveConfig(currentConfig);
+      setCurrentConfig(payload.config as AppConfig);
+      if (desktopWorkspace) {
+        await commitDesktopSnapshot(desktopWorkspace.replaceConfig(requireConfig(), { layoutChanged: true }));
+        return null;
+      }
+      return saveConfig(requireConfig());
     case "config.resetAllData":
+      closeAllDetachedWindows();
+      desktopWorkspace = null;
       teardownServices();
       currentConfig = null;
       return resetAllData(payload.dataDir as string);
     case "config.export":
       return exportConfig(payload.config as AppConfig, payload.destPath as string);
     case "config.import":
+      closeAllDetachedWindows();
+      desktopWorkspace = null;
       teardownServices();
-      currentConfig = await importConfig(payload.dataDir as string, payload.srcPath as string);
-      services = createAppServices({ config: currentConfig, externalPlugins: [] });
+      setCurrentConfig(await importConfig(payload.dataDir as string, payload.srcPath as string));
+      services = createAppServices({ config: requireConfig(), externalPlugins: [] });
       syncConfigAccessors();
+      desktopWorkspace = createDesktopWorkspace(requireConfig(), getSessionSnapshot());
       setResolvedIbkrGatewayListener((instanceId, connection) => {
-        rpc.send["ibkr.resolved"]({
-          instanceId,
-          connection: encodeRpcValue(connection),
+        const encodedConnection = encodeRpcValue(connection);
+        forEachReadyWindowRpc((currentRpc) => {
+          currentRpc.send["ibkr.resolved"]({
+            instanceId,
+            connection: encodedConnection,
+          });
         });
       });
-      return currentConfig;
+      reconcileDetachedWindows();
+      sendDesktopState(requireDesktopWorkspace().getSnapshot());
+      return requireConfig();
     case "session.set":
       requireServices().persistence.sessions.set(payload.sessionId as string, payload.value, payload.schemaVersion as number | undefined);
       return null;
@@ -659,6 +1187,7 @@ async function handleBackendRequest(
       requireServices().persistence.pluginState.delete(payload.pluginId as string, payload.key as string);
       return null;
     case "host.exit":
+      closeAllDetachedWindows();
       teardownServices();
       if (mainWindow) {
         mainWindow.close();
@@ -687,6 +1216,11 @@ async function handleBackendRequest(
     case "host.showContextMenu": {
       const menu = normalizeContextMenuItems(payload.menu);
       if (menu.length === 0) return false;
+      const requestId = getContextMenuRequestId(menu);
+      if (requestId) {
+        contextMenuRequestRpcs.clear();
+        contextMenuRequestRpcs.set(requestId, rpc);
+      }
       ContextMenu.showContextMenu(menu as never);
       return true;
     }
@@ -735,35 +1269,58 @@ function installApplicationMenu() {
   ]);
 }
 
-const rpc = BrowserView.defineRPC<ElectrobunDesktopRpcSchema>({
-  handlers: {
-    requests: {
-      "backend.request": async ({ method, payload }) => encodeRpcValue(await handleBackendRequest(rpc, method, payload)),
+function createWindowRpc(key: string): DesktopRpc {
+  let rpc!: DesktopRpc;
+  rpc = BrowserView.defineRPC<ElectrobunDesktopRpcSchema>({
+    handlers: {
+      requests: {
+        "backend.request": async ({ method, payload }) => encodeRpcValue(await handleBackendRequest(rpc, method, payload)),
+      },
+      messages: {},
     },
-    messages: {},
-  },
-});
+  });
+  registerWindowRpc(key, rpc);
+  return rpc;
+}
 
 ContextMenu.on("context-menu-clicked", (event: unknown) => {
   const payload = event && typeof event === "object" ? event as Record<string, unknown> : {};
   if (payload.action !== ELECTROBUN_CONTEXT_MENU_ACTION) return;
   const data = payload.data && typeof payload.data === "object" ? payload.data as Record<string, unknown> : {};
   if (typeof data.requestId !== "string" || typeof data.itemId !== "string") return;
-  rpc.send["context-menu.select"]({
+  const targetRpc = contextMenuRequestRpcs.get(data.requestId);
+  contextMenuRequestRpcs.delete(data.requestId);
+  const message = {
     requestId: data.requestId,
     itemId: data.itemId,
+  };
+  if (targetRpc) {
+    targetRpc.send["context-menu.select"](message);
+    return;
+  }
+  forEachReadyWindowRpc((windowRpc) => {
+    windowRpc.send["context-menu.select"](message);
   });
 });
 
 installApplicationMenu();
+
+const mainRpc = createWindowRpc(MAIN_WINDOW_RPC_KEY);
 
 mainWindow = new BrowserWindow({
   title: "Gloomberb",
   frame: DEFAULT_WINDOW_FRAME,
   url: "views://mainview/index.html",
   renderer: "native",
-  rpc,
+  rpc: mainRpc,
   titleBarStyle: "hiddenInset",
   navigationRules: JSON.stringify(["views://*"]),
   sandbox: false,
+});
+updateWindowFrameCache(mainWindow, DEFAULT_WINDOW_FRAME);
+(mainWindow as any).on?.("move", (event: WindowMoveEvent) => {
+  applyWindowMoveEvent(mainWindow, event);
+});
+(mainWindow as any).on?.("resize", (event: WindowResizeEvent) => {
+  applyWindowResizeEvent(mainWindow, event);
 });

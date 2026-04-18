@@ -6,7 +6,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export function getMaxChartZoom(totalPoints: number): number {
+function getMaxChartZoom(totalPoints: number): number {
   if (totalPoints <= 0) return 1;
   return Math.max(1, totalPoints / MIN_VISIBLE_POINTS);
 }

@@ -7,7 +7,6 @@ import {
 } from "../../state/app-context";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import type { ChartResolution, TimeRange } from "./chart-types";
-import type { IndicatorConfig } from "./indicators/types";
 
 export function usePersistChartControlSelection(rangePresetKey: string): (
   range: TimeRange,
@@ -24,27 +23,6 @@ export function usePersistChartControlSelection(rangePresetKey: string): (
       ...(pane?.settings ?? {}),
       [rangePresetKey]: range,
       chartResolution: resolution,
-    });
-    const layouts = currentState.config.layouts.map((savedLayout, index) => (
-      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
-    ));
-    const nextConfig = { ...currentState.config, layout, layouts };
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
-    scheduleConfigSave(nextConfig);
-  };
-}
-
-export function usePersistIndicatorConfig(): (config: IndicatorConfig) => void {
-  const dispatch = useAppDispatch();
-  const stateRef = useAppStateRef();
-  const paneId = usePaneInstanceId();
-  const pane = usePaneInstance();
-
-  return (indicatorConfig) => {
-    const currentState = stateRef.current;
-    const layout = setPaneSettings(currentState.config.layout, paneId, {
-      ...(pane?.settings ?? {}),
-      indicators: indicatorConfig,
     });
     const layouts = currentState.config.layouts.map((savedLayout, index) => (
       index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout

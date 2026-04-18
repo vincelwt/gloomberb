@@ -13,6 +13,7 @@ import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { Spinner } from "../../components/spinner";
 import { setOptionsAvailability } from "./options-availability";
+import { usePaneFooter } from "../../components";
 
 function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const { ticker } = usePaneTicker();
@@ -100,6 +101,30 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Build sorted strike list from the union of calls and puts
   const strikes = chain ? buildStrikeList(chain) : [];
+  const callsByStrike = new Map<number, OptionContract>(chain?.calls.map((c) => [c.strike, c]) ?? []);
+  const putsByStrike = new Map<number, OptionContract>(chain?.puts.map((p) => [p.strike, p]) ?? []);
+  const selectedStrike = strikes[strikeIdx];
+  const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
+  const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
+
+  usePaneFooter("options", () => {
+    const info = [
+      ...(selectedExpiration != null ? [{ id: "exp", parts: [{ text: formatExpDate(selectedExpiration), tone: "muted" as const }] }] : []),
+      ...(selectedStrike != null ? [{ id: "strike", parts: [{ text: `Strike ${formatStrikeLabel(selectedStrike)}`, tone: "value" as const, bold: true }] }] : []),
+      ...(selectedCall ? [{ id: "call-iv", parts: [{ text: "Call IV", tone: "label" as const }, { text: formatIv(selectedCall.impliedVolatility), tone: "value" as const }] }] : []),
+      ...(selectedPut ? [{ id: "put-iv", parts: [{ text: "Put IV", tone: "label" as const }, { text: formatIv(selectedPut.impliedVolatility), tone: "value" as const }] }] : []),
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+    ];
+    return info.length > 0 ? { info } : null;
+  }, [
+    error,
+    loading,
+    selectedCall?.impliedVolatility,
+    selectedExpiration,
+    selectedPut?.impliedVolatility,
+    selectedStrike,
+  ]);
 
   // Auto-scroll to matching strike when viewing an option position
   useEffect(() => {
@@ -145,8 +170,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   if (!chain || chain.expirationDates.length === 0) return <Text fg={colors.textDim}>No options available for {effectiveTicker}.</Text>;
 
   const innerWidth = Math.max(width - 4, 60);
-  const callsByStrike = new Map<number, OptionContract>(chain.calls.map((c) => [c.strike, c]));
-  const putsByStrike = new Map<number, OptionContract>(chain.puts.map((p) => [p.strike, p]));
 
   // Column widths for each side
   const colW = { last: 7, bid: 7, ask: 7, vol: 6, oi: 6 };
@@ -164,10 +187,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const expStart = Math.max(0, Math.min(expIdx - Math.floor(maxExpVisible / 2), chain.expirationDates.length - maxExpVisible));
   const visibleExps = chain.expirationDates.slice(expStart, expStart + maxExpVisible);
 
-  // Selected row detail
-  const selectedStrike = strikes[strikeIdx];
-  const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
-  const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
   const strikeItems: ListViewItem[] = strikes.map((strike) => ({
     id: String(strike),
     label: formatStrikeLabel(strike),
@@ -292,16 +311,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
         scrollable
       />
 
-      {/* Detail for selected row */}
-      {interactive && (selectedCall || selectedPut) && (
-        <Box height={1}>
-          <Text fg={colors.textDim}>
-            {selectedCall ? `Call IV: ${(selectedCall.impliedVolatility * 100).toFixed(1)}%` : ""}
-            {selectedCall && selectedPut ? "  |  " : ""}
-            {selectedPut ? `Put IV: ${(selectedPut.impliedVolatility * 100).toFixed(1)}%` : ""}
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -316,6 +325,11 @@ function buildStrikeList(chain: OptionsChain): number[] {
 function formatStrikeLabel(strike: number): string {
   const decimals = strike % 1 === 0 ? 0 : 2;
   return formatNumber(strike, decimals).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
+}
+
+function formatIv(value: number | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 interface ColWidths {

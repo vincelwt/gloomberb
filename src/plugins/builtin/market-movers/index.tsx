@@ -485,11 +485,10 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
           ],
         };
       }),
-      { id: "count", parts: [{ text: `${quotes.length} stocks`, tone: "muted" }] },
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab }],
-  }), [loading, quotes.length, refreshActiveTab, summaryQuotes]);
+  }), [loading, refreshActiveTab, summaryQuotes]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

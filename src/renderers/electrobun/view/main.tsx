@@ -15,6 +15,7 @@ import { WebInputHostProvider } from "./input-host";
 import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
 import { webRendererHost, webUiHost } from "./ui-host";
+import { createDesktopWindowBridge } from "./desktop-window-bridge";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -49,14 +50,20 @@ async function boot() {
   installElectrobunConfigStoreHost();
   installElectrobunPredictionMarketsFetchTransport();
   await installElectrobunAiHost();
-  const { config } = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
+  const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
+  const config = init.desktopSnapshot?.config ?? init.config;
+  const desktopWindowBridge = createDesktopWindowBridge(init.windowKind, init.paneId);
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
       <UiHostProvider ui={webUiHost} renderer={webRendererHost} nativeRenderer={webNativeRenderer}>
         <WebInputHostProvider>
           <WebToastHostProvider>
             <WebDialogHostProvider>
-              <App config={config} />
+              <App
+                config={config}
+                desktopWindowBridge={desktopWindowBridge}
+                desktopSnapshot={init.desktopSnapshot}
+              />
             </WebDialogHostProvider>
           </WebToastHostProvider>
         </WebInputHostProvider>
@@ -66,6 +73,7 @@ async function boot() {
   bootLog.info("root render scheduled", {
     layoutPanes: config.layout.instances.length,
     floatingPanes: config.layout.floating.length,
+    detachedPanes: config.layout.detached.length,
     brokerInstances: config.brokerInstances.length,
   });
 }

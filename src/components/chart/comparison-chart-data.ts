@@ -6,7 +6,6 @@ import type {
   ComparisonChartViewState,
   TimeRange,
 } from "./chart-types";
-import { RANGE_DAYS } from "./chart-types";
 import { getVisiblePointCount, resolveAnchoredChartZoom } from "./chart-viewport";
 
 export interface ComparisonProjectedPoint {
@@ -26,14 +25,14 @@ export interface ComparisonProjectedSeries {
   points: ComparisonProjectedPoint[];
 }
 
-export interface ComparisonVisibleWindow {
+interface ComparisonVisibleWindow {
   dates: Date[];
   startIdx: number;
   endIdx: number;
   totalDates: number;
 }
 
-export interface ComparisonAxisModeResolution {
+interface ComparisonAxisModeResolution {
   requestedAxisMode: ChartAxisMode;
   effectiveAxisMode: ChartAxisMode;
   warning: string | null;
@@ -62,19 +61,6 @@ function normalizeSeriesPoints(points: PricePoint[]): PricePoint[] {
     coerceDate(left.date as Date | string | number).getTime()
     - coerceDate(right.date as Date | string | number).getTime()
   ));
-}
-
-export function filterComparisonSeriesByTimeRange(
-  series: ComparisonChartSeries[],
-  range: TimeRange,
-): ComparisonChartSeries[] {
-  return series.map((entry) => {
-    const points = normalizeSeriesPoints(entry.points);
-    if (range === "ALL" || points.length <= RANGE_DAYS[range]) {
-      return { ...entry, points };
-    }
-    return { ...entry, points: points.slice(-RANGE_DAYS[range]) };
-  });
 }
 
 function getUniqueSortedDates(series: ComparisonChartSeries[]): Date[] {
@@ -185,7 +171,7 @@ function buildSeriesMap(points: PricePoint[]): Map<number, number> {
   return map;
 }
 
-export function resolveComparisonAxisMode(
+function resolveComparisonAxisMode(
   requestedAxisMode: ChartAxisMode,
   series: ComparisonChartSeries[],
   visibleDates: Date[],

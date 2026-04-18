@@ -2,7 +2,7 @@ import { Box, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, paneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { PaneFooterBar, hasPaneFooterContent, type CombinedPaneFooter } from "./pane-footer";
+import { PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
 import { getPaneBodyHeight } from "./pane-sizing";
 
 interface PaneWrapperProps {
@@ -42,9 +42,8 @@ export function PaneWrapper({
 }: PaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
-  const showFooter = hasPaneFooterContent(footer);
   const bodyHeight = typeof height === "number"
-    ? title ? getPaneBodyHeight(height, showFooter) : height
+    ? title ? getPaneBodyHeight(height) : height
     : undefined;
 
   return (
@@ -85,7 +84,7 @@ export function PaneWrapper({
       >
         {children}
       </Box>
-      {title && showFooter && (
+      {title && (
         <PaneFooterBar
           footer={footer}
           focused={focused}

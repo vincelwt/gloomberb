@@ -12,7 +12,7 @@ export type ChartIndicatorId =
   | "ema20"
   | "bollinger20";
 
-export interface ChartIndicatorOption {
+interface ChartIndicatorOption {
   id: ChartIndicatorId;
   label: string;
   compactLabel: string;
@@ -59,9 +59,9 @@ export const CHART_INDICATOR_OPTIONS: ChartIndicatorOption[] = [
 ];
 
 const CHART_INDICATOR_IDS = new Set<string>(CHART_INDICATOR_OPTIONS.map((option) => option.id));
-export const DEFAULT_CHART_INDICATOR_SELECTION: ChartIndicatorId[] = ["volume"];
+const DEFAULT_CHART_INDICATOR_SELECTION: ChartIndicatorId[] = ["volume"];
 
-export function isChartIndicatorId(value: unknown): value is ChartIndicatorId {
+function isChartIndicatorId(value: unknown): value is ChartIndicatorId {
   return typeof value === "string" && CHART_INDICATOR_IDS.has(value);
 }
 
