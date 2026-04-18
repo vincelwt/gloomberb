@@ -13,6 +13,7 @@ import type { AppConfig, PaneBinding, PaneInstanceConfig, SavedLayout } from "..
 import type { Quote, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import type { BrokerAccount } from "../../types/trading";
+import type { DesktopSharedStateSnapshot } from "../../types/desktop-window";
 import type { ReleaseInfo, UpdateProgress } from "../../updater";
 import { getDockLeafLayouts, getDockedPaneIds } from "../../plugins/pane-manager";
 import type { AppSessionSnapshot } from "./session-persistence";
@@ -115,6 +116,7 @@ export type AppAction =
   | { type: "FOCUS_PANE"; paneId: string }
   | { type: "FOCUS_NEXT"; paneOrder: string[] }
   | { type: "FOCUS_PREV"; paneOrder: string[] }
+  | { type: "HYDRATE_DESKTOP_SNAPSHOT"; snapshot: DesktopSharedStateSnapshot }
   | {
       type: "UPDATE_PLUGIN_PANE_STATE";
       paneId: string;
@@ -439,6 +441,21 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
   };
 }
 
+function hydrateDesktopSnapshot(state: AppState, snapshot: DesktopSharedStateSnapshot): AppState {
+  const baseState = withFocusedPane({
+    ...state,
+    paneState: snapshot.paneState,
+    focusedPaneId: snapshot.focusedPaneId,
+    activePanel: snapshot.activePanel,
+    statusBarVisible: snapshot.statusBarVisible,
+  }, snapshot.config);
+  return {
+    ...baseState,
+    activePanel: snapshot.activePanel,
+    statusBarVisible: snapshot.statusBarVisible,
+  };
+}
+
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_CONFIG":
@@ -759,6 +776,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const nextPaneId = action.paneOrder[(currentIndex - 1 + action.paneOrder.length) % action.paneOrder.length]!;
       return focusPaneState(state, nextPaneId);
     }
+
+    case "HYDRATE_DESKTOP_SNAPSHOT":
+      return hydrateDesktopSnapshot(state, action.snapshot);
 
     case "UPDATE_PANE_STATE": {
       const current = state.paneState[action.paneId] ?? {};

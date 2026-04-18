@@ -167,7 +167,7 @@ describe("FeedDataTableStackView", () => {
 
     const nextFrame = testSetup.captureCharFrame();
     expect(harnessSelectedIdx).toBe(1);
-    expect(nextFrame).not.toContain("<- Back");
+    expect(nextFrame).not.toContain("\u2190 Back");
     expect(nextFrame).not.toContain("Quarterly report details.");
   });
 
@@ -203,7 +203,7 @@ describe("FeedDataTableStackView", () => {
 
     const nextFrame = testSetup.captureCharFrame();
     expect(nextFrame).toContain("Fresh item after source change");
-    expect(nextFrame).not.toContain("<- Back");
+    expect(nextFrame).not.toContain("\u2190 Back");
     expect(nextFrame).not.toContain("Replacement detail");
   });
 

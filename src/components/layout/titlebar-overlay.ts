@@ -1,0 +1,2 @@
+export const TITLEBAR_TRAFFIC_LIGHT_WIDTH = 11;
+export const TITLEBAR_OVERLAY_HEIGHT_PX = 32;

@@ -1,9 +1,10 @@
 import { Box, Text } from "../../ui";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut, useViewport } from "../../react/input";
 import { useDialogState } from "../../ui/dialog";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
+import type { DesktopDockPreviewState, DesktopWindowBridge } from "../../types/desktop-window";
 import {
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
@@ -30,10 +31,7 @@ import {
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import { removePaneInstances, type LayoutConfig } from "../../types/config";
-import type { PaneDef } from "../../types/plugin";
 import {
-  PaneInstanceProvider,
-  resolveCollectionForPane,
   resolveTickerForPane,
   useAppDispatch,
   useAppSelector,
@@ -48,12 +46,16 @@ import { colors } from "../../theme/colors";
 import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
+import { PaneContent } from "./pane-content";
 import { PaneWrapper } from "./pane";
 import { hasPaneFooterContent, PaneFooterProvider } from "./pane-footer";
 import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
+import { getPaneDisplayTitle } from "./pane-title";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
+  desktopWindowBridge?: DesktopWindowBridge;
+  desktopDockPreview?: DesktopDockPreviewState | null;
 }
 
 interface HoverOverlay {
@@ -485,6 +487,7 @@ function menuForPane(
   persistLayout: (nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => void,
   focusPane: (paneId: string) => void,
   openPaneSettings: (paneId: string) => void,
+  desktopWindowBridge?: DesktopWindowBridge,
 ) {
   const baseActions: Array<{ id: string; label: string; action: () => void }> = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -515,47 +518,60 @@ function menuForPane(
     });
   }
 
+  if (desktopWindowBridge?.kind === "main" && desktopWindowBridge.popOutPane) {
+    baseActions.push({
+      id: "pop-out",
+      label: "Pop Out",
+      action: () => {
+        void desktopWindowBridge.popOutPane?.(pane.instance.instanceId);
+      },
+    });
+  }
+
   return baseActions;
 }
 
-interface PaneContentProps {
-  component: PaneDef["component"];
-  paneId: string;
-  paneType: string;
-  focused: boolean;
-  width: number;
-  height: number;
-  onClose?: (paneId: string) => void;
+function resolveExternalDockPreview(
+  preview: DesktopDockPreviewState | null | undefined,
+  bounds: LayoutBounds,
+): DragPreview | null {
+  if (!preview?.paneId || !preview.edge) return null;
+
+  switch (preview.edge) {
+    case "left":
+      return {
+        kind: "dock",
+        target: { kind: "frame", edge: "left" },
+        rect: { x: bounds.x, y: bounds.y, width: Math.max(1, Math.floor(bounds.width / 2)), height: bounds.height },
+      };
+    case "right": {
+      const width = Math.max(1, Math.floor(bounds.width / 2));
+      return {
+        kind: "dock",
+        target: { kind: "frame", edge: "right" },
+        rect: { x: bounds.x + Math.max(0, bounds.width - width), y: bounds.y, width, height: bounds.height },
+      };
+    }
+    case "top":
+      return {
+        kind: "dock",
+        target: { kind: "frame", edge: "top" },
+        rect: { x: bounds.x, y: bounds.y, width: bounds.width, height: Math.max(1, Math.floor(bounds.height / 2)) },
+      };
+    case "bottom": {
+      const height = Math.max(1, Math.floor(bounds.height / 2));
+      return {
+        kind: "dock",
+        target: { kind: "frame", edge: "bottom" },
+        rect: { x: bounds.x, y: bounds.y + Math.max(0, bounds.height - height), width: bounds.width, height },
+      };
+    }
+    default:
+      return null;
+  }
 }
 
-const PaneContent = memo(function PaneContent({
-  component: Component,
-  paneId,
-  paneType,
-  focused,
-  width,
-  height,
-  onClose,
-}: PaneContentProps) {
-  const close = useCallback(() => {
-    onClose?.(paneId);
-  }, [onClose, paneId]);
-
-  return (
-    <PaneInstanceProvider paneId={paneId}>
-      <Component
-        paneId={paneId}
-        paneType={paneType}
-        focused={focused}
-        width={width}
-        height={height}
-        close={onClose ? close : undefined}
-      />
-    </PaneInstanceProvider>
-  );
-});
-
-export function Shell({ pluginRegistry }: ShellProps) {
+export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview }: ShellProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);
@@ -688,10 +704,15 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
   const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
+  const externalDockPreview = useMemo(
+    () => resolveExternalDockPreview(desktopDockPreview, bounds),
+    [bounds, desktopDockPreview],
+  );
   const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
   const activeHoverOverlay = activePaneDrag && dragCursor
     ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
     : null;
+  const effectiveDockPreview = dockPreview ?? externalDockPreview;
   const nativeTransientOccluders = useMemo<NativeTransientOccluder[]>(() => {
     const occluders: NativeTransientOccluder[] = [];
 
@@ -708,7 +729,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
     if (activePaneDrag
       && activePaneDrag.mode === "docked"
       && dragFloatingRect?.paneId === activePaneDrag.paneId
-      && !dockPreview) {
+      && !effectiveDockPreview) {
       occluders.push({
         id: `drag-preview:${activePaneDrag.paneId}`,
         rect: dragFloatingRect.rect,
@@ -716,16 +737,16 @@ export function Shell({ pluginRegistry }: ShellProps) {
       });
     }
 
-    if (dockPreview) {
+    if (effectiveDockPreview) {
       occluders.push({
-        id: `dock-preview:${dockPreview.kind}`,
-        rect: dockPreview.rect,
+        id: `dock-preview:${effectiveDockPreview.kind}`,
+        rect: effectiveDockPreview.rect,
         zIndex: 96,
       });
     }
 
     return occluders;
-  }, [activeHoverOverlay, activePaneDrag, dockPreview, dragFloatingRect]);
+  }, [activeHoverOverlay, activePaneDrag, dragFloatingRect, effectiveDockPreview]);
   const nativeDockDividers = useMemo(
     () => resolveNativeDockDividers(dockDividerLayouts, dividerPreview),
     [dividerPreview, dockDividerLayouts],
@@ -754,26 +775,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
     () => ({ config, paneState }) as Parameters<typeof resolveTickerForPane>[0],
     [config, paneState],
   );
-  const getPaneTitle = useCallback((pane: ResolvedPane): string => {
-    if (pane.instance.paneId === "ticker-detail") {
-      const ticker = resolveTickerForPane(titleState, pane.instance.instanceId);
-      if (ticker) return ticker;
-      const collectionId = resolveCollectionForPane(titleState, pane.instance.instanceId);
-      return config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
-        ?? config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
-        ?? pane.instance.title
-        ?? pane.def.name;
-    }
-    if (pane.instance.title) return pane.instance.title;
-    if (pane.instance.paneId === "portfolio-list") {
-      const collectionId = resolveCollectionForPane(titleState, pane.instance.instanceId);
-      return config.portfolios.find((portfolio) => portfolio.id === collectionId)?.name
-        ?? config.watchlists.find((watchlist) => watchlist.id === collectionId)?.name
-        ?? pane.def.name;
-    }
-    const ticker = resolveTickerForPane(titleState, pane.instance.instanceId);
-    return ticker ? `${pane.def.name}: ${ticker}` : pane.def.name;
-  }, [config.portfolios, config.watchlists, titleState]);
+  const getPaneTitle = useCallback(
+    (pane: ResolvedPane): string => getPaneDisplayTitle(titleState, pane.instance, pane.def),
+    [titleState],
+  );
 
   const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds) => {
     const pane = paneMap.get(paneId);
@@ -794,9 +799,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
         persistLayout,
         focusPane,
         openPaneSettings,
+        desktopWindowBridge,
       ),
     });
-  }, [contentHeight, focusPane, openPaneSettings, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
+  }, [contentHeight, desktopWindowBridge, focusPane, openPaneSettings, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
     persistLayout(removePane(visibleLayout, paneId));
@@ -1095,7 +1101,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
     dividerPreview,
     dockDividerLayouts,
     dockLeafLayouts,
-    dockPreview,
+    effectiveDockPreview,
     dragFloatingRect,
     floatingPanes,
     focusedPaneId,
@@ -1415,7 +1421,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
       {activePaneDrag
         && activePaneDrag.mode === "docked"
         && dragFloatingRect?.paneId === activePaneDrag.paneId
-        && !dockPreview
+        && !effectiveDockPreview
         && (
           <Box
             position="absolute"
@@ -1431,13 +1437,13 @@ export function Shell({ pluginRegistry }: ShellProps) {
           />
         )}
 
-      {dockPreview && (
+      {effectiveDockPreview && (
         <Box
           position="absolute"
-          left={dockPreview.rect.x}
-          top={dockPreview.rect.y}
-          width={dockPreview.rect.width}
-          height={dockPreview.rect.height}
+          left={effectiveDockPreview.rect.x}
+          top={effectiveDockPreview.rect.y}
+          width={effectiveDockPreview.rect.width}
+          height={effectiveDockPreview.rect.height}
           border
           borderStyle="single"
           borderColor={colors.borderFocused}

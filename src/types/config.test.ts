@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createPaneInstance,
   findPrimaryPaneInstance,
+  materializeDetachedPanesAsFloating,
   resolveFollowBindingInstance,
   resolvePaneInstance,
   type LayoutConfig,
@@ -13,6 +14,7 @@ function createLayout(instances: PaneInstanceConfig[]): LayoutConfig {
     dockRoot: null,
     instances,
     floating: [],
+    detached: [],
   };
 }
 
@@ -103,5 +105,26 @@ describe("resolveFollowBindingInstance", () => {
     expect(
       resolveFollowBindingInstance(layout, "ticker-detail:first", (instance) => instance.paneId === "portfolio-list"),
     ).toBeUndefined();
+  });
+});
+
+describe("materializeDetachedPanesAsFloating", () => {
+  test("degrades detached panes into floating panes for non-desktop renderers", () => {
+    const layout = createLayout([
+      createPaneInstance("chat", {
+        instanceId: "chat:main",
+        binding: { kind: "none" },
+      }),
+    ]);
+    layout.detached = [
+      { instanceId: "chat:main", x: 14, y: 6, width: 48, height: 18 },
+    ];
+
+    const next = materializeDetachedPanesAsFloating(layout);
+
+    expect(next.detached).toEqual([]);
+    expect(next.floating).toEqual([
+      { instanceId: "chat:main", x: 14, y: 6, width: 48, height: 18 },
+    ]);
   });
 });

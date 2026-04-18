@@ -263,7 +263,7 @@ describe("prediction markets pane interactions", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will the Fed cut rates?");
     expect(frame).not.toContain("Kalshi primary rule");
-    expect(frame).not.toContain("<- Back");
+    expect(frame).not.toContain("\u2190 Back");
   });
 
   test("keeps a clicked header sort instead of snapping back to the default sort", async () => {
@@ -512,7 +512,7 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     const escapeFrame = testSetup.captureCharFrame();
-    expect(escapeFrame).toContain("<- Back");
+    expect(escapeFrame).toContain("\u2190 Back");
     expect(escapeFrame).toContain("Rule 2");
     expect(
       harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
@@ -550,7 +550,7 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     const detailFrame = testSetup.captureCharFrame();
-    expect(detailFrame).toContain("<- Back");
+    expect(detailFrame).toContain("\u2190 Back");
     expect(detailFrame).toContain("Kalshi primary rule");
     expect(
       harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[

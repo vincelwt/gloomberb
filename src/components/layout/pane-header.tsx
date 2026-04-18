@@ -1,4 +1,4 @@
-import { Box, Text, useUiCapabilities } from "../../ui";
+import { Box, Span, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../theme/colors";
 
@@ -49,7 +49,7 @@ function DesktopPaneButton({
         cursor: onMouseDown ? "pointer" : "default",
       }}
     >
-      <span
+      <Span
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -60,7 +60,7 @@ function DesktopPaneButton({
         }}
       >
         {icon}
-      </span>
+      </Span>
     </Box>
   );
 }

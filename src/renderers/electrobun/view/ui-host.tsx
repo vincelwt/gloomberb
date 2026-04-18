@@ -50,6 +50,16 @@ function cellWidth(value: unknown): CSSProperties["width"] {
   return value as CSSProperties["width"];
 }
 
+function startElectrobunWindowDrag(): void {
+  window.__electrobunInternalBridge?.postMessage(JSON.stringify([
+    JSON.stringify({
+      type: "message",
+      id: "startWindowMove",
+      payload: { id: window.__electrobunWindowId },
+    }),
+  ]));
+}
+
 function cellHeight(value: unknown): CSSProperties["height"] {
   if (typeof value === "number") return `${value * WEB_CELL_HEIGHT}px`;
   return value as CSSProperties["height"];
@@ -997,6 +1007,9 @@ export const webUiHost: UiHost = {
 export const webRendererHost: RendererHost = {
   requestExit() {
     void backendRequest("host.exit").catch(() => window.close());
+  },
+  startWindowDrag() {
+    startElectrobunWindowDrag();
   },
   async openExternal(url) {
     await backendRequest("host.openExternal", { url });
