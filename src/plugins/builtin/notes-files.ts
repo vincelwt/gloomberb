@@ -1,6 +1,7 @@
 export interface QuickNoteEntry {
   id: string;
   title: string;
+  updatedAt?: number;
 }
 
 const QUICK_NOTES_INDEX = "__quick-notes-index__";

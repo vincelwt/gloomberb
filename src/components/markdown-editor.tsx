@@ -78,6 +78,7 @@ export interface MarkdownEditorProps {
   initialValue?: string;
   placeholder?: string;
   onRef?: (ref: TextareaRenderable | null) => void;
+  onChange?: (value: string) => void;
 }
 
 export function MarkdownEditor({
@@ -86,6 +87,7 @@ export function MarkdownEditor({
   initialValue = "",
   placeholder = "Write notes...",
   onRef,
+  onChange,
 }: MarkdownEditorProps) {
   const syntaxFactory = useSyntaxStyleFactory();
   const textareaRef = useRef<TextareaRenderable>(null);
@@ -98,10 +100,10 @@ export function MarkdownEditor({
     const lines = text.split("\n");
     const { ids } = styleRef.current;
     for (let i = 0; i < lines.length; i++) {
-      ta.clearLineHighlights(i);
+      ta.clearLineHighlights?.(i);
       const lineHls = computeLineHighlights(lines[i]!, ids);
       for (const hl of lineHls) {
-        ta.addHighlight(i, hl);
+        ta.addHighlight?.(i, hl);
       }
     }
   }, []);
@@ -114,11 +116,14 @@ export function MarkdownEditor({
     styleRef.current = created;
     ta.syntaxStyle = created.style;
     applyHighlights();
-    ta.onContentChange = () => applyHighlights();
+    ta.onContentChange = () => {
+      applyHighlights();
+      onChange?.(ta.editBuffer.getText());
+    };
     return () => {
       if (ta) ta.onContentChange = undefined;
     };
-  }, [textareaKey, applyHighlights, syntaxFactory]);
+  }, [textareaKey, applyHighlights, onChange, syntaxFactory]);
 
   useEffect(() => {
     onRef?.(textareaRef.current);
@@ -136,7 +141,10 @@ export function MarkdownEditor({
       placeholderColor={colors.textDim}
       backgroundColor={focused ? colors.panel : colors.bg}
       flexGrow={1}
+      height="100%"
+      width="100%"
       wrapText
+      onInput={onChange}
     />
   );
 }

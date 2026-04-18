@@ -28,7 +28,7 @@ describe("HelpPane", () => {
         ["notes-pane", {
           id: "notes-pane",
           paneId: "notes",
-          label: "Quick Notes",
+          label: "Notes",
           description: "Open a notes window",
           shortcut: { prefix: "NOTE" },
         }],

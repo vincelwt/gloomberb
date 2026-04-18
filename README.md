@@ -131,7 +131,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `QQ <ticker>` | Quote Monitor |
 | `CHAT` | New Chat Pane |
 | `IBKR` | New IBKR Trading Pane |
-| `NOTE` | Quick Notes |
+| `NOTE` | Notes |
 | `AI <prompt>` | AI Screener |
 | `CMP <tickers>` | Comparison Chart |
 | `PM <query>` | Prediction Markets |

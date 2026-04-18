@@ -8,10 +8,10 @@ import { colors } from "../theme/colors";
 
 export interface MarkdownTextProps {
   text: string;
-  lineWidth: number;
-  catalog: Record<string, InlineTickerCatalogEntry>;
-  textColor: string;
-  openTicker: (symbol: string) => void;
+  lineWidth?: number;
+  catalog?: Record<string, InlineTickerCatalogEntry>;
+  textColor?: string;
+  openTicker?: (symbol: string) => void;
 }
 
 interface StyledSegment {
@@ -115,7 +115,7 @@ function MarkdownLine({
   onHover,
 }: {
   parsed: ParsedLine;
-  lineWidth: number;
+  lineWidth?: number;
   catalog: Record<string, InlineTickerCatalogEntry>;
   textColor: string;
   openTicker: (symbol: string) => void;
@@ -145,7 +145,7 @@ function MarkdownLine({
   // Complex case: need to handle tickers within styled segments
   // Render as a flex row to allow badge elements
   return (
-    <Box flexDirection="row" flexWrap="wrap" width={lineWidth}>
+    <Box flexDirection="row" flexWrap="wrap" {...(lineWidth != null ? { width: lineWidth } : {})}>
       {indentStr ? <Text fg={textColor}>{indentStr}</Text> : null}
       {parsed.segments.map((segment, segIdx) => {
         const tokens = tokenizeTickerText(segment.text);
@@ -187,15 +187,15 @@ function MarkdownLine({
 export function MarkdownText({
   text,
   lineWidth,
-  catalog,
-  textColor,
-  openTicker,
+  catalog = {},
+  textColor = colors.text,
+  openTicker = () => {},
 }: MarkdownTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const lines = text.split("\n");
 
   return (
-    <Box flexDirection="column" width={lineWidth}>
+    <Box flexDirection="column" {...(lineWidth != null ? { width: lineWidth } : {})}>
       {lines.map((line, index) => {
         if (line.trim() === "") {
           return <Text key={index}>{" "}</Text>;

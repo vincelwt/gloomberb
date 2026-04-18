@@ -3,6 +3,7 @@ import { backendRequest } from "./backend-rpc";
 export interface QuickNoteEntry {
   id: string;
   title: string;
+  updatedAt?: number;
 }
 
 export class NotesFiles {
