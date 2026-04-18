@@ -1329,8 +1329,11 @@ function AppInner({
     // Skip all global shortcuts when a dialog is open
     if (dialogOpen) return;
 
-    // Ctrl+P: toggle command bar (backtick handled in command-bar itself for close)
-    if (!isDetachedWindow && event.name === "p" && event.ctrl) {
+    // Ctrl+P / Cmd+K: toggle command bar (backtick close is handled in command-bar.tsx)
+    if (!isDetachedWindow && (
+      (event.name === "p" && event.ctrl)
+      || (event.name === "k" && (event.meta || event.super))
+    )) {
       event.preventDefault();
       event.stopPropagation();
       dispatch({ type: "TOGGLE_COMMAND_BAR" });

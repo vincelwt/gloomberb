@@ -86,6 +86,12 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
+  const openCommandBar = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
+  };
+
   if (!statusBarVisible) return null;
 
   if (nativePaneChrome) {
@@ -141,7 +147,12 @@ export function StatusBar() {
               );
             })
           ) : (
-            <Text fg={colors.textDim}>
+            <Text
+              fg={hoveredControl === "command-bar" ? colors.text : colors.textDim}
+              onMouseMove={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
+              onMouseDown={openCommandBar}
+              data-gloom-interactive="true"
+            >
               <Span fg={colors.text}>Ctrl+P</Span> command bar
             </Text>
           )}
@@ -241,7 +252,12 @@ export function StatusBar() {
             );
           })
         ) : (
-          <Text fg={colors.textDim}>
+          <Text
+            fg={hoveredControl === "command-bar" ? colors.text : colors.textDim}
+            bg={hoveredControl === "command-bar" ? hoverBg() : undefined}
+            onMouseMove={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
+            onMouseDown={openCommandBar}
+          >
             <Span fg={colors.text}>Ctrl+P</Span> command bar
           </Text>
         )}
