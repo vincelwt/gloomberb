@@ -1000,5 +1000,3 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     apiClient.dispose();
   },
 };
-
-export const chatPlugin = gloomberbCloudPlugin;

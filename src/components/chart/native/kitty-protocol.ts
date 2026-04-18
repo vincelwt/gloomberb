@@ -98,36 +98,6 @@ export function encodeKittyPlacement(placement: KittyPlacement): string {
   return `\x1b[s\x1b[${placement.row};${placement.column}H${wrapKittySequence(control)}\x1b[u`;
 }
 
-export function encodeKittyTransmitPng(options: {
-  imageId: number;
-  png: Uint8Array;
-  cols?: number;
-  rows?: number;
-  chunkSize?: number;
-}): string[] {
-  const chunks = chunkBase64Payload(Buffer.from(options.png).toString("base64"), options.chunkSize);
-
-  return chunks.map((chunk, index) => {
-    const isLast = index === chunks.length - 1;
-    const control = index === 0
-      ? buildControlData([
-        ["a", "T"],
-        ["f", 100],
-        ["t", "d"],
-        ["i", options.imageId],
-        ["q", 2],
-        ["c", options.cols ?? null],
-        ["r", options.rows ?? null],
-        ["m", isLast ? 0 : 1],
-      ])
-      : buildControlData([
-        ["m", isLast ? 0 : 1],
-      ]);
-
-    return wrapKittySequence(control, chunk);
-  });
-}
-
 export function encodeKittyDeleteImage(imageId: number, placementId?: number): string {
   return wrapKittySequence(buildControlData([
     ["a", "d"],
@@ -137,4 +107,3 @@ export function encodeKittyDeleteImage(imageId: number, placementId?: number): s
     ["q", 2],
   ]));
 }
-

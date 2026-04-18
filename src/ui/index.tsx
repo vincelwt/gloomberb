@@ -1,5 +1,5 @@
-import { createElement, forwardRef, type ReactNode } from "react";
-import { useUiHost, useRendererHost } from "./host";
+import { createElement, forwardRef } from "react";
+import { useUiHost } from "./host";
 export {
   RGBA,
   StyledText,
@@ -105,28 +105,3 @@ export const SpinnerMark = forwardRef<any, import("./host").SpinnerMarkProps>((p
   return createElement(HostSpinnerMark as any, { ...props, ref });
 });
 SpinnerMark.displayName = "SpinnerMark";
-
-export function Button({
-  children,
-  label,
-  onPress,
-  disabled = false,
-}: {
-  children?: ReactNode;
-  label?: string;
-  onPress?: () => void;
-  disabled?: boolean;
-}) {
-  const renderer = useRendererHost();
-  void renderer;
-  return (
-    <Box
-      onMouseDown={() => {
-        if (!disabled) onPress?.();
-      }}
-      data-disabled={disabled}
-    >
-      <Text>{children ?? label ?? ""}</Text>
-    </Box>
-  );
-}

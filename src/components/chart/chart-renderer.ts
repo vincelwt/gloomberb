@@ -436,7 +436,7 @@ function drawOhlcChart(
 // Volume bars
 // ---------------------------------------------------------------------------
 
-export function drawVolumeBars(
+function drawVolumeBars(
   buf: PixelBuffer,
   points: ProjectedChartPoint[],
   yTop: number,
@@ -622,7 +622,7 @@ function formatPercentAxisValue(value: number): string {
   return `${prefix}${value.toFixed(decimals)}%`;
 }
 
-export function formatPriceWithCurrency(
+function formatPriceWithCurrency(
   value: number,
   currency = "USD",
   assetCategory?: string,
@@ -744,12 +744,6 @@ export function formatCursorAxisValue(
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-export function formatDate(date: Date | string | number): string {
-  const d = date instanceof Date ? date : new Date(date);
-  if (isNaN(d.getTime())) return "—";
-  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-}
 
 export function formatDateShort(date: Date | string | number): string {
   const d = date instanceof Date ? date : new Date(date);
@@ -1371,48 +1365,4 @@ export function renderChart(
     priceRange,
     pixelBuffer: buf,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Pixel buffer → RGBA conversion for Kitty graphics protocol
-// ---------------------------------------------------------------------------
-
-function parseHex(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-
-/**
- * Convert a PixelBuffer to RGBA pixel data for use with drawSuperSampleBuffer.
- * Each pixel in the buffer maps to one RGBA pixel in the output.
- */
-export function pixelBufferToRGBA(buf: PixelBuffer, bgColor: string): Uint8Array {
-  const [bgR, bgG, bgB] = parseHex(bgColor);
-  const data = new Uint8Array(buf.width * buf.height * 4);
-  const colorCache = new Map<string, [number, number, number]>();
-
-  for (let y = 0; y < buf.height; y++) {
-    for (let x = 0; x < buf.width; x++) {
-      const offset = (y * buf.width + x) * 4;
-      const pixel = buf.pixels[y]?.[x] ?? null;
-      if (pixel) {
-        let rgb = colorCache.get(pixel.color);
-        if (!rgb) {
-          rgb = parseHex(pixel.color);
-          colorCache.set(pixel.color, rgb);
-        }
-        data[offset] = rgb[0];
-        data[offset + 1] = rgb[1];
-        data[offset + 2] = rgb[2];
-        data[offset + 3] = 255;
-      } else {
-        data[offset] = bgR;
-        data[offset + 1] = bgG;
-        data[offset + 2] = bgB;
-        data[offset + 3] = 255;
-      }
-    }
-  }
-
-  return data;
 }

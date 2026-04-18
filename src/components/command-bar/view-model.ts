@@ -10,12 +10,6 @@ export interface CommandBarModeInfo {
   hint: string;
 }
 
-export interface CommandBarModeStripEntry {
-  prefix: string;
-  label: string;
-  active: boolean;
-}
-
 export interface CommandBarFooterHints {
   left: string;
   right: string;
@@ -45,14 +39,6 @@ export interface CommandBarRowPresentation {
   primaryMuted: boolean;
 }
 
-const MODE_STRIP_ENTRIES = [
-  { prefix: "DES", label: "Description", kind: "search" },
-  { prefix: "TH", label: "Change theme", kind: "themes" },
-  { prefix: "PL", label: "Toggle plugins", kind: "plugins" },
-  { prefix: "LAY", label: "Layout actions", kind: "layout" },
-  { prefix: "NP", label: "New pane", kind: "new-pane" },
-] as const;
-
 export function resolveCommandBarMode(query: string): CommandBarModeInfo {
   const match = matchPrefix(query);
 
@@ -78,14 +64,6 @@ export function resolveCommandBarMode(query: string): CommandBarModeInfo {
     default:
       return { kind: "direct-command", badge: "COMMAND", hint: `Run ${match.command.label}` };
   }
-}
-
-export function getModeStrip(mode: CommandBarMode): CommandBarModeStripEntry[] {
-  return MODE_STRIP_ENTRIES.map((entry) => ({
-    prefix: entry.prefix,
-    label: entry.label,
-    active: entry.kind === mode,
-  }));
 }
 
 export function buildSections<T extends { category: string }>(items: T[]): Array<CommandBarSection<T>> {

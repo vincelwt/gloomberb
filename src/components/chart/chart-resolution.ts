@@ -9,7 +9,7 @@ export interface ChartResolutionSupport {
 
 export const TIME_RANGE_ORDER: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 
-export const CHART_RESOLUTION_ORDER: ChartResolution[] = [
+const CHART_RESOLUTION_ORDER: ChartResolution[] = [
   "auto",
   "1m",
   "5m",
@@ -22,7 +22,7 @@ export const CHART_RESOLUTION_ORDER: ChartResolution[] = [
   "1mo",
 ];
 
-export const CHART_RESOLUTION_LABELS: Record<ChartResolution, string> = {
+const CHART_RESOLUTION_LABELS: Record<ChartResolution, string> = {
   auto: "AUTO",
   "1m": "1M",
   "5m": "5M",
@@ -35,7 +35,7 @@ export const CHART_RESOLUTION_LABELS: Record<ChartResolution, string> = {
   "1mo": "1MO",
 };
 
-export const RANGE_PRESET_RESOLUTION: Record<TimeRange, ManualChartResolution> = {
+const RANGE_PRESET_RESOLUTION: Record<TimeRange, ManualChartResolution> = {
   "1D": "1m",
   "1W": "5m",
   "1M": "15m",
@@ -46,7 +46,7 @@ export const RANGE_PRESET_RESOLUTION: Record<TimeRange, ManualChartResolution> =
   "ALL": "1mo",
 };
 
-export const RANGE_PRELOAD_BUFFER: Record<TimeRange, TimeRange> = {
+const RANGE_PRELOAD_BUFFER: Record<TimeRange, TimeRange> = {
   "1D": "1W",
   "1W": "1M",
   "1M": "3M",
@@ -113,11 +113,11 @@ function compareTimeRange(left: TimeRange, right: TimeRange): number {
   return getTimeRangeIndex(left) - getTimeRangeIndex(right);
 }
 
-export function isChartResolution(value: unknown): value is ChartResolution {
+function isChartResolution(value: unknown): value is ChartResolution {
   return CHART_RESOLUTION_ORDER.includes(value as ChartResolution);
 }
 
-export function isManualChartResolution(value: unknown): value is ManualChartResolution {
+function isManualChartResolution(value: unknown): value is ManualChartResolution {
   return value !== "auto" && CHART_RESOLUTION_ORDER.includes(value as ChartResolution);
 }
 
@@ -137,7 +137,7 @@ function getManualResolutionOrderIndex(resolution: ManualChartResolution): numbe
   return CHART_RESOLUTION_ORDER.indexOf(resolution);
 }
 
-export function getPresetBufferRange(range: TimeRange): TimeRange {
+function getPresetBufferRange(range: TimeRange): TimeRange {
   return RANGE_PRELOAD_BUFFER[range];
 }
 
@@ -151,7 +151,7 @@ export function sortChartResolutions<T extends ChartResolution>(resolutions: rea
   ));
 }
 
-export function normalizeManualChartResolutions(resolutions: readonly string[]): ManualChartResolution[] {
+function normalizeManualChartResolutions(resolutions: readonly string[]): ManualChartResolution[] {
   const seen = new Set<ManualChartResolution>();
   for (const resolution of resolutions) {
     if (isManualChartResolution(resolution)) {
@@ -169,7 +169,7 @@ export function intersectChartResolutions(resolutionSets: Array<readonly string[
   );
 }
 
-export function sortChartResolutionSupport(support: readonly ChartResolutionSupport[]): ChartResolutionSupport[] {
+function sortChartResolutionSupport(support: readonly ChartResolutionSupport[]): ChartResolutionSupport[] {
   return [...support].sort((left, right) => (
     CHART_RESOLUTION_ORDER.indexOf(left.resolution) - CHART_RESOLUTION_ORDER.indexOf(right.resolution)
   ));
@@ -223,7 +223,7 @@ export function getSupportMaxRange(
   return normalizeChartResolutionSupport(support).find((entry) => entry.resolution === resolution)?.maxRange ?? null;
 }
 
-export function minTimeRange(left: TimeRange, right: TimeRange): TimeRange {
+function minTimeRange(left: TimeRange, right: TimeRange): TimeRange {
   return compareTimeRange(left, right) <= 0 ? left : right;
 }
 

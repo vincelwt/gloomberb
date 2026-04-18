@@ -2,8 +2,8 @@ import type { CommandDef, PaneTemplateDef } from "../../types/plugin";
 import type { Command } from "./command-registry";
 import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 
-export type RootShortcutArgKind = "text" | "ticker" | "ticker-list";
-export type ShortcutIntentKind = "none" | "complete" | "inferred-complete" | "partial" | "ambiguous";
+type RootShortcutArgKind = "text" | "ticker" | "ticker-list";
+type ShortcutIntentKind = "none" | "complete" | "inferred-complete" | "partial" | "ambiguous";
 
 interface ShortcutIntentBase {
   kind: Exclude<ShortcutIntentKind, "none">;
@@ -16,22 +16,22 @@ interface ShortcutIntentBase {
   completionQuery: string | null;
 }
 
-export interface CommandShortcutIntent extends ShortcutIntentBase {
+interface CommandShortcutIntent extends ShortcutIntentBase {
   source: "command";
   command: Command;
 }
 
-export interface PaneTemplateShortcutIntent extends ShortcutIntentBase {
+interface PaneTemplateShortcutIntent extends ShortcutIntentBase {
   source: "pane-template";
   template: PaneTemplateDef;
 }
 
-export interface PluginCommandShortcutIntent extends ShortcutIntentBase {
+interface PluginCommandShortcutIntent extends ShortcutIntentBase {
   source: "plugin-command";
   command: CommandDef;
 }
 
-export type ShortcutIntent =
+type ShortcutIntent =
   | { kind: "none" }
   | CommandShortcutIntent
   | PaneTemplateShortcutIntent
@@ -60,11 +60,11 @@ function mapPlaceholderToArgKind(value: string | undefined): RootShortcutArgKind
   return null;
 }
 
-export function getPaneShortcutArgKind(template: PaneTemplateDef): RootShortcutArgKind | null {
+function getPaneShortcutArgKind(template: PaneTemplateDef): RootShortcutArgKind | null {
   return template.shortcut?.argKind ?? mapPlaceholderToArgKind(template.shortcut?.argPlaceholder);
 }
 
-export function getCommandShortcutArgKind(command: Command): RootShortcutArgKind | null {
+function getCommandShortcutArgKind(command: Command): RootShortcutArgKind | null {
   return mapPlaceholderToArgKind(command.argPlaceholder) ?? (command.hasArg ? "text" : null);
 }
 

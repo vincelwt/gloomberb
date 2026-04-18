@@ -70,7 +70,7 @@ export function coerceFieldValues(value: CommandBarFieldValue | undefined): stri
     : [];
 }
 
-export function fieldOptionLabel(field: CommandBarWorkflowField, value: string): string {
+function fieldOptionLabel(field: CommandBarWorkflowField, value: string): string {
   if (field.type !== "select" && field.type !== "multi-select" && field.type !== "ordered-multi-select") {
     return value;
   }

@@ -10,7 +10,6 @@ export type ComparisonChartRenderMode = "area" | "line";
 
 export const TIME_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc"];
-export const CHART_AXIS_MODES: ChartAxisMode[] = ["price", "percent"];
 export const CHART_RENDERER_PREFERENCES: ChartRendererPreference[] = ["auto", "kitty", "braille"];
 export const COMPARISON_RENDER_MODES: ComparisonChartRenderMode[] = ["area", "line"];
 

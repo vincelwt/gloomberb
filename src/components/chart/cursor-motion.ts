@@ -1,12 +1,12 @@
 
-export interface ChartCursorPosition {
+interface ChartCursorPosition {
   x: number | null;
   y: number | null;
 }
 
 export type ChartCursorMotionKind = "pixel" | "cell" | "discrete";
 
-export const CELL_CURSOR_EASING = 0.72;
+const CELL_CURSOR_EASING = 0.72;
 export const CELL_CURSOR_SNAP_DISTANCE = 0.035;
 
 function sameNullableNumber(left: number | null, right: number | null, epsilon = 0): boolean {

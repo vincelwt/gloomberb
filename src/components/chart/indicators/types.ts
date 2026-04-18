@@ -33,5 +33,3 @@ export interface IndicatorConfig {
   macd?: { fast: number; slow: number; signal: number } | null;
   bollinger?: { period: number; stdDev: number } | null;
 }
-
-export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = {};

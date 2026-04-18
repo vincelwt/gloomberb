@@ -52,10 +52,9 @@
     "@opentui/react": "^0.1.90",
     "@stoqey/ib": "^1.5.3",
     "@tanstack/react-virtual": "^3.13.23",
-    "gray-matter": "^4.0.3",
     "opentui-spinner": "^0.0.6",
     "react": "19.2.5",
-    "yahoo-finance2": "^3.13.2"
+    "rxjs": "^7.8.2"
   },
   "patchedDependencies": {
     "@opentui/core@0.1.90": "patches/@opentui%2Fcore@0.1.90.patch"

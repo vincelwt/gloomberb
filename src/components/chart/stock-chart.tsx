@@ -1208,7 +1208,7 @@ const INDICATOR_COLORS = [
   "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8",
 ];
 
-export function getIndicatorWarmupPeriod(config: IndicatorConfig): number {
+function getIndicatorWarmupPeriod(config: IndicatorConfig): number {
   const periods = [
     ...(config.sma ?? []),
     ...(config.ema ?? []),
@@ -1358,7 +1358,7 @@ export function computeProjectedIndicatorOverlays(
   return reindexIndicatorOverlaysForProjection(overlays, sourcePoints, projectedPoints);
 }
 
-export function reindexIndicatorOverlaysForProjection(
+function reindexIndicatorOverlaysForProjection(
   overlays: ChartIndicatorOverlays,
   sourcePoints: readonly PricePoint[],
   projectedPoints: readonly ProjectedChartPoint[],

@@ -8,7 +8,6 @@ import type { DataProvider } from "../types/data-provider";
 import type { AppConfig } from "../types/config";
 import type { GloomPlugin } from "../types/plugin";
 import { getLoadablePlugins } from "../plugins/catalog";
-import { createBaseConverter } from "./base-converter";
 import { fail } from "./errors";
 import type { ConfigContext, MarketContext } from "./types";
 
@@ -53,5 +52,3 @@ export async function initMarketData(options: CliContextOptions = {}): Promise<M
   );
   return { ...context, dataProvider };
 }
-
-export { createBaseConverter };

@@ -512,7 +512,7 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     const escapeFrame = testSetup.captureCharFrame();
-    expect(escapeFrame).toContain("<- Back");
+    expect(escapeFrame).toContain("← Back");
     expect(escapeFrame).toContain("Rule 2");
     expect(
       harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
@@ -550,7 +550,7 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     const detailFrame = testSetup.captureCharFrame();
-    expect(detailFrame).toContain("<- Back");
+    expect(detailFrame).toContain("← Back");
     expect(detailFrame).toContain("Kalshi primary rule");
     expect(
       harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
