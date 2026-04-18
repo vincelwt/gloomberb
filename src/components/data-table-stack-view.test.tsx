@@ -117,7 +117,7 @@ describe("DataTableStackView", () => {
     await renderSettled();
 
     const detailFrame = testSetup.captureCharFrame();
-    expect(detailFrame).toContain("← Back");
+    expect(detailFrame).toContain("\u2190 Back");
     expect(detailFrame).toContain("Second detail");
 
     await emitKeypress({ name: "escape", sequence: "\u001b" });

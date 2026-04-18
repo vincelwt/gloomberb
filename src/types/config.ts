@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 11;
+export const CURRENT_CONFIG_VERSION = 12;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -45,9 +45,17 @@ export interface FloatingPlacementMemory {
   height: number;
 }
 
+export interface DetachedPlacementMemory {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface PanePlacementMemory {
   docked?: DockedPlacementMemory;
   floating?: FloatingPlacementMemory;
+  detached?: DetachedPlacementMemory;
 }
 
 export interface PaneInstanceConfig {
@@ -84,10 +92,19 @@ export interface FloatingPaneEntry {
   zIndex?: number;
 }
 
+export interface DetachedPaneEntry {
+  instanceId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface LayoutConfig {
   dockRoot: DockLayoutNode | null;
   instances: PaneInstanceConfig[];
   floating: FloatingPaneEntry[];
+  detached: DetachedPaneEntry[];
 }
 
 export interface SavedLayout {
@@ -193,6 +210,7 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     },
   ],
   floating: [],
+  detached: [],
 };
 
 let nextPaneInstanceSeq = 0;
@@ -281,6 +299,7 @@ export function clonePlacementMemory(memory: PanePlacementMemory | undefined): P
       position: memory.docked.position,
     } : undefined,
     floating: memory.floating ? { ...memory.floating } : undefined,
+    detached: memory.detached ? { ...memory.detached } : undefined,
   };
 }
 
@@ -369,11 +388,13 @@ export function removePaneInstances(layout: LayoutConfig, instanceIds: Iterable<
   const validInstanceIds = new Set(instances.map((instance) => instance.instanceId));
   const dockRoot = normalizeDockNode(layout.dockRoot, validInstanceIds, new Set<string>());
   const dockedPaneIds = new Set(getDockedPaneIdsFromNode(dockRoot));
+  const detached = layout.detached ?? [];
   return {
     ...layout,
     instances,
     dockRoot,
     floating: layout.floating.filter((entry) => !removedIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId)),
+    detached: detached.filter((entry) => !removedIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId)),
   };
 }
 
@@ -429,6 +450,17 @@ export function normalizePaneLayout(
   const validInstanceIds = new Set(nextLayout.instances.map((instance) => instance.instanceId));
   const dockRoot = normalizeDockNode(nextLayout.dockRoot, validInstanceIds, new Set<string>());
   const dockedPaneIds = new Set(getDockedPaneIdsFromNode(dockRoot));
+  const detached = (nextLayout.detached ?? [])
+    .filter((entry) => validInstanceIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId))
+    .filter((entry, index, entries) => entries.findIndex((candidate) => candidate.instanceId === entry.instanceId) === index)
+    .map((entry) => ({
+      instanceId: entry.instanceId,
+      x: entry.x,
+      y: entry.y,
+      width: entry.width,
+      height: entry.height,
+    }));
+  const detachedPaneIds = new Set(detached.map((entry) => entry.instanceId));
 
   return {
     dockRoot,
@@ -440,12 +472,18 @@ export function normalizePaneLayout(
       placementMemory: clonePlacementMemory(instance.placementMemory),
     })),
     floating: nextLayout.floating
-      .filter((entry) => validInstanceIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId))
+      .filter((entry) => (
+        validInstanceIds.has(entry.instanceId)
+        && !dockedPaneIds.has(entry.instanceId)
+        && !detachedPaneIds.has(entry.instanceId)
+      ))
       .map((entry) => ({ ...entry })),
+    detached,
   };
 }
 
 export function cloneLayout(layout: LayoutConfig): LayoutConfig {
+  const detached = layout.detached ?? [];
   return {
     dockRoot: layout.dockRoot ? cloneDockNode(layout.dockRoot) : null,
     instances: layout.instances.map((instance) => ({
@@ -456,6 +494,7 @@ export function cloneLayout(layout: LayoutConfig): LayoutConfig {
       placementMemory: clonePlacementMemory(instance.placementMemory),
     })),
     floating: layout.floating.map((entry) => ({ ...entry })),
+    detached: detached.map((entry) => ({ ...entry })),
   };
 }
 
@@ -486,4 +525,24 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     },
     recentTickers: [],
   };
+}
+
+export function materializeDetachedPanesAsFloating(layout: LayoutConfig): LayoutConfig {
+  const detached = layout.detached ?? [];
+  if (detached.length === 0) return cloneLayout(layout);
+
+  return normalizePaneLayout({
+    ...cloneLayout(layout),
+    floating: [
+      ...layout.floating.map((entry) => ({ ...entry })),
+      ...detached.map((entry) => ({
+        instanceId: entry.instanceId,
+        x: entry.x,
+        y: entry.y,
+        width: entry.width,
+        height: entry.height,
+      })),
+    ],
+    detached: [],
+  });
 }

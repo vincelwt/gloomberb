@@ -16,10 +16,10 @@ import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../utils/market-format";
 import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
 import { VERSION } from "../../version";
+import { TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 const UPDATE_NOTICE_DURATION_MS = 5_000;
-const TITLEBAR_TRAFFIC_LIGHT_WIDTH = 11;
 
 function DesktopHeaderPill({
   children,
