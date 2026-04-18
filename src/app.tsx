@@ -1,4 +1,4 @@
-import { Box, useNativeRenderer, useRendererHost } from "./ui";
+import { Box, ContextMenuProvider, useNativeRenderer, useRendererHost } from "./ui";
 import { ToastViewport, useToastHost } from "./ui/toast";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useShortcut } from "./react/input";
@@ -1362,21 +1362,23 @@ function AppInner({ pluginRegistry, tickerRepository, dataProvider, marketData, 
   });
 
   return (
-    <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
-      <Header />
-      <Shell pluginRegistry={pluginRegistry} />
-      <StatusBar />
-      {state.commandBarOpen && (
-        <CommandBar
-          dataProvider={dataProvider}
-          tickerRepository={tickerRepository}
-          pluginRegistry={pluginRegistry}
-          quitApp={() => rendererHost.requestExit()}
-          onCheckForUpdates={() => runUpdateCheck(true)}
-        />
-      )}
-      <ToastViewport position="bottom-right" />
-    </Box>
+    <ContextMenuProvider pluginRegistry={pluginRegistry}>
+      <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+        <Header />
+        <Shell pluginRegistry={pluginRegistry} />
+        <StatusBar />
+        {state.commandBarOpen && (
+          <CommandBar
+            dataProvider={dataProvider}
+            tickerRepository={tickerRepository}
+            pluginRegistry={pluginRegistry}
+            quitApp={() => rendererHost.requestExit()}
+            onCheckForUpdates={() => runUpdateCheck(true)}
+          />
+        )}
+        <ToastViewport position="bottom-right" />
+      </Box>
+    </ContextMenuProvider>
   );
 }
 

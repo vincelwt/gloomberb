@@ -1,4 +1,4 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useContextMenu } from "../../ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut, useViewport } from "../../react/input";
@@ -14,6 +14,7 @@ import {
   getDockDividerLayouts,
   getDockLeafLayouts,
   getRememberedFloatingRect,
+  gridlockAllPanes,
   isPaneInLayout,
   removePane,
   resizeSplitAtPath,
@@ -31,6 +32,7 @@ import {
 import type { PluginRegistry } from "../../plugins/registry";
 import { removePaneInstances, type LayoutConfig } from "../../types/config";
 import type { PaneDef } from "../../types/plugin";
+import { contextMenuDivider, type ContextMenuItem } from "../../types/context-menu";
 import {
   PaneInstanceProvider,
   resolveCollectionForPane,
@@ -155,6 +157,7 @@ interface ShellMouseEvent {
   type: string;
   x: number;
   y: number;
+  button?: number;
   preciseX?: number;
   preciseY?: number;
   stopPropagation: () => void;
@@ -485,21 +488,21 @@ function menuForPane(
   persistLayout: (nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => void,
   focusPane: (paneId: string) => void,
   openPaneSettings: (paneId: string) => void,
-) {
-  const baseActions: Array<{ id: string; label: string; action: () => void }> = [];
+): ContextMenuItem[] {
+  const baseActions: ContextMenuItem[] = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
     baseActions.push({
       id: "settings",
       label: "Settings",
-      action: () => openPaneSettings(pane.instance.instanceId),
+      onSelect: () => openPaneSettings(pane.instance.instanceId),
     });
   }
 
   if (pane.floating) {
     baseActions.push({
       id: "dock",
-      label: "Dock",
-      action: () => {
+      label: "Dock Pane",
+      onSelect: () => {
         persistLayout(applyDrop(layout, pane.instance.instanceId, { kind: "frame", edge: "right" }));
         focusPane(pane.instance.instanceId);
       },
@@ -507,15 +510,54 @@ function menuForPane(
   } else {
     baseActions.push({
       id: "float",
-      label: "Float",
-      action: () => {
+      label: "Float Pane",
+      onSelect: () => {
         persistLayout(floatPane(layout, pane.instance.instanceId, width, contentHeight, pane.def));
         focusPane(pane.instance.instanceId);
       },
     });
   }
 
+  baseActions.push({
+    id: "close-pane",
+    label: "Close Pane",
+    onSelect: () => persistLayout(removePane(layout, pane.instance.instanceId)),
+  });
+
+  baseActions.push(
+    contextMenuDivider("pane:layout-divider"),
+    {
+      id: "new-pane",
+      label: "New Pane...",
+      onSelect: () => pluginRegistry.openCommandBarFn("NP "),
+    },
+    {
+      id: "layout-actions",
+      label: "Layout Actions...",
+      onSelect: () => pluginRegistry.openCommandBarFn("LAY "),
+    },
+    {
+      id: "gridlock-all",
+      label: "Gridlock All Windows",
+      onSelect: () => {
+        persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width, height: contentHeight }));
+      },
+    },
+  );
+
   return baseActions;
+}
+
+function menuItemsForFallback(items: ContextMenuItem[]): Array<{ id: string; label: string; action: () => void }> {
+  return items.flatMap((item) => {
+    if (item.type === "divider" || item.type === "role" || item.enabled === false || item.hidden === true) return [];
+    if (!item.onSelect) return [];
+    return [{
+      id: item.id,
+      label: item.label,
+      action: () => { void item.onSelect?.(); },
+    }];
+  });
 }
 
 interface PaneContentProps {
@@ -564,7 +606,8 @@ export function Shell({ pluginRegistry }: ShellProps) {
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const renderer = useNativeRenderer();
-  const { nativePaneChrome, precisePointer } = useUiCapabilities();
+  const { nativePaneChrome, nativeContextMenu, precisePointer } = useUiCapabilities();
+  const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
@@ -775,28 +818,40 @@ export function Shell({ pluginRegistry }: ShellProps) {
     return ticker ? `${pane.def.name}: ${ticker}` : pane.def.name;
   }, [config.portfolios, config.watchlists, titleState]);
 
-  const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds) => {
+  const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds, event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     const pane = paneMap.get(paneId);
     if (!pane) return;
     focusPane(paneId);
-    const menuX = Math.max(0, Math.min(width - MENU_WIDTH, rect.x + Math.max(0, rect.width - MENU_WIDTH)));
-    const menuY = Math.max(0, Math.min(contentHeight - 1, rect.y + 1));
-    setMenuState({
+    const items = menuForPane(
+      pane,
+      visibleLayout,
+      width,
+      contentHeight,
+      pluginRegistry,
+      persistLayout,
+      focusPane,
+      openPaneSettings,
+    );
+    void showContextMenu({
+      kind: "pane",
       paneId,
-      x: menuX,
-      y: menuY,
-      items: menuForPane(
-        pane,
-        visibleLayout,
-        width,
-        contentHeight,
-        pluginRegistry,
-        persistLayout,
-        focusPane,
-        openPaneSettings,
-      ),
+      paneType: pane.instance.paneId,
+      title: getPaneTitle(pane),
+      floating: !!pane.floating,
+    }, items, event).then((shown) => {
+      if (shown) return;
+      const fallbackItems = menuItemsForFallback(items);
+      if (fallbackItems.length === 0) return;
+      const menuX = Math.max(0, Math.min(width - MENU_WIDTH, rect.x + Math.max(0, rect.width - MENU_WIDTH)));
+      const menuY = Math.max(0, Math.min(contentHeight - 1, rect.y + 1));
+      setMenuState({
+        paneId,
+        x: menuX,
+        y: menuY,
+        items: fallbackItems,
+      });
     });
-  }, [contentHeight, focusPane, openPaneSettings, paneMap, persistLayout, pluginRegistry, visibleLayout, width]);
+  }, [contentHeight, focusPane, getPaneTitle, openPaneSettings, paneMap, persistLayout, pluginRegistry, showContextMenu, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
     persistLayout(removePane(visibleLayout, paneId));
@@ -977,6 +1032,10 @@ export function Shell({ pluginRegistry }: ShellProps) {
           focused: isFocused,
         });
         focusPane(pane.instance.instanceId);
+        if (event.button === 2 && relativeY === 0) {
+          openPaneMenu(pane.instance.instanceId, rect, event);
+          return;
+        }
         if (relativeY === 0 && headerAreas.closeStart != null && relativeX >= headerAreas.closeStart && relativeX < rect.width) {
           handleFloatingClose(pane.instance.instanceId);
           event.stopPropagation();
@@ -988,7 +1047,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
           && headerAreas.closeStart != null
           && relativeX >= headerAreas.actionStart
           && relativeX < headerAreas.closeStart) {
-          openPaneMenu(pane.instance.instanceId, rect);
+          openPaneMenu(pane.instance.instanceId, rect, event);
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -1058,10 +1117,14 @@ export function Shell({ pluginRegistry }: ShellProps) {
           focused: isFocused,
         });
         focusPane(leaf.instanceId);
+        if (event.button === 2 && relativeY === 0) {
+          openPaneMenu(leaf.instanceId, leaf.rect, event);
+          return;
+        }
         if (relativeY === 0
           && headerAreas.actionStart != null
           && relativeX >= headerAreas.actionStart) {
-          openPaneMenu(leaf.instanceId, leaf.rect);
+          openPaneMenu(leaf.instanceId, leaf.rect, event);
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -1128,6 +1191,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
   const startNativeFloatingDrag = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (event.button === 2) {
+      return;
+    }
     const pointer = getShellPointer(event);
     focusNativePane(paneId);
     dragRef.current = {
@@ -1144,6 +1210,9 @@ export function Shell({ pluginRegistry }: ShellProps) {
 
   const startNativeDockedDrag = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (event.button === 2) {
+      return;
+    }
     const pointer = getShellPointer(event);
     focusNativePane(paneId);
     dragRef.current = {
@@ -1198,9 +1267,14 @@ export function Shell({ pluginRegistry }: ShellProps) {
   }, [handleActiveDrag]);
 
   const handleNativePaneAction = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    if (event.button === 2) return;
     event.stopPropagation();
     event.preventDefault();
-    openPaneMenu(paneId, rect);
+    openPaneMenu(paneId, rect, event);
+  }, [openPaneMenu]);
+
+  const handleNativePaneContextMenu = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    openPaneMenu(paneId, rect, event);
   }, [openPaneMenu]);
 
   const handleNativeFloatingClose = useCallback((paneId: string, event: ShellMouseEvent) => {
@@ -1249,6 +1323,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                     onHeaderMouseDown={nativePaneChrome ? (event) => startNativeDockedDrag(leaf.instanceId, leaf.rect, event) : undefined}
                     onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
                     onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+                    onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, leaf.rect, event) : undefined}
                     onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(leaf.instanceId, leaf.rect, event) : undefined}
                   >
                     <PaneContent
@@ -1292,6 +1367,7 @@ export function Shell({ pluginRegistry }: ShellProps) {
                   onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
                   onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
                   onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+                  onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(pane.instance.instanceId, preview, event) : undefined}
                   onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(pane.instance.instanceId, preview, event) : undefined}
                   onCloseMouseDown={nativePaneChrome ? (event) => handleNativeFloatingClose(pane.instance.instanceId, event) : undefined}
                   onResizeMouseDown={nativePaneChrome ? (event) => startNativeFloatResize(pane.instance.instanceId, preview, event) : undefined}

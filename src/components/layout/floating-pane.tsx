@@ -19,6 +19,7 @@ interface FloatingPaneWrapperProps {
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
+  onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
   onResizeMouseDown?: (event: any) => void;
@@ -43,6 +44,7 @@ export function FloatingPaneWrapper({
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
+  onHeaderContextMenu,
   onActionMouseDown,
   onCloseMouseDown,
   onResizeMouseDown,
@@ -85,6 +87,7 @@ export function FloatingPaneWrapper({
         onHeaderMouseDown={onHeaderMouseDown}
         onHeaderMouseDrag={onHeaderMouseDrag}
         onHeaderMouseDragEnd={onHeaderMouseDragEnd}
+        onHeaderContextMenu={onHeaderContextMenu}
         onActionMouseDown={onActionMouseDown}
         onCloseMouseDown={onCloseMouseDown}
       />

@@ -3,6 +3,7 @@ import { Electroview } from "electrobun/view";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   type AiChunkMessage,
+  type ContextMenuSelectMessage,
   type ElectrobunBackendInit,
   type ElectrobunDesktopRpcSchema,
   type IbkrResolvedMessage,
@@ -15,6 +16,7 @@ type QuoteListener = (message: QuoteUpdateMessage) => void;
 type IbkrSnapshotListener = (message: IbkrSnapshotMessage) => void;
 type IbkrResolvedListener = (message: IbkrResolvedMessage) => void;
 type AiChunkListener = (message: AiChunkMessage) => void;
+type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
 
 let initSnapshot: ElectrobunBackendInit | null = null;
 const quoteListeners = new Map<string, Set<QuoteListener>>();
@@ -22,6 +24,7 @@ const ibkrQuoteListeners = new Map<string, Set<QuoteListener>>();
 const ibkrSnapshotListeners = new Map<string, Set<IbkrSnapshotListener>>();
 const ibkrResolvedListeners = new Set<IbkrResolvedListener>();
 const aiChunkListeners = new Map<string, Set<AiChunkListener>>();
+const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener>>();
 
 function dispatch<T>(
   listeners: Map<string, Set<(value: T) => void>>,
@@ -89,6 +92,9 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
       },
       "ai.chunk": (message) => {
         dispatch(aiChunkListeners, message.runId, message);
+      },
+      "context-menu.select": (message) => {
+        dispatch(contextMenuSelectListeners, message.requestId, message);
       },
     },
   },
@@ -160,4 +166,11 @@ export function onAiChunk(
   listener: (message: AiChunkMessage) => void,
 ): () => void {
   return subscribe(aiChunkListeners, runId, listener);
+}
+
+export function onContextMenuSelect(
+  requestId: string,
+  listener: (message: ContextMenuSelectMessage) => void,
+): () => void {
+  return subscribe(contextMenuSelectListeners, requestId, listener);
 }

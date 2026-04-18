@@ -88,6 +88,46 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerDataProvider(provider)` | Add a data source |
 | `ctx.registerShortcut(shortcut)` | Add a global keyboard shortcut |
 | `ctx.registerTickerAction(action)` | Add a per-ticker action (shown via `a` key) |
+| `ctx.registerContextMenuProvider(provider)` | Add renderer-neutral context menu items |
+
+### Context menus
+
+Plugins can contribute items to native desktop context menus without importing Electrobun, the DOM, or OpenTUI directly. Use Gloomberb APIs from the plugin context, and let the renderer decide whether a native menu is available.
+
+```typescript
+ctx.registerContextMenuProvider({
+  id: "ticker-tools",
+  contexts: ["ticker"],
+  order: 10,
+  getItems(context) {
+    if (context.kind !== "ticker") return null;
+    return [{
+      id: "my-plugin:open-report",
+      label: `Open ${context.symbol} Report`,
+      onSelect: () => ctx.openCommandBar(`report ${context.symbol}`),
+    }];
+  },
+});
+```
+
+Pane menus receive the pane instance id, pane type, title, and whether the pane is floating:
+
+```typescript
+ctx.registerContextMenuProvider({
+  id: "pane-tools",
+  contexts: ["pane"],
+  getItems(context) {
+    if (context.kind !== "pane") return null;
+    return [{
+      id: "my-plugin:focus-pane",
+      label: "Focus Pane",
+      onSelect: () => ctx.focusPane(context.paneId),
+    }];
+  },
+});
+```
+
+Available context kinds are `pane`, `ticker`, `link`, `editable-text`, `selected-text`, `layout`, and `app`. Return `null` or an empty array when your plugin has nothing useful for a context. Keep actions renderer-neutral: call plugin context methods such as `ctx.openCommandBar()`, `ctx.selectTicker()`, `ctx.pinTicker()`, `ctx.focusPane()`, and `ctx.notify()` instead of using renderer-specific APIs.
 
 ### CLI commands
 

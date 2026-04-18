@@ -16,6 +16,7 @@ interface PaneHeaderProps {
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
+  onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
 }
@@ -49,7 +50,7 @@ function DesktopPaneButton({
         cursor: onMouseDown ? "pointer" : "default",
       }}
     >
-      <span
+      <Box
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -60,7 +61,7 @@ function DesktopPaneButton({
         }}
       >
         {icon}
-      </span>
+      </Box>
     </Box>
   );
 }
@@ -74,6 +75,7 @@ export function PaneHeader({
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
+  onHeaderContextMenu,
   onActionMouseDown,
   onCloseMouseDown,
 }: PaneHeaderProps) {
@@ -97,6 +99,7 @@ export function PaneHeader({
         onMouseDown={onHeaderMouseDown}
         onMouseDrag={onHeaderMouseDrag}
         onMouseDragEnd={onHeaderMouseDragEnd}
+        onContextMenu={onHeaderContextMenu}
         style={{
           borderBottom: `1px solid ${focused ? colors.borderFocused : colors.border}`,
           paddingInline: 6,

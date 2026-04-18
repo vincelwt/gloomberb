@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Box, Input, ScrollBox, Text } from "../../../ui";
+import { Box, Input, ScrollBox, Text, editableTextContextMenuItems, useRendererHost, useUiCapabilities } from "../../../ui";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { blendHex, colors, hoverBg } from "../../../theme/colors";
@@ -147,6 +147,8 @@ export function WebTextField({
 }: TextFieldProps) {
   const localInputRef = useRef<InputRenderable>(null);
   const resolvedInputRef = inputRef ?? localInputRef;
+  const renderer = useRendererHost();
+  const { nativeContextMenu } = useUiCapabilities();
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -168,6 +170,13 @@ export function WebTextField({
         onMouseDown={() => {
           onMouseDown?.();
           resolvedInputRef.current?.focus?.();
+        }}
+        onContextMenu={(event: any) => {
+          if (!nativeContextMenu || !renderer.showContextMenu) return;
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          resolvedInputRef.current?.focus?.();
+          void renderer.showContextMenu(editableTextContextMenuItems());
         }}
         data-gloom-role="desktop-text-field"
         style={{
