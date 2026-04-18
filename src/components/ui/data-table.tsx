@@ -1,5 +1,5 @@
 import { Box, ScrollBox, Text, useUiHost } from "../../ui";
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 import type { ColumnConfig } from "../../types/config";
@@ -60,6 +60,7 @@ export interface DataTableProps<
     item: T,
     index: number,
   ) => DataTableSectionHeader | null;
+  emptyContent?: ReactNode;
   emptyStateTitle: string;
   emptyStateHint?: string;
   virtualize?: boolean;
@@ -102,6 +103,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   onActivate,
   renderCell,
   renderSectionHeader,
+  emptyContent,
   emptyStateTitle,
   emptyStateHint,
   virtualize = true,
@@ -276,9 +278,11 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
         onSizeChange={measureContentWidth}
       >
         {items.length === 0 ? (
-          <Box width="100%" paddingX={1} paddingY={1}>
-            <EmptyState title={emptyStateTitle} hint={emptyStateHint} />
-          </Box>
+          emptyContent ?? (
+            <Box width="100%" paddingX={1} paddingY={1}>
+              <EmptyState title={emptyStateTitle} hint={emptyStateHint} />
+            </Box>
+          )
         ) : (
           <>
             {virtualize && startIndex > 0 && <Box height={startIndex} />}

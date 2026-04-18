@@ -653,8 +653,17 @@ export function WebPageStackView({
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1} overflow="hidden" gap={1}>
-      <Box height={1} flexDirection="row" alignItems="center">
+    <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      <Box
+        height={1}
+        flexDirection="row"
+        alignItems="center"
+        paddingX={1}
+        backgroundColor={colors.bg}
+        style={{
+          boxShadow: `inset 0 -1px 0 ${PANEL_BORDER}`,
+        }}
+      >
         <Box
           height={1}
           flexDirection="row"

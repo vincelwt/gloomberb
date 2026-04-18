@@ -1,8 +1,8 @@
-import { Box, Text } from "../../../ui";
+import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTable, TabBar, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
@@ -493,31 +493,18 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Tab bar */}
-      <Box flexDirection="row" height={1} paddingX={1}>
-        {TABS.map((tab) => {
-          const isActive = tab.id === activeTab;
-          return (
-            <Box
-              key={tab.id}
-              paddingX={1}
-              marginRight={1}
-              onMouseDown={(event: any) => {
-                event.preventDefault?.();
-                setActiveTab(tab.id);
-                setSelectedSymbol(null);
-                resetTableScroll();
-              }}
-            >
-              <Text
-                fg={isActive ? colors.textBright : colors.textDim}
-                attributes={isActive ? TextAttributes.BOLD | TextAttributes.UNDERLINE : TextAttributes.NONE}
-              >
-                {tab.label}
-              </Text>
-            </Box>
-          );
-        })}
+      <Box height={1} paddingX={1}>
+        <TabBar
+          tabs={TABS.map((tab) => ({ label: tab.label, value: tab.id }))}
+          activeValue={activeTab}
+          onSelect={(value) => {
+            setActiveTab(value as TabId);
+            setSelectedSymbol(null);
+            resetTableScroll();
+          }}
+          compact
+          variant="bare"
+        />
       </Box>
 
       <DataTable<MarketMoverRow, MarketMoverColumn>

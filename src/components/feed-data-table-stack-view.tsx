@@ -50,6 +50,8 @@ interface FeedDataTableStackViewProps {
   titleLabel?: string;
   emptyStateTitle?: string;
   emptyStateHint?: string;
+  isItemRead?: (item: FeedDataTableItem) => boolean;
+  onOpenItem?: (item: FeedDataTableItem, index: number) => void;
 }
 
 function truncateWithEllipsis(text: string, width: number): string {
@@ -214,6 +216,8 @@ export function FeedDataTableStackView({
   titleLabel = "Headline",
   emptyStateTitle = "No items.",
   emptyStateHint,
+  isItemRead,
+  onOpenItem,
 }: FeedDataTableStackViewProps) {
   const [sortPreference, setSortPreference] = useState<SortPreference>({
     columnId: "time",
@@ -264,8 +268,9 @@ export function FeedDataTableStackView({
 
   const openRow = useCallback((row: DetailRow | undefined) => {
     if (!row) return;
+    onOpenItem?.(row.item, row.itemIndex);
     setOpenItemId(row.item.id);
-  }, []);
+  }, [onOpenItem]);
 
   useEffect(() => {
     if (openItemId && !openItem) {
@@ -307,12 +312,16 @@ export function FeedDataTableStackView({
         return {
           text: row.item.title,
           color: selectedColor ?? colors.text,
-          attributes: rowState.selected
-            ? TextAttributes.BOLD
-            : TextAttributes.NONE,
+          attributes: isItemRead
+            ? isItemRead(row.item)
+              ? TextAttributes.NONE
+              : TextAttributes.BOLD
+            : rowState.selected
+              ? TextAttributes.BOLD
+              : TextAttributes.NONE,
         };
     }
-  }, []);
+  }, [isItemRead]);
 
   const handleDetailKeyDown = useCallback((event: {
     name?: string;

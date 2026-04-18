@@ -7,22 +7,37 @@ export interface TabItem {
   label: string;
   value: string;
   disabled?: boolean;
+  onClose?: (value: string) => void;
+  onDoubleClick?: (value: string) => void;
 }
 
 export interface TabsProps {
   tabs: TabItem[];
-  activeValue: string;
+  activeValue: string | null;
   onSelect: (value: string) => void;
   compact?: boolean;
+  variant?: "underline" | "pill" | "bare";
+  closeMode?: "active" | "always";
+  addLabel?: string;
+  onAdd?: () => void;
 }
 
 const WHEEL_DELTA_PER_CELL = 8;
 
-export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps) {
+export function Tabs({
+  tabs,
+  activeValue,
+  onSelect,
+  compact = false,
+  variant = "underline",
+  closeMode = "always",
+  addLabel = "+",
+  onAdd,
+}: TabsProps) {
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
   const palette = {
-    activeFg: colors.text,
+    activeFg: variant === "bare" ? colors.textBright : colors.text,
     inactiveFg: colors.textDim,
     disabledFg: colors.textMuted,
     hoverFg: colors.text,
@@ -30,6 +45,10 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
     inactiveUnderline: colors.bg,
     hoverUnderline: colors.border,
     hoverBg: hoverBg(),
+    activeBg: colors.selected,
+    activePillFg: colors.selectedText,
+    closeFg: colors.textMuted,
+    addFg: colors.textMuted,
   };
 
   if (NativeTabs) {
@@ -39,6 +58,10 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
         activeValue={activeValue}
         onSelect={onSelect}
         compact={compact}
+        variant={variant}
+        closeMode={closeMode}
+        addLabel={addLabel}
+        onAdd={onAdd}
         palette={palette}
       />
     );
@@ -50,9 +73,30 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
       activeValue={activeValue}
       onSelect={onSelect}
       compact={compact}
+      variant={variant}
+      closeMode={closeMode}
+      addLabel={addLabel}
+      onAdd={onAdd}
       palette={palette}
     />
   );
+}
+
+function shouldShowUnderline(variant: TabsProps["variant"], compact: boolean): boolean {
+  return variant === "underline" && !compact;
+}
+
+function tabHeight(variant: TabsProps["variant"], compact: boolean): number {
+  return shouldShowUnderline(variant, compact) ? 2 : 1;
+}
+
+function tabWidth(
+  tab: TabItem,
+  active: boolean,
+  closeMode: TabsProps["closeMode"],
+): number {
+  const showClose = !!tab.onClose && (closeMode === "always" || active);
+  return tab.label.length + 2 + (showClose ? 2 : 0);
 }
 
 function OpenTuiTabs({
@@ -60,6 +104,10 @@ function OpenTuiTabs({
   activeValue,
   onSelect,
   compact = false,
+  variant = "underline",
+  closeMode = "always",
+  addLabel = "+",
+  onAdd,
   palette,
 }: TabsProps & {
   palette: {
@@ -71,15 +119,21 @@ function OpenTuiTabs({
     inactiveUnderline: string;
     hoverUnderline: string;
     hoverBg: string;
+    activeBg: string;
+    activePillFg: string;
+    closeFg: string;
+    addFg: string;
   };
 }) {
   const [hoveredValue, setHoveredValue] = useState<string | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const tabWidths = useMemo(
-    () => tabs.map((tab) => tab.label.length + 2),
-    [tabs],
+    () => tabs.map((tab) => tabWidth(tab, tab.value === activeValue, closeMode)),
+    [activeValue, closeMode, tabs],
   );
-  const totalWidth = tabWidths.reduce((sum, width) => sum + width, 0);
+  const addWidth = onAdd ? addLabel.length + 2 : 0;
+  const totalWidth = tabWidths.reduce((sum, width) => sum + width, 0) + addWidth;
+  const height = tabHeight(variant, compact);
 
   useEffect(() => {
     const scrollBox = scrollRef.current;
@@ -132,18 +186,18 @@ function OpenTuiTabs({
     <ScrollBox
       ref={scrollRef}
       width="100%"
-      height={compact ? 1 : 2}
+      height={height}
       scrollX
       focusable={false}
       horizontalScrollbarOptions={{ visible: false }}
       onMouseScroll={handleMouseScroll}
     >
-      <Box flexDirection="row" width={totalWidth} height={compact ? 1 : 2}>
+      <Box flexDirection="row" width={totalWidth} height={height}>
         {tabs.map((tab, index) => {
           const active = tab.value === activeValue;
           const hovered = hoveredValue === tab.value && !tab.disabled;
           const tabWidth = tabWidths[index] ?? tab.label.length + 2;
-          const tabLabel = ` ${tab.label} `;
+          const showClose = !!tab.onClose && (closeMode === "always" || active);
           const startHover = tab.disabled
             ? undefined
             : () => {
@@ -160,7 +214,7 @@ function OpenTuiTabs({
               key={tab.value}
               width={tabWidth}
               flexDirection="column"
-              backgroundColor={hovered ? palette.hoverBg : undefined}
+              backgroundColor={active && variant === "pill" ? palette.activeBg : hovered ? palette.hoverBg : undefined}
               onMouseOver={startHover}
               onMouseMove={startHover}
               onMouseOut={endHover}
@@ -168,14 +222,29 @@ function OpenTuiTabs({
                 event.preventDefault();
                 onSelect(tab.value);
               }}
+              onDoubleClick={tab.disabled || !tab.onDoubleClick ? undefined : () => tab.onDoubleClick?.(tab.value)}
             >
-              <Text
-                fg={tab.disabled ? palette.disabledFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
-                attributes={active ? TextAttributes.BOLD : 0}
-              >
-                {tabLabel}
-              </Text>
-              {!compact && (
+              <Box flexDirection="row" height={1}>
+                <Text
+                  fg={tab.disabled ? palette.disabledFg : active && variant === "pill" ? palette.activePillFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
+                  attributes={active ? TextAttributes.BOLD : 0}
+                >
+                  {` ${tab.label} `}
+                </Text>
+                {showClose && (
+                  <Text
+                    fg={active && variant === "pill" ? palette.activePillFg : palette.closeFg}
+                    onMouseDown={(event: any) => {
+                      event.preventDefault?.();
+                      event.stopPropagation?.();
+                      tab.onClose?.(tab.value);
+                    }}
+                  >
+                    {"x "}
+                  </Text>
+                )}
+              </Box>
+              {shouldShowUnderline(variant, compact) && (
                 <Text fg={active ? palette.activeUnderline : hovered ? palette.hoverUnderline : palette.inactiveUnderline}>
                   {"▔".repeat(tabWidth)}
                 </Text>
@@ -183,6 +252,23 @@ function OpenTuiTabs({
             </Box>
           );
         })}
+        {onAdd && (
+          <Box
+            width={addWidth}
+            height={1}
+            backgroundColor={hoveredValue === "__add__" ? palette.hoverBg : undefined}
+            onMouseMove={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
+            onMouseOut={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onAdd();
+            }}
+          >
+            <Text fg={hoveredValue === "__add__" ? palette.hoverFg : palette.addFg}>
+              {` ${addLabel} `}
+            </Text>
+          </Box>
+        )}
       </Box>
     </ScrollBox>
   );

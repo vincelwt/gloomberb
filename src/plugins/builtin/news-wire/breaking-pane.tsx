@@ -12,6 +12,7 @@ import { getDigest, setDigest, isDigestInFlight, markDigestInFlight, clearDigest
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
 import { NEWS_QUERY_PRESETS } from "./news-query-presets";
+import { useNewsReadState } from "./read-state";
 
 const DIGEST_PROMPT = `You are a financial news wire editor. Condense this headline and summary into a single concise actionable bullet point for a professional trader. Include why it matters and potential market impact. Keep it under 120 characters. Respond with ONLY the bullet text, nothing else.
 
@@ -40,6 +41,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const [spinFrame, setSpinFrame] = useState(0);
   const processingRef = useRef(false);
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
+  const { readArticleIds, markArticleRead } = useNewsReadState();
 
   useEffect(() => {
     const providers = detectProviders();
@@ -127,11 +129,13 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       focused={focused}
       width={width}
       rootHeight={height}
+      readArticleIds={readArticleIds}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
       setSortPreference={setSortPreference}
       onOpenArticle={openArticle}
+      onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}

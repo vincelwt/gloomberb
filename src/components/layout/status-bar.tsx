@@ -20,6 +20,7 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
+import { TabBar } from "../tab-bar";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -40,7 +41,6 @@ export function StatusBar() {
   const gridlockTipVisible = useAppSelector(selectGridlockTipVisible);
   const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
-  const [hoveredTab, setHoveredTab] = useState<number | null>(null);
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
 
   const q = focusedFinancials?.quote;
@@ -59,6 +59,16 @@ export function StatusBar() {
 
   const hasMultipleLayouts = layouts.length > 1;
   const showGridlockTip = gridlockTipVisible && !!registry;
+  const layoutTabs = layouts.map((layout, index) => ({
+    label: `^${index + 1} ${truncate(layout.name, 14)}`,
+    value: String(index),
+  }));
+  const layoutTabsWidth = layoutTabs.reduce((sum, tab) => sum + tab.label.length + 2, 0);
+  const handleLayoutSelect = (value: string) => {
+    const index = Number(value);
+    if (!Number.isInteger(index) || index < 0 || index >= layouts.length) return;
+    dispatch({ type: "SWITCH_LAYOUT", index });
+  };
 
   useEffect(() => {
     if (!gridlockTipVisible) return;
@@ -104,42 +114,15 @@ export function StatusBar() {
       >
         <Box paddingLeft={1} flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
           {hasMultipleLayouts ? (
-            layouts.map((layout, index) => {
-              const active = index === activeLayoutIdx;
-              const hovered = hoveredTab === index && !active;
-              return (
-                <Box
-                  key={layout.name}
-                  height={1}
-                  flexDirection="row"
-                  alignItems="center"
-                  backgroundColor={active ? "rgba(84, 201, 159, 0.10)" : hovered ? "rgba(255,255,255,0.04)" : undefined}
-                  onMouseMove={() => setHoveredTab((current) => (current === index ? current : index))}
-                  onMouseDown={(event) => {
-                    event?.preventDefault?.();
-                    event?.stopPropagation?.();
-                    dispatch({ type: "SWITCH_LAYOUT", index });
-                  }}
-                  data-gloom-interactive="true"
-                  style={{
-                    borderRadius: 4,
-                    paddingInline: 4,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Text fg={active ? colors.borderFocused : colors.textDim}>
-                    ^{index + 1}
-                  </Text>
-                  <Text
-                    fg={active ? colors.textBright : hovered ? colors.text : colors.textDim}
-                    attributes={active ? TextAttributes.BOLD : 0}
-                    style={{ marginLeft: 6 }}
-                  >
-                    {truncate(layout.name, 14)}
-                  </Text>
-                </Box>
-              );
-            })
+            <Box width={layoutTabsWidth} height={1}>
+              <TabBar
+                tabs={layoutTabs}
+                activeValue={String(activeLayoutIdx)}
+                onSelect={handleLayoutSelect}
+                compact
+                variant="pill"
+              />
+            </Box>
           ) : (
             <Text fg={colors.textDim}>
               <Span fg={colors.text}>Ctrl+P</Span> command bar
@@ -217,29 +200,15 @@ export function StatusBar() {
     >
       <Box paddingLeft={1} flexShrink={0} flexDirection="row">
         {hasMultipleLayouts ? (
-          layouts.map((l, i) => {
-            const isActive = i === activeLayoutIdx;
-            const isHovered = hoveredTab === i && !isActive;
-            const num = i + 1;
-            const label = truncate(l.name, 14);
-            const bg = isActive ? colors.header : isHovered ? hoverBg() : undefined;
-            const fg = isActive ? colors.headerText : isHovered ? colors.text : colors.textDim;
-            return (
-              <Text
-                key={i}
-                fg={fg}
-                bg={bg}
-                onMouseMove={() => setHoveredTab((current) => (current === i ? current : i))}
-                onMouseDown={(event: any) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  dispatch({ type: "SWITCH_LAYOUT", index: i });
-                }}
-              >
-                {` ^${num} `}<Span fg={isActive ? colors.headerText : colors.text}>{label}</Span>{" "}
-              </Text>
-            );
-          })
+          <Box width={layoutTabsWidth} height={1}>
+            <TabBar
+              tabs={layoutTabs}
+              activeValue={String(activeLayoutIdx)}
+              onSelect={handleLayoutSelect}
+              compact
+              variant="pill"
+            />
+          </Box>
         ) : (
           <Text fg={colors.textDim}>
             <Span fg={colors.text}>Ctrl+P</Span> command bar

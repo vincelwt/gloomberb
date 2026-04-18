@@ -1,6 +1,5 @@
-import { Box, Input, ScrollBox, Text } from "../../ui";
+import { Box, Input, Text } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
-import { TextAttributes } from "../../ui";
 import { DataTableStackView, TabBar, usePaneFooter } from "../../components";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
@@ -17,12 +16,6 @@ import type {
   PredictionListRow,
 } from "./types";
 
-const CATEGORY_TAB_GAP = 2;
-const CATEGORY_RAIL_WIDTH = PREDICTION_CATEGORY_OPTIONS.reduce(
-  (total, category, index) =>
-    total + category.label.length + (index > 0 ? CATEGORY_TAB_GAP : 0),
-  2,
-);
 const PREDICTION_CELL_CACHE_SIZE = 12_000;
 const RELATIVE_TIME_CELL_BUCKET_MS = 60_000;
 
@@ -178,39 +171,20 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       </Box>
 
       {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
-        <ScrollBox height={1} scrollX focusable={false}>
-          <Box
-            flexDirection="row"
-            paddingX={1}
-            gap={CATEGORY_TAB_GAP}
-            width={CATEGORY_RAIL_WIDTH}
-            flexShrink={0}
-          >
-            {PREDICTION_CATEGORY_OPTIONS.map((category) => {
-              const active = category.id === controller.categoryId;
-              return (
-                <Box
-                  key={category.id}
-                  width={category.label.length}
-                  flexShrink={0}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    controller.actions.selectCategory(
-                      category.id as PredictionCategoryId,
-                    );
-                  }}
-                >
-                  <Text
-                    fg={active ? colors.textBright : colors.textDim}
-                    attributes={active ? TextAttributes.BOLD : 0}
-                  >
-                    {category.label}
-                  </Text>
-                </Box>
-              );
-            })}
-          </Box>
-        </ScrollBox>
+        <Box height={1} paddingX={1}>
+          <TabBar
+            tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
+              label: category.label,
+              value: category.id,
+            }))}
+            activeValue={controller.categoryId}
+            onSelect={(value) =>
+              controller.actions.selectCategory(value as PredictionCategoryId)
+            }
+            compact
+            variant="bare"
+          />
+        </Box>
       ) : null}
 
     </>

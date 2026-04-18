@@ -20,7 +20,7 @@ import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { TickerListTable } from "../../../components/ticker-list-table";
-import { Button, EmptyState, Spinner, usePaneFooter } from "../../../components";
+import { Button, EmptyState, Spinner, TabBar, usePaneFooter } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { canonicalExchange } from "../../../utils/exchanges";
 import { formatTimeAgo } from "../../../utils/format";
@@ -965,45 +965,37 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="row" height={1}>
-        {displayTabs.map((tab) => {
-          const isDraft = tab.draft === true;
-          const isActive = isDraft ? editorState?.mode === "create" : tab.id === activeTab?.id;
-          return (
-            <Box key={tab.id} flexDirection="row">
-              <Box
-                onMouseDown={() => {
-                  if (editorState) return;
-                  if (isDraft) return;
-                  setActiveTabId(tab.id);
-                  setCursorSymbol(null);
-                  const now = Date.now();
-                  const last = lastTabClickRef.current;
-                  if (last?.tabId === tab.id && now - last.at <= 350) {
-                    lastTabClickRef.current = null;
-                    editTab(tab);
-                    return;
-                  }
-                  lastTabClickRef.current = { tabId: tab.id, at: now };
-                }}
-              >
-                <Text
-                  fg={isActive ? colors.textBright : colors.textDim}
-                  bg={isActive ? colors.selected : undefined}
-                  attributes={isActive ? TextAttributes.BOLD : 0}
-                >
-                  {` ${truncateWithEllipsis(tab.title, isDraft ? 20 : 18)} `}
-                </Text>
-              </Box>
-              {isActive && !isDraft ? (
-                <Text fg={colors.textMuted} onMouseDown={() => { if (!editorState) removeTab(tab.id); }}>{`x `}</Text>
-              ) : (
-                <Text>{` `}</Text>
-              )}
-            </Box>
-          );
-        })}
-        <Text fg={colors.textMuted} onMouseDown={() => { if (!editorState) addTab(); }}>{` + `}</Text>
+      <Box height={1}>
+        <TabBar
+          tabs={displayTabs.map((tab) => {
+            const isDraft = tab.draft === true;
+            return {
+              label: truncateWithEllipsis(tab.title, isDraft ? 20 : 18),
+              value: tab.id,
+              onClose: !editorState && !isDraft ? removeTab : undefined,
+            };
+          })}
+          activeValue={editorState?.mode === "create" ? "__draft__" : activeTab?.id ?? null}
+          onSelect={(tabId) => {
+            if (editorState || tabId === "__draft__") return;
+            const tab = tabs.find((entry) => entry.id === tabId);
+            if (!tab) return;
+            setActiveTabId(tab.id);
+            setCursorSymbol(null);
+            const now = Date.now();
+            const last = lastTabClickRef.current;
+            if (last?.tabId === tab.id && now - last.at <= 350) {
+              lastTabClickRef.current = null;
+              editTab(tab);
+              return;
+            }
+            lastTabClickRef.current = { tabId: tab.id, at: now };
+          }}
+          compact
+          variant="pill"
+          closeMode="active"
+          onAdd={editorState ? undefined : addTab}
+        />
       </Box>
 
       <Box flexDirection="row" height={1} gap={1}>
