@@ -81,11 +81,7 @@ function createNotesTab(notesFiles: NotesFiles) {
     if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view notes.</Text>;
 
     return (
-      <Box flexDirection="column" padding={1} flexGrow={1}>
-        <Box flexDirection="row" height={1}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Notes</Text>
-        </Box>
-        <Box height={1} />
+      <Box flexDirection="column" flexGrow={1}>
         <Box flexGrow={1} onMouseDown={() => { if (!notesFocused) setNotesFocusedAndCapture(true); }}>
           <MarkdownEditor
             textareaKey={tickerSymbol ?? "none"}

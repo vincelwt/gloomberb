@@ -156,7 +156,7 @@ describe("AskAiTab", () => {
     expect(frame).toContain("codex");
   });
 
-  test("keeps the provider header readable in a narrow pane", async () => {
+  test("keeps provider metadata and hints readable in a narrow pane", async () => {
     setProviders([
       { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
       { id: "gemini", name: "Gemini", command: "gemini", available: true, buildArgs: () => [] },
@@ -171,9 +171,6 @@ describe("AskAiTab", () => {
 
     await flushFrame();
 
-    const headerLine = testSetup.captureCharFrame().split("\n").find((line) => line.includes("Ask AI")) ?? "";
-    expect(headerLine).toContain("Ask AI");
-    expect(headerLine).not.toContain("t to switch");
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Provider Claude");
     expect(frame).toContain("[t]provider");

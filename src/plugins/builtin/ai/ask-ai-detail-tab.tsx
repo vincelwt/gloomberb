@@ -243,11 +243,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
 
   if (availableProviders.length === 0) {
     return (
-      <Box flexDirection="column" padding={1} flexGrow={1}>
-        <Box height={1}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</Text>
-        </Box>
-        <Box height={1} />
+      <Box flexDirection="column" paddingX={1} flexGrow={1}>
         <Text fg={colors.textDim}>No AI CLI tools detected. Install one of:</Text>
         <Box height={1} />
         <Text fg={colors.text}>  claude  - Claude Code (claude.ai/claude-code)</Text>
@@ -259,14 +255,10 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
 
   const contentWidth = Math.max(width - 2, 0);
   const dividerWidth = Math.max(contentWidth, 0);
-  const chatHeight = Math.max(height - 7, 4);
+  const chatHeight = Math.max(height - 3, 4);
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingTop={1} height={height - 2}>
-      <Box flexDirection="row" height={1}>
-        <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>Ask AI</Text>
-      </Box>
-
+    <Box flexDirection="column" paddingX={1} height={height}>
       <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
         <Box flexDirection="column">
           {messages.length === 0 ? (
