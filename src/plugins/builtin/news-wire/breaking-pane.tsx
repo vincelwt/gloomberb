@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneFooter } from "../../../components";
 import { useNewsArticles } from "../../../news/hooks";
+import { Spinner } from "../../../components/spinner";
 import { usePluginPaneState } from "../../plugin-runtime";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../ai/providers";
@@ -27,7 +28,9 @@ function buildDigestPrompt(item: MarketNewsItem): string {
 }
 
 export function BreakingPane({ focused, width, height }: PaneProps) {
-  const articles = useNewsArticles(NEWS_QUERY_PRESETS.breaking).articles;
+  const breakingState = useNewsArticles(NEWS_QUERY_PRESETS.breaking);
+  const articles = breakingState.articles;
+  const loading = breakingState.phase === "loading" || (breakingState.phase === "refreshing" && articles.length === 0);
   const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("breaking:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("breaking:sort", DEFAULT_SORT);
   const [digestVersion, setDigestVersion] = useState(0);
@@ -113,6 +116,10 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   ) : (
     <Box flexGrow={1} />
   );
+
+  if (loading && articles.length === 0) {
+    return <Spinner label="Loading breaking news..." />;
+  }
 
   return (
     <NewsArticleStackView

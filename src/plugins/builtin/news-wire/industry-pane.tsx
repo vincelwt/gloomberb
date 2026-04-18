@@ -3,7 +3,9 @@ import { useEffect, useMemo } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { useNewsArticles } from "../../../news/hooks";
+import type { NewsQueryPhase } from "../../../news/types";
 import { TabBar, usePaneFooter } from "../../../components";
+import { Spinner } from "../../../components/spinner";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
@@ -18,14 +20,18 @@ const SECTOR_TABS = ["all", ...SECTOR_NEWS_SECTORS] as const;
 
 const DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
 
-function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNewsItem[]; allArticles: MarketNewsItem[] } {
-  const allArticles = useNewsArticles(NEWS_QUERY_PRESETS.feed).articles;
-  const sectorArticles = useNewsArticles(
+function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNewsItem[]; allArticles: MarketNewsItem[]; phase: NewsQueryPhase } {
+  const allState = useNewsArticles(NEWS_QUERY_PRESETS.feed);
+  const sectorState = useNewsArticles(
     sector === "all" ? null : NEWS_QUERY_PRESETS.sector(sector),
-  ).articles;
+  );
+  const allArticles = allState.articles;
+  const sectorArticles = sectorState.articles;
+  const phase = sector === "all" ? allState.phase : sectorState.phase;
   return {
     articles: sector === "all" ? allArticles : sectorArticles,
     allArticles,
+    phase,
   };
 }
 
@@ -33,7 +39,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const [category, setCategory] = usePluginPaneState<SectorNewsSelection>("industry:category", "all");
   const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("industry:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("industry:sort", DEFAULT_SORT);
-  const { articles, allArticles } = useIndustryArticles(category);
+  const { articles, allArticles, phase } = useIndustryArticles(category);
+  const loading = phase === "loading" || (phase === "refreshing" && articles.length === 0);
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
@@ -93,6 +100,10 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   ) : (
     <Box flexGrow={1} />
   );
+
+  if (loading && articles.length === 0) {
+    return <Spinner label="Loading sector news..." />;
+  }
 
   return (
     <NewsArticleStackView

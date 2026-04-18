@@ -14,8 +14,8 @@ export function FeedPane(props: PaneProps) {
       query={NEWS_QUERY_PRESETS.feed}
       columns={["time", "source", "title", "tickers", "categories"]}
       defaultSort={DEFAULT_SORT}
-      emptyStateTitle="Loading news feed..."
-      emptyStateHint="News appears after the backend responds."
+      emptyStateTitle="No feed stories yet"
+      emptyStateHint="Try refreshing later as wire stories arrive."
     />
   );
 }
