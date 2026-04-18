@@ -14,8 +14,8 @@ export function TopPane(props: PaneProps) {
       query={NEWS_QUERY_PRESETS.top}
       columns={["rank", "time", "source", "title", "tickers", "importance"]}
       defaultSort={DEFAULT_SORT}
-      emptyStateTitle="Loading top news..."
-      emptyStateHint="News appears after the backend ranks stories."
+      emptyStateTitle="No top stories yet"
+      emptyStateHint="Try refreshing later as new headlines are ranked."
     />
   );
 }
