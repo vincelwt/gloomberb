@@ -3,6 +3,7 @@ import type { TickerRepository } from "../data/ticker-repository";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
+import type { ContextMenuContext, ContextMenuItem } from "./context-menu";
 import type {
   AppConfig,
   BrokerInstanceConfig,
@@ -324,6 +325,13 @@ export interface TickerAction {
   execute: (ticker: TickerRecord, financials: TickerFinancials | null) => void | Promise<void>;
 }
 
+export interface ContextMenuProviderDef {
+  id: string;
+  order?: number;
+  contexts?: ContextMenuContext["kind"][];
+  getItems(context: ContextMenuContext): ContextMenuItem[] | null | undefined;
+}
+
 export interface PluginPersistence {
   getState<T = unknown>(key: string, options?: { schemaVersion?: number }): T | null;
   setState(key: string, value: unknown, options?: { schemaVersion?: number }): void;
@@ -400,6 +408,7 @@ export interface GloomPluginContext {
   registerDetailTab(tab: DetailTabDef): void;
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
+  registerContextMenuProvider(provider: ContextMenuProviderDef): void;
   registerNewsSource?(source: import("./news-source").NewsSource): () => void;
 
   getData(ticker: string): TickerFinancials | null;

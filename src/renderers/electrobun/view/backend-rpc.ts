@@ -3,6 +3,7 @@ import { Electroview } from "electrobun/view";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   type AiChunkMessage,
+  type ContextMenuSelectMessage,
   type DesktopDockPreviewMessage,
   type DesktopStateMessage,
   type ElectrobunBackendInit,
@@ -17,6 +18,7 @@ type QuoteListener = (message: QuoteUpdateMessage) => void;
 type IbkrSnapshotListener = (message: IbkrSnapshotMessage) => void;
 type IbkrResolvedListener = (message: IbkrResolvedMessage) => void;
 type AiChunkListener = (message: AiChunkMessage) => void;
+type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
 type DesktopStateListener = (message: DesktopStateMessage) => void;
 type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
 
@@ -26,6 +28,7 @@ const ibkrQuoteListeners = new Map<string, Set<QuoteListener>>();
 const ibkrSnapshotListeners = new Map<string, Set<IbkrSnapshotListener>>();
 const ibkrResolvedListeners = new Set<IbkrResolvedListener>();
 const aiChunkListeners = new Map<string, Set<AiChunkListener>>();
+const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener>>();
 const desktopStateListeners = new Set<DesktopStateListener>();
 const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
 
@@ -95,6 +98,9 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
       },
       "ai.chunk": (message) => {
         dispatch(aiChunkListeners, message.runId, message);
+      },
+      "context-menu.select": (message) => {
+        dispatch(contextMenuSelectListeners, message.requestId, message);
       },
       "desktop.state": (message) => {
         for (const listener of desktopStateListeners) {
@@ -176,6 +182,13 @@ export function onAiChunk(
   listener: (message: AiChunkMessage) => void,
 ): () => void {
   return subscribe(aiChunkListeners, runId, listener);
+}
+
+export function onContextMenuSelect(
+  requestId: string,
+  listener: (message: ContextMenuSelectMessage) => void,
+): () => void {
+  return subscribe(contextMenuSelectListeners, requestId, listener);
 }
 
 export function onDesktopState(listener: DesktopStateListener): () => void {

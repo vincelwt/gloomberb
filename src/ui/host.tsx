@@ -1,4 +1,5 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
+import type { ContextMenuItem } from "../types/context-menu";
 import type { AppNotificationRequest } from "../types/plugin";
 
 export const TextAttributes = {
@@ -207,6 +208,7 @@ export interface UiHost {
     cellHeightPx?: number;
     pixelRatio?: number;
     canvasCharts?: boolean;
+    nativeContextMenu?: boolean;
   };
   Box: ComponentType<BoxProps>;
   Text: ComponentType<TextProps>;
@@ -241,6 +243,7 @@ export interface RendererHost {
   copyText(text: string): Promise<void>;
   readText(): Promise<string>;
   notify(notification: AppNotificationRequest): void;
+  showContextMenu?(items: ContextMenuItem[]): Promise<boolean>;
 }
 
 interface UiHostContextValue {

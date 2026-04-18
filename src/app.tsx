@@ -1,4 +1,4 @@
-import { Box, useNativeRenderer, useRendererHost } from "./ui";
+import { Box, ContextMenuProvider, useNativeRenderer, useRendererHost } from "./ui";
 import { ToastViewport, useToastHost } from "./ui/toast";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useShortcut } from "./react/input";
@@ -1413,36 +1413,40 @@ function AppInner({
 
   if (desktopWindowBridge?.kind === "detached" && desktopWindowBridge.paneId) {
     return (
-      <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
-        <DetachedPaneShell
-          pluginRegistry={pluginRegistry}
-          desktopWindowBridge={{ ...desktopWindowBridge, kind: "detached", paneId: desktopWindowBridge.paneId }}
-        />
-        <ToastViewport position="bottom-right" />
-      </Box>
+      <ContextMenuProvider pluginRegistry={pluginRegistry}>
+        <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+          <DetachedPaneShell
+            pluginRegistry={pluginRegistry}
+            desktopWindowBridge={{ ...desktopWindowBridge, kind: "detached", paneId: desktopWindowBridge.paneId }}
+          />
+          <ToastViewport position="bottom-right" />
+        </Box>
+      </ContextMenuProvider>
     );
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
-      <Header />
-      <Shell
-        pluginRegistry={pluginRegistry}
-        desktopWindowBridge={desktopWindowBridge}
-        desktopDockPreview={desktopDockPreview}
-      />
-      <StatusBar />
-      {state.commandBarOpen && (
-        <CommandBar
-          dataProvider={dataProvider}
-          tickerRepository={tickerRepository}
+    <ContextMenuProvider pluginRegistry={pluginRegistry}>
+      <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+        <Header />
+        <Shell
           pluginRegistry={pluginRegistry}
-          quitApp={() => rendererHost.requestExit()}
-          onCheckForUpdates={() => runUpdateCheck(true)}
+          desktopWindowBridge={desktopWindowBridge}
+          desktopDockPreview={desktopDockPreview}
         />
-      )}
-      <ToastViewport position="bottom-right" />
-    </Box>
+        <StatusBar />
+        {state.commandBarOpen && (
+          <CommandBar
+            dataProvider={dataProvider}
+            tickerRepository={tickerRepository}
+            pluginRegistry={pluginRegistry}
+            quitApp={() => rendererHost.requestExit()}
+            onCheckForUpdates={() => runUpdateCheck(true)}
+          />
+        )}
+        <ToastViewport position="bottom-right" />
+      </Box>
+    </ContextMenuProvider>
   );
 }
 

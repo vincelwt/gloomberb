@@ -1,8 +1,9 @@
-import { Box, ScrollBox, Text } from "../ui";
+import { Box, ScrollBox, Text, tickerContextMenuItems, useContextMenu, useRendererHost, useUiCapabilities } from "../ui";
 import { memo, useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../ui";
 import { EmptyState } from "./ui";
 import { colors, hoverBg } from "../theme/colors";
+import { getSharedRegistry } from "../plugins/registry";
 import type { ColumnConfig } from "../types/config";
 import type { TickerFinancials, PricePoint } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
@@ -181,6 +182,7 @@ const TickerListRow = memo(function TickerListRow({
   setCursorSymbol,
   resolveCell,
   onRowActivate,
+  openContextMenuOnMouseDown,
   showSparklines,
   priceHistory,
   contentWidth,
@@ -196,6 +198,8 @@ const TickerListRow = memo(function TickerListRow({
   setCursorSymbol: (symbol: string) => void;
   resolveCell: ResolveTickerTableCell;
   onRowActivate?: (ticker: TickerRecord) => void;
+  onRowContextMenu: (ticker: TickerRecord, financials: TickerFinancials | undefined, event: unknown) => void;
+  openContextMenuOnMouseDown: boolean;
   showSparklines?: boolean;
   priceHistory?: PricePoint[];
   contentWidth: number;
@@ -214,10 +218,17 @@ const TickerListRow = memo(function TickerListRow({
       {...tableContentWidthProps(contentWidth)}
       paddingX={1}
       backgroundColor={rowBg}
+      data-gloom-context-menu-surface="true"
       onMouseMove={() => setHoveredIdx(index)}
       onMouseDown={(event) => {
-        event.preventDefault();
         setCursorSymbol(ticker.metadata.ticker);
+        if (event.button === 2) {
+          if (openContextMenuOnMouseDown) {
+            onRowContextMenu(ticker, financials, event);
+          }
+          return;
+        }
+        event.preventDefault();
         if (!onRowActivate) return;
         if (typeof event.detail === "number" && event.detail >= 2) {
           lastActivatedAtRef.current = null;
@@ -231,6 +242,10 @@ const TickerListRow = memo(function TickerListRow({
           return;
         }
         lastActivatedAtRef.current = now;
+      }}
+      onContextMenu={(event: unknown) => {
+        setCursorSymbol(ticker.metadata.ticker);
+        onRowContextMenu(ticker, financials, event);
       }}
     >
       {columns.map((column) => {
@@ -268,6 +283,8 @@ const TickerListRow = memo(function TickerListRow({
   && previous.setCursorSymbol === next.setCursorSymbol
   && previous.resolveCell === next.resolveCell
   && previous.onRowActivate === next.onRowActivate
+  && previous.onRowContextMenu === next.onRowContextMenu
+  && previous.openContextMenuOnMouseDown === next.openContextMenuOnMouseDown
   && previous.showSparklines === next.showSparklines
   && previous.priceHistory === next.priceHistory
   && previous.contentWidth === next.contentWidth
@@ -303,6 +320,9 @@ export function TickerListTable({
   const effectiveScrollRef = scrollRef ?? internalScrollRef;
   const hoveredIdxRef = useRef(hoveredIdx);
   const appViewport = useViewport();
+  const renderer = useRendererHost();
+  const { showContextMenu } = useContextMenu();
+  const { nativeContextMenu } = useUiCapabilities();
   const [scrollVersion, setScrollVersion] = useState(0);
   hoveredIdxRef.current = hoveredIdx;
   const safeFlashSymbols = flashSymbols ?? EMPTY_FLASH_SYMBOLS;
@@ -370,6 +390,28 @@ export function TickerListTable({
     if (hoveredIdxRef.current === index) return;
     setHoveredIdx(index);
   }, [setHoveredIdx]);
+  const handleRowContextMenu = useCallback((
+    ticker: TickerRecord,
+    financials: TickerFinancials | undefined,
+    event: unknown,
+  ) => {
+    const registry = getSharedRegistry() ?? null;
+    void showContextMenu(
+      {
+        kind: "ticker",
+        symbol: ticker.metadata.ticker,
+        ticker,
+        financials: financials ?? null,
+      },
+      tickerContextMenuItems({
+        ticker,
+        financials: financials ?? null,
+        registry,
+        copyText: renderer.copyText.bind(renderer),
+      }),
+      event as { preventDefault?: () => void; stopPropagation?: () => void },
+    );
+  }, [renderer, showContextMenu]);
 
   return (
     <Box
@@ -428,6 +470,8 @@ export function TickerListTable({
                 setCursorSymbol={setCursorSymbol}
                 resolveCell={resolveCell}
                 onRowActivate={onRowActivate}
+                onRowContextMenu={handleRowContextMenu}
+                openContextMenuOnMouseDown={nativeContextMenu !== true}
                 showSparklines={showSparklines}
                 priceHistory={financialsMap.get(ticker.metadata.ticker)?.priceHistory}
                 contentWidth={contentWidth}

@@ -17,6 +17,7 @@ interface PaneWrapperProps {
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
+  onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
@@ -34,6 +35,7 @@ export function PaneWrapper({
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
+  onHeaderContextMenu,
   onActionMouseDown,
   footer,
   children,
@@ -70,6 +72,7 @@ export function PaneWrapper({
           onHeaderMouseDown={onHeaderMouseDown}
           onHeaderMouseDrag={onHeaderMouseDrag}
           onHeaderMouseDragEnd={onHeaderMouseDragEnd}
+          onHeaderContextMenu={onHeaderContextMenu}
           onActionMouseDown={onActionMouseDown}
         />
       )}

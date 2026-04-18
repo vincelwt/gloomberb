@@ -1,6 +1,7 @@
-import { Box, Text } from "../ui";
+import { Box, Text, useTickerContextMenu, useUiCapabilities } from "../ui";
 import { TextAttributes } from "../ui";
 import { colors, priceColor } from "../theme/colors";
+import { getSharedRegistry } from "../plugins/registry";
 import { formatMarketPriceWithCurrency } from "../utils/market-format";
 import type { Quote } from "../types/financials";
 
@@ -49,6 +50,15 @@ export function TickerBadge({
   onHoverEnd,
   onOpen,
 }: TickerBadgeProps) {
+  const registry = getSharedRegistry();
+  const { nativeContextMenu } = useUiCapabilities();
+  const ticker = registry?.getTickerFn(symbol) ?? null;
+  const financials = registry?.getDataFn(symbol) ?? null;
+  const openTickerContextMenu = useTickerContextMenu({
+    ticker,
+    financials,
+    onOpen,
+  });
   const tone = status === "ready" && quote ? priceColor(quote.changePercent) : colors.borderFocused;
   const label = hovered && quote
     ? `${symbol} ${formatMarketPriceWithCurrency(quote.price, quote.currency, { minimumFractionDigits: 2 })}`
@@ -67,6 +77,7 @@ export function TickerBadge({
       <Box
         paddingX={1}
         backgroundColor={backgroundColor}
+        data-gloom-context-menu-surface="true"
         onMouseOver={() => {
           onHoverStart?.();
         }}
@@ -74,10 +85,19 @@ export function TickerBadge({
           onHoverEnd?.();
         }}
         onMouseDown={(event: any) => {
+          if (event.button === 2) {
+            if (nativeContextMenu !== true) {
+              void openTickerContextMenu(event);
+            }
+            return;
+          }
           event.stopPropagation?.();
           event.preventDefault?.();
           if (!interactive) return;
           onOpen(symbol);
+        }}
+        onContextMenu={(event: any) => {
+          void openTickerContextMenu(event);
         }}
       >
         <Text fg={color} attributes={TextAttributes.BOLD}>
