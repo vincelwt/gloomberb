@@ -1,7 +1,7 @@
-import { Box, Input, Text, Textarea, useUiCapabilities } from "../../ui";
+import { Box, Input, ScrollBox, Text, Textarea, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { TextAttributes, type InputRenderable, type TextareaRenderable } from "../../ui";
+import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import { useNativeRenderer } from "../../ui";
 import { useViewport } from "../../react/input";
 import { Spinner } from "../spinner";
@@ -188,9 +188,19 @@ interface ListScreenState {
 
 type WorkflowStringValues = Record<string, string>;
 
+type CommandBarListRow =
+  | { kind: "spacer"; id: string }
+  | { kind: "heading"; id: string; label: string }
+  | { kind: "item"; item: ResultItem; globalIdx: number }
+  | { kind: "message"; id: string; label: string; dim?: boolean }
+  | { kind: "spinner"; id: string; label: string }
+  | { kind: "filler"; id: string };
+
 const commandBarLog = debugLog.createLogger("command-bar");
 const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
 const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
+const NATIVE_COMMAND_BAR_PADDING_X_PX = 14;
+const NATIVE_COMMAND_BAR_PADDING_Y_PX = 14;
 
 function getDefaultConfigBackupPath(): string {
   const home = typeof process !== "undefined" ? process.env.HOME : undefined;
@@ -209,6 +219,36 @@ function getInputRef(
 
 function orderListResults(results: ResultItem[]): ResultItem[] {
   return buildSections(results).flatMap((section) => section.items);
+}
+
+function buildListRows(listState: ListScreenState): CommandBarListRow[] {
+  const rows: CommandBarListRow[] = [];
+  const sections = buildSections(listState.results);
+  let globalIdx = 0;
+  sections.forEach((section, sectionIndex) => {
+    if (sectionIndex > 0) {
+      rows.push({ kind: "spacer", id: `spacer:${sectionIndex}:${section.category}` });
+    }
+    rows.push({ kind: "heading", id: `heading:${sectionIndex}:${section.category}`, label: section.category });
+    for (const item of section.items) {
+      rows.push({ kind: "item", item, globalIdx });
+      globalIdx += 1;
+    }
+  });
+  return rows;
+}
+
+function buildNativeListRows(listState: ListScreenState, rows: CommandBarListRow[]): CommandBarListRow[] {
+  if (listState.searching && rows.length === 0) {
+    return [{ kind: "spinner", id: "searching", label: "Searching…" }];
+  }
+  if (rows.length === 0) {
+    return [{ kind: "message", id: "empty", label: listState.emptyLabel }];
+  }
+  if (listState.searching) {
+    return [...rows, { kind: "spinner", id: "searching", label: "Searching…" }];
+  }
+  return rows;
 }
 
 function getVisibleMultiSelectPickerOptions(
@@ -301,7 +341,7 @@ export function CommandBar({
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const renderer = useNativeRenderer();
   const { width: termWidth, height: termHeight } = useViewport();
-  const { nativePaneChrome } = useUiCapabilities();
+  const { nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18 } = useUiCapabilities();
   const [rootQuery, setRootQueryValue] = useState(state.commandBarQuery);
   const rootQueryRef = useRef(rootQuery);
   rootQueryRef.current = rootQuery;
@@ -326,6 +366,7 @@ export function CommandBar({
   const previousRootModeRef = useRef(rootModeInfo.kind);
   const rootThemeBaseIdRef = useRef<string | null>(null);
   const workflowInputRefs = useRef<Record<string, RefObject<InputRenderable | TextareaRenderable | null>>>({});
+  const nativeListScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const visibleListStateRef = useRef<ListScreenState | null>(null);
   const processedLaunchSequenceRef = useRef<number | null>(null);
   const currentRoute = routeStack[routeStack.length - 1] ?? null;
@@ -4900,10 +4941,7 @@ export function CommandBar({
     ? Math.max(46, Math.min(78, termWidth - 10, Math.floor(termWidth * 0.64)))
     : Math.max(42, Math.min(72, termWidth - 8, Math.floor(termWidth * 0.68)));
   const bodyHeight = Math.min(16, Math.max(9, termHeight - 9));
-  const barHeight = nativePaneChrome ? bodyHeight + 4 : bodyHeight + 7;
-  const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
-  const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
-  const contentPadding = nativePaneChrome ? 2 : 3;
+  const contentPadding = nativePaneChrome ? 1 : 3;
   const paletteBg = commandBarBg();
   const paletteHeadingText = commandBarHeadingText();
   const paletteHoverBg = commandBarHoverBg();
@@ -4913,46 +4951,62 @@ export function CommandBar({
   const paletteSubtleText = commandBarSubtleText();
   const panelBg = nativePaneChrome ? commandBarPanelBg() : paletteBg;
   const inputBg = nativePaneChrome ? commandBarInputBg() : paletteBg;
-  const resultsInnerWidth = Math.max(12, barWidth - contentPadding * 2);
-  const trailingWidth = Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
-  const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
-  const queryDisplayWidth = Math.max(8, barWidth - contentPadding * 2);
   const visibleListState = routeListState && (routeListState.kind === "root" || routeListState.kind === "mode" || routeListState.kind === "picker" || routeListState.kind === "pane-settings")
     ? routeListState
     : null;
   const showCustomMultiSelectPicker = currentRoute?.kind === "picker" && currentRoute.pickerId === "field-multi-select";
+  const listRows = visibleListState ? buildListRows(visibleListState) : [];
+  const nativeListRows = visibleListState ? buildNativeListRows(visibleListState, listRows) : [];
+  const listBodyHeight = nativePaneChrome
+    ? Math.min(bodyHeight, Math.max(1, nativeListRows.length))
+    : bodyHeight;
+  const nativePanelPaddingColumns = nativePaneChrome
+    ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_X_PX * 2) / Math.max(1, cellWidthPx))
+    : 0;
+  const nativePanelPaddingRows = nativePaneChrome
+    ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_Y_PX * 2) / Math.max(1, cellHeightPx))
+    : 0;
+  const nativeListChromeRows = (visibleListState && !showCustomMultiSelectPicker)
+    ? (currentRoute ? 1 : 0) + 2 + listBodyHeight + nativePanelPaddingRows
+    : null;
+  const barHeight = nativePaneChrome
+    ? nativeListChromeRows ?? bodyHeight + 4
+    : bodyHeight + 7;
+  const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
+  const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
+  const resultsInnerWidth = Math.max(12, barWidth - nativePanelPaddingColumns - contentPadding * 2);
+  const trailingWidth = Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
+  const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
+  const queryDisplayWidth = Math.max(8, resultsInnerWidth);
+  const nativeSelectedRowIndex = nativePaneChrome && visibleListState
+    ? nativeListRows.findIndex((row) => row.kind === "item" && row.globalIdx === visibleListState.selectedIdx)
+    : -1;
   const bodySlotKey = showCustomMultiSelectPicker
     ? "picker:field-multi-select"
     : currentRoute?.kind === "picker"
       ? `picker:${currentRoute.pickerId}`
       : currentRoute?.kind ?? "root";
 
+  useEffect(() => {
+    if (!nativePaneChrome || nativeSelectedRowIndex < 0) return;
+    const scrollBox = nativeListScrollRef.current;
+    if (!scrollBox) return;
+    const viewportHeight = Math.max(1, scrollBox.viewport?.height ?? listBodyHeight);
+    if (nativeSelectedRowIndex < scrollBox.scrollTop) {
+      scrollBox.scrollTo(nativeSelectedRowIndex);
+    } else if (nativeSelectedRowIndex >= scrollBox.scrollTop + viewportHeight) {
+      scrollBox.scrollTo(nativeSelectedRowIndex - viewportHeight + 1);
+    }
+  }, [listBodyHeight, nativePaneChrome, nativeSelectedRowIndex, visibleListState?.kind, visibleListState?.query]);
+
   const renderListBody = () => {
     if (!visibleListState) return null;
 
-    const allRows: Array<
-      | { kind: "spacer"; id: string }
-      | { kind: "heading"; id: string; label: string }
-      | { kind: "item"; item: ResultItem; globalIdx: number }
-      | { kind: "message"; id: string; label: string; dim?: boolean }
-      | { kind: "spinner"; id: string; label: string }
-      | { kind: "filler"; id: string }
-    > = [];
-    const sections = buildSections(visibleListState.results);
-    let globalIdx = 0;
-    sections.forEach((section, sectionIndex) => {
-      if (sectionIndex > 0) {
-        allRows.push({ kind: "spacer", id: `spacer:${sectionIndex}:${section.category}` });
-      }
-      allRows.push({ kind: "heading", id: `heading:${sectionIndex}:${section.category}`, label: section.category });
-      for (const item of section.items) {
-        allRows.push({ kind: "item", item, globalIdx });
-        globalIdx += 1;
-      }
-    });
-
-    let visibleRows: typeof allRows;
-    if (visibleListState.searching && allRows.length === 0) {
+    const allRows = listRows;
+    let visibleRows: CommandBarListRow[];
+    if (nativePaneChrome) {
+      visibleRows = nativeListRows;
+    } else if (visibleListState.searching && allRows.length === 0) {
       visibleRows = [{ kind: "spinner", id: "searching", label: "Searching…" }];
     } else if (allRows.length === 0) {
       visibleRows = [{ kind: "message", id: "empty", label: visibleListState.emptyLabel }];
@@ -4970,39 +5024,35 @@ export function CommandBar({
       }
     }
 
-    while (visibleRows.length < bodyHeight) {
+    while (!nativePaneChrome && visibleRows.length < bodyHeight) {
       visibleRows.push({ kind: "filler", id: `filler:${visibleRows.length}` });
     }
 
-    return (
-      <Box
-        flexDirection="column"
-        height={bodyHeight}
-        onMouseScroll={handleListScroll}
-      >
+    const renderedRows = (
+      <>
         {visibleRows.map((row) => {
           if (row.kind === "filler" || row.kind === "spacer") {
             return <Box key={row.id} height={1} />;
           }
           if (row.kind === "spinner") {
             return (
-              <Box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
+              <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}>
                 <Spinner label={row.label} />
               </Box>
             );
           }
           if (row.kind === "message") {
             return (
-              <Box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
-                <Text fg={paletteText}>{truncateText(row.label, barWidth - contentPadding * 2)}</Text>
+              <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}>
+                <Text fg={paletteText}>{truncateText(row.label, queryDisplayWidth)}</Text>
               </Box>
             );
           }
           if (row.kind === "heading") {
             return (
-              <Box key={row.id} height={1} paddingX={contentPadding} onMouseScroll={handleListScroll}>
+              <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}>
                 <Text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
-                  {truncateText(row.label, barWidth - contentPadding * 2)}
+                  {truncateText(row.label, queryDisplayWidth)}
                 </Text>
               </Box>
             );
@@ -5025,7 +5075,7 @@ export function CommandBar({
                   ? paletteHoverBg
                   : (nativePaneChrome ? panelBg : paletteBg)}
               onMouseMove={() => setHoveredIndex(row.globalIdx)}
-              onMouseScroll={handleListScroll}
+              {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}
               onMouseDown={(event: any) => {
                 event.stopPropagation?.();
                 event.preventDefault?.();
@@ -5041,6 +5091,7 @@ export function CommandBar({
                 }
                 activateListSelection({ item: row.item });
               }}
+              data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
               style={nativePaneChrome ? { borderRadius: 6 } : undefined}
             >
               <Box width={labelWidth}>
@@ -5054,6 +5105,29 @@ export function CommandBar({
             </Box>
           );
         })}
+      </>
+    );
+
+    if (nativePaneChrome) {
+      return (
+        <ScrollBox
+          ref={nativeListScrollRef}
+          flexDirection="column"
+          height={listBodyHeight}
+          scrollY
+        >
+          {renderedRows}
+        </ScrollBox>
+      );
+    }
+
+    return (
+      <Box
+        flexDirection="column"
+        height={bodyHeight}
+        onMouseScroll={handleListScroll}
+      >
+        {renderedRows}
       </Box>
     );
   };
@@ -5065,12 +5139,12 @@ export function CommandBar({
       <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
         {currentRoute.subtitle && (
           <Box height={1}>
-            <Text fg={paletteSubtleText}>{truncateText(currentRoute.subtitle, barWidth - contentPadding * 2)}</Text>
+            <Text fg={paletteSubtleText}>{truncateText(currentRoute.subtitle, queryDisplayWidth)}</Text>
           </Box>
         )}
         {currentRoute.description?.map((line, index) => (
           <Box key={`workflow-desc:${index}`} height={1}>
-            <Text fg={paletteSubtleText}>{truncateText(line, barWidth - contentPadding * 2)}</Text>
+            <Text fg={paletteSubtleText}>{truncateText(line, queryDisplayWidth)}</Text>
           </Box>
         ))}
         {currentRoute.subtitle || (currentRoute.description?.length ?? 0) > 0 ? <Box height={1} /> : null}
@@ -5152,7 +5226,7 @@ export function CommandBar({
                           const preview = coerceFieldString(value).trim();
                           const lines = (preview || field.placeholder || "Unset")
                             .split("\n")
-                            .flatMap((line) => line.match(new RegExp(`.{1,${Math.max(1, barWidth - contentPadding * 2 - 8)}}`, "g")) ?? [""])
+                            .flatMap((line) => line.match(new RegExp(`.{1,${Math.max(1, queryDisplayWidth - 8)}}`, "g")) ?? [""])
                             .slice(0, 4);
                           return lines.map((line, index) => (
                             <Box key={`${field.id}:preview:${index}`} height={1}>
@@ -5193,7 +5267,7 @@ export function CommandBar({
                   style={nativePaneChrome ? { borderRadius: 4 } : undefined}
                 >
                   <Text fg={active ? paletteText : paletteSubtleText}>
-                    {truncateText(summarizeWorkflowFieldValue(field, value), barWidth - contentPadding * 2)}
+                    {truncateText(summarizeWorkflowFieldValue(field, value), queryDisplayWidth)}
                   </Text>
                 </Box>
               )}
@@ -5204,7 +5278,7 @@ export function CommandBar({
                       field.type === "textarea" && active
                         ? `${field.description} Ctrl+S submits.`
                         : field.description,
-                      barWidth - contentPadding * 2,
+                      queryDisplayWidth,
                     )}
                   </Text>
                 </Box>
@@ -5214,7 +5288,7 @@ export function CommandBar({
         })}
         {currentRoute.error && (
           <Box height={1}>
-            <Text fg={colors.negative}>{truncateText(currentRoute.error, barWidth - contentPadding * 2)}</Text>
+            <Text fg={colors.negative}>{truncateText(currentRoute.error, queryDisplayWidth)}</Text>
           </Box>
         )}
         {currentRoute.pendingLabel && currentRoute.pending && (
@@ -5236,13 +5310,13 @@ export function CommandBar({
       <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
         {currentRoute.body.map((line, index) => (
           <Box key={`confirm:${index}`} height={1}>
-            <Text fg={paletteText}>{truncateText(line, barWidth - contentPadding * 2)}</Text>
+            <Text fg={paletteText}>{truncateText(line, queryDisplayWidth)}</Text>
           </Box>
         ))}
         <Box height={1} />
         {currentRoute.error && (
           <Box height={1}>
-            <Text fg={colors.negative}>{truncateText(currentRoute.error, barWidth - contentPadding * 2)}</Text>
+            <Text fg={colors.negative}>{truncateText(currentRoute.error, queryDisplayWidth)}</Text>
           </Box>
         )}
         {currentRoute.pending && (
@@ -5330,6 +5404,7 @@ export function CommandBar({
           borderRadius: 8,
           boxShadow: "0 14px 32px rgba(0,0,0,0.18)",
           overflow: "hidden",
+          padding: `${NATIVE_COMMAND_BAR_PADDING_Y_PX}px ${NATIVE_COMMAND_BAR_PADDING_X_PX}px`,
         } : undefined}
       >
         {!nativePaneChrome && <Box height={1} backgroundColor={paletteBg} />}
@@ -5428,7 +5503,7 @@ export function CommandBar({
                 {visibleListState.kind === "root" && rootShortcutFeedback
                   ? (
                     <Text fg={paletteSubtleText}>
-                      {truncateText(rootShortcutFeedback, barWidth - contentPadding * 2)}
+                      {truncateText(rootShortcutFeedback, queryDisplayWidth)}
                     </Text>
                   )
                   : null}
@@ -5442,7 +5517,7 @@ export function CommandBar({
           {showCustomMultiSelectPicker && renderMultiSelectBody()}
         </Box>
 
-        <Box flexGrow={1} backgroundColor={nativePaneChrome ? panelBg : undefined} />
+        {!nativePaneChrome && <Box flexGrow={1} />}
       </Box>
     </Box>
   );
