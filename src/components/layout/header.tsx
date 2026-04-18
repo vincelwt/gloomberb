@@ -164,7 +164,7 @@ export function Header() {
         className="electrobun-webkit-app-region-drag"
         style={{
           borderBottom: `1px solid ${colors.borderFocused}`,
-          boxShadow: "inset 0 -1px 0 rgba(84, 201, 159, 0.18)",
+          boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}, inset 0 -1px 0 rgba(84, 201, 159, 0.18)`,
           paddingInline: 8,
         }}
       >

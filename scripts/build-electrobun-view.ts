@@ -88,6 +88,11 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
       [data-gloom-role="pane-window"] {
         background-clip: padding-box;
       }
+      [data-gloom-role="detached-pane-window"] {
+        border: 0;
+        box-shadow: none;
+        background-clip: padding-box;
+      }
       [data-gloom-role="app-header"][data-titlebar-overlay="true"],
       .electrobun-webkit-app-region-drag {
         cursor: default;

@@ -3,13 +3,17 @@ name: tui-testing
 description: >-
   Testing Gloomberb at every level: CLI commands for fast data/integration checks,
   OpenTUI's built-in test harness for component tests, and tmux for full end-to-end
-  TUI testing. Use this skill when you need to verify features, write regression
-  tests, or smoke-test the running app.
+  terminal TUI testing. Use this skill when you need to verify terminal TUI features,
+  write OpenTUI regression tests, or smoke-test the terminal app. Do not use it for
+  Electrobun/desktop-web-only visual or window chrome work unless tmux/OpenTUI
+  coverage is explicitly needed.
 ---
 
 # Testing Gloomberb
 
 Three testing approaches. **Start with the simplest level that covers your change** and escalate only when needed.
+
+This skill is for terminal TUI and OpenTUI test workflows. For Electrobun/desktop-web-only fixes, use focused desktop builds/tests instead unless the task explicitly asks for tmux or terminal rendering coverage.
 
 ## Critical Rule
 

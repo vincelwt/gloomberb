@@ -172,7 +172,7 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
 }
 
 export function PaneInstanceProvider({ paneId, children }: { paneId: string; children: ReactNode }) {
-  return <PaneContext value={paneId}>{children}</PaneContext>;
+  return <PaneContext.Provider value={paneId}>{children}</PaneContext.Provider>;
 }
 
 export function usePaneInstanceId(): string {
@@ -439,5 +439,5 @@ export function AppProvider({
 
   usePersistSessionSnapshot(sessionStore, state, APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION);
 
-  return <AppContext value={storeRef.current}>{children}</AppContext>;
+  return <AppContext.Provider value={storeRef.current}>{children}</AppContext.Provider>;
 }
