@@ -55,6 +55,22 @@ export function commandBarBg(): string {
   return blendForContrast(base, colors.bg, accent, 1.45);
 }
 
+export function commandBarPanelBg(): string {
+  return blendHex(commandBarBg(), colors.panel, 0.28);
+}
+
+export function commandBarInputBg(): string {
+  return blendHex(commandBarPanelBg(), colors.bg, 0.22);
+}
+
+export function commandBarPanelBorder(): string {
+  return blendHex(colors.border, colors.borderFocused, 0.18);
+}
+
+export function commandBarOverlayBg(): string {
+  return blendHex(colors.bg, colors.panel, 0.18);
+}
+
 export function commandBarSelectedBg(): string {
   const base = commandBarBg();
   const accent = higherContrast(colors.selectedText, colors.textBright, colors.selected);

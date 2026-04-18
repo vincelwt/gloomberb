@@ -1,6 +1,6 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
-import type { ReactNode } from "react";
+import { type ComponentType, type ReactNode } from "react";
 import { colors } from "../../theme/colors";
 
 export interface SectionProps {
@@ -54,6 +54,15 @@ export interface DialogFrameProps {
 }
 
 export function DialogFrame({ title, children, footer }: DialogFrameProps) {
+  const HostDialogFrame = useUiHost().DialogFrame as ComponentType<DialogFrameProps> | undefined;
+  if (HostDialogFrame) {
+    return (
+      <HostDialogFrame title={title} footer={footer}>
+        {children}
+      </HostDialogFrame>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <Box height={1}>

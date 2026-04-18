@@ -360,19 +360,29 @@ export function PaneFooterBar({
   const reservedRight = Math.max(0, reserveRight);
 
   if (nativePaneChrome) {
-    const nativeContentWidth = width > 0 ? Math.max(0, Math.floor(width) - reservedRight - 2) : undefined;
     return (
       <Box
         height={1}
         flexDirection="row"
         paddingLeft={1}
         paddingRight={reservedRight + 1}
+        alignItems="center"
         data-gloom-role="pane-footer"
         data-focused={focused ? "true" : "false"}
         data-empty={empty ? "true" : "false"}
-        style={{ "--pane-footer-border-color": borderColor }}
+        style={{
+          "--pane-footer-border-color": borderColor,
+          borderTop: `1px solid ${borderColor}`,
+          backgroundColor: focused ? "rgba(84, 201, 159, 0.05)" : "rgba(20, 25, 30, 0.55)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        }}
       >
-        <FooterContent footer={resolvedFooter} focused={focused} width={nativeContentWidth} showBackground={false} />
+        <FooterContent
+          footer={resolvedFooter}
+          focused={focused}
+          width={width > 0 ? Math.max(0, Math.floor(width) - reservedRight - 2) : undefined}
+          showBackground={false}
+        />
       </Box>
     );
   }

@@ -219,6 +219,15 @@ export interface UiHost {
   ChartSurface: ComponentType<ChartSurfaceProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;
+  Button?: ComponentType<any>;
+  TextField?: ComponentType<any>;
+  ListView?: ComponentType<any>;
+  Checkbox?: ComponentType<any>;
+  Switch?: ComponentType<any>;
+  RadioGroup?: ComponentType<any>;
+  SegmentedControl?: ComponentType<any>;
+  DialogFrame?: ComponentType<any>;
+  PageStackView?: ComponentType<any>;
   Tabs?: ComponentType<HostTabsProps>;
   DataTable?: ComponentType<any>;
   createSyntaxStyle?(): SyntaxStyleLike;

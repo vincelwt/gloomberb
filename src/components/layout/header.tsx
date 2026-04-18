@@ -1,5 +1,5 @@
 import { Box, SpinnerMark, Text, TextAttributes, useUiCapabilities } from "../../ui";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppActive } from "../../state/app-activity";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
@@ -20,6 +20,32 @@ import { VERSION } from "../../version";
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 const UPDATE_NOTICE_DURATION_MS = 5_000;
 const TITLEBAR_TRAFFIC_LIGHT_WIDTH = 11;
+
+function DesktopHeaderPill({
+  children,
+  backgroundColor = "rgba(8, 12, 15, 0.34)",
+  borderColor = "rgba(132, 145, 161, 0.22)",
+}: {
+  children: ReactNode;
+  backgroundColor?: string;
+  borderColor?: string;
+}) {
+  return (
+    <Box
+      height={1}
+      flexDirection="row"
+      alignItems="center"
+      backgroundColor={backgroundColor}
+      style={{
+        border: `1px solid ${borderColor}`,
+        borderRadius: 5,
+        paddingInline: 6,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
 
 function UpdateStatus() {
   const dispatch = useAppDispatch();
@@ -125,6 +151,57 @@ export function Header() {
   const mktState = spyQuote?.marketState;
   const mktLabel = mktState ? marketStateLabel(mktState) : "";
   const mktColor = mktState ? marketStateColor(mktState) : colors.headerText;
+
+  if (titleBarOverlay) {
+    return (
+      <Box
+        flexDirection="row"
+        height={1}
+        alignItems="center"
+        backgroundColor={colors.header}
+        data-gloom-role="app-header"
+        data-titlebar-overlay="true"
+        className="electrobun-webkit-app-region-drag"
+        style={{
+          borderBottom: `1px solid ${colors.borderFocused}`,
+          boxShadow: "inset 0 -1px 0 rgba(84, 201, 159, 0.18)",
+          paddingInline: 8,
+        }}
+      >
+        <Box paddingLeft={TITLEBAR_TRAFFIC_LIGHT_WIDTH} flexDirection="row" alignItems="center" gap={1}>
+          <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
+            Gloomberb
+          </Text>
+          <DesktopHeaderPill
+            backgroundColor="rgba(84, 201, 159, 0.12)"
+            borderColor="rgba(84, 201, 159, 0.28)"
+          >
+            <Text fg={colors.headerText}>v{VERSION}</Text>
+          </DesktopHeaderPill>
+        </Box>
+        <Box flexGrow={1} paddingLeft={2} paddingRight={2} minWidth={0}>
+          <UpdateStatus />
+        </Box>
+        {mktLabel ? (
+          <Box paddingRight={1}>
+            <DesktopHeaderPill borderColor="rgba(132, 145, 161, 0.18)">
+              <Text fg={mktColor}>{mktLabel}</Text>
+            </DesktopHeaderPill>
+          </Box>
+        ) : null}
+        <Box paddingRight={1}>
+          <Text fg={spyColor}>{spyText}</Text>
+        </Box>
+        {extText ? (
+          <Box paddingRight={1}>
+            <Text fg={extText.color}>{extText.text}</Text>
+          </Box>
+        ) : null}
+        <Text fg={colors.headerText}>{baseCurrency}</Text>
+      </Box>
+    );
+  }
+
   return (
     <Box
       flexDirection="row"

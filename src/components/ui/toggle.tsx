@@ -1,5 +1,6 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
+import { type ComponentType } from "react";
 import { colors } from "../../theme/colors";
 
 export interface CheckboxProps {
@@ -17,6 +18,19 @@ export function Checkbox({
   selected = false,
   onChange,
 }: CheckboxProps) {
+  const HostCheckbox = useUiHost().Checkbox as ComponentType<CheckboxProps> | undefined;
+  if (HostCheckbox) {
+    return (
+      <HostCheckbox
+        label={label}
+        checked={checked}
+        disabled={disabled}
+        selected={selected}
+        onChange={onChange}
+      />
+    );
+  }
+
   const fg = disabled ? colors.textMuted : selected ? colors.text : colors.textDim;
   const marker = checked ? "x" : " ";
 
@@ -50,6 +64,18 @@ export function Switch({
   disabled = false,
   onChange,
 }: SwitchProps) {
+  const HostSwitch = useUiHost().Switch as ComponentType<SwitchProps> | undefined;
+  if (HostSwitch) {
+    return (
+      <HostSwitch
+        label={label}
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+
   const fg = disabled ? colors.textMuted : colors.text;
   const stateBg = checked ? colors.positive : colors.panel;
   const stateText = checked ? " ON " : " OFF ";
@@ -89,6 +115,18 @@ export function RadioGroup({
   value,
   onChange,
 }: RadioGroupProps) {
+  const HostRadioGroup = useUiHost().RadioGroup as ComponentType<RadioGroupProps> | undefined;
+  if (HostRadioGroup) {
+    return (
+      <HostRadioGroup
+        label={label}
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
   return (
     <Box flexDirection="column">
       {label && (
@@ -139,6 +177,17 @@ export function SegmentedControl({
   value,
   onChange,
 }: SegmentedControlProps) {
+  const HostSegmentedControl = useUiHost().SegmentedControl as ComponentType<SegmentedControlProps> | undefined;
+  if (HostSegmentedControl) {
+    return (
+      <HostSegmentedControl
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
   return (
     <Box flexDirection="row">
       {options.map((option) => {
