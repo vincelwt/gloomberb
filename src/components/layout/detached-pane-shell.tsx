@@ -6,11 +6,11 @@ import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { findPaneInstance } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
-import { PaneFooterBar, PaneFooterProvider } from "./pane-footer";
+import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane-footer";
 import { PaneContent } from "./pane-content";
-import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
+import { getPaneBodyWidth } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
-import { TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
+import { TITLEBAR_OVERLAY_HEIGHT_PX, TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 
 interface DetachedPaneShellProps {
   pluginRegistry: PluginRegistry;
@@ -29,7 +29,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   const paneState = useAppSelector((state) => state.paneState);
   const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
   const { width, height } = useViewport();
-  const { nativePaneChrome, titleBarOverlay } = useUiCapabilities();
+  const { cellHeightPx = 18, nativePaneChrome, titleBarOverlay } = useUiCapabilities();
   const instance = useAppSelector((state) => findPaneInstance(state.config.layout, desktopWindowBridge.paneId) ?? null);
   const paneDef = instance ? pluginRegistry.panes.get(instance.paneId) ?? null : null;
   const hasPaneSettings = !!instance && pluginRegistry.hasPaneSettings(instance.instanceId);
@@ -41,7 +41,6 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     ? getPaneDisplayTitle(titleState, instance, paneDef)
     : "Detached Pane";
   const focused = focusedPaneId === desktopWindowBridge.paneId || focusedPaneId == null;
-  const bodyHeight = getPaneBodyHeight(height);
   const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(width)) : getPaneBodyWidth(width);
 
   useEffect(() => {
@@ -64,16 +63,6 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     pluginRegistry.openPaneSettingsFn(desktopWindowBridge.paneId);
   }, [desktopWindowBridge.paneId, pluginRegistry]);
 
-  const dockPane = useCallback((event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
-    stopMouse(event);
-    void desktopWindowBridge.dockDetachedPane?.(desktopWindowBridge.paneId);
-  }, [desktopWindowBridge]);
-
-  const closePane = useCallback((event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
-    stopMouse(event);
-    void desktopWindowBridge.closeDetachedPane?.(desktopWindowBridge.paneId);
-  }, [desktopWindowBridge]);
-
   if (!instance || !paneDef) {
     return (
       <Box flexGrow={1} alignItems="center" justifyContent="center" backgroundColor={colors.bg}>
@@ -84,88 +73,75 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
 
   return (
     <PaneFooterProvider>
-      {(footer) => (
-        <Box
-          flexDirection="column"
-          flexGrow={1}
-          width={width}
-          height={height}
-          backgroundColor={floatingPaneBg(focused)}
-          data-gloom-role="pane-window"
-          data-floating="false"
-          data-focused={focused ? "true" : "false"}
-          style={{ "--pane-border-color": focused ? colors.borderFocused : colors.border }}
-          onMouseDown={focusPane}
-        >
+      {(footer) => {
+        const showFooter = hasPaneFooterContent(footer);
+        const headerHeightRows = titleBarOverlay ? TITLEBAR_OVERLAY_HEIGHT_PX / cellHeightPx : 1;
+        const footerHeightRows = showFooter ? 1 : 0;
+        const bodyHeight = Math.max(1, height - headerHeightRows - footerHeightRows);
+        const titleBackground = floatingPaneTitleBg(focused);
+
+        return (
           <Box
-            height={1}
+            flexDirection="column"
+            flexGrow={1}
             width={width}
-            backgroundColor={floatingPaneTitleBg(focused)}
-            flexDirection="row"
-            data-gloom-role="pane-header"
-            data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
-            data-floating="true"
+            height={height}
+            backgroundColor={floatingPaneBg(focused)}
+            data-gloom-role="detached-pane-window"
             data-focused={focused ? "true" : "false"}
-            onMouseDown={startWindowDrag}
+            onMouseDown={focusPane}
           >
             <Box
+              height={1}
+              width={width}
+              backgroundColor={titleBackground}
               flexDirection="row"
-              alignItems="center"
-              flexGrow={1}
-              minWidth={0}
-              paddingLeft={titleBarOverlay ? TITLEBAR_TRAFFIC_LIGHT_WIDTH : 1}
-              paddingRight={1}
+              data-gloom-role="pane-header"
+              data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
+              data-floating="true"
+              data-focused={focused ? "true" : "false"}
+              style={{ boxShadow: `0 -1px 0 ${titleBackground}, inset 0 1px 0 ${titleBackground}` }}
+              onMouseDown={startWindowDrag}
             >
-              <Text fg={paneTitleText(focused, true)} selectable={false}>{":: "}</Text>
-              <Box flexGrow={1} minWidth={0} overflow="hidden">
-                <Text fg={paneTitleText(focused, true)} selectable={false} data-gloom-role="pane-title">{title}</Text>
+              <Box
+                flexDirection="row"
+                alignItems="center"
+                flexGrow={1}
+                minWidth={0}
+                paddingLeft={titleBarOverlay ? TITLEBAR_TRAFFIC_LIGHT_WIDTH : 1}
+                paddingRight={1}
+              >
+                <Box flexGrow={1} minWidth={0} overflow="hidden">
+                  <Text fg={paneTitleText(focused, true)} selectable={false} data-gloom-role="pane-title">{title}</Text>
+                </Box>
+                {hasPaneSettings && (
+                  <Text
+                    fg={paneTitleText(focused, true)}
+                    selectable={false}
+                    className="electrobun-webkit-app-region-no-drag"
+                    data-gloom-role="pane-action"
+                    data-gloom-interactive="true"
+                    onMouseDown={openSettings}
+                  >
+                    {" ... "}
+                  </Text>
+                )}
               </Box>
-              {hasPaneSettings && (
-                <Text
-                  fg={paneTitleText(focused, true)}
-                  selectable={false}
-                  className="electrobun-webkit-app-region-no-drag"
-                  data-gloom-role="pane-action"
-                  data-gloom-interactive="true"
-                  onMouseDown={openSettings}
-                >
-                  {" ... "}
-                </Text>
-              )}
-              <Text
-                fg={paneTitleText(focused, true)}
-                selectable={false}
-                className="electrobun-webkit-app-region-no-drag"
-                data-gloom-interactive="true"
-                onMouseDown={dockPane}
-              >
-                {" dock "}
-              </Text>
-              <Text
-                fg={paneTitleText(focused, true)}
-                selectable={false}
-                className="electrobun-webkit-app-region-no-drag"
-                data-gloom-role="pane-close"
-                data-gloom-interactive="true"
-                onMouseDown={closePane}
-              >
-                {" x "}
-              </Text>
             </Box>
+            <Box height={bodyHeight} overflow="hidden" backgroundColor={colors.bg}>
+              <PaneContent
+                component={paneDef.component}
+                paneId={instance.instanceId}
+                paneType={instance.paneId}
+                focused={focused}
+                width={bodyWidth}
+                height={bodyHeight}
+              />
+            </Box>
+            {showFooter && <PaneFooterBar footer={footer} focused={focused} width={width} />}
           </Box>
-          <Box height={bodyHeight} overflow="hidden">
-            <PaneContent
-              component={paneDef.component}
-              paneId={instance.instanceId}
-              paneType={instance.paneId}
-              focused={focused}
-              width={bodyWidth}
-              height={bodyHeight}
-            />
-          </Box>
-          <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={13} />
-        </Box>
-      )}
+        );
+      }}
     </PaneFooterProvider>
   );
 }

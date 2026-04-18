@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import type { NativeRendererHost } from "../../../ui";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
-import { hasWebCtrlModifier, normalizeWebKeyName, webKeySequence } from "./key-event";
+import { hasWebCtrlModifier, normalizeWebKeyName, shouldConsumeWebAppKeyDown, webKeySequence } from "./key-event";
 
 type Listener = (...args: unknown[]) => void;
 type KeypressListener = (event: {
@@ -54,10 +54,12 @@ class WebKeyInput {
       stopPropagation: () => event.stopPropagation(),
       preventDefault: () => event.preventDefault(),
     };
-    for (const listener of this.listeners.get("keypress") ?? []) {
+    const listeners = this.listeners.get("keypress");
+    for (const listener of listeners ?? []) {
       listener(payload);
       if (event.defaultPrevented) break;
     }
+    if (listeners?.size && shouldConsumeWebAppKeyDown(event)) event.preventDefault();
   }
 }
 

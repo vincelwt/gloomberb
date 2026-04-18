@@ -1,6 +1,6 @@
 ---
 name: opentui
-description: Comprehensive OpenTUI skill for building terminal user interfaces. Covers the core imperative API, React reconciler, and Solid reconciler. Use for any TUI development task including components, layout, keyboard handling, animations, and testing.
+description: Comprehensive OpenTUI skill for building terminal user interfaces. Covers the core imperative API, React reconciler, and Solid reconciler. Use for terminal OpenTUI development tasks including components, layout, keyboard handling, animations, and testing. Do not use for Electrobun/desktop-web-only window chrome, CSS, or browser renderer work unless terminal OpenTUI behavior is also in scope.
 metadata:
    references: core, react, solid, testing
 ---
@@ -8,6 +8,8 @@ metadata:
 # OpenTUI Platform Skill
 
 Consolidated skill for building terminal user interfaces with OpenTUI. Use decision trees below to find the right framework and components, then load detailed references.
+
+This skill is for terminal OpenTUI surfaces. Do not load it for Electrobun desktop-web-only window chrome, CSS, or browser renderer fixes unless the task also changes terminal OpenTUI behavior.
 
 ## Critical Rules
 
