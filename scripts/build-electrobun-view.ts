@@ -1,5 +1,6 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join, relative } from "path";
+import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../src/components/layout/titlebar-overlay";
 
 const outdir = join(process.cwd(), "dist", "electrobun-view");
 const electrobunViewDir = join(process.cwd(), "src", "renderers", "electrobun", "view");
@@ -106,8 +107,8 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
         app-region: no-drag;
       }
       [data-titlebar-overlay="true"] {
-        min-height: 32px;
-        max-height: 32px;
+        min-height: ${TITLEBAR_OVERLAY_HEIGHT_PX}px;
+        max-height: ${TITLEBAR_OVERLAY_HEIGHT_PX}px;
         align-items: center;
       }
       [data-titlebar-overlay="true"] * {

@@ -163,9 +163,9 @@ export function Header() {
         data-titlebar-overlay="true"
         className="electrobun-webkit-app-region-drag"
         style={{
-          borderBottom: `1px solid ${colors.borderFocused}`,
-          boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}, inset 0 -1px 0 rgba(84, 201, 159, 0.18)`,
-          paddingInline: 8,
+          boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}`,
+          paddingLeft: 8,
+          paddingRight: 12,
         }}
       >
         <Box paddingLeft={TITLEBAR_TRAFFIC_LIGHT_WIDTH} flexDirection="row" alignItems="center" gap={1}>
@@ -176,7 +176,7 @@ export function Header() {
             backgroundColor="rgba(84, 201, 159, 0.12)"
             borderColor="rgba(84, 201, 159, 0.28)"
           >
-            <Text fg={colors.headerText}>v{VERSION}</Text>
+            <Text fg={colors.headerText} style={{ fontSize: 11 }}>v{VERSION}</Text>
           </DesktopHeaderPill>
         </Box>
         <Box flexGrow={1} paddingLeft={2} paddingRight={2} minWidth={0}>
