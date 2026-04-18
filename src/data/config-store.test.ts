@@ -72,6 +72,7 @@ describe("sanitizeLayout", () => {
         },
       ],
       floating: [],
+      detached: [],
     }, DEFAULT_LAYOUT);
 
     expect(findPaneInstance(layout, "ticker-detail:main")?.binding).toEqual({
@@ -92,6 +93,7 @@ describe("sanitizeLayout", () => {
         },
       ],
       floating: [],
+      detached: [],
     }, DEFAULT_LAYOUT);
 
     expect(findPaneInstance(layout, "ticker-detail:main")).toBeUndefined();
@@ -141,6 +143,7 @@ describe("sanitizeLayout", () => {
         },
       ],
       floating: [],
+      detached: [],
     }, DEFAULT_LAYOUT);
 
     expect(layout.dockRoot?.kind).toBe("split");
@@ -168,6 +171,7 @@ describe("sanitizeLayout", () => {
       ],
       docked: [{ instanceId: "portfolio-list:main", columnIndex: 0 }],
       floating: [],
+      detached: [],
     }, DEFAULT_LAYOUT);
 
     expect(layout).toEqual(DEFAULT_LAYOUT);
@@ -175,6 +179,25 @@ describe("sanitizeLayout", () => {
 });
 
 describe("loadConfig", () => {
+  test("defaults detached layouts to an empty list for older configs", async () => {
+    const dataDir = await createTempConfigDir();
+    const layoutWithoutDetached = {
+      ...DEFAULT_LAYOUT,
+      detached: undefined,
+    };
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: CURRENT_CONFIG_VERSION - 1,
+      layout: layoutWithoutDetached,
+      layouts: [{ name: "Default", layout: layoutWithoutDetached }],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
+    expect(config.layout.detached).toEqual([]);
+    expect(config.layouts[0]?.layout.detached).toEqual([]);
+  });
+
   test("fills in missing chart preferences for older configs", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
@@ -315,6 +338,7 @@ describe("loadConfig", () => {
       ],
       docked: [{ instanceId: "portfolio-list:main", columnIndex: 0 }],
       floating: [],
+      detached: [],
     };
 
     await writeConfigJson(dataDir, createSavedConfig({
