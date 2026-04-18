@@ -205,7 +205,6 @@ function DebugPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("debug-log", () => ({
     info: [
-      { id: "count", parts: [{ text: `${totalEntries} entries`, tone: "value", bold: true }] },
       ...(filterLevel ? [{ id: "level", parts: [{ text: filterLevel.toUpperCase(), tone: "value" as const, color: levelColor(filterLevel), bold: true }] }] : []),
       ...(filterSource ? [{ id: "source", parts: [{ text: filterSource, tone: "positive" as const }] }] : []),
       ...(autoScroll ? [{ id: "auto", parts: [{ text: "AUTO", tone: "muted" as const }] }] : []),
@@ -218,7 +217,7 @@ function DebugPane({ focused, width, height }: PaneProps) {
       { id: "auto", key: "a", label: "uto", onPress: () => setAutoScroll((prev) => !prev) },
       { id: "jump", key: "g/G", label: "jump", onPress: jumpBottom },
     ],
-  }), [autoScroll, clearLogs, cycleLevelFilter, cycleSourceFilter, exportLogs, filterLevel, filterSource, jumpBottom, totalEntries]);
+  }), [autoScroll, clearLogs, cycleLevelFilter, cycleSourceFilter, exportLogs, filterLevel, filterSource, jumpBottom]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

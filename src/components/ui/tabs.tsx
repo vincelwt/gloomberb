@@ -132,18 +132,20 @@ function OpenTuiTabs({
     <ScrollBox
       ref={scrollRef}
       width="100%"
-      height={compact ? 1 : 2}
+      height={1}
       scrollX
       focusable={false}
       horizontalScrollbarOptions={{ visible: false }}
       onMouseScroll={handleMouseScroll}
     >
-      <Box flexDirection="row" width={totalWidth} height={compact ? 1 : 2}>
+      <Box flexDirection="row" width={totalWidth} height={1}>
         {tabs.map((tab, index) => {
           const active = tab.value === activeValue;
           const hovered = hoveredValue === tab.value && !tab.disabled;
           const tabWidth = tabWidths[index] ?? tab.label.length + 2;
           const tabLabel = ` ${tab.label} `;
+          const attributes = (active ? TextAttributes.BOLD : 0)
+            | (!compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
           const startHover = tab.disabled
             ? undefined
             : () => {
@@ -159,7 +161,8 @@ function OpenTuiTabs({
             <Box
               key={tab.value}
               width={tabWidth}
-              flexDirection="column"
+              height={1}
+              flexDirection="row"
               backgroundColor={hovered ? palette.hoverBg : undefined}
               onMouseOver={startHover}
               onMouseMove={startHover}
@@ -171,15 +174,10 @@ function OpenTuiTabs({
             >
               <Text
                 fg={tab.disabled ? palette.disabledFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
-                attributes={active ? TextAttributes.BOLD : 0}
+                attributes={attributes}
               >
                 {tabLabel}
               </Text>
-              {!compact && (
-                <Text fg={active ? palette.activeUnderline : hovered ? palette.hoverUnderline : palette.inactiveUnderline}>
-                  {"▔".repeat(tabWidth)}
-                </Text>
-              )}
             </Box>
           );
         })}

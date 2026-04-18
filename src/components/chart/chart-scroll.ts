@@ -5,7 +5,7 @@ export type ChartScrollDirection = "up" | "down" | "left" | "right";
 
 const KEYBOARD_PAN_WIDTH_RATIO = 0.02;
 const SCROLL_PAN_WIDTH_RATIO = 0.005;
-const DRAG_PAN_VISIBLE_RATIO = 0.2;
+const DRAG_PAN_VISIBLE_RATIO = 1;
 
 interface BufferExpansionViewState {
   activePreset: TimeRange | null;
@@ -45,7 +45,7 @@ export function resolveDragPanOffset(
   maxPanOffset: number,
 ): number {
   return clamp(
-    startPanOffset - getDragPanPointDelta(deltaCells, chartWidth, visibleCount),
+    startPanOffset + getDragPanPointDelta(deltaCells, chartWidth, visibleCount),
     0,
     Math.max(maxPanOffset, 0),
   );

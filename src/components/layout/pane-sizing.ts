@@ -1,10 +1,9 @@
 
 const RESERVED_PANE_CHROME_ROWS = 2;
-const RESERVED_PANE_CHROME_ROWS_WITHOUT_FOOTER = 1;
 
-export function getPaneBodyHeight(height: number, hasFooter = true): number {
-  // Reserve the header row plus the shared pane footer row when footer content exists.
-  return Math.max(1, height - (hasFooter ? RESERVED_PANE_CHROME_ROWS : RESERVED_PANE_CHROME_ROWS_WITHOUT_FOOTER));
+export function getPaneBodyHeight(height: number): number {
+  // Reserve the header row plus the bottom chrome row, even when the footer is visually empty.
+  return Math.max(1, height - RESERVED_PANE_CHROME_ROWS);
 }
 
 export function getPaneBodyWidth(width: number): number {

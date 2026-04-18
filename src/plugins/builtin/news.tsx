@@ -100,15 +100,14 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     }
   }, [news.length, selectedIdx, setSelectedIdx]);
 
-  usePaneFooter("news", () => ({
-    info: [
-      ...(ticker ? [{ id: "ticker", parts: [{ text: ticker.metadata.ticker, tone: "value" as const, bold: true }] }] : []),
-      { id: "count", parts: [{ text: `${news.length} headlines`, tone: "muted" }] },
+  usePaneFooter("news", () => {
+    const info = [
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
-    ],
-  }), [error, loading, loadingSummary, news.length, ticker?.metadata.ticker]);
+    ];
+    return info.length > 0 ? { info } : null;
+  }, [error, loading, loadingSummary]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view news.</Text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;

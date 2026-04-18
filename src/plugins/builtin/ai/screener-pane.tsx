@@ -928,7 +928,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
         parts: [{ text: activeProvider?.name ?? activeTab.providerId, tone: activeProvider?.available === false ? "warning" as const : "value" as const, bold: true }],
       }] : []),
       { id: "status", parts: [{ text: statusText, tone: isRunningActiveTab ? "muted" : "value" }] },
-      ...(activeTab ? [{ id: "count", parts: [{ text: `${activeTab.results.length} tickers`, tone: "muted" as const }] }] : []),
       ...(forceRunArmed ? [{ id: "force", parts: [{ text: "force refresh armed", tone: "warning" as const }] }] : []),
     ],
     hints: editorState

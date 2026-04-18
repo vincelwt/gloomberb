@@ -158,6 +158,7 @@ interface StockChartProps {
   height: number;
   focused: boolean;
   interactive?: boolean;
+  onActivate?: () => void;
   compact?: boolean;
   axisMode?: ChartAxisMode;
   historyOverride?: PricePoint[] | null;
@@ -1478,6 +1479,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   height,
   focused,
   interactive,
+  onActivate,
   compact,
   axisMode = "price",
   historyOverride = null,
@@ -1776,7 +1778,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const axisGap = axisSectionWidthBudget > 0 ? 1 : 0;
   const minChartWidth = compact ? 12 : 20;
   const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
-  const headerRows = compact ? 0 : 4;
+  const headerRows = compact ? 0 : 3;
   const helpRow = compact ? 1 : 0;
   const timeAxisRow = 1;
   const volumeHeight = showVolume && !compact ? 3 : 0;
@@ -3582,7 +3584,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   };
 
   const handlePlotDown = (event: ChartMouseEvent) => {
-    if (!interactive || compact) return;
+    if (compact) return;
+    if (!interactive) onActivate?.();
     focusPaneForMouseInteraction(event);
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
@@ -3607,7 +3610,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   };
 
   const handlePlotDrag = (event: ChartMouseEvent) => {
-    if (!interactive || compact) return;
+    if (compact || (!interactive && !dragRef.current)) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (localPointer) {
       const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
@@ -3630,7 +3633,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       const deltaCells = getGlobalMouseX(event, renderer) - dragRef.current.startGlobalX;
       requestAutoWindow(shiftDateWindow(
         dragRef.current.startWindow,
-        -getDragPanWindowRatio(deltaCells, chartWidth),
+        getDragPanWindowRatio(deltaCells, chartWidth),
       ));
       return;
     }
@@ -3902,9 +3905,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       onMouseDrag={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotDrag}
       onMouseDragEnd={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => { dragRef.current = null; }}
       onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
-      onMouseOut={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : () => {
-        dragRef.current = null;
-      }}
     >
       {isBlockingBody
         ? (
