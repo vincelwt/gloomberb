@@ -1,5 +1,6 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
+import { type ComponentType } from "react";
 import { colors } from "../../theme/colors";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -44,6 +45,21 @@ export function Button({
   shortcut,
   width,
 }: ButtonProps) {
+  const HostButton = useUiHost().Button as ComponentType<ButtonProps> | undefined;
+  if (HostButton) {
+    return (
+      <HostButton
+        label={label}
+        onPress={onPress}
+        variant={variant}
+        disabled={disabled}
+        active={active}
+        shortcut={shortcut}
+        width={width}
+      />
+    );
+  }
+
   const palette = resolveButtonColors(variant, active, disabled);
 
   return (

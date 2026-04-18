@@ -54,6 +54,11 @@ const PaneFooterContext = createContext<PaneFooterContextValue | null>(null);
 
 const EMPTY_FOOTER: CombinedPaneFooter = { info: [], hints: [] };
 
+export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolean {
+  if (!footer) return false;
+  return footer.info.length > 0 || footer.hints.length > 0;
+}
+
 function combineRegistrations(registrations: Map<string, PaneFooterRegistration>): CombinedPaneFooter {
   if (registrations.size === 0) return EMPTY_FOOTER;
 
@@ -355,24 +360,34 @@ export function PaneFooterBar({
 }) {
   const { nativePaneChrome } = useUiCapabilities();
   const resolvedFooter = footer ?? EMPTY_FOOTER;
-  const empty = resolvedFooter.info.length === 0 && resolvedFooter.hints.length === 0;
+  const empty = !hasPaneFooterContent(resolvedFooter);
   const borderColor = focused ? colors.borderFocused : colors.border;
   const reservedRight = Math.max(0, reserveRight);
 
   if (nativePaneChrome) {
-    const nativeContentWidth = width > 0 ? Math.max(0, Math.floor(width) - reservedRight - 2) : undefined;
     return (
       <Box
         height={1}
         flexDirection="row"
         paddingLeft={1}
         paddingRight={reservedRight + 1}
+        alignItems="center"
         data-gloom-role="pane-footer"
         data-focused={focused ? "true" : "false"}
         data-empty={empty ? "true" : "false"}
-        style={{ "--pane-footer-border-color": borderColor }}
+        style={{
+          "--pane-footer-border-color": borderColor,
+          borderTop: `1px solid ${borderColor}`,
+          backgroundColor: focused ? "rgba(84, 201, 159, 0.05)" : "rgba(20, 25, 30, 0.55)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        }}
       >
-        <FooterContent footer={resolvedFooter} focused={focused} width={nativeContentWidth} showBackground={false} />
+        <FooterContent
+          footer={resolvedFooter}
+          focused={focused}
+          width={width > 0 ? Math.max(0, Math.floor(width) - reservedRight - 2) : undefined}
+          showBackground={false}
+        />
       </Box>
     );
   }

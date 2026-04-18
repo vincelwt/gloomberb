@@ -33,6 +33,17 @@ import {
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { backendRequest } from "./backend-rpc";
 import { WebDataTable } from "./data-table";
+import {
+  WebButton,
+  WebCheckbox,
+  WebDialogFrame,
+  WebListView,
+  WebPageStackView,
+  WebRadioGroup,
+  WebSegmentedControl,
+  WebSwitch,
+  WebTextField,
+} from "./desktop-controls";
 
 function cellWidth(value: unknown): CSSProperties["width"] {
   if (typeof value === "number") return `${value * WEB_CELL_WIDTH}px`;
@@ -562,6 +573,10 @@ const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(function W
       {...cleanDomProps(props)}
       ref={elementRef}
       value={value}
+      autoCorrect="off"
+      autoCapitalize="off"
+      autoComplete="off"
+      spellCheck={false}
       placeholder={getStringProp(props, "placeholder")}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onKeyDown={handleKeyDown}
@@ -620,6 +635,10 @@ const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown>>(func
       {...cleanDomProps(props)}
       ref={elementRef}
       value={value}
+      autoCorrect="off"
+      autoCapitalize="off"
+      autoComplete="off"
+      spellCheck={false}
       placeholder={getStringProp(props, "placeholder")}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onKeyDown={handleKeyDown}
@@ -928,6 +947,15 @@ export const webUiHost: UiHost = {
   ScrollBox: WebScrollBox,
   Input: WebInput,
   Textarea: WebTextarea,
+  Button: WebButton,
+  TextField: WebTextField,
+  ListView: WebListView,
+  Checkbox: WebCheckbox,
+  Switch: WebSwitch,
+  RadioGroup: WebRadioGroup,
+  SegmentedControl: WebSegmentedControl,
+  DialogFrame: WebDialogFrame,
+  PageStackView: WebPageStackView,
   DataTable: WebDataTable,
   Tabs: WebTabs,
   ChartSurface: forwardRef<BoxRenderable, Record<string, unknown> & { children?: ReactNode }>(

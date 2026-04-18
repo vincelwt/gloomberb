@@ -3,6 +3,7 @@ import { act } from "react";
 import { Box } from "../../ui";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
+  hasPaneFooterContent,
   PaneFooterBar,
   PaneFooterProvider,
   usePaneFooter,
@@ -66,6 +67,15 @@ function FooterHarness({
 }
 
 describe("PaneFooterBar", () => {
+  test("reports when footer has content", () => {
+    expect(hasPaneFooterContent(null)).toBe(false);
+    expect(hasPaneFooterContent({ info: [], hints: [] })).toBe(false);
+    expect(hasPaneFooterContent({
+      info: [{ id: "rows", parts: [{ text: "Rows", tone: "label" }] }],
+      hints: [],
+    })).toBe(true);
+  });
+
   test("renders info left and hints right", async () => {
     testSetup = await testRender(<FooterHarness />, { width: 64, height: 1 });
     await act(async () => {

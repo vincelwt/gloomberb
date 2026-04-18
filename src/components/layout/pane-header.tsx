@@ -1,4 +1,5 @@
-import { Box, Text, useUiCapabilities } from "../../ui";
+import { Box, Span, Text, useUiCapabilities } from "../../ui";
+import type { ReactNode } from "react";
 import { colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../theme/colors";
 
 export const PANE_HEADER_HEIGHT = 1;
@@ -26,6 +27,44 @@ function truncateTitle(title: string, maxWidth: number): string {
   return `${title.slice(0, maxWidth - 2)}..`;
 }
 
+function DesktopPaneButton({
+  icon,
+  onMouseDown,
+}: {
+  icon: ReactNode;
+  onMouseDown?: (event: any) => void;
+}) {
+  return (
+    <Box
+      height={1}
+      alignItems="center"
+      justifyContent="center"
+      onMouseDown={onMouseDown}
+      data-gloom-interactive={onMouseDown ? "true" : undefined}
+      style={{
+        borderRadius: 4,
+        minWidth: 20,
+        paddingInline: 4,
+        backgroundColor: "rgba(255,255,255,0.04)",
+        cursor: onMouseDown ? "pointer" : "default",
+      }}
+    >
+      <Span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 12,
+          height: 12,
+          color: colors.textDim,
+        }}
+      >
+        {icon}
+      </Span>
+    </Box>
+  );
+}
+
 export function PaneHeader({
   title,
   width,
@@ -46,8 +85,6 @@ export function PaneHeader({
   const textColor = paneTitleText(focused, floating);
 
   if (nativePaneChrome) {
-    const reservedWidth = PANE_HEADER_GRIP.length + actionText.length + closeText.length;
-    const clippedTitle = truncateTitle(title, Math.max(0, width - reservedWidth));
     return (
       <Box
         height={PANE_HEADER_HEIGHT}
@@ -60,27 +97,60 @@ export function PaneHeader({
         onMouseDown={onHeaderMouseDown}
         onMouseDrag={onHeaderMouseDrag}
         onMouseDragEnd={onHeaderMouseDragEnd}
+        style={{
+          borderBottom: `1px solid ${focused ? colors.borderFocused : colors.border}`,
+          paddingInline: 6,
+          boxShadow: focused ? "inset 0 -1px 0 rgba(84, 201, 159, 0.18)" : "inset 0 -1px 0 rgba(255,255,255,0.04)",
+        }}
       >
-        <Text fg={textColor} selectable={false} data-gloom-role="pane-grip">{PANE_HEADER_GRIP}</Text>
-        <Text fg={textColor} selectable={false} data-gloom-role="pane-title">{clippedTitle}</Text>
-        <Box flexGrow={1} />
-        <Text
-          fg={textColor}
-          selectable={false}
-          data-gloom-role="pane-action"
-          onMouseDown={showActions ? onActionMouseDown : undefined}
-        >
-          {actionText}
+        <Text fg={focused ? colors.borderFocused : colors.textMuted} selectable={false} data-gloom-role="pane-grip">
+          {PANE_HEADER_GRIP}
         </Text>
-        {floating && (
+        <Box flexGrow={1} minWidth={0} overflow="hidden">
           <Text
             fg={textColor}
             selectable={false}
-            data-gloom-role="pane-close"
-            onMouseDown={onCloseMouseDown}
+            data-gloom-role="pane-title"
+            style={{
+              fontWeight: focused ? 700 : 600,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
-            {closeText}
+            {title}
           </Text>
+        </Box>
+        <Box data-gloom-role="pane-action">
+          {showActions ? (
+            <DesktopPaneButton
+              onMouseDown={onActionMouseDown}
+              icon={(
+                <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
+                  <circle cx="2" cy="6" r="1.1" fill="currentColor" />
+                  <circle cx="6" cy="6" r="1.1" fill="currentColor" />
+                  <circle cx="10" cy="6" r="1.1" fill="currentColor" />
+                </svg>
+              )}
+            />
+          ) : <Box width={2} />}
+        </Box>
+        {floating && (
+          <Box data-gloom-role="pane-close" marginLeft={1}>
+            <DesktopPaneButton
+              onMouseDown={onCloseMouseDown}
+              icon={(
+                <svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 3L9 9M9 3L3 9"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
+            />
+          </Box>
         )}
       </Box>
     );

@@ -1,5 +1,5 @@
-import { Box, ScrollBox, Text } from "../../ui";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Box, ScrollBox, Text, useUiHost } from "../../ui";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 
@@ -81,6 +81,30 @@ export function ListView({
   scrollable = false,
   autoScrollToIndex = true,
 }: ListViewProps) {
+  const HostListView = useUiHost().ListView as ComponentType<ListViewProps> | undefined;
+  if (HostListView) {
+    return (
+      <HostListView
+        items={items}
+        selectedIndex={selectedIndex}
+        scrollIndex={scrollIndex}
+        onSelect={onSelect}
+        onActivate={onActivate}
+        renderRow={renderRow}
+        getRowBackgroundColor={getRowBackgroundColor}
+        showSelectedDescription={showSelectedDescription}
+        emptyMessage={emptyMessage}
+        bgColor={bgColor}
+        selectedBgColor={selectedBgColor}
+        hoverBgColor={hoverBgColor}
+        height={height}
+        flexGrow={flexGrow}
+        scrollable={scrollable}
+        autoScrollToIndex={autoScrollToIndex}
+      />
+    );
+  }
+
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const baseBg = bgColor ?? colors.bg;

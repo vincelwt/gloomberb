@@ -3,6 +3,7 @@ import type { NewsQuery } from "../../../news/types";
 import { useNewsArticles } from "../../../news/hooks";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneFooter } from "../../../components";
+import { Spinner } from "../../../components/spinner";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import {
@@ -31,7 +32,9 @@ export function NewsPresetPane({
   emptyStateTitle: string;
   emptyStateHint: string;
 }) {
-  const articles = useNewsArticles(query).articles;
+  const newsState = useNewsArticles(query);
+  const articles = newsState.articles;
+  const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
   const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>(
     `${paneKey}:selectedArticleId`,
     null,
@@ -54,6 +57,10 @@ export function NewsPresetPane({
   ) : (
     <Box flexGrow={1} />
   );
+
+  if (loading && articles.length === 0) {
+    return <Spinner label={`Loading ${title.toLowerCase()}...`} />;
+  }
 
   return (
     <NewsArticleStackView

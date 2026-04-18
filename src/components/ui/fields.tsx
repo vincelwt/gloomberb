@@ -1,5 +1,5 @@
-import { Box, Input, Span, Text } from "../../ui";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { Box, Input, Span, Text, useUiHost } from "../../ui";
+import { useEffect, useRef, useState, type ComponentType, type RefObject } from "react";
 import { type InputRenderable } from "../../ui";
 import { colors } from "../../theme/colors";
 
@@ -42,6 +42,28 @@ export function TextField({
   placeholderColor = colors.textDim,
   onMouseDown,
 }: TextFieldProps) {
+  const HostTextField = useUiHost().TextField as ComponentType<TextFieldProps> | undefined;
+  if (HostTextField) {
+    return (
+      <HostTextField
+        label={label}
+        value={value}
+        placeholder={placeholder}
+        focused={focused}
+        width={width}
+        inputRef={inputRef}
+        onChange={onChange}
+        onSubmit={onSubmit}
+        hint={hint}
+        type={type}
+        backgroundColor={backgroundColor}
+        textColor={textColor}
+        placeholderColor={placeholderColor}
+        onMouseDown={onMouseDown}
+      />
+    );
+  }
+
   const localInputRef = useRef<InputRenderable>(null);
   const resolvedInputRef = inputRef ?? localInputRef;
   const currentValueRef = useRef(value ?? "");

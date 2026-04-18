@@ -1,10 +1,10 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useUiHost } from "../../ui";
 import { useShortcut } from "../../react/input";
-import type { ReactNode } from "react";
+import { type ComponentType, type ReactNode } from "react";
 import { colors } from "../../theme/colors";
 import { isDetailBackNavigationKey } from "../../utils/back-navigation";
 
-interface PageStackViewProps {
+export interface PageStackViewProps {
   focused: boolean;
   detailOpen: boolean;
   onBack: () => void;
@@ -23,6 +23,21 @@ export function PageStackView({
   backLabel = "Back",
   backHint,
 }: PageStackViewProps) {
+  const HostPageStackView = useUiHost().PageStackView as ComponentType<PageStackViewProps> | undefined;
+  if (HostPageStackView) {
+    return (
+      <HostPageStackView
+        focused={focused}
+        detailOpen={detailOpen}
+        onBack={onBack}
+        rootContent={rootContent}
+        detailContent={detailContent}
+        backLabel={backLabel}
+        backHint={backHint}
+      />
+    );
+  }
+
   useShortcut((event) => {
     if (!focused || !detailOpen || !isDetailBackNavigationKey(event)) return;
     event.stopPropagation?.();
@@ -48,7 +63,7 @@ export function PageStackView({
             onBack();
           }}
         >
-          <Text fg={colors.textBright}>{`<- ${backLabel}`}</Text>
+          <Text fg={colors.textBright}>{`← ${backLabel}`}</Text>
         </Box>
         <Box flexGrow={1} />
         {backHint ? <Text fg={colors.textMuted}>{backHint}</Text> : null}

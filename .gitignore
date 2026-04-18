@@ -36,3 +36,5 @@ src-tauri/gen
 # Finder (MacOS) folder config
 .DS_Store
 .code-graph/
+
+.codex/

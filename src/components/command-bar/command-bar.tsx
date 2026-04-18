@@ -1,4 +1,4 @@
-import { Box, Input, Text, Textarea } from "../../ui";
+import { Box, Input, Text, Textarea, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TextAttributes, type InputRenderable, type TextareaRenderable } from "../../ui";
@@ -12,6 +12,8 @@ import {
   commandBarBg,
   commandBarHeadingText,
   commandBarHoverBg,
+  commandBarInputBg,
+  commandBarPanelBg,
   commandBarSelectedBg,
   commandBarSelectedText,
   commandBarSubtleText,
@@ -187,6 +189,8 @@ interface ListScreenState {
 type WorkflowStringValues = Record<string, string>;
 
 const commandBarLog = debugLog.createLogger("command-bar");
+const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
+const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
 
 function getDefaultConfigBackupPath(): string {
   const home = typeof process !== "undefined" ? process.env.HOME : undefined;
@@ -297,6 +301,7 @@ export function CommandBar({
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const renderer = useNativeRenderer();
   const { width: termWidth, height: termHeight } = useViewport();
+  const { nativePaneChrome } = useUiCapabilities();
   const [rootQuery, setRootQueryValue] = useState(state.commandBarQuery);
   const rootQueryRef = useRef(rootQuery);
   rootQueryRef.current = rootQuery;
@@ -4891,12 +4896,14 @@ export function CommandBar({
     updateWorkflowValue,
   ]);
 
-  const barWidth = Math.max(42, Math.min(72, termWidth - 8, Math.floor(termWidth * 0.68)));
+  const barWidth = nativePaneChrome
+    ? Math.max(46, Math.min(78, termWidth - 10, Math.floor(termWidth * 0.64)))
+    : Math.max(42, Math.min(72, termWidth - 8, Math.floor(termWidth * 0.68)));
   const bodyHeight = Math.min(16, Math.max(9, termHeight - 9));
-  const barHeight = bodyHeight + 7;
+  const barHeight = nativePaneChrome ? bodyHeight + 4 : bodyHeight + 7;
   const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
   const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
-  const contentPadding = 3;
+  const contentPadding = nativePaneChrome ? 2 : 3;
   const paletteBg = commandBarBg();
   const paletteHeadingText = commandBarHeadingText();
   const paletteHoverBg = commandBarHoverBg();
@@ -4904,6 +4911,8 @@ export function CommandBar({
   const paletteSelectedText = commandBarSelectedText();
   const paletteText = commandBarText();
   const paletteSubtleText = commandBarSubtleText();
+  const panelBg = nativePaneChrome ? commandBarPanelBg() : paletteBg;
+  const inputBg = nativePaneChrome ? commandBarInputBg() : paletteBg;
   const resultsInnerWidth = Math.max(12, barWidth - contentPadding * 2);
   const trailingWidth = Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
   const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
@@ -5010,7 +5019,11 @@ export function CommandBar({
               flexDirection="row"
               height={1}
               paddingX={contentPadding}
-              backgroundColor={isSelected ? paletteSelectedBg : isHovered ? paletteHoverBg : paletteBg}
+              backgroundColor={isSelected
+                ? paletteSelectedBg
+                : isHovered
+                  ? paletteHoverBg
+                  : (nativePaneChrome ? panelBg : paletteBg)}
               onMouseMove={() => setHoveredIndex(row.globalIdx)}
               onMouseScroll={handleListScroll}
               onMouseDown={(event: any) => {
@@ -5028,6 +5041,7 @@ export function CommandBar({
                 }
                 activateListSelection({ item: row.item });
               }}
+              style={nativePaneChrome ? { borderRadius: 6 } : undefined}
             >
               <Box width={labelWidth}>
                 <Text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
@@ -5069,7 +5083,7 @@ export function CommandBar({
               key={field.id}
               flexDirection="column"
               marginBottom={1}
-              backgroundColor={active ? colors.panel : paletteBg}
+              backgroundColor={active ? inputBg : panelBg}
               onMouseDown={(event: any) => {
                 event.stopPropagation?.();
                 syncActiveWorkflowTextarea(currentRoute);
@@ -5080,6 +5094,12 @@ export function CommandBar({
                   openWorkflowFieldPicker(currentRoute, field);
                 }
               }}
+              style={nativePaneChrome ? {
+                border: `1px solid ${active ? "rgba(84, 201, 159, 0.28)" : "rgba(132, 145, 161, 0.16)"}`,
+                borderRadius: 6,
+                paddingInline: 8,
+                paddingBlock: 6,
+              } : undefined}
             >
               <Box height={1}>
                 <Text fg={active ? paletteText : paletteSubtleText} attributes={active ? TextAttributes.BOLD : 0}>
@@ -5093,6 +5113,7 @@ export function CommandBar({
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
+                    backgroundColor={active ? inputBg : panelBg}
                     onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
                     onSubmit={() => {
                       const index = visibleFields.findIndex((entry) => entry.id === field.id);
@@ -5108,8 +5129,9 @@ export function CommandBar({
                     minHeight={6}
                     height={6}
                     border
-                    borderColor={active ? paletteSelectedBg : paletteBg}
-                    backgroundColor={active ? colors.panel : paletteBg}
+                    borderColor={active ? (nativePaneChrome ? "rgba(84, 201, 159, 0.28)" : paletteSelectedBg) : (nativePaneChrome ? "rgba(132, 145, 161, 0.16)" : paletteBg)}
+                    backgroundColor={active ? inputBg : panelBg}
+                    style={nativePaneChrome ? { borderRadius: 6, overflow: "hidden" } : undefined}
                   >
                     {active ? (
                       <Textarea
@@ -5120,7 +5142,7 @@ export function CommandBar({
                         focused={!currentRoute.pending}
                         textColor={paletteText}
                         placeholderColor={paletteSubtleText}
-                        backgroundColor={colors.panel}
+                        backgroundColor={nativePaneChrome ? inputBg : colors.panel}
                         flexGrow={1}
                         wrapText
                       />
@@ -5148,6 +5170,7 @@ export function CommandBar({
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
+                    backgroundColor={active ? inputBg : panelBg}
                     onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
                     onSubmit={() => {
                       const index = visibleFields.findIndex((entry) => entry.id === field.id);
@@ -5162,11 +5185,12 @@ export function CommandBar({
               ) : (
                 <Box
                   height={1}
-                  backgroundColor={borderColor}
+                  backgroundColor={nativePaneChrome ? "transparent" : borderColor}
                   onMouseDown={(event: any) => {
                     event.stopPropagation?.();
                     openWorkflowFieldPicker(currentRoute, field);
                   }}
+                  style={nativePaneChrome ? { borderRadius: 4 } : undefined}
                 >
                   <Text fg={active ? paletteText : paletteSubtleText}>
                     {truncateText(summarizeWorkflowFieldValue(field, value), barWidth - contentPadding * 2)}
@@ -5266,7 +5290,7 @@ export function CommandBar({
               : route);
           }}
           onToggle={(id) => handleMultiSelectToggle(id)}
-          bgColor={paletteBg}
+          bgColor={nativePaneChrome ? panelBg : paletteBg}
         />
         <Box flexDirection="row" gap={1}>
           <Button label="Done" variant="primary" onPress={commitMultiSelectPicker} />
@@ -5282,7 +5306,7 @@ export function CommandBar({
       left={0}
       width={termWidth}
       height={termHeight}
-      zIndex={100}
+      zIndex={nativePaneChrome ? COMMAND_BAR_OVERLAY_Z_INDEX : 100}
       onMouseDown={(event: any) => {
         event.stopPropagation?.();
         event.preventDefault?.();
@@ -5296,51 +5320,87 @@ export function CommandBar({
         width={barWidth}
         height={barHeight}
         flexDirection="column"
-        backgroundColor={paletteBg}
-        zIndex={101}
+        backgroundColor={panelBg}
+        zIndex={nativePaneChrome ? COMMAND_BAR_PANEL_Z_INDEX : 101}
         onMouseDown={(event: any) => {
           event.stopPropagation?.();
         }}
+        data-gloom-role="command-bar-panel"
+        style={nativePaneChrome ? {
+          borderRadius: 8,
+          boxShadow: "0 14px 32px rgba(0,0,0,0.18)",
+          overflow: "hidden",
+        } : undefined}
       >
-        <Box height={1} />
+        {!nativePaneChrome && <Box height={1} backgroundColor={paletteBg} />}
 
-        <Box height={1} paddingX={contentPadding} flexDirection="row" alignItems="center">
-          {currentRoute && (
-            <Box marginRight={1}>
-              <Button label="Back" variant="ghost" onPress={popRoute} />
+        {!nativePaneChrome && (
+          <Box
+            height={1}
+            paddingX={contentPadding}
+            flexDirection="row"
+            alignItems="center"
+          >
+            {currentRoute && (
+              <Box marginRight={1}>
+                <Button label="Back" variant="ghost" onPress={popRoute} />
+              </Box>
+            )}
+            <Box flexGrow={1}>
+              <Text fg={paletteText} attributes={TextAttributes.BOLD}>
+                {currentRoute?.kind === "mode"
+                  ? currentRoute.screen === "themes" ? "Change Theme"
+                    : currentRoute.screen === "plugins" ? "Manage Plugins"
+                      : currentRoute.screen === "layout" ? "Layout Actions"
+                        : currentRoute.screen === "new-pane" ? "New Pane"
+                          : "Security Description"
+                  : currentRoute?.kind === "picker" ? currentRoute.title
+                    : currentRoute?.kind === "pane-settings" ? "Pane Settings"
+                      : currentRoute?.kind === "workflow" ? currentRoute.title
+                      : currentRoute?.kind === "confirm" ? currentRoute.title
+                          : "Commands"}
+              </Text>
+            </Box>
+          </Box>
+        )}
+
+        <Box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={panelBg}>
+          {nativePaneChrome && currentRoute && (
+            <Box height={1} paddingX={contentPadding}>
+              <Text
+                fg={paletteSubtleText}
+                onMouseDown={(event: any) => {
+                  event.stopPropagation?.();
+                  event.preventDefault?.();
+                  popRoute();
+                }}
+                data-gloom-interactive="true"
+              >
+                ← Back
+              </Text>
             </Box>
           )}
-          <Box flexGrow={1}>
-            <Text fg={paletteText} attributes={TextAttributes.BOLD}>
-              {currentRoute?.kind === "mode"
-                ? currentRoute.screen === "themes" ? "Change Theme"
-                  : currentRoute.screen === "plugins" ? "Manage Plugins"
-                    : currentRoute.screen === "layout" ? "Layout Actions"
-                      : currentRoute.screen === "new-pane" ? "New Pane"
-                        : "Security Description"
-                : currentRoute?.kind === "picker" ? currentRoute.title
-                  : currentRoute?.kind === "pane-settings" ? "Pane Settings"
-                    : currentRoute?.kind === "workflow" ? currentRoute.title
-                    : currentRoute?.kind === "confirm" ? currentRoute.title
-                        : "Commands"}
-            </Text>
-          </Box>
-        </Box>
-
-        <Box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={paletteBg}>
           {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
             <>
               <Box height={1} paddingX={contentPadding}>
-                <Box width={queryDisplayWidth} height={1} position="relative">
+                <Box
+                  width={queryDisplayWidth}
+                  height={1}
+                  position="relative"
+                  backgroundColor={nativePaneChrome ? undefined : inputBg}
+                  style={nativePaneChrome ? undefined : {
+                    overflow: "hidden",
+                  }}
+                >
                   <Input
                     value={visibleListState.query}
                     onInput={setActiveListQuery}
                     onChange={setActiveListQuery}
                     placeholder={visibleListState.kind === "root" ? "Search" : "Filter"}
                     focused
-                    width={queryDisplayWidth}
-                    backgroundColor={paletteBg}
-                    focusedBackgroundColor={paletteBg}
+                    width={nativePaneChrome ? "100%" : queryDisplayWidth}
+                    backgroundColor={nativePaneChrome ? "transparent" : paletteBg}
+                    focusedBackgroundColor={nativePaneChrome ? "transparent" : paletteBg}
                     textColor={paletteText}
                     focusedTextColor={paletteText}
                     placeholderColor={paletteSubtleText}
@@ -5382,7 +5442,7 @@ export function CommandBar({
           {showCustomMultiSelectPicker && renderMultiSelectBody()}
         </Box>
 
-        <Box flexGrow={1} />
+        <Box flexGrow={1} backgroundColor={nativePaneChrome ? panelBg : undefined} />
       </Box>
     </Box>
   );
