@@ -313,10 +313,10 @@ const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { children?:
     };
 
     const handleMouseDown = (event: MouseEvent) => {
-      callMouseHandler(propsRef.current.onMouseDown, event, "down");
-      if (event.isPropagationStopped() || event.button !== 0) return;
       const hasSyntheticDrag = typeof propsRef.current.onMouse === "function";
       const hasDirectDrag = typeof propsRef.current.onMouseDrag === "function" || typeof propsRef.current.onMouseDragEnd === "function";
+      callMouseHandler(propsRef.current.onMouseDown, event, "down");
+      if (event.button !== 0 || (event.isPropagationStopped() && !hasDirectDrag)) return;
       if (!hasSyntheticDrag && !hasDirectDrag) return;
       callMouseHandler(propsRef.current.onMouse, event, "down");
       draggingRef.current = true;
@@ -822,7 +822,7 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
         display: "flex",
         flexDirection: "row",
         width: "100%",
-        height: cellHeight(compact ? 1 : 2),
+        height: cellHeight(1),
         minInlineSize: 0,
         flexShrink: 0,
         overflowX: "auto",
@@ -841,10 +841,10 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
           "--tab-hover-bg": palette.hoverBg,
           color: "var(--tab-fg)",
           width: cellWidth(tabWidth),
-          height: cellHeight(compact ? 1 : 2),
+          height: cellHeight(1),
           flex: "0 0 auto",
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
           alignItems: "stretch",
           justifyContent: "flex-start",
           padding: 0,
@@ -856,6 +856,7 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
           textAlign: "left",
           whiteSpace: "pre",
           cursor: disabled ? "default" : "pointer",
+          boxShadow: compact ? undefined : "inset 0 -2px 0 var(--tab-underline)",
         } satisfies CssVars;
 
         return (
@@ -885,20 +886,6 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
             >
               {` ${tab.label} `}
             </span>
-            {!compact && (
-              <span
-                data-gloom-role="tab-underline"
-                aria-hidden="true"
-                style={{
-                  display: "block",
-                  height: "var(--cell-h)",
-                  lineHeight: "var(--cell-h)",
-                  color: "var(--tab-underline)",
-                }}
-              >
-                {"▔".repeat(tabWidth)}
-              </span>
-            )}
           </button>
         );
       })}

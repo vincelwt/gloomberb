@@ -398,7 +398,9 @@ export function PaneFooterBar({
       <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused="true" data-empty={empty ? "true" : "false"}>
         <Text fg={borderColor} selectable={false}>└</Text>
         <Box width={contentWidth} height={1} overflow="hidden">
-          <FooterContent footer={resolvedFooter} focused width={contentWidth} />
+          {empty
+            ? <Text fg={borderColor} selectable={false}>{"─".repeat(contentWidth)}</Text>
+            : <FooterContent footer={resolvedFooter} focused width={contentWidth} />}
         </Box>
         {reservedRight === 0 && <Text fg={borderColor} selectable={false}>┘</Text>}
       </Box>

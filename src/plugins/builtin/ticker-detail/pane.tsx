@@ -64,7 +64,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     ? resolveLockedTabId(paneSettings, allTabs)
     : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
   const activePluginTab = pluginTabs.find((tab) => tab.id === resolvedTabId && allTabs.some((visibleTab) => visibleTab.id === tab.id)) ?? null;
-  const tabBarHeight = paneSettings.hideTabs ? 0 : 2;
+  const tabBarHeight = paneSettings.hideTabs ? 0 : 1;
   const contentHeight = Math.max(1, height - tabBarHeight);
 
   const allTabsRef = useRef(allTabs);

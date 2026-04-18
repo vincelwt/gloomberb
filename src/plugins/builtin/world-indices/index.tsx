@@ -351,7 +351,6 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
     }
   }, [quotes]);
 
-  const loadedCount = Array.from(quotes.values()).filter((state) => !!state.quote).length;
   const loadingCount = Array.from(quotes.values()).filter((state) => state.loading).length;
   const latestQuoteTs = Math.max(
     0,
@@ -359,12 +358,10 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
   );
   usePaneFooter("world-indices", () => ({
     info: [
-      { id: "rows", parts: [{ text: `${navigableIndices.length} indices`, tone: "muted" }] },
-      { id: "quotes", parts: [{ text: `${loadedCount} quotes`, tone: loadedCount > 0 ? "value" : "muted" }] },
-      ...(loadingCount > 0 ? [{ id: "loading", parts: [{ text: `${loadingCount} loading`, tone: "muted" as const }] }] : []),
+      ...(loadingCount > 0 ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(latestQuoteTs > 0 ? [{ id: "fresh", parts: [{ text: new Date(latestQuoteTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), tone: "muted" as const }] }] : []),
     ],
-  }), [latestQuoteTs, loadedCount, loadingCount, navigableIndices.length]);
+  }), [latestQuoteTs, loadingCount]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
-import { act, useReducer } from "react";
+import { act, useReducer, useState } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../layout/pane-footer";
 import {
   AppContext,
@@ -123,10 +123,14 @@ function ChartHarness({
   config,
   ticker,
   financials,
+  interactive = false,
+  activateOnMouse = false,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials;
+  interactive?: boolean;
+  activateOnMouse?: boolean;
 }) {
   const initialState = createInitialState(config);
   initialState.focusedPaneId = TEST_PANE_ID;
@@ -134,7 +138,9 @@ function ChartHarness({
   initialState.financials = new Map([[ticker.metadata.ticker, financials]]);
 
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const [mouseInteractive, setMouseInteractive] = useState(interactive);
   harnessDispatch = dispatch;
+  const effectiveInteractive = activateOnMouse ? mouseInteractive : interactive;
 
   return (
     <AppContext value={{ state, dispatch }}>
@@ -142,7 +148,13 @@ function ChartHarness({
         <PaneFooterProvider>
           {(footer) => (
             <Box flexDirection="column" width={84} height={16}>
-              <StockChart width={84} height={15} focused />
+              <StockChart
+                width={84}
+                height={15}
+                focused
+                interactive={effectiveInteractive}
+                onActivate={activateOnMouse ? () => setMouseInteractive(true) : undefined}
+              />
               <PaneFooterBar footer={footer} focused width={84} />
             </Box>
           )}
@@ -324,6 +336,65 @@ describe("StockChart renderer switching", () => {
     expect(footerLine).toContain("[m]ode");
     expect(footerLine).not.toContain("Dec 2019");
     expect(footerLine).not.toContain("Dec 2024");
+  });
+
+  test("pans the visible window with mouse drag", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.layout.instances = config.layout.instances.map((instance) => (
+      instance.instanceId === TEST_PANE_ID
+        ? {
+          ...instance,
+          settings: {
+            chartRangePreset: "1Y",
+            chartResolution: "1d",
+          },
+        }
+        : instance
+    ));
+    config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
+    const ticker = makeTicker(symbol);
+    const history = makeHistory(240);
+    const provider = makeProvider({ [symbol]: history });
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: history,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+          activateOnMouse
+        />,
+      );
+    });
+
+    await flushFrames(3);
+    await emitKeypress({ name: "=", sequence: "=" });
+    await flushFrames(3);
+
+    const beforeLines = testSetup.captureCharFrame().split("\n");
+    const beforeAxis = beforeLines[14] ?? "";
+
+    await act(async () => {
+      await testSetup!.mockMouse.drag(20, 8, 68, 8);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(2);
+
+    const afterLines = testSetup.captureCharFrame().split("\n");
+    const afterAxis = afterLines[14] ?? "";
+    expect(afterAxis).not.toBe(beforeAxis);
   });
 
   test("switches from braille to kitty without crashing text updates", async () => {

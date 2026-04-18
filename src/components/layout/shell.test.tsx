@@ -925,6 +925,12 @@ describe("Shell", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(testSetup.captureCharFrame()).toContain("Footer Probe");
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+
+    expect(frame).toContain("Footer Probe");
+    expect(lines[8]).toContain("Footer Probe");
+    expect(lines[9]).not.toContain("Footer Probe");
+    expect(lines[9]).toContain("└───────────────────────────");
   });
 });

@@ -768,7 +768,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     info: [
       { id: "impact", parts: [{ text: `impact: ${impactFilter}`, tone: impactFilter === "all" ? "muted" : "value" }] },
       { id: "country", parts: [{ text: `country: ${countryFilter}`, tone: countryFilter === "all" ? "muted" : "value" }] },
-      { id: "count", parts: [{ text: `${filtered.length} events`, tone: "muted" }] },
       ...(nextEvent && nextCountdown ? [{
         id: "next",
         parts: [{ text: `Next: ${nextEvent.event.length > 18 ? nextEvent.event.slice(0, 18).trimEnd() : nextEvent.event} ${nextCountdown}`, tone: "muted" as const }],
@@ -782,7 +781,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
       { id: "country", key: "c", label: "country", onPress: cycleCountryFilter },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
     ],
-  }), [countryFilter, cycleCountryFilter, cycleImpactFilter, error, filtered.length, impactFilter, load, loading, nextCountdown, nextEvent?.event, staleness]);
+  }), [countryFilter, cycleCountryFilter, cycleImpactFilter, error, impactFilter, load, loading, nextCountdown, nextEvent?.event, staleness]);
 
   const handleHeaderClick = useCallback(() => {}, []);
   const selectDisplayRow = useCallback((row: DisplayRow) => {

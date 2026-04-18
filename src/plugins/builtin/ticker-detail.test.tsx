@@ -476,8 +476,8 @@ describe("TickerDetailPane", () => {
 
     await flushFrame();
     const frame = testSetup.captureCharFrame();
-    expect(receivedHeight).toBe(16);
-    expect(frame).toContain("height:16");
+    expect(receivedHeight).toBe(17);
+    expect(frame).toContain("height:17");
   });
 
   test("hides SEC for non-US equities", async () => {

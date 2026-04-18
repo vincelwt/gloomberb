@@ -75,10 +75,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       : colors.borderFocused;
   usePaneFooter("prediction-markets", () => ({
     info: [
-      { id: "count", parts: [{ text: `${controller.visibleRows.length} markets`, tone: "muted" }] },
       ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
       ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
-      ...(controller.watchlistSet.size > 0 ? [{ id: "watch", parts: [{ text: `${controller.watchlistSet.size} watched`, tone: "muted" as const }] }] : []),
       ...(controller.catalogStatus ? [{
         id: "catalog",
         parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
@@ -105,8 +103,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
-    controller.visibleRows.length,
-    controller.watchlistSet.size,
   ]);
 
   const browseControls = (

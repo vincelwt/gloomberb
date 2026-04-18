@@ -48,7 +48,7 @@ import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } fr
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneContent } from "./pane-content";
 import { PaneWrapper } from "./pane";
-import { hasPaneFooterContent, PaneFooterProvider } from "./pane-footer";
+import { PaneFooterProvider } from "./pane-footer";
 import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 
@@ -1241,7 +1241,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
           >
             <PaneFooterProvider>
               {(footer) => {
-                const bodyHeight = getPaneBodyHeight(leaf.rect.height, hasPaneFooterContent(footer));
+                const bodyHeight = getPaneBodyHeight(leaf.rect.height);
                 return (
                   <PaneWrapper
                     title={getPaneTitle(pane)}
@@ -1281,7 +1281,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         return (
           <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
             {(footer) => {
-              const bodyHeight = getPaneBodyHeight(preview.height, hasPaneFooterContent(footer));
+              const bodyHeight = getPaneBodyHeight(preview.height);
               return (
                 <FloatingPaneWrapper
                   title={getPaneTitle(pane)}
