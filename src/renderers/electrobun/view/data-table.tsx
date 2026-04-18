@@ -19,7 +19,6 @@ import { useAppDispatch, usePaneInstance } from "../../../state/app-context";
 import { useRafCallback } from "../../../react/use-raf-callback";
 import { padTo } from "../../../utils/format";
 import { measurePerf } from "../../../utils/perf-marks";
-import { useDoubleClickActivation } from "../../../components/use-double-click-activation";
 import type {
   DataTableCell,
   DataTableColumn,
@@ -27,11 +26,6 @@ import type {
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
-
-interface DataTableRowPointerTarget<T> {
-  item: T;
-  index: number;
-}
 
 interface VirtualRow {
   index: number;
@@ -235,7 +229,8 @@ function WebDataTableRowInner<
 >({
   columns,
   focusPane,
-  handleRowMouseDown,
+  onActivateRow,
+  onSelectRow,
   hovered,
   index,
   item,
@@ -250,11 +245,8 @@ function WebDataTableRowInner<
 }: {
   columns: C[];
   focusPane: () => void;
-  handleRowMouseDown: (
-    targetKey: string,
-    value: DataTableRowPointerTarget<T>,
-    event?: { detail?: number },
-  ) => void;
+  onActivateRow?: (item: T, index: number) => void;
+  onSelectRow: (item: T, index: number) => void;
   hovered: boolean;
   index: number;
   item: T;
@@ -327,7 +319,13 @@ function WebDataTableRowInner<
       onMouseDown={(event) => {
         focusPane();
         event.preventDefault();
-        handleRowMouseDown(itemKey, { item, index }, event);
+        onSelectRow(item, index);
+      }}
+      onDoubleClick={(event) => {
+        focusPane();
+        event.preventDefault();
+        event.stopPropagation();
+        onActivateRow?.(item, index);
       }}
     >
       {columns.map((column) => {
@@ -354,7 +352,18 @@ function WebDataTableRowInner<
               }
               event.preventDefault();
               event.stopPropagation();
-              handleRowMouseDown(itemKey, { item, index }, event);
+              onSelectRow(item, index);
+            }}
+            onDoubleClick={(event) => {
+              if (cell.onMouseDown) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
+              focusPane();
+              event.preventDefault();
+              event.stopPropagation();
+              onActivateRow?.(item, index);
             }}
           >
             <span
@@ -392,6 +401,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   onActivate,
   renderCell,
   renderSectionHeader,
+  emptyContent,
   emptyStateTitle,
   emptyStateHint,
   virtualize = true,
@@ -410,17 +420,12 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     [columns],
   );
   const minWidthPx = px(tableWidth);
-  const handleRowMouseDown =
-    useDoubleClickActivation<DataTableRowPointerTarget<T>>({
-      onSelect: ({ item, index }) => {
-        onSelect(item, index);
-      },
-      onActivate: onActivate
-        ? ({ item, index }) => {
-            onActivate(item, index);
-          }
-        : undefined,
-    });
+  const selectRow = useCallback((item: T, index: number) => {
+    onSelect(item, index);
+  }, [onSelect]);
+  const activateRow = useCallback((item: T, index: number) => {
+    onActivate?.(item, index);
+  }, [onActivate]);
 
   const focusPane = useCallback(() => {
     if (!paneInstanceId) return;
@@ -588,23 +593,25 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             })}
           </div>
           {items.length === 0 ? (
-            <div
-              style={{
-                width: "100%",
-                padding: `${WEB_CELL_HEIGHT}px ${WEB_CELL_WIDTH}px`,
-                color: colors.textDim,
-                lineHeight: "var(--cell-h)",
-              }}
-            >
-              <div style={cellTextStyle(colors.textBright, TextAttributes.BOLD)}>
-                {emptyStateTitle}
-              </div>
-              {emptyStateHint ? (
-                <div style={cellTextStyle(colors.textDim, TextAttributes.NONE)}>
-                  {emptyStateHint}
+            emptyContent ?? (
+              <div
+                style={{
+                  width: "100%",
+                  padding: `${WEB_CELL_HEIGHT}px ${WEB_CELL_WIDTH}px`,
+                  color: colors.textDim,
+                  lineHeight: "var(--cell-h)",
+                }}
+              >
+                <div style={cellTextStyle(colors.textBright, TextAttributes.BOLD)}>
+                  {emptyStateTitle}
                 </div>
-              ) : null}
-            </div>
+                {emptyStateHint ? (
+                  <div style={cellTextStyle(colors.textDim, TextAttributes.NONE)}>
+                    {emptyStateHint}
+                  </div>
+                ) : null}
+              </div>
+            )
           ) : measurePerf(
             "data-table.desktop.render-virtual-rows",
             () =>
@@ -624,7 +631,8 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     itemKey={itemKey}
                     columns={columns}
                     focusPane={focusPane}
-                    handleRowMouseDown={handleRowMouseDown}
+                    onActivateRow={onActivate ? activateRow : undefined}
+                    onSelectRow={selectRow}
                     hovered={hovered}
                     minWidthPx={minWidthPx}
                     renderCell={renderCell}

@@ -1,13 +1,12 @@
 import { Box, Input, Text } from "../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useShortcut } from "../../react/input";
-import { TextAttributes } from "../../ui";
 import { type InputRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, DetailTabProps, PaneProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { MarkdownEditor } from "../../components/markdown-editor";
-import { usePaneFooter } from "../../components";
+import { TabBar, usePaneFooter } from "../../components";
 import { NotesFiles, type QuickNoteEntry } from "./notes-files";
 
 function createNotesTab(notesFiles: NotesFiles) {
@@ -204,6 +203,15 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
       setEditing(false);
     }, [tabs, activeTabId]);
 
+    const startRenameTab = useCallback((id: string) => {
+      const tab = tabs.find((entry) => entry.id === id);
+      if (!tab) return;
+      setActiveTabId(id);
+      setRenameValue(tab.title);
+      setRenaming(true);
+      setEditing(false);
+    }, [tabs]);
+
     const commitRename = useCallback(() => {
       const value = renameInputRef.current?.editBuffer.getText().trim() || renameValue.trim();
       if (!value || !activeTabId) {
@@ -288,47 +296,26 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
 
     return (
       <Box flexDirection="column" flexGrow={1}>
-        {/* Tab bar */}
-        <Box flexDirection="row" height={1}>
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTabId;
-            return (
-              <Box key={tab.id} flexDirection="row">
-                <Text
-                  fg={isActive ? colors.textBright : colors.textDim}
-                  bg={isActive ? colors.selected : undefined}
-                  attributes={isActive ? TextAttributes.BOLD : 0}
-                  onMouseDown={() => {
-                    if (tab.id !== activeTabId) {
-                      saveCurrentTab();
-                      setActiveTabId(tab.id);
-                      setEditing(false);
-                    }
-                  }}
-                  onDoubleClick={() => {
-                    setActiveTabId(tab.id);
-                    startRename();
-                  }}
-                >
-                  {` ${tab.title} `}
-                </Text>
-                {isActive && tabs.length > 1 ? (
-                  <Text
-                    fg={colors.textMuted}
-                    onMouseDown={() => removeTab(tab.id)}
-                  >
-                    {`x `}
-                  </Text>
-                ) : <Text>{` `}</Text>}
-              </Box>
-            );
-          })}
-          <Text
-            fg={colors.textMuted}
-            onMouseDown={addTab}
-          >
-            {` + `}
-          </Text>
+        <Box height={1}>
+          <TabBar
+            tabs={tabs.map((tab) => ({
+              label: tab.title,
+              value: tab.id,
+              onClose: tabs.length > 1 ? removeTab : undefined,
+              onDoubleClick: startRenameTab,
+            }))}
+            activeValue={activeTabId}
+            onSelect={(id) => {
+              if (id === activeTabId) return;
+              saveCurrentTab();
+              setActiveTabId(id);
+              setEditing(false);
+            }}
+            compact
+            variant="pill"
+            closeMode="active"
+            onAdd={addTab}
+          />
         </Box>
         {/* Rename input */}
         {renaming && (

@@ -21,12 +21,15 @@ interface NewsArticleStackBaseProps {
   articles: MarketNewsItem[];
   focused: boolean;
   width: number;
+  readArticleIds?: ReadonlySet<string>;
   selectedArticleId: string | null;
   setSelectedArticleId: (articleId: string | null) => void;
   sortPreference: NewsSortPreference;
   setSortPreference: (preference: NewsSortPreference) => void;
   onOpenArticle: (article: MarketNewsItem) => void;
+  onArticleRead?: (articleId: string) => void;
   columns: NewsColumnId[];
+  emptyContent?: ReactNode;
   emptyStateTitle: string;
   emptyStateHint?: string;
   titleForArticle?: (article: MarketNewsItem) => string;
@@ -140,18 +143,21 @@ export function NewsArticleStackView({
   articles,
   focused,
   width,
+  readArticleIds,
   rootHeight,
   selectedArticleId,
   setSelectedArticleId,
   sortPreference,
   setSortPreference,
   onOpenArticle,
+  onArticleRead,
   detailOpen,
   onBack,
   detailContent,
   rootBefore,
   onRootKeyDown,
   columns: columnIds,
+  emptyContent,
   emptyStateTitle,
   emptyStateHint,
   titleForArticle,
@@ -168,10 +174,15 @@ export function NewsArticleStackView({
     setSelectedArticleId(sortedArticles[index]?.id ?? null);
   }, [setSelectedArticleId, sortedArticles]);
 
+  const openArticle = useCallback((article: MarketNewsItem) => {
+    onArticleRead?.(article.id);
+    onOpenArticle(article);
+  }, [onArticleRead, onOpenArticle]);
+
   const openIndex = useCallback((index: number) => {
     const article = sortedArticles[index];
-    if (article) onOpenArticle(article);
-  }, [onOpenArticle, sortedArticles]);
+    if (article) openArticle(article);
+  }, [openArticle, sortedArticles]);
 
   useEffect(() => {
     if (sortedArticles.length === 0) {
@@ -201,7 +212,9 @@ export function NewsArticleStackView({
         return {
           text: titleForArticle?.(item) ?? item.title,
           color: selectedColor ?? colors.text,
-          attributes: item.isBreaking ? TextAttributes.BOLD : TextAttributes.NONE,
+          attributes: readArticleIds?.has(item.id)
+            ? TextAttributes.NONE
+            : TextAttributes.BOLD,
         };
       case "tickers":
         return { text: item.tickers.join(" "), color: selectedColor ?? colors.textBright };
@@ -213,7 +226,7 @@ export function NewsArticleStackView({
           color: selectedColor ?? (item.importance >= 80 ? colors.positive : colors.textDim),
         };
     }
-  }, [titleForArticle]);
+  }, [readArticleIds, titleForArticle]);
 
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>
@@ -236,8 +249,9 @@ export function NewsArticleStackView({
       getItemKey={(item) => item.id}
       isSelected={(item, index) => item.id === selectedArticleId || (selectedArticleId === null && index === 0)}
       onSelect={(article) => setSelectedArticleId(article.id)}
-      onActivate={onOpenArticle}
+      onActivate={openArticle}
       renderCell={renderCell}
+      emptyContent={emptyContent}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}

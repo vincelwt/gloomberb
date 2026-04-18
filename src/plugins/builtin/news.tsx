@@ -11,6 +11,7 @@ import { Spinner } from "../../components/spinner";
 import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../components";
 import { useNewsArticles } from "../../news/hooks";
 import { registerNewsWireFeatures } from "./news-wire";
+import { useNewsReadState } from "./news-wire/read-state";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
@@ -28,7 +29,7 @@ function getFeedItems(
     const preview = summaryCache.get(item.url) ?? item.summary ?? undefined;
     const isSelected = item.url === selectedUrl;
     return {
-      id: item.url || `${item.title}:${item.publishedAt.toISOString()}`,
+      id: item.id,
       eyebrow: item.source,
       title: item.title,
       timestamp: item.publishedAt,
@@ -67,6 +68,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     limit: NEWS_ITEM_LIMIT,
   } : null);
   const news = newsState.articles;
+  const { readArticleIds, markArticleRead } = useNewsReadState();
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
   const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
 
@@ -124,6 +126,8 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
       items={items}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
+      isItemRead={(item) => readArticleIds.has(item.id)}
+      onOpenItem={(item) => markArticleRead(item.id)}
       sourceLabel="Source"
       titleLabel="Headline"
       emptyStateTitle="No news."

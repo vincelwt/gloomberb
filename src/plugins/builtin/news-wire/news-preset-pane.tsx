@@ -11,6 +11,7 @@ import {
   type NewsColumnId,
   type NewsSortPreference,
 } from "./news-table";
+import { useNewsReadState } from "./read-state";
 
 export function NewsPresetPane({
   focused,
@@ -44,6 +45,7 @@ export function NewsPresetPane({
     defaultSort,
   );
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
+  const { readArticleIds, markArticleRead } = useNewsReadState();
 
   usePaneFooter(`news-wire:${paneKey}`, () => null, [paneKey]);
 
@@ -63,11 +65,13 @@ export function NewsPresetPane({
       focused={focused}
       width={width}
       rootHeight={height}
+      readArticleIds={readArticleIds}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
       setSortPreference={setSortPreference}
       onOpenArticle={openArticle}
+      onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}

@@ -3,7 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePaneTicker } from "../../../state/app-context";
-import { usePaneFooter } from "../../../components";
+import { TabBar, usePaneFooter } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import type { FinancialStatement } from "../../../types/financials";
 import {
@@ -79,6 +79,12 @@ const FINANCIAL_SUB_TABS: FinancialSubTab[] = [
     ],
   },
 ];
+
+const FINANCIAL_SUB_TABS_WIDTH = FINANCIAL_SUB_TABS.reduce(
+  (sum, tab) => sum + tab.name.length + 2,
+  0,
+);
+const FINANCIAL_PERIOD_TABS_WIDTH = "Annual".length + "Quarterly".length + 4;
 
 const FLOW_KEYS = new Set<string>([
   "totalRevenue",
@@ -341,24 +347,30 @@ export function ResolvedFinancialsTab({
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={2} paddingBottom={1}>
       <Box flexDirection="row" height={1}>
-        {FINANCIAL_SUB_TABS.map((tab, index) => (
-          <Box key={tab.key} flexDirection="row" onMouseDown={() => setSubTabIdx(index)}>
-            <Text
-              fg={index === subTabIdx ? colors.textBright : colors.textDim}
-              attributes={index === subTabIdx ? TextAttributes.BOLD : 0}
-            >
-              {tab.name}
-            </Text>
-            {index < FINANCIAL_SUB_TABS.length - 1 && <Text fg={colors.textMuted}>{" │ "}</Text>}
-          </Box>
-        ))}
-        <Box flexGrow={1} />
-        <Box onMouseDown={() => setPeriod("annual")}>
-          <Text fg={isAnnual ? colors.textBright : colors.textDim} attributes={isAnnual ? TextAttributes.BOLD : 0}>Annual</Text>
+        <Box width={FINANCIAL_SUB_TABS_WIDTH} height={1}>
+          <TabBar
+            tabs={FINANCIAL_SUB_TABS.map((tab, index) => ({
+              label: tab.name,
+              value: String(index),
+            }))}
+            activeValue={String(subTabIdx)}
+            onSelect={(value) => setSubTabIdx(Number(value))}
+            compact
+            variant="bare"
+          />
         </Box>
-        <Text fg={colors.textMuted}>{" / "}</Text>
-        <Box onMouseDown={() => setPeriod("quarterly")}>
-          <Text fg={!isAnnual ? colors.textBright : colors.textDim} attributes={!isAnnual ? TextAttributes.BOLD : 0}>Quarterly</Text>
+        <Box flexGrow={1} />
+        <Box width={FINANCIAL_PERIOD_TABS_WIDTH} height={1}>
+          <TabBar
+            tabs={[
+              { label: "Annual", value: "annual", disabled: !hasAnnualStatements },
+              { label: "Quarterly", value: "quarterly", disabled: !hasQuarterlyStatements },
+            ]}
+            activeValue={isAnnual ? "annual" : "quarterly"}
+            onSelect={(value) => setPeriod(value as FinancialPeriod)}
+            compact
+            variant="bare"
+          />
         </Box>
       </Box>
       <Box height={1} />

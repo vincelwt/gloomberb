@@ -176,6 +176,9 @@ export interface HostTabItem {
   label: string;
   value: string;
   disabled?: boolean;
+  onClose?: (value: string) => void;
+  onDoubleClick?: (value: string) => void;
+  onContextMenu?: (value: string, event: any) => void;
 }
 
 export interface HostTabsPalette {
@@ -187,13 +190,21 @@ export interface HostTabsPalette {
   inactiveUnderline: string;
   hoverUnderline: string;
   hoverBg: string;
+  activeBg: string;
+  activePillFg: string;
+  closeFg: string;
+  addFg: string;
 }
 
 export interface HostTabsProps {
   tabs: HostTabItem[];
-  activeValue: string;
+  activeValue: string | null;
   onSelect: (value: string) => void;
   compact?: boolean;
+  variant?: "underline" | "pill" | "bare";
+  closeMode?: "active" | "always";
+  addLabel?: string;
+  onAdd?: () => void;
   palette: HostTabsPalette;
 }
 

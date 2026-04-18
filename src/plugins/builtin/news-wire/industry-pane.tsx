@@ -9,6 +9,7 @@ import { Spinner } from "../../../components/spinner";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
+import { useNewsReadState } from "./read-state";
 import {
   NEWS_QUERY_PRESETS,
   SECTOR_NEWS_SECTORS,
@@ -42,6 +43,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const { articles, allArticles, phase } = useIndustryArticles(category);
   const loading = phase === "loading" || (phase === "refreshing" && articles.length === 0);
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
+  const { readArticleIds, markArticleRead } = useNewsReadState();
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
     for (const cat of SECTOR_TABS) {
@@ -85,6 +87,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
         activeValue={category}
         onSelect={(value) => setCategory(value as SectorNewsSelection)}
         compact
+        variant="bare"
       />
     </Box>
   );
@@ -95,27 +98,30 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     <Box flexGrow={1} />
   );
 
-  if (loading && articles.length === 0) {
-    return <Spinner label="Loading sector news..." />;
-  }
-
   return (
     <NewsArticleStackView
       articles={articles}
       focused={focused}
       width={width}
       rootHeight={height}
+      readArticleIds={readArticleIds}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
       setSortPreference={setSortPreference}
       onOpenArticle={openArticle}
+      onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
       rootBefore={rootBefore}
       onRootKeyDown={handleRootKeyDown}
       columns={["time", "source", "title", "tickers", "categories"]}
+      emptyContent={loading && articles.length === 0 ? (
+        <Box width="100%" paddingX={1} paddingY={1}>
+          <Spinner label="Loading sector news..." />
+        </Box>
+      ) : undefined}
       emptyStateTitle="No news in this category"
       emptyStateHint="Try another category or wait for the next feed refresh."
     />

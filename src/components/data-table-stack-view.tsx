@@ -88,6 +88,7 @@ export function DataTableStackView<
   onActivate,
   renderCell,
   renderSectionHeader,
+  emptyContent,
   emptyStateTitle,
   emptyStateHint,
   virtualize = true,
@@ -223,6 +224,7 @@ export function DataTableStackView<
         onActivate={onActivate}
         renderCell={renderCell}
         renderSectionHeader={renderSectionHeader}
+        emptyContent={emptyContent}
         emptyStateTitle={emptyStateTitle}
         emptyStateHint={emptyStateHint}
         virtualize={virtualize}

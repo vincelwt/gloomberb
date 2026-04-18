@@ -232,16 +232,15 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
         all: unset;
         box-sizing: border-box;
       }
-      [data-gloom-role="tab-button"]:not(:disabled):hover {
-        --tab-fg: var(--tab-hover-fg);
-        background: var(--tab-hover-bg);
-      }
-      [data-gloom-role="tab-button"]:not(:disabled):not([data-active="true"]):hover {
-        --tab-underline: var(--tab-hover-underline);
-      }
       [data-gloom-role="tab-button"]:focus-visible {
         outline: 1px solid var(--tab-hover-underline);
         outline-offset: -1px;
+      }
+      [data-gloom-role="tab-close"] {
+        cursor: pointer;
+      }
+      [data-gloom-role="tab-close"]:hover {
+        background: rgba(255,255,255,.1);
       }
       [data-gloom-scrollbar-x="hidden"]::-webkit-scrollbar:horizontal {
         height: 0;

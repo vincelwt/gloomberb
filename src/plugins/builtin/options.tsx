@@ -12,6 +12,7 @@ import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { Spinner } from "../../components/spinner";
+import { TabBar } from "../../components/tab-bar";
 import { setOptionsAvailability } from "./options-availability";
 import { usePaneFooter } from "../../components";
 
@@ -20,7 +21,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const [expIdx, setExpIdx] = useState(0);
   const [strikeIdx, setStrikeIdx] = useState(0);
   const [interactive, setInteractive] = useState(false);
-  const [hoveredExpIdx, setHoveredExpIdx] = useState<number | null>(null);
   const target = resolveOptionsTarget(ticker);
   const isOpt = target?.isOptionTicker ?? false;
   const parsed = target?.parsedOption ?? null;
@@ -76,10 +76,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     setExpIdx(0);
     setStrikeIdx(0);
   }, [effectiveTicker]);
-
-  useEffect(() => {
-    setHoveredExpIdx(null);
-  }, [expIdx]);
 
   useEffect(() => {
     if (!target) return;
@@ -199,26 +195,21 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
       {/* Expiration selector */}
       <Box flexDirection="row" height={1} gap={1}>
         <Text fg={colors.textDim}>Exp:</Text>
-        {visibleExps.map((ts, i) => {
-          const realIdx = expStart + i;
-          const isActive = realIdx === expIdx;
-          const isHovered = realIdx === hoveredExpIdx && !isActive;
-          return (
-            <Box
-              key={ts}
-              onMouseMove={() => setHoveredExpIdx((current) => (current === realIdx ? current : realIdx))}
-              onMouseOut={() => setHoveredExpIdx((current) => (current === realIdx ? null : current))}
-              onMouseDown={() => { enterInteractive(); setExpIdx(realIdx); }}
-            >
-              <Text
-                fg={isActive ? colors.textBright : isHovered ? colors.text : colors.textMuted}
-                attributes={isActive ? TextAttributes.BOLD : isHovered ? TextAttributes.UNDERLINE : 0}
-              >
-                {isActive ? `[${formatExpDate(ts)}]` : ` ${formatExpDate(ts)} `}
-              </Text>
-            </Box>
-          );
-        })}
+        <Box flexGrow={1} height={1}>
+          <TabBar
+            tabs={visibleExps.map((ts, i) => ({
+              label: formatExpDate(ts),
+              value: String(expStart + i),
+            }))}
+            activeValue={String(expIdx)}
+            onSelect={(value) => {
+              enterInteractive();
+              setExpIdx(Number(value));
+            }}
+            compact
+            variant="bare"
+          />
+        </Box>
         {loading && <spinner name="dots" color={colors.textDim} />}
       </Box>
 

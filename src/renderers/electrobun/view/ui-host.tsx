@@ -821,8 +821,24 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
 
 type CssVars = CSSProperties & Record<`--${string}`, string>;
 
-function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: HostTabsProps) {
+function WebTabs({
+  tabs,
+  activeValue,
+  onSelect,
+  compact = false,
+  variant = "underline",
+  closeMode = "always",
+  addLabel = "+",
+  onAdd,
+  palette,
+}: HostTabsProps) {
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
+  const [hoveredValue, setHoveredValue] = useState<string | null>(null);
+  const showUnderline = variant === "underline" && !compact;
+  const listHeight = showUnderline ? 28 : "100%";
+  const tabFontSize = compact || showUnderline ? 12 : 13;
+  const tabPaddingInline = showUnderline ? 10 : 8;
+  const tabPaddingBlock = variant === "bare" || variant === "pill" ? 2 : 0;
 
   useEffect(() => {
     activeTabRef.current?.scrollIntoView({
@@ -840,6 +856,21 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
     event.preventDefault();
   };
 
+  const resolveTabBackground = (active: boolean, hovered: boolean) => {
+    if (active && variant === "pill") {
+      return hovered ? "rgba(84, 201, 159, 0.24)" : palette.activeBg;
+    }
+    return hovered ? palette.hoverBg : "transparent";
+  };
+
+  const resolveTabColor = (disabled: boolean, active: boolean, hovered: boolean) => {
+    if (disabled) return palette.disabledFg;
+    if (active && variant === "pill") return palette.activePillFg;
+    if (active) return palette.activeFg;
+    if (hovered) return palette.hoverFg;
+    return palette.inactiveFg;
+  };
+
   return (
     <div
       data-gloom-role="tab-list"
@@ -848,42 +879,57 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
       style={{
         display: "flex",
         flexDirection: "row",
+        alignItems: "stretch",
+        gap: 4,
         width: "100%",
-        height: cellHeight(1),
+        height: listHeight,
         minInlineSize: 0,
         flexShrink: 0,
         overflowX: "auto",
         overflowY: "hidden",
+        paddingInline: variant === "underline" ? 0 : 4,
+        paddingBlock: tabPaddingBlock,
+        marginBottom: showUnderline ? 4 : 0,
+        boxSizing: "border-box",
       }}
     >
       {tabs.map((tab) => {
         const active = tab.value === activeValue;
         const disabled = tab.disabled === true;
-        const tabWidth = tab.label.length + 2;
+        const hovered = hoveredValue === tab.value && !disabled;
+        const closeVisible = !!tab.onClose && (closeMode === "always" || active);
         const tabStyle = {
-          "--tab-fg": disabled ? palette.disabledFg : active ? palette.activeFg : palette.inactiveFg,
+          "--tab-fg": resolveTabColor(disabled, active, hovered),
           "--tab-hover-fg": palette.hoverFg,
           "--tab-underline": active ? palette.activeUnderline : palette.inactiveUnderline,
           "--tab-hover-underline": palette.hoverUnderline,
           "--tab-hover-bg": palette.hoverBg,
+          "--tab-close-fg": active && variant === "pill" ? palette.activePillFg : palette.closeFg,
           color: "var(--tab-fg)",
-          width: cellWidth(tabWidth),
-          height: cellHeight(1),
           flex: "0 0 auto",
           display: "flex",
           flexDirection: "row",
-          alignItems: "stretch",
-          justifyContent: "flex-start",
-          padding: 0,
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          position: "relative",
+          minWidth: 0,
+          height: "100%",
+          paddingInline: tabPaddingInline,
+          paddingBlock: 0,
+          paddingBottom: showUnderline ? 2 : 0,
           margin: 0,
           border: 0,
-          background: "transparent",
+          borderRadius: variant === "underline" ? 5 : 6,
+          background: resolveTabBackground(active, hovered),
           font: "inherit",
-          lineHeight: "var(--cell-h)",
-          textAlign: "left",
-          whiteSpace: "pre",
+          fontSize: tabFontSize,
+          fontWeight: active ? 700 : 500,
+          lineHeight: 1,
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          transition: "background-color 110ms ease, color 110ms ease, box-shadow 110ms ease",
           cursor: disabled ? "default" : "pointer",
-          boxShadow: compact ? undefined : "inset 0 -2px 0 var(--tab-underline)",
         } satisfies CssVars;
 
         return (
@@ -898,24 +944,119 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
             aria-disabled={disabled || undefined}
             disabled={disabled}
             style={tabStyle}
+            onMouseEnter={() => setHoveredValue(tab.value)}
+            onMouseLeave={() => setHoveredValue((current) => (current === tab.value ? null : current))}
             onClick={() => {
               if (!disabled) onSelect(tab.value);
             }}
+            onDoubleClick={() => {
+              if (!disabled) tab.onDoubleClick?.(tab.value);
+            }}
+            onContextMenu={tab.onContextMenu ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              tab.onContextMenu?.(tab.value, event);
+            } : undefined}
           >
             <span
               data-gloom-role="tab-label"
               style={{
                 display: "block",
-                height: "var(--cell-h)",
-                lineHeight: "var(--cell-h)",
-                fontWeight: active ? 700 : undefined,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              {` ${tab.label} `}
+              {tab.label}
             </span>
+            {closeVisible && (
+              <span
+                data-gloom-role="tab-close"
+                aria-label={`Close ${tab.label}`}
+                role="button"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 16,
+                  height: 16,
+                  marginRight: -4,
+                  borderRadius: 4,
+                  color: "var(--tab-close-fg)",
+                  fontSize: 12,
+                  lineHeight: 1,
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  tab.onClose?.(tab.value);
+                }}
+              >
+                {"x"}
+              </span>
+            )}
+            {showUnderline && (
+              <span
+                data-gloom-role="tab-underline"
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  left: 10,
+                  right: 10,
+                  bottom: 1,
+                  height: 2,
+                  borderRadius: 999,
+                  background: "var(--tab-underline)",
+                  opacity: active ? 1 : hovered ? 0.7 : 0,
+                }}
+              />
+            )}
           </button>
         );
       })}
+      {onAdd && (
+        <button
+          data-gloom-role="tab-button"
+          type="button"
+          style={{
+            "--tab-fg": palette.addFg,
+            "--tab-hover-fg": palette.hoverFg,
+            "--tab-underline": palette.inactiveUnderline,
+            "--tab-hover-underline": palette.hoverUnderline,
+            "--tab-hover-bg": palette.hoverBg,
+            color: hoveredValue === "__add__" ? palette.hoverFg : "var(--tab-fg)",
+            flex: "0 0 auto",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            paddingInline: tabPaddingInline,
+            paddingBlock: 0,
+            margin: 0,
+            border: 0,
+            borderRadius: variant === "underline" ? 5 : 6,
+            background: hoveredValue === "__add__" ? palette.hoverBg : "transparent",
+            font: "inherit",
+            fontSize: tabFontSize,
+            fontWeight: 500,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            transition: "background-color 110ms ease, color 110ms ease",
+            cursor: "pointer",
+          } satisfies CssVars}
+          onMouseEnter={() => setHoveredValue("__add__")}
+          onMouseLeave={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
+          onClick={onAdd}
+        >
+          <span
+            data-gloom-role="tab-label"
+            style={{
+              display: "block",
+            }}
+          >
+            {addLabel}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

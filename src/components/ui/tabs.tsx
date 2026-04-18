@@ -7,22 +7,38 @@ export interface TabItem {
   label: string;
   value: string;
   disabled?: boolean;
+  onClose?: (value: string) => void;
+  onDoubleClick?: (value: string) => void;
+  onContextMenu?: (value: string, event: any) => void;
 }
 
 export interface TabsProps {
   tabs: TabItem[];
-  activeValue: string;
+  activeValue: string | null;
   onSelect: (value: string) => void;
   compact?: boolean;
+  variant?: "underline" | "pill" | "bare";
+  closeMode?: "active" | "always";
+  addLabel?: string;
+  onAdd?: () => void;
 }
 
 const WHEEL_DELTA_PER_CELL = 8;
 
-export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps) {
+export function Tabs({
+  tabs,
+  activeValue,
+  onSelect,
+  compact = false,
+  variant = "underline",
+  closeMode = "always",
+  addLabel = "+",
+  onAdd,
+}: TabsProps) {
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
   const palette = {
-    activeFg: colors.text,
+    activeFg: variant === "bare" ? colors.textBright : colors.text,
     inactiveFg: colors.textDim,
     disabledFg: colors.textMuted,
     hoverFg: colors.text,
@@ -30,6 +46,10 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
     inactiveUnderline: colors.bg,
     hoverUnderline: colors.border,
     hoverBg: hoverBg(),
+    activeBg: colors.selected,
+    activePillFg: colors.selectedText,
+    closeFg: colors.textMuted,
+    addFg: colors.textMuted,
   };
 
   if (NativeTabs) {
@@ -39,6 +59,10 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
         activeValue={activeValue}
         onSelect={onSelect}
         compact={compact}
+        variant={variant}
+        closeMode={closeMode}
+        addLabel={addLabel}
+        onAdd={onAdd}
         palette={palette}
       />
     );
@@ -50,9 +74,22 @@ export function Tabs({ tabs, activeValue, onSelect, compact = false }: TabsProps
       activeValue={activeValue}
       onSelect={onSelect}
       compact={compact}
+      variant={variant}
+      closeMode={closeMode}
+      addLabel={addLabel}
+      onAdd={onAdd}
       palette={palette}
     />
   );
+}
+
+function tabWidth(
+  tab: TabItem,
+  active: boolean,
+  closeMode: TabsProps["closeMode"],
+): number {
+  const showClose = !!tab.onClose && (closeMode === "always" || active);
+  return tab.label.length + 2 + (showClose ? 2 : 0);
 }
 
 function OpenTuiTabs({
@@ -60,6 +97,10 @@ function OpenTuiTabs({
   activeValue,
   onSelect,
   compact = false,
+  variant = "underline",
+  closeMode = "always",
+  addLabel = "+",
+  onAdd,
   palette,
 }: TabsProps & {
   palette: {
@@ -71,15 +112,20 @@ function OpenTuiTabs({
     inactiveUnderline: string;
     hoverUnderline: string;
     hoverBg: string;
+    activeBg: string;
+    activePillFg: string;
+    closeFg: string;
+    addFg: string;
   };
 }) {
   const [hoveredValue, setHoveredValue] = useState<string | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const tabWidths = useMemo(
-    () => tabs.map((tab) => tab.label.length + 2),
-    [tabs],
+    () => tabs.map((tab) => tabWidth(tab, tab.value === activeValue, closeMode)),
+    [activeValue, closeMode, tabs],
   );
-  const totalWidth = tabWidths.reduce((sum, width) => sum + width, 0);
+  const addWidth = onAdd ? addLabel.length + 2 : 0;
+  const totalWidth = tabWidths.reduce((sum, width) => sum + width, 0) + addWidth;
 
   useEffect(() => {
     const scrollBox = scrollRef.current;
@@ -143,9 +189,9 @@ function OpenTuiTabs({
           const active = tab.value === activeValue;
           const hovered = hoveredValue === tab.value && !tab.disabled;
           const tabWidth = tabWidths[index] ?? tab.label.length + 2;
-          const tabLabel = ` ${tab.label} `;
+          const showClose = !!tab.onClose && (closeMode === "always" || active);
           const attributes = (active ? TextAttributes.BOLD : 0)
-            | (!compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
+            | (variant === "underline" && !compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
           const startHover = tab.disabled
             ? undefined
             : () => {
@@ -163,24 +209,60 @@ function OpenTuiTabs({
               width={tabWidth}
               height={1}
               flexDirection="row"
-              backgroundColor={hovered ? palette.hoverBg : undefined}
+              backgroundColor={active && variant === "pill" ? palette.activeBg : hovered ? palette.hoverBg : undefined}
               onMouseOver={startHover}
               onMouseMove={startHover}
               onMouseOut={endHover}
               onMouseDown={tab.disabled ? undefined : (event) => {
+                if ((event as any)?.button === 2 && tab.onContextMenu) {
+                  event.preventDefault?.();
+                  event.stopPropagation?.();
+                  tab.onContextMenu(tab.value, event);
+                  return;
+                }
                 event.preventDefault();
                 onSelect(tab.value);
               }}
+              onDoubleClick={tab.disabled || !tab.onDoubleClick ? undefined : () => tab.onDoubleClick?.(tab.value)}
             >
               <Text
-                fg={tab.disabled ? palette.disabledFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
+                fg={tab.disabled ? palette.disabledFg : active && variant === "pill" ? palette.activePillFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
                 attributes={attributes}
               >
-                {tabLabel}
+                {` ${tab.label} `}
               </Text>
+              {showClose && (
+                <Text
+                  fg={active && variant === "pill" ? palette.activePillFg : palette.closeFg}
+                  onMouseDown={(event: any) => {
+                    event.preventDefault?.();
+                    event.stopPropagation?.();
+                    tab.onClose?.(tab.value);
+                  }}
+                >
+                  {"x "}
+                </Text>
+              )}
             </Box>
           );
         })}
+        {onAdd && (
+          <Box
+            width={addWidth}
+            height={1}
+            backgroundColor={hoveredValue === "__add__" ? palette.hoverBg : undefined}
+            onMouseMove={() => setHoveredValue((current) => (current === "__add__" ? current : "__add__"))}
+            onMouseOut={() => setHoveredValue((current) => (current === "__add__" ? null : current))}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onAdd();
+            }}
+          >
+            <Text fg={hoveredValue === "__add__" ? palette.hoverFg : palette.addFg}>
+              {` ${addLabel} `}
+            </Text>
+          </Box>
+        )}
       </Box>
     </ScrollBox>
   );

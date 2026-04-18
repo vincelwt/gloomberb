@@ -23,6 +23,8 @@ let selectedTableRow: string | null = null;
 let activatedTableRow: string | null = null;
 let selectedChips: string[] = [];
 let tableHorizontalScrollbarVisible: boolean | null = null;
+let closedTab: string | null = null;
+let addedTab = false;
 
 function ScrollableListHarness() {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -229,6 +231,8 @@ afterEach(() => {
   activatedTableRow = null;
   selectedChips = [];
   tableHorizontalScrollbarVisible = null;
+  closedTab = null;
+  addedTab = false;
 });
 
 describe("shared UI kit", () => {
@@ -296,6 +300,44 @@ describe("shared UI kit", () => {
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("Options");
     expect(frame).toContain("Insider");
+  });
+
+  test("renders tab actions for editable tab sets", async () => {
+    testSetup = await testRender(
+      <Tabs
+        tabs={[
+          { label: "One", value: "one", onClose: (value) => { closedTab = value; } },
+          { label: "Two", value: "two" },
+        ]}
+        activeValue="one"
+        onSelect={() => {}}
+        compact
+        variant="pill"
+        closeMode="active"
+        onAdd={() => { addedTab = true; }}
+      />,
+      { width: 24, height: 3 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("One x");
+    expect(frame).toContain("+");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(5, 0);
+      await testSetup!.renderOnce();
+    });
+    expect(closedTab).toBe("one");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(14, 0);
+      await testSetup!.renderOnce();
+    });
+    expect(addedTab).toBe(true);
   });
 
   test("renders default tabs in one row", async () => {
