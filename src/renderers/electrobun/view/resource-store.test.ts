@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { TauriMemoryResourceStore } from "./resource-store";
+import { DesktopMemoryResourceStore } from "./resource-store";
 
-describe("TauriMemoryResourceStore", () => {
+describe("DesktopMemoryResourceStore", () => {
   test("returns persisted resource records with values", () => {
-    const store = new TauriMemoryResourceStore();
+    const store = new DesktopMemoryResourceStore();
     const key = {
       namespace: "plugins:prediction-markets",
       kind: "catalog",
@@ -23,7 +23,7 @@ describe("TauriMemoryResourceStore", () => {
   });
 
   test("returns expired records only when requested", () => {
-    const store = new TauriMemoryResourceStore();
+    const store = new DesktopMemoryResourceStore();
     const key = {
       namespace: "plugins:prediction-markets",
       kind: "catalog",

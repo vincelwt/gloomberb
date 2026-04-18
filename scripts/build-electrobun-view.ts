@@ -1,12 +1,12 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join, relative } from "path";
 
-const outdir = join(process.cwd(), "dist", "tauri");
-const tauriWebDir = join(process.cwd(), "src", "renderers", "tauri", "web");
+const outdir = join(process.cwd(), "dist", "electrobun-view");
+const electrobunViewDir = join(process.cwd(), "src", "renderers", "electrobun", "view");
 
 function aliasImport(args: { path: string }, sourceSuffix: string, target: string) {
   if (args.path.endsWith(sourceSuffix)) {
-    return { path: join(tauriWebDir, target) };
+    return { path: join(electrobunViewDir, target) };
   }
   return undefined;
 }
@@ -15,11 +15,11 @@ await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 
 const result = await Bun.build({
-  entrypoints: [join(process.cwd(), "src", "renderers", "tauri", "web", "main.tsx")],
+  entrypoints: [join(process.cwd(), "src", "renderers", "electrobun", "view", "main.tsx")],
   outdir,
   target: "browser",
   format: "esm",
-  splitting: true,
+  splitting: false,
   sourcemap: "external",
   minify: true,
   define: {
@@ -27,10 +27,13 @@ const result = await Bun.build({
   },
   plugins: [
     {
-      name: "tauri-renderer-native-stubs",
+      name: "electrobun-renderer-native-bridges",
       setup(build) {
         build.onResolve({ filter: /.*/ }, (args) => (
           aliasImport(args, "ibkr/gateway-service", "native-stubs/ibkr-gateway-service.ts")
+          ?? aliasImport(args, "gateway-service", "native-stubs/ibkr-gateway-service.ts")
+          ?? aliasImport(args, "plugins/builtin/notes-files", "notes-files.ts")
+          ?? aliasImport(args, "notes-files", "notes-files.ts")
           ?? aliasImport(args, "core/app-services", "app-services.ts")
           ?? aliasImport(args, "native/kitty-support", "native-stubs/chart-kitty-support.ts")
           ?? aliasImport(args, "native/surface-manager", "native-stubs/chart-surface-manager.ts")
@@ -46,12 +49,12 @@ if (!result.success) {
     console.error(log);
   }
   process.exitCode = 1;
-  throw new Error("Failed to build Tauri web assets");
+  throw new Error("Failed to build Electrobun view assets");
 }
 
 const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
 if (!entry) {
-  throw new Error("Tauri web build did not produce a JavaScript entrypoint");
+  throw new Error("Electrobun view build did not produce a JavaScript entrypoint");
 }
 
 const entrySrc = `./${relative(outdir, entry.path).replaceAll("\\", "/")}`;
@@ -85,13 +88,30 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
       [data-gloom-role="pane-window"] {
         background-clip: padding-box;
       }
-      [data-gloom-role="app-header"][data-titlebar-overlay="true"] {
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"],
+      .electrobun-webkit-app-region-drag {
         cursor: default;
+        -webkit-app-region: drag;
+        app-region: drag;
         -webkit-user-select: none;
         user-select: none;
       }
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] {
+        min-height: 32px;
+        max-height: 32px;
+        align-items: center;
+      }
       [data-gloom-role="app-header"][data-titlebar-overlay="true"] * {
         cursor: inherit;
+      }
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] button,
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] input,
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] textarea,
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] a,
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] .electrobun-webkit-app-region-no-drag,
+      [data-gloom-role="app-header"][data-titlebar-overlay="true"] [data-gloom-interactive="true"] {
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
       }
       [data-gloom-role="pane-window"][data-floating="true"] {
         border: 0;

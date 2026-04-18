@@ -1,5 +1,5 @@
-import { Box, SpinnerMark, Text, TextAttributes, useRendererHost, useUiCapabilities } from "../../ui";
-import { useCallback, useEffect } from "react";
+import { Box, SpinnerMark, Text, TextAttributes, useUiCapabilities } from "../../ui";
+import { useEffect } from "react";
 import { colors, priceColor } from "../../theme/colors";
 import { useAppActive } from "../../state/app-activity";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
@@ -20,11 +20,6 @@ import { VERSION } from "../../version";
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 const UPDATE_NOTICE_DURATION_MS = 5_000;
 const TITLEBAR_TRAFFIC_LIGHT_WIDTH = 11;
-
-interface HeaderMouseEvent {
-  button?: number;
-  preventDefault?: () => void;
-}
 
 function UpdateStatus() {
   const dispatch = useAppDispatch();
@@ -102,7 +97,6 @@ function UpdateStatus() {
 export function Header() {
   const baseCurrency = useAppSelector(selectBaseCurrency);
   const appActive = useAppActive();
-  const rendererHost = useRendererHost();
   const { titleBarOverlay } = useUiCapabilities();
   const spyQuoteEntry = useQuoteEntry("SPY", null);
   const spyQuote = useResolvedEntryValue(spyQuoteEntry);
@@ -131,13 +125,6 @@ export function Header() {
   const mktState = spyQuote?.marketState;
   const mktLabel = mktState ? marketStateLabel(mktState) : "";
   const mktColor = mktState ? marketStateColor(mktState) : colors.headerText;
-  const handleMouseDown = useCallback((event: HeaderMouseEvent) => {
-    if (!titleBarOverlay || !rendererHost.startWindowDrag) return;
-    if (typeof event.button === "number" && event.button !== 0) return;
-    event.preventDefault?.();
-    void Promise.resolve(rendererHost.startWindowDrag()).catch(() => {});
-  }, [rendererHost, titleBarOverlay]);
-
   return (
     <Box
       flexDirection="row"
@@ -145,7 +132,7 @@ export function Header() {
       backgroundColor={colors.header}
       data-gloom-role="app-header"
       data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
-      onMouseDown={handleMouseDown}
+      className={titleBarOverlay ? "electrobun-webkit-app-region-drag" : undefined}
     >
       <Box paddingLeft={titleBarOverlay ? TITLEBAR_TRAFFIC_LIGHT_WIDTH : 1}>
         <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>

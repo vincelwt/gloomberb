@@ -1,22 +1,22 @@
 import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config-store";
 import type { AppConfig } from "../../../types/config";
-import { backendRequest, getTauriBackendInitSnapshot } from "./backend-rpc";
+import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
 
-const tauriConfigStoreHost: ConfigStoreHost = {
+const electrobunConfigStoreHost: ConfigStoreHost = {
   async getDataDir() {
-    return getTauriBackendInitSnapshot()?.config.dataDir ?? null;
+    return getElectrobunBackendInitSnapshot()?.config.dataDir ?? null;
   },
   async loadConfig() {
-    const config = getTauriBackendInitSnapshot()?.config;
-    if (!config) throw new Error("Tauri backend has not initialized config.");
+    const config = getElectrobunBackendInitSnapshot()?.config;
+    if (!config) throw new Error("Electrobun backend has not initialized config.");
     return config;
   },
   async saveConfig(config: AppConfig) {
     await backendRequest("config.save", { config });
   },
   async initDataDir() {
-    const config = getTauriBackendInitSnapshot()?.config;
-    if (!config) throw new Error("Tauri backend has not initialized config.");
+    const config = getElectrobunBackendInitSnapshot()?.config;
+    if (!config) throw new Error("Electrobun backend has not initialized config.");
     return config;
   },
   async resetAllData(dataDir: string) {
@@ -30,6 +30,6 @@ const tauriConfigStoreHost: ConfigStoreHost = {
   },
 };
 
-export function installTauriConfigStoreHost(): void {
-  setConfigStoreHost(tauriConfigStoreHost);
+export function installElectrobunConfigStoreHost(): void {
+  setConfigStoreHost(electrobunConfigStoreHost);
 }

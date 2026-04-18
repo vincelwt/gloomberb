@@ -1,7 +1,6 @@
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { NewsService } from "../../../news/aggregator";
 import { setSharedNewsService } from "../../../news/hooks";
-import { uiBuiltinPlugins } from "../../../plugins/catalog-ui";
 import { PluginRegistry } from "../../../plugins/registry";
 import type { AppServices } from "../../../core/app-services";
 import type { AppConfig } from "../../../types/config";
@@ -16,10 +15,11 @@ import {
   PLUGIN_STATE_SAVE_DEBOUNCE_MS,
   SESSION_SAVE_DEBOUNCE_MS,
 } from "../../../state/persist-scheduler";
-import { backendRequest, getTauriBackendInitSnapshot } from "./backend-rpc";
-import { TauriMemoryResourceStore } from "./resource-store";
+import { backendRequest, getElectrobunBackendInitSnapshot, onQuoteSubscription } from "./backend-rpc";
+import { DesktopMemoryResourceStore } from "./resource-store";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerf } from "../../../utils/perf-marks";
+import { createDesktopBuiltinPlugins } from "./desktop-plugins";
 
 const REMOTE_DATA_REQUEST_CACHE_LIMIT = 150;
 const servicesLog = debugLog.createLogger("services");
@@ -49,9 +49,10 @@ class RemoteTickerRepository {
 }
 
 class RemoteDataProvider implements DataProvider {
-  readonly id = "tauri-backend";
+  readonly id = "desktop-backend";
   readonly name = "Gloomberb Backend";
   private readonly requestCache = new Map<string, Promise<unknown>>();
+  private nextSubscriptionId = 1;
 
   private cachedRequest<T>(method: string, payload: unknown): Promise<T> {
     const key = `${method}:${JSON.stringify(payload)}`;
@@ -143,15 +144,42 @@ class RemoteDataProvider implements DataProvider {
   }
 
   subscribeQuotes(
-    _targets: QuoteSubscriptionTarget[],
-    _onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
+    targets: QuoteSubscriptionTarget[],
+    onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    return () => {};
+    const uniqueTargets = [...new Map(
+      targets.map((target) => [
+        `${target.symbol}:${target.exchange ?? ""}:${target.brokerId ?? ""}:${target.brokerInstanceId ?? ""}`,
+        target,
+      ] as const),
+    ).values()];
+    if (uniqueTargets.length === 0) return () => {};
+
+    const subscriptionId = `quote:${this.nextSubscriptionId++}`;
+    const disposeMessages = onQuoteSubscription(subscriptionId, (message) => {
+      onQuote(message.target as QuoteSubscriptionTarget, message.quote as Quote);
+    });
+    let disposed = false;
+
+    void backendRequest("data.subscribeQuotes", {
+      subscriptionId,
+      targets: uniqueTargets,
+    }).catch((error) => {
+      disposeMessages();
+      console.error("Failed to subscribe to backend quotes", error);
+    });
+
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      disposeMessages();
+      void backendRequest("data.unsubscribeQuotes", { subscriptionId }).catch(() => {});
+    };
   }
 }
 
 class RemoteSessionStore {
-  private snapshot = getTauriBackendInitSnapshot()?.sessionSnapshot ?? null;
+  private snapshot = getElectrobunBackendInitSnapshot()?.sessionSnapshot ?? null;
   private readonly scheduler = createPersistScheduler<{
     sessionId: string;
     value: unknown;
@@ -248,8 +276,8 @@ class RemotePluginStateStore {
 
 class RemotePersistence {
   readonly tickers = {};
-  readonly resources = new TauriMemoryResourceStore();
-  readonly pluginState = new RemotePluginStateStore(getTauriBackendInitSnapshot()?.pluginState ?? {});
+  readonly resources = new DesktopMemoryResourceStore();
+  readonly pluginState = new RemotePluginStateStore(getElectrobunBackendInitSnapshot()?.pluginState ?? {});
   readonly sessions = new RemoteSessionStore();
   close(): void {
     void this.sessions.flush();
@@ -258,7 +286,7 @@ class RemotePersistence {
 }
 
 export function createAppServices({ config }: { config: AppConfig }): AppServices {
-  servicesLog.info("create tauri web services start", {
+  servicesLog.info("create desktop web services start", {
     brokerInstanceCount: config.brokerInstances.length,
   });
   const persistence = measurePerf("startup.services.persistence", () => new RemotePersistence());
@@ -275,7 +303,8 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
   setSharedMarketDataCoordinator(marketData);
   setSharedNewsService(newsService);
 
-  for (const plugin of uiBuiltinPlugins) {
+  const plugins = createDesktopBuiltinPlugins((ticker, count, exchange) => dataProvider.getNews(ticker, count, exchange));
+  for (const plugin of plugins) {
     measurePerf("startup.services.register-plugin", () => {
       void pluginRegistry.register(plugin);
     }, { pluginId: plugin.id });
@@ -283,7 +312,7 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
   measurePerf("startup.services.news-start", () => {
     newsService.start();
   });
-  servicesLog.info("create tauri web services complete", { pluginCount: uiBuiltinPlugins.length });
+  servicesLog.info("create desktop web services complete", { pluginCount: plugins.length });
 
   return {
     persistence: persistence as never,

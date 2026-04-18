@@ -34,7 +34,7 @@ function isStale(record: CachedResourceRecord): boolean {
   return record.staleAt < Date.now();
 }
 
-export class TauriMemoryResourceStore {
+export class DesktopMemoryResourceStore {
   private readonly records = new Map<string, CachedResourceRecord>();
 
   get<T>(key: ResourceCacheKey, options: GetResourceOptions = {}): CachedResourceRecord<T> | null {

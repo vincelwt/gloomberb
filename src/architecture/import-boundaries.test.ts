@@ -57,8 +57,11 @@ describe("import boundaries", () => {
       if (specifier.startsWith("#opentui/")) {
         return true;
       }
-      if (specifier.startsWith("@tauri-apps/") || specifier === "react-dom" || specifier.startsWith("react-dom/")) {
-        return !file.startsWith("src/renderers/tauri/");
+      if (specifier.startsWith("electrobun/")) {
+        return !file.startsWith("src/renderers/electrobun/");
+      }
+      if (specifier === "react-dom" || specifier.startsWith("react-dom/")) {
+        return !file.startsWith("src/renderers/electrobun/");
       }
       return false;
     });
@@ -74,7 +77,7 @@ describe("import boundaries", () => {
         specifier.startsWith("@opentui/")
         || specifier.startsWith("@opentui-ui/")
         || specifier.startsWith("#opentui/")
-        || specifier.startsWith("@tauri-apps/")
+        || specifier.startsWith("electrobun/")
         || specifier === "react-dom"
         || specifier.startsWith("react-dom/")
       );

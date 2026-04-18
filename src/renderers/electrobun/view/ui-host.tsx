@@ -15,7 +15,6 @@ import {
   type Ref,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   StyledText,
   TextAttributes,
@@ -879,7 +878,7 @@ function WebTabs({ tabs, activeValue, onSelect, compact = false, palette }: Host
 }
 
 export const webUiHost: UiHost = {
-  kind: "tauri-web",
+  kind: "desktop-web",
   capabilities: {
     nativePaneChrome: true,
     titleBarOverlay: true,
@@ -971,9 +970,6 @@ export const webRendererHost: RendererHost = {
   requestExit() {
     void backendRequest("host.exit").catch(() => window.close());
   },
-  async startWindowDrag() {
-    await getCurrentWindow().startDragging();
-  },
   async openExternal(url) {
     await backendRequest("host.openExternal", { url });
   },
@@ -992,8 +988,9 @@ export const webRendererHost: RendererHost = {
     }
   },
   notify(notification) {
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(notification.title ?? "Gloomberb", { body: notification.body });
-    }
+    void backendRequest("host.notify", {
+      title: notification.title,
+      body: notification.body,
+    }).catch(() => {});
   },
 };

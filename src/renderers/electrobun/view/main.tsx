@@ -1,9 +1,20 @@
 /// <reference lib="dom" />
 /** @jsxImportSource react */
 import { createRoot } from "react-dom/client";
+import { App } from "../../../app";
+import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
+import { initElectrobunBackend } from "./backend-rpc";
+import { installElectrobunAiHost } from "./ai-host";
+import { installElectrobunConfigStoreHost } from "./config-host";
+import { WebDialogHostProvider } from "./dialog-host";
+import { installElectrobunPredictionMarketsFetchTransport } from "./http-fetch";
+import { WebInputHostProvider } from "./input-host";
+import { webNativeRenderer } from "./native-renderer";
+import { WebToastHostProvider } from "./toast-host";
+import { webRendererHost, webUiHost } from "./ui-host";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -11,57 +22,35 @@ if (!rootElement) {
 }
 
 const root = createRoot(rootElement);
-const bootLog = debugLog.createLogger("tauri-web-boot");
-const TAURI_WEB_CONSOLE_LOG_SOURCES = [
+const bootLog = debugLog.createLogger("electrobun-web-boot");
+const ELECTROBUN_WEB_CONSOLE_LOG_SOURCES = [
   "app",
   "main-thread",
   "perf",
   "refresh-queue",
   "services",
   "startup",
-  "tauri-web-boot",
+  "electrobun-web-boot",
 ];
 debugLog.mirrorToConsole({
-  sources: TAURI_WEB_CONSOLE_LOG_SOURCES,
+  sources: ELECTROBUN_WEB_CONSOLE_LOG_SOURCES,
 });
-const stopMainThreadMonitor = startMainThreadMonitor("tauri.web", { mirrorToConsole: true });
+const stopMainThreadMonitor = startMainThreadMonitor("electrobun.web", { mirrorToConsole: true });
 
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
-bootLog.warn("diagnostic console mirror enabled", { sources: TAURI_WEB_CONSOLE_LOG_SOURCES });
+bootLog.warn("diagnostic console mirror enabled", { sources: ELECTROBUN_WEB_CONSOLE_LOG_SOURCES });
 
 async function boot() {
   bootLog.info("boot started");
-  const backendModulePromise = import("./backend-rpc");
-  const backendInitPromise = backendModulePromise.then(({ initTauriBackend }) => initTauriBackend());
+  const backendInitPromise = initElectrobunBackend();
   // Avoid a premature global unhandled-rejection render while UI chunks load.
   void backendInitPromise.catch(() => {});
 
-  const [
-    { App },
-    { UiHostProvider },
-    { WebDialogHostProvider },
-    { installTauriConfigStoreHost },
-    { installTauriPredictionMarketsFetchTransport },
-    { WebInputHostProvider },
-    { webNativeRenderer },
-    { WebToastHostProvider },
-    { webRendererHost, webUiHost },
-  ] = await measurePerfAsync("startup.tauri.import-ui", () => Promise.all([
-    import("../../../app"),
-    import("../../../ui/host"),
-    import("./dialog-host"),
-    import("./config-host"),
-    import("./http-fetch"),
-    import("./input-host"),
-    import("./native-renderer"),
-    import("./toast-host"),
-    import("./ui-host"),
-  ]));
-
-  installTauriConfigStoreHost();
-  installTauriPredictionMarketsFetchTransport();
-  const { config } = await measurePerfAsync("startup.tauri.backend-init", () => backendInitPromise);
-  measurePerfAsync("startup.tauri.root-render", async () => {
+  installElectrobunConfigStoreHost();
+  installElectrobunPredictionMarketsFetchTransport();
+  await installElectrobunAiHost();
+  const { config } = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
+  measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
       <UiHostProvider ui={webUiHost} renderer={webRendererHost} nativeRenderer={webNativeRenderer}>
         <WebInputHostProvider>

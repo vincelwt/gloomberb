@@ -197,7 +197,7 @@ export interface HostTabsProps {
 }
 
 export interface UiHost {
-  kind?: "opentui" | "tauri-web";
+  kind?: "opentui" | "desktop-web";
   capabilities?: {
     nativePaneChrome?: boolean;
     titleBarOverlay?: boolean;

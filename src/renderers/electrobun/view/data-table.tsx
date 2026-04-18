@@ -606,7 +606,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
               ) : null}
             </div>
           ) : measurePerf(
-            "data-table.tauri.render-virtual-rows",
+            "data-table.desktop.render-virtual-rows",
             () =>
               virtualRows.map((row) => {
                 const item = items[row.index];

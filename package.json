@@ -17,8 +17,9 @@
     "start": "bun src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
-    "tauri:web:build": "bun run scripts/build-tauri-web.ts",
-    "tauri:dev": "tauri dev",
+    "desktop:view:build": "bun run scripts/build-electrobun-view.ts",
+    "desktop:dev": "electrobun dev --watch",
+    "desktop:build": "electrobun build",
     "test": "bun test",
     "release": "./scripts/release.sh"
   },
@@ -36,9 +37,9 @@
     "finance"
   ],
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@types/bun": "latest",
     "@types/react-dom": "^19.2.3",
+    "electrobun": "^1.16.0",
     "react-dom": "19.2.5"
   },
   "peerDependencies": {
@@ -51,7 +52,6 @@
     "@opentui/react": "^0.1.90",
     "@stoqey/ib": "^1.5.3",
     "@tanstack/react-virtual": "^3.13.23",
-    "@tauri-apps/api": "^2",
     "gray-matter": "^4.0.3",
     "opentui-spinner": "^0.0.6",
     "react": "19.2.5",

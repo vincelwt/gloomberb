@@ -2,7 +2,7 @@
 import { setPredictionMarketsFetchTransport } from "../../../plugins/prediction-markets/services/fetch";
 import { backendRequest } from "./backend-rpc";
 
-interface TauriHttpFetchResponse {
+interface ElectrobunHttpFetchResponse {
   status: number;
   statusText: string;
   headers: Record<string, string>;
@@ -51,12 +51,12 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal | null | undefine
   });
 }
 
-async function tauriHttpFetch(url: string, init?: RequestInit): Promise<Response> {
+async function electrobunHttpFetch(url: string, init?: RequestInit): Promise<Response> {
   if (init?.signal?.aborted) {
     throw createAbortError();
   }
 
-  const requestPromise = backendRequest<TauriHttpFetchResponse>("http.fetch", {
+  const requestPromise = backendRequest<ElectrobunHttpFetchResponse>("http.fetch", {
     url,
     init: {
       method: init?.method,
@@ -74,6 +74,6 @@ async function tauriHttpFetch(url: string, init?: RequestInit): Promise<Response
   });
 }
 
-export function installTauriPredictionMarketsFetchTransport(): void {
-  setPredictionMarketsFetchTransport(tauriHttpFetch);
+export function installElectrobunPredictionMarketsFetchTransport(): void {
+  setPredictionMarketsFetchTransport(electrobunHttpFetch);
 }
