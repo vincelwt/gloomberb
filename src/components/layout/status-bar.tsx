@@ -1,5 +1,5 @@
-import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../ui";
-import { useEffect, useState } from "react";
+import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
+import { useCallback, useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
 import { useAppDispatch, useAppSelector, useFocusedTicker } from "../../state/app-context";
 import {
@@ -20,6 +20,7 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
+import type { ContextMenuItem } from "../../types/context-menu";
 import { TabBar } from "../tab-bar";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
@@ -32,7 +33,8 @@ function truncate(text: string, width: number): string {
 }
 
 export function StatusBar() {
-  const { nativePaneChrome } = useUiCapabilities();
+  const { nativePaneChrome, nativeContextMenu } = useUiCapabilities();
+  const { showContextMenu } = useContextMenu();
   const registry = getSharedRegistry();
   const dispatch = useAppDispatch();
   const layouts = useAppSelector(selectSavedLayouts);
@@ -96,6 +98,91 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
+  const layoutContextMenuItems = useCallback((index: number): ContextMenuItem[] => {
+    const layout = layouts[index];
+    if (!layout) return [];
+    const active = index === activeLayoutIdx;
+    const switchToLayout = () => {
+      if (!active) {
+        dispatch({ type: "SWITCH_LAYOUT", index });
+      }
+    };
+    const openWorkflowForLayout = (commandId: string) => {
+      switchToLayout();
+      registry?.openPluginCommandWorkflow(commandId);
+    };
+    const items: ContextMenuItem[] = [];
+
+    if (!active) {
+      items.push({
+        id: "layout:switch",
+        label: `Switch to ${layout.name}`,
+        onSelect: () => dispatch({ type: "SWITCH_LAYOUT", index }),
+      });
+      items.push(contextMenuDivider("layout:switch-divider"));
+    }
+
+    items.push(
+      {
+        id: "layout:rename",
+        label: "Rename Layout...",
+        onSelect: () => openWorkflowForLayout("rename-layout"),
+      },
+      {
+        id: "layout:duplicate",
+        label: "Duplicate Layout",
+        onSelect: () => dispatch({ type: "DUPLICATE_LAYOUT", index }),
+      },
+      {
+        id: "layout:new",
+        label: "New Layout...",
+        onSelect: () => registry?.openPluginCommandWorkflow("new-layout"),
+      },
+      {
+        id: "layout:delete",
+        label: "Delete Layout...",
+        enabled: layouts.length > 1,
+        onSelect: () => openWorkflowForLayout("delete-layout"),
+      },
+      contextMenuDivider("layout:actions-divider"),
+      {
+        id: "layout:actions",
+        label: "Layout Actions...",
+        onSelect: () => registry?.openCommandBarFn("LAY "),
+      },
+    );
+
+    return items;
+  }, [activeLayoutIdx, dispatch, layouts, registry]);
+
+  const openLayoutContextMenu = useCallback((
+    index: number,
+    event: { preventDefault?: () => void; stopPropagation?: () => void },
+  ) => {
+    const layout = layouts[index];
+    if (!layout) return Promise.resolve(false);
+    return showContextMenu(
+      {
+        kind: "layout",
+        layoutIndex: index,
+        layoutName: layout.name,
+        active: index === activeLayoutIdx,
+      },
+      layoutContextMenuItems(index),
+      event,
+    );
+  }, [activeLayoutIdx, layoutContextMenuItems, layouts, showContextMenu]);
+  const handleLayoutTabContextMenu = useCallback((value: string, event: any) => {
+    const index = Number(value);
+    if (!Number.isInteger(index) || index < 0 || index >= layouts.length) return;
+    if (event?.type !== "contextmenu" && event?.button === 2 && nativeContextMenu === true) return;
+    void openLayoutContextMenu(index, event);
+  }, [layouts.length, nativeContextMenu, openLayoutContextMenu]);
+  const layoutTabItems = layoutTabs.map((tab) => ({
+    ...tab,
+    onContextMenu: handleLayoutTabContextMenu,
+  }));
+
   if (!statusBarVisible) return null;
 
   if (nativePaneChrome) {
@@ -106,6 +193,9 @@ export function StatusBar() {
         alignItems="center"
         backgroundColor={colors.panel}
         data-gloom-role="status-bar"
+        onContextMenu={(event: any) => {
+          void openLayoutContextMenu(activeLayoutIdx, event);
+        }}
         style={{
           borderTop: `1px solid ${colors.border}`,
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
@@ -116,7 +206,7 @@ export function StatusBar() {
           {hasMultipleLayouts ? (
             <Box width={layoutTabsWidth} height={1}>
               <TabBar
-                tabs={layoutTabs}
+                tabs={layoutTabItems}
                 activeValue={String(activeLayoutIdx)}
                 onSelect={handleLayoutSelect}
                 compact
@@ -197,12 +287,15 @@ export function StatusBar() {
       alignItems="center"
       backgroundColor={colors.panel}
       data-gloom-role="status-bar"
+      onContextMenu={(event: any) => {
+        void openLayoutContextMenu(activeLayoutIdx, event);
+      }}
     >
       <Box paddingLeft={1} flexShrink={0} flexDirection="row">
         {hasMultipleLayouts ? (
           <Box width={layoutTabsWidth} height={1}>
             <TabBar
-              tabs={layoutTabs}
+              tabs={layoutTabItems}
               activeValue={String(activeLayoutIdx)}
               onSelect={handleLayoutSelect}
               compact

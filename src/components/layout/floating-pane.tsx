@@ -2,7 +2,7 @@ import { Box, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { PaneFooterBar, hasPaneFooterContent, type CombinedPaneFooter } from "./pane-footer";
+import { PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
 import { getPaneBodyHeight } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
@@ -19,6 +19,7 @@ interface FloatingPaneWrapperProps {
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
+  onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
   onResizeMouseDown?: (event: any) => void;
@@ -43,6 +44,7 @@ export function FloatingPaneWrapper({
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
+  onHeaderContextMenu,
   onActionMouseDown,
   onCloseMouseDown,
   onResizeMouseDown,
@@ -53,8 +55,7 @@ export function FloatingPaneWrapper({
 }: FloatingPaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = floatingPaneBg(focused);
-  const showFooter = hasPaneFooterContent(footer);
-  const bodyHeight = getPaneBodyHeight(height, showFooter);
+  const bodyHeight = getPaneBodyHeight(height);
 
   return (
     <Box
@@ -85,6 +86,7 @@ export function FloatingPaneWrapper({
         onHeaderMouseDown={onHeaderMouseDown}
         onHeaderMouseDrag={onHeaderMouseDrag}
         onHeaderMouseDragEnd={onHeaderMouseDragEnd}
+        onHeaderContextMenu={onHeaderContextMenu}
         onActionMouseDown={onActionMouseDown}
         onCloseMouseDown={onCloseMouseDown}
       />
@@ -94,7 +96,7 @@ export function FloatingPaneWrapper({
         {children}
       </Box>
 
-      {showFooter && <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={2} />}
+      <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={2} />
 
       {nativePaneChrome ? (
         <Box

@@ -30,9 +30,15 @@ import {
   type UiHost,
   type StyledTextChunk,
 } from "../../../ui/host";
+import { editableTextContextMenuItems } from "../../../ui/context-menu";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
-import { backendRequest } from "./backend-rpc";
+import { backendRequest, onContextMenuSelect } from "./backend-rpc";
 import { WebDataTable } from "./data-table";
+import {
+  DesktopContextMenuActionScope,
+  createContextMenuRequestId,
+  prepareDesktopContextMenu,
+} from "./context-menu";
 import {
   WebButton,
   WebCheckbox,
@@ -49,6 +55,13 @@ function cellWidth(value: unknown): CSSProperties["width"] {
   if (typeof value === "number") return `${value * WEB_CELL_WIDTH}px`;
   return value as CSSProperties["width"];
 }
+
+const NATIVE_CONTEXT_MENU_SUPPORTED = !/\blinux\b/i.test(window.navigator.platform || window.navigator.userAgent || "");
+const CONTEXT_MENU_ACTION_TTL_MS = 120_000;
+const contextMenuActionScope = new DesktopContextMenuActionScope(
+  onContextMenuSelect,
+  CONTEXT_MENU_ACTION_TTL_MS,
+);
 
 function startElectrobunWindowDrag(): void {
   window.__electrobunInternalBridge?.postMessage(JSON.stringify([
@@ -313,10 +326,10 @@ const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { children?:
     };
 
     const handleMouseDown = (event: MouseEvent) => {
-      callMouseHandler(propsRef.current.onMouseDown, event, "down");
-      if (event.isPropagationStopped() || event.button !== 0) return;
       const hasSyntheticDrag = typeof propsRef.current.onMouse === "function";
       const hasDirectDrag = typeof propsRef.current.onMouseDrag === "function" || typeof propsRef.current.onMouseDragEnd === "function";
+      callMouseHandler(propsRef.current.onMouseDown, event, "down");
+      if (event.button !== 0 || (event.isPropagationStopped() && !hasDirectDrag)) return;
       if (!hasSyntheticDrag && !hasDirectDrag) return;
       callMouseHandler(propsRef.current.onMouse, event, "down");
       draggingRef.current = true;
@@ -580,6 +593,13 @@ const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(function W
       placeholder={getStringProp(props, "placeholder")}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        if (!NATIVE_CONTEXT_MENU_SUPPORTED || !webRendererHost.showContextMenu) return;
+        elementRef.current?.focus();
+        event.preventDefault();
+        event.stopPropagation();
+        void webRendererHost.showContextMenu(editableTextContextMenuItems());
+      }}
       onSelect={() => {
         setCursorOffset(elementRef.current?.selectionStart ?? valueRef.current.length);
         callTextHandler(props.onCursorChange, valueRef.current);
@@ -642,6 +662,13 @@ const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown>>(func
       placeholder={getStringProp(props, "placeholder")}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        if (!NATIVE_CONTEXT_MENU_SUPPORTED || !webRendererHost.showContextMenu) return;
+        elementRef.current?.focus();
+        event.preventDefault();
+        event.stopPropagation();
+        void webRendererHost.showContextMenu(editableTextContextMenuItems());
+      }}
       onSelect={() => {
         setCursorOffset(elementRef.current?.selectionStart ?? valueRef.current.length);
         callTextHandler(props.onCursorChange, valueRef.current);
@@ -925,6 +952,11 @@ function WebTabs({
             onDoubleClick={() => {
               if (!disabled) tab.onDoubleClick?.(tab.value);
             }}
+            onContextMenu={tab.onContextMenu ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              tab.onContextMenu?.(tab.value, event);
+            } : undefined}
           >
             <span
               data-gloom-role="tab-label"
@@ -1040,6 +1072,7 @@ export const webUiHost: UiHost = {
     cellHeightPx: WEB_CELL_HEIGHT,
     pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     canvasCharts: true,
+    nativeContextMenu: NATIVE_CONTEXT_MENU_SUPPORTED,
   },
   Box: WebBox,
   Text: ({ children, ...props }) => (
@@ -1156,5 +1189,22 @@ export const webRendererHost: RendererHost = {
       title: notification.title,
       body: notification.body,
     }).catch(() => {});
+  },
+  async showContextMenu(items) {
+    if (!NATIVE_CONTEXT_MENU_SUPPORTED) return false;
+    contextMenuActionScope.clear();
+    const requestId = createContextMenuRequestId();
+    const prepared = prepareDesktopContextMenu(items, requestId);
+    if (prepared.menu.length === 0) return false;
+
+    contextMenuActionScope.bind(requestId, prepared.actions);
+
+    try {
+      await backendRequest("host.showContextMenu", { menu: prepared.menu });
+      return true;
+    } catch {
+      contextMenuActionScope.clearRequest(requestId);
+      return false;
+    }
   },
 };

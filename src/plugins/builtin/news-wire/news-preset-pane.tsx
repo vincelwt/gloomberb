@@ -47,12 +47,7 @@ export function NewsPresetPane({
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
   const { readArticleIds, markArticleRead } = useNewsReadState();
 
-  usePaneFooter(`news-wire:${paneKey}`, () => ({
-    info: [
-      { id: "title", parts: [{ text: title, tone: "value", bold: true }] },
-      { id: "count", parts: [{ text: `${articles.length} stories`, tone: "muted" }] },
-    ],
-  }), [articles.length, paneKey, title]);
+  usePaneFooter(`news-wire:${paneKey}`, () => null, [paneKey]);
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />

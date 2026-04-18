@@ -258,11 +258,11 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("earnings-calendar", () => ({
     info: [
-      { id: "count", parts: [{ text: loading ? "loading" : `${eventCount} upcoming`, tone: loading ? "muted" : "value", bold: !loading }] },
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => reload(true) }],
-  }), [error, eventCount, loading, reload]);
+  }), [error, loading, reload]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

@@ -105,13 +105,10 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("news-wire:breaking", () => ({
     info: [
-      { id: "title", parts: [{ text: "Breaking News", tone: "value", bold: true }] },
-      { id: "count", parts: [{ text: `${articles.length} stories`, tone: "muted" }] },
-      ...(aiAvailable ? [{ id: "digest", parts: [{ text: "AI digest", tone: "muted" as const }] }] : []),
       ...(aiRunning ? [{ id: "running", parts: [{ text: BRAILLE_FRAMES[spinFrame] ?? "running", tone: "positive" as const }] }] : []),
       ...(aiError ? [{ id: "paused", parts: [{ text: "AI paused", tone: "warning" as const }] }] : []),
     ],
-  }), [aiAvailable, aiError, aiRunning, articles.length, spinFrame]);
+  }), [aiError, aiRunning, spinFrame]);
 
   const detailContent = detailArticle ? (
     <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />

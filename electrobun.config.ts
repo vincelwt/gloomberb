@@ -23,6 +23,8 @@ const config: ElectrobunConfig = {
       "package.json",
     ],
     watchIgnore: [
+      ".git",
+      ".git/**",
       "dist/**",
       "build/**",
       "artifacts/**",

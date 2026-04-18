@@ -2,7 +2,7 @@
 /** @jsxImportSource react */
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { InputHostProvider, type InputHost, type KeyEventLike } from "../../../react/input";
-import { hasWebCtrlModifier, normalizeWebKeyName, webKeySequence } from "./key-event";
+import { hasWebCtrlModifier, normalizeWebKeyName, shouldConsumeWebAppKeyDown, webKeySequence } from "./key-event";
 
 export const WEB_CELL_WIDTH = 8;
 export const WEB_CELL_HEIGHT = 18;
@@ -44,7 +44,10 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
     useShortcut(handler, options) {
       useEffect(() => {
         if (options?.enabled === false) return;
-        const onKeyDown = (event: KeyboardEvent) => handler(toKeyEventLike(event));
+        const onKeyDown = (event: KeyboardEvent) => {
+          handler(toKeyEventLike(event));
+          if (shouldConsumeWebAppKeyDown(event)) event.preventDefault();
+        };
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
       }, [handler, options?.enabled, options?.scope]);

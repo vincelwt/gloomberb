@@ -340,6 +340,30 @@ describe("shared UI kit", () => {
     expect(addedTab).toBe(true);
   });
 
+  test("renders default tabs in one row", async () => {
+    testSetup = await testRender(
+      <box flexDirection="column">
+        <Tabs
+          tabs={[
+            { label: "Overview", value: "overview" },
+            { label: "Chart", value: "chart" },
+          ]}
+          activeValue="chart"
+          onSelect={() => {}}
+        />
+        <text>After tabs</text>
+      </box>,
+      { width: 32, height: 3 },
+    );
+
+    await testSetup.renderOnce();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    expect(lines[0]).toContain("Overview");
+    expect(lines[0]).toContain("Chart");
+    expect(lines[1]).toContain("After tabs");
+  });
+
   test("renders toggle lists with selection and descriptions", async () => {
     testSetup = await testRender(
       <ToggleList

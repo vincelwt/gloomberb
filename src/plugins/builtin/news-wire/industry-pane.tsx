@@ -78,13 +78,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     return true;
   };
 
-  usePaneFooter("news-wire:industry", () => ({
-    info: [
-      { id: "title", parts: [{ text: "Sector News", tone: "value", bold: true }] },
-      { id: "category", parts: [{ text: sectorNewsLabel(category), tone: category === "all" ? "muted" : "value" }] },
-      { id: "count", parts: [{ text: `${articles.length} stories`, tone: "muted" }] },
-    ],
-  }), [articles.length, category]);
+  usePaneFooter("news-wire:industry", () => null, [category]);
 
   const rootBefore = (
     <Box height={1} flexShrink={0} overflow="hidden">

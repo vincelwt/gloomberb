@@ -1,7 +1,7 @@
 import { Box, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
-import { useRendererHost } from "../../ui";
+import { linkContextMenuItems, useContextMenu, useRendererHost, useUiCapabilities } from "../../ui";
 
 export function openUrl(url: string) {
   if (!url.trim()) return;
@@ -43,16 +43,39 @@ export function ExternalLinkText(
   },
 ) {
   const rendererHost = useRendererHost();
+  const { showContextMenu } = useContextMenu();
+  const { nativeContextMenu } = useUiCapabilities();
   const resolvedOpen = onOpen === openUrl
     ? (nextUrl: string) => {
       void rendererHost.openExternal(nextUrl);
     }
     : onOpen;
+  const openLinkContextMenu = (event: { preventDefault?: () => void; stopPropagation?: () => void }) => showContextMenu(
+    { kind: "link", url, label },
+    linkContextMenuItems({
+      url,
+      open: resolvedOpen,
+      copy: (text) => { void rendererHost.copyText(text); },
+    }),
+    event,
+  );
   return (
     <Text
       fg={color}
       attributes={TextAttributes.UNDERLINE}
-      onMouseDown={(event: any) => handleOpen(url, resolvedOpen, event)}
+      data-gloom-context-menu-surface="true"
+      onMouseDown={(event: any) => {
+        if (event.button === 2) {
+          if (nativeContextMenu !== true) {
+            void openLinkContextMenu(event);
+          }
+          return;
+        }
+        handleOpen(url, resolvedOpen, event);
+      }}
+      onContextMenu={(event: any) => {
+        void openLinkContextMenu(event);
+      }}
     >
       {label ?? url}
     </Text>

@@ -47,7 +47,7 @@ export function ChartTab({
   const config = useAppSelector((state) => state.config);
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
-  const chartHeight = Math.max((height || termHeight - 8) - 2, 10);
+  const chartHeight = Math.max(height ?? termHeight - 8, 10);
   const rawIndicatorSelection = config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_KEY];
   const indicatorSelectionVersion = config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY];
   const hasStoredIndicatorSelection = Array.isArray(rawIndicatorSelection);
@@ -103,6 +103,7 @@ export function ChartTab({
           height={chartHeight}
           focused={focused}
           interactive={interactive}
+          onActivate={onActivate}
           axisMode={axisMode}
           symbol={symbol}
           ticker={ticker}

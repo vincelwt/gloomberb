@@ -11,6 +11,18 @@ export {
   useUiCapabilities,
   useUiHost,
 } from "./host";
+export {
+  ContextMenuProvider,
+  appContextMenuItems,
+  compactContextMenuItems,
+  editableTextContextMenuItems,
+  linkContextMenuItems,
+  tickerContextMenuItems,
+  useContextMenu,
+  useTickerContextMenu,
+} from "./context-menu";
+export { contextMenuDivider } from "../types/context-menu";
+export type { ContextMenuContext, ContextMenuItem } from "../types/context-menu";
 export type {
   BoxRenderable,
   BoxProps,

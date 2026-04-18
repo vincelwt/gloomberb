@@ -1822,9 +1822,6 @@ function ComparisonStockChartView({
       onMouseDrag={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotDrag : undefined}
       onMouseDragEnd={hasChartData && !isBlockingBody && !bodyMessage ? () => { dragRef.current = null; } : undefined}
       onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
-      onMouseOut={hasChartData && !isBlockingBody && !bodyMessage ? () => {
-        dragRef.current = null;
-      } : undefined}
     >
       {isBlockingBody
         ? (

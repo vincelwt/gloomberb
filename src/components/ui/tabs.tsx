@@ -9,6 +9,7 @@ export interface TabItem {
   disabled?: boolean;
   onClose?: (value: string) => void;
   onDoubleClick?: (value: string) => void;
+  onContextMenu?: (value: string, event: any) => void;
 }
 
 export interface TabsProps {
@@ -82,14 +83,6 @@ export function Tabs({
   );
 }
 
-function shouldShowUnderline(variant: TabsProps["variant"], compact: boolean): boolean {
-  return variant === "underline" && !compact;
-}
-
-function tabHeight(variant: TabsProps["variant"], compact: boolean): number {
-  return shouldShowUnderline(variant, compact) ? 2 : 1;
-}
-
 function tabWidth(
   tab: TabItem,
   active: boolean,
@@ -133,7 +126,6 @@ function OpenTuiTabs({
   );
   const addWidth = onAdd ? addLabel.length + 2 : 0;
   const totalWidth = tabWidths.reduce((sum, width) => sum + width, 0) + addWidth;
-  const height = tabHeight(variant, compact);
 
   useEffect(() => {
     const scrollBox = scrollRef.current;
@@ -186,18 +178,20 @@ function OpenTuiTabs({
     <ScrollBox
       ref={scrollRef}
       width="100%"
-      height={height}
+      height={1}
       scrollX
       focusable={false}
       horizontalScrollbarOptions={{ visible: false }}
       onMouseScroll={handleMouseScroll}
     >
-      <Box flexDirection="row" width={totalWidth} height={height}>
+      <Box flexDirection="row" width={totalWidth} height={1}>
         {tabs.map((tab, index) => {
           const active = tab.value === activeValue;
           const hovered = hoveredValue === tab.value && !tab.disabled;
           const tabWidth = tabWidths[index] ?? tab.label.length + 2;
           const showClose = !!tab.onClose && (closeMode === "always" || active);
+          const attributes = (active ? TextAttributes.BOLD : 0)
+            | (variant === "underline" && !compact && (active || hovered) ? TextAttributes.UNDERLINE : 0);
           const startHover = tab.disabled
             ? undefined
             : () => {
@@ -213,40 +207,40 @@ function OpenTuiTabs({
             <Box
               key={tab.value}
               width={tabWidth}
-              flexDirection="column"
+              height={1}
+              flexDirection="row"
               backgroundColor={active && variant === "pill" ? palette.activeBg : hovered ? palette.hoverBg : undefined}
               onMouseOver={startHover}
               onMouseMove={startHover}
               onMouseOut={endHover}
               onMouseDown={tab.disabled ? undefined : (event) => {
+                if ((event as any)?.button === 2 && tab.onContextMenu) {
+                  event.preventDefault?.();
+                  event.stopPropagation?.();
+                  tab.onContextMenu(tab.value, event);
+                  return;
+                }
                 event.preventDefault();
                 onSelect(tab.value);
               }}
               onDoubleClick={tab.disabled || !tab.onDoubleClick ? undefined : () => tab.onDoubleClick?.(tab.value)}
             >
-              <Box flexDirection="row" height={1}>
+              <Text
+                fg={tab.disabled ? palette.disabledFg : active && variant === "pill" ? palette.activePillFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
+                attributes={attributes}
+              >
+                {` ${tab.label} `}
+              </Text>
+              {showClose && (
                 <Text
-                  fg={tab.disabled ? palette.disabledFg : active && variant === "pill" ? palette.activePillFg : active ? palette.activeFg : hovered ? palette.hoverFg : palette.inactiveFg}
-                  attributes={active ? TextAttributes.BOLD : 0}
+                  fg={active && variant === "pill" ? palette.activePillFg : palette.closeFg}
+                  onMouseDown={(event: any) => {
+                    event.preventDefault?.();
+                    event.stopPropagation?.();
+                    tab.onClose?.(tab.value);
+                  }}
                 >
-                  {` ${tab.label} `}
-                </Text>
-                {showClose && (
-                  <Text
-                    fg={active && variant === "pill" ? palette.activePillFg : palette.closeFg}
-                    onMouseDown={(event: any) => {
-                      event.preventDefault?.();
-                      event.stopPropagation?.();
-                      tab.onClose?.(tab.value);
-                    }}
-                  >
-                    {"x "}
-                  </Text>
-                )}
-              </Box>
-              {shouldShowUnderline(variant, compact) && (
-                <Text fg={active ? palette.activeUnderline : hovered ? palette.hoverUnderline : palette.inactiveUnderline}>
-                  {"▔".repeat(tabWidth)}
+                  {"x "}
                 </Text>
               )}
             </Box>

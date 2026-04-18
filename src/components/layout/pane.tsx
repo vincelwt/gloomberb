@@ -2,7 +2,7 @@ import { Box, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, paneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { PaneFooterBar, hasPaneFooterContent, type CombinedPaneFooter } from "./pane-footer";
+import { PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
 import { getPaneBodyHeight } from "./pane-sizing";
 
 interface PaneWrapperProps {
@@ -17,6 +17,7 @@ interface PaneWrapperProps {
   onHeaderMouseDown?: (event: any) => void;
   onHeaderMouseDrag?: (event: any) => void;
   onHeaderMouseDragEnd?: (event: any) => void;
+  onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
@@ -34,15 +35,15 @@ export function PaneWrapper({
   onHeaderMouseDown,
   onHeaderMouseDrag,
   onHeaderMouseDragEnd,
+  onHeaderContextMenu,
   onActionMouseDown,
   footer,
   children,
 }: PaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
-  const showFooter = hasPaneFooterContent(footer);
   const bodyHeight = typeof height === "number"
-    ? title ? getPaneBodyHeight(height, showFooter) : height
+    ? title ? getPaneBodyHeight(height) : height
     : undefined;
 
   return (
@@ -71,6 +72,7 @@ export function PaneWrapper({
           onHeaderMouseDown={onHeaderMouseDown}
           onHeaderMouseDrag={onHeaderMouseDrag}
           onHeaderMouseDragEnd={onHeaderMouseDragEnd}
+          onHeaderContextMenu={onHeaderContextMenu}
           onActionMouseDown={onActionMouseDown}
         />
       )}
@@ -82,7 +84,7 @@ export function PaneWrapper({
       >
         {children}
       </Box>
-      {title && showFooter && (
+      {title && (
         <PaneFooterBar
           footer={footer}
           focused={focused}

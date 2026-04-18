@@ -376,10 +376,10 @@ export function PaneFooterBar({
         data-focused={focused ? "true" : "false"}
         data-empty={empty ? "true" : "false"}
         style={{
-          "--pane-footer-border-color": borderColor,
-          borderTop: `1px solid ${borderColor}`,
-          backgroundColor: focused ? "rgba(84, 201, 159, 0.05)" : "rgba(20, 25, 30, 0.55)",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+          "--pane-footer-border-color": empty ? "transparent" : borderColor,
+          borderTop: `1px solid ${empty ? "transparent" : borderColor}`,
+          backgroundColor: empty ? "transparent" : focused ? "rgba(84, 201, 159, 0.05)" : "rgba(20, 25, 30, 0.55)",
+          boxShadow: empty ? "none" : "inset 0 1px 0 rgba(255,255,255,0.03)",
         }}
       >
         <FooterContent
@@ -398,7 +398,9 @@ export function PaneFooterBar({
       <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused="true" data-empty={empty ? "true" : "false"}>
         <Text fg={borderColor} selectable={false}>└</Text>
         <Box width={contentWidth} height={1} overflow="hidden">
-          <FooterContent footer={resolvedFooter} focused width={contentWidth} />
+          {empty
+            ? <Text fg={borderColor} selectable={false}>{"─".repeat(contentWidth)}</Text>
+            : <FooterContent footer={resolvedFooter} focused width={contentWidth} />}
         </Box>
         {reservedRight === 0 && <Text fg={borderColor} selectable={false}>┘</Text>}
       </Box>

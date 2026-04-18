@@ -8,6 +8,7 @@ import type { TickerFinancials } from "../types/financials";
 import type {
   AppNotificationRequest,
   CommandDef,
+  ContextMenuProviderDef,
   CustomColumnDef,
   DetailTabDef,
   GloomPlugin,
@@ -23,6 +24,7 @@ import type {
   PluginResumeState,
   TickerAction,
 } from "../types/plugin";
+import type { ContextMenuContext, ContextMenuItem } from "../types/context-menu";
 import type { TickerRecord } from "../types/ticker";
 import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
@@ -45,6 +47,11 @@ type SlotEntry = {
   render: (props: unknown) => ReactNode;
 };
 
+interface ContextMenuProviderEntry {
+  pluginId: string;
+  provider: ContextMenuProviderDef;
+}
+
 export function getSharedDataProvider(): DataProvider | undefined { return sharedDataProvider; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
 export function setSharedDataProviderForTests(provider: DataProvider | undefined): void {
@@ -64,6 +71,7 @@ interface PluginItems {
   detailTabs: string[];
   shortcuts: string[];
   tickerActions: string[];
+  contextMenuProviders: string[];
   eventDisposers: Array<() => void>;
   newsSourceDisposers: Array<() => void>;
 }
@@ -88,6 +96,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private detailTabsMap = new Map<string, DetailTabDef>();
   private shortcutsMap = new Map<string, KeyboardShortcut>();
   private tickerActionsMap = new Map<string, TickerAction>();
+  private contextMenuProvidersMap = new Map<string, ContextMenuProviderEntry>();
 
   readonly events: EventBus;
   readonly dataProvider: DataProvider;
@@ -168,6 +177,34 @@ export class PluginRegistry implements PluginRuntimeAccess {
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this.tickerActionsMap; }
   get allPlugins(): ReadonlyMap<string, GloomPlugin> { return this.plugins; }
 
+  getContextMenuItems(context: ContextMenuContext): ContextMenuItem[] {
+    const disabledPlugins = new Set(this.getConfigFn().disabledPlugins ?? []);
+    const entries = [...this.contextMenuProvidersMap.entries()]
+      .filter(([, entry]) => !disabledPlugins.has(entry.pluginId))
+      .filter(([, entry]) => !entry.provider.contexts || entry.provider.contexts.includes(context.kind))
+      .sort((left, right) => (
+        (left[1].provider.order ?? 0) - (right[1].provider.order ?? 0)
+        || left[1].pluginId.localeCompare(right[1].pluginId)
+        || left[1].provider.id.localeCompare(right[1].provider.id)
+      ));
+
+    const items: ContextMenuItem[] = [];
+    for (const [, entry] of entries) {
+      try {
+        const provided = entry.provider.getItems(context);
+        if (provided?.length) items.push(...provided);
+      } catch (error) {
+        this.registryLog.error("Context menu provider failed", {
+          pluginId: entry.pluginId,
+          providerId: entry.provider.id,
+          context: context.kind,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return items;
+  }
+
   getDataProviderPluginId(providerId: string): string | undefined {
     return this.dataProviderOwners.get(providerId);
   }
@@ -226,6 +263,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       detailTabs: [],
       shortcuts: [],
       tickerActions: [],
+      contextMenuProviders: [],
       eventDisposers: [],
       newsSourceDisposers: [],
     };
@@ -518,6 +556,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
         items.shortcuts.push(shortcut.id);
       },
       registerTickerAction: (action) => { this.tickerActionsMap.set(action.id, action); items.tickerActions.push(action.id); },
+      registerContextMenuProvider: (provider) => {
+        const providerKey = `${pluginId}:${provider.id}`;
+        this.contextMenuProvidersMap.set(providerKey, { pluginId, provider });
+        items.contextMenuProviders.push(providerKey);
+      },
       registerNewsSource: (source) => {
         const ownedSource: import("../types/news-source").NewsSource = {
           id: source.id,
@@ -690,6 +733,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
         this.shortcutOwners.delete(shortcutId);
       }
       for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
+      for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
       for (const dispose of items.eventDisposers) dispose();
       for (const dispose of items.newsSourceDisposers) dispose();
       this.pluginItems.delete(pluginId);

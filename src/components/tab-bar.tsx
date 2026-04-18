@@ -6,6 +6,7 @@ export interface Tab {
   disabled?: boolean;
   onClose?: (value: string) => void;
   onDoubleClick?: (value: string) => void;
+  onContextMenu?: (value: string, event: any) => void;
 }
 
 export interface TabBarProps {
