@@ -17,17 +17,27 @@ import {
   type PaneRuntimeState,
 } from "../state/app-context";
 import type { DataProvider } from "../types/data-provider";
+import type { AppNotificationRequest } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
   getDataProvider(): DataProvider | null;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
+  selectTicker(symbol: string, paneId?: string): void;
+  switchTab(tabId: string, paneId?: string): void;
+  switchPanel(panel: "left" | "right"): void;
+  openCommandBar(query?: string): void;
+  showWidget(widgetId: string): void;
+  hideWidget(widgetId: string): void;
+  openPluginCommandWorkflow(commandId: string): void;
+  notify(notification: AppNotificationRequest): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
   getResumeState<T = unknown>(pluginId: string, key: string, schemaVersion?: number): T | null;
   setResumeState(pluginId: string, key: string, value: unknown, schemaVersion?: number): void;
   deleteResumeState(pluginId: string, key: string): void;
   getConfigState<T = unknown>(pluginId: string, key: string): T | null;
   setConfigState(pluginId: string, key: string, value: unknown): Promise<void>;
+  setConfigStates(pluginId: string, values: Record<string, unknown>): Promise<void>;
   deleteConfigState(pluginId: string, key: string): Promise<void>;
   getConfigStateKeys(pluginId: string): string[];
 }
@@ -69,6 +79,52 @@ export function usePluginTickerActions() {
   return {
     pinTicker: runtime.pinTicker,
     navigateTicker: runtime.navigateTicker,
+  };
+}
+
+export function usePluginPaneActions() {
+  const { runtime } = usePluginRenderContext();
+  const selectTicker = useCallback((symbol: string, paneId?: string) => {
+    runtime.selectTicker(symbol, paneId);
+  }, [runtime]);
+  const switchTab = useCallback((tabId: string, paneId?: string) => {
+    runtime.switchTab(tabId, paneId);
+  }, [runtime]);
+  const switchPanel = useCallback((panel: "left" | "right") => {
+    runtime.switchPanel(panel);
+  }, [runtime]);
+
+  return {
+    selectTicker,
+    switchTab,
+    switchPanel,
+  };
+}
+
+export function usePluginAppActions() {
+  const { runtime } = usePluginRenderContext();
+  const openCommandBar = useCallback((query?: string) => {
+    runtime.openCommandBar(query);
+  }, [runtime]);
+  const showWidget = useCallback((widgetId: string) => {
+    runtime.showWidget(widgetId);
+  }, [runtime]);
+  const hideWidget = useCallback((widgetId: string) => {
+    runtime.hideWidget(widgetId);
+  }, [runtime]);
+  const openPluginCommandWorkflow = useCallback((commandId: string) => {
+    runtime.openPluginCommandWorkflow(commandId);
+  }, [runtime]);
+  const notify = useCallback((notification: AppNotificationRequest) => {
+    runtime.notify(notification);
+  }, [runtime]);
+
+  return {
+    openCommandBar,
+    showWidget,
+    hideWidget,
+    openPluginCommandWorkflow,
+    notify,
   };
 }
 
@@ -320,4 +376,15 @@ export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: S
   }, [key, pluginId, runtime]);
 
   return [value, setValue];
+}
+
+export function useSetPluginConfigStates(): (values: Record<string, unknown>) => void {
+  const { pluginId, runtime } = usePluginRenderContext();
+
+  return useCallback((values: Record<string, unknown>) => {
+    if (Object.keys(values).length === 0) {
+      return;
+    }
+    void runtime.setConfigStates(pluginId, values);
+  }, [pluginId, runtime]);
 }

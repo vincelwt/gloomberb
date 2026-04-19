@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
+import { PluginRenderProvider } from "../plugin-runtime";
 import { HelpPane } from "./help";
-import { setSharedRegistryForTests } from "../registry";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -11,27 +12,27 @@ afterEach(() => {
     testSetup.renderer.destroy();
     testSetup = undefined;
   }
-  setSharedRegistryForTests(undefined);
 });
 
 describe("HelpPane", () => {
   test("opens the debug log from the mouse action", async () => {
     const calls: string[] = [];
-
-    setSharedRegistryForTests({
+    const runtime = createTestPluginRuntime({
+      openCommandBar: (query?: string) => calls.push(`command:${query ?? ""}`),
       showWidget: (paneId: string) => calls.push(`widget:${paneId}`),
-      openCommandBarFn: (query?: string) => calls.push(`command:${query ?? ""}`),
-    } as any);
+    });
 
     testSetup = await testRender(
-      <HelpPane
-        paneId="help:main"
-        paneType="help"
-        focused
-        width={88}
-        height={36}
-        close={() => {}}
-      />,
+      <PluginRenderProvider pluginId="help" runtime={runtime}>
+        <HelpPane
+          paneId="help:main"
+          paneType="help"
+          focused
+          width={88}
+          height={36}
+          close={() => {}}
+        />
+      </PluginRenderProvider>,
       { width: 88, height: 36 },
     );
 

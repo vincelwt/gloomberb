@@ -13,13 +13,9 @@ import {
 } from "../../../components/chart/indicators/options";
 import type { ChartAxisMode } from "../../../components/chart/chart-types";
 import { ResolvedStockChart } from "../../../components/chart/stock-chart";
-import { useAppDispatch, useAppSelector } from "../../../state/app-context";
-import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { getSharedRegistry } from "../../registry";
-
-const TICKER_DETAIL_PLUGIN_ID = "ticker-detail";
+import { usePluginConfigState, useSetPluginConfigStates } from "../../plugin-runtime";
 
 export function ChartTab({
   width,
@@ -43,13 +39,12 @@ export function ChartTab({
   financials: TickerFinancials | null;
 }) {
   const { width: termWidth, height: termHeight } = useViewport();
-  const dispatch = useAppDispatch();
-  const config = useAppSelector((state) => state.config);
+  const [rawIndicatorSelection] = usePluginConfigState<unknown>(CHART_INDICATORS_PLUGIN_CONFIG_KEY, null);
+  const [indicatorSelectionVersion] = usePluginConfigState<unknown>(CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY, null);
+  const setPluginConfigStates = useSetPluginConfigStates();
 
   const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
   const chartHeight = Math.max(height ?? termHeight - 8, 10);
-  const rawIndicatorSelection = config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_KEY];
-  const indicatorSelectionVersion = config.pluginConfig[TICKER_DETAIL_PLUGIN_ID]?.[CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY];
   const hasStoredIndicatorSelection = Array.isArray(rawIndicatorSelection);
   const selectedIndicatorIds = useMemo(
     () => resolveChartIndicatorSelection(rawIndicatorSelection, indicatorSelectionVersion),
@@ -62,21 +57,11 @@ export function ChartTab({
   const showVolume = selectedIndicatorIds.includes("volume");
   const persistIndicatorSelection = useCallback((nextSelection: ChartIndicatorId[]) => {
     const normalized = normalizeChartIndicatorSelection(nextSelection);
-    const nextConfig = {
-      ...config,
-      pluginConfig: {
-        ...config.pluginConfig,
-        [TICKER_DETAIL_PLUGIN_ID]: {
-          ...(config.pluginConfig[TICKER_DETAIL_PLUGIN_ID] ?? {}),
-          [CHART_INDICATORS_PLUGIN_CONFIG_KEY]: normalized,
-          [CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY]: CURRENT_CHART_INDICATORS_CONFIG_VERSION,
-        },
-      },
-    };
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
-    scheduleConfigSave(nextConfig);
-    getSharedRegistry()?.events.emit("config:changed", { config: nextConfig });
-  }, [config, dispatch]);
+    setPluginConfigStates({
+      [CHART_INDICATORS_PLUGIN_CONFIG_KEY]: normalized,
+      [CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY]: CURRENT_CHART_INDICATORS_CONFIG_VERSION,
+    });
+  }, [setPluginConfigStates]);
 
   return (
     <Box

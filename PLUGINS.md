@@ -488,35 +488,38 @@ ctx.createPaneFromTemplate("my-chart-new", { symbol: "AAPL" });
 Plugins can import renderer-neutral layout primitives from `gloomberb/ui` and shared controls from `gloomberb/components`. Prefer these public APIs over ad hoc rows, custom controls, or renderer internals so plugin screens feel native across hosts.
 
 ```typescript
+import { Box, Text } from "gloomberb/ui";
 import {
   StockChart,
   Tabs,
+  TabBar,
   ListView,
+  DataTable,
   DataTableView,
+  DataTableStackView,
+  FeedDataTableStackView,
+  TickerListTable,
+  TickerListTableView,
   ToggleList,
   Button,
-  IconButton,
-  Checkbox,
-  Switch,
-  RadioGroup,
+  MultiSelectDialogButton,
+  MultiSelectDialogContent,
   SegmentedControl,
   TextField,
-  SearchField,
   NumberField,
-  StatusBadge,
-  Notice,
   EmptyState,
-  Section,
-  FieldRow,
   DialogFrame,
+  ChoiceDialog,
+  ExternalLink,
+  ExternalLinkText,
+  openUrl,
+  PageStackView,
   Spinner,
-  ProgressBar,
-  SkeletonRow,
-  LoadingBlock,
   PriceSelectorDialog,
   PaneFooterBar,
   usePaneFooter,
   usePaneHints,
+  useExternalLinkFooter,
   colors,
   priceColor,
   hoverBg,
@@ -540,28 +543,40 @@ import {
 
 Available components:
 - `Tabs` — horizontal tab navigation
+- `TabBar` — alias for `Tabs` used by older plugin code
 - `ListView` — shared selectable list primitive with mouse support
+- `DataTable` — low-level table primitive when a plugin owns table state
 - `DataTableView` — shared sortable table wrapper with keyboard navigation and synchronized scrolling
+- `DataTableStackView`, `FeedDataTableStackView` — stacked table views for dense list panes
+- `TickerListTable`, `TickerListTableView` — ticker table primitives used by market list panes
 - `StockChart` — interactive area, line, candlestick, and OHLC chart
 - `ToggleList` — checkbox list with selection
-- `Button` / `IconButton` — clickable actions for dialogs and toolbars
-- `Checkbox`, `Switch`, `RadioGroup`, `SegmentedControl` — boolean and option controls
-- `TextField`, `SearchField`, `NumberField` — input controls
-- `StatusBadge`, `Notice`, `EmptyState` — status and empty/loading feedback
-- `Section`, `FieldRow`, `DialogFrame` — shared framing/layout helpers
-- `Spinner`, `ProgressBar`, `SkeletonRow`, `LoadingBlock` — loading states
+- `Button` — clickable actions for dialogs and toolbars
+- `MultiSelectDialogButton`, `MultiSelectDialogContent` — multi-select dialog controls
+- `SegmentedControl` — compact option selector
+- `TextField`, `NumberField` — input controls
+- `EmptyState` — empty or unavailable-state feedback
+- `DialogFrame` — shared dialog framing
+- `ChoiceDialog` — shared single-choice dialog with keyboard and mouse selection
+- `ExternalLink`, `ExternalLinkText`, `openUrl` — renderer-neutral link helpers
+- `PageStackView` — stacked page navigation view
+- `Spinner` — loading indicator
 - `PriceSelectorDialog` — ticker price picker dialog
 - `PaneFooterBar` — shared pane footer renderer used by the shell
 - `usePaneFooter(registrationId, factory, deps)` — register pane footer info and action hints from a pane or detail tab
 - `usePaneHints(registrationId, factory, deps)` — register only footer hints
+- `useExternalLinkFooter(options)` — register footer help for an external link
 - `colors` — theme color palette
 - `priceColor(change)` — returns green/red/neutral color for a price change
 - `hoverBg` — standard hover background color
 - `useAppState()` — access full app state
+- `usePaneSettingValue()` — read and update the current pane's persisted settings
 - `usePaneTicker()` — get the ticker bound to the current pane
 - `useFocusedTicker()` — get the currently focused ticker
 - `useSelectedTicker()` — alias for `usePaneTicker()`
 - `formatCurrency`, `formatCompact`, `formatPercent`, `formatPercentRaw`, `formatNumber`, `padTo` — number formatting utilities
+
+For layout that is not represented above, compose `Box` and `Text` from `gloomberb/ui` rather than importing renderer-specific primitives or unexported shared components.
 
 Pane footers are the shared place for pane status and non-obvious keyboard actions. Register informational segments on the left and hints on the right:
 
@@ -590,10 +605,12 @@ import {
   usePluginState,
   usePluginConfigState,
   usePluginTickerActions,
+  usePluginAppActions,
 } from "gloomberb/plugins/plugin-runtime";
 
 const dataProvider = usePluginDataProvider();
 const { navigateTicker, pinTicker } = usePluginTickerActions();
+const { openCommandBar, showWidget, hideWidget, notify } = usePluginAppActions();
 
 // Per-pane transient state (scoped to the current pane instance)
 const [expanded, setExpanded] = usePluginPaneState("expanded", false);
@@ -655,9 +672,9 @@ The simplest plugin type. This adds a new tab to the right-side detail pane:
 
 ```typescript
 import React from "react";
-import { Box } from "gloomberb/ui";
+import { Box, Text } from "gloomberb/ui";
 import type { GloomPlugin, DetailTabProps } from "gloomberb/types/plugin";
-import { EmptyState, FieldRow, Section, usePaneTicker, colors } from "gloomberb/components";
+import { EmptyState, usePaneTicker, colors } from "gloomberb/components";
 
 function SentimentTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
@@ -672,10 +689,18 @@ function SentimentTab({ width, height, focused }: DetailTabProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Section title={`Sentiment for ${ticker.metadata.ticker}`}>
-        <FieldRow label="Signal" value="Bullish" valueColor={colors.positive} />
-        <FieldRow label="Trend" value="Improving" />
-      </Section>
+      <Box height={1}>
+        <Text fg={colors.text}>{`Sentiment for ${ticker.metadata.ticker}`}</Text>
+      </Box>
+      <Box height={1} />
+      <Box flexDirection="row" height={1}>
+        <Text fg={colors.textDim}>Signal  </Text>
+        <Text fg={colors.positive}>Bullish</Text>
+      </Box>
+      <Box flexDirection="row" height={1}>
+        <Text fg={colors.textDim}>Trend   </Text>
+        <Text fg={colors.text}>Improving</Text>
+      </Box>
     </Box>
   );
 }
@@ -699,7 +724,7 @@ export default {
 
 ## UI guidelines for plugins
 
-- Prefer `ListView`, `Tabs`, `Button`, `Checkbox`, and `Notice` before custom rows.
+- Prefer `ListView`, `Tabs`, `Button`, `SegmentedControl`, `TextField`, and `EmptyState` before custom rows.
 - Support both mouse and keyboard for anything interactive.
 - Put pane status and non-obvious shortcuts in `usePaneFooter()` / `usePaneHints()` instead of ad hoc body rows.
 - Use `colors` and the shared components instead of hard-coded palette values when possible.

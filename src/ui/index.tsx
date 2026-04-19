@@ -36,7 +36,6 @@ export type {
   InputProps,
   NativeRendererHost,
   PixelResolution,
-  RGBA,
   RGBA as RGBAColor,
   RendererHost,
   ScrollBoxRenderable,

@@ -15,7 +15,7 @@ import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation"
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
 import { debugLog } from "../../utils/debug-log";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
-import { TextField, ExternalLink } from "../ui";
+import { TextField, ExternalLink, ListView, type ListViewItem } from "../ui";
 
 interface OnboardingWizardProps {
   config: AppConfig;
@@ -148,15 +148,15 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   }, [pluginRegistry.brokers]);
 
   // Build the list of choices for the portfolio step: manual + all connectable brokers
-  const portfolioChoices = useMemo(() => {
-    const choices: Array<{ id: string; label: string; desc: string }> = [
-      { id: "manual", label: "Create Manual Portfolio", desc: "Add tickers and positions by hand" },
+  const portfolioChoices = useMemo<ListViewItem[]>(() => {
+    const choices: ListViewItem[] = [
+      { id: "manual", label: "Create Manual Portfolio", description: "Add tickers and positions by hand" },
     ];
     for (const broker of brokerOptions) {
       choices.push({
         id: broker.id,
         label: `Connect ${broker.name}`,
-        desc: `Auto-import positions via ${broker.name}`,
+        description: `Auto-import positions via ${broker.name}`,
       });
     }
     return choices;
@@ -642,6 +642,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             sub={portfolioSub}
             choices={portfolioChoices}
             optionIdx={portfolioOptionIdx}
+            onOptionSelect={setPortfolioOptionIdx}
             portfolioName={portfolioName}
             onNameChange={setPortfolioName}
             selectedBrokerId={selectedBrokerId}
@@ -789,6 +790,7 @@ function PortfolioStep({
   sub,
   choices,
   optionIdx,
+  onOptionSelect,
   portfolioName,
   onNameChange,
   selectedBrokerId,
@@ -803,8 +805,9 @@ function PortfolioStep({
   brokerSyncError,
 }: {
   sub: PortfolioSub;
-  choices: Array<{ id: string; label: string; desc: string }>;
+  choices: ListViewItem[];
   optionIdx: number;
+  onOptionSelect: (idx: number) => void;
   portfolioName: string;
   onNameChange: (n: string) => void;
   selectedBrokerId: string | null;
@@ -830,24 +833,12 @@ function PortfolioStep({
         </Box>
         <Box height={2} />
 
-        {choices.map((opt, i) => {
-          const isSel = i === optionIdx;
-          return (
-            <Box key={opt.id} height={1} backgroundColor={isSel ? colors.selected : colors.bg}>
-              <Text fg={isSel ? colors.selectedText : colors.textDim}>
-                {isSel ? "\u25b8 " : "  "}
-              </Text>
-              <Text fg={isSel ? colors.text : colors.textDim} attributes={isSel ? TextAttributes.BOLD : 0}>
-                {opt.label}
-              </Text>
-            </Box>
-          );
-        })}
-
-        <Box height={1} />
-        <Box height={1}>
-          <Text fg={colors.textDim}>{choices[optionIdx]?.desc}</Text>
-        </Box>
+        <ListView
+          items={choices}
+          selectedIndex={optionIdx}
+          onSelect={onOptionSelect}
+          showSelectedDescription
+        />
 
         <Box height={1} />
         <Box height={1}>

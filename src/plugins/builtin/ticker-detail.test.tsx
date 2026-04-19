@@ -17,12 +17,14 @@ import {
   type AppConfig,
   type BrokerInstanceConfig,
 } from "../../types/config";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { DetailTabDef } from "../../types/plugin";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../registry";
 import { setSharedRegistryForTests } from "../registry";
+import { PluginRenderProvider } from "../plugin-runtime";
 import { resetOptionsAvailabilityCache } from "./options-availability";
 import { FinancialsTab, tickerDetailPlugin } from "./ticker-detail";
 import { isUsEquityTicker } from "../../utils/sec";
@@ -32,6 +34,8 @@ const TEST_PANE_ID = "ticker-detail:test";
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
+
+const runtime = createTestPluginRuntime();
 
 const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -218,13 +222,15 @@ function DetailHarness({
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <text>{`active:${state.paneState[TEST_PANE_ID]?.activeTabId ?? ""}`}</text>
-        <DetailPane
-          paneId={TEST_PANE_ID}
-          paneType="ticker-detail"
-          focused
-          width={width}
-          height={height}
-        />
+        <PluginRenderProvider pluginId={tickerDetailPlugin.id} runtime={runtime}>
+          <DetailPane
+            paneId={TEST_PANE_ID}
+            paneType="ticker-detail"
+            focused
+            width={width}
+            height={height}
+          />
+        </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
   );

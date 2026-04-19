@@ -11,7 +11,8 @@ import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedRegistryForTests } from "../../plugins/registry";
 import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugins/plugin-runtime";
+import { PluginRenderProvider } from "../../plugins/plugin-runtime";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { PaneProps } from "../../types/plugin";
 import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
@@ -73,7 +74,7 @@ function createShellPluginRegistry(options?: {
     getPluginPaneTemplateIds: () => [],
     hasPaneSettings: (paneId: string) => paneId === "portfolio-list:main",
     openPaneSettingsFn: () => {},
-    openCommandBarFn: () => {},
+    openCommandBar: () => {},
     updateLayoutFn: () => {},
     hideWidget: () => {},
   } as unknown as PluginRegistry;
@@ -84,19 +85,13 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
   if (!pane) throw new Error("missing portfolio pane");
 
   let registry: PluginRegistry;
-  const runtime: PluginRuntimeAccess = {
-    getDataProvider: () => null,
-    pinTicker: (symbol, options) => registry.pinTickerFn(symbol, options),
-    navigateTicker: (symbol) => registry.navigateTickerFn(symbol),
-    subscribeResumeState: () => () => {},
-    getResumeState: () => null,
-    setResumeState: () => {},
-    deleteResumeState: () => {},
-    getConfigState: () => null,
-    setConfigState: async () => {},
-    deleteConfigState: async () => {},
-    getConfigStateKeys: () => [],
-  };
+  const runtime = createTestPluginRuntime({
+    pinTicker: (symbol, options) => registry.pinTicker(symbol, options),
+    navigateTicker: (symbol) => registry.navigateTicker(symbol),
+    selectTicker: (symbol, paneId) => registry.selectTicker(symbol, paneId),
+    switchTab: (tabId, paneId) => registry.switchTab(tabId, paneId),
+    switchPanel: (panel) => registry.switchPanel(panel),
+  });
   const wrappedPane = {
     ...pane,
     component: (props: PaneProps) => (
@@ -117,12 +112,12 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
     getPluginPaneTemplateIds: () => [],
     hasPaneSettings: () => true,
     openPaneSettingsFn: () => {},
-    openCommandBarFn: () => {},
+    openCommandBar: () => {},
     updateLayoutFn: () => {},
     hideWidget: () => {},
     focusPaneFn: () => {},
-    pinTickerFn: () => {},
-    navigateTickerFn: () => {},
+    pinTicker: () => {},
+    navigateTicker: () => {},
     showPaneFn: () => {},
     getLayoutFn: () => ({ dockRoot: null, instances: [], floating: [] }),
     getTermSizeFn: () => ({ width: 120, height: 40 }),

@@ -509,7 +509,7 @@ export function CommandBar({
   }, [dispatch]);
 
   const openFixedTickerPane = useCallback((symbol: string) => {
-    pluginRegistry.pinTickerFn(symbol, { floating: true, paneType: "ticker-detail" });
+    pluginRegistry.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
   }, [pluginRegistry]);
 
   const previewThemeId = useCallback((themeId: string | undefined) => {

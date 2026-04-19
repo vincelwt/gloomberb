@@ -658,7 +658,7 @@ function menuForPane(
       id: "layout-actions",
       label: "Layout Actions...",
       accelerator: PANE_MANAGEMENT_ACCELERATORS.layoutActions,
-      onSelect: () => pluginRegistry.openCommandBarFn("LAY "),
+      onSelect: () => pluginRegistry.openCommandBar("LAY "),
     },
     {
       id: "gridlock-all",
@@ -828,7 +828,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   }, [dispatch]);
 
   const openLayoutMenu = useCallback(() => {
-    pluginRegistry.openCommandBarFn("LAY ");
+    pluginRegistry.openCommandBar("LAY ");
   }, [pluginRegistry]);
 
   const openPaneSettings = useCallback((paneId: string) => {

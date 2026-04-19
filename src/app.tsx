@@ -763,14 +763,14 @@ function AppInner({
   pluginRegistry.getPluginConfigValueFn = (pluginId, key) => (
     (state.config.pluginConfig[pluginId]?.[key] as any) ?? null
   );
-  pluginRegistry.setPluginConfigValueFn = async (pluginId, key, value) => {
+  const setPluginConfigValues = async (pluginId: string, values: Record<string, unknown>) => {
     const nextConfig = {
       ...state.config,
       pluginConfig: {
         ...state.config.pluginConfig,
         [pluginId]: {
           ...(state.config.pluginConfig[pluginId] ?? {}),
-          [key]: value,
+          ...values,
         },
       },
     };
@@ -778,6 +778,10 @@ function AppInner({
     await saveConfigImmediately(nextConfig);
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
   };
+  pluginRegistry.setPluginConfigValueFn = async (pluginId, key, value) => {
+    await setPluginConfigValues(pluginId, { [key]: value });
+  };
+  pluginRegistry.setPluginConfigValuesFn = setPluginConfigValues;
   pluginRegistry.deletePluginConfigValueFn = async (pluginId, key) => {
     const currentPluginConfig = state.config.pluginConfig[pluginId];
     if (!currentPluginConfig || !(key in currentPluginConfig)) return;
@@ -1322,7 +1326,7 @@ function AppInner({
           activatePane(detailPane.instanceId, nextLayout);
         }
       } else {
-        pluginRegistry.pinTickerFn(symbol, { floating: false });
+        pluginRegistry.pinTicker(symbol, { floating: false });
       }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

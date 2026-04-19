@@ -3,9 +3,10 @@ import { act } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
+import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../types/config";
 import { Box } from "../../ui";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
+import { PluginRenderProvider } from "../plugin-runtime";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
 import {
   AskAiDetailTab as AskAiTab,
@@ -19,44 +20,6 @@ import type { TickerRecord } from "../../types/ticker";
 const PANE_ID = "ticker-detail:main";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
-
-function makeRuntime(): PluginRuntimeAccess {
-  const resumeState = new Map<string, unknown>();
-  const listeners = new Map<string, Set<() => void>>();
-
-  return {
-    getDataProvider: () => null,
-    pinTicker() {},
-    navigateTicker() {},
-    subscribeResumeState(pluginId, key, listener) {
-      const storeKey = `${pluginId}:${key}`;
-      if (!listeners.has(storeKey)) listeners.set(storeKey, new Set());
-      listeners.get(storeKey)!.add(listener);
-      return () => listeners.get(storeKey)?.delete(listener);
-    },
-    getResumeState(pluginId, key) {
-      return (resumeState.get(`${pluginId}:${key}`) as any) ?? null;
-    },
-    setResumeState(pluginId, key, value) {
-      const storeKey = `${pluginId}:${key}`;
-      resumeState.set(storeKey, value);
-      for (const listener of listeners.get(storeKey) ?? []) listener();
-    },
-    deleteResumeState(pluginId, key) {
-      const storeKey = `${pluginId}:${key}`;
-      resumeState.delete(storeKey);
-      for (const listener of listeners.get(storeKey) ?? []) listener();
-    },
-    getConfigState() {
-      return null;
-    },
-    async setConfigState() {},
-    async deleteConfigState() {},
-    getConfigStateKeys() {
-      return [];
-    },
-  };
-}
 
 function makeTicker(symbol: string, name = symbol): TickerRecord {
   return {
@@ -106,7 +69,7 @@ function createAskAiHarness(
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={PANE_ID}>
-        <PluginRenderProvider pluginId="ai" runtime={makeRuntime()}>
+        <PluginRenderProvider pluginId="ai" runtime={createStatefulTestPluginRuntime()}>
           <PaneFooterProvider>
             {(footer) => (
               <Box flexDirection="column" width={width} height={height}>
@@ -239,7 +202,7 @@ describe("AskAiTab", () => {
 
     const opened: string[] = [];
     setSharedRegistryForTests({
-      pinTickerFn(symbol: string) {
+      pinTicker(symbol: string) {
         opened.push(symbol);
       },
     } as any);

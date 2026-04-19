@@ -214,7 +214,7 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     hasPaneSettings,
     events: { emit: () => {} },
     hideWidget: () => {},
-    pinTickerFn: () => {},
+    pinTicker: () => {},
     showWidget: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
@@ -979,7 +979,7 @@ describe("CommandBar", () => {
       <CommandBarHarness
         query="DES MSFT"
         configurePluginRegistry={(pluginRegistry) => {
-          pluginRegistry.pinTickerFn = (symbol) => {
+          pluginRegistry.pinTicker = (symbol) => {
             pinned.push(symbol);
           };
         }}
@@ -1514,7 +1514,7 @@ describe("CommandBar", () => {
       <CommandBarHarness
         query=""
         configurePluginRegistry={(pluginRegistry) => {
-          pluginRegistry.pinTickerFn = (symbol) => {
+          pluginRegistry.pinTicker = (symbol) => {
             pinned.push(symbol);
           };
         }}

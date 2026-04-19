@@ -133,6 +133,18 @@ export class PluginRegistry implements PluginRuntimeAccess {
   navigateTicker = (symbol: string) => {
     this.navigateTickerFn(symbol);
   };
+  selectTicker = (symbol: string, paneId?: string) => {
+    this.selectTickerFn(symbol, paneId);
+  };
+  switchPanel = (panel: "left" | "right") => {
+    this.switchPanelFn(panel);
+  };
+  switchTab = (tabId: string, paneId?: string) => {
+    this.switchTabFn(tabId, paneId);
+  };
+  openCommandBar = (query?: string) => {
+    this.openCommandBarFn(query);
+  };
   openPluginCommandWorkflow = (commandId: string) => {
     this.openPluginCommandWorkflowFn(commandId);
   };
@@ -149,6 +161,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   applyPaneSettingValueFn: ((paneId: string, field: import("../types/plugin").PaneSettingField, value: unknown) => Promise<void>) = async () => {};
   getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = () => null;
   setPluginConfigValueFn: ((pluginId: string, key: string, value: unknown) => Promise<void>) = async () => {};
+  setPluginConfigValuesFn: ((pluginId: string, values: Record<string, unknown>) => Promise<void>) = async () => {};
   deletePluginConfigValueFn: ((pluginId: string, key: string) => Promise<void>) = async () => {};
 
   readonly Slot;
@@ -343,6 +356,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   setConfigState(pluginId: string, key: string, value: unknown): Promise<void> {
     return this.setPluginConfigValueFn(pluginId, key, value);
+  }
+
+  setConfigStates(pluginId: string, values: Record<string, unknown>): Promise<void> {
+    return this.setPluginConfigValuesFn(pluginId, values);
   }
 
   deleteConfigState(pluginId: string, key: string): Promise<void> {
@@ -583,6 +600,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (ticker) => this.getTickerFn(ticker),
       getConfig: () => this.getConfigFn(),
+      getPaneDef: (paneId) => this.panesMap.get(paneId),
 
       dataProvider: this.dataProvider,
       tickerRepository: this.tickerRepository,
@@ -602,10 +620,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
       syncBrokerInstance: (instanceId) => this.syncBrokerInstanceFn(instanceId),
       removeBrokerInstance: (instanceId) => this.removeBrokerInstanceFn(instanceId),
 
-      selectTicker: (symbol, paneId) => this.selectTickerFn(symbol, paneId),
-      switchPanel: (panel) => this.switchPanelFn(panel),
-      switchTab: (tabId, paneId) => this.switchTabFn(tabId, paneId),
-      openCommandBar: (query) => this.openCommandBarFn(query),
+      selectTicker: this.selectTicker,
+      switchPanel: this.switchPanel,
+      switchTab: this.switchTab,
+      openCommandBar: this.openCommandBar,
       showPane: (paneId) => this.showPaneFn(paneId),
       createPaneFromTemplate: (templateId, options) => this.createPaneFromTemplateFn(templateId, options),
       hidePane: (paneId) => this.hidePaneFn(paneId),

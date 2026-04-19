@@ -70,6 +70,7 @@ function setupIbkrPlugin(config: AppConfig) {
     getData: () => null,
     getTicker: (symbol: string) => tickers.get(symbol) ?? null,
     getConfig: () => config,
+    getPaneDef: () => undefined,
     persistence: {} as any,
     storage: {} as any,
     dataProvider: {} as any,

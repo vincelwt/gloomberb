@@ -7,17 +7,20 @@ import {
   appReducer,
   createInitialState,
 } from "../state/app-context";
+import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../test-support/plugin-runtime";
 import { createDefaultConfig } from "../types/config";
 import {
   PluginRenderProvider,
   deletePluginPaneStateValue,
   getPluginPaneStateValue,
   setPluginPaneStateValue,
-  type PluginRuntimeAccess,
+  usePluginAppActions,
   useDebouncedPluginPaneState,
   usePluginConfigState,
+  usePluginPaneActions,
   usePluginPaneState,
   usePluginState,
+  useSetPluginConfigStates,
 } from "./plugin-runtime";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -57,19 +60,7 @@ describe("plugin runtime hooks", () => {
     const stateRef: { current: ReturnType<typeof createInitialState> | null } = { current: null };
     let setSelection: ((value: SetStateAction<string>) => void) | null = null;
 
-    const runtime = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
-      subscribeResumeState: () => () => {},
-      getResumeState: () => null,
-      setResumeState() {},
-      deleteResumeState() {},
-      getConfigState: () => null,
-      setConfigState: async () => {},
-      deleteConfigState: async () => {},
-      getConfigStateKeys: () => [],
-    } satisfies PluginRuntimeAccess;
+    const runtime = createTestPluginRuntime();
 
     function HookHarness() {
       const [state, dispatch] = useReducer(appReducer, createInitialState(config));
@@ -122,74 +113,10 @@ describe("plugin runtime hooks", () => {
     const config = createDefaultConfig("/tmp/gloomberb-plugin-runtime");
     const stateRef: { current: ReturnType<typeof createInitialState> | null } = { current: null };
     const dispatchRef: { current: React.Dispatch<any> | null } = { current: null };
-    const resumeState = new Map<string, unknown>();
-    const listeners = new Map<string, Set<() => void>>();
-
-    const runtime: PluginRuntimeAccess = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
-      subscribeResumeState(pluginId, key, listener) {
-        const listenerKey = `${pluginId}:${key}`;
-        if (!listeners.has(listenerKey)) listeners.set(listenerKey, new Set());
-        listeners.get(listenerKey)!.add(listener);
-        return () => {
-          const current = listeners.get(listenerKey);
-          if (!current) return;
-          current.delete(listener);
-        };
-      },
-      getResumeState(pluginId, key) {
-        return (resumeState.get(`${pluginId}:${key}`) as any) ?? null;
-      },
-      setResumeState(pluginId, key, value) {
-        const listenerKey = `${pluginId}:${key}`;
-        resumeState.set(listenerKey, value);
-        for (const listener of listeners.get(listenerKey) ?? []) listener();
-      },
-      deleteResumeState(pluginId, key) {
-        const listenerKey = `${pluginId}:${key}`;
-        resumeState.delete(listenerKey);
-        for (const listener of listeners.get(listenerKey) ?? []) listener();
-      },
-      getConfigState(pluginId, key) {
-        return (stateRef.current?.config.pluginConfig[pluginId]?.[key] as any) ?? null;
-      },
-      async setConfigState(pluginId, key, value) {
-        const currentState = stateRef.current!;
-        dispatchRef.current?.({
-          type: "SET_CONFIG",
-          config: {
-            ...currentState.config,
-            pluginConfig: {
-              ...currentState.config.pluginConfig,
-              [pluginId]: {
-                ...(currentState.config.pluginConfig[pluginId] ?? {}),
-                [key]: value,
-              },
-            },
-          },
-        });
-      },
-      async deleteConfigState(pluginId, key) {
-        const currentState = stateRef.current!;
-        const currentPluginConfig = { ...(currentState.config.pluginConfig[pluginId] ?? {}) };
-        delete currentPluginConfig[key];
-        const nextPluginConfig = { ...currentState.config.pluginConfig };
-        if (Object.keys(currentPluginConfig).length === 0) delete nextPluginConfig[pluginId];
-        else nextPluginConfig[pluginId] = currentPluginConfig;
-        dispatchRef.current?.({
-          type: "SET_CONFIG",
-          config: {
-            ...currentState.config,
-            pluginConfig: nextPluginConfig,
-          },
-        });
-      },
-      getConfigStateKeys(pluginId) {
-        return Object.keys(stateRef.current?.config.pluginConfig[pluginId] ?? {}).sort();
-      },
-    };
+    const runtime = createConfigBackedTestPluginRuntime({
+      getConfig: () => stateRef.current?.config,
+      setConfig: (config) => dispatchRef.current?.({ type: "SET_CONFIG", config }),
+    });
 
     function HookHarness() {
       const [state, dispatch] = useReducer(appReducer, createInitialState(config));
@@ -212,16 +139,24 @@ describe("plugin runtime hooks", () => {
       const [venueScope, setVenueScope] = usePluginPaneState<string>("venueScope", "all");
       const [provider, setProvider] = usePluginState<string>("provider", "claude");
       const [mode, setMode] = usePluginConfigState<string>("displayMode", "compact");
+      const [layoutMode] = usePluginConfigState<string>("layoutMode", "default");
+      const setConfigStates = useSetPluginConfigStates();
 
       useEffect(() => {
         if (paneSelection === 0) setPaneSelection(3);
         if (venueScope === "all") setVenueScope("kalshi");
         if (provider === "claude") setProvider("codex");
-        if (mode === "compact") setMode("expanded");
+        if (mode === "compact") {
+          setMode("expanded");
+        } else if (layoutMode === "default") {
+          setConfigStates({ layoutMode: "wide", density: "dense" });
+        }
       }, [
+        layoutMode,
         mode,
         paneSelection,
         provider,
+        setConfigStates,
         setMode,
         setPaneSelection,
         setProvider,
@@ -229,7 +164,7 @@ describe("plugin runtime hooks", () => {
         venueScope,
       ]);
 
-      return <text>{`${paneSelection}|${venueScope}|${provider}|${mode}`}</text>;
+      return <text>{`${paneSelection}|${venueScope}|${provider}|${mode}|${layoutMode}`}</text>;
     }
 
     testSetup = await testRender(<HookHarness />, { width: 40, height: 5 });
@@ -237,10 +172,11 @@ describe("plugin runtime hooks", () => {
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("3|kalshi|codex|expanded");
+    expect(frame).toContain("3|kalshi|codex|expanded|wide");
     expect(stateRef.current?.paneState["portfolio-list:main"]?.pluginState).toEqual({
       news: {
         selectedIdx: 3,
@@ -248,8 +184,106 @@ describe("plugin runtime hooks", () => {
       },
     });
     expect(stateRef.current?.config.pluginConfig.news).toEqual({
+      density: "dense",
       displayMode: "expanded",
+      layoutMode: "wide",
     });
-    expect(resumeState.get("news:provider")).toBe("codex");
+    expect(runtime.getResumeState("news", "provider")).toBe("codex");
+  });
+
+  test("exposes renderer app actions through the plugin hook", async () => {
+    const calls: string[] = [];
+    let actions: ReturnType<typeof usePluginAppActions> | null = null;
+
+    const runtime = createTestPluginRuntime({
+      openCommandBar(query?: string) {
+        calls.push(`command:${query ?? ""}`);
+      },
+      showWidget(widgetId: string) {
+        calls.push(`show:${widgetId}`);
+      },
+      hideWidget(widgetId: string) {
+        calls.push(`hide:${widgetId}`);
+      },
+      openPluginCommandWorkflow(commandId: string) {
+        calls.push(`workflow:${commandId}`);
+      },
+      notify(notification) {
+        calls.push(`notify:${notification.body}`);
+      },
+    });
+
+    function HookProbe() {
+      actions = usePluginAppActions();
+      return <text>actions</text>;
+    }
+
+    testSetup = await testRender(
+      <PluginRenderProvider pluginId="help" runtime={runtime}>
+        <HookProbe />
+      </PluginRenderProvider>,
+      { width: 40, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    actions?.openCommandBar("PL ");
+    actions?.showWidget("debug");
+    actions?.hideWidget("chat");
+    actions?.openPluginCommandWorkflow("set-alert");
+    actions?.notify({ body: "Saved", type: "success" });
+
+    expect(calls).toEqual([
+      "command:PL ",
+      "show:debug",
+      "hide:chat",
+      "workflow:set-alert",
+      "notify:Saved",
+    ]);
+  });
+
+  test("exposes renderer pane actions through the plugin hook", async () => {
+    const calls: string[] = [];
+    let actions: ReturnType<typeof usePluginPaneActions> | null = null;
+
+    const runtime = createTestPluginRuntime({
+      selectTicker(symbol: string, paneId?: string) {
+        calls.push(`select:${symbol}:${paneId ?? ""}`);
+      },
+      switchTab(tabId: string, paneId?: string) {
+        calls.push(`tab:${tabId}:${paneId ?? ""}`);
+      },
+      switchPanel(panel: "left" | "right") {
+        calls.push(`panel:${panel}`);
+      },
+    });
+
+    function HookProbe() {
+      actions = usePluginPaneActions();
+      return <text>pane-actions</text>;
+    }
+
+    testSetup = await testRender(
+      <PluginRenderProvider pluginId="ibkr" runtime={runtime}>
+        <HookProbe />
+      </PluginRenderProvider>,
+      { width: 40, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    actions?.selectTicker("AAPL", "ibkr:main");
+    actions?.switchTab("ibkr-trade", "ibkr:main");
+    actions?.switchPanel("right");
+
+    expect(calls).toEqual([
+      "select:AAPL:ibkr:main",
+      "tab:ibkr-trade:ibkr:main",
+      "panel:right",
+    ]);
   });
 });
