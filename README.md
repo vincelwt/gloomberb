@@ -160,11 +160,15 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | Key | Action |
 |-----|--------|
 | `Ctrl+P` or `` ` `` | Open command bar |
-| `Ctrl+x` | Close current window |
+| `Cmd/Ctrl+,` | Open focused pane settings |
+| `Cmd/Ctrl+W` | Close focused pane |
+| `Cmd/Ctrl+Shift+D` | Dock or float focused pane |
+| `Cmd/Ctrl+Shift+O` | Pop out focused pane |
+| `Cmd/Ctrl+Shift+L` | Layout actions |
+| `Cmd/Ctrl+Shift+G` | Gridlock all windows |
 | `Tab` | Switch between panels |
 | `j` / `k` | Navigate ticker list |
 | `h` / `l` | Switch tabs |
-| `Ctrl+,` | Open settings |
 | `m` | Cycle chart mode in the chart tab |
 | `q` | Quit |
 

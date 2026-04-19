@@ -19,6 +19,7 @@ import {
   buildNativeWindowState,
   constrainFloatingRectToBounds,
   finalizePaneDragRelease,
+  resolvePaneManagementShortcut,
   resolveAppHeaderHeightCells,
   resolveNativeDockDividers,
   resolvePaneDragFloatingRect,
@@ -806,6 +807,19 @@ describe("Shell", () => {
       width: 50,
       height: 22,
     }));
+  });
+
+  test("resolves pane management shortcuts", () => {
+    const base = { ctrl: false, meta: true, super: true, shift: true, alt: false };
+    expect(resolvePaneManagementShortcut({ ...base, name: ",", key: ",", shift: false })).toBe("settings");
+    expect(resolvePaneManagementShortcut({ ...base, name: "w", key: "w", ctrl: true, meta: false, super: false, shift: false })).toBe("close");
+    expect(resolvePaneManagementShortcut({ ...base, name: "D", key: "D" })).toBe("toggle-floating");
+    expect(resolvePaneManagementShortcut({ ...base, name: "o", key: "o" })).toBe("pop-out");
+    expect(resolvePaneManagementShortcut({ ...base, name: "l", key: "l" })).toBe("layout-actions");
+    expect(resolvePaneManagementShortcut({ ...base, name: "g", key: "g" })).toBe("gridlock-all");
+    expect(resolvePaneManagementShortcut({ ...base, name: "n", key: "n" })).toBeNull();
+    expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", alt: true })).toBeNull();
+    expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", meta: false, super: false })).toBeNull();
   });
 
   test("closes the focused docked pane with Ctrl+W", async () => {

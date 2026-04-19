@@ -1,7 +1,7 @@
 import { AsciiText, Box, Text, useContextMenu } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
-import { useShortcut, useViewport } from "../../react/input";
+import { useShortcut, useViewport, type KeyEventLike } from "../../react/input";
 import { useDialogState } from "../../ui/dialog";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import type { DesktopDockPreviewState, DesktopWindowBridge } from "../../types/desktop-window";
@@ -174,6 +174,37 @@ const DEFAULT_HEADER_HEIGHT = 1;
 const MENU_WIDTH = 18;
 const PANE_DRAG_THRESHOLD = 2;
 const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
+const PANE_MANAGEMENT_ACCELERATORS = {
+  settings: "CmdOrCtrl+,",
+  toggleFloating: "CmdOrCtrl+Shift+D",
+  popOut: "CmdOrCtrl+Shift+O",
+  close: "CmdOrCtrl+W",
+  layoutActions: "CmdOrCtrl+Shift+L",
+  gridlockAll: "CmdOrCtrl+Shift+G",
+} as const;
+
+type PaneManagementShortcut =
+  | "settings"
+  | "toggle-floating"
+  | "pop-out"
+  | "close"
+  | "layout-actions"
+  | "gridlock-all";
+
+export function resolvePaneManagementShortcut(
+  event: Pick<KeyEventLike, "name" | "key" | "ctrl" | "meta" | "super" | "shift" | "alt">,
+): PaneManagementShortcut | null {
+  if (!event.ctrl && !event.meta && !event.super) return null;
+  const name = (event.name ?? event.key ?? "").toLowerCase();
+  if (name === "w") return "close";
+  if (!event.shift && name === ",") return "settings";
+  if (!event.shift || event.alt) return null;
+  if (name === "d") return "toggle-floating";
+  if (name === "o") return "pop-out";
+  if (name === "l") return "layout-actions";
+  if (name === "g") return "gridlock-all";
+  return null;
+}
 
 export function resolveAppHeaderHeightCells(options: { titleBarOverlay?: boolean; cellHeightPx?: number }): number {
   if (!options.titleBarOverlay || !options.cellHeightPx || options.cellHeightPx <= 0) return DEFAULT_HEADER_HEIGHT;
@@ -576,6 +607,7 @@ function menuForPane(
     baseActions.push({
       id: "settings",
       label: "Settings",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.settings,
       onSelect: () => openPaneSettings(pane.instance.instanceId),
     });
   }
@@ -584,6 +616,7 @@ function menuForPane(
     baseActions.push({
       id: "dock",
       label: "Dock Pane",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.toggleFloating,
       onSelect: () => {
         persistLayout(applyDrop(layout, pane.instance.instanceId, { kind: "frame", edge: "right" }));
         focusPane(pane.instance.instanceId);
@@ -593,6 +626,7 @@ function menuForPane(
     baseActions.push({
       id: "float",
       label: "Float Pane",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.toggleFloating,
       onSelect: () => {
         persistLayout(floatPane(layout, pane.instance.instanceId, width, contentHeight, pane.def));
         focusPane(pane.instance.instanceId);
@@ -604,6 +638,7 @@ function menuForPane(
     baseActions.push({
       id: "pop-out",
       label: "Pop Out",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.popOut,
       onSelect: () => {
         void desktopWindowBridge.popOutPane?.(pane.instance.instanceId);
       },
@@ -613,24 +648,22 @@ function menuForPane(
   baseActions.push({
     id: "close-pane",
     label: "Close Pane",
+    accelerator: PANE_MANAGEMENT_ACCELERATORS.close,
     onSelect: () => persistLayout(removePane(layout, pane.instance.instanceId)),
   });
 
   baseActions.push(
     contextMenuDivider("pane:layout-divider"),
     {
-      id: "new-pane",
-      label: "New Pane...",
-      onSelect: () => pluginRegistry.openCommandBarFn("NP "),
-    },
-    {
       id: "layout-actions",
       label: "Layout Actions...",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.layoutActions,
       onSelect: () => pluginRegistry.openCommandBarFn("LAY "),
     },
     {
       id: "gridlock-all",
       label: "Gridlock All Windows",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.gridlockAll,
       onSelect: () => {
         persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width, height: contentHeight }));
       },
@@ -751,19 +784,6 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     updateDockPreview(null);
   }, [updateDividerPreview, updateDockPreview, updateDragFloatingRect]);
 
-  useShortcut((event) => {
-    if (event.name === "escape") {
-      if (!dragRef.current) return;
-      cancelActiveDrag();
-      return;
-    }
-    if (event.name !== "w" || (!event.ctrl && !event.meta && !event.super)) return;
-    if (dragRef.current || overlayOpen || inputCaptured) return;
-    if (!closeFocusedPane()) return;
-    event.preventDefault();
-    event.stopPropagation();
-  });
-
   const disabledPaneIds = useMemo(() => {
     const disabledPlugins = new Set(config.disabledPlugins);
     const ids = new Set<string>();
@@ -833,6 +853,75 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     [contentHeight, floatingPanes, width],
   );
   const paneMap = useMemo(() => new Map([...dockedPanes, ...floatingPanes].map((pane) => [pane.instance.instanceId, pane])), [dockedPanes, floatingPanes]);
+
+  const openFocusedPaneSettings = useCallback(() => {
+    if (!focusedPaneId || !pluginRegistry.hasPaneSettings(focusedPaneId)) return false;
+    openPaneSettings(focusedPaneId);
+    return true;
+  }, [focusedPaneId, openPaneSettings, pluginRegistry]);
+
+  const toggleFocusedPaneFloating = useCallback(() => {
+    if (!focusedPaneId) return false;
+    const pane = paneMap.get(focusedPaneId);
+    if (!pane) return false;
+    const nextLayout = pane.floating
+      ? applyDrop(visibleLayout, pane.instance.instanceId, { kind: "frame", edge: "right" })
+      : floatPane(visibleLayout, pane.instance.instanceId, width, contentHeight, pane.def);
+    persistLayout(nextLayout);
+    focusPane(pane.instance.instanceId);
+    return true;
+  }, [contentHeight, focusPane, focusedPaneId, paneMap, persistLayout, visibleLayout, width]);
+
+  const popOutFocusedPane = useCallback(() => {
+    if (!focusedPaneId || desktopWindowBridge?.kind !== "main" || !desktopWindowBridge.popOutPane) return false;
+    if (!isPaneInLayout(visibleLayout, focusedPaneId)) return false;
+    void desktopWindowBridge.popOutPane(focusedPaneId);
+    return true;
+  }, [desktopWindowBridge, focusedPaneId, visibleLayout]);
+
+  const gridlockVisiblePanes = useCallback(() => {
+    persistLayout(gridlockAllPanes(visibleLayout, { x: 0, y: 0, width, height: contentHeight }));
+    return true;
+  }, [contentHeight, persistLayout, visibleLayout, width]);
+
+  useShortcut((event) => {
+    if (event.name === "escape") {
+      if (!dragRef.current) return;
+      cancelActiveDrag();
+      return;
+    }
+
+    const shortcut = resolvePaneManagementShortcut(event);
+    if (!shortcut || dragRef.current || overlayOpen || inputCaptured) return;
+
+    let handled = false;
+    switch (shortcut) {
+      case "close":
+        handled = closeFocusedPane();
+        break;
+      case "settings":
+        handled = openFocusedPaneSettings();
+        break;
+      case "toggle-floating":
+        handled = toggleFocusedPaneFloating();
+        break;
+      case "pop-out":
+        handled = popOutFocusedPane();
+        break;
+      case "layout-actions":
+        openLayoutMenu();
+        handled = true;
+        break;
+      case "gridlock-all":
+        handled = gridlockVisiblePanes();
+        break;
+    }
+
+    if (!handled) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
   const dockGeometryOptions = useMemo(() => (nativePaneChrome ? { precise: true } : undefined), [nativePaneChrome]);
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
   const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);

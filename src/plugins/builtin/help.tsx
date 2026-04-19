@@ -209,6 +209,16 @@ export function HelpPane({ width, height }: PaneProps) {
               compact={compact}
             />
             <ShortcutRow
+              badges={["Cmd/Ctrl+,"]}
+              description="Edit settings for the focused pane."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["Cmd/Ctrl+Shift+D"]}
+              description="Dock or float the focused pane."
+              compact={compact}
+            />
+            <ShortcutRow
               badges={["j", "k"]}
               description="Move through lists in most panes. Arrow keys also work."
               compact={compact}
@@ -222,8 +232,13 @@ export function HelpPane({ width, height }: PaneProps) {
 
           <HelpSection title="Layout System">
             <ShortcutRow
-              badges={["LAY"]}
+              badges={["LAY", "Cmd/Ctrl+Shift+L"]}
               description="Open layout actions."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["Cmd/Ctrl+Shift+G"]}
+              description="Gridlock all windows."
               compact={compact}
             />
             <Text fg={colors.text}>Docked panes stay in the saved layout.</Text>

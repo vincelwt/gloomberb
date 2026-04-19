@@ -1208,7 +1208,8 @@ function ShortcutsStep({
   const keyboardShortcuts = [
     { key: "Ctrl+P / `", desc: "Open the command bar" },
     { key: "Tab", desc: "Switch between panels" },
-    { key: "Ctrl+W", desc: "Close the current window" },
+    { key: "Cmd/Ctrl+W", desc: "Close the focused pane" },
+    { key: "Cmd/Ctrl+Shift+D", desc: "Dock or float the focused pane" },
     { key: "q", desc: "Quit" },
   ];
 
@@ -1241,7 +1242,7 @@ function ShortcutsStep({
     return [...builtIn, ...pluginPrefixes];
   }, [pluginRegistry, disabledSet]);
 
-  const COL = 14;
+  const COL = 20;
 
   return (
     <Box flexDirection="column" paddingX={2}>
