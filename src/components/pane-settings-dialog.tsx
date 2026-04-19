@@ -1,15 +1,14 @@
-import { Box, Text } from "../ui";
+import { Box, Text, useUiHost } from "../ui";
 import { TextAttributes } from "../ui";
 import { type AlertContext, useDialog, useDialogKeyboard } from "../ui/dialog";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   PaneSettingField,
   PaneSettingTextField,
 } from "../types/plugin";
 import type { PluginRegistry } from "../plugins/registry";
-import { useAppSelector } from "../state/app-context";
 import { colors } from "../theme/colors";
-import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
+import { Button, DialogFrame, ListView, MultiSelectDialogContent, SegmentedControl, TextField } from "./ui";
 
 interface PaneSettingsDialogContentProps extends AlertContext {
   paneId: string;
@@ -54,6 +53,255 @@ function coerceSelectedValues(value: unknown): string[] {
     : [];
 }
 
+const DESKTOP_TEXT_STYLE = {
+  letterSpacing: 0,
+  lineHeight: "var(--cell-h)",
+} as const;
+
+function desktopText(weight?: number) {
+  return weight ? { ...DESKTOP_TEXT_STYLE, fontWeight: weight } : DESKTOP_TEXT_STYLE;
+}
+
+function DesktopDialogSurface({
+  title,
+  subtitle,
+  dismiss,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  dismiss: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Box
+      width={68}
+      maxWidth="calc(100vw - 72px)"
+      flexDirection="column"
+      style={{
+        padding: 12,
+      }}
+    >
+      <Box flexDirection="row" alignItems="flex-start" style={{ marginBottom: 10 }}>
+        <Box flexDirection="column" flexGrow={1} minWidth={0}>
+          <Text fg={colors.textBright} style={desktopText(700)}>{title}</Text>
+          {subtitle && (
+            <Text fg={colors.textMuted} wrapText style={{ ...desktopText(), marginTop: 3 }}>
+              {subtitle}
+            </Text>
+          )}
+        </Box>
+        <Box
+          width={3}
+          height={1}
+          alignItems="center"
+          justifyContent="center"
+          onMouseDown={(event: any) => {
+            event.stopPropagation?.();
+            event.preventDefault?.();
+            dismiss();
+          }}
+          data-gloom-interactive="true"
+          style={{
+            borderRadius: 6,
+            cursor: "pointer",
+            marginLeft: 16,
+            color: colors.textMuted,
+          }}
+        >
+          <Text fg={colors.textMuted} style={desktopText(700)}>x</Text>
+        </Box>
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+function DesktopSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Box
+      width="42px"
+      height="18px"
+      flexDirection="row"
+      alignItems="center"
+      justifyContent={checked ? "flex-end" : "flex-start"}
+      backgroundColor={checked ? colors.selected : "rgba(255, 255, 255, 0.07)"}
+      onMouseDown={(event: any) => {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        onChange(!checked);
+      }}
+      data-gloom-interactive="true"
+      style={{
+        border: `1px solid ${checked ? colors.borderFocused : colors.border}`,
+        borderRadius: 999,
+        boxShadow: checked ? "inset 0 1px 0 rgba(255,255,255,0.10)" : "inset 0 1px 0 rgba(255,255,255,0.05)",
+        cursor: "pointer",
+        paddingInline: 2,
+      }}
+    >
+      <Box
+        width="14px"
+        height="14px"
+        backgroundColor={checked ? colors.selectedText : colors.textMuted}
+        style={{
+          borderRadius: 999,
+          boxShadow: "0 1px 2px rgba(0, 0, 0, 0.35)",
+        }}
+      />
+    </Box>
+  );
+}
+
+function DesktopValuePill({ value }: { value: string }) {
+  return (
+    <Box
+      flexDirection="row"
+      alignItems="center"
+      backgroundColor="rgba(255, 255, 255, 0.06)"
+      style={{
+        border: `1px solid ${colors.border}`,
+        borderRadius: 6,
+        padding: "1px 7px",
+      }}
+    >
+      <Text fg={colors.textDim} style={desktopText(600)}>{value}</Text>
+    </Box>
+  );
+}
+
+function DesktopSettingsRow({
+  field,
+  selected,
+  hovered,
+  currentValue,
+  onHover,
+  onEdit,
+  onApply,
+}: {
+  field: PaneSettingField;
+  selected: boolean;
+  hovered: boolean;
+  currentValue: unknown;
+  onHover: () => void;
+  onEdit: () => void;
+  onApply: (field: PaneSettingField, value: unknown) => void;
+}) {
+  const isToggle = field.type === "toggle";
+  const isSelect = field.type === "select";
+  const rowInteractive = !isSelect;
+  const summary = summarizeValue(field, currentValue);
+  const control = field.type === "toggle" ? (
+    <DesktopSwitch checked={currentValue === true} onChange={(checked) => onApply(field, checked)} />
+  ) : field.type === "select" ? (
+    <Box
+      width="100%"
+      style={{
+        marginTop: 4,
+        overflowX: "auto",
+        overflowY: "hidden",
+      }}
+    >
+      <SegmentedControl
+        value={typeof currentValue === "string" ? currentValue : ""}
+        options={field.options.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }))}
+        onChange={(value) => onApply(field, value)}
+      />
+    </Box>
+  ) : (
+    <Box flexDirection="row" alignItems="center" gap={1}>
+      <DesktopValuePill value={summary} />
+      <Text fg={colors.textMuted} style={desktopText(600)}>Edit</Text>
+    </Box>
+  );
+
+  return (
+    <Box
+      flexDirection="column"
+      minHeight={field.description || isSelect ? undefined : 2}
+      backgroundColor={hovered || selected ? "rgba(255, 255, 255, 0.045)" : "transparent"}
+      onMouseMove={onHover}
+      onMouseDown={rowInteractive
+        ? (event: any) => {
+          event.stopPropagation?.();
+          event.preventDefault?.();
+          if (isToggle) onApply(field, currentValue !== true);
+          else onEdit();
+        }
+        : undefined}
+      data-gloom-interactive={rowInteractive ? "true" : undefined}
+      style={{
+        borderBottom: `1px solid ${hovered || selected ? colors.borderFocused : colors.border}`,
+        cursor: rowInteractive ? "pointer" : "default",
+        padding: "6px 2px 7px",
+        transition: "background-color 100ms ease, border-color 100ms ease",
+      }}
+    >
+      <Box flexDirection="row" alignItems="center" width="100%">
+        <Box flexDirection="row" flexGrow={1} minWidth={0} style={{ paddingRight: 12 }}>
+          <Text fg={colors.text} style={desktopText(650)}>{field.label}</Text>
+        </Box>
+        {!isSelect && control}
+      </Box>
+      {field.description && (
+        <Text fg={colors.textMuted} wrapText style={desktopText()}>
+          {field.description}
+        </Text>
+      )}
+      {isSelect && control}
+    </Box>
+  );
+}
+
+function DesktopSettingsList({
+  fields,
+  selectedIndex,
+  hoveredFieldKey,
+  settings,
+  onHover,
+  onEdit,
+  onApply,
+}: {
+  fields: PaneSettingField[];
+  selectedIndex: number;
+  hoveredFieldKey: string | null;
+  settings: Record<string, unknown>;
+  onHover: (field: PaneSettingField, index: number) => void;
+  onEdit: (field: PaneSettingField, index: number) => void;
+  onApply: (field: PaneSettingField, value: unknown, index: number) => void;
+}) {
+  return (
+    <Box
+      flexDirection="column"
+      style={{
+        borderTop: `1px solid ${colors.border}`,
+      }}
+    >
+      {fields.map((field, index) => (
+        <DesktopSettingsRow
+          key={field.key}
+          field={field}
+          selected={index === selectedIndex && hoveredFieldKey === null}
+          hovered={hoveredFieldKey === field.key}
+          currentValue={settings[field.key]}
+          onHover={() => onHover(field, index)}
+          onEdit={() => onEdit(field, index)}
+          onApply={(targetField, value) => onApply(targetField, value, index)}
+        />
+      ))}
+    </Box>
+  );
+}
+
 function SelectFieldDialog({
   dismiss,
   dialogId,
@@ -67,6 +315,7 @@ function SelectFieldDialog({
 }) {
   const initialIndex = Math.max(0, field.options.findIndex((option) => option.value === currentValue));
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
+  const isDesktop = useUiHost().kind === "desktop-web";
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
@@ -79,6 +328,54 @@ function SelectFieldDialog({
       void onApply(option.value).then(() => dismiss()).catch(() => {});
     }
   }, dialogId);
+
+  if (isDesktop) {
+    return (
+      <DesktopDialogSurface
+        title={field.label}
+        subtitle={field.description}
+        dismiss={dismiss}
+      >
+        <Box flexDirection="column" style={{ borderTop: `1px solid ${colors.border}` }}>
+          {field.options.map((option, index) => {
+            const selected = option.value === currentValue;
+            const focused = index === selectedIndex;
+            return (
+              <Box
+                key={option.value}
+                minHeight={option.description ? 4 : 3}
+                flexDirection="row"
+                alignItems="center"
+                backgroundColor={selected || focused ? "rgba(255, 255, 255, 0.045)" : "transparent"}
+                onMouseMove={() => setSelectedIndex(index)}
+                onMouseDown={(event: any) => {
+                  event.stopPropagation?.();
+                  event.preventDefault?.();
+                  void onApply(option.value).then(() => dismiss()).catch(() => {});
+                }}
+                data-gloom-interactive="true"
+                style={{
+                  borderBottom: `1px solid ${selected || focused ? colors.borderFocused : colors.border}`,
+                  cursor: "pointer",
+                  padding: "6px 2px 7px",
+                }}
+              >
+                <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                  <Text fg={colors.textBright} style={desktopText(650)}>{option.label}</Text>
+                  {option.description && (
+                    <Text fg={colors.textMuted} wrapText style={{ ...desktopText(), marginTop: 3 }}>
+                      {option.description}
+                    </Text>
+                  )}
+                </Box>
+                {selected && <DesktopValuePill value="Selected" />}
+              </Box>
+            );
+          })}
+        </Box>
+      </DesktopDialogSurface>
+    );
+  }
 
   return (
     <DialogFrame
@@ -117,6 +414,7 @@ function TextFieldDialog({
   const [value, setValue] = useState(typeof currentValue === "string" ? currentValue : "");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<any>(null);
+  const isDesktop = useUiHost().kind === "desktop-web";
 
   useEffect(() => {
     inputRef.current?.focus?.();
@@ -138,6 +436,34 @@ function TextFieldDialog({
       setError(err instanceof Error ? err.message : "Could not save this value.");
     }
   };
+
+  if (isDesktop) {
+    return (
+      <DesktopDialogSurface
+        title={field.label}
+        subtitle={field.description}
+        dismiss={dismiss}
+      >
+        <Box flexDirection="column" gap={1}>
+          <TextField
+            inputRef={inputRef}
+            value={value}
+            placeholder={field.placeholder}
+            focused
+            width={56}
+            onChange={setValue}
+            onSubmit={() => { void submit(); }}
+          />
+          {error && (
+            <Text fg={colors.negative} wrapText style={desktopText(600)}>{error}</Text>
+          )}
+          <Box flexDirection="row" justifyContent="flex-end" style={{ marginTop: 12 }}>
+            <Button label="Save" variant="primary" onPress={() => { void submit(); }} />
+          </Box>
+        </Box>
+      </DesktopDialogSurface>
+    );
+  }
 
   return (
     <DialogFrame
@@ -203,10 +529,12 @@ export function PaneSettingsDialogContent({
   pluginRegistry,
   applyFieldValue,
 }: PaneSettingsDialogContentProps) {
-  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
   const dialog = useDialog();
+  const isDesktop = useUiHost().kind === "desktop-web";
   const descriptor = pluginRegistry.resolvePaneSettings(paneId);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [hoveredFieldKey, setHoveredFieldKey] = useState<string | null>(null);
+  const [, setSettingsRevision] = useState(0);
 
   const fields = descriptor?.settingsDef.fields ?? [];
 
@@ -216,12 +544,17 @@ export function PaneSettingsDialogContent({
     }
   }, [fields.length, selectedIndex]);
 
+  const applyAndRefresh = async (field: PaneSettingField, value: unknown) => {
+    await applyFieldValue(paneId, field, value);
+    setSettingsRevision((revision) => revision + 1);
+  };
+
   const openFieldEditor = async (field: PaneSettingField | undefined) => {
     if (!field || !descriptor) return;
     const currentValue = descriptor.context.settings[field.key];
 
     if (field.type === "toggle") {
-      await applyFieldValue(paneId, field, currentValue !== true);
+      await applyAndRefresh(field, currentValue !== true);
       return;
     }
 
@@ -232,7 +565,7 @@ export function PaneSettingsDialogContent({
             {...ctx}
             field={field}
             currentValue={currentValue}
-            onApply={(value) => applyFieldValue(paneId, field, value)}
+            onApply={(value) => applyAndRefresh(field, value)}
           />
         ),
       });
@@ -246,7 +579,7 @@ export function PaneSettingsDialogContent({
             {...ctx}
             field={field}
             currentValue={currentValue}
-            onApply={(value) => applyFieldValue(paneId, field, value)}
+            onApply={(value) => applyAndRefresh(field, value)}
           />
         ),
       });
@@ -259,7 +592,7 @@ export function PaneSettingsDialogContent({
           {...ctx}
           field={field}
           currentValue={currentValue}
-          onApply={(value) => applyFieldValue(paneId, field, value)}
+          onApply={(value) => applyAndRefresh(field, value)}
         />
       ),
     });
@@ -276,6 +609,16 @@ export function PaneSettingsDialogContent({
   }, dialogId);
 
   if (!descriptor) {
+    if (isDesktop) {
+      return (
+        <DesktopDialogSurface title="Pane Settings" dismiss={dismiss}>
+          <Text fg={colors.textDim} wrapText style={desktopText()}>
+            This pane is no longer configurable.
+          </Text>
+        </DesktopDialogSurface>
+      );
+    }
+
     return (
       <DialogFrame title="Pane Settings" footer="Press esc to cancel">
         <Text fg={colors.textDim}>This pane is no longer configurable.</Text>
@@ -284,6 +627,40 @@ export function PaneSettingsDialogContent({
   }
 
   const title = descriptor.settingsDef.title ?? `${descriptor.paneDef.name} Settings`;
+
+  if (isDesktop) {
+    return (
+      <DesktopDialogSurface
+        title={title}
+        dismiss={dismiss}
+      >
+        {fields.length === 0 ? (
+          <Text fg={colors.textDim} wrapText style={desktopText()}>
+            No settings available.
+          </Text>
+        ) : (
+          <DesktopSettingsList
+            fields={fields}
+            selectedIndex={selectedIndex}
+            hoveredFieldKey={hoveredFieldKey}
+            settings={descriptor.context.settings}
+            onHover={(field, index) => {
+              setSelectedIndex(index);
+              setHoveredFieldKey(field.key);
+            }}
+            onEdit={(field, index) => {
+              setSelectedIndex(index);
+              void openFieldEditor(field).catch(() => {});
+            }}
+            onApply={(field, value, index) => {
+              setSelectedIndex(index);
+              void applyAndRefresh(field, value).catch(() => {});
+            }}
+          />
+        )}
+      </DesktopDialogSurface>
+    );
+  }
 
   return (
     <DialogFrame title={title} footer="Use ↑↓ to choose · enter to edit · esc cancel">
@@ -320,7 +697,7 @@ export function PaneSettingsDialogContent({
           </Box>
         )}
       />
-      {fields.length === 0 && focusedPaneId === paneId && (
+      {fields.length === 0 && (
         <Box height={1}>
           <Text fg={colors.textDim}>No settings available.</Text>
         </Box>
