@@ -455,7 +455,6 @@ describe("shared UI kit", () => {
     await emitKeypress({ name: "enter", sequence: "\r" });
     expect(resolvedChoice).toBe("beta");
 
-    resolvedChoice = null;
     const gammaRow = testSetup.captureCharFrame().split("\n").findIndex((line) => line.includes("Gamma"));
     expect(gammaRow).toBeGreaterThanOrEqual(0);
 
