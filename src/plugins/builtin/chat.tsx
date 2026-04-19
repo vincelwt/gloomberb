@@ -12,6 +12,8 @@ import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudNewsSource, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
+import { registerEconCalendarFeature } from "./econ";
+import { registerYieldCurveFeature } from "./yield-curve";
 
 interface ChatContentProps {
   width: number;
@@ -886,7 +888,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
   id: "gloomberb-cloud",
   name: "Gloomberb Cloud",
   version: "1.0.0",
-  description: "Free near-real-time data + chat. Requires signup.",
+  description: "Free market, macro, and chat services. Chat requires signup.",
   toggleable: true,
   order: 10,
   dataProvider: createGloomberbCloudProvider(),
@@ -910,6 +912,8 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
     chatController.setNotifier(ctx.notify);
     ctx.registerNewsSource?.(createGloomberbCloudNewsSource());
+    registerEconCalendarFeature(ctx);
+    registerYieldCurveFeature(ctx);
 
     ctx.registerPane({
       id: "chat",

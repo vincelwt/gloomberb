@@ -3,6 +3,7 @@
 export { PriceSelectorDialog } from "./price-selector-dialog";
 export type { PriceSelectorDialogProps } from "./price-selector-dialog";
 export { StockChart } from "./chart/stock-chart";
+export { StaticChartSurface } from "./chart/static-chart-surface";
 export type { ChartViewState, TimeRange, ChartRenderMode, ChartColors } from "./chart/chart-types";
 export * from "./ui";
 export { ToggleList } from "./toggle-list";

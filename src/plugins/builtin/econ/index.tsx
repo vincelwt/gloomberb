@@ -1,22 +1,17 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyledText, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTableStackView, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import { DataTableStackView, StaticChartSurface, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import type { GloomPluginContext, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
-import {
-  attachEconCalendarPersistence,
-  fetchEconCalendar,
-  resetEconCalendarPersistence,
-} from "./calendar-source";
+import { fetchEconCalendar } from "./calendar-source";
 import type { EconEvent, EconImpact } from "./types";
-import { usePluginConfigState, usePluginTickerActions } from "../../plugin-runtime";
+import { usePluginTickerActions } from "../../plugin-runtime";
 import { resolveFredMapping } from "./fred-series-map";
-import { fetchFredObservations, fetchFredSeriesInfo, type FredObservation, type FredSeriesInfo } from "./fred-client";
-import { renderChart, resolveChartPalette, type StyledContent } from "../../../components/chart/chart-renderer";
+import { resolveChartPalette } from "../../../components/chart/chart-renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
-import { FRED_API_KEY_COMMAND_LABEL, FRED_API_KEY_CONFIG_KEY } from "../fred-settings";
+import { apiClient, type CloudFredObservationPayload, type CloudFredSeriesInfoPayload } from "../../../utils/api-client";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -147,8 +142,8 @@ type EconCalendarColumn = DataTableColumn & { id: EconCalendarColumnId };
 // ---------------------------------------------------------------------------
 
 interface FredCache {
-  observations: FredObservation[];
-  info: FredSeriesInfo | null;
+  observations: CloudFredObservationPayload[];
+  info: CloudFredSeriesInfoPayload | null;
 }
 
 interface EconDetailViewProps {
@@ -159,7 +154,6 @@ interface EconDetailViewProps {
 }
 
 function EconDetailView({ event, width, height, focused }: EconDetailViewProps) {
-  const [fredApiKey] = usePluginConfigState<string>(FRED_API_KEY_CONFIG_KEY, "");
   const { navigateTicker } = usePluginTickerActions();
   const cacheRef = useRef<Map<string, FredCache>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -171,7 +165,6 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
 
   useEffect(() => {
     if (!mapping) return;
-    if (!fredApiKey) return;
 
     const cached = cacheRef.current.get(mapping.seriesId);
     if (cached) {
@@ -186,11 +179,8 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
     fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
     const startDate = `${fiveYearsAgo.getFullYear()}-${String(fiveYearsAgo.getMonth() + 1).padStart(2, "0")}-${String(fiveYearsAgo.getDate()).padStart(2, "0")}`;
 
-    Promise.all([
-      fetchFredObservations(fredApiKey, mapping.seriesId, { startDate, sortOrder: "asc" }),
-      fetchFredSeriesInfo(fredApiKey, mapping.seriesId),
-    ])
-      .then(([observations, info]) => {
+    apiClient.getCloudFredSeries(mapping.seriesId, { startDate, sortOrder: "asc" })
+      .then(({ observations, info }) => {
         const entry: FredCache = { observations, info };
         cacheRef.current.set(mapping.seriesId, entry);
         setData(entry);
@@ -201,7 +191,7 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
       .finally(() => {
         setLoading(false);
       });
-  }, [mapping?.seriesId, fredApiKey]);
+  }, [mapping?.seriesId]);
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;
@@ -234,24 +224,6 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
         </Box>
         <Box flexGrow={1} justifyContent="center" alignItems="center">
           <Text fg={colors.textMuted}>No historical data available for this indicator</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // No API key
-  if (!fredApiKey) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box height={1} paddingX={1} flexDirection="row">
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {event.event}
-          </Text>
-          <Box flexGrow={1} />
-          <Text fg={colors.textDim}>{mapping.seriesId}</Text>
-        </Box>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</Text>
         </Box>
       </Box>
     );
@@ -297,11 +269,11 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
 
   const { observations, info } = data;
   const chartWidth = Math.max(10, width - 2);
-  const chartHeight = Math.min(16, Math.max(8, Math.floor(height * 0.3)));
+  const chartHeight = Math.min(18, Math.max(9, Math.floor(height * 0.38)));
 
   // Build chart points (ascending order for chart), exclude null values
   const chartPoints: ProjectedChartPoint[] = observations
-    .filter((obs): obs is FredObservation & { value: number } => obs.value != null)
+    .filter((obs): obs is CloudFredObservationPayload & { value: number } => obs.value != null)
     .map((obs) => ({
       date: new Date(obs.date),
       open: obs.value,
@@ -312,21 +284,6 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
     }));
 
   const palette = resolveChartPalette(colors, "positive");
-
-  let chartResult: ReturnType<typeof renderChart> | null = null;
-  if (chartPoints.length >= 2) {
-    chartResult = renderChart(chartPoints, {
-      width: chartWidth,
-      height: chartHeight,
-      showVolume: false,
-      volumeHeight: 0,
-      cursorX: null,
-      cursorY: null,
-      mode: "area",
-      colors: palette,
-      timeAxisDates: chartPoints.map((p) => p.date),
-    });
-  }
 
   // Table rows (descending for display, last 12)
   // For "change" mode, compute m/m or q/q percent change from consecutive observations
@@ -398,14 +355,21 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
       <ScrollBox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
         <Box flexDirection="column">
           {/* Chart */}
-          {chartResult ? (
+          {chartPoints.length >= 2 ? (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
-              <Box flexDirection="column" height={chartHeight}>
-                {chartResult.lines.map((line, i) => (
-                  <Text key={i} content={chartLineContent(line)} />
-                ))}
-              </Box>
-              <Text fg={colors.textDim}>{chartResult.timeLabels}</Text>
+              <StaticChartSurface
+                points={chartPoints}
+                width={chartWidth}
+                height={chartHeight}
+                mode="area"
+                colors={palette}
+                timeAxisDates={chartPoints.map((p) => p.date)}
+                showTimeAxis
+                timeAxisColor={colors.textDim}
+                yAxisLabel={units ? `Value (${units})` : "Value"}
+                yAxisColor={colors.textDim}
+                formatYAxisValue={(value) => formatCompactAxisValue(value, units)}
+              />
             </Box>
           ) : (
             <Box paddingX={1} marginTop={1}>
@@ -492,8 +456,16 @@ function actualColor(actual: string | null, forecast: string | null): string {
   return colors.text;
 }
 
-function chartLineContent(line: string | StyledContent): string | StyledText {
-  return typeof line === "string" ? line : new StyledText(line.chunks);
+function formatCompactAxisValue(value: number, units: string): string {
+  const abs = Math.abs(value);
+  const normalizedUnits = units.toLowerCase();
+  if (normalizedUnits.includes("percent")) {
+    return `${value.toFixed(abs >= 10 ? 1 : 2)}%`;
+  }
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
+  return value.toLocaleString("en-US", { maximumFractionDigits: abs >= 10 ? 1 : 2 });
 }
 
 // ---------------------------------------------------------------------------
@@ -513,9 +485,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   const fetchGenRef = useRef(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
-  const backfilledSeriesRef = useRef<Set<string>>(new Set());
-
-  const [fredApiKey] = usePluginConfigState<string>(FRED_API_KEY_CONFIG_KEY, "");
 
   const load = useCallback(async (force = false) => {
     fetchGenRef.current += 1;
@@ -549,80 +518,6 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     const interval = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(interval);
   }, []);
-
-  // Backfill actual values for past US events using FRED
-  useEffect(() => {
-    if (!fredApiKey || events.length === 0) return;
-
-    const nowTs = Date.now();
-    const pastEvents = events.filter(
-      (ev) =>
-        ev.date.getTime() < nowTs &&
-        ev.actual === null &&
-        resolveFredMapping(ev.event, ev.country),
-    );
-
-    // Group by series ID to deduplicate fetches
-    const seriesGroups = new Map<string, { mapping: ReturnType<typeof resolveFredMapping>; events: EconEvent[] }>();
-    for (const ev of pastEvents) {
-      const mapping = resolveFredMapping(ev.event, ev.country)!;
-      if (backfilledSeriesRef.current.has(mapping.seriesId)) continue;
-      const group = seriesGroups.get(mapping.seriesId);
-      if (group) {
-        group.events.push(ev);
-      } else {
-        seriesGroups.set(mapping.seriesId, { mapping, events: [ev] });
-      }
-    }
-
-    if (seriesGroups.size === 0) return;
-
-    (async () => {
-      const results = await Promise.allSettled(
-        [...seriesGroups.entries()].map(async ([seriesId, { mapping }]) => {
-          const obs = await fetchFredObservations(fredApiKey, seriesId, {
-            limit: mapping!.displayMode === "change" ? 2 : 1,
-            sortOrder: "desc",
-          });
-          backfilledSeriesRef.current.add(seriesId);
-          if (obs.length === 0 || obs[0]!.value === null) return null;
-
-          let formatted: string;
-          if (mapping!.displayMode === "change" && obs.length >= 2 && obs[1]!.value) {
-            // Compute month-over-month percent change
-            const current = obs[0]!.value!;
-            const prior = obs[1]!.value!;
-            const pctChange = ((current - prior) / Math.abs(prior)) * 100;
-            formatted = `${pctChange >= 0 ? "" : "-"}${Math.abs(pctChange).toFixed(1)}%`;
-          } else {
-            const value = obs[0]!.value!;
-            formatted = value.toLocaleString("en-US", { maximumFractionDigits: 1 });
-          }
-          return { seriesId, formatted };
-        }),
-      );
-
-      const actuals = new Map<string, string>();
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value) {
-          actuals.set(result.value.seriesId, result.value.formatted);
-        }
-      }
-
-      if (actuals.size === 0) return;
-
-      setEvents((prev) =>
-        prev.map((ev) => {
-          if (ev.actual !== null) return ev;
-          const mapping = resolveFredMapping(ev.event, ev.country);
-          if (!mapping) return ev;
-          const actual = actuals.get(mapping.seriesId);
-          if (!actual) return ev;
-          return { ...ev, actual };
-        }),
-      );
-    })();
-  }, [events, fredApiKey]);
 
   const filtered = useMemo(() => events
     .filter((ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter))
@@ -878,6 +773,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
       }}
       columns={columns}
       items={rows}
+      isNavigable={(row) => row.kind === "event"}
       sortColumnId={null}
       sortDirection="asc"
       onHeaderClick={handleHeaderClick}
@@ -896,63 +792,23 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const econCalendarPlugin: GloomPlugin = {
-  id: "econ-calendar",
-  name: "Economic Calendar",
-  version: "1.0.0",
-  description: "Upcoming economic events and releases",
-  toggleable: true,
+export function registerEconCalendarFeature(ctx: GloomPluginContext): void {
+  ctx.registerPane({
+    id: "econ-calendar",
+    name: "Economic Calendar",
+    icon: "E",
+    component: EconCalendarPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 100, height: 30 },
+  });
 
-  setup(ctx) {
-    attachEconCalendarPersistence(ctx.persistence);
-
-    ctx.registerCommand({
-      id: "econ-set-fred-key",
-      label: FRED_API_KEY_COMMAND_LABEL,
-      keywords: ["fred", "api", "key", "economic", "econ", "configure", "setup"],
-      category: "config",
-      description: "Configure your free FRED API key for historical economic data (fred.stlouisfed.org)",
-      wizard: [
-        {
-          key: "apiKey",
-          label: "FRED API Key",
-          placeholder: "Paste your FRED API key",
-          type: "password",
-        },
-      ],
-      async execute(values) {
-        const key = values?.apiKey?.trim();
-        if (!key) return;
-        await ctx.configState.set(FRED_API_KEY_CONFIG_KEY, key);
-        ctx.notify({ body: "FRED API key saved", type: "success" });
-      },
-    });
-  },
-
-  dispose() {
-    resetEconCalendarPersistence();
-  },
-
-  panes: [
-    {
-      id: "econ-calendar",
-      name: "Economic Calendar",
-      icon: "E",
-      component: EconCalendarPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 30 },
-    },
-  ],
-
-  paneTemplates: [
-    {
-      id: "econ-calendar-pane",
-      paneId: "econ-calendar",
-      label: "Economic Calendar",
-      description: "Upcoming economic events, releases, and indicators.",
-      keywords: ["econ", "economic", "calendar", "events", "macro", "releases", "fed", "cpi", "gdp"],
-      shortcut: { prefix: "ECON" },
-    },
-  ],
-};
+  ctx.registerPaneTemplate({
+    id: "econ-calendar-pane",
+    paneId: "econ-calendar",
+    label: "Economic Calendar",
+    description: "Upcoming economic events, releases, and indicators.",
+    keywords: ["econ", "economic", "calendar", "events", "macro", "releases", "fed", "cpi", "gdp"],
+    shortcut: { prefix: "ECON" },
+  });
+}

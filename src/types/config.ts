@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 12;
+export const CURRENT_CONFIG_VERSION = 13;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -516,7 +516,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     activeLayoutIndex: 0,
     brokerInstances: [],
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr"],
-    disabledPlugins: ["gloomberb-cloud"],
+    disabledPlugins: [],
     pluginConfig: {},
     theme: "amber",
     chartPreferences: {

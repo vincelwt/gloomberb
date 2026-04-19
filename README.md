@@ -46,7 +46,7 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 |--------|-------------|
 | **Portfolio List** | Main ticker list with portfolios & watchlists |
 | **Ticker Detail** | Overview, financials, and chart tabs |
-| **Gloomberb Cloud** | Near-real-time data and chat |
+| **Gloomberb Cloud** | Near-real-time market data, macro calendar, yield curve, and chat |
 | **Manual Entry** | Manually add positions, saved locally |
 | **IBKR** | Import positions from Flex Query or trade with Gateway API |
 | **News** | Ticker and market-wide news from Cloud, Yahoo fallback, and RSS feeds |
@@ -60,11 +60,9 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 | **Correlation** | Compare ticker return correlations |
 | **Portfolio Analytics** | Sharpe ratio, beta, and sector allocation |
 | **Insider** | View recent insider transactions |
-| **Economic Calendar** | Upcoming macro events and FRED-backed history |
 | **World Equity Indices** | Global equity index monitor grouped by region |
 | **Market Movers** | Gainers, losers, most active, and trending tickers |
 | **FX Cross Rates** | Currency cross-rate matrix for major FX pairs |
-| **Yield Curve** | US Treasury yield curve charted from FRED data |
 | **Sector Performance** | S&P 500 sector performance via ETF proxies |
 | **Earnings Calendar** | Upcoming earnings dates and estimates |
 

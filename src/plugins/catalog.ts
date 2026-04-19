@@ -12,7 +12,6 @@ import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/chat";
 import { helpPlugin } from "./builtin/help";
 import { comparisonChartPlugin } from "./builtin/comparison-chart";
-import { econCalendarPlugin } from "./builtin/econ";
 import { worldIndicesPlugin } from "./builtin/world-indices";
 import { marketMoversPlugin } from "./builtin/market-movers";
 import { debugPlugin } from "./builtin/debug";
@@ -24,7 +23,6 @@ import { analyticsPlugin } from "./builtin/analytics";
 import { insiderPlugin } from "./builtin/insider";
 import { alertsPlugin } from "./builtin/alerts";
 import { fxMatrixPlugin } from "./builtin/fx-matrix";
-import { yieldCurvePlugin } from "./builtin/yield-curve";
 import { sectorsPlugin } from "./builtin/sectors";
 import { earningsPlugin } from "./builtin/earnings";
 
@@ -54,12 +52,10 @@ export const builtinPlugins: GloomPlugin[] = [
   correlationPlugin,
   analyticsPlugin,
   insiderPlugin,
-  econCalendarPlugin,
   worldIndicesPlugin,
   marketMoversPlugin,
   alertsPlugin,
   fxMatrixPlugin,
-  yieldCurvePlugin,
   sectorsPlugin,
   earningsPlugin,
   debugPlugin,

@@ -1,26 +1,26 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
-import { usePaneFooter } from "../../../components";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import { StaticChartSurface, usePaneFooter } from "../../../components";
+import type { GloomPluginContext, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import { useAppSelector } from "../../../state/app-context";
-import { renderChart, resolveChartPalette } from "../../../components/chart/chart-renderer";
+import { resolveChartPalette } from "../../../components/chart/chart-renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
 import {
-  attachYieldCurvePersistence,
   loadYieldCurve,
   parseYieldPoints,
   isInverted,
-  resetYieldCurvePersistence,
   TREASURY_MATURITIES,
   type YieldPoint,
 } from "./treasury-data";
-import { FRED_API_KEY_COMMAND_LABEL, getSharedFredApiKey } from "../fred-settings";
 
 function formatYield(y: number | null): string {
   if (y == null) return "—";
-  return y.toFixed(2);
+  return `${y.toFixed(2)}%`;
+}
+
+function formatYieldAxis(value: number): string {
+  return `${value.toFixed(2)}%`;
 }
 
 function spreadBp(points: YieldPoint[]): number | null {
@@ -31,9 +31,6 @@ function spreadBp(points: YieldPoint[]): number | null {
 }
 
 export function YieldCurvePane({ focused, width, height }: PaneProps) {
-  const config = useAppSelector((s) => s.config);
-  const apiKey = getSharedFredApiKey(config);
-
   const [points, setPoints] = useState<YieldPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,15 +38,13 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
   const fetchGenRef = useRef(0);
 
   const load = useCallback(async (force = false) => {
-    if (!apiKey) return;
-
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setLoading(true);
     setError(null);
 
     try {
-      const data = await loadYieldCurve(apiKey, { force });
+      const data = await loadYieldCurve();
       if (fetchGenRef.current !== gen) return;
       setPoints(data);
     } catch (err) {
@@ -58,7 +53,7 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
     } finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
-  }, [apiKey]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -84,16 +79,6 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }],
   }), [bp, error, inverted, load, loading]);
 
-  if (!apiKey) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>{`Configure FRED API key: type '${FRED_API_KEY_COMMAND_LABEL}' in command bar`}</Text>
-        </Box>
-      </Box>
-    );
-  }
-
   if (loading && points.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
@@ -117,7 +102,7 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
   const validPoints = parseYieldPoints(points);
 
   const chartWidth = Math.max(10, width - 2);
-  const chartHeight = Math.min(12, Math.max(6, Math.floor(height * 0.3)));
+  const chartHeight = Math.min(18, Math.max(8, height - 5));
 
   const palette = resolveChartPalette(colors, "positive");
 
@@ -130,21 +115,6 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
     close: p.yield!,
     volume: 0,
   }));
-
-  let chartResult: ReturnType<typeof renderChart> | null = null;
-  if (chartPoints.length >= 2) {
-    chartResult = renderChart(chartPoints, {
-      width: chartWidth,
-      height: chartHeight,
-      showVolume: false,
-      volumeHeight: 0,
-      cursorX: null,
-      cursorY: null,
-      mode: "line",
-      colors: palette,
-      timeAxisDates: chartPoints.map((p) => p.date),
-    });
-  }
 
   // Build maturity label row and yield value row for the table
   const colWidth = Math.max(6, Math.floor((width - 2) / TREASURY_MATURITIES.length));
@@ -160,13 +130,18 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
       <ScrollBox flexGrow={1} scrollY focusable={false}>
         <Box flexDirection="column">
           {/* Chart */}
-          {chartResult && chartResult.lines.length > 0 ? (
+          {chartPoints.length >= 2 ? (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
-              <Box flexDirection="column" height={chartHeight}>
-                {chartResult.lines.map((line, i) => (
-                  <Text key={i} content={line} />
-                ))}
-              </Box>
+              <StaticChartSurface
+                points={chartPoints}
+                width={chartWidth}
+                height={chartHeight}
+                mode="line"
+                colors={palette}
+                yAxisLabel="Yield (%)"
+                yAxisColor={colors.textDim}
+                formatYAxisValue={formatYieldAxis}
+              />
             </Box>
           ) : (
             <Box paddingX={1} marginTop={1}>
@@ -187,41 +162,23 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
   );
 }
 
-export const yieldCurvePlugin: GloomPlugin = {
-  id: "yield-curve",
-  name: "Yield Curve",
-  version: "1.0.0",
-  description: "US Treasury yield curve from FRED",
-  toggleable: true,
+export function registerYieldCurveFeature(ctx: GloomPluginContext): void {
+  ctx.registerPane({
+    id: "yield-curve",
+    name: "US Treasury Yield Curve",
+    icon: "Y",
+    component: YieldCurvePane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 80, height: 20 },
+  });
 
-  setup(ctx) {
-    attachYieldCurvePersistence(ctx.persistence);
-  },
-
-  dispose() {
-    resetYieldCurvePersistence();
-  },
-
-  panes: [
-    {
-      id: "yield-curve",
-      name: "US Treasury Yield Curve",
-      icon: "Y",
-      component: YieldCurvePane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 80, height: 20 },
-    },
-  ],
-
-  paneTemplates: [
-    {
-      id: "yield-curve-pane",
-      paneId: "yield-curve",
-      label: "Yield Curve",
-      description: "US Treasury yield curve charted from FRED data.",
-      keywords: ["yield", "curve", "treasury", "bonds", "rates", "gc", "interest"],
-      shortcut: { prefix: "GC" },
-    },
-  ],
-};
+  ctx.registerPaneTemplate({
+    id: "yield-curve-pane",
+    paneId: "yield-curve",
+    label: "Yield Curve",
+    description: "US Treasury yield curve charted from FRED data.",
+    keywords: ["yield", "curve", "treasury", "bonds", "rates", "gc", "interest"],
+    shortcut: { prefix: "GC" },
+  });
+}

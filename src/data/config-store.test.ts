@@ -266,6 +266,18 @@ describe("loadConfig", () => {
     expect(config.disabledPlugins).toEqual(["chat", "news"]);
   });
 
+  test("enables Gloomberb Cloud when migrating older default configs", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 12,
+      disabledPlugins: ["gloomberb-cloud", "news"],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["news"]);
+  });
+
   test("preserves IBKR gateway configs without migration rewrites", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({

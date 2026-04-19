@@ -79,6 +79,46 @@ export interface CloudPricePointPayload {
   volume?: number;
 }
 
+export type CloudEconImpact = "high" | "medium" | "low";
+
+export interface CloudEconEventPayload {
+  id: string;
+  date: string;
+  time: string;
+  country: string;
+  event: string;
+  actual: string | null;
+  forecast: string | null;
+  prior: string | null;
+  impact: CloudEconImpact;
+}
+
+export interface CloudFredObservationPayload {
+  date: string;
+  value: number | null;
+}
+
+export interface CloudFredSeriesInfoPayload {
+  id: string;
+  title: string;
+  units: string;
+  frequency: string;
+  seasonalAdjustment: string;
+  source: string;
+  notes: string;
+}
+
+export interface CloudFredSeriesPayload {
+  observations: CloudFredObservationPayload[];
+  info: CloudFredSeriesInfoPayload | null;
+}
+
+export interface CloudYieldPointPayload {
+  maturity: string;
+  maturityYears: number;
+  yield: number | null;
+}
+
 export interface CloudNewsEntityPayload {
   id: string;
   entityType: string;
@@ -844,6 +884,32 @@ class GloomApiClient {
   async getCloudExchangeRate(fromCurrency: string): Promise<CloudMarketResponse<{ rate: number }>> {
     const params = new URLSearchParams({ fromCurrency });
     return this.request<CloudMarketResponse<{ rate: number }>>(`/market/exchange-rate?${params.toString()}`);
+  }
+
+  async getCloudEconomicCalendar(): Promise<CloudEconEventPayload[]> {
+    return this.request<CloudEconEventPayload[]>("/cloud/econ/calendar");
+  }
+
+  async getCloudFredSeries(
+    seriesId: string,
+    params: {
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      sortOrder?: "asc" | "desc";
+    } = {},
+  ): Promise<CloudFredSeriesPayload> {
+    const search = new URLSearchParams();
+    if (params.startDate) search.set("startDate", params.startDate);
+    if (params.endDate) search.set("endDate", params.endDate);
+    if (params.limit != null) search.set("limit", String(params.limit));
+    if (params.sortOrder) search.set("sortOrder", params.sortOrder);
+    const qs = search.toString();
+    return this.request<CloudFredSeriesPayload>(`/cloud/econ/series/${encodeURIComponent(seriesId)}${qs ? `?${qs}` : ""}`);
+  }
+
+  async getCloudYieldCurve(): Promise<CloudYieldPointPayload[]> {
+    return this.request<CloudYieldPointPayload[]>("/cloud/econ/yield-curve");
   }
 
   async getCloudNews(params: {

@@ -1,6 +1,4 @@
-import { fetchFredObservations } from "../econ/fred-client";
-import type { PersistedResourceValue } from "../../../types/persistence";
-import type { PluginPersistence } from "../../../types/plugin";
+import { apiClient } from "../../../utils/api-client";
 
 export interface YieldPoint {
   maturity: string;      // "1M", "3M", "6M", "1Y", "2Y", "5Y", "7Y", "10Y", "20Y", "30Y"
@@ -21,83 +19,14 @@ export const TREASURY_MATURITIES: Array<{ maturity: string; years: number; serie
   { maturity: "30Y", years: 30,    seriesId: "DGS30" },
 ];
 
-const CACHE_KIND = "treasury-yield-curve";
-const CACHE_KEY = "latest";
-const CACHE_SOURCE = "fred";
-const CACHE_SCHEMA_VERSION = 1;
-
-export const YIELD_CURVE_CACHE_POLICY = {
-  staleMs: 15 * 60 * 1000,
-  expireMs: 7 * 24 * 60 * 60 * 1000,
-} as const;
-
-let yieldCurvePersistence: PluginPersistence | null = null;
-
-export function attachYieldCurvePersistence(persistence: PluginPersistence): void {
-  yieldCurvePersistence = persistence;
-}
-
-export function resetYieldCurvePersistence(): void {
-  yieldCurvePersistence = null;
-}
-
-function readYieldCurveCache(options?: {
-  allowExpired?: boolean;
-}): PersistedResourceValue<YieldPoint[]> | null {
-  return yieldCurvePersistence?.getResource<YieldPoint[]>(CACHE_KIND, CACHE_KEY, {
-    sourceKey: CACHE_SOURCE,
-    schemaVersion: CACHE_SCHEMA_VERSION,
-    allowExpired: options?.allowExpired,
-  }) ?? null;
-}
-
-function writeYieldCurveCache(points: YieldPoint[]): void {
-  yieldCurvePersistence?.setResource(CACHE_KIND, CACHE_KEY, points, {
-    sourceKey: CACHE_SOURCE,
-    schemaVersion: CACHE_SCHEMA_VERSION,
-    cachePolicy: YIELD_CURVE_CACHE_POLICY,
-  });
-}
-
-export async function fetchYieldCurve(apiKey: string): Promise<YieldPoint[]> {
-  const results = await Promise.allSettled(
-    TREASURY_MATURITIES.map(async ({ maturity, years, seriesId }) => {
-      const obs = await fetchFredObservations(apiKey, seriesId, { limit: 1, sortOrder: "desc" });
-      const value = obs[0]?.value ?? null;
-      return { maturity, maturityYears: years, yield: value };
-    }),
-  );
-  return results.map((r, i) => {
-    if (r.status === "fulfilled") return r.value;
-    return { maturity: TREASURY_MATURITIES[i]!.maturity, maturityYears: TREASURY_MATURITIES[i]!.years, yield: null };
-  });
-}
-
-export async function loadYieldCurve(
-  apiKey: string,
-  options?: {
-    force?: boolean;
-    fetcher?: (apiKey: string) => Promise<YieldPoint[]>;
-  },
-): Promise<YieldPoint[]> {
-  const freshCache = readYieldCurveCache();
-  if (!options?.force && freshCache && !freshCache.stale) {
-    return freshCache.value;
-  }
-
-  try {
-    const points = await (options?.fetcher ?? fetchYieldCurve)(apiKey);
-    writeYieldCurveCache(points);
-    return points;
-  } catch (error) {
-    const staleCache = freshCache ?? readYieldCurveCache({ allowExpired: true });
-    if (staleCache) return staleCache.value;
-    throw error;
-  }
+export async function loadYieldCurve(): Promise<YieldPoint[]> {
+  return apiClient.getCloudYieldCurve();
 }
 
 export function parseYieldPoints(points: YieldPoint[]): YieldPoint[] {
-  return points.filter((p) => p.yield !== null);
+  return points
+    .filter((p) => p.yield !== null)
+    .sort((a, b) => a.maturityYears - b.maturityYears);
 }
 
 export function isInverted(points: YieldPoint[]): boolean {
