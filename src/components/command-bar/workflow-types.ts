@@ -38,7 +38,7 @@ export interface CommandBarRouteBase {
 
 export interface CommandBarModeRoute extends CommandBarRouteBase {
   kind: "mode";
-  screen: "ticker-search" | "themes" | "plugins" | "layout" | "new-pane";
+  screen: "ticker-search" | "themes" | "plugins" | "layout";
   query: string;
   selectedIdx: number;
   hoveredIdx: number | null;

@@ -140,6 +140,7 @@ export function WebTextField({
   onSubmit,
   hint,
   type = "text",
+  variant = "default",
   backgroundColor = colors.bg,
   textColor = colors.text,
   placeholderColor = colors.textDim,
@@ -149,9 +150,10 @@ export function WebTextField({
   const resolvedInputRef = inputRef ?? localInputRef;
   const renderer = useRendererHost();
   const { nativeContextMenu } = useUiCapabilities();
+  const plain = variant === "plain";
 
   return (
-    <Box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={plain ? 0 : 1}>
       {label && (
         <Box height={1}>
           <Text
@@ -166,7 +168,7 @@ export function WebTextField({
         height={1}
         width={width}
         alignItems="center"
-        backgroundColor={backgroundColor}
+        backgroundColor={plain ? "transparent" : backgroundColor}
         onMouseDown={() => {
           onMouseDown?.();
           resolvedInputRef.current?.focus?.();
@@ -180,9 +182,9 @@ export function WebTextField({
         }}
         data-gloom-role="desktop-text-field"
         style={{
-          border: `1px solid ${controlBorderColor(focused, false)}`,
-          borderRadius: CONTROL_RADIUS,
-          boxShadow: controlShadow(focused),
+          border: plain ? "none" : `1px solid ${controlBorderColor(focused, false)}`,
+          borderRadius: plain ? 0 : CONTROL_RADIUS,
+          boxShadow: plain ? undefined : controlShadow(focused),
           overflow: "hidden",
         }}
       >
@@ -196,13 +198,13 @@ export function WebTextField({
           textColor={textColor}
           focusedTextColor={textColor}
           placeholderColor={placeholderColor}
-          backgroundColor={backgroundColor}
-          focusedBackgroundColor={backgroundColor}
+          backgroundColor={plain ? "transparent" : backgroundColor}
+          focusedBackgroundColor={plain ? "transparent" : backgroundColor}
           cursorColor={colors.textBright}
           style={{
-            paddingLeft: 10,
-            paddingRight: 10,
-            borderRadius: CONTROL_RADIUS,
+            paddingLeft: plain ? 0 : 10,
+            paddingRight: plain ? 0 : 10,
+            borderRadius: plain ? 0 : CONTROL_RADIUS,
           }}
           onInput={onChange}
           onChange={onChange}

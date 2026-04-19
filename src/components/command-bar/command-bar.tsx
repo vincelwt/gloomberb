@@ -347,10 +347,16 @@ export function CommandBar({
   const renderer = useNativeRenderer();
   const { width: termWidth, height: termHeight } = useViewport();
   const { nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18 } = useUiCapabilities();
+  const availableCommands = useMemo(
+    () => nativePaneChrome
+      ? commands.filter((command) => command.id !== "cycle-chart-renderer")
+      : commands,
+    [nativePaneChrome],
+  );
   const [rootQuery, setRootQueryValue] = useState(state.commandBarQuery);
   const rootQueryRef = useRef(rootQuery);
   rootQueryRef.current = rootQuery;
-  const rootModeInfo = resolveCommandBarMode(rootQuery);
+  const rootModeInfo = resolveCommandBarMode(rootQuery, availableCommands);
   const [rootSelectedIdx, setRootSelectedIdx] = useState(0);
   const [rootHoveredIdx, setRootHoveredIdx] = useState<number | null>(null);
   const [rootSearching, setRootSearching] = useState(false);
@@ -573,7 +579,7 @@ export function CommandBar({
   }, [dispatch, persistLayoutChange, pluginRegistry]);
 
   const openModeRoute = useCallback((
-    screen: "ticker-search" | "themes" | "plugins" | "layout" | "new-pane",
+    screen: "ticker-search" | "themes" | "plugins" | "layout",
     initialQuery = "",
     payload?: Record<string, unknown>,
   ) => {
@@ -2123,11 +2129,11 @@ export function CommandBar({
 
   const rootShortcutIntent = useMemo(() => parseRootShortcutIntent({
     query: rootQuery,
-    commands,
+    commands: availableCommands,
     pluginCommands: getAvailablePluginCommands(),
     paneTemplates: getAvailablePaneShortcutTemplates(rootQuery),
     activeTicker: activeTickerSymbol,
-  }), [activeTickerSymbol, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
+  }), [activeTickerSymbol, availableCommands, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
 
   const createPaneTemplateItem = useCallback((
     template: PaneTemplateDef,
@@ -2164,20 +2170,13 @@ export function CommandBar({
       id: `pane-template:${template.id}:${arg || ""}`,
       label: displayLabel,
       detail: shortcutLabel ? `${template.description} · ${shortcutLabel}` : template.description,
-      category: options?.category ?? (pluginName ? `${pluginName} Panes` : "New Panes"),
+      category: options?.category ?? (pluginName ? `${pluginName} Panes` : "Panes"),
       kind: "action",
       right: options?.showShortcut ? template.shortcut?.prefix : undefined,
       searchText: `${displayLabel} ${template.label} ${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
       action,
     };
   }, [openPaneTemplateDirect, openPaneTemplateWorkflow, pluginRegistry, runPaneTemplateShortcut, shouldOpenTemplateConfig]);
-
-  const paneTemplateItems = useCallback((filterQuery?: string): ResultItem[] => {
-    const items = getAvailablePaneTemplates().map((template) => createPaneTemplateItem(template));
-    return filterQuery
-      ? fuzzyFilter(items, filterQuery, (item) => `${item.label} ${item.detail} ${item.searchText || ""} ${item.right || ""}`)
-      : items;
-  }, [createPaneTemplateItem, getAvailablePaneTemplates]);
 
   const paneShortcutItems = useCallback((options?: {
     filterQuery?: string;
@@ -2517,7 +2516,7 @@ export function CommandBar({
     executeCollectionCommand,
   ]);
 
-  const activeMatch = matchPrefix(rootQuery);
+  const activeMatch = matchPrefix(rootQuery, availableCommands);
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
@@ -2852,7 +2851,7 @@ export function CommandBar({
     }
 
     const items: ResultItem[] = [];
-    const match = matchPrefix(rootQuery);
+    const match = matchPrefix(rootQuery, availableCommands);
     let initialIdx = 0;
     const shortcutItem = buildRootShortcutItem();
 
@@ -2912,8 +2911,6 @@ export function CommandBar({
           action: toggleAction,
         });
       }
-    } else if (match && match.command.id === "new-pane") {
-      items.push(...paneTemplateItems(match.arg));
     } else if (match && match.command.id === "layout") {
       const currentLayout = state.config.layout;
       const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
@@ -3235,7 +3232,7 @@ export function CommandBar({
         category: "Tickers",
       })));
       items.push(...paneShortcutItems());
-      for (const command of commands) {
+      for (const command of availableCommands) {
         const item = commandToItem(command);
         if (item) items.push(item);
       }
@@ -3243,7 +3240,7 @@ export function CommandBar({
       items.push(...pluginCommandItems());
     } else {
       const tickerItems = localTickerSearchResultItems(undefined, { category: "Tickers" });
-      const commandItems = commands
+      const commandItems = availableCommands
         .map((command) => commandToItem(command))
         .filter((item): item is ResultItem => item !== null);
       const allItems = [
@@ -3262,6 +3259,7 @@ export function CommandBar({
     activeCollectionId,
     activeTickerData,
     activeTickerSymbol,
+    availableCommands,
     closeAll,
     createPluginCommandItem,
     currentRoute,
@@ -3274,7 +3272,6 @@ export function CommandBar({
     openBuiltInWorkflow,
     openPickerRoute,
     paneShortcutItems,
-    paneTemplateItems,
     persistLayoutChange,
     pluginCommandItems,
     pluginRegistry,
@@ -3495,7 +3492,7 @@ export function CommandBar({
   const acceptRootShortcutTab = useCallback((): boolean => {
     const intent = parseRootShortcutIntent({
       query: rootQueryRef.current,
-      commands,
+      commands: availableCommands,
       pluginCommands: getAvailablePluginCommands(),
       paneTemplates: getAvailablePaneShortcutTemplates(rootQueryRef.current),
       activeTicker: activeTickerSymbol,
@@ -3539,6 +3536,7 @@ export function CommandBar({
     return false;
   }, [
     activeTickerSymbol,
+    availableCommands,
     getAvailablePluginCommands,
     getAvailablePaneShortcutTemplates,
     openModeRoute,
@@ -3549,7 +3547,7 @@ export function CommandBar({
   const resolveImmediateRootSelection = useCallback((query: string): ResultItem | null => {
     const intent = parseRootShortcutIntent({
       query,
-      commands,
+      commands: availableCommands,
       pluginCommands: getAvailablePluginCommands(),
       paneTemplates: getAvailablePaneShortcutTemplates(query),
       activeTicker: activeTickerSymbol,
@@ -3569,7 +3567,7 @@ export function CommandBar({
       });
     }
 
-    const match = matchPrefix(query);
+    const match = matchPrefix(query, availableCommands);
     if (!match) {
       return null;
     }
@@ -3606,10 +3604,6 @@ export function CommandBar({
         right: match.command.prefix,
         action: () => { void runSecurityDescriptionShortcut(match.arg); },
       };
-    }
-
-    if (match.command.id === "new-pane") {
-      return paneTemplateItems(match.arg)[0] ?? null;
     }
 
     if (match.command.id === "theme") {
@@ -3678,11 +3672,11 @@ export function CommandBar({
     createPaneTemplateItem,
     createPluginCommandItem,
     activeTickerSymbol,
+    availableCommands,
     executeCollectionCommand,
     getAvailablePluginCommands,
     getAvailablePaneShortcutTemplates,
     openModeRoute,
-    paneTemplateItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
   ]);
@@ -4048,23 +4042,6 @@ export function CommandBar({
             footerRight: getScreenFooterRight(currentRoute),
           };
         }
-        case "new-pane": {
-          const results = paneTemplateItems(currentRoute.query);
-          return {
-            kind: "mode",
-            title: "New Pane",
-            subtitle: "Create panes from plugin-defined templates.",
-            query: currentRoute.query,
-            selectedIdx: currentRoute.selectedIdx,
-            hoveredIdx: currentRoute.hoveredIdx,
-            results: orderListResults(results),
-            searching: false,
-            emptyLabel: getEmptyState("new-pane", currentRoute.query).label,
-            emptyDetail: getEmptyState("new-pane", currentRoute.query).detail,
-            footerLeft: getScreenFooterLeft(currentRoute),
-            footerRight: getScreenFooterRight(currentRoute),
-          };
-        }
         case "ticker-search": {
           const results = currentRoute.query.trim()
             ? tickerSearchResults.map((item) => adaptTickerSearchRouteResult(item, currentRoute.payload))
@@ -4177,7 +4154,6 @@ export function CommandBar({
     openPaneSettingsRoute,
     openPickerRoute,
     paneShortcutItems,
-    paneTemplateItems,
     persistLayoutChange,
     pluginCommandItems,
     pluginRegistry,
@@ -4222,7 +4198,7 @@ export function CommandBar({
 
   const setActiveListQuery = useCallback((nextQuery: string) => {
     if (!currentRoute) {
-      if (rootModeInfo.kind === "themes" && resolveCommandBarMode(nextQuery).kind !== "themes") {
+      if (rootModeInfo.kind === "themes" && resolveCommandBarMode(nextQuery, availableCommands).kind !== "themes") {
         clearThemePreview(rootThemeBaseIdRef.current ?? stateRef.current.config.theme);
         rootThemeBaseIdRef.current = null;
       }
@@ -4238,7 +4214,7 @@ export function CommandBar({
         return route;
       });
     }
-  }, [clearThemePreview, currentRoute, rootModeInfo.kind, setRootQuery, updateTopRoute]);
+  }, [availableCommands, clearThemePreview, currentRoute, rootModeInfo.kind, setRootQuery, updateTopRoute]);
 
   const moveListSelection = useCallback((delta: number) => {
     const listState = visibleListStateRef.current;
@@ -4740,6 +4716,18 @@ export function CommandBar({
         const activeField = visibleFields.find((field) => field.id === currentRoute.activeFieldId) ?? visibleFields[0];
         const activeTextarea = activeField?.type === "textarea";
 
+        if (isPlainBackspace(event)) {
+          const activeValue = activeField
+            ? getWorkflowFieldStringValue(activeField, currentRoute.values[activeField.id])
+            : "";
+          if (!activeField || !isWorkflowTextField(activeField) || activeValue.length === 0) {
+            event.stopPropagation();
+            event.preventDefault();
+            popRoute();
+            return;
+          }
+        }
+
         if (event.name === "tab") {
           event.stopPropagation();
           event.preventDefault();
@@ -4974,20 +4962,15 @@ export function CommandBar({
   const showCustomMultiSelectPicker = currentRoute?.kind === "picker" && currentRoute.pickerId === "field-multi-select";
   const listRows = visibleListState ? buildListRows(visibleListState) : [];
   const nativeListRows = visibleListState ? buildNativeListRows(visibleListState, listRows) : [];
-  const listBodyHeight = nativePaneChrome
-    ? Math.min(bodyHeight, Math.max(1, nativeListRows.length))
-    : bodyHeight;
+  const listBodyHeight = bodyHeight;
   const nativePanelPaddingColumns = nativePaneChrome
     ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_X_PX * 2) / Math.max(1, cellWidthPx))
     : 0;
   const nativePanelPaddingRows = nativePaneChrome
     ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_Y_PX * 2) / Math.max(1, cellHeightPx))
     : 0;
-  const nativeListChromeRows = (visibleListState && !showCustomMultiSelectPicker)
-    ? (currentRoute ? 1 : 0) + 2 + listBodyHeight + nativePanelPaddingRows
-    : null;
   const barHeight = nativePaneChrome
-    ? nativeListChromeRows ?? bodyHeight + 4
+    ? bodyHeight + 3 + nativePanelPaddingRows
     : bodyHeight + 7;
   const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
   const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
@@ -5092,6 +5075,7 @@ export function CommandBar({
                   ? paletteHoverBg
                   : (nativePaneChrome ? panelBg : paletteBg)}
               onMouseMove={() => setHoveredIndex(row.globalIdx)}
+              onMouseOut={() => setHoveredIndex(null)}
               {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}
               onMouseDown={(event: any) => {
                 event.stopPropagation?.();
@@ -5169,12 +5153,14 @@ export function CommandBar({
           const active = field.id === currentRoute.activeFieldId;
           const value = currentRoute.values[field.id];
           const borderColor = active ? paletteSelectedBg : paletteBg;
+          const fieldBg = nativePaneChrome ? "transparent" : active ? inputBg : panelBg;
+          const nativeFieldRule = active ? "rgba(84, 201, 159, 0.48)" : "rgba(132, 145, 161, 0.18)";
           return (
             <Box
               key={field.id}
               flexDirection="column"
               marginBottom={1}
-              backgroundColor={active ? inputBg : panelBg}
+              backgroundColor={fieldBg}
               onMouseDown={(event: any) => {
                 event.stopPropagation?.();
                 syncActiveWorkflowTextarea(currentRoute);
@@ -5186,10 +5172,8 @@ export function CommandBar({
                 }
               }}
               style={nativePaneChrome ? {
-                border: `1px solid ${active ? "rgba(84, 201, 159, 0.28)" : "rgba(132, 145, 161, 0.16)"}`,
-                borderRadius: 6,
-                paddingInline: 8,
-                paddingBlock: 6,
+                borderBottom: `1px solid ${nativeFieldRule}`,
+                paddingBlock: 4,
               } : undefined}
             >
               <Box height={1}>
@@ -5204,7 +5188,8 @@ export function CommandBar({
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
-                    backgroundColor={active ? inputBg : panelBg}
+                    variant={nativePaneChrome ? "plain" : "default"}
+                    backgroundColor={fieldBg}
                     onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
                     onSubmit={() => {
                       const index = visibleFields.findIndex((entry) => entry.id === field.id);
@@ -5219,10 +5204,10 @@ export function CommandBar({
                   <Box
                     minHeight={6}
                     height={6}
-                    border
-                    borderColor={active ? (nativePaneChrome ? "rgba(84, 201, 159, 0.28)" : paletteSelectedBg) : (nativePaneChrome ? "rgba(132, 145, 161, 0.16)" : paletteBg)}
-                    backgroundColor={active ? inputBg : panelBg}
-                    style={nativePaneChrome ? { borderRadius: 6, overflow: "hidden" } : undefined}
+                    border={!nativePaneChrome}
+                    borderColor={active ? paletteSelectedBg : paletteBg}
+                    backgroundColor={fieldBg}
+                    style={nativePaneChrome ? { overflow: "hidden" } : undefined}
                   >
                     {active ? (
                       <Textarea
@@ -5233,7 +5218,7 @@ export function CommandBar({
                         focused={!currentRoute.pending}
                         textColor={paletteText}
                         placeholderColor={paletteSubtleText}
-                        backgroundColor={nativePaneChrome ? inputBg : colors.panel}
+                        backgroundColor={nativePaneChrome ? "transparent" : colors.panel}
                         flexGrow={1}
                         wrapText
                       />
@@ -5261,7 +5246,8 @@ export function CommandBar({
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
-                    backgroundColor={active ? inputBg : panelBg}
+                    variant={nativePaneChrome ? "plain" : "default"}
+                    backgroundColor={fieldBg}
                     onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
                     onSubmit={() => {
                       const index = visibleFields.findIndex((entry) => entry.id === field.id);
@@ -5444,8 +5430,7 @@ export function CommandBar({
                   ? currentRoute.screen === "themes" ? "Change Theme"
                     : currentRoute.screen === "plugins" ? "Manage Plugins"
                       : currentRoute.screen === "layout" ? "Layout Actions"
-                        : currentRoute.screen === "new-pane" ? "New Pane"
-                          : "Security Description"
+                        : "Security Description"
                   : currentRoute?.kind === "picker" ? currentRoute.title
                     : currentRoute?.kind === "pane-settings" ? "Pane Settings"
                       : currentRoute?.kind === "workflow" ? currentRoute.title

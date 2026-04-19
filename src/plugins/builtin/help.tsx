@@ -178,8 +178,8 @@ export function HelpPane({ width, height }: PaneProps) {
               compact={compact}
             />
             <ShortcutRow
-              badges={["NP", "PS", "PL"]}
-              description="Create panes, edit pane settings, and manage plugins."
+              badges={["PS", "PL"]}
+              description="Edit pane settings and manage plugins."
               compact={compact}
             />
           </HelpSection>

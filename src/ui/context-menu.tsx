@@ -184,11 +184,6 @@ export function appContextMenuItems(registry: Pick<PluginRegistry, "openCommandB
       onSelect: () => registry?.openCommandBarFn(),
     },
     {
-      id: "app:new-pane",
-      label: "New Pane...",
-      onSelect: () => registry?.openCommandBarFn("NP "),
-    },
-    {
       id: "app:layout-actions",
       label: "Layout Actions...",
       onSelect: () => registry?.openCommandBarFn("LAY "),

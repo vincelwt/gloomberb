@@ -212,7 +212,7 @@ describe("command-bar helpers", () => {
     expect(getScreenFooterLeft(orderedPickerRoute)).toBe("up/down move  space toggle  [ ] reorder  enter done");
     expect(getScreenFooterRight(orderedPickerRoute)).toBe("backspace/esc back");
     expect(getScreenFooterRight(filteredPickerRoute)).toBe("backspace delete  esc back");
-    expect(getScreenFooterRight(workflowRoute)).toBe("esc back");
+    expect(getScreenFooterRight(workflowRoute)).toBe("backspace/esc back");
     expect(getScreenFooterRight(confirmRoute)).toBe("backspace/esc back");
   });
 

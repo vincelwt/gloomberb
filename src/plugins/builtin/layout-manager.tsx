@@ -109,19 +109,6 @@ export const layoutManagerPlugin: GloomPlugin = {
     });
 
     ctx.registerCommand({
-      id: "add-pane",
-      label: "New Pane",
-      description: "Create a new pane from plugin templates",
-      keywords: ["new", "add", "pane", "panel", "show"],
-      category: "config",
-      hidden: () => true,
-      execute: async () => {
-        ctx.openCommandBar("NP ");
-        notify("Choose a pane template to create", { type: "info" });
-      },
-    });
-
-    ctx.registerCommand({
       id: "gridlock-all",
       label: "Gridlock All Windows",
       description: "Arrange all visible panes into a tiled grid",
