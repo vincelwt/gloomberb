@@ -4,6 +4,7 @@ import { testRender } from "../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { Button } from "./button";
+import { ChoiceDialog } from "./choice-dialog";
 import { DataTable } from "./data-table";
 import { TextField } from "./fields";
 import { ListView } from "./list-view";
@@ -21,6 +22,7 @@ let activatedTableRow: string | null = null;
 let tableHorizontalScrollbarVisible: boolean | null = null;
 let closedTab: string | null = null;
 let addedTab = false;
+let resolvedChoice: string | null = null;
 
 function ScrollableListHarness() {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -199,6 +201,43 @@ function MultiSelectDialogButtonHarness() {
   );
 }
 
+function ChoiceDialogHarness() {
+  return (
+    <ChoiceDialog
+      title="Choose Account"
+      dismiss={() => {}}
+      resolve={(value) => {
+        resolvedChoice = value;
+      }}
+      choices={[
+        { id: "alpha", label: "Alpha", description: "Alpha account" },
+        { id: "beta", label: "Beta", description: "Beta account" },
+        { id: "gamma", label: "Gamma", description: "Gamma account" },
+      ]}
+    />
+  );
+}
+
+async function emitKeypress(event: { name?: string; sequence?: string }) {
+  await act(async () => {
+    testSetup!.renderer.keyInput.emit("keypress", {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      ...event,
+    } as any);
+    await Promise.resolve();
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
+  await testSetup!.renderOnce();
+}
+
 afterEach(() => {
   if (testSetup) {
     testSetup.renderer.destroy();
@@ -210,6 +249,7 @@ afterEach(() => {
   tableHorizontalScrollbarVisible = null;
   closedTab = null;
   addedTab = false;
+  resolvedChoice = null;
 });
 
 describe("shared UI kit", () => {
@@ -391,6 +431,58 @@ describe("shared UI kit", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).not.toContain("Chart Indicators");
+  });
+
+  test("supports keyboard and pointer selection in choice dialogs", async () => {
+    testSetup = await testRender(<ChoiceDialogHarness />, { width: 44, height: 10 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Alpha account");
+
+    await emitKeypress({ name: "down" });
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Beta account");
+
+    await emitKeypress({ name: "k", sequence: "k" });
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Alpha account");
+
+    await emitKeypress({ name: "j", sequence: "j" });
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    expect(resolvedChoice).toBe("beta");
+
+    resolvedChoice = null;
+    const gammaRow = testSetup.captureCharFrame().split("\n").findIndex((line) => line.includes("Gamma"));
+    expect(gammaRow).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(2, gammaRow);
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Gamma account");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, gammaRow);
+      await testSetup!.renderOnce();
+    });
+    expect(resolvedChoice).toBe("gamma");
+  });
+
+  test("cancels choice dialogs with escape", async () => {
+    testSetup = await testRender(<ChoiceDialogHarness />, { width: 44, height: 10 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+
+    expect(resolvedChoice).toBe("");
   });
 
   test("keeps shared multi-select values in option order when toggling", () => {

@@ -20,6 +20,9 @@ export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-selec
 export type { MultiSelectDialogButtonProps, MultiSelectDialogContentProps } from "./multi-select-dialog";
 export type { MultiSelectOption } from "./multi-select";
 
+export { ChoiceDialog } from "./choice-dialog";
+export type { ChoiceDialogChoice, ChoiceDialogProps } from "./choice-dialog";
+
 export { SegmentedControl } from "./toggle";
 export type {
   SegmentedControlProps,

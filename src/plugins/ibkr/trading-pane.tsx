@@ -175,7 +175,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
           choices={gatewayInstances.map((instance) => ({
             id: instance.id,
             label: instance.label,
-            desc: "Gateway / TWS",
+            description: "Gateway / TWS",
           }))}
         />
       ),
@@ -217,7 +217,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
           choices={nextAccounts.map((account) => ({
             id: account.accountId,
             label: `${selectedInstance.label} → ${account.accountId}`,
-            desc: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
+            description: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
           }))}
         />
       ),

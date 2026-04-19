@@ -33,6 +33,7 @@ export interface ListViewProps {
   height?: number;
   flexGrow?: number;
   scrollable?: boolean;
+  selectOnHover?: boolean;
   autoScrollToIndex?: boolean;
 }
 
@@ -79,6 +80,7 @@ export function ListView({
   height,
   flexGrow,
   scrollable = false,
+  selectOnHover = false,
   autoScrollToIndex = true,
 }: ListViewProps) {
   const HostListView = useUiHost().ListView as ComponentType<ListViewProps> | undefined;
@@ -100,6 +102,7 @@ export function ListView({
         height={height}
         flexGrow={flexGrow}
         scrollable={scrollable}
+        selectOnHover={selectOnHover}
         autoScrollToIndex={autoScrollToIndex}
       />
     );
@@ -157,6 +160,7 @@ export function ListView({
         onMouseMove={() => {
           if (!disabled) {
             setHoveredIndex((current) => (current === index ? current : index));
+            if (selectOnHover) onSelect?.(index);
           }
         }}
         onMouseDown={() => {
