@@ -53,6 +53,7 @@ import { PaneWrapper } from "./pane";
 import { PaneFooterProvider } from "./pane-footer";
 import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
+import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
@@ -169,10 +170,15 @@ interface ShellMouseEvent {
   preventDefault: () => void;
 }
 
-const HEADER_HEIGHT = 1;
+const DEFAULT_HEADER_HEIGHT = 1;
 const MENU_WIDTH = 18;
 const PANE_DRAG_THRESHOLD = 2;
 const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
+
+export function resolveAppHeaderHeightCells(options: { titleBarOverlay?: boolean; cellHeightPx?: number }): number {
+  if (!options.titleBarOverlay || !options.cellHeightPx || options.cellHeightPx <= 0) return DEFAULT_HEADER_HEIGHT;
+  return TITLEBAR_OVERLAY_HEIGHT_PX / options.cellHeightPx;
+}
 
 function pointInRect(rect: LayoutBounds, x: number, y: number): boolean {
   return x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height;
@@ -180,6 +186,38 @@ function pointInRect(rect: LayoutBounds, x: number, y: number): boolean {
 
 function isMeaningfulPaneDrag(startX: number, startY: number, currentX: number, currentY: number, threshold = PANE_DRAG_THRESHOLD): boolean {
   return Math.max(Math.abs(currentX - startX), Math.abs(currentY - startY)) >= threshold;
+}
+
+function clampFinite(value: number, min: number, max: number, fallback = min): number {
+  const normalized = Number.isFinite(value) ? value : fallback;
+  return Math.max(min, Math.min(max, normalized));
+}
+
+function fitFloatingDimension(value: number, min: number, available: number): number {
+  const max = Math.max(1, Number.isFinite(available) ? available : 1);
+  const boundedMin = Math.min(min, max);
+  return clampFinite(value, boundedMin, max, boundedMin);
+}
+
+export function constrainFloatingRectToBounds(
+  rect: FloatingRect,
+  totalWidth: number,
+  totalHeight: number,
+): FloatingRect {
+  const boundsWidth = Math.max(1, Number.isFinite(totalWidth) ? totalWidth : 1);
+  const boundsHeight = Math.max(1, Number.isFinite(totalHeight) ? totalHeight : 1);
+  const width = fitFloatingDimension(rect.width, MIN_FLOAT_WIDTH, boundsWidth);
+  const height = fitFloatingDimension(rect.height, MIN_FLOAT_HEIGHT, boundsHeight);
+  const maxX = Math.max(0, boundsWidth - width);
+  const maxY = Math.max(0, boundsHeight - height);
+
+  return {
+    ...rect,
+    x: clampFinite(rect.x, 0, maxX, 0),
+    y: clampFinite(rect.y, 0, maxY, 0),
+    width,
+    height,
+  };
 }
 
 function positionFloatingRectUnderPointer(
@@ -190,13 +228,14 @@ function positionFloatingRectUnderPointer(
   totalWidth: number,
   totalHeight: number,
 ): FloatingRect {
-  const pointerOffsetX = Math.max(0, Math.min(rect.width - 1, drag.startX - drag.origRect.x));
-  const pointerOffsetY = Math.max(0, Math.min(rect.height - 1, drag.startY - drag.origRect.y));
-  return {
-    ...rect,
-    x: Math.max(0, Math.min(totalWidth - rect.width, pointerX - pointerOffsetX)),
-    y: Math.max(0, Math.min(totalHeight - rect.height, pointerY - pointerOffsetY)),
-  };
+  const fittedRect = constrainFloatingRectToBounds(rect, totalWidth, totalHeight);
+  const pointerOffsetX = Math.max(0, Math.min(fittedRect.width - 1, drag.startX - drag.origRect.x));
+  const pointerOffsetY = Math.max(0, Math.min(fittedRect.height - 1, drag.startY - drag.origRect.y));
+  return constrainFloatingRectToBounds({
+    ...fittedRect,
+    x: pointerX - pointerOffsetX,
+    y: pointerY - pointerOffsetY,
+  }, totalWidth, totalHeight);
 }
 
 export function resolvePaneDragFloatingRect(
@@ -211,12 +250,12 @@ export function resolvePaneDragFloatingRect(
     return positionFloatingRectUnderPointer(baseRect, drag, pointerX, pointerY, totalWidth, totalHeight);
   }
 
-  return {
-    x: Math.max(0, Math.min(totalWidth - drag.origRect.width, drag.origRect.x + (pointerX - drag.startX))),
-    y: Math.max(0, Math.min(totalHeight - drag.origRect.height, drag.origRect.y + (pointerY - drag.startY))),
+  return constrainFloatingRectToBounds({
+    x: drag.origRect.x + (pointerX - drag.startX),
+    y: drag.origRect.y + (pointerY - drag.startY),
     width: drag.origRect.width,
     height: drag.origRect.height,
-  };
+  }, totalWidth, totalHeight);
 }
 
 function resolveFloatResizeRect(
@@ -226,12 +265,13 @@ function resolveFloatResizeRect(
   totalWidth: number,
   totalHeight: number,
 ): FloatingRect {
-  return {
+  return constrainFloatingRectToBounds({
     x: drag.origRect.x,
     y: drag.origRect.y,
     width: Math.max(MIN_FLOAT_WIDTH, Math.min(totalWidth - drag.origRect.x, drag.origRect.width + (pointerX - drag.startX))),
     height: Math.max(MIN_FLOAT_HEIGHT, Math.min(totalHeight - drag.origRect.y, drag.origRect.height + (pointerY - drag.startY))),
-  };
+    zIndex: drag.origRect.zIndex,
+  }, totalWidth, totalHeight);
 }
 
 function centerRectWithin(parent: LayoutBounds, width: number, height: number): LayoutBounds {
@@ -313,6 +353,7 @@ export function buildNativeWindowState(
   overlay: { open: boolean; width: number; contentHeight: number },
   transientOccluders: readonly NativeTransientOccluder[] = [],
   dockDividers: readonly DockDividerLayout[] = [],
+  appHeaderHeight: number = DEFAULT_HEADER_HEIGHT,
 ): { paneLayers: NativePaneLayer[]; occluders: NativeOccluder[] } {
   const previewedFloatingPanes = floatingPanes.map((pane) => (
     dragFloatingRect?.paneId === pane.paneId
@@ -330,7 +371,7 @@ export function buildNativeWindowState(
     paneId: pane.paneId,
     rect: {
       x: pane.rect.x,
-      y: pane.rect.y + HEADER_HEIGHT,
+      y: pane.rect.y + appHeaderHeight,
       width: pane.rect.width,
       height: pane.rect.height,
     },
@@ -343,7 +384,7 @@ export function buildNativeWindowState(
       paneId: null,
       rect: {
         x: divider.rect.x,
-        y: divider.rect.y + HEADER_HEIGHT,
+        y: divider.rect.y + appHeaderHeight,
         width: divider.rect.width,
         height: divider.rect.height,
       },
@@ -358,7 +399,7 @@ export function buildNativeWindowState(
       paneId: null,
       rect: {
         x: occluder.rect.x,
-        y: occluder.rect.y + HEADER_HEIGHT,
+        y: occluder.rect.y + appHeaderHeight,
         width: occluder.rect.width,
         height: occluder.rect.height,
       },
@@ -372,7 +413,7 @@ export function buildNativeWindowState(
       paneId: null,
       rect: {
         x: 0,
-        y: HEADER_HEIGHT,
+        y: appHeaderHeight,
         width: overlay.width,
         height: overlay.contentHeight,
       },
@@ -660,12 +701,13 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const renderer = useNativeRenderer();
-  const { nativePaneChrome, nativeContextMenu, precisePointer } = useUiCapabilities();
+  const { nativePaneChrome, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
 
-  const contentHeight = Math.max(1, height - (statusBarVisible ? 2 : 1));
+  const appHeaderHeight = resolveAppHeaderHeightCells({ titleBarOverlay, cellHeightPx });
+  const contentHeight = Math.max(1, height - appHeaderHeight - (statusBarVisible ? 1 : 0));
   pluginRegistry.getTermSizeFn = () => ({ width, height: contentHeight });
 
   const layout = useAppSelector(selectLayout);
@@ -686,8 +728,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const dockPreviewRef = useRef<DragPreview | null>(null);
 
   const updateDragFloatingRect = useCallback((next: { paneId: string; rect: FloatingRect } | null) => {
-    setDragFloatingRect(next);
-  }, []);
+    setDragFloatingRect(next
+      ? { paneId: next.paneId, rect: constrainFloatingRectToBounds(next.rect, width, contentHeight) }
+      : null);
+  }, [contentHeight, width]);
 
   const updateDividerPreview = useCallback((next: DividerPreviewState | null) => {
     dividerPreviewRef.current = next;
@@ -781,6 +825,13 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     () => resolveFloating(visibleLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
     [disabledPaneIds, pluginRegistry.panes, visibleLayout],
   );
+  const visibleFloatingPanes = useMemo(
+    () => floatingPanes.map((pane) => ({
+      pane,
+      rect: constrainFloatingRectToBounds(pane.floating!, width, contentHeight),
+    })),
+    [contentHeight, floatingPanes, width],
+  );
   const paneMap = useMemo(() => new Map([...dockedPanes, ...floatingPanes].map((pane) => [pane.instance.instanceId, pane])), [dockedPanes, floatingPanes]);
   const dockGeometryOptions = useMemo(() => (nativePaneChrome ? { precise: true } : undefined), [nativePaneChrome]);
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
@@ -836,17 +887,18 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const nativeWindowState = useMemo(
     () => buildNativeWindowState(
       dockedPanes.map((pane) => pane.instance.instanceId),
-      floatingPanes.map((pane) => ({
+      visibleFloatingPanes.map(({ pane, rect }) => ({
         paneId: pane.instance.instanceId,
-        rect: pane.floating!,
+        rect,
         zIndex: pane.floating?.zIndex ?? 50,
       })),
       dragFloatingRect,
       { open: overlayOpen, width, contentHeight },
       nativeTransientOccluders,
       nativeDockDividers,
+      appHeaderHeight,
     ),
-    [contentHeight, dockedPanes, dragFloatingRect, floatingPanes, nativeDockDividers, nativeTransientOccluders, overlayOpen, width],
+    [appHeaderHeight, contentHeight, dockedPanes, dragFloatingRect, nativeDockDividers, nativeTransientOccluders, overlayOpen, visibleFloatingPanes, width],
   );
 
   useEffect(() => {
@@ -903,9 +955,9 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   }, [persistLayout, visibleLayout]);
 
   const handleActiveDrag = useCallback((event: ShellMouseEvent) => {
-    const shellY = event.y - HEADER_HEIGHT;
+    const shellY = event.y - appHeaderHeight;
     const preciseX = event.preciseX ?? event.x;
-    const preciseShellY = (event.preciseY ?? event.y) - HEADER_HEIGHT;
+    const preciseShellY = (event.preciseY ?? event.y) - appHeaderHeight;
     const hitX = precisePointer ? preciseX : event.x;
     const hitShellY = precisePointer ? preciseShellY : shellY;
     const dragThreshold = precisePointer ? PRECISE_PANE_DRAG_THRESHOLD : PANE_DRAG_THRESHOLD;
@@ -1024,6 +1076,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     }
   }, [
     bounds,
+    appHeaderHeight,
     contentHeight,
     dockLeafLayouts,
     dispatch,
@@ -1041,9 +1094,9 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   ]);
 
   const handleMouse = useCallback((event: ShellMouseEvent) => {
-    const shellY = event.y - HEADER_HEIGHT;
+    const shellY = event.y - appHeaderHeight;
     const preciseX = event.preciseX ?? event.x;
-    const preciseShellY = (event.preciseY ?? event.y) - HEADER_HEIGHT;
+    const preciseShellY = (event.preciseY ?? event.y) - appHeaderHeight;
     if (shellY < 0) return;
 
     if (event.type === "down") {
@@ -1051,8 +1104,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         setMenuState(null);
       }
 
-      for (const pane of [...floatingPanes].sort((a, b) => (b.floating?.zIndex ?? 50) - (a.floating?.zIndex ?? 50))) {
-        const rect = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
+      for (const { pane, rect: visibleRect } of [...visibleFloatingPanes].sort((a, b) => (b.pane.floating?.zIndex ?? 50) - (a.pane.floating?.zIndex ?? 50))) {
+        const rect = dragFloatingRect?.paneId === pane.instance.instanceId
+          ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
+          : visibleRect;
         if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
         const relativeX = event.x - rect.x;
         const relativeY = shellY - rect.y;
@@ -1183,6 +1238,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     handleActiveDrag(event);
   }, [
     bounds,
+    appHeaderHeight,
     closeFocusedPane,
     contentHeight,
     dividerPreview,
@@ -1190,7 +1246,6 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     dockLeafLayouts,
     effectiveDockPreview,
     dragFloatingRect,
-    floatingPanes,
     focusedPaneId,
     focusPane,
     handleActiveDrag,
@@ -1205,14 +1260,15 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     updateDividerPreview,
     updateDockPreview,
     updateDragFloatingRect,
+    visibleFloatingPanes,
     visibleLayout,
     width,
   ]);
 
   const getShellPointer = useCallback((event: ShellMouseEvent) => ({
     x: event.preciseX ?? event.x,
-    y: (event.preciseY ?? event.y) - HEADER_HEIGHT,
-  }), []);
+    y: (event.preciseY ?? event.y) - appHeaderHeight,
+  }), [appHeaderHeight]);
 
   const focusNativePane = useCallback((paneId: string) => {
     if (menuState) setMenuState(null);
@@ -1372,8 +1428,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         );
       })}
 
-      {floatingPanes.map((pane) => {
-        const preview = dragFloatingRect?.paneId === pane.instance.instanceId ? dragFloatingRect.rect : pane.floating!;
+      {visibleFloatingPanes.map(({ pane, rect }) => {
+        const preview = dragFloatingRect?.paneId === pane.instance.instanceId
+          ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
+          : rect;
         const focused = focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
         const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(preview.width)) : getPaneBodyWidth(preview.width);
@@ -1420,7 +1478,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         );
       })}
 
-      {dockLeafLayouts.length === 0 && floatingPanes.length === 0 && (
+      {dockLeafLayouts.length === 0 && visibleFloatingPanes.length === 0 && (
         <Box flexGrow={1} alignItems="center" justifyContent="center">
           <Text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</Text>
         </Box>
@@ -1461,12 +1519,12 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         let rect: { x: number; y: number; width: number; height: number } | null = null;
         let z = 3;
         // Check floating panes first (they render on top of docked panes)
-        const floatingPane = floatingPanes.find((p) => p.instance.instanceId === focusedPaneId);
+        const floatingPane = visibleFloatingPanes.find((entry) => entry.pane.instance.instanceId === focusedPaneId);
         if (floatingPane) {
-          rect = dragFloatingRect?.paneId === floatingPane.instance.instanceId
-            ? dragFloatingRect.rect
-            : floatingPane.floating!;
-          z = (floatingPane.floating?.zIndex ?? 50) + 1;
+          rect = dragFloatingRect?.paneId === floatingPane.pane.instance.instanceId
+            ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
+            : floatingPane.rect;
+          z = (floatingPane.pane.floating?.zIndex ?? 50) + 1;
         } else {
           // Check docked panes
           const dockedLeaf = dockLeafLayouts.find((l) => l.instanceId === focusedPaneId);
