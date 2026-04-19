@@ -1,6 +1,8 @@
 <div align="center">
 
-# 📉 Gloomberb
+<img src="src/assets/gloomberb-logo.png" alt="Gloomberb logo" width="96" />
+
+# Gloomberb
 
 **Modern extensible financial terminal.**
 
