@@ -14,6 +14,7 @@ import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { PluginRegistry } from "../../plugins/registry";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugins/plugin-runtime";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../../plugins/registry";
 import type { TickerRecord } from "../../types/ticker";
 import {
@@ -98,10 +99,6 @@ function createProvider(historyBySymbol: Record<string, number[]>, currencyBySym
 
 function createRegistrySpy(spy: { selected: string[]; focused: string[] }): PluginRegistry {
   return {
-    navigateTickerFn: (symbol: string) => {
-      spy.selected.push(symbol);
-      spy.focused.push("ticker-detail");
-    },
     selectTickerFn: (symbol: string) => { spy.selected.push(symbol); },
     focusPaneFn: (paneId: string) => { spy.focused.push(paneId); },
     navigateTickerFn: (symbol: string) => {
@@ -111,10 +108,33 @@ function createRegistrySpy(spy: { selected: string[]; focused: string[] }): Plug
   } as unknown as PluginRegistry;
 }
 
+function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): PluginRuntimeAccess {
+  return {
+    getDataProvider: () => null,
+    pinTicker: (symbol: string) => {
+      spy.selected.push(symbol);
+      spy.focused.push("ticker-detail");
+    },
+    navigateTicker: (symbol: string) => {
+      spy.selected.push(symbol);
+      spy.focused.push("ticker-detail");
+    },
+    subscribeResumeState: () => () => {},
+    getResumeState: () => null,
+    setResumeState: () => {},
+    deleteResumeState: () => {},
+    getConfigState: () => null,
+    setConfigState: async () => {},
+    deleteConfigState: async () => {},
+    getConfigStateKeys: () => [],
+  };
+}
+
 function createComparisonHarness(
   settings: Record<string, unknown>,
   tickers: TickerRecord[],
   financials: Array<[string, TickerFinancials]>,
+  runtime: PluginRuntimeAccess,
 ) {
   const config = createDefaultConfig("/tmp/gloomberb-compare");
   const layout = {
@@ -125,6 +145,7 @@ function createComparisonHarness(
       settings,
     }],
     floating: [],
+    detached: [],
   };
   const nextConfig = {
     ...config,
@@ -147,20 +168,22 @@ function createComparisonHarness(
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PaneFooterProvider>
-          {(footer) => (
-            <Box flexDirection="column" width={120} height={20}>
-              <ComparisonPane
-                paneId={TEST_PANE_ID}
-                paneType="comparison-chart"
-                focused
-                width={120}
-                height={19}
-              />
-              <PaneFooterBar footer={footer} focused width={120} />
-            </Box>
-          )}
-        </PaneFooterProvider>
+        <PluginRenderProvider pluginId="comparison-chart" runtime={runtime}>
+          <PaneFooterProvider>
+            {(footer) => (
+              <Box flexDirection="column" width={120} height={20}>
+                <ComparisonPane
+                  paneId={TEST_PANE_ID}
+                  paneType="comparison-chart"
+                  focused
+                  width={120}
+                  height={19}
+                />
+                <PaneFooterBar footer={footer} focused width={120} />
+              </Box>
+            )}
+          </PaneFooterProvider>
+        </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
   );
@@ -181,13 +204,14 @@ async function mountComparisonHarness(
   settings: Record<string, unknown>,
   tickers: TickerRecord[],
   financials: Array<[string, TickerFinancials]>,
+  spy: { selected: string[]; focused: string[] } = { selected: [], focused: [] },
 ) {
   actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
   testSetup = await createTestRenderer({ width: 120, height: 20 });
   root = createRoot(testSetup.renderer);
   await act(async () => {
     root!.render(
-      createComparisonHarness(settings, tickers, financials),
+      createComparisonHarness(settings, tickers, financials, createRuntimeSpy(spy)),
     );
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -339,7 +363,7 @@ describe("comparisonChartPlugin", () => {
       ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
       ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
       ["NVDA", makeFinancials("NVDA", "USD", [300, 305, 310])],
-    ]);
+    ], spy);
 
     await flushFrames();
     await pressComparisonInput(() => testSetup!.mockInput.pressArrow("right"));

@@ -10,7 +10,7 @@ import type { TickerRecord } from "../../../types/ticker";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { Box } from "../../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
-import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../../registry";
+import { getSharedDataProvider, setSharedDataProviderForTests, setSharedRegistryForTests } from "../../registry";
 import { AiScreenerPane } from "./screener-pane";
 import { __setDetectedProvidersForTests, type AiProvider } from "./providers";
 
@@ -23,6 +23,7 @@ function makeRuntime(): PluginRuntimeAccess {
   const listeners = new Map<string, Set<() => void>>();
 
   return {
+    getDataProvider: () => getSharedDataProvider() ?? null,
     pinTicker() {},
     navigateTicker() {},
     subscribeResumeState(pluginId, key, listener) {
@@ -220,10 +221,10 @@ describe("AiScreenerPane", () => {
     });
 
     await waitForFrameToContain("AAPL");
-    const frame = await waitForFrameToContain("1 tickers");
+    const frame = await waitForFrameToContain("Initial pass");
     expect(frame).toContain("Compounders");
     expect(frame).toContain("Initial pass");
-    expect(frame).toContain("1 tickers");
+    expect(frame).toContain("Strong cash flow durability");
   });
 
   test("merges new unique results on a normal refresh", async () => {
@@ -259,9 +260,9 @@ describe("AiScreenerPane", () => {
     });
 
     await waitForFrameToContain("MSFT");
-    const frame = await waitForFrameToContain("2 tickers");
+    const frame = await waitForFrameToContain("Second pass");
     expect(frame).toContain("AAPL");
-    expect(frame).toContain("2 tickers");
+    expect(frame).toContain("MSFT");
   });
 
   test("opens the inline prompt editor without using the dialog flow", async () => {
@@ -335,9 +336,9 @@ describe("AiScreenerPane", () => {
     });
 
     await waitForFrameToContain("MSFT");
-    const frame = await waitForFrameToContain("1 tickers");
+    const frame = await waitForFrameToContain("Second pass");
     expect(frame).not.toContain("AAPL");
-    expect(frame).toContain("1 tickers");
+    expect(frame).toContain("MSFT");
   });
 
   test("keeps the last good results visible when a rerun returns invalid JSON", async () => {

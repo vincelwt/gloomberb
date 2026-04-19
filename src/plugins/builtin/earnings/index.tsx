@@ -1,16 +1,13 @@
-import { Box } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { TextAttributes } from "../../../ui";
+import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { EarningsEvent } from "../../../types/data-provider";
 import { colors } from "../../../theme/colors";
-import { getSharedDataProvider } from "../../registry";
 import { useAppSelector, getFocusedCollectionId } from "../../../state/app-context";
 import { getCollectionTickers } from "../../../state/selectors";
 import { formatCompact } from "../../../utils/format";
-import { usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
+import { usePluginDataProvider, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
 import {
   attachEarningsCalendarPersistence,
   loadEarningsCalendar,
@@ -103,14 +100,12 @@ function buildColumns(width: number): EarningsColumn[] {
 }
 
 function EarningsCalendarPane({ focused, width, height }: PaneProps) {
+  const dataProvider = usePluginDataProvider();
   const { navigateTicker } = usePluginTickerActions();
   const [events, setEvents] = useState<EarningsEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
 
   const state = useAppSelector((current) => current);
   const collectionId = getFocusedCollectionId(state);
@@ -131,18 +126,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const selectedRowIndex = rows.findIndex((row) => row.kind === "event" && row.eventIdx === activeEventIdx);
   const columns = useMemo(() => buildColumns(width), [width]);
 
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
-
   const reload = useCallback((force = false) => {
     if (tickerSymbols.length === 0) {
       setEvents([]);
@@ -151,10 +134,9 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    const provider = getSharedDataProvider();
     setLoading(true);
     setError(null);
-    loadEarningsCalendar(provider, tickerSymbols, { force })
+    loadEarningsCalendar(dataProvider, tickerSymbols, { force })
       .then((data) => {
         setEvents(data);
       })
@@ -164,7 +146,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       .finally(() => {
         setLoading(false);
       });
-  }, [tickerSymbols]);
+  }, [dataProvider, tickerSymbols]);
 
   useEffect(() => {
     reload(false);
@@ -176,34 +158,18 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     }
   }, [eventCount, selectedIdx, setSelectedIdx]);
 
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox || selectedRowIndex < 0) return;
-    scrollBox.scrollTo?.(0, Math.max(0, selectedRowIndex - Math.floor((height - 3) / 2)));
-  }, [height, selectedRowIndex]);
-
   const openEvent = useCallback((event: EarningsEvent) => {
     navigateTicker(event.symbol);
   }, [navigateTicker]);
 
-  const selectEventIndex = useCallback((index: number) => {
-    if (eventCount === 0) return;
-    setSelectedIdx(Math.min(Math.max(index, 0), eventCount - 1));
-  }, [eventCount, setSelectedIdx]);
-
-  useShortcut((event) => {
-    if (!focused) return;
-    if (event.name === "j" || event.name === "down") {
-      selectEventIndex(activeEventIdx + 1);
-    } else if (event.name === "k" || event.name === "up") {
-      selectEventIndex(activeEventIdx - 1);
-    } else if (event.name === "return" || event.name === "enter") {
-      const selected = eventRows[activeEventIdx];
-      if (selected) openEvent(selected.event);
-    } else if (event.name === "r") {
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (event.name === "r") {
+      event.preventDefault?.();
       reload(true);
+      return true;
     }
-  });
+    return false;
+  }, [reload]);
 
   const selectDisplayRow = useCallback((row: DisplayRow) => {
     if (row.kind !== "event") return;
@@ -265,28 +231,32 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   }), [error, loading, reload]);
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <DataTable<DisplayRow, EarningsColumn>
-        columns={columns}
-        items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={() => {}}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={hoveredIdx}
-        setHoveredIdx={setHoveredIdx}
-        getItemKey={(row) => row.key}
-        isSelected={(row) => row.kind === "event" && row.eventIdx === activeEventIdx}
-        onSelect={selectDisplayRow}
-        renderSectionHeader={renderSectionHeader}
-        renderCell={renderCell}
-        emptyStateTitle={loading ? "Loading earnings..." : "No upcoming earnings found"}
-        showHorizontalScrollbar={false}
-      />
-    </Box>
+    <DataTableView<DisplayRow, EarningsColumn>
+      focused={focused}
+      selectedIndex={selectedRowIndex}
+      isNavigable={(row) => row.kind === "event"}
+      onSelectIndex={(_index, row) => {
+        if (row.kind === "event") setSelectedIdx(row.eventIdx);
+      }}
+      onActivateIndex={(_index, row) => {
+        if (row.kind === "event") openEvent(row.event);
+      }}
+      onRootKeyDown={handleTableKeyDown}
+      rootWidth={width}
+      rootHeight={height}
+      columns={columns}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      getItemKey={(row) => row.key}
+      isSelected={(row) => row.kind === "event" && row.eventIdx === activeEventIdx}
+      onSelect={selectDisplayRow}
+      renderSectionHeader={renderSectionHeader}
+      renderCell={renderCell}
+      emptyStateTitle={loading ? "Loading earnings..." : "No upcoming earnings found"}
+      showHorizontalScrollbar={false}
+    />
   );
 }
 

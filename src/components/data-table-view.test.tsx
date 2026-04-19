@@ -8,20 +8,23 @@ import {
 } from "../state/app-context";
 import { createDefaultConfig } from "../types/config";
 import { Box, Text } from "../ui";
-import { DataTableStackView } from "./data-table-stack-view";
+import { DataTableView } from "./data-table-view";
 import type { DataTableCell, DataTableColumn } from "./ui";
 
-interface Row {
-  id: string;
-  title: string;
-  body: string;
-}
+type Row =
+  | { type: "section"; id: string; title: string }
+  | { type: "row"; id: string; title: string };
 
 type Column = DataTableColumn & { id: "title" };
 
 const rows: Row[] = [
-  { id: "first", title: "First row", body: "First detail" },
-  { id: "second", title: "Second row", body: "Second detail" },
+  { type: "section", id: "section", title: "Group" },
+  { type: "row", id: "first", title: "First row" },
+  { type: "row", id: "second", title: "Second row" },
+];
+
+const columns: Column[] = [
+  { id: "title", label: "Title", width: 20, align: "left" },
 ];
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -35,35 +38,24 @@ afterEach(async () => {
 });
 
 function Harness() {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [openRow, setOpenRow] = useState<Row | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(1);
+  const [activatedTitle, setActivatedTitle] = useState("");
   const state = createInitialState(
-    createDefaultConfig("/tmp/gloomberb-data-table-stack-view-test"),
+    createDefaultConfig("/tmp/gloomberb-data-table-view-test"),
   );
-  const columns: Column[] = [
-    { id: "title", label: "Title", width: 20, align: "left" },
-  ];
+  const selectedTitle = rows[selectedIndex]?.title ?? "none";
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
-      <PaneInstanceProvider paneId="portfolio-list:main">
-        <DataTableStackView<Row, Column>
+      <PaneInstanceProvider paneId="data-table-view-test">
+        <DataTableView<Row, Column>
           focused
-          detailOpen={!!openRow}
-          onBack={() => setOpenRow(null)}
-          detailContent={
-            openRow ? (
-              <Box flexGrow={1}>
-                <Text>{openRow.body}</Text>
-              </Box>
-            ) : (
-              <Box flexGrow={1} />
-            )
-          }
-          detailTitle={openRow?.title}
           selectedIndex={selectedIndex}
+          isNavigable={(row) => row.type === "row"}
           onSelectIndex={(index) => setSelectedIndex(index)}
-          onActivateIndex={(_index, row) => setOpenRow(row)}
+          onActivateIndex={(_index, row) => {
+            if (row.type === "row") setActivatedTitle(row.title);
+          }}
           columns={columns}
           items={rows}
           sortColumnId={null}
@@ -72,10 +64,18 @@ function Harness() {
           getItemKey={(row) => row.id}
           isSelected={(_row, index) => index === selectedIndex}
           onSelect={(_row, index) => setSelectedIndex(index)}
-          onActivate={(row) => setOpenRow(row)}
-          renderCell={(row): DataTableCell => ({ text: row.title })}
+          renderSectionHeader={(row) => row.type === "section"
+            ? { text: row.title }
+            : null}
+          renderCell={(row): DataTableCell => ({
+            text: row.type === "row" ? row.title : "",
+          })}
           emptyStateTitle="No rows"
-          showHorizontalScrollbar={false}
+          rootAfter={
+            <Box height={1}>
+              <Text>{`selected=${selectedTitle} activated=${activatedTitle}`}</Text>
+            </Box>
+          }
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -106,32 +106,24 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
   });
 }
 
-describe("DataTableStackView", () => {
-  test("owns table navigation, detail open, and back navigation", async () => {
+describe("DataTableView", () => {
+  test("owns row keyboard navigation and skips section headers", async () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
 
     await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("First row");
-    expect(testSetup.captureCharFrame()).not.toContain("j/k move");
+    expect(testSetup.captureCharFrame()).toContain("selected=First row");
 
     await emitKeypress({ name: "j", sequence: "j" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
+
+    await emitKeypress({ name: "k", sequence: "k" });
+    await emitKeypress({ name: "k", sequence: "k" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=First row");
+
     await emitKeypress({ name: "enter", sequence: "\r" });
     await renderSettled();
-
-    const detailFrame = testSetup.captureCharFrame();
-    expect(detailFrame).toContain("\u2190 Back");
-    expect(detailFrame).toContain("\u2190 Back Second row");
-    expect(detailFrame).toContain("Second detail");
-
-    await emitKeypress({ name: "escape", sequence: "\u001b" });
-    await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("Second detail");
-
-    await emitKeypress({ name: "backspace", sequence: "\u007f" });
-    await renderSettled();
-
-    const rootFrame = testSetup.captureCharFrame();
-    expect(rootFrame).toContain("Second row");
-    expect(rootFrame).not.toContain("Second detail");
+    expect(testSetup.captureCharFrame()).toContain("activated=First row");
   });
 });

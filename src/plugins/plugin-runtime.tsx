@@ -16,8 +16,10 @@ import {
   usePaneInstanceId,
   type PaneRuntimeState,
 } from "../state/app-context";
+import type { DataProvider } from "../types/data-provider";
 
 export interface PluginRuntimeAccess {
+  getDataProvider(): DataProvider | null;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
@@ -68,6 +70,11 @@ export function usePluginTickerActions() {
     pinTicker: runtime.pinTicker,
     navigateTicker: runtime.navigateTicker,
   };
+}
+
+export function usePluginDataProvider(): DataProvider | null {
+  const { runtime } = usePluginRenderContext();
+  return runtime.getDataProvider();
 }
 
 export function getPluginPaneStateValue<T>(

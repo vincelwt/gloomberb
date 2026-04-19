@@ -1,7 +1,6 @@
 import { Box, Text } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useShortcut } from "../../react/input";
-import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
+import { TextAttributes } from "../../ui";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
@@ -11,7 +10,7 @@ import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { setOptionsAvailability } from "./options-availability";
-import { DataTable, Spinner, TabBar, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../components";
+import { DataTableView, Spinner, TabBar, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../components";
 
 type OptionColumnId =
   | "callLast"
@@ -51,7 +50,7 @@ const OPTION_COLUMNS: OptionColumn[] = [
   { id: "callIv", label: "C IV", width: 6, align: "right", headerColor: OPTION_IV_COLOR },
   { id: "callBid", label: "C BID", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
   { id: "callAsk", label: "C ASK", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
-  { id: "strike", label: "STRIKE", width: 9, align: "center", headerColor: OPTION_STRIKE_COLOR },
+  { id: "strike", label: "STRIKE", width: 9, align: "right", headerColor: OPTION_STRIKE_COLOR },
   { id: "putBid", label: "P BID", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
   { id: "putAsk", label: "P ASK", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
   { id: "putIv", label: "P IV", width: 6, align: "right", headerColor: OPTION_IV_COLOR },
@@ -66,10 +65,7 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
   const [strikeIdx, setStrikeIdx] = useState(0);
   const [autoScrollVersion, setAutoScrollVersion] = useState(0);
   const [scrollToIndexAlign, setScrollToIndexAlign] = useState<"nearest" | "center">("nearest");
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [interactive, setInteractive] = useState(false);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const userSelectedStrikeRef = useRef(false);
   const target = resolveOptionsTarget(ticker);
   const isOpt = target?.isOptionTicker ?? false;
@@ -167,18 +163,6 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
   const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
   const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
 
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
-
   usePaneFooter("options", () => {
     const info = [
       ...(selectedExpiration != null ? [{ id: "exp", parts: [{ text: formatExpDate(selectedExpiration), tone: "muted" as const }] }] : []),
@@ -214,57 +198,58 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
     setAutoScrollVersion((version) => version + 1);
   }, [expIdx, financials?.quote?.price, parsed?.strike, strikes]);
 
-  // Keyboard navigation
-  useShortcut((event) => {
-    if (!focused || !chain) return;
-
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     const isEnter = event.name === "enter" || event.name === "return";
 
-    // Enter/Escape for interactive mode
     if (isEnter && !interactive) {
       event.preventDefault?.();
       event.stopPropagation?.();
       enterInteractive();
-      return;
+      return true;
     }
     if (event.name === "escape" && interactive) {
       event.preventDefault?.();
       event.stopPropagation?.();
       exitInteractive();
-      return;
+      return true;
     }
 
-    // Row movement follows the shared table panes and does not require capture.
     if (event.name === "j" || event.name === "down") {
-      if (strikes.length === 0) return;
+      if (strikes.length === 0) return true;
       event.preventDefault?.();
       event.stopPropagation?.();
       userSelectedStrikeRef.current = true;
       setScrollToIndexAlign("nearest");
       setStrikeIdx((i) => Math.min(i + 1, strikes.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      if (strikes.length === 0) return;
+      return true;
+    }
+    if (event.name === "k" || event.name === "up") {
+      if (strikes.length === 0) return true;
       event.preventDefault?.();
       event.stopPropagation?.();
       userSelectedStrikeRef.current = true;
       setScrollToIndexAlign("nearest");
       setStrikeIdx((i) => Math.max(i - 1, 0));
+      return true;
     }
 
-    if (!interactive) return;
+    if (!interactive) return false;
 
-    // Left/right switch expirations once the tab has captured input.
-    const numExp = chain.expirationDates.length;
+    const numExp = chain?.expirationDates.length ?? 0;
     if (event.name === "h" || event.name === "left") {
       event.preventDefault?.();
       event.stopPropagation?.();
       setExpIdx((i) => Math.max(i - 1, 0));
-    } else if (event.name === "l" || event.name === "right") {
+      return true;
+    }
+    if (event.name === "l" || event.name === "right") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      setExpIdx((i) => Math.min(i + 1, numExp - 1));
+      setExpIdx((i) => Math.min(i + 1, Math.max(numExp - 1, 0)));
+      return true;
     }
-  });
+    return false;
+  }, [chain?.expirationDates.length, enterInteractive, exitInteractive, interactive, strikes.length]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view options.</Text>;
   if (loading && !chain) return <Spinner label="Loading options chain..." />;
@@ -303,7 +288,7 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
             variant="bare"
           />
         </Box>
-        {loading && <spinner name="dots" color={colors.textDim} />}
+        {loading && <Spinner />}
       </Box>
 
       {/* Position banner */}
@@ -315,18 +300,15 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
         </Box>
       )}
 
-      <DataTable<OptionTableRow, OptionColumn>
+      <DataTableView<OptionTableRow, OptionColumn>
+        focused={focused}
+        selectedIndex={strikeIdx}
+        onRootKeyDown={handleTableKeyDown}
         columns={OPTION_COLUMNS}
         items={rows}
         sortColumnId={null}
         sortDirection="asc"
         onHeaderClick={() => {}}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={hoveredIdx}
-        setHoveredIdx={setHoveredIdx}
         getItemKey={(row) => String(row.strike)}
         isSelected={(_row, index) => index === strikeIdx}
         onSelect={(_row, index) => {

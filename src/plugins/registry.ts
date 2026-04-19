@@ -126,6 +126,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
   navigateTickerFn: ((symbol: string) => void) = () => {};
+  getDataProvider = () => this.dataProvider;
   pinTicker = (symbol: string, options?: { floating?: boolean; paneType?: string }) => {
     this.pinTickerFn(symbol, options);
   };
@@ -162,7 +163,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     sharedRegistry = this;
     (globalThis as any).__gloomRegistry = this;
     this.Slot = ({ name, ...props }: { name: keyof GloomSlots } & Record<string, unknown>) => (
-      this.renderSlot(name, props as unknown)
+      this.renderSlot(name, props as any)
     );
   }
 
@@ -667,8 +668,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
             order: plugin.order ?? 0,
             render: (props: unknown) => createElement(
               PluginRenderProvider,
-              { pluginId: plugin.id, runtime: this },
-              (renderer as any)(props),
+              {
+                pluginId: plugin.id,
+                runtime: this,
+                children: (renderer as any)(props),
+              },
             ),
           });
           entries.sort((left, right) => left.order - right.order || left.pluginId.localeCompare(right.pluginId));

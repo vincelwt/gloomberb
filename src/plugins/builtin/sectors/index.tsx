@@ -1,13 +1,9 @@
-import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type ScrollBoxRenderable } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
-import { usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
-import { getSharedDataProvider } from "../../registry";
+import { usePluginDataProvider, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
 import { SECTORS, type SectorDef } from "./sector-data";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -114,6 +110,7 @@ function nextSortPreference(current: SectorSortPreference, columnId: string): Se
 }
 
 export function SectorPerformancePane({ focused, width, height }: PaneProps) {
+  const dataProvider = usePluginDataProvider();
   const { navigateTicker } = usePluginTickerActions();
   const [rows, setRows] = useState<SectorRow[]>(
     SECTORS.map((sector) => ({ ...sector, price: null, changePercent: null, currency: "USD", loading: true })),
@@ -123,12 +120,9 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
     "sortPreference",
     DEFAULT_SORT_PREFERENCE,
   );
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const fetchGenRef = useRef(0);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
 
   const columns = useMemo(() => buildColumns(width), [width]);
   const sortedRows = useMemo(() => sortRows(rows, sortPreference), [rows, sortPreference]);
@@ -137,23 +131,10 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
     : -1;
   const activeIdx = selectedIdx >= 0 ? selectedIdx : (sortedRows.length > 0 ? 0 : -1);
 
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
-
   const fetchAll = useCallback(() => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
-    const provider = getSharedDataProvider();
-    if (!provider) {
+    if (!dataProvider) {
       setRows((prev) => prev.map((row) => ({ ...row, loading: false })));
       return;
     }
@@ -162,7 +143,7 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
 
     const fetches = SECTORS.map(async (sector) => {
       try {
-        const quote = await provider.getQuote(sector.etf, "");
+        const quote = await dataProvider.getQuote(sector.etf, "");
         if (fetchGenRef.current !== gen) return;
         setRows((prev) =>
           prev.map((row) =>
@@ -192,7 +173,7 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
         setLastRefresh(new Date());
       }
     });
-  }, []);
+  }, [dataProvider]);
 
   useEffect(() => {
     fetchAll();
@@ -207,17 +188,6 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
       setSelectedEtf(firstRow.etf);
     }
   }, [selectedEtf, setSelectedEtf, sortedRows]);
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox?.viewport || activeIdx < 0) return;
-    const viewportHeight = Math.max(scrollBox.viewport.height, 1);
-    if (activeIdx < scrollBox.scrollTop) {
-      scrollBox.scrollTo(activeIdx);
-    } else if (activeIdx >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(activeIdx - viewportHeight + 1);
-    }
-  }, [activeIdx, sortedRows.length]);
 
   const openRow = useCallback((row: SectorRow) => {
     navigateTicker(row.etf);
@@ -240,20 +210,14 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
     setSelectedEtf(row.etf);
   }, [openRow, selectedEtf, setSelectedEtf]);
 
-  useShortcut((event) => {
-    if (!focused) return;
-
-    if (event.name === "j" || event.name === "down") {
-      selectIndex(Math.min(activeIdx + 1, sortedRows.length - 1));
-    } else if (event.name === "k" || event.name === "up") {
-      selectIndex(Math.max(activeIdx - 1, 0));
-    } else if (event.name === "return") {
-      const row = sortedRows[activeIdx];
-      if (row) openRow(row);
-    } else if (event.name === "r") {
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (event.name === "r") {
+      event.preventDefault?.();
       fetchAll();
+      return true;
     }
-  });
+    return false;
+  }, [fetchAll]);
 
   const renderCell = useCallback((
     row: SectorRow,
@@ -302,27 +266,26 @@ export function SectorPerformancePane({ focused, width, height }: PaneProps) {
   }), [fetchAll, lastRefresh]);
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <DataTable<SectorRow, SectorColumn>
-        columns={columns}
-        items={sortedRows}
-        sortColumnId={sortPreference.columnId}
-        sortDirection={sortPreference.direction}
-        onHeaderClick={handleHeaderClick}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={hoveredIdx}
-        setHoveredIdx={setHoveredIdx}
-        getItemKey={(row) => row.etf}
-        isSelected={(row) => row.etf === selectedEtf}
-        onSelect={selectRow}
-        renderCell={renderCell}
-        emptyStateTitle="No sector data available"
-        showHorizontalScrollbar={false}
-      />
-    </Box>
+    <DataTableView<SectorRow, SectorColumn>
+      focused={focused}
+      selectedIndex={activeIdx}
+      onSelectIndex={selectIndex}
+      onActivateIndex={(_index, row) => openRow(row)}
+      onRootKeyDown={handleTableKeyDown}
+      rootWidth={width}
+      rootHeight={height}
+      columns={columns}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
+      getItemKey={(row) => row.etf}
+      isSelected={(row) => row.etf === selectedEtf}
+      onSelect={selectRow}
+      renderCell={renderCell}
+      emptyStateTitle="No sector data available"
+      showHorizontalScrollbar={false}
+    />
   );
 }
 

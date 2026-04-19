@@ -139,6 +139,7 @@ export function createRuntime(): PluginRuntimeAccess {
   const listeners = new Map<string, Set<() => void>>();
 
   return {
+    getDataProvider: () => null,
     pinTicker() {},
     navigateTicker() {},
     subscribeResumeState(pluginId, key, listener) {

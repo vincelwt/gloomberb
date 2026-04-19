@@ -52,6 +52,7 @@ function createAlertsConfig(alerts: AlertRule[]): AppConfig {
       binding: { kind: "none" },
     }],
     floating: [],
+    detached: [],
   };
 
   return {
@@ -72,6 +73,7 @@ function makeRuntime(): PluginRuntimeAccess {
   const listeners = new Map<string, Set<() => void>>();
 
   return {
+    getDataProvider: () => null,
     pinTicker() {},
     navigateTicker() {},
     subscribeResumeState(pluginId, key, listener) {
@@ -155,7 +157,13 @@ function AlertsHarness({
           <PaneFooterProvider>
             {(footer) => (
               <Box flexDirection="column" width={width} height={height}>
-                <AlertsPane focused width={width} height={Math.max(1, height - 1)} />
+                <AlertsPane
+                  paneId={TEST_PANE_ID}
+                  paneType="alerts"
+                  focused
+                  width={width}
+                  height={Math.max(1, height - 1)}
+                />
                 <PaneFooterBar footer={footer} focused width={width} />
               </Box>
             )}
@@ -334,7 +342,7 @@ describe("alertsPlugin command", () => {
     };
 
     try {
-      alertsPlugin.setup(ctx as any);
+      await alertsPlugin.setup?.(ctx as any);
       const command = commands.find((entry) => entry.id === "set-alert");
 
       expect(command?.label).toBe("Add Alert");

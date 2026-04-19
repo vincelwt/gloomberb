@@ -53,6 +53,10 @@ function plugin(id: string, setup: (ctx: GloomPluginContext) => void): GloomPlug
   };
 }
 
+function contextMenuLabels(items: ReturnType<PluginRegistry["getContextMenuItems"]>): string[] {
+  return items.flatMap((item) => item.type === "divider" || !item.label ? [] : [item.label]);
+}
+
 afterEach(() => {
   currentRegistry?.destroy();
   currentRegistry = null;
@@ -71,7 +75,7 @@ describe("PluginRegistry context menu providers", () => {
       });
     }));
 
-    expect(registry.getContextMenuItems({ kind: "app" }).map((item) => item.label)).toEqual(["Tools Item"]);
+    expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual(["Tools Item"]);
 
     registry.unregister("tools");
     expect(registry.getContextMenuItems({ kind: "app" })).toEqual([]);
@@ -99,7 +103,7 @@ describe("PluginRegistry context menu providers", () => {
       });
     }));
 
-    expect(registry.getContextMenuItems({ kind: "app" }).map((item) => item.label)).toEqual([
+    expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual([
       "A/A",
       "A/B",
       "Z",
@@ -121,7 +125,7 @@ describe("PluginRegistry context menu providers", () => {
       });
     }));
 
-    expect(registry.getContextMenuItems({ kind: "app" }).map((item) => item.label)).toEqual(["Visible"]);
+    expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual(["Visible"]);
   });
 
   test("provider exceptions do not prevent other provider items", async () => {
@@ -141,6 +145,6 @@ describe("PluginRegistry context menu providers", () => {
       });
     }));
 
-    expect(registry.getContextMenuItems({ kind: "app" }).map((item) => item.label)).toEqual(["Works"]);
+    expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual(["Works"]);
   });
 });

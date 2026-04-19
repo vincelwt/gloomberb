@@ -39,6 +39,7 @@ function createAnalyticsConfig(initialPortfolioId: string): AppConfig {
       params: { portfolioId: initialPortfolioId },
     }],
     floating: [],
+    detached: [],
   };
 
   return {

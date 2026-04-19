@@ -1,15 +1,8 @@
-import { Box } from "../ui";
-import { useShortcut, useViewport } from "../react/input";
+import { useShortcut } from "../react/input";
 import { type ScrollBoxRenderable } from "../ui";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
-import { DataTable, PageStackView, type DataTableColumn, type DataTableProps } from "./ui";
+import { type ReactNode, type RefObject } from "react";
+import { DataTableView } from "./data-table-view";
+import { PageStackView, type DataTableColumn, type DataTableProps } from "./ui";
 
 interface KeyboardEventLike {
   name?: string;
@@ -97,144 +90,48 @@ export function DataTableStackView<
   overscan,
   showHorizontalScrollbar,
 }: DataTableStackViewProps<T, C>) {
-  const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
-  const internalScrollRef = useRef<ScrollBoxRenderable>(null);
-  const [internalHoveredIdx, setInternalHoveredIdx] = useState<number | null>(
-    null,
-  );
-  const appViewport = useViewport();
-
-  const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
-  const effectiveScrollRef = scrollRef ?? internalScrollRef;
-  const effectiveHoveredIdx =
-    hoveredIdx !== undefined ? hoveredIdx : internalHoveredIdx;
-  const effectiveSetHoveredIdx = setHoveredIdx ?? setInternalHoveredIdx;
-
-  const defaultSyncHeaderScroll = useCallback(() => {
-    const body = effectiveScrollRef.current;
-    const header = effectiveHeaderScrollRef.current;
-    if (!body || !header) return;
-    if (header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, [effectiveHeaderScrollRef, effectiveScrollRef]);
-  const effectiveSyncHeaderScroll = syncHeaderScroll ?? defaultSyncHeaderScroll;
-
-  const handleBodyScrollActivity = useCallback(() => {
-    if (onBodyScrollActivity) {
-      onBodyScrollActivity();
-      return;
-    }
-    queueMicrotask(effectiveSyncHeaderScroll);
-  }, [effectiveSyncHeaderScroll, onBodyScrollActivity]);
-
-  const selectIndex = useCallback((index: number) => {
-    const item = items[index];
-    if (!item) return;
-    if (onSelectIndex) {
-      onSelectIndex(index, item);
-      return;
-    }
-    onSelect(item, index);
-  }, [items, onSelect, onSelectIndex]);
-
-  const activateIndex = useCallback((index: number) => {
-    const item = items[index];
-    if (!item) return;
-    if (onActivateIndex) {
-      onActivateIndex(index, item);
-      return;
-    }
-    onActivate?.(item, index);
-  }, [items, onActivate, onActivateIndex]);
-
   useShortcut((event) => {
-    if (!focused || !keyboardNavigation) return;
-
-    if (detailOpen) {
-      onDetailKeyDown?.(event);
-      return;
-    }
-
-    if (onRootKeyDown?.(event)) return;
-    if (items.length === 0) return;
-
-    if (event.name === "j" || event.name === "down") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      selectIndex(
-        selectedIndex >= 0
-          ? Math.min(selectedIndex + 1, items.length - 1)
-          : 0,
-      );
-      return;
-    }
-
-    if (event.name === "k" || event.name === "up") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      selectIndex(selectedIndex > 0 ? selectedIndex - 1 : 0);
-      return;
-    }
-
-    if (event.name === "enter" || event.name === "return") {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      activateIndex(selectedIndex >= 0 ? selectedIndex : 0);
-    }
+    if (!focused || !detailOpen || !keyboardNavigation) return;
+    onDetailKeyDown?.(event);
   });
 
-  useEffect(() => {
-    const scrollBox = effectiveScrollRef.current;
-    if (!scrollBox?.viewport || selectedIndex < 0) return;
-    const viewportHeight = Math.max(
-      1,
-      Math.min(scrollBox.viewport.height, Math.ceil(appViewport.height)),
-    );
-    if (selectedIndex < scrollBox.scrollTop) {
-      scrollBox.scrollTo(selectedIndex);
-    } else if (selectedIndex >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(selectedIndex - viewportHeight + 1);
-    }
-  }, [appViewport.height, effectiveScrollRef, items.length, selectedIndex]);
-
   const rootContent = (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      width={rootWidth}
-      height={rootHeight}
-      backgroundColor={rootBackgroundColor}
-      overflow="hidden"
-    >
-      {rootBefore}
-      <DataTable<T, C>
-        columns={columns}
-        items={items}
-        sortColumnId={sortColumnId}
-        sortDirection={sortDirection}
-        onHeaderClick={onHeaderClick}
-        headerScrollRef={effectiveHeaderScrollRef}
-        scrollRef={effectiveScrollRef}
-        syncHeaderScroll={effectiveSyncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={effectiveHoveredIdx}
-        setHoveredIdx={effectiveSetHoveredIdx}
-        getItemKey={getItemKey}
-        isSelected={isSelected}
-        onSelect={onSelect}
-        onActivate={onActivate}
-        renderCell={renderCell}
-        renderSectionHeader={renderSectionHeader}
-        emptyContent={emptyContent}
-        emptyStateTitle={emptyStateTitle}
-        emptyStateHint={emptyStateHint}
-        virtualize={virtualize}
-        overscan={overscan}
-        showHorizontalScrollbar={showHorizontalScrollbar}
-      />
-      {rootAfter}
-    </Box>
+    <DataTableView<T, C>
+      focused={focused && !detailOpen}
+      selectedIndex={selectedIndex}
+      onSelectIndex={onSelectIndex}
+      onActivateIndex={onActivateIndex}
+      rootBefore={rootBefore}
+      rootAfter={rootAfter}
+      rootWidth={rootWidth}
+      rootHeight={rootHeight}
+      rootBackgroundColor={rootBackgroundColor}
+      headerScrollRef={headerScrollRef}
+      scrollRef={scrollRef}
+      syncHeaderScroll={syncHeaderScroll}
+      onBodyScrollActivity={onBodyScrollActivity}
+      hoveredIdx={hoveredIdx}
+      setHoveredIdx={setHoveredIdx}
+      keyboardNavigation={keyboardNavigation}
+      onRootKeyDown={onRootKeyDown}
+      columns={columns}
+      items={items}
+      sortColumnId={sortColumnId}
+      sortDirection={sortDirection}
+      onHeaderClick={onHeaderClick}
+      getItemKey={getItemKey}
+      isSelected={isSelected}
+      onSelect={onSelect}
+      onActivate={onActivate}
+      renderCell={renderCell}
+      renderSectionHeader={renderSectionHeader}
+      emptyContent={emptyContent}
+      emptyStateTitle={emptyStateTitle}
+      emptyStateHint={emptyStateHint}
+      virtualize={virtualize}
+      overscan={overscan}
+      showHorizontalScrollbar={showHorizontalScrollbar}
+    />
   );
 
   return (

@@ -1,8 +1,12 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useShortcut } from "../../../react/input";
-import { type ScrollBoxRenderable } from "../../../ui";
-import { TabBar, usePaneFooter, type PaneFooterSegment } from "../../../components";
+import {
+  TabBar,
+  usePaneFooter,
+  type DataTableKeyEvent,
+  type PaneFooterSegment,
+  type TickerListVisibleRange,
+} from "../../../components";
 import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import { getSharedRegistry } from "../../registry";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
@@ -202,7 +206,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [collectionSorts, setCollectionSorts] = usePaneStateValue<Record<string, CollectionSortPreference>>("collectionSorts", {});
   const [cashDrawerExpanded, setCashDrawerExpanded] = usePaneStateValue<boolean>("cashDrawerExpanded", false);
 
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
@@ -211,8 +214,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const mountedRef = useRef(true);
   const warmupInFlightRef = useRef(new Set<string>());
   const warmupAttemptRef = useRef(new Map<string, number>());
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const {
     cursorSymbol,
     setCursorSymbol,
@@ -294,30 +295,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
 
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const updateStreamWindow = useCallback(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) return;
-
-    const buffer = 3;
-    const start = Math.max(0, scrollBox.scrollTop - buffer);
-    const end = Math.min(sortedTickers.length, scrollBox.scrollTop + scrollBox.viewport.height + buffer);
+  const handleVisibleRangeChange = useCallback(({ start, end }: TickerListVisibleRange) => {
     setStreamWindow((current) => (
       current.start === start && current.end === end ? current : { start, end }
     ));
-  }, [sortedTickers.length]);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-    updateStreamWindow();
-  }, [syncHeaderScroll, updateStreamWindow]);
+  }, []);
 
   const handleCollectionSelect = useCallback((collectionId: string) => {
     cancelPendingCursorSymbol();
@@ -349,57 +331,46 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     registry?.navigateTickerFn(ticker.metadata.ticker);
   }, [flushCursorSymbol, registry]);
 
-  const handleKeyboard = useCallback((event: { name?: string; shift?: boolean }) => {
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
 
     const key = event.name;
     const isEnter = key === "enter" || key === "return";
 
     if (isEnter && event.shift) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       const ticker = sortedTickers[safeSelectedIdx];
       if (ticker) {
         registry?.pinTickerFn(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
       }
-      return;
+      return true;
     }
 
     if (shouldToggleCashMarginDrawer(key, showCashDrawer)) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       setCashDrawerExpanded(!cashDrawerExpanded);
-      return;
-    }
-
-    if (key === "j" || key === "down") {
-      const nextTicker = sortedTickers[Math.min(safeSelectedIdx + 1, sortedTickers.length - 1)];
-      if (nextTicker) setCursorSymbol(nextTicker.metadata.ticker);
-      return;
-    }
-
-    if (key === "k" || key === "up") {
-      const nextTicker = sortedTickers[Math.max(safeSelectedIdx - 1, 0)];
-      if (nextTicker) setCursorSymbol(nextTicker.metadata.ticker);
-      return;
+      return true;
     }
 
     if (!paneSettings.hideTabs && (key === "h" || key === "left")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       const previousCollection = visibleCollections[Math.max(currentTabIdx - 1, 0)];
       if (previousCollection) handleCollectionSelect(previousCollection.id);
-      return;
+      return true;
     }
 
     if (!paneSettings.hideTabs && (key === "l" || key === "right")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       const nextCollection = visibleCollections[Math.min(currentTabIdx + 1, visibleCollections.length - 1)];
       if (nextCollection) handleCollectionSelect(nextCollection.id);
-      return;
+      return true;
     }
 
-    if (!isEnter) return;
-
-    flushCursorSymbol(cursorSymbol);
-
-    const ticker = sortedTickers[safeSelectedIdx];
-    if (ticker) {
-      registry?.navigateTickerFn(ticker.metadata.ticker);
-    }
+    return false;
   }, [
     cashDrawerExpanded,
     currentTabIdx,
@@ -408,15 +379,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     registry,
     safeSelectedIdx,
     setCashDrawerExpanded,
-    setCursorSymbol,
-    flushCursorSymbol,
     handleCollectionSelect,
     showCashDrawer,
     sortedTickers,
     visibleCollections,
   ]);
-
-  useShortcut(handleKeyboard);
 
   useEffect(() => {
     if (activeCollectionId !== currentCollectionId) {
@@ -430,33 +397,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       mountedRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (headerScrollRef.current) {
-      headerScrollRef.current.horizontalScrollBar.visible = false;
-    }
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) return;
-
-    const viewportHeight = scrollBox.viewport.height;
-    if (safeSelectedIdx < scrollBox.scrollTop) {
-      scrollBox.scrollTo(safeSelectedIdx);
-    } else if (safeSelectedIdx >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(safeSelectedIdx - viewportHeight + 1);
-    }
-    queueMicrotask(updateStreamWindow);
-  }, [safeSelectedIdx, updateStreamWindow]);
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) return;
-    scrollBox.verticalScrollBar.visible = sortedTickers.length > scrollBox.viewport.height;
-    updateStreamWindow();
-  }, [sortedTickers.length, drawerHeight, cashDrawerExpanded, updateStreamWindow]);
 
   useEffect(() => {
     if (!appActive) return;
@@ -653,21 +593,20 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
       <PortfolioTickerTable
         columns={columns}
+        focused={focused}
         sortColumnId={activeSort.columnId}
         sortDirection={activeSort.direction}
         onHeaderClick={handleHeaderClick}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
         sortedTickers={sortedTickers}
         cursorSymbol={cursorSymbol}
-        hoveredIdx={hoveredIdx}
-        setHoveredIdx={setHoveredIdx}
         setCursorSymbol={setCursorSymbol}
         financialsMap={financialsMap}
         columnContext={columnContext}
         flashSymbols={flashSymbols}
+        onRootKeyDown={handleTableKeyDown}
+        onVisibleRangeChange={handleVisibleRangeChange}
+        visibleRangeBuffer={3}
+        resetScrollKey={activeCollectionId}
         onRowActivate={handleRowActivate}
       />
 

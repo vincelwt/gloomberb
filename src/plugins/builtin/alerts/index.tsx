@@ -1,8 +1,6 @@
-import { Box } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { TextAttributes } from "../../../ui";
+import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../../types/plugin";
 import type { AlertCondition, AlertRule } from "./types";
 import { colors } from "../../../theme/colors";
@@ -119,13 +117,13 @@ type AlertColumnId =
 type AlertColumn = DataTableColumn & { id: AlertColumnId };
 
 const ALERT_COLUMNS: AlertColumn[] = [
-  { id: "status", label: "Status", width: 6 },
-  { id: "symbol", label: "Symbol", width: 8 },
-  { id: "condition", label: "Condition", width: 9 },
+  { id: "status", label: "Status", width: 6, align: "left" },
+  { id: "symbol", label: "Symbol", width: 8, align: "left" },
+  { id: "condition", label: "Condition", width: 9, align: "left" },
   { id: "target", label: "Target", width: 8, align: "right" },
   { id: "last", label: "Last", width: 8, align: "right" },
-  { id: "triggered", label: "Triggered", width: 9 },
-  { id: "rearm", label: "", width: 6 },
+  { id: "triggered", label: "Triggered", width: 9, align: "left" },
+  { id: "rearm", label: "", width: 6, align: "left" },
 ];
 
 const ALERT_TABLE_CONTENT_WIDTH = ALERT_COLUMNS.reduce(
@@ -136,9 +134,6 @@ const ALERT_TABLE_CONTENT_WIDTH = ALERT_COLUMNS.reduce(
 export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const [alertsJson, setAlertsJson] = usePluginConfigState<string>(ALERTS_KEY, "[]");
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
 
   const { alerts, rows, activeCount, triggeredCount } = useMemo(() => {
@@ -182,18 +177,6 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     if (selected) deleteAlert(selected.id);
   }, [deleteAlert, rows, selectedIdx]);
 
-  const syncHeaderScroll = useCallback(() => {
-    const body = scrollRef.current;
-    const header = headerScrollRef.current;
-    if (body && header && header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
-
   usePaneFooter("alerts", () => ({
     info: [
       {
@@ -221,46 +204,24 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     setSelectedIdx((prev) => (rows.length === 0 ? 0 : Math.min(prev, rows.length - 1)));
   }, [rows.length]);
 
-  useShortcut((event) => {
-    if (!focused) return;
-
-    if (event.name === "j" || event.name === "down") {
-      event.preventDefault?.();
-      if (rows.length > 0) {
-        setSelectedIdx((prev) => Math.min(prev + 1, rows.length - 1));
-      }
-    } else if (event.name === "k" || event.name === "up") {
-      event.preventDefault?.();
-      if (rows.length > 0) {
-        setSelectedIdx((prev) => Math.max(prev - 1, 0));
-      }
-    } else if (event.name === "d") {
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (event.name === "d") {
       event.preventDefault?.();
       deleteSelectedAlert();
-    } else if (event.name === "return") {
-      event.preventDefault?.();
-      const selected = rows[selectedIdx];
-      if (selected?.status === "triggered") rearmAlert(selected.id);
-    } else if (event.name === "a" || event.name === "n") {
+      return true;
+    }
+    if (event.name === "a" || event.name === "n") {
       event.preventDefault?.();
       openSetAlertCommand();
-    } else if (event.name === "escape") {
+      return true;
+    }
+    if (event.name === "escape") {
       event.preventDefault?.();
       close?.();
+      return true;
     }
-  });
-
-  // Keep selection in scroll view
-  useEffect(() => {
-    const sb = scrollRef.current;
-    if (!sb?.viewport || rows.length === 0 || selectedIdx < 0) return;
-    const viewportHeight = Math.max(sb.viewport.height, 1);
-    if (selectedIdx < sb.scrollTop) {
-      sb.scrollTo(selectedIdx);
-    } else if (selectedIdx >= sb.scrollTop + viewportHeight) {
-      sb.scrollTo(selectedIdx - viewportHeight + 1);
-    }
-  }, [selectedIdx, rows.length]);
+    return false;
+  }, [close, deleteSelectedAlert, openSetAlertCommand]);
 
   const renderCell = useCallback((
     alert: AlertRule,
@@ -317,37 +278,29 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   }, [rearmAlert]);
 
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      height={height}
-      backgroundColor={colors.bg}
-    >
-      <DataTable<AlertRule, AlertColumn>
-        columns={ALERT_COLUMNS}
-        items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={() => {}}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={hoveredIdx}
-        setHoveredIdx={setHoveredIdx}
-        getItemKey={(alert) => alert.id}
-        isSelected={(_alert, index) => index === selectedIdx}
-        onSelect={(_alert, index) => setSelectedIdx(index)}
-        onActivate={(alert) => {
-          if (alert.status === "triggered") rearmAlert(alert.id);
-        }}
-        renderCell={renderCell}
-        emptyStateTitle="No alerts"
-        emptyStateHint="Use the action bar to create one."
-        showHorizontalScrollbar={showHorizontalScrollbar}
-      />
-
-    </Box>
+    <DataTableView<AlertRule, AlertColumn>
+      focused={focused}
+      selectedIndex={selectedIdx}
+      onRootKeyDown={handleTableKeyDown}
+      rootWidth={width}
+      rootHeight={height}
+      rootBackgroundColor={colors.bg}
+      columns={ALERT_COLUMNS}
+      items={rows}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
+      getItemKey={(alert) => alert.id}
+      isSelected={(_alert, index) => index === selectedIdx}
+      onSelect={(_alert, index) => setSelectedIdx(index)}
+      onActivate={(alert) => {
+        if (alert.status === "triggered") rearmAlert(alert.id);
+      }}
+      renderCell={renderCell}
+      emptyStateTitle="No alerts"
+      emptyStateHint="Use the action bar to create one."
+      showHorizontalScrollbar={showHorizontalScrollbar}
+    />
   );
 }
 
