@@ -15,7 +15,7 @@ import type { PaneProps } from "../../types/plugin";
 import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
 import { Header } from "./header";
-import { buildNativeWindowState, finalizePaneDragRelease, resolveNativeDockDividers, Shell } from "./shell";
+import { buildNativeWindowState, finalizePaneDragRelease, resolveNativeDockDividers, resolvePaneDragFloatingRect, Shell } from "./shell";
 import type { DataProvider } from "../../types/data-provider";
 import type { PricePoint, Quote, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
@@ -881,6 +881,52 @@ describe("Shell", () => {
       width: 30,
       height: 8,
     }));
+  });
+
+  test("derives a floating pane drag release rect from the release pointer", () => {
+    const rect = resolvePaneDragFloatingRect(
+      {
+        mode: "floating",
+        startX: 7,
+        startY: 3,
+        origRect: { x: 4, y: 2, width: 30, height: 8 },
+      },
+      { x: 4, y: 2, width: 30, height: 8 },
+      18,
+      6,
+      80,
+      24,
+    );
+
+    expect(rect).toEqual({
+      x: 15,
+      y: 5,
+      width: 30,
+      height: 8,
+    });
+  });
+
+  test("keeps the pointer anchored when releasing a docked pane drag without an intermediate preview", () => {
+    const rect = resolvePaneDragFloatingRect(
+      {
+        mode: "docked",
+        startX: 22,
+        startY: 4,
+        origRect: { x: 10, y: 2, width: 40, height: 12 },
+      },
+      { x: 8, y: 1, width: 32, height: 10 },
+      30,
+      8,
+      80,
+      24,
+    );
+
+    expect(rect).toEqual({
+      x: 18,
+      y: 6,
+      width: 32,
+      height: 10,
+    });
   });
 
   test("keeps the last floating pane body row visible above the border", async () => {

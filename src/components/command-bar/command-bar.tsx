@@ -20,6 +20,7 @@ import {
   commandBarText,
 } from "../../theme/colors";
 import {
+  getEffectiveThemeId,
   getFocusedCollectionId,
   useAppDispatch,
   useAppSelector,
@@ -28,7 +29,7 @@ import {
 } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, getThemeOptions, matchPrefix, type Command } from "./command-registry";
-import { applyTheme } from "../../theme/colors";
+import { applyTheme, getCurrentThemeId } from "../../theme/colors";
 import { exportConfig, importConfig, resetAllData, saveConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
@@ -251,6 +252,10 @@ function buildNativeListRows(listState: ListScreenState, rows: CommandBarListRow
   return rows;
 }
 
+function clampListIndex(index: number, length: number): number {
+  return Math.max(0, Math.min(index, Math.max(0, length - 1)));
+}
+
 function getVisibleMultiSelectPickerOptions(
   route: Extract<CommandBarRoute, { kind: "picker" }>,
 ): CommandBarPickerOption[] {
@@ -375,21 +380,24 @@ export function CommandBar({
   const activeCollectionId = getFocusedCollectionId(state);
   const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
 
+  const clearThemePreview = useCallback((themeId: string | null | undefined) => {
+    if (!themeId) return;
+    if (getCurrentThemeId() !== themeId) {
+      applyTheme(themeId);
+    }
+    dispatch({ type: "PREVIEW_THEME", theme: null });
+  }, [dispatch]);
+
   const restoreThemePreview = useCallback(() => {
     const themeRoute = [...routeStack].reverse().find((route) => (
       route.kind === "mode" && route.screen === "themes"
     ));
     if (themeRoute?.kind === "mode" && themeRoute.themeBaseId) {
-      applyTheme(themeRoute.themeBaseId);
-      dispatch({ type: "SET_THEME", theme: themeRoute.themeBaseId });
+      clearThemePreview(themeRoute.themeBaseId);
       return;
     }
-    const rootThemeBaseId = rootThemeBaseIdRef.current;
-    if (rootThemeBaseId && stateRef.current.config.theme !== rootThemeBaseId) {
-      applyTheme(rootThemeBaseId);
-      dispatch({ type: "SET_THEME", theme: rootThemeBaseId });
-    }
-  }, [dispatch, routeStack]);
+    clearThemePreview(rootThemeBaseIdRef.current);
+  }, [clearThemePreview, routeStack]);
 
   const closeAll = useCallback((options?: { revertThemePreview?: boolean }) => {
     if (options?.revertThemePreview !== false) {
@@ -422,7 +430,10 @@ export function CommandBar({
     setRouteStack((current) => {
       if (current.length === 0) return current;
       const next = [...current];
-      next[next.length - 1] = updater(next[next.length - 1]!);
+      const top = next[next.length - 1]!;
+      const updated = updater(top);
+      if (updated === top) return current;
+      next[next.length - 1] = updated;
       return next;
     });
   }, []);
@@ -434,8 +445,7 @@ export function CommandBar({
     }
 
     if (currentRoute.kind === "mode" && currentRoute.screen === "themes" && currentRoute.themeBaseId) {
-      applyTheme(currentRoute.themeBaseId);
-      dispatch({ type: "SET_THEME", theme: currentRoute.themeBaseId });
+      clearThemePreview(currentRoute.themeBaseId);
     }
 
     if (routeStack.length === 1 && currentRoute.restoreMain) {
@@ -445,7 +455,7 @@ export function CommandBar({
     }
 
     setRouteStack((current) => current.slice(0, -1));
-  }, [closeAll, currentRoute, dispatch, routeStack.length, setRootQuery]);
+  }, [clearThemePreview, closeAll, currentRoute, routeStack.length, setRootQuery]);
 
   const dismissCommandBar = useCallback(() => {
     if (currentRoute) {
@@ -496,6 +506,21 @@ export function CommandBar({
   const openFixedTickerPane = useCallback((symbol: string) => {
     pluginRegistry.pinTickerFn(symbol, { floating: true, paneType: "ticker-detail" });
   }, [pluginRegistry]);
+
+  const previewThemeId = useCallback((themeId: string | undefined) => {
+    if (!themeId) return;
+    if (getCurrentThemeId() !== themeId) {
+      applyTheme(themeId);
+    }
+    const previewTheme = themeId === stateRef.current.config.theme ? null : themeId;
+    if (stateRef.current.themePreview !== previewTheme) {
+      dispatch({ type: "PREVIEW_THEME", theme: previewTheme });
+    }
+  }, [dispatch]);
+
+  const previewThemeSelection = useCallback((listState: ListScreenState, selectedIdx: number) => {
+    previewThemeId(listState.results[selectedIdx]?.themeId);
+  }, [previewThemeId]);
 
   const focusTicker = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
     const currentState = stateRef.current;
@@ -2510,18 +2535,17 @@ export function CommandBar({
     if (currentRoute) return;
 
     const previousMode = previousRootModeRef.current;
-    if (rootModeInfo.kind === "themes" && previousMode !== "themes") {
+    if (rootModeInfo.kind === "themes" && (previousMode !== "themes" || !rootThemeBaseIdRef.current)) {
       rootThemeBaseIdRef.current = state.config.theme;
     } else if (rootModeInfo.kind !== "themes" && previousMode === "themes") {
       const rootThemeBaseId = rootThemeBaseIdRef.current;
-      if (rootThemeBaseId && state.config.theme !== rootThemeBaseId) {
-        applyTheme(rootThemeBaseId);
-        dispatch({ type: "SET_THEME", theme: rootThemeBaseId });
+      if (rootThemeBaseId && getEffectiveThemeId(state) !== rootThemeBaseId) {
+        clearThemePreview(rootThemeBaseId);
       }
       rootThemeBaseIdRef.current = null;
     }
     previousRootModeRef.current = rootModeInfo.kind;
-  }, [currentRoute, dispatch, rootModeInfo.kind, state.config.theme]);
+  }, [clearThemePreview, currentRoute, rootModeInfo.kind, state.config.theme, state.themePreview]);
 
   const tickerSearchRouteQuery = currentRoute?.kind === "mode" && currentRoute.screen === "ticker-search"
     ? currentRoute.query
@@ -4174,21 +4198,6 @@ export function CommandBar({
   visibleListStateRef.current = routeListState;
 
   useEffect(() => {
-    if (!state.commandBarOpen) return;
-    if (!routeListState) return;
-    const selected = currentRoute?.kind === "mode" && currentRoute.screen === "themes"
-      ? routeListState.results[currentRoute.selectedIdx]
-      : !currentRoute && rootModeInfo.kind === "themes"
-        ? routeListState.results[rootSelectedIdx]
-        : null;
-    if (!selected?.themeId) return;
-    if (selected?.themeId && state.config.theme !== selected.themeId) {
-      applyTheme(selected.themeId);
-      dispatch({ type: "SET_THEME", theme: selected.themeId });
-    }
-  }, [currentRoute, dispatch, rootModeInfo.kind, rootSelectedIdx, routeListState, state.commandBarOpen, state.config.theme]);
-
-  useEffect(() => {
     if (currentRoute?.kind !== "workflow") return;
     ensureRouteFieldFocus(currentRoute);
   }, [currentRoute, ensureRouteFieldFocus]);
@@ -4213,6 +4222,10 @@ export function CommandBar({
 
   const setActiveListQuery = useCallback((nextQuery: string) => {
     if (!currentRoute) {
+      if (rootModeInfo.kind === "themes" && resolveCommandBarMode(nextQuery).kind !== "themes") {
+        clearThemePreview(rootThemeBaseIdRef.current ?? stateRef.current.config.theme);
+        rootThemeBaseIdRef.current = null;
+      }
       setRootQuery(nextQuery);
       return;
     }
@@ -4225,14 +4238,18 @@ export function CommandBar({
         return route;
       });
     }
-  }, [currentRoute, setRootQuery, updateTopRoute]);
+  }, [clearThemePreview, currentRoute, rootModeInfo.kind, setRootQuery, updateTopRoute]);
 
   const moveListSelection = useCallback((delta: number) => {
     const listState = visibleListStateRef.current;
     if (!listState || listState.results.length === 0 || delta === 0) return;
-    const maxIndex = listState.results.length - 1;
+    const nextIndex = clampListIndex(listState.selectedIdx + delta, listState.results.length);
+    const nextListState = { ...listState, selectedIdx: nextIndex, hoveredIdx: null };
+    visibleListStateRef.current = nextListState;
+    previewThemeSelection(nextListState, nextIndex);
+
     if (!currentRouteRef.current) {
-      setRootSelectedIdx((current) => Math.max(0, Math.min(current + delta, maxIndex)));
+      setRootSelectedIdx(nextIndex);
       setRootHoveredIdx(null);
       return;
     }
@@ -4243,11 +4260,10 @@ export function CommandBar({
       if (!top || (top.kind !== "mode" && top.kind !== "picker" && top.kind !== "pane-settings")) {
         return current;
       }
-      const nextIndex = Math.max(0, Math.min(top.selectedIdx + delta, maxIndex));
       next[next.length - 1] = { ...top, selectedIdx: nextIndex, hoveredIdx: null };
       return next;
     });
-  }, []);
+  }, [previewThemeSelection]);
 
   const setHoveredIndex = useCallback((index: number | null) => {
     if (!currentRoute) {
@@ -4792,7 +4808,8 @@ export function CommandBar({
         if (currentRoute.pickerId === "field-multi-select" && (event.name === "space" || event.sequence === " ")) {
           event.stopPropagation();
           event.preventDefault();
-          const selected = routeListState?.results[currentRoute.selectedIdx];
+          const listState = visibleListStateRef.current;
+          const selected = listState?.results[listState.selectedIdx];
           if (!selected) return;
           handleMultiSelectToggle(selected.id);
           return;
@@ -4842,7 +4859,8 @@ export function CommandBar({
         return;
       }
 
-      if (!routeListState) return;
+      const activeListState = visibleListStateRef.current;
+      if (!activeListState) return;
 
       if (!currentRoute && event.name === "tab") {
         if (acceptRootShortcutTab()) {
@@ -4876,7 +4894,7 @@ export function CommandBar({
       if ((event.ctrl && event.name === "w") || (event.meta && (event.name === "h" || event.name === "u"))) {
         event.stopPropagation();
         event.preventDefault();
-        const trimmed = routeListState.query.replace(/\s+$/, "");
+        const trimmed = activeListState.query.replace(/\s+$/, "");
         const nextQuery = trimmed.replace(/[^\s]+$/, "").replace(/\s+$/, "");
         setActiveListQuery(nextQuery);
         return;
@@ -4887,7 +4905,7 @@ export function CommandBar({
       if (pluginToggleMode && event.name === "space") {
         event.stopPropagation();
         event.preventDefault();
-        const selected = routeListState.results[routeListState.selectedIdx];
+        const selected = activeListState.results[activeListState.selectedIdx];
         if (selected?.pluginToggle) {
           void selected.pluginToggle();
         }
@@ -4932,7 +4950,6 @@ export function CommandBar({
     popRoute,
     renderer,
     rootModeInfo.kind,
-    routeListState,
     setActiveListQuery,
     updateWorkflowValue,
   ]);

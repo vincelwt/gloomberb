@@ -32,6 +32,7 @@ import { usePersistSessionSnapshot } from "./use-session-snapshot";
 import {
   appReducer,
   createInitialState,
+  getEffectiveThemeId,
   getFocusedTickerSymbol,
   type PaneRuntimeState,
   resolveCollectionForPane,
@@ -43,6 +44,7 @@ import { scheduleConfigSave } from "./config-save-scheduler";
 export {
   appReducer,
   createInitialState,
+  getEffectiveThemeId,
   getFocusedCollectionId,
   getFocusedTickerSymbol,
   getPaneState,
@@ -151,7 +153,7 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
     () => {
       const state = context.getState();
       const selection = selectorRef.current(state);
-      const themeId = state.config.theme;
+      const themeId = getEffectiveThemeId(state);
       const previous = lastSnapshotRef.current;
       if (previous && Object.is(previous.selection, selection) && previous.themeId === themeId) {
         return previous;
@@ -164,7 +166,7 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
       const state = context.getState();
       return {
         selection: selectorRef.current(state),
-        themeId: state.config.theme,
+        themeId: getEffectiveThemeId(state),
       };
     },
   );
@@ -325,7 +327,7 @@ export function AppProvider({
     },
   );
   // Sync the current theme before descendants read the shared palette during this render.
-  syncTheme(state.config.theme);
+  syncTheme(getEffectiveThemeId(state));
   const previousRecentTickers = useRef(state.recentTickers);
   const stateRef = useRef(state);
   const listenersRef = useRef(new Set<() => void>());

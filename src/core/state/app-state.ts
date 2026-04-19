@@ -58,6 +58,7 @@ export interface AppState {
   commandBarOpen: boolean;
   commandBarQuery: string;
   commandBarLaunchRequest: CommandBarLaunchRequest | null;
+  themePreview: string | null;
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
@@ -96,6 +97,7 @@ export type AppAction =
   | { type: "SHOW_GRIDLOCK_TIP" }
   | { type: "DISMISS_GRIDLOCK_TIP" }
   | { type: "SET_THEME"; theme: string }
+  | { type: "PREVIEW_THEME"; theme: string | null }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo | null }
   | { type: "SET_UPDATE_PROGRESS"; progress: UpdateProgress | null }
   | { type: "SET_UPDATE_CHECK_IN_PROGRESS"; checking: boolean }
@@ -261,6 +263,10 @@ export function getFocusedTickerSymbol(state: AppState): string | null {
 
 export function getFocusedCollectionId(state: AppState): string | null {
   return state.focusedPaneId ? resolveCollectionForPane(state, state.focusedPaneId) : null;
+}
+
+export function getEffectiveThemeId(state: Pick<AppState, "config" | "themePreview">): string {
+  return state.themePreview ?? state.config.theme;
 }
 
 function clearTickerBindings(layout: LayoutConfig, symbol: string): LayoutConfig {
@@ -459,7 +465,7 @@ function hydrateDesktopSnapshot(state: AppState, snapshot: DesktopSharedStateSna
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_CONFIG":
-      return withFocusedPane({ ...state, layoutHistory: {} }, action.config);
+      return withFocusedPane({ ...state, themePreview: null, layoutHistory: {} }, action.config);
 
     case "SET_TICKERS":
       return { ...state, tickers: action.tickers };
@@ -529,7 +535,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "TOGGLE_COMMAND_BAR":
       return state.commandBarOpen
-        ? { ...state, commandBarOpen: false, commandBarQuery: "", commandBarLaunchRequest: null }
+        ? { ...state, commandBarOpen: false, commandBarQuery: "", commandBarLaunchRequest: null, themePreview: null }
         : { ...state, commandBarOpen: true, commandBarQuery: "", commandBarLaunchRequest: null };
 
     case "SET_COMMAND_BAR": {
@@ -544,6 +550,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         commandBarOpen: action.open,
         commandBarQuery: action.open ? (action.query ?? "") : "",
         commandBarLaunchRequest: launchRequest,
+        themePreview: action.open ? state.themePreview : null,
       };
     }
 
@@ -584,7 +591,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, gridlockTipVisible: false };
 
     case "SET_THEME":
-      return { ...state, config: { ...state.config, theme: action.theme } };
+      if (state.config.theme === action.theme && state.themePreview == null) return state;
+      return { ...state, themePreview: null, config: { ...state.config, theme: action.theme } };
+
+    case "PREVIEW_THEME":
+      if (state.themePreview === action.theme) return state;
+      return { ...state, themePreview: action.theme };
 
     case "SET_UPDATE_AVAILABLE":
       return { ...state, updateAvailable: action.release, updateNotice: action.release ? null : state.updateNotice };
@@ -849,6 +861,7 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     commandBarOpen: false,
     commandBarQuery: "",
     commandBarLaunchRequest: null,
+    themePreview: null,
     refreshing: new Set(),
     initialized: false,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,

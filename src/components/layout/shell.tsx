@@ -129,6 +129,13 @@ interface PaneDragReleaseResult {
   shouldShowGridlockTip: boolean;
 }
 
+export interface PaneDragRectState {
+  mode: "docked" | "floating";
+  startX: number;
+  startY: number;
+  origRect: FloatingRect;
+}
+
 type DragMode =
   | {
     type: "divider";
@@ -142,11 +149,7 @@ type DragMode =
   | {
     type: "pane-drag";
     paneId: string;
-    mode: "docked" | "floating";
-    startX: number;
-    startY: number;
-    origRect: FloatingRect;
-  }
+  } & PaneDragRectState
   | {
     type: "float-resize";
     paneId: string;
@@ -181,7 +184,7 @@ function isMeaningfulPaneDrag(startX: number, startY: number, currentX: number, 
 
 function positionFloatingRectUnderPointer(
   rect: FloatingRect,
-  drag: Extract<DragMode, { type: "pane-drag" }>,
+  drag: PaneDragRectState,
   pointerX: number,
   pointerY: number,
   totalWidth: number,
@@ -193,6 +196,41 @@ function positionFloatingRectUnderPointer(
     ...rect,
     x: Math.max(0, Math.min(totalWidth - rect.width, pointerX - pointerOffsetX)),
     y: Math.max(0, Math.min(totalHeight - rect.height, pointerY - pointerOffsetY)),
+  };
+}
+
+export function resolvePaneDragFloatingRect(
+  drag: PaneDragRectState,
+  baseRect: FloatingRect,
+  pointerX: number,
+  pointerY: number,
+  totalWidth: number,
+  totalHeight: number,
+): FloatingRect {
+  if (drag.mode === "docked") {
+    return positionFloatingRectUnderPointer(baseRect, drag, pointerX, pointerY, totalWidth, totalHeight);
+  }
+
+  return {
+    x: Math.max(0, Math.min(totalWidth - drag.origRect.width, drag.origRect.x + (pointerX - drag.startX))),
+    y: Math.max(0, Math.min(totalHeight - drag.origRect.height, drag.origRect.y + (pointerY - drag.startY))),
+    width: drag.origRect.width,
+    height: drag.origRect.height,
+  };
+}
+
+function resolveFloatResizeRect(
+  drag: Extract<DragMode, { type: "float-resize" }>,
+  pointerX: number,
+  pointerY: number,
+  totalWidth: number,
+  totalHeight: number,
+): FloatingRect {
+  return {
+    x: drag.origRect.x,
+    y: drag.origRect.y,
+    width: Math.max(MIN_FLOAT_WIDTH, Math.min(totalWidth - drag.origRect.x, drag.origRect.width + (pointerX - drag.startX))),
+    height: Math.max(MIN_FLOAT_HEIGHT, Math.min(totalHeight - drag.origRect.y, drag.origRect.height + (pointerY - drag.startY))),
   };
 }
 
@@ -644,12 +682,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(null);
   const [dividerPreview, setDividerPreview] = useState<DividerPreviewState | null>(null);
   const [dockPreview, setDockPreview] = useState<DragPreview | null>(null);
-  const dragFloatingRectRef = useRef<{ paneId: string; rect: FloatingRect } | null>(null);
   const dividerPreviewRef = useRef<DividerPreviewState | null>(null);
   const dockPreviewRef = useRef<DragPreview | null>(null);
 
   const updateDragFloatingRect = useCallback((next: { paneId: string; rect: FloatingRect } | null) => {
-    dragFloatingRectRef.current = next;
     setDragFloatingRect(next);
   }, []);
 
@@ -908,21 +944,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         }
 
         const pane = paneMap.get(drag.paneId);
-        const nextRect = drag.mode === "docked"
-          ? positionFloatingRectUnderPointer(
-              getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def),
-              drag,
-              preciseX,
-              preciseShellY,
-              width,
-              contentHeight,
-            )
-          : {
-              x: Math.max(0, Math.min(width - drag.origRect.width, drag.origRect.x + (preciseX - drag.startX))),
-              y: Math.max(0, Math.min(contentHeight - drag.origRect.height, drag.origRect.y + (preciseShellY - drag.startY))),
-              width: drag.origRect.width,
-              height: drag.origRect.height,
-            };
+        const baseRect = drag.mode === "docked"
+          ? getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def)
+          : drag.origRect;
+        const nextRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
         updateDragFloatingRect({ paneId: drag.paneId, rect: nextRect });
         setDragCursor({ x: hitX, y: hitShellY });
 
@@ -947,12 +972,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
       } else if (drag.type === "float-resize") {
         updateDragFloatingRect({
           paneId: drag.paneId,
-          rect: {
-            x: drag.origRect.x,
-            y: drag.origRect.y,
-            width: Math.max(MIN_FLOAT_WIDTH, Math.min(width - drag.origRect.x, drag.origRect.width + (preciseX - drag.startX))),
-            height: Math.max(MIN_FLOAT_HEIGHT, Math.min(contentHeight - drag.origRect.y, drag.origRect.height + (preciseShellY - drag.startY))),
-          },
+          rect: resolveFloatResizeRect(drag, preciseX, preciseShellY, width, contentHeight),
         });
       }
       event.stopPropagation();
@@ -969,14 +989,17 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         updateDividerPreview(null);
       } else if (drag.type === "pane-drag") {
         const movedEnough = isMeaningfulPaneDrag(drag.startX, drag.startY, preciseX, preciseShellY, dragThreshold);
-        const preview = dragFloatingRectRef.current;
-        const previewRect = preview?.paneId === drag.paneId ? preview.rect : drag.origRect;
         if (!movedEnough) {
           updateDockPreview(null);
           setDragCursor(null);
           updateDragFloatingRect(null);
         } else {
-          const releaseResult = finalizePaneDragRelease(visibleLayout, drag.paneId, previewRect, dockPreviewRef.current);
+          const pane = paneMap.get(drag.paneId);
+          const baseRect = drag.mode === "docked"
+            ? getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def)
+            : drag.origRect;
+          const releaseRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
+          const releaseResult = finalizePaneDragRelease(visibleLayout, drag.paneId, releaseRect, dockPreviewRef.current);
           persistLayout(releaseResult.nextLayout);
           focusPane(drag.paneId);
           if (releaseResult.shouldShowGridlockTip) {
@@ -987,10 +1010,8 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
           updateDragFloatingRect(null);
         }
       } else if (drag.type === "float-resize") {
-        const preview = dragFloatingRectRef.current;
-        if (preview?.paneId === drag.paneId) {
-          persistLayout(floatAtRect(visibleLayout, drag.paneId, preview.rect));
-        }
+        const releaseRect = resolveFloatResizeRect(drag, preciseX, preciseShellY, width, contentHeight);
+        persistLayout(floatAtRect(visibleLayout, drag.paneId, releaseRect));
         updateDragFloatingRect(null);
         setDragCursor(null);
       }

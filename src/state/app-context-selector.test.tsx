@@ -121,6 +121,52 @@ describe("pane selectors", () => {
     expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
   });
 
+  test("rerenders selector consumers when the theme preview changes", async () => {
+    testSetup = await testRender(
+      <AppProvider config={createTickerDetailConfig("AAPL")}>
+        <DispatchCapture />
+        <ThemeSelectorHarness />
+      </AppProvider>,
+      { width: 32, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:amber`);
+
+    await act(() => {
+      capturedDispatch?.({ type: "PREVIEW_THEME", theme: "green" });
+    });
+
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
+  });
+
+  test("falls back to the committed theme when theme preview clears", async () => {
+    testSetup = await testRender(
+      <AppProvider config={createTickerDetailConfig("AAPL")}>
+        <DispatchCapture />
+        <ThemeSelectorHarness />
+      </AppProvider>,
+      { width: 32, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+    await act(() => {
+      capturedDispatch?.({ type: "PREVIEW_THEME", theme: "green" });
+    });
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
+
+    await act(() => {
+      capturedDispatch?.({ type: "PREVIEW_THEME", theme: null });
+    });
+
+    await testSetup.renderOnce();
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:amber`);
+  });
+
   test("uses the configured theme on the first provider render", async () => {
     const config = createTickerDetailConfig("AAPL");
     config.theme = "green";

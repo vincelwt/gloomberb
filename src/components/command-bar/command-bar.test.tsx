@@ -3,7 +3,7 @@ import { act, useReducer } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { CommandBar } from "./command-bar";
-import { AppContext, type AppState, appReducer, createInitialState } from "../../state/app-context";
+import { AppContext, type AppState, appReducer, createInitialState, getEffectiveThemeId } from "../../state/app-context";
 import { createTestDataProvider } from "../../test-support/data-provider";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
@@ -305,7 +305,7 @@ function CommandBarHarness({
   return (
     <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
       <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
-        {live && <text>{`theme:${currentState.config.theme}`}</text>}
+        {live && <text>{`theme:${getEffectiveThemeId(currentState)}`}</text>}
         {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
         {currentState.commandBarOpen && (
           <CommandBar
@@ -727,6 +727,32 @@ describe("CommandBar", () => {
     expect(frame).toContain("theme:green");
   });
 
+  test("does not preview a theme from mouse hover alone", async () => {
+    testSetup = await testRender(<CommandBarHarness query="TH " live />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    const frame = testSetup.captureCharFrame();
+    const rows = frame.split("\n");
+    const hoveredRow = rows.findIndex((line) => line.includes("Green"));
+    const hoveredCol = rows[hoveredRow]?.indexOf("Green") ?? -1;
+
+    expect(hoveredRow).toBeGreaterThanOrEqual(0);
+    expect(hoveredCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(hoveredCol + 1, hoveredRow);
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+
+    const hoveredFrame = testSetup.captureCharFrame();
+    expect(hoveredFrame).toContain("theme:amber");
+    expect(hoveredFrame).not.toContain("theme:green");
+  });
+
   test("keeps the selected theme after pressing enter in root theme mode", async () => {
     testSetup = await testRender(<CommandBarHarness query="TH " live />, {
       width: 80,
@@ -751,6 +777,49 @@ describe("CommandBar", () => {
     expect(frame).toContain("theme:green");
     expect(frame).not.toContain("theme:amber");
     expect(frame).not.toContain("Commands");
+  });
+
+  test("uses pending keyboard theme selection when enter follows before a repaint", async () => {
+    testSetup = await testRender(<CommandBarHarness query="TH " live />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("theme:green");
+    expect(frame).not.toContain("theme:amber");
+    expect(frame).not.toContain("Commands");
+  });
+
+  test("clears theme preview when leaving root theme mode", async () => {
+    testSetup = await testRender(<CommandBarHarness query="TH " live />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressArrow("down");
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).toContain("theme:green");
+
+    await emitKeypress(testSetup, { name: "u", ctrl: true });
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("theme:amber");
+    expect(frame).not.toContain("theme:green");
+    expect(frame).toContain("Commands");
   });
 
   test("keeps typed prefixes in the root query until a result is activated", async () => {
