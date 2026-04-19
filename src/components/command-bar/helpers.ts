@@ -14,7 +14,7 @@ import type {
 } from "./workflow-types";
 import type { CollectionKind, CollectionMembershipAction } from "./workflow-ops";
 
-export type RouteCommandId = "security-description" | "theme" | "plugins" | "layout" | "new-pane";
+export type RouteCommandId = "security-description" | "theme" | "plugins" | "layout";
 export type CollectionCommandId = "add-watchlist" | "add-portfolio" | "remove-watchlist" | "remove-portfolio";
 
 export function summarizeError(error: unknown): Record<string, string> {
@@ -32,8 +32,7 @@ export function isRouteCommandId(commandId: string): commandId is RouteCommandId
   return commandId === "security-description"
     || commandId === "theme"
     || commandId === "plugins"
-    || commandId === "layout"
-    || commandId === "new-pane";
+    || commandId === "layout";
 }
 
 export function normalizeFieldOptions(
@@ -238,7 +237,7 @@ export function normalizeWizardFields(steps: WizardStep[]): {
   return { fields, description, initialValues, pendingLabel, successLabel };
 }
 
-export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-search" | "themes" | "plugins" | "layout" | "new-pane" {
+export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-search" | "themes" | "plugins" | "layout" {
   switch (commandId) {
     case "security-description":
       return "ticker-search";
@@ -248,8 +247,6 @@ export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-searc
       return "plugins";
     case "layout":
       return "layout";
-    case "new-pane":
-      return "new-pane";
   }
 }
 
@@ -328,7 +325,7 @@ export function getScreenFooterLeft(route: CommandBarRoute | null): string {
 export function getScreenFooterRight(route: CommandBarRoute | null): string {
   if (!route) return "esc cancel";
 
-  if (route.kind === "workflow") return "esc back";
+  if (route.kind === "workflow") return "backspace/esc back";
   if (route.kind === "confirm") return "backspace/esc back";
 
   if (

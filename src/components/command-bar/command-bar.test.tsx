@@ -1635,7 +1635,7 @@ describe("CommandBar", () => {
   test("moves through long result lists with the mouse wheel", async () => {
     testSetup = await testRender(
       <CommandBarHarness
-        query="NP scratch"
+        query="scratch"
         configurePluginRegistry={(pluginRegistry) => {
           const paneTemplates = pluginRegistry.paneTemplates as Map<string, any>;
           for (let index = 0; index < 20; index++) {
@@ -1753,8 +1753,8 @@ describe("CommandBar", () => {
     expect(frame).toContain("1c / 1d");
   });
 
-  test("renders new pane mode with plugin-defined pane templates", async () => {
-    testSetup = await testRender(<CommandBarHarness query="NP chat" />, {
+  test("filters plugin-defined pane templates directly from the root query", async () => {
+    testSetup = await testRender(<CommandBarHarness query="chat" />, {
       width: 100,
       height: 18,
     });
@@ -1947,7 +1947,7 @@ describe("CommandBar", () => {
           description: "Authenticate without leaving the command bar",
           category: "config",
           wizard: [
-            { key: "username", label: "Username", type: "text", placeholder: "vince" },
+            { key: "username", label: "Username", type: "text" },
           ],
           execute: async () => {},
         } as any);

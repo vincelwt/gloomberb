@@ -1,8 +1,8 @@
-import { matchPrefix } from "./command-registry";
+import { matchPrefix, type Command } from "./command-registry";
 
 export { rankTickerSearchItems } from "../../utils/ticker-search";
 
-export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "layout" | "new-pane" | "direct-command";
+export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "layout" | "direct-command";
 
 export interface CommandBarModeInfo {
   kind: CommandBarMode;
@@ -39,8 +39,8 @@ export interface CommandBarRowPresentation {
   primaryMuted: boolean;
 }
 
-export function resolveCommandBarMode(query: string): CommandBarModeInfo {
-  const match = matchPrefix(query);
+export function resolveCommandBarMode(query: string, commandList?: Command[]): CommandBarModeInfo {
+  const match = matchPrefix(query, commandList);
 
   if (!query.trim()) {
     return { kind: "default", badge: "BROWSE", hint: "Type a command, ticker, or prefix" };
@@ -59,8 +59,6 @@ export function resolveCommandBarMode(query: string): CommandBarModeInfo {
       return { kind: "plugins", badge: "PLUGINS", hint: "Toggle plugins without leaving the list" };
     case "layout":
       return { kind: "layout", badge: "LAYOUT", hint: "Organize panes, history, and saved layouts" };
-    case "new-pane":
-      return { kind: "new-pane", badge: "NEW PANE", hint: "Create plugin-defined panes for the current workspace" };
     default:
       return { kind: "direct-command", badge: "COMMAND", hint: `Run ${match.command.label}` };
   }
@@ -96,9 +94,6 @@ export function getFooterHints(mode: CommandBarMode, isNarrow: boolean): Command
   if (mode === "layout") {
     return { left: moveAndSelect, right: "esc cancel" };
   }
-  if (mode === "new-pane") {
-    return { left: moveAndSelect, right: "esc cancel" };
-  }
   return { left: moveAndSelect, right: "esc cancel" };
 }
 
@@ -115,8 +110,6 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
       return { label: "No themes match", detail: query.trim() || "Installed themes will appear here" };
     case "layout":
       return { label: "No layout actions match", detail: query.trim() || "Focused-pane and layout actions will appear here" };
-    case "new-pane":
-      return { label: "No pane templates match", detail: query.trim() || "Plugin-defined pane templates will appear here" };
     default:
       if (query.trim()) {
         return { label: `No matches for "${query.trim()}"`, detail: "Try a ticker, command name, or prefix" };

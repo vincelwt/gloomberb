@@ -5,6 +5,7 @@ import {
   rankTickerSearchItems,
   resolveCommandBarMode,
 } from "./view-model";
+import { commands } from "./command-registry";
 
 describe("command bar view model helpers", () => {
   test("resolves prefix-driven modes", () => {
@@ -13,9 +14,14 @@ describe("command bar view model helpers", () => {
     expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
     expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
     expect(resolveCommandBarMode("LAY ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
-    expect(resolveCommandBarMode("NP ")).toMatchObject({ kind: "new-pane", badge: "NEW PANE" });
+    expect(resolveCommandBarMode("NP ")).toMatchObject({ kind: "default", badge: "FILTER" });
     expect(resolveCommandBarMode("PS")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
     expect(resolveCommandBarMode("AW")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
+  });
+
+  test("can resolve modes against a renderer-specific command list", () => {
+    const desktopCommands = commands.filter((command) => command.id !== "cycle-chart-renderer");
+    expect(resolveCommandBarMode("CR", desktopCommands)).toMatchObject({ kind: "default", badge: "FILTER" });
   });
 
   test("builds sections while preserving order", () => {

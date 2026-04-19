@@ -160,16 +160,6 @@ export const commands: Command[] = [
     execute: () => {}, // handled by command bar
   },
   {
-    id: "new-pane",
-    prefix: "NP",
-    label: "New Pane",
-    description: "Add or create a new pane from plugin templates",
-    hasArg: true,
-    argPlaceholder: "pane",
-    category: "Config",
-    execute: () => {}, // handled by command bar
-  },
-  {
     id: "toggle-status-bar",
     prefix: "SB",
     label: "Toggle Status Bar",
@@ -259,12 +249,12 @@ export function getThemeOptions(): Array<{ id: string; name: string; description
 }
 
 /** Find a command whose prefix matches the start of the input */
-export function matchPrefix(input: string): { command: Command; arg: string } | null {
+export function matchPrefix(input: string, commandList: Command[] = commands): { command: Command; arg: string } | null {
   const upper = input.toUpperCase().trim();
   if (!upper) return null;
 
   // Sort by prefix length descending so longer prefixes match first (e.g., "AW" before "A")
-  const sorted = [...commands].sort((a, b) => b.prefix.length - a.prefix.length);
+  const sorted = [...commandList].sort((a, b) => b.prefix.length - a.prefix.length);
 
   for (const cmd of sorted) {
     if (upper.startsWith(cmd.prefix + " ") || upper === cmd.prefix) {

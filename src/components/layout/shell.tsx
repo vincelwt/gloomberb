@@ -619,11 +619,6 @@ function menuForPane(
   baseActions.push(
     contextMenuDivider("pane:layout-divider"),
     {
-      id: "new-pane",
-      label: "New Pane...",
-      onSelect: () => pluginRegistry.openCommandBarFn("NP "),
-    },
-    {
       id: "layout-actions",
       label: "Layout Actions...",
       onSelect: () => pluginRegistry.openCommandBarFn("LAY "),

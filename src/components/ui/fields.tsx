@@ -14,6 +14,7 @@ export interface TextFieldProps {
   onSubmit?: (value: string) => void;
   hint?: string;
   type?: "text" | "password";
+  variant?: "default" | "plain";
   backgroundColor?: string;
   textColor?: string;
   placeholderColor?: string;
@@ -37,6 +38,7 @@ export function TextField({
   onSubmit,
   hint,
   type = "text",
+  variant = "default",
   backgroundColor = colors.bg,
   textColor = colors.text,
   placeholderColor = colors.textDim,
@@ -56,6 +58,7 @@ export function TextField({
         onSubmit={onSubmit}
         hint={hint}
         type={type}
+        variant={variant}
         backgroundColor={backgroundColor}
         textColor={textColor}
         placeholderColor={placeholderColor}
