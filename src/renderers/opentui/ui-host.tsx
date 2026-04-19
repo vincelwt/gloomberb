@@ -2,6 +2,7 @@ import { RGBA, StyledText as OpenTuiStyledText, SyntaxStyle, TextAttributes as O
 import { createElement } from "react";
 import "opentui-spinner/react";
 import { TextAttributes, type UiHost, type TextProps } from "../../ui/host";
+import { renderAsciiText } from "../../ui/ascii-font";
 
 function mapTextAttributes(appAttributes: number | undefined, props?: TextProps): number | undefined {
   const flags = typeof appAttributes === "number" ? appAttributes : 0;
@@ -67,6 +68,30 @@ export const openTuiUiHost: UiHost = {
   ChartSurface: ({ children, bitmap: _bitmap, bitmaps: _bitmaps, crosshair: _crosshair, ...props }) => <box {...props}>{children}</box>,
   ImageSurface: ({ children, ...props }) => <box {...props}>{children}</box>,
   SpinnerMark: ({ children, ...props }) => createElement("spinner" as any, props, children),
+  AsciiText: ({ text, font = "tiny", color, fg, bg, backgroundColor, selectable = false, ...props }) => {
+    const resolvedColor = color ?? fg;
+    const resolvedBackground = backgroundColor ?? bg;
+    if (font === "wordmark") {
+      return createElement(
+        "box" as any,
+        { ...props, flexDirection: props.flexDirection ?? "column" },
+        renderAsciiText(text, font).map((line, index) => createElement("text" as any, {
+          key: index,
+          fg: resolvedColor,
+          bg: resolvedBackground,
+          selectable,
+        }, line)),
+      );
+    }
+    return createElement("ascii-font" as any, {
+      ...props,
+      text,
+      font,
+      color: resolvedColor,
+      backgroundColor: resolvedBackground,
+      selectable,
+    });
+  },
   createSyntaxStyle: () => SyntaxStyle.create(),
   colorFromHex: (hex) => RGBA.fromHex(hex),
 };

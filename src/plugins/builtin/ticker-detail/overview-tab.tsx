@@ -274,7 +274,7 @@ export function OverviewTab({
   const hasBidAsk = quote?.bid != null || quote?.ask != null;
 
   return (
-    <ScrollBox flexGrow={1} scrollY>
+    <ScrollBox flexGrow={1} flexBasis={0} scrollY focusable={false}>
       <Box flexDirection="column" paddingX={1} paddingBottom={1} gap={1}>
         {/* Ticker header */}
         <Box flexDirection="row">

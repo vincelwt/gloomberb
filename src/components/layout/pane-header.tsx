@@ -46,7 +46,7 @@ function DesktopPaneButton({
         borderRadius: 4,
         minWidth: 20,
         paddingInline: 4,
-        backgroundColor: "rgba(255,255,255,0.04)",
+        backgroundColor: "transparent",
         cursor: onMouseDown ? "pointer" : "default",
       }}
     >

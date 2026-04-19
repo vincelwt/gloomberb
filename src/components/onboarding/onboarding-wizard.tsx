@@ -1,4 +1,4 @@
-import { Box, Input, Span, Strong, Text, Underline } from "../../ui";
+import { AsciiText, Box, Input, Span, Strong, Text, Underline } from "../../ui";
 import { useState, useCallback, useEffect, useRef, useMemo, type RefObject } from "react";
 import { useShortcut, useViewport } from "../../react/input";
 import { TextAttributes } from "../../ui";
@@ -35,12 +35,7 @@ interface BrokerOption {
   adapter: BrokerAdapter;
 }
 
-const LOGO = [
-  "\u259E\u2580\u2596\u259C           \u258C        \u258C  ",
-  "\u258C\u2584\u2596\u2590 \u259E\u2580\u2596\u259E\u2580\u2596\u259B\u259A\u2580\u2596\u259B\u2580\u2596\u259E\u2580\u2596\u2599\u2580\u2596\u259B\u2580\u2596",
-  "\u258C \u258C\u2590 \u258C \u258C\u258C \u258C\u258C\u2590 \u258C\u258C \u258C\u259B\u2580 \u258C  \u258C \u258C",
-  "\u259D\u2580  \u2598\u259D\u2580 \u259D\u2580 \u2598\u259D \u2598\u2580\u2580 \u259D\u2580\u2598\u2598  \u2580\u2580 ",
-];
+const LOGO_TEXT = "Gloomberb";
 
 const PASSWORD_MASK_CHAR = "*";
 const onboardingLog = debugLog.createLogger("onboarding");
@@ -711,11 +706,7 @@ function WelcomeStep() {
   return (
     <Box flexDirection="column" paddingX={2}>
       <Box height={1} />
-      {LOGO.map((line, i) => (
-        <Box key={i} height={1}>
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{line}</Text>
-        </Box>
-      ))}
+      <AsciiText text={LOGO_TEXT} font="wordmark" color={colors.textBright} />
       <Box height={2} />
       <Box height={1}>
         <Text fg={colors.textDim}>{"The open terminal for modern finance."}</Text>

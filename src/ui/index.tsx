@@ -42,6 +42,7 @@ export type {
   ScrollBoxRenderable,
   ScrollBoxProps,
   SyntaxStyleLike,
+  AsciiTextProps,
   StyledTextChunk,
   SpinnerMarkProps,
   TextareaRenderable,
@@ -51,6 +52,7 @@ export type {
   TextEditBuffer,
   UiHost,
 } from "./host";
+export type { AsciiFontName } from "./ascii-font";
 
 export const Box = forwardRef<any, import("./host").BoxProps>((props, ref) => {
   const { Box: HostBox } = useUiHost();
@@ -117,3 +119,9 @@ export const SpinnerMark = forwardRef<any, import("./host").SpinnerMarkProps>((p
   return createElement(HostSpinnerMark as any, { ...props, ref });
 });
 SpinnerMark.displayName = "SpinnerMark";
+
+export const AsciiText = forwardRef<any, import("./host").AsciiTextProps>((props, ref) => {
+  const { AsciiText: HostAsciiText } = useUiHost();
+  return createElement(HostAsciiText as any, { ...props, ref });
+});
+AsciiText.displayName = "AsciiText";

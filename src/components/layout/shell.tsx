@@ -1,4 +1,4 @@
-import { Box, Text, useContextMenu } from "../../ui";
+import { AsciiText, Box, Text, useContextMenu } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut, useViewport } from "../../react/input";
@@ -1322,6 +1322,22 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
       overflow="hidden"
       {...(!nativePaneChrome ? { onMouse: handleMouse } : {})}
     >
+      <Box
+        position="absolute"
+        left={0}
+        top={0}
+        width={width}
+        height={contentHeight}
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Box flexDirection="column" alignItems="center">
+          <AsciiText text="Gloomberb" font="wordmark" color={colors.textMuted} />
+          <Box height={1} />
+          <Text fg={colors.textDim}>Ctrl+P to get started.</Text>
+        </Box>
+      </Box>
+
       {dockLeafLayouts.map((leaf) => {
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) return null;
@@ -1419,12 +1435,6 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
           </PaneFooterProvider>
         );
       })}
-
-      {dockLeafLayouts.length === 0 && floatingPanes.length === 0 && (
-        <Box flexGrow={1} alignItems="center" justifyContent="center">
-          <Text fg={colors.textDim}>No panes configured. Press Ctrl+P to get started.</Text>
-        </Box>
-      )}
 
       {dockDividerLayouts.map((divider) => {
         const active = dividerPreview?.pathKey === divider.path.join(".");

@@ -108,6 +108,15 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function mapCloudNewsTickers(item: CloudNewsPayload, fallbackTicker?: string): string[] {
+  const tickers = collectNewsDisplayTickers(
+    item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
+  );
+  const fallbackTickers = collectNewsDisplayTickers([fallbackTicker]);
+  if (tickers.length === 0) tickers.push(...fallbackTickers);
+  return tickers;
+}
+
 function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): NewsArticle {
   const publishedAt = new Date(item.lastPublishedAt || item.firstPublishedAt || item.lastSeenAt);
   const topic = item.topic ?? item.category ?? "general";
@@ -120,17 +129,7 @@ function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): N
     novelty: item.scores?.novelty ?? 0,
     confidence: item.scores?.confidence ?? 0,
   };
-  const linkTickers = collectNewsDisplayTickers(
-    item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
-  );
-  const entityTickers = collectNewsDisplayTickers(
-    item.entities.flatMap((entity) => [entity.symbol, entity.canonicalTicker]),
-  );
-  const tickers = collectNewsDisplayTickers([
-    ...linkTickers,
-    ...(linkTickers.length > 0 ? [] : entityTickers),
-    fallbackTicker,
-  ]);
+  const tickers = mapCloudNewsTickers(item, fallbackTicker);
   return {
     id: item.id,
     title: item.headline,

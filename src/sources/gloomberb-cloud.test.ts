@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { GloomberbCloudProvider, createGloomberbCloudNewsSource } from "./gloomberb-cloud";
+import { createGloomberbCloudNewsSource, GloomberbCloudProvider } from "./gloomberb-cloud";
 import { apiClient, type AuthUser } from "../utils/api-client";
 
 const verifiedUser: AuthUser = {
@@ -300,29 +300,29 @@ describe("GloomberbCloudProvider", () => {
     }]);
   });
 
-  test("maps news ticker links to unique display tickers", async () => {
+  test("maps news ticker labels from validated story links only", async () => {
     apiClient.getCloudNews = async () => ({
       items: [{
-        id: "story-media",
-        headline: "Media merger draws opposition",
-        summary: "Hollywood figures oppose a proposed merger.",
-        topic: "mna",
-        topics: ["mna"],
-        category: "mna",
-        sentiment: "neutral",
-        sectors: ["communication_services"],
-        firstPublishedAt: "2026-04-13T21:00:00.000Z",
-        lastPublishedAt: "2026-04-13T21:28:00.000Z",
-        firstSeenAt: "2026-04-13T21:00:10.000Z",
-        lastSeenAt: "2026-04-13T21:28:10.000Z",
-        primaryUrl: "https://example.com/media-merger",
+        id: "story-1",
+        headline: "Sanofi reports vaccine update",
+        summary: "Sanofi and Moderna shared new vaccine data.",
+        topic: "product_approval",
+        topics: ["product_approval"],
+        category: "product_approval",
+        sentiment: "positive",
+        sectors: ["health_care"],
+        firstPublishedAt: "2026-04-01T10:00:00.000Z",
+        lastPublishedAt: "2026-04-01T10:05:00.000Z",
+        firstSeenAt: "2026-04-01T10:00:10.000Z",
+        lastSeenAt: "2026-04-01T10:05:10.000Z",
+        primaryUrl: "https://example.com/sny-vaccine",
         primarySource: "example-wire",
         scores: {
-          importance: 60,
-          urgency: 40,
-          marketImpact: 50,
-          novelty: 30,
-          confidence: 90,
+          importance: 77,
+          urgency: 66,
+          marketImpact: 82,
+          novelty: 71,
+          confidence: 93,
         },
         flags: {
           breaking: false,
@@ -333,39 +333,70 @@ describe("GloomberbCloudProvider", () => {
         sourceCount: 1,
         sources: ["example-wire"],
         entities: [{
-          id: "wbd",
-          entityType: "security",
-          symbol: "WBD",
-          exchange: "XNAS",
-          canonicalTicker: "WBD:XNAS",
-          name: "Warner Bros Discovery",
+          id: "entity-1",
+          entityType: "company",
+          name: "Sanofi",
+          symbol: "SNY",
+          exchange: "NASDAQ",
+          canonicalTicker: "SNY:NASDAQ",
           role: null,
-          confidence: 0.8,
+          confidence: 0.95,
+        }, {
+          id: "entity-2",
+          entityType: "company",
+          name: "Noise Corp",
+          symbol: "NOISE",
+          exchange: "OTC",
+          canonicalTicker: "NOISE:OTC",
+          role: null,
+          confidence: 0.6,
         }],
         tickerLinks: [{
-          symbol: "NFLX",
-          exchange: "XNAS",
-          canonicalTicker: "NFLX:XNAS",
-          relationType: "related",
-          displayTier: "related",
-          confidence: 0.9,
-          relevanceScore: 85,
-        }, {
-          symbol: "PARA",
-          exchange: "XNAS",
-          canonicalTicker: "PARA:XNAS",
+          symbol: "SNY",
+          exchange: "NASDAQ",
+          canonicalTicker: "SNY:NASDAQ",
           relationType: "direct",
           displayTier: "primary",
-          confidence: 0.95,
-          relevanceScore: 92,
+          confidence: 0.98,
+          relevanceScore: 95,
+          impactScore: 88,
+          sentiment: "positive",
+        }, {
+          symbol: "SNY",
+          exchange: "NASDAQ",
+          canonicalTicker: "SNY:NASDAQ",
+          relationType: "direct",
+          displayTier: "primary",
+          confidence: 0.98,
+          relevanceScore: 95,
+          impactScore: 88,
+          sentiment: "positive",
+        }, {
+          symbol: "MRNA",
+          exchange: "NASDAQ",
+          canonicalTicker: "MRNA:NASDAQ",
+          relationType: "competitor",
+          displayTier: "related",
+          confidence: 0.8,
+          relevanceScore: 65,
+          impactScore: 54,
+          sentiment: "neutral",
         }],
       }],
       nextCursor: null,
     });
 
     const source = createGloomberbCloudNewsSource();
-    const news = await source.fetchNews({ feed: "top", limit: 10 });
+    const news = await source.fetchNews({ feed: "top", ticker: "SNY" });
 
-    expect(news[0]?.tickers).toEqual(["NFLX", "PARA"]);
+    expect(news[0]?.tickers).toEqual(["SNY", "MRNA"]);
+    expect(news[0]?.importance).toBe(77);
+    expect(news[0]?.scores).toEqual({
+      importance: 77,
+      urgency: 66,
+      marketImpact: 82,
+      novelty: 71,
+      confidence: 93,
+    });
   });
 });
