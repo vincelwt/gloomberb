@@ -591,6 +591,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (ticker) => this.getTickerFn(ticker),
       getConfig: () => this.getConfigFn(),
+      getPaneDef: (paneId) => this.panesMap.get(paneId),
 
       dataProvider: this.dataProvider,
       tickerRepository: this.tickerRepository,

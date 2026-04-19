@@ -2,7 +2,6 @@ import { saveConfig } from "../../data/config-store";
 import { findPaneInstance, type LayoutConfig } from "../../types/config";
 import type { AppNotificationRequest, GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import type { AppAction } from "../../state/app-context";
-import { getSharedRegistry } from "../registry";
 import { notifyGridlockComplete } from "../gridlock-notification";
 import {
   dockPane,
@@ -31,13 +30,11 @@ export function clearLayoutManagerDispatch() {
   getStateRef = null;
 }
 
-function persistLayout(layout: LayoutConfig) {
+function persistLayout(ctx: Pick<GloomPluginContext, "getConfig">, layout: LayoutConfig) {
   if (!dispatchRef) return;
   dispatchRef({ type: "PUSH_LAYOUT_HISTORY" });
   dispatchRef({ type: "UPDATE_LAYOUT", layout });
-  const registry = getSharedRegistry();
-  if (!registry) return;
-  const config = registry.getConfigFn();
+  const config = ctx.getConfig();
   const layouts = config.layouts.map((savedLayout, index) => (
     index === config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
   ));
@@ -67,8 +64,6 @@ export const layoutManagerPlugin: GloomPlugin = {
       category: "config",
       execute: async () => {
         if (!getStateRef) return;
-        const registry = getSharedRegistry();
-        if (!registry) return;
 
         const { layout, termWidth, termHeight, focusedPaneId } = getStateRef();
         const focusedPane = getFocusedPane(layout, focusedPaneId);
@@ -77,9 +72,9 @@ export const layoutManagerPlugin: GloomPlugin = {
           return;
         }
 
-        const def = registry.panes.get(focusedPane.paneId);
+        const def = ctx.getPaneDef(focusedPane.paneId);
         const nextLayout = floatPane(layout, focusedPane.instanceId, termWidth, termHeight, def);
-        persistLayout(nextLayout);
+        persistLayout(ctx, nextLayout);
         dispatchRef?.({ type: "FOCUS_PANE", paneId: focusedPane.instanceId });
       },
     });
@@ -92,8 +87,6 @@ export const layoutManagerPlugin: GloomPlugin = {
       category: "config",
       execute: async () => {
         if (!getStateRef) return;
-        const registry = getSharedRegistry();
-        if (!registry) return;
 
         const { layout, focusedPaneId } = getStateRef();
         const focusedPane = getFocusedPane(layout, focusedPaneId);
@@ -103,7 +96,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         }
 
         const nextLayout = dockPane(layout, focusedPane.instanceId);
-        persistLayout(nextLayout);
+        persistLayout(ctx, nextLayout);
         dispatchRef?.({ type: "FOCUS_PANE", paneId: focusedPane.instanceId });
       },
     });
@@ -118,7 +111,7 @@ export const layoutManagerPlugin: GloomPlugin = {
       execute: async () => {
         if (!getStateRef) return;
         const { layout, termWidth, termHeight } = getStateRef();
-        persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width: termWidth, height: termHeight }));
+        persistLayout(ctx, gridlockAllPanes(layout, { x: 0, y: 0, width: termWidth, height: termHeight }));
         notifyGridlockComplete(ctx.notify, () => {
           dispatchRef?.({ type: "UNDO_LAYOUT" });
         });
@@ -139,7 +132,7 @@ export const layoutManagerPlugin: GloomPlugin = {
           notify("Focus a pane to remove it", { type: "info" });
           return;
         }
-        persistLayout(removePane(layout, focusedPane.instanceId));
+        persistLayout(ctx, removePane(layout, focusedPane.instanceId));
       },
     });
 
@@ -168,9 +161,7 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["delete", "remove", "layout", "preset"],
       category: "config",
       confirm: () => {
-        const registry = getSharedRegistry();
-        if (!registry) return null;
-        const config = registry.getConfigFn();
+        const config = ctx.getConfig();
         const layout = config.layouts[config.activeLayoutIndex];
         if (!layout) return null;
         return {
@@ -182,9 +173,7 @@ export const layoutManagerPlugin: GloomPlugin = {
         };
       },
       execute: async () => {
-        const registry = getSharedRegistry();
-        if (!registry) return;
-        const config = registry.getConfigFn();
+        const config = ctx.getConfig();
         if (config.layouts.length <= 1) {
           notify("Can't delete the only layout", { type: "error" });
           return;
@@ -209,9 +198,7 @@ export const layoutManagerPlugin: GloomPlugin = {
           notify("Name is required", { type: "error" });
           return;
         }
-        const registry = getSharedRegistry();
-        if (!registry) return;
-        dispatchRef?.({ type: "RENAME_LAYOUT", index: registry.getConfigFn().activeLayoutIndex, name });
+        dispatchRef?.({ type: "RENAME_LAYOUT", index: ctx.getConfig().activeLayoutIndex, name });
         notify(`Layout renamed to "${name}"`, { type: "success" });
       },
     });
@@ -223,9 +210,7 @@ export const layoutManagerPlugin: GloomPlugin = {
       keywords: ["duplicate", "copy", "clone", "layout"],
       category: "config",
       execute: async () => {
-        const registry = getSharedRegistry();
-        if (!registry) return;
-        dispatchRef?.({ type: "DUPLICATE_LAYOUT", index: registry.getConfigFn().activeLayoutIndex });
+        dispatchRef?.({ type: "DUPLICATE_LAYOUT", index: ctx.getConfig().activeLayoutIndex });
         notify("Layout duplicated", { type: "success" });
       },
     });
@@ -252,7 +237,7 @@ export const layoutManagerPlugin: GloomPlugin = {
 
         const others = dockedPaneIds.filter((instanceId) => instanceId !== focusedPane.instanceId);
         if (others.length === 1) {
-          persistLayout(swapPanes(layout, focusedPane.instanceId, others[0]!));
+          persistLayout(ctx, swapPanes(layout, focusedPane.instanceId, others[0]!));
           return;
         }
 
