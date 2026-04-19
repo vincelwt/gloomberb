@@ -169,7 +169,7 @@ export function StatusBar() {
       {
         id: "layout:actions",
         label: "Layout Actions...",
-        onSelect: () => registry?.openCommandBarFn("LAY "),
+        onSelect: () => registry?.openCommandBar("LAY "),
       },
     );
 

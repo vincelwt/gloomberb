@@ -99,9 +99,9 @@ function createProvider(historyBySymbol: Record<string, number[]>, currencyBySym
 
 function createRegistrySpy(spy: { selected: string[]; focused: string[] }): PluginRegistry {
   return {
-    selectTickerFn: (symbol: string) => { spy.selected.push(symbol); },
+    selectTicker: (symbol: string) => { spy.selected.push(symbol); },
     focusPaneFn: (paneId: string) => { spy.focused.push(paneId); },
-    navigateTickerFn: (symbol: string) => {
+    navigateTicker: (symbol: string) => {
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
     },

@@ -221,7 +221,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -253,7 +253,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -291,7 +291,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -329,7 +329,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -367,7 +367,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {

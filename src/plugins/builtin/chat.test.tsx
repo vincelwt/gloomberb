@@ -1031,7 +1031,7 @@ describe("ChatContent", () => {
     const opened: string[] = [];
 
     setSharedRegistryForTests({
-      pinTickerFn(symbol: string) {
+      pinTicker(symbol: string) {
         opened.push(symbol);
       },
     } as any);

@@ -1326,7 +1326,7 @@ function AppInner({
           activatePane(detailPane.instanceId, nextLayout);
         }
       } else {
-        pluginRegistry.pinTickerFn(symbol, { floating: false });
+        pluginRegistry.pinTicker(symbol, { floating: false });
       }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
