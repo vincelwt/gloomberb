@@ -12,7 +12,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
-import { setSharedRegistryForTests } from "../registry";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { ibkrGatewayManager } from "../ibkr/gateway-service";
 import { portfolioListPlugin } from "./portfolio-list";
 
@@ -31,6 +31,23 @@ const PortfolioPane = portfolioListPlugin.panes![0]!.component as (props: {
   width: number;
   height: number;
 }) => JSX.Element;
+
+function createPluginRuntime(overrides: Partial<PluginRuntimeAccess> = {}): PluginRuntimeAccess {
+  return {
+    getDataProvider: () => null,
+    pinTicker() {},
+    navigateTicker() {},
+    subscribeResumeState: () => () => {},
+    getResumeState: () => null,
+    setResumeState() {},
+    deleteResumeState() {},
+    getConfigState: () => null,
+    setConfigState: async () => {},
+    deleteConfigState: async () => {},
+    getConfigStateKeys: () => [],
+    ...overrides,
+  };
+}
 
 function createBrokerInstance(connectionMode: "gateway" | "flex", id = `ibkr-${connectionMode}`): BrokerInstanceConfig {
   return {
@@ -191,6 +208,7 @@ function PortfolioHarness({
   quote,
   exchangeRates,
   stateMutator,
+  runtime = createPluginRuntime(),
 }: {
   config: AppConfig;
   collectionId: string;
@@ -200,6 +218,7 @@ function PortfolioHarness({
   quote?: Quote;
   exchangeRates?: Map<string, number>;
   stateMutator?: (state: ReturnType<typeof createInitialState>) => void;
+  runtime?: PluginRuntimeAccess;
 }) {
   const initialState = createPortfolioState(config, collectionId, expanded, {
     ticker,
@@ -215,13 +234,15 @@ function PortfolioHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PortfolioPane
-          paneId={TEST_PANE_ID}
-          paneType="portfolio-list"
-          focused
-          width={100}
-          height={24}
-        />
+        <PluginRenderProvider pluginId="portfolio-list" runtime={runtime}>
+          <PortfolioPane
+            paneId={TEST_PANE_ID}
+            paneType="portfolio-list"
+            focused
+            width={100}
+            height={24}
+          />
+        </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
   );
@@ -245,7 +266,6 @@ afterEach(async () => {
   sharedCoordinator = null;
   setSharedMarketDataCoordinator(null);
   harnessState = null;
-  setSharedRegistryForTests(undefined);
   await ibkrGatewayManager.removeInstance("ibkr-live");
   for (const path of tempPaths.splice(0)) {
     if (existsSync(path)) rmSync(path, { force: true });
@@ -257,14 +277,14 @@ describe("PortfolioListPane cash and margin UI", () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
     const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
     const navigated: string[] = [];
-    setSharedRegistryForTests({
-      navigateTickerFn: (symbol: string) => {
+    const runtime = createPluginRuntime({
+      navigateTicker: (symbol: string) => {
         navigated.push(symbol);
       },
-    } as any);
+    });
 
     testSetup = await testRender(
-      <PortfolioHarness config={config} collectionId={portfolioId} />,
+      <PortfolioHarness config={config} collectionId={portfolioId} runtime={runtime} />,
       { width: 100, height: 24 },
     );
 

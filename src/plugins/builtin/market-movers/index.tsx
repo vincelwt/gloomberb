@@ -1,7 +1,7 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "../../../ui";
-import { DataTableView, TabBar, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
+import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
@@ -434,7 +434,7 @@ export function MarketMoversPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} paddingX={1}>
-        <TabBar
+        <Tabs
           tabs={TABS.map((tab) => ({ label: tab.label, value: tab.id }))}
           activeValue={activeTab}
           onSelect={(value) => {

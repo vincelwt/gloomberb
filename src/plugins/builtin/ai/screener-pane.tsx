@@ -21,7 +21,7 @@ import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hook
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
-import { Button, EmptyState, Spinner, TabBar, TickerListTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import { Button, EmptyState, Spinner, Tabs, TickerListTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { canonicalExchange } from "../../../utils/exchanges";
 import { formatTimeAgo } from "../../../utils/format";
@@ -918,7 +918,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1}>
-        <TabBar
+        <Tabs
           tabs={displayTabs.map((tab) => {
             const isDraft = tab.draft === true;
             return {

@@ -414,13 +414,15 @@ ctx.notify({ body: "FYI..." }); // defaults to an in-app info toast
 Panes with `defaultMode: "floating"` open as draggable/resizable floating windows:
 
 ```typescript
+import { Box, Text } from "gloomberb/ui";
+
 ctx.registerPane({
   id: "my-pane",
   name: "My Pane",
   component: ({ paneId, paneType, width, height, focused, close }) => (
-    <box flexDirection="column" width={width} height={height}>
-      <text>Hello from pane!</text>
-    </box>
+    <Box flexDirection="column" width={width} height={height}>
+      <Text>Hello from pane!</Text>
+    </Box>
   ),
   defaultPosition: "right",
   defaultMode: "floating",
@@ -483,13 +485,12 @@ ctx.createPaneFromTemplate("my-chart-new", { symbol: "AAPL" });
 
 ## Reusable components
 
-Plugins can import the shared UI kit from `gloomberb/components`. Prefer these over ad hoc rows and controls so plugin screens feel native.
+Plugins can import renderer-neutral layout primitives from `gloomberb/ui` and shared controls from `gloomberb/components`. Prefer these public APIs over ad hoc rows, custom controls, or renderer internals so plugin screens feel native across hosts.
 
 ```typescript
 import {
   StockChart,
   Tabs,
-  TabBar,
   ListView,
   DataTableView,
   ToggleList,
@@ -538,7 +539,7 @@ import {
 ```
 
 Available components:
-- `Tabs` / `TabBar` — horizontal tab navigation
+- `Tabs` — horizontal tab navigation
 - `ListView` — shared selectable list primitive with mouse support
 - `DataTableView` — shared sortable table wrapper with keyboard navigation and synchronized scrolling
 - `StockChart` — interactive area, line, candlestick, and OHLC chart
@@ -654,6 +655,7 @@ The simplest plugin type. This adds a new tab to the right-side detail pane:
 
 ```typescript
 import React from "react";
+import { Box } from "gloomberb/ui";
 import type { GloomPlugin, DetailTabProps } from "gloomberb/types/plugin";
 import { EmptyState, FieldRow, Section, usePaneTicker, colors } from "gloomberb/components";
 
@@ -669,12 +671,12 @@ function SentimentTab({ width, height, focused }: DetailTabProps) {
   }
 
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
       <Section title={`Sentiment for ${ticker.metadata.ticker}`}>
         <FieldRow label="Signal" value="Bullish" valueColor={colors.positive} />
         <FieldRow label="Trend" value="Improving" />
       </Section>
-    </box>
+    </Box>
   );
 }
 
@@ -834,14 +836,18 @@ Ticker actions appear when pressing `a` with a ticker selected.
 For advanced UI injection, plugins can provide slot renderers directly:
 
 ```typescript
+import { Box, Text } from "gloomberb/ui";
+
 export const myPlugin: GloomPlugin = {
   id: "my-plugin",
   name: "My Plugin",
   version: "1.0.0",
   slots: {
-    "status:widget": () => <text> LIVE</text>,
+    "status:widget": () => <Text> LIVE</Text>,
     "detail:section": ({ ticker, financials }) => (
-      <box><text>Extra info for {ticker.metadata.ticker}</text></box>
+      <Box>
+        <Text>Extra info for {ticker.metadata.ticker}</Text>
+      </Box>
     ),
   },
 };
@@ -866,7 +872,7 @@ Available slots:
 - Look at the built-in plugins in `src/plugins/builtin/` for real-world examples
 - Use `order` on detail tabs to control position (core tabs use 10, 20, 30)
 - Toggleable plugins can be enabled/disabled by users from settings (`Ctrl+,`)
-- The UI is built with [OpenTUI](https://github.com/anthropics/opentui) React — use `<box>`, `<text>`, and `<input>` for layout
+- The terminal renderer is backed by [OpenTUI](https://opentui.com/) packages such as `@opentui/core` and `@opentui/react`; plugin UI should stay on `gloomberb/ui` and `gloomberb/components`
 - Use `ctx.storage` to persist data across app restarts
 - Use `ctx.on()` to react to app events without polling
 - Use `ctx.notify()` for non-intrusive user feedback and desktop notifications

@@ -14,8 +14,7 @@ import {
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
-import { EmptyState } from "../../../components";
-import { TabBar } from "../../../components/tab-bar";
+import { EmptyState, Tabs } from "../../../components";
 import { getConfiguredIbkrGatewayInstances } from "../../ibkr/instance-selection";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { ChartTab } from "./chart-tab";
@@ -161,7 +160,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
       {!paneSettings.hideTabs && (
-        <TabBar
+        <Tabs
           tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
           activeValue={resolvedTabId}
           onSelect={setActiveTabId}

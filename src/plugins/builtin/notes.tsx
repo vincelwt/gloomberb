@@ -7,7 +7,7 @@ import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { MarkdownEditor } from "../../components/markdown-editor";
 import { MarkdownText } from "../../components/markdown-text";
-import { DialogFrame, TabBar, usePaneFooter } from "../../components";
+import { DialogFrame, Tabs, usePaneFooter } from "../../components";
 import { type PromptContext, useDialog, useDialogKeyboard } from "../../ui/dialog";
 import { NotesFiles, type QuickNoteEntry } from "./notes-files";
 
@@ -492,7 +492,7 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
     return (
       <Box flexDirection="column" flexGrow={1}>
         <Box height={1}>
-          <TabBar
+          <Tabs
             tabs={tabs.map((tab) => ({
               label: tab.title,
               value: tab.id,
