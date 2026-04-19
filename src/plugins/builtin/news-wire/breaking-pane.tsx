@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import { useNewsArticles } from "../../../news/hooks";
 import { Spinner } from "../../../components/spinner";
-import { usePluginPaneState } from "../../plugin-runtime";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../ai/providers";
 import { runAiPrompt } from "../ai/runner";
@@ -12,6 +12,7 @@ import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { getSelectedNewsArticle, NewsArticleStackView, type NewsSortPreference } from "./news-table";
 import { useNewsArticleFooter } from "./news-footer";
 import { NEWS_QUERY_PRESETS } from "./news-query-presets";
+import { usePersistedNewsArticles } from "./persisted-articles";
 import { useNewsReadState } from "./read-state";
 
 const DIGEST_PROMPT = `You are a financial news wire editor. Condense this headline and summary into a single concise actionable bullet point for a professional trader. Include why it matters and potential market impact. Keep it under 120 characters. Respond with ONLY the bullet text, nothing else.
@@ -30,9 +31,9 @@ function buildDigestPrompt(item: MarketNewsItem): string {
 
 export function BreakingPane({ focused, width, height }: PaneProps) {
   const breakingState = useNewsArticles(NEWS_QUERY_PRESETS.breaking);
-  const articles = breakingState.articles;
+  const articles = usePersistedNewsArticles("breaking:articles", breakingState.articles);
   const loading = breakingState.phase === "loading" || (breakingState.phase === "refreshing" && articles.length === 0);
-  const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("breaking:selectedArticleId", null);
+  const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("breaking:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("breaking:sort", DEFAULT_SORT);
   const [digestVersion, setDigestVersion] = useState(0);
   const [aiAvailable, setAiAvailable] = useState(false);

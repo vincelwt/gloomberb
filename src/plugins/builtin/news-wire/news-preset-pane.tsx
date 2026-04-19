@@ -4,7 +4,7 @@ import type { NewsQuery } from "../../../news/types";
 import { useNewsArticles } from "../../../news/hooks";
 import type { PaneProps } from "../../../types/plugin";
 import { Spinner } from "../../../components/spinner";
-import { usePluginPaneState } from "../../plugin-runtime";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import {
   getSelectedNewsArticle,
@@ -14,6 +14,7 @@ import {
 } from "./news-table";
 import { useNewsArticleFooter } from "./news-footer";
 import { useNewsReadState } from "./read-state";
+import { usePersistedNewsArticles } from "./persisted-articles";
 
 export function NewsPresetPane({
   focused,
@@ -36,9 +37,9 @@ export function NewsPresetPane({
   emptyStateHint: string;
 }) {
   const newsState = useNewsArticles(query);
-  const articles = newsState.articles;
+  const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
-  const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>(
+  const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>(
     `${paneKey}:selectedArticleId`,
     null,
   );

@@ -6,11 +6,12 @@ import { useNewsArticles } from "../../../news/hooks";
 import type { NewsQueryPhase } from "../../../news/types";
 import { Tabs } from "../../../components";
 import { Spinner } from "../../../components/spinner";
-import { usePluginPaneState } from "../../plugin-runtime";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import { getSelectedNewsArticle, NewsArticleStackView, type NewsSortPreference } from "./news-table";
 import { useNewsArticleFooter } from "./news-footer";
 import { useNewsReadState } from "./read-state";
+import { usePersistedNewsArticles } from "./persisted-articles";
 import {
   NEWS_QUERY_PRESETS,
   SECTOR_NEWS_SECTORS,
@@ -27,8 +28,8 @@ function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNew
   const sectorState = useNewsArticles(
     sector === "all" ? null : NEWS_QUERY_PRESETS.sector(sector),
   );
-  const allArticles = allState.articles;
-  const sectorArticles = sectorState.articles;
+  const allArticles = usePersistedNewsArticles("industry:all:articles", allState.articles);
+  const sectorArticles = usePersistedNewsArticles(`industry:sector:${sector}:articles`, sectorState.articles);
   const phase = sector === "all" ? allState.phase : sectorState.phase;
   return {
     articles: sector === "all" ? allArticles : sectorArticles,
@@ -39,7 +40,7 @@ function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNew
 
 export function IndustryPane({ focused, width, height }: PaneProps) {
   const [category, setCategory] = usePluginPaneState<SectorNewsSelection>("industry:category", "all");
-  const [selectedArticleId, setSelectedArticleId] = usePluginPaneState<string | null>("industry:selectedArticleId", null);
+  const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("industry:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("industry:sort", DEFAULT_SORT);
   const { articles, allArticles, phase } = useIndustryArticles(category);
   const loading = phase === "loading" || (phase === "refreshing" && articles.length === 0);

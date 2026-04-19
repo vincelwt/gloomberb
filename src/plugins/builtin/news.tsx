@@ -6,12 +6,13 @@ import { colors } from "../../theme/colors";
 import type { NewsArticle } from "../../types/news-source";
 import { useArticleSummary, useResolvedEntryValue } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
-import { usePluginPaneState } from "../../plugins/plugin-runtime";
+import { useDebouncedPluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
 import { FeedDataTableStackView, type FeedDataTableItem } from "../../components";
 import { useNewsArticles } from "../../news/hooks";
 import { registerNewsWireFeatures } from "./news-wire";
 import { useNewsArticleFooter } from "./news-wire/news-footer";
+import { usePersistedNewsArticles } from "./news-wire/persisted-articles";
 import { useNewsReadState } from "./news-wire/read-state";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
@@ -57,7 +58,7 @@ function getFeedItems(
 function NewsTab({ width, height, focused }: DetailTabProps) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
-  const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
+  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
   const summaryFetchRef = useRef(0);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
@@ -68,7 +69,11 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     tickerTier: "primary",
     limit: NEWS_ITEM_LIMIT,
   } : null);
-  const news = newsState.articles;
+  const liveNews = newsState.articles;
+  const news = usePersistedNewsArticles(
+    `articles:${instrument?.symbol ?? "none"}:${instrument?.exchange ?? ""}`,
+    liveNews,
+  );
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
   const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;

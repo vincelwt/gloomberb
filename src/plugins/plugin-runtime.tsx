@@ -131,8 +131,9 @@ export function usePluginPaneState<T>(key: string, fallback: T, paneId?: string)
   const stateRef = useAppStateRef();
   const fallbackRef = useRef(fallback);
   fallbackRef.current = fallback;
-  const paneState = useAppSelector((state) => state.paneState[scopedPaneId]);
-  const value = getPluginPaneStateValue(paneState, pluginId, key, fallback);
+  const value = useAppSelector((state) => (
+    getPluginPaneStateValue(state.paneState[scopedPaneId], pluginId, key, fallback)
+  ));
 
   const setValue = useCallback((nextValue: SetStateAction<T>) => {
     const currentPaneState = stateRef.current.paneState[scopedPaneId];
