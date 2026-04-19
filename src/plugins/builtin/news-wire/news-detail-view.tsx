@@ -4,7 +4,10 @@ import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
-import { getSharedRegistry } from "../../registry";
+import { TickerBadge } from "../../../components/ticker-badge";
+import { ExternalLink } from "../../../components/ui";
+import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
+import { useInlineTickers } from "../../../state/use-inline-tickers";
 
 export function useNewsArticleDetail(articles: MarketNewsItem[]) {
   const [detailArticleId, setDetailArticleId] = useState<string | null>(null);
@@ -56,18 +59,24 @@ export function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
-export function NewsDetailView({ item, focused, width, height }: {
+export function NewsDetailView({ item, focused, width, showTitle = true }: {
   item: MarketNewsItem;
   focused: boolean;
   width: number;
-  height: number;
+  showTitle?: boolean;
 }) {
-  const registry = getSharedRegistry();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const innerW = Math.max(10, width - 2);
   const titleLines = wrapText(item.title, innerW);
   const summaryLines = item.summary ? wrapText(item.summary, innerW) : [];
+  const tickers = useMemo(
+    () => collectNewsDisplayTickers(item.tickers),
+    [item.tickers],
+  );
+  const tickerTexts = useMemo(() => tickers.map((ticker) => `$${ticker}`), [tickers]);
+  const { catalog, openTicker } = useInlineTickers(tickerTexts);
+  const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const dateStr = item.publishedAt.toLocaleString("en-US", {
     month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
   });
@@ -100,17 +109,18 @@ export function NewsDetailView({ item, focused, width, height }: {
   });
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} flexGrow={1} minHeight={0}>
       <ScrollBox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
         <Box flexDirection="column" paddingX={1} paddingY={1} gap={1}>
-          {/* Title */}
-          <Box flexDirection="column">
-            {titleLines.map((line, i) => (
-              <Box key={i} height={1}>
-                <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{line}</Text>
-              </Box>
-            ))}
-          </Box>
+          {showTitle && (
+            <Box flexDirection="column">
+              {titleLines.map((line, i) => (
+                <Box key={i} height={1}>
+                  <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{line}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
           {/* Source + time */}
           <Box height={1} flexDirection="row">
             <Text fg={colors.text}>{item.source}</Text>
@@ -127,18 +137,35 @@ export function NewsDetailView({ item, focused, width, height }: {
             </Box>
           )}
           {/* Tickers */}
-          {item.tickers.length > 0 && (
-            <Box flexDirection="row" flexWrap="wrap" gap={1}>
-              {item.tickers.map((ticker) => (
-                <Text
-                  key={ticker}
-                  fg={colors.textBright}
-                  attributes={TextAttributes.UNDERLINE}
-                  onMouseDown={() => registry?.navigateTickerFn(ticker)}
-                >
-                  {ticker}
-                </Text>
-              ))}
+          {tickers.length > 0 && (
+            <Box flexDirection="row" flexWrap="wrap" width={innerW}>
+              {tickers.map((ticker) => {
+                const entry = catalog[ticker];
+                if (!entry || entry.status === "missing") {
+                  return (
+                    <Box key={ticker} paddingRight={1}>
+                      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+                        {ticker}
+                      </Text>
+                    </Box>
+                  );
+                }
+
+                return (
+                  <TickerBadge
+                    key={ticker}
+                    symbol={ticker}
+                    status={entry.status}
+                    quote={entry.quote}
+                    hovered={hoveredTicker === ticker}
+                    onHoverStart={() => setHoveredTicker(ticker)}
+                    onHoverEnd={() => {
+                      setHoveredTicker((current) => (current === ticker ? null : current));
+                    }}
+                    onOpen={openTicker}
+                  />
+                );
+              })}
             </Box>
           )}
           {/* Categories */}
@@ -150,9 +177,7 @@ export function NewsDetailView({ item, focused, width, height }: {
             </Box>
           )}
           {/* URL */}
-          <Box height={1}>
-            <Text fg={colors.textDim}>{item.url}</Text>
-          </Box>
+          <ExternalLink url={item.url} color={colors.textDim} />
         </Box>
       </ScrollBox>
     </Box>

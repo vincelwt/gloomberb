@@ -226,7 +226,6 @@ export function FeedDataTableStackView({
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const detailTextWidth = Math.max(width - 2, 12);
-  const detailHeight = Math.max(height - 1, 4);
   const columns = useMemo(
     () => buildColumns(width, sourceLabel, titleLabel, items),
     [items, sourceLabel, titleLabel, width],
@@ -344,26 +343,14 @@ export function FeedDataTableStackView({
   }, [scrollDetailBy]);
 
   const detailContent = openItem ? (
-    <Box flexDirection="column" flexGrow={1} paddingX={1}>
+    <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       <ScrollBox
         ref={detailScrollRef}
-        height={detailHeight}
+        flexGrow={1}
         scrollY
         focusable={false}
       >
         <Box flexDirection="column">
-          {wrapTextLines(
-            openItem.detailTitle ?? openItem.title,
-            detailTextWidth,
-            4,
-          ).map((line, index) => (
-            <Box key={`title-${index}`} height={1}>
-              <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-                {line}
-              </Text>
-            </Box>
-          ))}
-
           {(openItem.detailMeta ?? [])
             .flatMap((entry) => wrapTextLines(entry, detailTextWidth, 2))
             .map((line, index) => (
@@ -410,6 +397,7 @@ export function FeedDataTableStackView({
       detailOpen={!!openItem}
       onBack={() => setOpenItemId(null)}
       detailContent={detailContent}
+      detailTitle={openItem ? openItem.detailTitle ?? openItem.title : undefined}
       selectedIndex={activeRowIndex}
       onSelectIndex={(_index, row) => onSelect(row.itemIndex)}
       onActivateIndex={(_index, row) => openRow(row)}

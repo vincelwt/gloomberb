@@ -1,9 +1,9 @@
 
-const RESERVED_PANE_CHROME_ROWS = 2;
+const PANE_HEADER_ROWS = 1;
+const PANE_FOOTER_ROWS = 1;
 
-export function getPaneBodyHeight(height: number): number {
-  // Reserve the header row plus the bottom chrome row, even when the footer is visually empty.
-  return Math.max(1, height - RESERVED_PANE_CHROME_ROWS);
+export function getPaneBodyHeight(height: number, reserveFooter = true): number {
+  return Math.max(1, height - PANE_HEADER_ROWS - (reserveFooter ? PANE_FOOTER_ROWS : 0));
 }
 
 export function getPaneBodyWidth(width: number): number {

@@ -33,6 +33,7 @@ export interface DataTableStackViewProps<
   detailOpen: boolean;
   onBack: () => void;
   detailContent: ReactNode;
+  detailTitle?: string;
   selectedIndex: number;
   onSelectIndex?: (index: number, item: T) => void;
   onActivateIndex?: (index: number, item: T) => void;
@@ -60,6 +61,7 @@ export function DataTableStackView<
   detailOpen,
   onBack,
   detailContent,
+  detailTitle,
   selectedIndex,
   onSelectIndex,
   onActivateIndex,
@@ -242,6 +244,7 @@ export function DataTableStackView<
       onBack={onBack}
       rootContent={rootContent}
       detailContent={detailContent}
+      detailTitle={detailTitle}
     />
   );
 }

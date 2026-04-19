@@ -156,4 +156,50 @@ describe("NewsArticleStackView", () => {
     expect(frame).toContain("Loading sector content");
     expect(frame).not.toContain("No stories");
   });
+
+  test("dedupes exchange-qualified ticker aliases in table cells", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-table-ticker-dedupe-test"),
+    );
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="news-feed:main">
+          <NewsArticleStackView
+            articles={[
+              makeArticle({
+                id: "media",
+                title: "Media merger story",
+                tickers: ["NFLX", "NFLX:XNAS", "PARA", "PARA:XNAS"],
+              }),
+            ]}
+            focused
+            width={90}
+            rootHeight={10}
+            selectedArticleId="media"
+            setSelectedArticleId={() => {}}
+            sortPreference={sortPreference}
+            setSortPreference={() => {}}
+            onOpenArticle={() => {}}
+            detailOpen={false}
+            onBack={() => {}}
+            detailContent={<Box />}
+            columns={["time", "source", "title", "tickers"]}
+            emptyStateTitle="No stories"
+          />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 90, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("NFLX PARA");
+    expect(frame).not.toContain("NFLX:XNAS");
+    expect(frame).not.toContain("PARA:XNAS");
+  });
 });

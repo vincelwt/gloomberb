@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { GloomberbCloudProvider } from "./gloomberb-cloud";
+import { createGloomberbCloudNewsSource, GloomberbCloudProvider } from "./gloomberb-cloud";
 import { apiClient, type AuthUser } from "../utils/api-client";
 
 const verifiedUser: AuthUser = {
@@ -298,5 +298,105 @@ describe("GloomberbCloudProvider", () => {
       publishedAt: new Date("2026-04-01T10:05:00.000Z"),
       summary: "Apple lifted its outlook after stronger iPhone demand.",
     }]);
+  });
+
+  test("maps news ticker labels from validated story links only", async () => {
+    apiClient.getCloudNews = async () => ({
+      items: [{
+        id: "story-1",
+        headline: "Sanofi reports vaccine update",
+        summary: "Sanofi and Moderna shared new vaccine data.",
+        topic: "product_approval",
+        topics: ["product_approval"],
+        category: "product_approval",
+        sentiment: "positive",
+        sectors: ["health_care"],
+        firstPublishedAt: "2026-04-01T10:00:00.000Z",
+        lastPublishedAt: "2026-04-01T10:05:00.000Z",
+        firstSeenAt: "2026-04-01T10:00:10.000Z",
+        lastSeenAt: "2026-04-01T10:05:10.000Z",
+        primaryUrl: "https://example.com/sny-vaccine",
+        primarySource: "example-wire",
+        scores: {
+          importance: 77,
+          urgency: 66,
+          marketImpact: 82,
+          novelty: 71,
+          confidence: 93,
+        },
+        flags: {
+          breaking: false,
+          developing: false,
+          stale: false,
+        },
+        variantCount: 1,
+        sourceCount: 1,
+        sources: ["example-wire"],
+        entities: [{
+          id: "entity-1",
+          entityType: "company",
+          name: "Sanofi",
+          symbol: "SNY",
+          exchange: "NASDAQ",
+          canonicalTicker: "SNY:NASDAQ",
+          role: null,
+          confidence: 0.95,
+        }, {
+          id: "entity-2",
+          entityType: "company",
+          name: "Noise Corp",
+          symbol: "NOISE",
+          exchange: "OTC",
+          canonicalTicker: "NOISE:OTC",
+          role: null,
+          confidence: 0.6,
+        }],
+        tickerLinks: [{
+          symbol: "SNY",
+          exchange: "NASDAQ",
+          canonicalTicker: "SNY:NASDAQ",
+          relationType: "direct",
+          displayTier: "primary",
+          confidence: 0.98,
+          relevanceScore: 95,
+          impactScore: 88,
+          sentiment: "positive",
+        }, {
+          symbol: "SNY",
+          exchange: "NASDAQ",
+          canonicalTicker: "SNY:NASDAQ",
+          relationType: "direct",
+          displayTier: "primary",
+          confidence: 0.98,
+          relevanceScore: 95,
+          impactScore: 88,
+          sentiment: "positive",
+        }, {
+          symbol: "MRNA",
+          exchange: "NASDAQ",
+          canonicalTicker: "MRNA:NASDAQ",
+          relationType: "competitor",
+          displayTier: "related",
+          confidence: 0.8,
+          relevanceScore: 65,
+          impactScore: 54,
+          sentiment: "neutral",
+        }],
+      }],
+      nextCursor: null,
+    });
+
+    const source = createGloomberbCloudNewsSource();
+    const news = await source.fetchNews({ feed: "top", ticker: "SNY" });
+
+    expect(news[0]?.tickers).toEqual(["SNY", "MRNA"]);
+    expect(news[0]?.importance).toBe(77);
+    expect(news[0]?.scores).toEqual({
+      importance: 77,
+      urgency: 66,
+      marketImpact: 82,
+      novelty: 71,
+      confidence: 93,
+    });
   });
 });
