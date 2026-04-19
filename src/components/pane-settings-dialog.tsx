@@ -16,6 +16,21 @@ interface PaneSettingsDialogContentProps extends AlertContext {
   applyFieldValue: (paneId: string, field: PaneSettingField, value: unknown) => Promise<void>;
 }
 
+type SelectPaneSettingField = Extract<PaneSettingField, { type: "select" }>;
+type MultiSelectPaneSettingField = Extract<PaneSettingField, { type: "multi-select" | "ordered-multi-select" }>;
+
+interface SelectFieldDialogProps extends AlertContext {
+  field: SelectPaneSettingField;
+  currentValue: unknown;
+  onApply: (value: string) => Promise<void>;
+}
+
+interface TextFieldDialogProps extends AlertContext {
+  field: PaneSettingTextField;
+  currentValue: unknown;
+  onApply: (value: string) => Promise<void>;
+}
+
 function isSpaceKey(event: { name?: string; sequence?: string }): boolean {
   return event.name === "space" || event.name === " " || event.sequence === " ";
 }
@@ -302,20 +317,18 @@ function DesktopSettingsList({
   );
 }
 
-function SelectFieldDialog({
+function useSelectFieldDialogController({
   dismiss,
-  dialogId,
   field,
   currentValue,
   onApply,
-}: AlertContext & {
-  field: Extract<PaneSettingField, { type: "select" }>;
-  currentValue: unknown;
-  onApply: (value: string) => Promise<void>;
-}) {
+}: SelectFieldDialogProps) {
   const initialIndex = Math.max(0, field.options.findIndex((option) => option.value === currentValue));
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
-  const isDesktop = useUiHost().kind === "desktop-web";
+
+  const applyOption = (value: string) => {
+    void onApply(value).then(() => dismiss()).catch(() => {});
+  };
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
@@ -325,57 +338,73 @@ function SelectFieldDialog({
     else if (event.name === "enter" || event.name === "return" || isSpaceKey(event)) {
       const option = field.options[selectedIndex];
       if (!option) return;
-      void onApply(option.value).then(() => dismiss()).catch(() => {});
+      applyOption(option.value);
     }
-  }, dialogId);
+  });
 
-  if (isDesktop) {
-    return (
-      <DesktopDialogSurface
-        title={field.label}
-        subtitle={field.description}
-        dismiss={dismiss}
-      >
-        <Box flexDirection="column" style={{ borderTop: `1px solid ${colors.border}` }}>
-          {field.options.map((option, index) => {
-            const selected = option.value === currentValue;
-            const focused = index === selectedIndex;
-            return (
-              <Box
-                key={option.value}
-                minHeight={option.description ? 4 : 3}
-                flexDirection="row"
-                alignItems="center"
-                backgroundColor={selected || focused ? "rgba(255, 255, 255, 0.045)" : "transparent"}
-                onMouseMove={() => setSelectedIndex(index)}
-                onMouseDown={(event: any) => {
-                  event.stopPropagation?.();
-                  event.preventDefault?.();
-                  void onApply(option.value).then(() => dismiss()).catch(() => {});
-                }}
-                data-gloom-interactive="true"
-                style={{
-                  borderBottom: `1px solid ${selected || focused ? colors.borderFocused : colors.border}`,
-                  cursor: "pointer",
-                  padding: "6px 2px 7px",
-                }}
-              >
-                <Box flexDirection="column" flexGrow={1} minWidth={0}>
-                  <Text fg={colors.textBright} style={desktopText(650)}>{option.label}</Text>
-                  {option.description && (
-                    <Text fg={colors.textMuted} wrapText style={{ ...desktopText(), marginTop: 3 }}>
-                      {option.description}
-                    </Text>
-                  )}
-                </Box>
-                {selected && <DesktopValuePill value="Selected" />}
+  return { selectedIndex, setSelectedIndex, applyOption };
+}
+
+function SelectFieldDialog(props: SelectFieldDialogProps) {
+  return useUiHost().kind === "desktop-web"
+    ? <DesktopSelectFieldDialog {...props} />
+    : <TuiSelectFieldDialog {...props} />;
+}
+
+function DesktopSelectFieldDialog(props: SelectFieldDialogProps) {
+  const { dismiss, field, currentValue } = props;
+  const { selectedIndex, setSelectedIndex, applyOption } = useSelectFieldDialogController(props);
+
+  return (
+    <DesktopDialogSurface
+      title={field.label}
+      subtitle={field.description}
+      dismiss={dismiss}
+    >
+      <Box flexDirection="column" style={{ borderTop: `1px solid ${colors.border}` }}>
+        {field.options.map((option, index) => {
+          const selected = option.value === currentValue;
+          const focused = index === selectedIndex;
+          return (
+            <Box
+              key={option.value}
+              minHeight={option.description ? 4 : 3}
+              flexDirection="row"
+              alignItems="center"
+              backgroundColor={selected || focused ? "rgba(255, 255, 255, 0.045)" : "transparent"}
+              onMouseMove={() => setSelectedIndex(index)}
+              onMouseDown={(event: any) => {
+                event.stopPropagation?.();
+                event.preventDefault?.();
+                applyOption(option.value);
+              }}
+              data-gloom-interactive="true"
+              style={{
+                borderBottom: `1px solid ${selected || focused ? colors.borderFocused : colors.border}`,
+                cursor: "pointer",
+                padding: "6px 2px 7px",
+              }}
+            >
+              <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                <Text fg={colors.textBright} style={desktopText(650)}>{option.label}</Text>
+                {option.description && (
+                  <Text fg={colors.textMuted} wrapText style={{ ...desktopText(), marginTop: 3 }}>
+                    {option.description}
+                  </Text>
+                )}
               </Box>
-            );
-          })}
-        </Box>
-      </DesktopDialogSurface>
-    );
-  }
+              {selected && <DesktopValuePill value="Selected" />}
+            </Box>
+          );
+        })}
+      </Box>
+    </DesktopDialogSurface>
+  );
+}
+
+function TuiSelectFieldDialog(props: SelectFieldDialogProps) {
+  const { field } = props;
+  const { selectedIndex, setSelectedIndex, applyOption } = useSelectFieldDialogController(props);
 
   return (
     <DialogFrame
@@ -393,28 +422,21 @@ function SelectFieldDialog({
         showSelectedDescription
         onSelect={setSelectedIndex}
         onActivate={(item) => {
-          void onApply(item.id).then(() => dismiss()).catch(() => {});
+          applyOption(item.id);
         }}
       />
     </DialogFrame>
   );
 }
 
-function TextFieldDialog({
+function useTextFieldDialogController({
   dismiss,
-  dialogId,
-  field,
   currentValue,
   onApply,
-}: AlertContext & {
-  field: PaneSettingTextField;
-  currentValue: unknown;
-  onApply: (value: string) => Promise<void>;
-}) {
+}: TextFieldDialogProps) {
   const [value, setValue] = useState(typeof currentValue === "string" ? currentValue : "");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<any>(null);
-  const isDesktop = useUiHost().kind === "desktop-web";
 
   useEffect(() => {
     inputRef.current?.focus?.();
@@ -425,7 +447,7 @@ function TextFieldDialog({
       event.stopPropagation();
       dismiss();
     }
-  }, dialogId);
+  });
 
   const submit = async () => {
     try {
@@ -437,33 +459,49 @@ function TextFieldDialog({
     }
   };
 
-  if (isDesktop) {
-    return (
-      <DesktopDialogSurface
-        title={field.label}
-        subtitle={field.description}
-        dismiss={dismiss}
-      >
-        <Box flexDirection="column" gap={1}>
-          <TextField
-            inputRef={inputRef}
-            value={value}
-            placeholder={field.placeholder}
-            focused
-            width={56}
-            onChange={setValue}
-            onSubmit={() => { void submit(); }}
-          />
-          {error && (
-            <Text fg={colors.negative} wrapText style={desktopText(600)}>{error}</Text>
-          )}
-          <Box flexDirection="row" justifyContent="flex-end" style={{ marginTop: 12 }}>
-            <Button label="Save" variant="primary" onPress={() => { void submit(); }} />
-          </Box>
+  return { value, setValue, error, inputRef, submit };
+}
+
+function TextFieldDialog(props: TextFieldDialogProps) {
+  return useUiHost().kind === "desktop-web"
+    ? <DesktopTextFieldDialog {...props} />
+    : <TuiTextFieldDialog {...props} />;
+}
+
+function DesktopTextFieldDialog(props: TextFieldDialogProps) {
+  const { dismiss, field } = props;
+  const { value, setValue, error, inputRef, submit } = useTextFieldDialogController(props);
+
+  return (
+    <DesktopDialogSurface
+      title={field.label}
+      subtitle={field.description}
+      dismiss={dismiss}
+    >
+      <Box flexDirection="column" gap={1}>
+        <TextField
+          inputRef={inputRef}
+          value={value}
+          placeholder={field.placeholder}
+          focused
+          width={56}
+          onChange={setValue}
+          onSubmit={() => { void submit(); }}
+        />
+        {error && (
+          <Text fg={colors.negative} wrapText style={desktopText(600)}>{error}</Text>
+        )}
+        <Box flexDirection="row" justifyContent="flex-end" style={{ marginTop: 12 }}>
+          <Button label="Save" variant="primary" onPress={() => { void submit(); }} />
         </Box>
-      </DesktopDialogSurface>
-    );
-  }
+      </Box>
+    </DesktopDialogSurface>
+  );
+}
+
+function TuiTextFieldDialog(props: TextFieldDialogProps) {
+  const { dismiss, field } = props;
+  const { value, setValue, error, inputRef, submit } = useTextFieldDialogController(props);
 
   return (
     <DialogFrame
@@ -505,7 +543,7 @@ function MultiSelectFieldDialog({
   currentValue,
   onApply,
 }: AlertContext & {
-  field: Extract<PaneSettingField, { type: "multi-select" | "ordered-multi-select" }>;
+  field: MultiSelectPaneSettingField;
   currentValue: unknown;
   onApply: (value: string[]) => Promise<void>;
 }) {
@@ -522,9 +560,130 @@ function MultiSelectFieldDialog({
   );
 }
 
+function DesktopUnavailablePaneSettingsDialog({ dismiss }: { dismiss: () => void }) {
+  return (
+    <DesktopDialogSurface title="Pane Settings" dismiss={dismiss}>
+      <Text fg={colors.textDim} wrapText style={desktopText()}>
+        This pane is no longer configurable.
+      </Text>
+    </DesktopDialogSurface>
+  );
+}
+
+function TuiUnavailablePaneSettingsDialog() {
+  return (
+    <DialogFrame title="Pane Settings" footer="Press esc to cancel">
+      <Text fg={colors.textDim}>This pane is no longer configurable.</Text>
+    </DialogFrame>
+  );
+}
+
+function DesktopPaneSettingsDialogBody({
+  title,
+  dismiss,
+  fields,
+  selectedIndex,
+  hoveredFieldKey,
+  settings,
+  onHover,
+  onEdit,
+  onApply,
+}: {
+  title: string;
+  dismiss: () => void;
+  fields: PaneSettingField[];
+  selectedIndex: number;
+  hoveredFieldKey: string | null;
+  settings: Record<string, unknown>;
+  onHover: (field: PaneSettingField, index: number) => void;
+  onEdit: (field: PaneSettingField, index: number) => void;
+  onApply: (field: PaneSettingField, value: unknown, index: number) => void;
+}) {
+  return (
+    <DesktopDialogSurface
+      title={title}
+      dismiss={dismiss}
+    >
+      {fields.length === 0 ? (
+        <Text fg={colors.textDim} wrapText style={desktopText()}>
+          No settings available.
+        </Text>
+      ) : (
+        <DesktopSettingsList
+          fields={fields}
+          selectedIndex={selectedIndex}
+          hoveredFieldKey={hoveredFieldKey}
+          settings={settings}
+          onHover={onHover}
+          onEdit={onEdit}
+          onApply={onApply}
+        />
+      )}
+    </DesktopDialogSurface>
+  );
+}
+
+function TuiPaneSettingsDialogBody({
+  title,
+  fields,
+  selectedIndex,
+  settings,
+  onSelect,
+  onActivate,
+}: {
+  title: string;
+  fields: PaneSettingField[];
+  selectedIndex: number;
+  settings: Record<string, unknown>;
+  onSelect: (index: number) => void;
+  onActivate: (field: PaneSettingField | undefined) => void;
+}) {
+  return (
+    <DialogFrame title={title} footer="Use ↑↓ to choose · enter to edit · esc cancel">
+      <ListView
+        items={fields.map((field) => ({
+          id: field.key,
+          label: field.label,
+          description: field.description,
+          detail: summarizeValue(field, settings[field.key]),
+        }))}
+        selectedIndex={selectedIndex}
+        bgColor={colors.commandBg}
+        showSelectedDescription
+        onSelect={onSelect}
+        onActivate={(_, index) => {
+          onActivate(fields[index]);
+        }}
+        renderRow={(item, rowState) => (
+          <Box flexDirection="row" justifyContent="space-between" width="100%">
+            <Box flexDirection="row">
+              <Text fg={rowState.selected ? colors.selectedText : colors.textDim}>
+                {rowState.selected ? "\u25b8 " : "  "}
+              </Text>
+              <Text
+                fg={rowState.selected ? colors.text : colors.textDim}
+                attributes={rowState.selected ? TextAttributes.BOLD : 0}
+              >
+                {item.label}
+              </Text>
+            </Box>
+            <Text fg={rowState.selected ? colors.textMuted : colors.textMuted}>
+              {item.detail}
+            </Text>
+          </Box>
+        )}
+      />
+      {fields.length === 0 && (
+        <Box height={1}>
+          <Text fg={colors.textDim}>No settings available.</Text>
+        </Box>
+      )}
+    </DialogFrame>
+  );
+}
+
 export function PaneSettingsDialogContent({
   dismiss,
-  dialogId,
   paneId,
   pluginRegistry,
   applyFieldValue,
@@ -560,7 +719,7 @@ export function PaneSettingsDialogContent({
 
     if (field.type === "select") {
       await dialog.alert({
-        content: (ctx) => (
+        content: (ctx: AlertContext) => (
           <SelectFieldDialog
             {...ctx}
             field={field}
@@ -574,7 +733,7 @@ export function PaneSettingsDialogContent({
 
     if (field.type === "text") {
       await dialog.alert({
-        content: (ctx) => (
+        content: (ctx: AlertContext) => (
           <TextFieldDialog
             {...ctx}
             field={field}
@@ -587,7 +746,7 @@ export function PaneSettingsDialogContent({
     }
 
     await dialog.alert({
-      content: (ctx) => (
+      content: (ctx: AlertContext) => (
         <MultiSelectFieldDialog
           {...ctx}
           field={field}
@@ -606,102 +765,47 @@ export function PaneSettingsDialogContent({
     else if (event.name === "enter" || event.name === "return" || isSpaceKey(event)) {
       void openFieldEditor(fields[selectedIndex]).catch(() => {});
     }
-  }, dialogId);
+  });
 
   if (!descriptor) {
-    if (isDesktop) {
-      return (
-        <DesktopDialogSurface title="Pane Settings" dismiss={dismiss}>
-          <Text fg={colors.textDim} wrapText style={desktopText()}>
-            This pane is no longer configurable.
-          </Text>
-        </DesktopDialogSurface>
-      );
-    }
-
-    return (
-      <DialogFrame title="Pane Settings" footer="Press esc to cancel">
-        <Text fg={colors.textDim}>This pane is no longer configurable.</Text>
-      </DialogFrame>
-    );
+    return isDesktop
+      ? <DesktopUnavailablePaneSettingsDialog dismiss={dismiss} />
+      : <TuiUnavailablePaneSettingsDialog />;
   }
 
   const title = descriptor.settingsDef.title ?? `${descriptor.paneDef.name} Settings`;
 
-  if (isDesktop) {
-    return (
-      <DesktopDialogSurface
-        title={title}
-        dismiss={dismiss}
-      >
-        {fields.length === 0 ? (
-          <Text fg={colors.textDim} wrapText style={desktopText()}>
-            No settings available.
-          </Text>
-        ) : (
-          <DesktopSettingsList
-            fields={fields}
-            selectedIndex={selectedIndex}
-            hoveredFieldKey={hoveredFieldKey}
-            settings={descriptor.context.settings}
-            onHover={(field, index) => {
-              setSelectedIndex(index);
-              setHoveredFieldKey(field.key);
-            }}
-            onEdit={(field, index) => {
-              setSelectedIndex(index);
-              void openFieldEditor(field).catch(() => {});
-            }}
-            onApply={(field, value, index) => {
-              setSelectedIndex(index);
-              void applyAndRefresh(field, value).catch(() => {});
-            }}
-          />
-        )}
-      </DesktopDialogSurface>
-    );
-  }
-
-  return (
-    <DialogFrame title={title} footer="Use ↑↓ to choose · enter to edit · esc cancel">
-      <ListView
-        items={fields.map((field) => ({
-          id: field.key,
-          label: field.label,
-          description: field.description,
-          detail: summarizeValue(field, descriptor.context.settings[field.key]),
-        }))}
-        selectedIndex={selectedIndex}
-        bgColor={colors.commandBg}
-        showSelectedDescription
-        onSelect={setSelectedIndex}
-        onActivate={(_, index) => {
-          void openFieldEditor(fields[index]).catch(() => {});
-        }}
-        renderRow={(item, rowState) => (
-          <Box flexDirection="row" justifyContent="space-between" width="100%">
-            <Box flexDirection="row">
-              <Text fg={rowState.selected ? colors.selectedText : colors.textDim}>
-                {rowState.selected ? "\u25b8 " : "  "}
-              </Text>
-              <Text
-                fg={rowState.selected ? colors.text : colors.textDim}
-                attributes={rowState.selected ? TextAttributes.BOLD : 0}
-              >
-                {item.label}
-              </Text>
-            </Box>
-            <Text fg={rowState.selected ? colors.textMuted : colors.textMuted}>
-              {item.detail}
-            </Text>
-          </Box>
-        )}
-      />
-      {fields.length === 0 && (
-        <Box height={1}>
-          <Text fg={colors.textDim}>No settings available.</Text>
-        </Box>
-      )}
-    </DialogFrame>
+  return isDesktop ? (
+    <DesktopPaneSettingsDialogBody
+      title={title}
+      dismiss={dismiss}
+      fields={fields}
+      selectedIndex={selectedIndex}
+      hoveredFieldKey={hoveredFieldKey}
+      settings={descriptor.context.settings}
+      onHover={(field, index) => {
+        setSelectedIndex(index);
+        setHoveredFieldKey(field.key);
+      }}
+      onEdit={(field, index) => {
+        setSelectedIndex(index);
+        void openFieldEditor(field).catch(() => {});
+      }}
+      onApply={(field, value, index) => {
+        setSelectedIndex(index);
+        void applyAndRefresh(field, value).catch(() => {});
+      }}
+    />
+  ) : (
+    <TuiPaneSettingsDialogBody
+      title={title}
+      fields={fields}
+      selectedIndex={selectedIndex}
+      settings={descriptor.context.settings}
+      onSelect={setSelectedIndex}
+      onActivate={(field) => {
+        void openFieldEditor(field).catch(() => {});
+      }}
+    />
   );
 }

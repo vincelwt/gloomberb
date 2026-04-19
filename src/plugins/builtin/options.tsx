@@ -10,7 +10,7 @@ import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { setOptionsAvailability } from "./options-availability";
-import { DataTableView, Spinner, TabBar, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../components";
+import { DataTableView, Spinner, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../components";
 
 type OptionColumnId =
   | "callLast"
@@ -274,7 +274,7 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
       <Box flexDirection="row" height={1} gap={1}>
         <Text fg={colors.textDim}>Exp:</Text>
         <Box flexGrow={1} height={1}>
-          <TabBar
+          <Tabs
             tabs={visibleExps.map((ts, i) => ({
               label: formatExpDate(ts),
               value: String(expStart + i),

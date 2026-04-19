@@ -1,7 +1,7 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import type { RefObject } from "react";
-import { Spinner, TabBar } from "../../../components";
+import { Spinner, Tabs } from "../../../components";
 import { EmptyState } from "../../../components/ui/status";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
@@ -232,7 +232,7 @@ export function PredictionMarketDetailPane({
       )}
 
       <Box paddingBottom={1}>
-        <TabBar
+        <Tabs
           tabs={DETAIL_TABS.map((tab) => ({
             label: tab.label,
             value: tab.value,

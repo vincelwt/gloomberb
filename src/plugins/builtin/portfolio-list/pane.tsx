@@ -1,14 +1,14 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  TabBar,
+  Tabs,
   usePaneFooter,
   type DataTableKeyEvent,
   type PaneFooterSegment,
   type TickerListVisibleRange,
 } from "../../../components";
 import { createRowValueCache } from "../../../components/ui/row-value-cache";
-import { getSharedRegistry } from "../../registry";
+import { usePluginTickerActions } from "../../plugin-runtime";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
@@ -190,7 +190,7 @@ function sortTickers(
 }
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
-  const registry = getSharedRegistry();
+  const { navigateTicker, pinTicker } = usePluginTickerActions();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
   const config = useAppSelector((state) => state.config);
@@ -328,8 +328,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   const handleRowActivate = useCallback((ticker: TickerRecord) => {
     flushCursorSymbol(ticker.metadata.ticker);
-    registry?.navigateTickerFn(ticker.metadata.ticker);
-  }, [flushCursorSymbol, registry]);
+    navigateTicker(ticker.metadata.ticker);
+  }, [flushCursorSymbol, navigateTicker]);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
@@ -342,7 +342,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       event.stopPropagation?.();
       const ticker = sortedTickers[safeSelectedIdx];
       if (ticker) {
-        registry?.pinTickerFn(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
+        pinTicker(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
       }
       return true;
     }
@@ -376,7 +376,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     currentTabIdx,
     focused,
     paneSettings.hideTabs,
-    registry,
+    pinTicker,
     safeSelectedIdx,
     setCashDrawerExpanded,
     handleCollectionSelect,
@@ -580,7 +580,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         {!paneSettings.hideTabs && (
           <Box flexDirection="row" height={1}>
             <Box flexShrink={1} overflow="hidden">
-              <TabBar
+              <Tabs
                 tabs={visibleCollections.map((collection) => ({ label: collection.name, value: collection.id }))}
                 activeValue={activeCollectionId}
                 onSelect={handleCollectionSelect}

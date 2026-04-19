@@ -1,6 +1,6 @@
 import { Box, Input, Text } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
-import { DataTableStackView, TabBar, usePaneFooter } from "../../components";
+import { DataTableStackView, Tabs, usePaneFooter } from "../../components";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
@@ -101,7 +101,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const browseControls = (
     <>
       {!controller.paneSettings.hideTabs ? (
-        <TabBar
+        <Tabs
           tabs={VENUE_TABS.map((tab) => ({
             label: tab.label,
             value: tab.value,
@@ -152,7 +152,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         </Box>
 
         <Box flexGrow={1}>
-          <TabBar
+          <Tabs
             tabs={BROWSE_TABS.map((tab) => ({
               label: tab.label,
               value: tab.value,
@@ -168,7 +168,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
 
       {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
         <Box height={1} paddingX={1}>
-          <TabBar
+          <Tabs
             tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
               label: category.label,
               value: category.id,

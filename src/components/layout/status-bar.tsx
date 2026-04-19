@@ -17,7 +17,7 @@ import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
 import type { ContextMenuItem } from "../../types/context-menu";
-import { TabBar } from "../tab-bar";
+import { Tabs } from "../ui/tabs";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -198,7 +198,7 @@ export function StatusBar() {
         <Box paddingLeft={1} flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
           {hasMultipleLayouts ? (
             <Box width={layoutTabsWidth} height={1}>
-              <TabBar
+              <Tabs
                 tabs={layoutTabItems}
                 activeValue={String(activeLayoutIdx)}
                 onSelect={handleLayoutSelect}
@@ -264,7 +264,7 @@ export function StatusBar() {
       <Box paddingLeft={1} flexShrink={0} flexDirection="row">
         {hasMultipleLayouts ? (
           <Box width={layoutTabsWidth} height={1}>
-            <TabBar
+            <Tabs
               tabs={layoutTabItems}
               activeValue={String(activeLayoutIdx)}
               onSelect={handleLayoutSelect}

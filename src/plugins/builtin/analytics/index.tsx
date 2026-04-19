@@ -2,7 +2,7 @@ import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTableView, TabBar, type DataTableColumn } from "../../../components";
+import { DataTableView, Tabs, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
@@ -587,7 +587,7 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
         <>
           <Box flexDirection="row" height={1}>
             <Box flexShrink={1} overflow="hidden">
-              <TabBar
+              <Tabs
                 tabs={portfolioTabs}
                 activeValue={activePortfolioId}
                 onSelect={handlePortfolioSelect}

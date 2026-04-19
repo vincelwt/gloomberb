@@ -3,7 +3,7 @@ import { TextAttributes } from "@opentui/core";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import type { ReactNode } from "react";
-import { act, useReducer } from "react";
+import { act, createElement, useReducer } from "react";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { setSharedDataProviderForTests } from "../../plugins/registry";
@@ -11,6 +11,7 @@ import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedRegistryForTests } from "../../plugins/registry";
 import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugins/plugin-runtime";
 import type { PaneProps } from "../../types/plugin";
 import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
@@ -81,8 +82,32 @@ function createShellPluginRegistry(options?: {
 function createBrokerPortfolioRegistry(): PluginRegistry {
   const pane = portfolioListPlugin.panes?.[0];
   if (!pane) throw new Error("missing portfolio pane");
-  return {
-    panes: new Map([["portfolio-list", pane]]),
+
+  let registry: PluginRegistry;
+  const runtime: PluginRuntimeAccess = {
+    getDataProvider: () => null,
+    pinTicker: (symbol, options) => registry.pinTickerFn(symbol, options),
+    navigateTicker: (symbol) => registry.navigateTickerFn(symbol),
+    subscribeResumeState: () => () => {},
+    getResumeState: () => null,
+    setResumeState: () => {},
+    deleteResumeState: () => {},
+    getConfigState: () => null,
+    setConfigState: async () => {},
+    deleteConfigState: async () => {},
+    getConfigStateKeys: () => [],
+  };
+  const wrappedPane = {
+    ...pane,
+    component: (props: PaneProps) => (
+      <PluginRenderProvider pluginId={portfolioListPlugin.id} runtime={runtime}>
+        {createElement(pane.component as any, props)}
+      </PluginRenderProvider>
+    ),
+  };
+
+  registry = {
+    panes: new Map([["portfolio-list", wrappedPane]]),
     paneTemplates: new Map(),
     commands: new Map(),
     tickerActions: new Map(),
@@ -97,11 +122,14 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
     hideWidget: () => {},
     focusPaneFn: () => {},
     pinTickerFn: () => {},
+    navigateTickerFn: () => {},
     showPaneFn: () => {},
     getLayoutFn: () => ({ dockRoot: null, instances: [], floating: [] }),
     getTermSizeFn: () => ({ width: 120, height: 40 }),
     Slot: () => null,
   } as unknown as PluginRegistry;
+
+  return registry;
 }
 
 function makeQuote(overrides: Partial<Quote> = {}): Quote {

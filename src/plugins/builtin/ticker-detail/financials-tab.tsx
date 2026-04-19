@@ -3,7 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePaneTicker } from "../../../state/app-context";
-import { TabBar, usePaneFooter } from "../../../components";
+import { Tabs, usePaneFooter } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import type { FinancialStatement } from "../../../types/financials";
 import {
@@ -356,7 +356,7 @@ export function ResolvedFinancialsTab({
     >
       <Box flexDirection="row" height={1}>
         <Box width={FINANCIAL_SUB_TABS_WIDTH} height={1}>
-          <TabBar
+          <Tabs
             tabs={FINANCIAL_SUB_TABS.map((tab, index) => ({
               label: tab.name,
               value: String(index),
@@ -369,7 +369,7 @@ export function ResolvedFinancialsTab({
         </Box>
         <Box flexGrow={1} />
         <Box width={FINANCIAL_PERIOD_TABS_WIDTH} height={1}>
-          <TabBar
+          <Tabs
             tabs={[
               { label: "Annual", value: "annual", disabled: !hasAnnualStatements },
               { label: "Quarterly", value: "quarterly", disabled: !hasQuarterlyStatements },
