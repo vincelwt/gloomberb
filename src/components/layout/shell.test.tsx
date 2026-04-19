@@ -15,7 +15,15 @@ import type { PaneProps } from "../../types/plugin";
 import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
 import { Header } from "./header";
-import { buildNativeWindowState, finalizePaneDragRelease, resolveNativeDockDividers, resolvePaneDragFloatingRect, Shell } from "./shell";
+import {
+  buildNativeWindowState,
+  constrainFloatingRectToBounds,
+  finalizePaneDragRelease,
+  resolveAppHeaderHeightCells,
+  resolveNativeDockDividers,
+  resolvePaneDragFloatingRect,
+  Shell,
+} from "./shell";
 import type { DataProvider } from "../../types/data-provider";
 import type { PricePoint, Quote, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
@@ -394,6 +402,11 @@ describe("Header", () => {
 });
 
 describe("Shell", () => {
+  test("uses the desktop titlebar overlay height for shell chrome math", () => {
+    expect(resolveAppHeaderHeightCells({ titleBarOverlay: true, cellHeightPx: 18 })).toBe(28 / 18);
+    expect(resolveAppHeaderHeightCells({ titleBarOverlay: false, cellHeightPx: 18 })).toBe(1);
+  });
+
   test("uses the live floating preview rect for native occluders", () => {
     const state = buildNativeWindowState(
       ["portfolio-list:main"],
@@ -423,6 +436,26 @@ describe("Shell", () => {
         zIndex: 75,
       },
     ]);
+  });
+
+  test("offsets native occluders by the actual app header height", () => {
+    const state = buildNativeWindowState(
+      [],
+      [
+        {
+          paneId: "ticker-detail:main",
+          rect: { x: 8, y: 2, width: 36, height: 12 },
+          zIndex: 75,
+        },
+      ],
+      null,
+      { open: false, width: 120, contentHeight: 40 },
+      [],
+      [],
+      28 / 18,
+    );
+
+    expect(state.occluders[0]?.rect.y).toBeCloseTo(2 + (28 / 18));
   });
 
   test("ignores docked drag previews when building native occluders", () => {
@@ -684,7 +717,11 @@ describe("Shell", () => {
       spanColumn += span.width;
     }
     expect(resolutionCol).toBeGreaterThanOrEqual(0);
-    expect(testSetup.captureCharFrame()).toContain("AAPL - AUTO");
+    const initialBoldResolutionText = resolutionSpansBefore
+      .filter((span) => (span.attributes & TextAttributes.BOLD) !== 0)
+      .map((span) => span.text)
+      .join("");
+    expect(initialBoldResolutionText).toContain("AUTO");
 
     await act(async () => {
       await testSetup!.mockMouse.click(resolutionCol, resolutionRow);
@@ -944,6 +981,45 @@ describe("Shell", () => {
       y: 5,
       width: 30,
       height: 8,
+    });
+  });
+
+  test("keeps a floating pane drag inside fractional desktop bounds", () => {
+    const rect = resolvePaneDragFloatingRect(
+      {
+        mode: "floating",
+        startX: 38,
+        startY: 9,
+        origRect: { x: 30, y: 7, width: 24, height: 8 },
+      },
+      { x: 30, y: 7, width: 24, height: 8 },
+      90,
+      40,
+      52.5,
+      18.5,
+    );
+
+    expect(rect).toEqual({
+      x: 28.5,
+      y: 10.5,
+      width: 24,
+      height: 8,
+    });
+  });
+
+  test("fits oversized floating panes into the current canvas", () => {
+    const rect = constrainFloatingRectToBounds(
+      { x: 80, y: 30, width: 100, height: 40, zIndex: 75 },
+      50.5,
+      12.5,
+    );
+
+    expect(rect).toEqual({
+      x: 0,
+      y: 0,
+      width: 50.5,
+      height: 12.5,
+      zIndex: 75,
     });
   });
 

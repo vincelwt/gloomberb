@@ -32,13 +32,20 @@ import { contextMenuSelectionMessage } from "./context-menu-click";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
 import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
 import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
+import {
+  DEFAULT_WINDOW_FRAME,
+  DETACHED_WINDOW_MIN_SIZE,
+  MAIN_WINDOW_MIN_SIZE,
+  normalizeWindowFrame,
+  normalizeWindowFrameWithMinimum,
+  type WindowFrame,
+  type WindowMinimumSize,
+} from "./window-frame";
 
-const DEFAULT_WINDOW_FRAME = { x: 64, y: 48, width: 1440, height: 920 };
 const NOTES_INDEX_FILE = "__quick-notes-index__.json";
 const MAIN_WINDOW_RPC_KEY = "main";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
-type WindowFrame = { x: number; y: number; width: number; height: number };
 type WindowMoveEvent = { data?: { x?: number; y?: number } };
 type WindowResizeEvent = { data?: Partial<WindowFrame> };
 type PersistedCloudSession = {
@@ -174,23 +181,18 @@ function clearTimer(
   }
 }
 
-function normalizeWindowFrame(frame: Partial<WindowFrame> | null | undefined, fallback: WindowFrame = DEFAULT_WINDOW_FRAME): WindowFrame {
-  return {
-    x: typeof frame?.x === "number" ? frame.x : fallback.x,
-    y: typeof frame?.y === "number" ? frame.y : fallback.y,
-    width: typeof frame?.width === "number" ? frame.width : fallback.width,
-    height: typeof frame?.height === "number" ? frame.height : fallback.height,
-  };
-}
-
 function getWindowFrame(window: BrowserWindow | null): WindowFrame | null {
   if (!window) return null;
   return normalizeWindowFrame(window.frame);
 }
 
-function updateWindowFrameCache(window: BrowserWindow | null, patch: Partial<WindowFrame>): WindowFrame | null {
+function updateWindowFrameCache(
+  window: BrowserWindow | null,
+  patch: Partial<WindowFrame>,
+  minimumSize?: WindowMinimumSize,
+): WindowFrame | null {
   if (!window) return null;
-  const nextFrame = normalizeWindowFrame(patch, getWindowFrame(window) ?? DEFAULT_WINDOW_FRAME);
+  const nextFrame = normalizeWindowFrameWithMinimum(patch, getWindowFrame(window) ?? DEFAULT_WINDOW_FRAME, minimumSize);
   window.frame = nextFrame;
   return nextFrame;
 }
@@ -202,8 +204,19 @@ function applyWindowMoveEvent(window: BrowserWindow | null, event: WindowMoveEve
   });
 }
 
-function applyWindowResizeEvent(window: BrowserWindow | null, event: WindowResizeEvent): WindowFrame | null {
-  return updateWindowFrameCache(window, event.data ?? {});
+function applyWindowResizeEvent(
+  window: BrowserWindow | null,
+  event: WindowResizeEvent,
+  minimumSize?: WindowMinimumSize,
+): WindowFrame | null {
+  if (!window) return null;
+  const previousFrame = getWindowFrame(window) ?? DEFAULT_WINDOW_FRAME;
+  const rawFrame = normalizeWindowFrame(event.data ?? {}, previousFrame);
+  const nextFrame = updateWindowFrameCache(window, rawFrame, minimumSize);
+  if (nextFrame && (nextFrame.width !== rawFrame.width || nextFrame.height !== rawFrame.height)) {
+    window.setFrame(nextFrame.x, nextFrame.y, nextFrame.width, nextFrame.height);
+  }
+  return nextFrame;
 }
 
 function setCurrentConfig(nextConfig: AppConfig): void {
@@ -444,24 +457,24 @@ function resolveDetachedWindowTitle(instanceId: string): string {
 function resolveDetachedWindowFrame(instanceId: string): { x: number; y: number; width: number; height: number } {
   const detachedEntry = requireConfig().layout.detached.find((entry) => entry.instanceId === instanceId);
   if (detachedEntry) {
-    return {
+    return normalizeWindowFrameWithMinimum({
       x: detachedEntry.x,
       y: detachedEntry.y,
       width: detachedEntry.width,
       height: detachedEntry.height,
-    };
+    }, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
   }
   const remembered = findPaneInstance(requireConfig().layout, instanceId)?.placementMemory?.detached;
   if (remembered) {
-    return remembered;
+    return normalizeWindowFrameWithMinimum(remembered, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
   }
   const mainFrame = getWindowFrame(mainWindow) ?? DEFAULT_WINDOW_FRAME;
-  return {
+  return normalizeWindowFrameWithMinimum({
     x: mainFrame.x + 72,
     y: mainFrame.y + 72,
     width: Math.max(720, Math.floor(mainFrame.width * 0.45)),
     height: Math.max(420, Math.floor(mainFrame.height * 0.5)),
-  };
+  }, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
 }
 
 function resolveDetachedDockEdge(frame: { x: number; y: number; width: number; height: number }): "left" | "right" | "top" | "bottom" | null {
@@ -512,9 +525,10 @@ function createDetachedWindow(
   frame: { x: number; y: number; width: number; height: number },
 ): BrowserWindow {
   const rpc = createWindowRpc(detachedRpcKey(instanceId));
+  const initialFrame = normalizeWindowFrameWithMinimum(frame, DEFAULT_WINDOW_FRAME, DETACHED_WINDOW_MIN_SIZE);
   const window = new BrowserWindow({
     title: resolveDetachedWindowTitle(instanceId),
-    frame,
+    frame: initialFrame,
     url: "views://mainview/index.html",
     renderer: "native",
     rpc,
@@ -522,7 +536,7 @@ function createDetachedWindow(
     navigationRules: JSON.stringify(["views://*"]),
     sandbox: false,
   });
-  updateWindowFrameCache(window, frame);
+  updateWindowFrameCache(window, initialFrame, DETACHED_WINDOW_MIN_SIZE);
   detachedWindows.set(instanceId, window);
 
   (window as any).on?.("close", () => {
@@ -539,7 +553,7 @@ function createDetachedWindow(
     scheduleDetachedWindowMove(instanceId);
   });
   (window as any).on?.("resize", (event: WindowResizeEvent) => {
-    applyWindowResizeEvent(window, event);
+    applyWindowResizeEvent(window, event, DETACHED_WINDOW_MIN_SIZE);
     scheduleDetachedWindowMove(instanceId);
   });
 
@@ -571,13 +585,17 @@ function reconcileDetachedWindows(): void {
     const hasLiveFrameUpdate = pendingDetachedMoveFlush.has(instanceId)
       || detachedFrameTimers.has(instanceId)
       || detachedDockTimers.has(instanceId);
+    const nextFrame = currentFrame
+      ? normalizeWindowFrameWithMinimum(entry, currentFrame, DETACHED_WINDOW_MIN_SIZE)
+      : null;
     if (!hasLiveFrameUpdate
       && currentFrame
-      && (currentFrame.x !== entry.x
-        || currentFrame.y !== entry.y
-        || currentFrame.width !== entry.width
-        || currentFrame.height !== entry.height)) {
-      existingWindow.setFrame(entry.x, entry.y, entry.width, entry.height);
+      && nextFrame
+      && (currentFrame.x !== nextFrame.x
+        || currentFrame.y !== nextFrame.y
+        || currentFrame.width !== nextFrame.width
+        || currentFrame.height !== nextFrame.height)) {
+      existingWindow.setFrame(nextFrame.x, nextFrame.y, nextFrame.width, nextFrame.height);
     }
     (existingWindow as any).setTitle?.(resolveDetachedWindowTitle(instanceId));
   }
@@ -1267,7 +1285,7 @@ const mainRpc = createWindowRpc(MAIN_WINDOW_RPC_KEY);
 
 mainWindow = new BrowserWindow({
   title: "Gloomberb",
-  frame: DEFAULT_WINDOW_FRAME,
+  frame: normalizeWindowFrameWithMinimum(DEFAULT_WINDOW_FRAME, DEFAULT_WINDOW_FRAME, MAIN_WINDOW_MIN_SIZE),
   url: "views://mainview/index.html",
   renderer: "native",
   rpc: mainRpc,
@@ -1275,10 +1293,10 @@ mainWindow = new BrowserWindow({
   navigationRules: JSON.stringify(["views://*"]),
   sandbox: false,
 });
-updateWindowFrameCache(mainWindow, DEFAULT_WINDOW_FRAME);
+updateWindowFrameCache(mainWindow, DEFAULT_WINDOW_FRAME, MAIN_WINDOW_MIN_SIZE);
 (mainWindow as any).on?.("move", (event: WindowMoveEvent) => {
   applyWindowMoveEvent(mainWindow, event);
 });
 (mainWindow as any).on?.("resize", (event: WindowResizeEvent) => {
-  applyWindowResizeEvent(mainWindow, event);
+  applyWindowResizeEvent(mainWindow, event, MAIN_WINDOW_MIN_SIZE);
 });
