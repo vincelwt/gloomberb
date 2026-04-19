@@ -343,10 +343,20 @@ export function FeedDataTableStackView({
   }, [scrollDetailBy]);
 
   const detailContent = openItem ? (
-    <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexBasis={0}
+      minHeight={0}
+      overflow="hidden"
+      paddingX={1}
+      paddingY={1}
+    >
       <ScrollBox
         ref={detailScrollRef}
         flexGrow={1}
+        flexBasis={0}
+        minHeight={0}
         scrollY
         focusable={false}
       >

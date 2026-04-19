@@ -84,6 +84,17 @@ export function sortNewsArticles(
   });
 }
 
+export function getSelectedNewsArticle(
+  articles: MarketNewsItem[],
+  selectedArticleId: string | null,
+  preference: NewsSortPreference,
+): MarketNewsItem | null {
+  const selectedArticle = selectedArticleId
+    ? articles.find((article) => article.id === selectedArticleId) ?? null
+    : null;
+  return selectedArticle ?? sortNewsArticles(articles, preference)[0] ?? null;
+}
+
 function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId): NewsSortPreference {
   if (current.columnId === columnId) {
     return {

@@ -1,5 +1,5 @@
 import { Text } from "../../ui";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
@@ -8,9 +8,10 @@ import { useArticleSummary, useResolvedEntryValue } from "../../market-data/hook
 import { instrumentFromTicker } from "../../market-data/request-types";
 import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { Spinner } from "../../components/spinner";
-import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../components";
+import { FeedDataTableStackView, type FeedDataTableItem } from "../../components";
 import { useNewsArticles } from "../../news/hooks";
 import { registerNewsWireFeatures } from "./news-wire";
+import { useNewsArticleFooter } from "./news-wire/news-footer";
 import { useNewsReadState } from "./news-wire/read-state";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
@@ -102,14 +103,18 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     }
   }, [news.length, selectedIdx, setSelectedIdx]);
 
-  usePaneFooter("news", () => {
-    const info = [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
-      ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
-    ];
-    return info.length > 0 ? { info } : null;
-  }, [error, loading, loadingSummary]);
+  const footerInfo = useMemo(() => [
+    ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+    ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+    ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
+  ], [error, loading, loadingSummary]);
+
+  useNewsArticleFooter({
+    registrationId: "news",
+    focused,
+    article: selected,
+    info: footerInfo,
+  });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view news.</Text>;
   if (loading && news.length === 0) return <Spinner label="Loading news..." />;

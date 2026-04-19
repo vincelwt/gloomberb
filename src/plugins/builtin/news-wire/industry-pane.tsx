@@ -4,11 +4,12 @@ import type { PaneProps } from "../../../types/plugin";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { useNewsArticles } from "../../../news/hooks";
 import type { NewsQueryPhase } from "../../../news/types";
-import { TabBar, usePaneFooter } from "../../../components";
+import { TabBar } from "../../../components";
 import { Spinner } from "../../../components/spinner";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
-import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
+import { getSelectedNewsArticle, NewsArticleStackView, type NewsSortPreference } from "./news-table";
+import { useNewsArticleFooter } from "./news-footer";
 import { useNewsReadState } from "./read-state";
 import {
   NEWS_QUERY_PRESETS,
@@ -63,6 +64,11 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     setSelectedArticleId(null);
   }, [category, setSelectedArticleId]);
 
+  const selectedArticle = useMemo(() => {
+    if (detailArticle) return detailArticle;
+    return getSelectedNewsArticle(articles, selectedArticleId, sortPreference);
+  }, [articles, detailArticle, selectedArticleId, sortPreference]);
+
   const handleRootKeyDown = (event: {
     name?: string;
     preventDefault?: () => void;
@@ -78,7 +84,11 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     return true;
   };
 
-  usePaneFooter("news-wire:industry", () => null, [category]);
+  useNewsArticleFooter({
+    registrationId: "news-wire:industry",
+    focused,
+    article: selectedArticle,
+  });
 
   const rootBefore = (
     <Box height={1} flexShrink={0} overflow="hidden">

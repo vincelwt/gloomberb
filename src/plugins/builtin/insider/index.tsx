@@ -11,7 +11,7 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app-context";
 import { colors } from "../../../theme/colors";
 import { Spinner } from "../../../components/spinner";
-import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../../components";
+import { FeedDataTableStackView, useExternalLinkFooter, type FeedDataTableItem } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
@@ -146,7 +146,6 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
         detailBody: isLoading
           ? "Loading filing content..."
           : "This Form 4 filing could not be parsed into a transaction summary.",
-        detailNote: filing.filingUrl || undefined,
       };
     }
 
@@ -162,7 +161,6 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
         ...filingMeta,
       ],
       detailBody: buildTransactionDetailBody(transaction),
-      detailNote: filing.filingUrl || undefined,
     };
   });
 }
@@ -241,6 +239,7 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   const summary = useMemo(() => buildSummary(allParsed), [allParsed]);
   const pendingCount = form4Filings.filter((f) => !contentMap.has(f.accessionNumber)).length;
   const selectedTransaction = parsed[selectedIdx]?.transaction ?? null;
+  const selectedFiling = parsed[selectedIdx]?.filing ?? null;
 
   const toggleNameFilter = useCallback((reportedName: string) => {
     setNameFilter((current) => current === reportedName ? null : reportedName);
@@ -266,13 +265,13 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
 
   const selectedFilterName = selectedTransaction?.reportedName ?? null;
   const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
-  usePaneFooter("insider", () => ({
-    info: [
-      { id: "summary", parts: [{ text: truncateText(summary, Math.max(24, width - 20)), tone: "muted" }] },
-      ...(nameFilter ? [{ id: "filter", parts: [{ text: `filter: ${truncateText(nameFilter, 24)}`, tone: "warning" as const }] }] : []),
-      ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
-    ],
-    hints: selectedFilterName || nameFilter
+  const footerInfo = useMemo(() => [
+    { id: "summary", parts: [{ text: truncateText(summary, Math.max(24, width - 20)), tone: "muted" as const }] },
+    ...(nameFilter ? [{ id: "filter", parts: [{ text: `filter: ${truncateText(nameFilter, 24)}`, tone: "warning" as const }] }] : []),
+    ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
+  ], [nameFilter, pendingLabel, summary, width]);
+  const footerHints = useMemo(() => (
+    selectedFilterName || nameFilter
       ? [{
           id: "filter",
           key: "f",
@@ -282,8 +281,17 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
             else if (selectedFilterName) toggleNameFilter(selectedFilterName);
           },
         }]
-      : [],
-  }), [clearNameFilter, nameFilter, pendingLabel, selectedFilterName, summary, toggleNameFilter, width]);
+      : []
+  ), [clearNameFilter, nameFilter, selectedFilterName, toggleNameFilter]);
+  useExternalLinkFooter({
+    registrationId: "insider",
+    focused,
+    url: error ? null : selectedFiling?.filingUrl,
+    source: selectedFiling?.form ? formatFilingForm(selectedFiling.form) : null,
+    info: footerInfo,
+    hints: footerHints,
+    label: "filing",
+  });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view insider activity.</Text>;
   if (!eligibleTicker) return renderNotice("Insider transactions are only shown for US equities.", width);

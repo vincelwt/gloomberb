@@ -1,5 +1,5 @@
 import { Box, Text } from "../../ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { SecFilingItem } from "../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingContent, useSecFilingsQuery } from "../../market-data/hooks";
@@ -8,7 +8,7 @@ import { usePluginPaneState } from "../../plugins/plugin-runtime";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { Spinner } from "../../components/spinner";
-import { FeedDataTableStackView, usePaneFooter, type FeedDataTableItem } from "../../components";
+import { FeedDataTableStackView, useExternalLinkFooter, type FeedDataTableItem } from "../../components";
 import { isUsEquityTicker } from "../../utils/sec";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { parseForm4Xml, transactionTypeLabel } from "./insider/insider-data";
@@ -222,7 +222,6 @@ function toFeedItems(
               : form4Detail ?? fetchedContent ?? fallbackBody
           )
         : form4Detail ?? fallbackBody,
-      detailNote: filing.filingUrl || undefined,
     };
   });
 }
@@ -306,13 +305,18 @@ function SecTab({ width, height, focused }: DetailTabProps) {
     })();
   }, [filings]);
 
-  usePaneFooter("sec", () => {
-    const info = [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
-    ];
-    return info.length > 0 ? { info } : null;
-  }, [error, loading]);
+  const footerInfo = useMemo(() => [
+    ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+    ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+  ], [error, loading]);
+  useExternalLinkFooter({
+    registrationId: "sec",
+    focused,
+    url: error ? null : selected?.filingUrl,
+    source: selected?.form,
+    info: footerInfo,
+    label: "filing",
+  });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
   if (!eligibleTicker) return renderNotice("SEC filings are only shown for US equities.", width);

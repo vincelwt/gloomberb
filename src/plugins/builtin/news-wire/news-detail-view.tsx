@@ -109,8 +109,8 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   });
 
   return (
-    <Box flexDirection="column" width={width} flexGrow={1} minHeight={0}>
-      <ScrollBox ref={scrollRef} flexGrow={1} scrollY focusable={false}>
+    <Box flexDirection="column" width={width} flexGrow={1} flexBasis={0} minHeight={0} overflow="hidden">
+      <ScrollBox ref={scrollRef} flexGrow={1} flexBasis={0} minHeight={0} scrollY focusable={false}>
         <Box flexDirection="column" paddingX={1} paddingY={1} gap={1}>
           {showTitle && (
             <Box flexDirection="column">

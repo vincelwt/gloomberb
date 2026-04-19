@@ -1,16 +1,18 @@
 import { Box } from "../../../ui";
+import { useMemo } from "react";
 import type { NewsQuery } from "../../../news/types";
 import { useNewsArticles } from "../../../news/hooks";
 import type { PaneProps } from "../../../types/plugin";
-import { usePaneFooter } from "../../../components";
 import { Spinner } from "../../../components/spinner";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import {
+  getSelectedNewsArticle,
   NewsArticleStackView,
   type NewsColumnId,
   type NewsSortPreference,
 } from "./news-table";
+import { useNewsArticleFooter } from "./news-footer";
 import { useNewsReadState } from "./read-state";
 
 export function NewsPresetPane({
@@ -46,8 +48,16 @@ export function NewsPresetPane({
   );
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const selectedArticle = useMemo(() => {
+    if (detailArticle) return detailArticle;
+    return getSelectedNewsArticle(articles, selectedArticleId, sortPreference);
+  }, [articles, detailArticle, selectedArticleId, sortPreference]);
 
-  usePaneFooter(`news-wire:${paneKey}`, () => null, [paneKey]);
+  useNewsArticleFooter({
+    registrationId: `news-wire:${paneKey}`,
+    focused,
+    article: selectedArticle,
+  });
 
   const detailContent = detailArticle ? (
     <NewsDetailView

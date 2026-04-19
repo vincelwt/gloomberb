@@ -24,6 +24,7 @@ export type {
   PaneFooterPart,
   PaneHint,
 } from "./layout/pane-footer";
+export { useExternalLinkFooter } from "./use-external-link-footer";
 
 // Theme
 export { colors, priceColor, hoverBg } from "../theme/colors";
