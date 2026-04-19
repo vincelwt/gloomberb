@@ -58,6 +58,7 @@ describe("plugin runtime hooks", () => {
     let setSelection: ((value: SetStateAction<string>) => void) | null = null;
 
     const runtime = {
+      getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
       subscribeResumeState: () => () => {},
@@ -125,6 +126,7 @@ describe("plugin runtime hooks", () => {
     const listeners = new Map<string, Set<() => void>>();
 
     const runtime: PluginRuntimeAccess = {
+      getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
       subscribeResumeState(pluginId, key, listener) {

@@ -73,6 +73,8 @@ Use `setup()` for interactive runtime registration, and `cliCommands` for root-l
 
 Plugins should treat Gloomberb's UI APIs as the renderer contract. Official plugins may render panes, detail tabs, and slot widgets with React, but plugin UI should import shared Gloom APIs such as `gloomberb/ui`, `gloomberb/react`, or the plugin runtime hooks instead of importing OpenTUI, Electrobun, DOM, or terminal renderer packages directly. Renderer-specific details like terminal keyboard events, kitty images, DOM pointer behavior, dialogs, and notifications belong in the renderer adapters.
 
+React plugin panes and detail tabs are wrapped in a plugin render context. Use plugin runtime hooks for app services from render code.
+
 The `setup()` function receives a context object with these capabilities:
 
 ### Registration methods
@@ -489,6 +491,7 @@ import {
   Tabs,
   TabBar,
   ListView,
+  DataTableView,
   ToggleList,
   Button,
   IconButton,
@@ -537,6 +540,7 @@ import {
 Available components:
 - `Tabs` / `TabBar` — horizontal tab navigation
 - `ListView` — shared selectable list primitive with mouse support
+- `DataTableView` — shared sortable table wrapper with keyboard navigation and synchronized scrolling
 - `StockChart` — interactive area, line, candlestick, and OHLC chart
 - `ToggleList` — checkbox list with selection
 - `Button` / `IconButton` — clickable actions for dialogs and toolbars
@@ -576,10 +580,19 @@ Do not register basic navigation hints. Pane hints must omit `Esc`, `Enter`, arr
 
 ### Plugin runtime hooks
 
-These hooks are available inside pane and tab components rendered by a plugin. They provide reactive access to the plugin's storage layers:
+These hooks are available inside pane and tab components rendered by a plugin. They provide app actions, provider access, and reactive access to the plugin's storage layers:
 
 ```typescript
-import { usePluginPaneState, usePluginState, usePluginConfigState } from "gloomberb/plugins/plugin-runtime";
+import {
+  usePluginDataProvider,
+  usePluginPaneState,
+  usePluginState,
+  usePluginConfigState,
+  usePluginTickerActions,
+} from "gloomberb/plugins/plugin-runtime";
+
+const dataProvider = usePluginDataProvider();
+const { navigateTicker, pinTicker } = usePluginTickerActions();
 
 // Per-pane transient state (scoped to the current pane instance)
 const [expanded, setExpanded] = usePluginPaneState("expanded", false);

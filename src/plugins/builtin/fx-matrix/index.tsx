@@ -5,7 +5,7 @@ import { useShortcut } from "../../../react/input";
 import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
-import { getSharedDataProvider } from "../../registry";
+import { usePluginDataProvider } from "../../plugin-runtime";
 import { MAJOR_CURRENCIES, CURRENCY_FLAGS, formatRate, type MajorCurrency } from "./pairs";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -19,6 +19,7 @@ function formatAge(ms: number): string {
 }
 
 export function FxMatrixPane({ focused, width, height }: PaneProps) {
+  const dataProvider = usePluginDataProvider();
   const [rates, setRates] = useState<Map<MajorCurrency, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
@@ -26,8 +27,7 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
   const fetchGenRef = useRef(0);
 
   const fetchRates = useCallback(async () => {
-    const provider = getSharedDataProvider();
-    if (!provider) return;
+    if (!dataProvider) return;
 
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
@@ -36,7 +36,7 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
       const results = await Promise.allSettled(
         MAJOR_CURRENCIES.map(async (currency) => {
           if (currency === "USD") return { currency, rate: 1 };
-          const rate = await provider.getExchangeRate(currency);
+          const rate = await dataProvider.getExchangeRate(currency);
           return { currency, rate };
         }),
       );
@@ -55,7 +55,7 @@ export function FxMatrixPane({ focused, width, height }: PaneProps) {
     } finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
-  }, []);
+  }, [dataProvider]);
 
   useEffect(() => {
     fetchRates();

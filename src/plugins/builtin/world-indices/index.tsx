@@ -1,15 +1,12 @@
-import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { DataTable, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
+import { TextAttributes } from "../../../ui";
+import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { Quote } from "../../../types/financials";
 import type { MarketState } from "../../../types/financials";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
-import { usePluginTickerActions } from "../../plugin-runtime";
-import { getSharedDataProvider } from "../../registry";
+import { usePluginDataProvider, usePluginTickerActions } from "../../plugin-runtime";
 import { WORLD_INDICES, REGION_LABELS, REGION_ORDER, getIndicesByRegion, type IndexEntry } from "./indices";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -152,14 +149,12 @@ function nextSortPreference(
 }
 
 export function WorldIndicesPane({ focused, width, height }: PaneProps) {
+  const dataProvider = usePluginDataProvider();
   const { pinTicker } = usePluginTickerActions();
   const [quotes, setQuotes] = useState<QuoteMap>(new Map());
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [hoveredFlatIdx, setHoveredFlatIdx] = useState<number | null>(null);
   const [sortPreference, setSortPreference] = useState<WorldIndexSortPreference>(DEFAULT_SORT_PREFERENCE);
   const fetchGenRef = useRef(0);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
 
   const indicesByRegion = useMemo(() => getIndicesByRegion(), []);
   const flatRows = useMemo(
@@ -183,8 +178,7 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
   }, [flatRows, selectedFlatIdx, selectedSymbol]);
 
   const fetchAll = useCallback(() => {
-    const provider = getSharedDataProvider();
-    if (!provider) return;
+    if (!dataProvider) return;
 
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
@@ -197,7 +191,7 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
         return next;
       });
 
-      provider.getQuote(entry.symbol, "").then((quote) => {
+      dataProvider.getQuote(entry.symbol, "").then((quote) => {
         if (fetchGenRef.current !== gen) return;
         setQuotes((prev) => {
           const next = new Map(prev);
@@ -214,25 +208,13 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
         });
       });
     }
-  }, []);
+  }, [dataProvider]);
 
   useEffect(() => {
     fetchAll();
     const interval = setInterval(fetchAll, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [fetchAll]);
-
-  const syncHeaderScroll = useCallback(() => {
-    const bodyScrollBox = scrollRef.current;
-    const headerScrollBox = headerScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
 
   const openSelected = useCallback((flatIdx: number) => {
     const row = flatRows[flatIdx];
@@ -249,38 +231,6 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
-
-  useShortcut((event) => {
-    if (!focused) return;
-
-    const currentPos = navigableIndices.indexOf(activeFlatIdx);
-    const key = event.name;
-    const isEnter = key === "enter" || key === "return";
-
-    if (key === "j" || key === "down") {
-      event.preventDefault?.();
-      const next = navigableIndices[currentPos >= 0 ? currentPos + 1 : 0];
-      if (next !== undefined) selectFlatIndex(next);
-    } else if (key === "k" || key === "up") {
-      event.preventDefault?.();
-      const next = navigableIndices[currentPos > 0 ? currentPos - 1 : 0];
-      if (next !== undefined) selectFlatIndex(next);
-    } else if (isEnter) {
-      event.preventDefault?.();
-      openSelected(activeFlatIdx);
-    }
-  });
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox?.viewport || activeFlatIdx < 0) return;
-    const viewportHeight = Math.max(scrollBox.viewport.height, 1);
-    if (activeFlatIdx < scrollBox.scrollTop) {
-      scrollBox.scrollTo(activeFlatIdx);
-    } else if (activeFlatIdx >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(activeFlatIdx - viewportHeight + 1);
-    }
-  }, [activeFlatIdx]);
 
   const columns = useMemo<WorldIndexColumn[]>(() => {
     const statusWidth = 1;
@@ -364,30 +314,29 @@ export function WorldIndicesPane({ focused, width, height }: PaneProps) {
   }), [latestQuoteTs, loadingCount]);
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <DataTable<WorldIndexTableRow, WorldIndexColumn>
-        columns={columns}
-        items={flatRows}
-        sortColumnId={sortPreference.columnId}
-        sortDirection={sortPreference.direction}
-        onHeaderClick={handleHeaderClick}
-        headerScrollRef={headerScrollRef}
-        scrollRef={scrollRef}
-        syncHeaderScroll={syncHeaderScroll}
-        onBodyScrollActivity={handleBodyScrollActivity}
-        hoveredIdx={hoveredFlatIdx}
-        setHoveredIdx={setHoveredFlatIdx}
-        getItemKey={(row) => row.type === "header" ? `header-${row.region}` : row.entry.symbol}
-        isSelected={(row) => row.type === "row" && row.entry.symbol === selectedSymbol}
-        onSelect={(_row, index) => selectFlatIndex(index)}
-        onActivate={(_row, index) => openSelected(index)}
-        renderSectionHeader={(row) => row.type === "header"
-          ? { text: REGION_LABELS[row.region] }
-          : null}
-        renderCell={renderCell}
-        emptyStateTitle="No indices configured."
-      />
-    </Box>
+    <DataTableView<WorldIndexTableRow, WorldIndexColumn>
+      focused={focused}
+      selectedIndex={activeFlatIdx}
+      isNavigable={(row) => row.type === "row"}
+      onSelectIndex={selectFlatIndex}
+      onActivateIndex={(index) => openSelected(index)}
+      rootWidth={width}
+      rootHeight={height}
+      columns={columns}
+      items={flatRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
+      getItemKey={(row) => row.type === "header" ? `header-${row.region}` : row.entry.symbol}
+      isSelected={(row) => row.type === "row" && row.entry.symbol === selectedSymbol}
+      onSelect={(_row, index) => selectFlatIndex(index)}
+      onActivate={(_row, index) => openSelected(index)}
+      renderSectionHeader={(row) => row.type === "header"
+        ? { text: REGION_LABELS[row.region] }
+        : null}
+      renderCell={renderCell}
+      emptyStateTitle="No indices configured."
+    />
   );
 }
 

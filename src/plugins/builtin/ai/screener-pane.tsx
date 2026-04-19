@@ -1,10 +1,11 @@
 import { Box, Text, Textarea } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch } from "react";
 import type { RefObject } from "react";
-import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
+import { TextAttributes, type TextareaRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import type { PaneProps } from "../../../types/plugin";
 import type { ColumnConfig } from "../../../types/config";
+import type { DataProvider } from "../../../types/data-provider";
 import type { InstrumentSearchResult } from "../../../types/instrument";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -13,19 +14,19 @@ import {
   useAppSelector,
   usePaneInstance,
   usePaneInstanceId,
+  type AppAction,
 } from "../../../state/app-context";
-import { usePluginPaneState, usePluginState } from "../../../plugins/plugin-runtime";
+import { usePluginDataProvider, usePluginPaneState, usePluginState, usePluginTickerActions } from "../../../plugins/plugin-runtime";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
-import { TickerListTable } from "../../../components/ticker-list-table";
-import { Button, EmptyState, Spinner, TabBar, usePaneFooter } from "../../../components";
+import { Button, EmptyState, Spinner, TabBar, TickerListTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { canonicalExchange } from "../../../utils/exchanges";
 import { formatTimeAgo } from "../../../utils/format";
 import { getColumnValue, getSortValue, type ColumnContext } from "../portfolio-list/metrics";
-import { getSharedDataProvider, getSharedRegistry } from "../../registry";
+import { getSharedRegistry } from "../../registry";
 import { upsertTickerFromSearchResult } from "../../../utils/ticker-search";
 import { buildGloomberbCliInstructions, resolveGloomberbCliCommand } from "./gloomberb-cli";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "./providers";
@@ -216,10 +217,10 @@ function matchesExchange(result: InstrumentSearchResult, exchange: string): bool
 async function resolveCandidateTicker(
   candidate: { symbol: string; exchange: string; reason: string },
   localTickers: ReadonlyMap<string, TickerRecord>,
-  stateDispatch: ReturnType<typeof useAppState>["dispatch"],
+  stateDispatch: Dispatch<AppAction>,
+  dataProvider: DataProvider | null,
 ): Promise<ValidatedScreenerResult | null> {
   const registry = getSharedRegistry();
-  const dataProvider = getSharedDataProvider() ?? registry?.dataProvider ?? null;
   if (!registry || !dataProvider) {
     throw new Error("AI screener could not access the ticker repository.");
   }
@@ -261,7 +262,8 @@ async function resolveCandidateTicker(
 async function validateScreenerResults(
   candidates: Array<{ symbol: string; exchange: string; reason: string }>,
   localTickers: ReadonlyMap<string, TickerRecord>,
-  stateDispatch: ReturnType<typeof useAppState>["dispatch"],
+  stateDispatch: Dispatch<AppAction>,
+  dataProvider: DataProvider | null,
 ): Promise<{ results: ValidatedScreenerResult[]; warning: string | null }> {
   const resolved: ValidatedScreenerResult[] = [];
   const unresolved: string[] = [];
@@ -269,7 +271,7 @@ async function validateScreenerResults(
   const seen = new Set<string>();
 
   for (const candidate of candidates) {
-    const result = await resolveCandidateTicker(candidate, localTickers, stateDispatch);
+    const result = await resolveCandidateTicker(candidate, localTickers, stateDispatch, dataProvider);
     if (!result) {
       unresolved.push(candidate.symbol);
       continue;
@@ -348,6 +350,8 @@ function ActionChip({
 }
 
 export function AiScreenerPane({ focused, width, height }: PaneProps) {
+  const dataProvider = usePluginDataProvider();
+  const { pinTicker } = usePluginTickerActions();
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
   const dispatch = useAppDispatch();
@@ -365,15 +369,12 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const [activeTabId, setActiveTabId] = usePluginPaneState<string | null>("activeTabId", null);
   const [cursorSymbol, setCursorSymbol] = usePluginPaneState<string | null>("cursorSymbol", null);
   const [sorts, setSorts] = usePluginPaneState<Record<string, ScreenerSortPreference>>("sorts", {});
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [runState, setRunState] = useState<RunState | null>(null);
   const [now, setNow] = useState(Date.now());
   const [editorState, setEditorState] = useState<ScreenerEditorState | null>(null);
   const [forceConfirmTabId, setForceConfirmTabId] = useState<string | null>(null);
   const runRef = useRef<AiRunController | null>(null);
   const editorTextareaRef = useRef<TextareaRenderable | null>(null);
-  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
   const initializedRef = useRef(false);
   const pendingInitialRunRef = useRef<string | null>(null);
   const lastTabClickRef = useRef<{ tabId: string; at: number } | null>(null);
@@ -491,18 +492,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
   const isRunningActiveTab = runState?.tabId === activeTab?.id;
   const forceRunArmed = !!activeTab && forceConfirmTabId === activeTab.id;
-
-  const syncHeaderScroll = useCallback(() => {
-    const header = headerScrollRef.current;
-    const body = scrollRef.current;
-    if (header && body && header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, []);
-
-  const handleBodyScrollActivity = useCallback(() => {
-    syncHeaderScroll();
-  }, [syncHeaderScroll]);
 
   const updateTabs = useCallback((updater: (tabs: AiScreenerTab[]) => AiScreenerTab[]) => {
     setPersistedState((current) => ({
@@ -678,7 +667,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       rawOutput = await run.done;
 
       const parsed = parseScreenerResponse(rawOutput);
-      const validated = await validateScreenerResults(parsed.tickers, tickers, dispatch);
+      const validated = await validateScreenerResults(parsed.tickers, tickers, dispatch, dataProvider);
       const nextResults = !samePrompt || mode === "force"
         ? validated.results
         : mergeScreenerResults(tab.results, validated.results);
@@ -707,7 +696,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       }
       setRunState((current) => (current?.tabId === tab.id ? null : current));
     }
-  }, [dispatch, providers, setForceConfirmTabId, tabs, tickers, upsertTab]);
+  }, [dataProvider, dispatch, providers, setForceConfirmTabId, tabs, tickers, upsertTab]);
 
   useEffect(() => {
     if (!pendingInitialRunRef.current) return;
@@ -731,30 +720,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     }
   }, [activeTab, forceConfirmTabId]);
 
-  useEffect(() => {
-    if (headerScrollRef.current) {
-      headerScrollRef.current.horizontalScrollBar.visible = false;
-    }
-    syncHeaderScroll();
-  }, [columns, syncHeaderScroll]);
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) return;
-    const viewportHeight = scrollBox.viewport.height;
-    if (safeSelectedIdx < scrollBox.scrollTop) {
-      scrollBox.scrollTo(safeSelectedIdx);
-    } else if (safeSelectedIdx >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(Math.max(0, safeSelectedIdx - viewportHeight + 1));
-    }
-  }, [safeSelectedIdx]);
-
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) return;
-    scrollBox.verticalScrollBar.visible = sortedTickers.length > scrollBox.viewport.height;
-  }, [sortedTickers.length, width, height]);
-
   const cycleTabs = useCallback((direction: -1 | 1) => {
     if (!activeTab || tabs.length <= 1) return;
     const currentIndex = tabs.findIndex((tab) => tab.id === activeTab.id);
@@ -777,6 +742,18 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       [activeTab.id]: next,
     });
   }, [activeTab, setSorts, sorts]);
+
+  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    const isEnter = event.name === "enter" || event.name === "return";
+    if (!isEnter || !cursorSymbol) return false;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    pinTicker(cursorSymbol, {
+      floating: !!event.shift,
+      paneType: "ticker-detail",
+    });
+    return true;
+  }, [cursorSymbol, pinTicker]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -804,22 +781,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     }
 
     const key = event.name;
-    const isEnter = key === "enter" || key === "return";
-
-    if (key === "j" || key === "down") {
-      const nextTicker = sortedTickers[Math.min(safeSelectedIdx + 1, sortedTickers.length - 1)];
-      if (nextTicker) {
-        setCursorSymbol(nextTicker.metadata.ticker);
-      }
-      return;
-    }
-    if (key === "k" || key === "up") {
-      const nextTicker = sortedTickers[Math.max(safeSelectedIdx - 1, 0)];
-      if (nextTicker) {
-        setCursorSymbol(nextTicker.metadata.ticker);
-      }
-      return;
-    }
     if (event.name === "t") {
       addTab();
       return;
@@ -850,15 +811,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     }
     if (event.name === "e") {
       editActiveTab();
-      return;
     }
-
-    if (!isEnter || !cursorSymbol) return;
-    const registry = getSharedRegistry();
-    registry?.pinTickerFn(cursorSymbol, {
-      floating: !!event.shift,
-      paneType: "ticker-detail",
-    });
   });
 
   useEffect(() => () => {
@@ -868,7 +821,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const contentHeight = Math.max(height - 8, 4);
   const warningColor = colors.borderFocused;
   const statusText = activeTab
-    ? isRunningActiveTab
+    ? isRunningActiveTab && runState
       ? `${runState.mode === "force" ? "Force refreshing" : "Refreshing"} with ${getAiProvider(activeTab.providerId, providers)?.name ?? "AI"}...`
       : activeTab.lastSuccessAt
         ? `Last ran ${formatTimeAgo(new Date(activeTab.lastSuccessAt))}`
@@ -1116,7 +1069,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
             </Box>
           )}
 
-          {summaryLines.length > 0 && !activeTab.lastError && (
+          {activeTab && summaryLines.length > 0 && !activeTab.lastError && (
             <Box flexDirection="column" paddingX={1} paddingTop={activeTab.lastWarning ? 0 : 1}>
               {summaryLines.map((line, index) => (
                 <Box key={`summary:${index}`} height={1}>
@@ -1136,12 +1089,11 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                 <Spinner label="Running AI screener..." />
               </Box>
             ) : (
-              <TickerListTable
+              <TickerListTableView
+                focused={focused}
                 columns={columns}
                 tickers={sortedTickers}
                 cursorSymbol={cursorSymbol}
-                hoveredIdx={hoveredIdx}
-                setHoveredIdx={setHoveredIdx}
                 setCursorSymbol={setCursorSymbol}
                 resolveCell={(column, ticker, financials) => {
                   if (column.id === "ticker") {
@@ -1157,15 +1109,13 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                   return getColumnValue(column, ticker, financials, columnContext);
                 }}
                 financialsMap={financialsMap}
-                headerScrollRef={headerScrollRef}
-                scrollRef={scrollRef}
-                syncHeaderScroll={syncHeaderScroll}
-                onBodyScrollActivity={handleBodyScrollActivity}
                 sortColumnId={activeSort.columnId}
                 sortDirection={activeSort.direction}
                 onHeaderClick={handleHeaderClick}
+                onRootKeyDown={handleTableKeyDown}
+                resetScrollKey={activeTab.id}
                 onRowActivate={(ticker) => {
-                  getSharedRegistry()?.pinTickerFn(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
+                  pinTicker(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
                 }}
                 emptyTitle="No matches yet."
                 emptyHint={promptDirty ? "Prompt changed. Refresh to rerun." : "Run this screener. Use PS to customize columns."}

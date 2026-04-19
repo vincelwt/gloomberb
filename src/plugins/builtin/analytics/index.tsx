@@ -1,8 +1,8 @@
 import { Box, Text } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { DataTable, TabBar, type DataTableColumn } from "../../../components";
+import { DataTableView, TabBar, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
@@ -271,11 +271,7 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
 
   const [currentPortfolioId, setCurrentPortfolioId] = usePaneStateValue<string>("portfolioId", fallbackPortfolioId);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
-  const [hoveredSectorIdx, setHoveredSectorIdx] = useState<number | null>(null);
   const [sectorSort, setSectorSort] = useState<SectorSortPreference>(DEFAULT_SECTOR_SORT);
-
-  const sectorScrollRef = useRef<ScrollBoxRenderable>(null);
-  const sectorHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
 
   const activePortfolioId = resolvePortfolioId(portfolios, currentPortfolioId) ?? fallbackPortfolioId;
   const activePortfolio = useMemo(
@@ -291,8 +287,6 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const handlePortfolioSelect = useCallback((portfolioId: string) => {
     setCurrentPortfolioId(portfolioId);
     setSelectedSectorId(null);
-    setHoveredSectorIdx(null);
-    sectorScrollRef.current?.scrollTo(0);
   }, [setCurrentPortfolioId]);
 
   const portfolioTickers = useMemo(() => {
@@ -557,18 +551,6 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   ], [beta, sharpe]);
   const metricsHeight = summaryRows.length + riskRows.length + 5;
 
-  const syncSectorHeaderScroll = useCallback(() => {
-    const bodyScrollBox = sectorScrollRef.current;
-    const headerScrollBox = sectorHeaderScrollRef.current;
-    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
-      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
-    }
-  }, []);
-
-  const handleSectorBodyScrollActivity = useCallback(() => {
-    syncSectorHeaderScroll();
-  }, [syncSectorHeaderScroll]);
-
   const handleSectorHeaderClick = useCallback((columnId: string) => {
     setSectorSort((current) => nextSectorSortPreference(current, columnId));
   }, []);
@@ -587,15 +569,6 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
       if (nextPortfolio) handlePortfolioSelect(nextPortfolio.id);
       return;
     }
-    if (key === "j" || key === "down") {
-      const nextRow = sortedSectorRows[Math.min(safeSelectedSectorIdx + 1, sortedSectorRows.length - 1)];
-      if (nextRow) setSelectedSectorId(nextRow.id);
-      return;
-    }
-    if (key === "k" || key === "up") {
-      const nextRow = sortedSectorRows[Math.max(safeSelectedSectorIdx - 1, 0)];
-      if (nextRow) setSelectedSectorId(nextRow.id);
-    }
   });
 
   useEffect(() => {
@@ -603,25 +576,6 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
       setCurrentPortfolioId(activePortfolioId);
     }
   }, [activePortfolioId, currentPortfolioId, setCurrentPortfolioId]);
-
-  useEffect(() => {
-    if (sectorHeaderScrollRef.current) {
-      sectorHeaderScrollRef.current.horizontalScrollBar.visible = false;
-    }
-    syncSectorHeaderScroll();
-  }, [syncSectorHeaderScroll]);
-
-  useEffect(() => {
-    const scrollBox = sectorScrollRef.current;
-    if (!scrollBox || selectedSectorIdx < 0) return;
-
-    const viewportHeight = scrollBox.viewport.height;
-    if (selectedSectorIdx < scrollBox.scrollTop) {
-      scrollBox.scrollTo(selectedSectorIdx);
-    } else if (selectedSectorIdx >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(selectedSectorIdx - viewportHeight + 1);
-    }
-  }, [selectedSectorIdx]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -694,18 +648,15 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
                 </Text>
               </Box>
 
-              <DataTable<SectorTableRow, SectorTableColumn>
+              <DataTableView<SectorTableRow, SectorTableColumn>
+                focused={focused}
+                selectedIndex={safeSelectedSectorIdx}
+                resetScrollKey={activePortfolioId}
                 columns={sectorColumns}
                 items={sortedSectorRows}
                 sortColumnId={sectorSort.columnId}
                 sortDirection={sectorSort.direction}
                 onHeaderClick={handleSectorHeaderClick}
-                headerScrollRef={sectorHeaderScrollRef}
-                scrollRef={sectorScrollRef}
-                syncHeaderScroll={syncSectorHeaderScroll}
-                onBodyScrollActivity={handleSectorBodyScrollActivity}
-                hoveredIdx={hoveredSectorIdx}
-                setHoveredIdx={setHoveredSectorIdx}
                 getItemKey={(row) => row.id}
                 isSelected={(row) => effectiveSelectedSectorId === row.id}
                 onSelect={(row) => setSelectedSectorId(row.id)}

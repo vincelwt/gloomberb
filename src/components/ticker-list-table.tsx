@@ -26,6 +26,12 @@ type ResolveTickerTableCell = (
   ticker: TickerRecord,
   financials: TickerFinancials | undefined,
 ) => TickerTableCell;
+type TableMouseEvent = {
+  button?: number;
+  detail?: number;
+  preventDefault?: () => void;
+  stopPropagation?: () => void;
+};
 
 const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "price",
@@ -52,7 +58,7 @@ function resolveQuoteFlashColor(direction: QuoteFlashDirection, fallbackColor: s
   }
 }
 
-interface TickerListTableProps {
+export interface TickerListTableProps {
   columns: ColumnConfig[];
   tickers: TickerRecord[];
   cursorSymbol: string | null;
@@ -122,8 +128,8 @@ const TickerListHeader = memo(function TickerListHeader({
               key={column.id}
               width={column.width + 1}
               backgroundColor={colors.panel}
-              onMouseDown={onHeaderClick ? (event) => {
-                event.preventDefault();
+              onMouseDown={onHeaderClick ? (event: TableMouseEvent) => {
+                event.preventDefault?.();
                 onHeaderClick(column.id);
               } : undefined}
             >
@@ -182,6 +188,7 @@ const TickerListRow = memo(function TickerListRow({
   setCursorSymbol,
   resolveCell,
   onRowActivate,
+  onRowContextMenu,
   openContextMenuOnMouseDown,
   showSparklines,
   priceHistory,
@@ -220,7 +227,7 @@ const TickerListRow = memo(function TickerListRow({
       backgroundColor={rowBg}
       data-gloom-context-menu-surface="true"
       onMouseMove={() => setHoveredIdx(index)}
-      onMouseDown={(event) => {
+      onMouseDown={(event: TableMouseEvent) => {
         setCursorSymbol(ticker.metadata.ticker);
         if (event.button === 2) {
           if (openContextMenuOnMouseDown) {
@@ -228,7 +235,7 @@ const TickerListRow = memo(function TickerListRow({
           }
           return;
         }
-        event.preventDefault();
+        event.preventDefault?.();
         if (!onRowActivate) return;
         if (typeof event.detail === "number" && event.detail >= 2) {
           lastActivatedAtRef.current = null;

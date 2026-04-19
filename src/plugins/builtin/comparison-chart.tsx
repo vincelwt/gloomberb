@@ -8,7 +8,7 @@ import {
   DEFAULT_COMPARISON_CHART_RESOLUTION,
   normalizeChartResolution,
 } from "../../components/chart/chart-resolution";
-import { getSharedRegistry } from "../../plugins/registry";
+import { usePluginTickerActions } from "../../plugins/plugin-runtime";
 import { usePaneInstance } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import type { GloomPlugin, PaneProps, PaneSettingsDef } from "../../types/plugin";
@@ -101,13 +101,13 @@ export function buildComparisonChartPaneTitle(symbols: string[]): string {
   return `${symbols.slice(0, 2).join(" · ")} +${symbols.length - 2}`;
 }
 function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
-  const registry = getSharedRegistry();
+  const { navigateTicker } = usePluginTickerActions();
   const pane = usePaneInstance();
   const settings = useMemo(() => getComparisonChartPaneSettings(pane?.settings), [pane?.settings]);
 
   const openTicker = useCallback((symbol: string) => {
-    registry?.navigateTickerFn(symbol);
-  }, [registry]);
+    navigateTicker(symbol);
+  }, [navigateTicker]);
 
   if (settings.symbols.length === 0) {
     return (
