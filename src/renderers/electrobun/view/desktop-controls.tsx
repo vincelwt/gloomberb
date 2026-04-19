@@ -603,7 +603,7 @@ export function WebSegmentedControl({
 
 export function WebDialogFrame({ title, children, footer }: DialogFrameProps) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" style={{ padding: 14 }}>
       <Box
         height={1}
         flexDirection="row"

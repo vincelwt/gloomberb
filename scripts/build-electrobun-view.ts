@@ -325,17 +325,19 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(0,0,0,.72);
+        background: rgba(0,0,0,.64);
         z-index: 9999;
       }
       .gloom-dialog {
         max-width: min(920px, calc(100vw - 48px));
         max-height: calc(100vh - 48px);
         overflow: auto;
-        border: 1px solid #54c99f;
+        border: 1px solid #3a4148;
+        border-radius: 6px;
         background: #101417;
         color: #d8dde3;
-        padding: 14px;
+        padding: 0;
+        box-shadow: 0 18px 48px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.05);
       }
     </style>
   </head>

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
 import { dirname, join } from "path";
-import { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu } from "electrobun/bun";
 import { getAiProviderDefinitions } from "../../../plugins/builtin/ai/providers";
 import { runAiPrompt, type AiRunController } from "../../../plugins/builtin/ai/runner";
 import {
@@ -28,6 +28,8 @@ import { isPaneDetached } from "../../../plugins/pane-manager";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
 import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
+import { contextMenuSelectionMessage } from "./context-menu-click";
+import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
 import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
 
 const DEFAULT_WINDOW_FRAME = { x: 64, y: 48, width: 1440, height: 920 };
@@ -216,70 +218,6 @@ function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
 
 function normalizeText(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function normalizeContextMenuItems(value: unknown, depth = 0): unknown[] {
-  if (!Array.isArray(value) || depth > 4) return [];
-
-  const items: unknown[] = [];
-  for (const rawItem of value) {
-    if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) continue;
-    const item = rawItem as Record<string, unknown>;
-    if (item.type === "divider" || item.type === "separator") {
-      items.push({ type: "divider" });
-      continue;
-    }
-
-    const submenu = normalizeContextMenuItems(item.submenu, depth + 1);
-    const role = normalizeText(item.role);
-    const action = normalizeText(item.action);
-    const data = item.data && typeof item.data === "object" && !Array.isArray(item.data)
-      ? item.data as Record<string, unknown>
-      : null;
-    const customAction = action === ELECTROBUN_CONTEXT_MENU_ACTION
-      && typeof data?.requestId === "string"
-      && typeof data?.itemId === "string";
-
-    if (!role && !customAction && submenu.length === 0 && !normalizeText(item.label)) continue;
-    items.push({
-      type: "normal",
-      label: normalizeText(item.label),
-      tooltip: normalizeText(item.tooltip),
-      enabled: item.enabled === false ? false : true,
-      checked: item.checked === true,
-      hidden: item.hidden === true,
-      accelerator: normalizeText(item.accelerator),
-      ...(role ? { role } : {}),
-      ...(customAction ? {
-        action: ELECTROBUN_CONTEXT_MENU_ACTION,
-        data: {
-          requestId: data!.requestId,
-          itemId: data!.itemId,
-        },
-      } : {}),
-      ...(submenu.length > 0 ? { submenu } : {}),
-    });
-  }
-
-  return items;
-}
-
-function getContextMenuRequestId(items: unknown[]): string | null {
-  for (const item of items) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const record = item as Record<string, unknown>;
-    const data = record.data && typeof record.data === "object" && !Array.isArray(record.data)
-      ? record.data as Record<string, unknown>
-      : null;
-    if (record.action === ELECTROBUN_CONTEXT_MENU_ACTION && typeof data?.requestId === "string") {
-      return data.requestId;
-    }
-    if (Array.isArray(record.submenu)) {
-      const submenuRequestId = getContextMenuRequestId(record.submenu);
-      if (submenuRequestId) return submenuRequestId;
-    }
-  }
-  return null;
 }
 
 function notePath(dataDir: string, symbol: string): string {
@@ -1283,17 +1221,11 @@ function createWindowRpc(key: string): DesktopRpc {
   return rpc;
 }
 
-ContextMenu.on("context-menu-clicked", (event: unknown) => {
-  const payload = event && typeof event === "object" ? event as Record<string, unknown> : {};
-  if (payload.action !== ELECTROBUN_CONTEXT_MENU_ACTION) return;
-  const data = payload.data && typeof payload.data === "object" ? payload.data as Record<string, unknown> : {};
-  if (typeof data.requestId !== "string" || typeof data.itemId !== "string") return;
-  const targetRpc = contextMenuRequestRpcs.get(data.requestId);
-  contextMenuRequestRpcs.delete(data.requestId);
-  const message = {
-    requestId: data.requestId,
-    itemId: data.itemId,
-  };
+Electrobun.events.on("context-menu-clicked", (event: unknown) => {
+  const message = contextMenuSelectionMessage(event, ELECTROBUN_CONTEXT_MENU_ACTION);
+  if (!message) return;
+  const targetRpc = contextMenuRequestRpcs.get(message.requestId);
+  contextMenuRequestRpcs.delete(message.requestId);
   if (targetRpc) {
     targetRpc.send["context-menu.select"](message);
     return;

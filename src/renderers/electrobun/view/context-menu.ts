@@ -48,6 +48,10 @@ function actionIdFor(path: readonly number[], item: ContextMenuActionItem): stri
   return item.id || path.join(".");
 }
 
+function nativeActionFor(requestId: string, itemId: string): string {
+  return `${ELECTROBUN_CONTEXT_MENU_ACTION}:${encodeURIComponent(requestId)}:${encodeURIComponent(itemId)}`;
+}
+
 function roleItemToDesktop(item: ContextMenuRoleItem): DesktopContextMenuItem {
   return {
     type: "normal",
@@ -85,7 +89,7 @@ function prepareItems(
       checked: item.checked,
       hidden: item.hidden,
       accelerator: item.accelerator,
-      action: item.onSelect ? ELECTROBUN_CONTEXT_MENU_ACTION : undefined,
+      action: item.onSelect ? nativeActionFor(requestId, itemId) : undefined,
       data: item.onSelect ? { requestId, itemId } : undefined,
       submenu: item.submenu ? prepareItems(item.submenu, requestId, itemPath, actions) : undefined,
     };

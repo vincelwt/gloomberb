@@ -77,7 +77,7 @@ describe("Electrobun desktop context menu serialization", () => {
 
     expect(prepared.menu[0]).toMatchObject({ role: "paste" });
     expect(prepared.menu[1]).toMatchObject({
-      action: ELECTROBUN_CONTEXT_MENU_ACTION,
+      action: `${ELECTROBUN_CONTEXT_MENU_ACTION}:request-2:open`,
       data: { requestId: "request-2", itemId: "open" },
     });
     expect(prepared.actions.get("open")).toBe(action);
