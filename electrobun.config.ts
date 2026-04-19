@@ -32,6 +32,7 @@ const config: ElectrobunConfig = {
     ],
     mac: {
       createDmg: false,
+      icons: "icon.iconset",
       defaultRenderer: "native",
     },
   },

@@ -83,12 +83,3 @@ export function Button({
     </Box>
   );
 }
-
-export interface IconButtonProps extends Omit<ButtonProps, "label"> {
-  icon: string;
-  label?: string;
-}
-
-export function IconButton({ icon, label, ...props }: IconButtonProps) {
-  return <Button label={label ? `${icon} ${label}` : icon} {...props} />;
-}

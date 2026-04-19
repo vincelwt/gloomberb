@@ -414,6 +414,7 @@ export interface GloomPluginContext {
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerRecord | null;
   getConfig(): import("./config").AppConfig;
+  getPaneDef(paneId: string): PaneDef | undefined;
 
   readonly dataProvider: DataProvider;
   readonly tickerRepository: TickerRepository;

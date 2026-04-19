@@ -7,6 +7,7 @@ import {
   createInitialState,
   PaneInstanceProvider,
 } from "../../state/app-context";
+import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
@@ -135,43 +136,7 @@ export function createConfig(options?: {
 }
 
 export function createRuntime(): PluginRuntimeAccess {
-  const resumeState = new Map<string, unknown>();
-  const listeners = new Map<string, Set<() => void>>();
-
-  return {
-    getDataProvider: () => null,
-    pinTicker() {},
-    navigateTicker() {},
-    subscribeResumeState(pluginId, key, listener) {
-      const listenerKey = `${pluginId}:${key}`;
-      if (!listeners.has(listenerKey)) listeners.set(listenerKey, new Set());
-      listeners.get(listenerKey)!.add(listener);
-      return () => {
-        listeners.get(listenerKey)?.delete(listener);
-      };
-    },
-    getResumeState(pluginId, key) {
-      return (resumeState.get(`${pluginId}:${key}`) as any) ?? null;
-    },
-    setResumeState(pluginId, key, value) {
-      const listenerKey = `${pluginId}:${key}`;
-      resumeState.set(listenerKey, value);
-      for (const listener of listeners.get(listenerKey) ?? []) listener();
-    },
-    deleteResumeState(pluginId, key) {
-      const listenerKey = `${pluginId}:${key}`;
-      resumeState.delete(listenerKey);
-      for (const listener of listeners.get(listenerKey) ?? []) listener();
-    },
-    getConfigState() {
-      return null;
-    },
-    async setConfigState() {},
-    async deleteConfigState() {},
-    getConfigStateKeys() {
-      return [];
-    },
-  };
+  return createStatefulTestPluginRuntime();
 }
 
 export function installPredictionMarketMocks() {

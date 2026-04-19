@@ -61,6 +61,8 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
   const defaults = createDefaultConfig(dataDir);
   const shouldMigratePortfolioDefaults =
     typeof saved.configVersion !== "number" || saved.configVersion < CURRENT_CONFIG_VERSION;
+  const shouldEnableCloudDefault =
+    typeof saved.configVersion !== "number" || saved.configVersion < 13;
   const directLayout = migrateLegacyPortfolioDefaultColumns(
     sanitizeLayout(saved.layout, defaults.layout),
     shouldMigratePortfolioDefaults,
@@ -87,7 +89,9 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     activeLayoutIndex,
     brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
-    disabledPlugins: sanitizeDisabledPlugins(saved, defaults.disabledPlugins),
+    disabledPlugins: sanitizeDisabledPlugins(saved, defaults.disabledPlugins, {
+      enableCloudDefault: shouldEnableCloudDefault,
+    }),
     pluginConfig: sanitizePluginConfig(saved.pluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
@@ -174,8 +178,15 @@ function sanitizeDisabledPluginList(value: unknown): string[] {
   return [...new Set(sanitizeStringArray(value, []))];
 }
 
-function sanitizeDisabledPlugins(saved: Record<string, unknown>, fallback: string[]): string[] {
-  return sanitizeDisabledPluginList(saved.disabledPlugins ?? fallback);
+function sanitizeDisabledPlugins(
+  saved: Record<string, unknown>,
+  fallback: string[],
+  options: { enableCloudDefault?: boolean } = {},
+): string[] {
+  const disabled = sanitizeDisabledPluginList(saved.disabledPlugins ?? fallback);
+  return options.enableCloudDefault
+    ? disabled.filter((pluginId) => pluginId !== "gloomberb-cloud")
+    : disabled;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

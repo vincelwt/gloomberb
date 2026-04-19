@@ -200,7 +200,6 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
       [data-gloom-role="pane-hint"] {
         cursor: pointer;
         border-radius: 4px;
-        padding-inline: 2px;
       }
       [data-gloom-role="pane-hint"]:hover {
         background: rgba(255,255,255,.08);

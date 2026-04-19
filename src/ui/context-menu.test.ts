@@ -62,9 +62,9 @@ describe("context menu item builders", () => {
           execute: () => {},
         }],
       ]),
-      navigateTickerFn: () => {},
-      pinTickerFn: () => {},
-      openCommandBarFn: () => {},
+      navigateTicker: () => {},
+      pinTicker: () => {},
+      openCommandBar: () => {},
     } as unknown as PluginRegistry;
 
     const labels = menuLabels(tickerContextMenuItems({

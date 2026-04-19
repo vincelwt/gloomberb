@@ -10,8 +10,7 @@ import {
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app-context";
 import { colors } from "../../../theme/colors";
-import { Spinner } from "../../../components/spinner";
-import { FeedDataTableStackView, useExternalLinkFooter, type FeedDataTableItem } from "../../../components";
+import { FeedDataTableStackView, Spinner, useExternalLinkFooter, type FeedDataTableItem } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";

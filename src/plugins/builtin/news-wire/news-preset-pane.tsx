@@ -3,8 +3,8 @@ import { useMemo } from "react";
 import type { NewsQuery } from "../../../news/types";
 import { useNewsArticles } from "../../../news/hooks";
 import type { PaneProps } from "../../../types/plugin";
-import { Spinner } from "../../../components/spinner";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
+import { Spinner } from "../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
 import {
   getSelectedNewsArticle,

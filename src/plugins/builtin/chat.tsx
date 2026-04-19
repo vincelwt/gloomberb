@@ -10,8 +10,11 @@ import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
+import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudNewsSource, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
+import { registerEconCalendarFeature } from "./econ";
+import { registerYieldCurveFeature } from "./yield-curve";
 
 interface ChatContentProps {
   width: number;
@@ -131,10 +134,14 @@ export function getSelectedMessageScrollTop({
   return scrollTop;
 }
 
-function openAuthCommand(query: string, event?: { preventDefault?: () => void; stopPropagation?: () => void }) {
+function openAuthCommand(
+  openCommandBar: (query?: string) => void,
+  query: string,
+  event?: { preventDefault?: () => void; stopPropagation?: () => void },
+) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
-  getSharedRegistry()?.openCommandBarFn(query);
+  openCommandBar(query);
 }
 
 function CloudStatusIcon() {
@@ -170,6 +177,7 @@ function CloudStatusIcon() {
 }
 
 function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
+  const { openCommandBar } = usePluginAppActions();
   const [hoveredAction, setHoveredAction] = useState<"login" | "signup" | null>(null);
 
   return (
@@ -178,7 +186,7 @@ function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
         backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
         onMouseMove={() => setHoveredAction((current) => (current === "login" ? current : "login"))}
         onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
-        onMouseDown={(event: any) => openAuthCommand("Log In", event)}
+        onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Log In", event)}
       >
         <Text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Log In </Text>
       </Box>
@@ -189,7 +197,7 @@ function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
             backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
             onMouseMove={() => setHoveredAction((current) => (current === "signup" ? current : "signup"))}
             onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
-            onMouseDown={(event: any) => openAuthCommand("Sign Up", event)}
+            onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Sign Up", event)}
           >
             <Text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </Text>
           </Box>
@@ -824,6 +832,7 @@ export function ChatPane({ focused, width, height, close }: PaneProps) {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
+  const { showWidget } = usePluginAppActions();
   const cloudPluginDisabled = useAppSelector((state) => state.config.disabledPlugins.includes("gloomberb-cloud"));
   const initialSnapshot = controller.getSnapshot();
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
@@ -834,7 +843,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    getSharedRegistry()?.showWidget("chat");
+    showWidget("chat");
   };
 
   useEffect(() => {
@@ -886,7 +895,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
   id: "gloomberb-cloud",
   name: "Gloomberb Cloud",
   version: "1.0.0",
-  description: "Free near-real-time data + chat. Requires signup.",
+  description: "Free market, macro, and chat services. Chat requires signup.",
   toggleable: true,
   order: 10,
   dataProvider: createGloomberbCloudProvider(),
@@ -910,6 +919,8 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
     chatController.setNotifier(ctx.notify);
     ctx.registerNewsSource?.(createGloomberbCloudNewsSource());
+    registerEconCalendarFeature(ctx);
+    registerYieldCurveFeature(ctx);
 
     ctx.registerPane({
       id: "chat",

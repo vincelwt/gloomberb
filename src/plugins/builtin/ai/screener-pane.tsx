@@ -21,7 +21,7 @@ import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hook
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
-import { Button, EmptyState, Spinner, Tabs, TickerListTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import { Button, EmptyState, SegmentedControl, Spinner, Tabs, TickerListTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { canonicalExchange } from "../../../utils/exchanges";
 import { formatTimeAgo } from "../../../utils/format";
@@ -320,33 +320,6 @@ function sortScreenerRows(
       : (leftValue as number) - (rightValue as number);
     return sortPreference.direction === "asc" ? comparison : -comparison;
   });
-}
-
-function ActionChip({
-  label,
-  onPress,
-  active = false,
-  disabled = false,
-}: {
-  label: string;
-  onPress?: () => void;
-  active?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <Box
-      backgroundColor={active ? colors.selected : colors.panel}
-      onMouseDown={!disabled && onPress ? (event: any) => {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        onPress();
-      } : undefined}
-    >
-      <Text fg={disabled ? colors.textDim : active ? colors.selectedText : colors.text}>
-        {` ${label} `}
-      </Text>
-    </Box>
-  );
 }
 
 export function AiScreenerPane({ focused, width, height }: PaneProps) {
@@ -890,8 +863,8 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
         ]
       : [
           { id: "new", key: "t", label: "new", onPress: addTab },
-          { id: "close", key: "w", label: "close", onPress: activeTab ? () => removeTab(activeTab.id) : undefined, disabled: !activeTab },
-          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab, disabled: !activeTab || isRunningActiveTab },
+          { id: "close", key: "w", label: "close tab", onPress: activeTab ? () => removeTab(activeTab.id) : undefined, disabled: !activeTab },
+          { id: "refresh", key: "r", label: "refresh", onPress: refreshActiveTab, disabled: !activeTab || isRunningActiveTab },
           { id: "force-refresh", key: "Shift+R", label: "force refresh", onPress: forceRefreshActiveTab, disabled: !activeTab || isRunningActiveTab },
           { id: "edit", key: "e", label: "edit", onPress: editActiveTab, disabled: !activeTab },
         ],
@@ -1003,20 +976,18 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
                 ? "Describe the companies or setups you want this screener to discover."
                 : "Update the screener prompt or provider. Saving does not rerun it automatically."}
             </Text>
-            <Box flexDirection="row" gap={1} flexWrap="wrap">
-              {selectableProviders.map((provider) => (
-                <ActionChip
-                  key={provider.id}
-                  label={provider.available ? provider.name : `${provider.name} (missing)`}
-                  onPress={() => {
-                    setEditorState((current) => current
-                      ? { ...current, providerId: provider.id, error: null }
-                      : current);
-                  }}
-                  active={editorState.providerId === provider.id}
-                />
-              ))}
-            </Box>
+            <SegmentedControl
+              value={editorState.providerId}
+              options={selectableProviders.map((provider) => ({
+                value: provider.id,
+                label: provider.available ? provider.name : `${provider.name} (missing)`,
+              }))}
+              onChange={(providerId) => {
+                setEditorState((current) => current
+                  ? { ...current, providerId, error: null }
+                  : current);
+              }}
+            />
             {editorState.error ? (
               <Text fg={colors.negative}>{editorState.error}</Text>
             ) : (

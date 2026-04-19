@@ -128,7 +128,7 @@ function selectedTextMenuItems(text: string, registry: PluginRegistry | null, co
       {
         id: "selected-text:open-ticker",
         label: "Open as Ticker",
-        onSelect: () => registry?.navigateTickerFn(symbol),
+        onSelect: () => registry?.navigateTicker(symbol),
       },
       {
         id: "selected-text:copy-symbol",
@@ -176,33 +176,33 @@ export function linkContextMenuItems({
   ];
 }
 
-export function appContextMenuItems(registry: Pick<PluginRegistry, "openCommandBarFn"> | null): ContextMenuItem[] {
+export function appContextMenuItems(registry: Pick<PluginRegistry, "openCommandBar"> | null): ContextMenuItem[] {
   return [
     {
       id: "app:command-bar",
       label: "Command Bar",
-      onSelect: () => registry?.openCommandBarFn(),
+      onSelect: () => registry?.openCommandBar(),
     },
     {
       id: "app:layout-actions",
       label: "Layout Actions...",
-      onSelect: () => registry?.openCommandBarFn("LAY "),
+      onSelect: () => registry?.openCommandBar("LAY "),
     },
     contextMenuDivider("app:config-divider"),
     {
       id: "app:plugins",
       label: "Manage Plugins...",
-      onSelect: () => registry?.openCommandBarFn("PL "),
+      onSelect: () => registry?.openCommandBar("PL "),
     },
     {
       id: "app:theme",
       label: "Change Theme...",
-      onSelect: () => registry?.openCommandBarFn("TH "),
+      onSelect: () => registry?.openCommandBar("TH "),
     },
     {
       id: "app:updates",
       label: "Check for Updates",
-      onSelect: () => registry?.openCommandBarFn("Check for Updates"),
+      onSelect: () => registry?.openCommandBar("Check for Updates"),
     },
   ];
 }
@@ -225,12 +225,12 @@ export function tickerContextMenuItems({
     {
       id: "ticker:open",
       label: `Open ${symbol}`,
-      onSelect: () => (openTicker ? openTicker(symbol) : registry?.navigateTickerFn(symbol)),
+      onSelect: () => (openTicker ? openTicker(symbol) : registry?.navigateTicker(symbol)),
     },
     {
       id: "ticker:pin-floating",
       label: `Pin ${symbol} in Floating Detail`,
-      onSelect: () => registry?.pinTickerFn(symbol, { floating: true, paneType: "ticker-detail" }),
+      onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" }),
     },
     {
       id: "ticker:copy-symbol",
@@ -241,12 +241,12 @@ export function tickerContextMenuItems({
     {
       id: "ticker:add-watchlist",
       label: "Add to Watchlist...",
-      onSelect: () => registry?.openCommandBarFn(`AW ${symbol}`),
+      onSelect: () => registry?.openCommandBar(`AW ${symbol}`),
     },
     {
       id: "ticker:add-portfolio",
       label: "Add to Portfolio...",
-      onSelect: () => registry?.openCommandBarFn(`AP ${symbol}`),
+      onSelect: () => registry?.openCommandBar(`AP ${symbol}`),
     },
   ];
 
@@ -254,14 +254,14 @@ export function tickerContextMenuItems({
     items.push({
       id: "ticker:remove-watchlist",
       label: "Remove from Watchlist...",
-      onSelect: () => registry?.openCommandBarFn(`RW ${symbol}`),
+      onSelect: () => registry?.openCommandBar(`RW ${symbol}`),
     });
   }
   if (ticker.metadata.portfolios.length > 0) {
     items.push({
       id: "ticker:remove-portfolio",
       label: "Remove from Portfolio...",
-      onSelect: () => registry?.openCommandBarFn(`RP ${symbol}`),
+      onSelect: () => registry?.openCommandBar(`RP ${symbol}`),
     });
   }
 

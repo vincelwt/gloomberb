@@ -159,7 +159,7 @@ export function useInlineTickers(texts: readonly string[]): {
   useQuoteStreaming(streamingTargets);
 
   const openTicker = useCallback((symbol: string) => {
-    registry?.pinTickerFn(symbol, { floating: true, paneType: "ticker-detail" });
+    registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
   }, [registry]);
 
   const catalog: Record<string, InlineTickerCatalogEntry> = {};

@@ -1,8 +1,9 @@
 import { Box, ScrollBox, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
+import { usePaneFooter } from "../../components";
 import { useShortcut } from "../../react/input";
 import { useDialog } from "../../ui/dialog";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { resolveTickerFinancialsForInstrument } from "../../market-data/coordinator";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import {
@@ -17,7 +18,7 @@ import type { Quote } from "../../types/financials";
 import { formatCurrency, padTo } from "../../utils/format";
 import { formatMarketPrice, formatMarketQuantity } from "../../utils/market-format";
 import { getBrokerInstance } from "../../utils/broker-instances";
-import { getSharedRegistry } from "../registry";
+import { usePluginPaneActions } from "../plugin-runtime";
 import { isGatewayConfigured } from "./config";
 import { ChoiceDialog } from "./dialogs";
 import { useIbkrGatewaySelection } from "./gateway-selection";
@@ -44,6 +45,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   const tickers = useAppSelector((state) => state.tickers);
   const paneId = usePaneInstanceId();
   const { collectionId } = usePaneCollection(paneId);
+  const { selectTicker, switchTab, switchPanel } = usePluginPaneActions();
   const dialog = useDialog();
   const tradeState = useTradingPaneState();
   const {
@@ -174,7 +176,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
           choices={gatewayInstances.map((instance) => ({
             id: instance.id,
             label: instance.label,
-            desc: "Gateway / TWS",
+            description: "Gateway / TWS",
           }))}
         />
       ),
@@ -216,7 +218,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
           choices={nextAccounts.map((account) => ({
             id: account.accountId,
             label: `${selectedInstance.label} → ${account.accountId}`,
-            desc: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
+            description: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
           }))}
         />
       ),
@@ -241,7 +243,6 @@ export function TradingPane({ focused, width, height }: PaneProps) {
 
   const openSelectedOrder = useCallback(() => {
     if (!selectedOrder) return;
-    const registry = getSharedRegistry();
     const ticker = findTickerForOrder(selectedOrder, tickers);
     if (!ticker) {
       setTradingMessage(undefined, `No local ticker exists for ${selectedOrder.contract.localSymbol || selectedOrder.contract.symbol}.`);
@@ -254,10 +255,41 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       lastInfo: `Loaded order ${selectedOrder.orderId} into ${ticker.metadata.ticker}.`,
       lastError: undefined,
     });
-    registry?.selectTickerFn(ticker.metadata.ticker, paneId);
-    registry?.switchTabFn("ibkr-trade", paneId);
-    registry?.switchPanelFn("right");
-  }, [selectedOrder, tickers, paneId]);
+    selectTicker(ticker.metadata.ticker, paneId);
+    switchTab("ibkr-trade", paneId);
+    switchPanel("right");
+  }, [selectedOrder, tickers, paneId, selectTicker, switchTab, switchPanel]);
+
+  const footerActionsRef = useRef<{
+    chooseBrokerInstance: () => Promise<void>;
+    chooseAccount: () => Promise<void>;
+    openSelectedOrder: () => void;
+    cancelSelectedOrder: () => Promise<void>;
+    refresh: () => Promise<void>;
+  }>({
+    chooseBrokerInstance: async () => {},
+    chooseAccount: async () => {},
+    openSelectedOrder: () => {},
+    cancelSelectedOrder: async () => {},
+    refresh: async () => {},
+  });
+  footerActionsRef.current = {
+    chooseBrokerInstance,
+    chooseAccount,
+    openSelectedOrder,
+    cancelSelectedOrder,
+    refresh,
+  };
+
+  usePaneFooter("ibkr-trading-pane", () => ({
+    hints: [
+      { id: "profile", key: "i", label: "profile", onPress: () => footerActionsRef.current.chooseBrokerInstance().catch(() => {}) },
+      { id: "account", key: "a", label: "ccount", onPress: () => footerActionsRef.current.chooseAccount().catch(() => {}) },
+      { id: "open", key: "m", label: "open", onPress: () => footerActionsRef.current.openSelectedOrder() },
+      { id: "cancel", key: "c", label: "ancel", onPress: () => footerActionsRef.current.cancelSelectedOrder().catch(() => {}) },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => footerActionsRef.current.refresh().catch(() => {}) },
+    ],
+  }), []);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -299,7 +331,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   const activeAccount = availableAccounts.find((account) => account.accountId === (tradeState.accountId || ""));
   const orderPanelWidth = Math.max(36, Math.floor(width * 0.6));
   const listPanelWidth = Math.max(24, width - orderPanelWidth - 1);
-  const listHeight = Math.max(4, height - 6);
+  const listHeight = Math.max(4, height - 4);
   const getOrderQuote = useCallback((symbol: string): Quote | null => {
     const ticker = tickers.get(symbol) ?? null;
     const instrument = instrumentFromTicker(ticker, symbol);
@@ -418,7 +450,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                   onMouseDown={() => {
                     const symbol = execution.contract.symbol;
                     if (symbol && tickers.has(symbol)) {
-                      getSharedRegistry()?.selectTickerFn(symbol, paneId);
+                      selectTicker(symbol, paneId);
                     }
                   }}
                 >
@@ -436,13 +468,6 @@ export function TradingPane({ focused, width, height }: PaneProps) {
         </Box>
       </Box>
 
-      <Box flexDirection="row" height={1}>
-        <Text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => openSelectedOrder()}>{" [Enter] Open "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => cancelSelectedOrder().catch(() => {})}>{" [c] Cancel "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => refresh().catch(() => {})}>{" [r] Refresh "}</Text>
-      </Box>
     </Box>
   );
 }

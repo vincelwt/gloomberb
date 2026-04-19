@@ -43,13 +43,10 @@ import {
 } from "./context-menu";
 import {
   WebButton,
-  WebCheckbox,
   WebDialogFrame,
   WebListView,
   WebPageStackView,
-  WebRadioGroup,
   WebSegmentedControl,
-  WebSwitch,
   WebTextField,
 } from "./desktop-controls";
 
@@ -1151,9 +1148,6 @@ export const webUiHost: UiHost = {
   Button: WebButton,
   TextField: WebTextField,
   ListView: WebListView,
-  Checkbox: WebCheckbox,
-  Switch: WebSwitch,
-  RadioGroup: WebRadioGroup,
   SegmentedControl: WebSegmentedControl,
   DialogFrame: WebDialogFrame,
   PageStackView: WebPageStackView,

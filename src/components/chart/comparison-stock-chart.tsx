@@ -1066,6 +1066,7 @@ function ComparisonStockChartView({
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
   const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
+  const showNativeUnavailable = rendererState.nativeUnavailable && !useCanvasChart;
 
   const staticScene = useMemo(() => buildComparisonChartScene(projection, {
     width: chartWidth,
@@ -1938,7 +1939,7 @@ function ComparisonStockChartView({
           {projection.warning && (
             <Text fg={colors.textDim}>{projection.warning}</Text>
           )}
-          {rendererState.nativeUnavailable && (
+          {showNativeUnavailable && (
             <Text fg={colors.textDim}>native unavailable</Text>
           )}
         </Box>

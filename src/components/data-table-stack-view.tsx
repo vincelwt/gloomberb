@@ -30,6 +30,7 @@ export interface DataTableStackViewProps<
   selectedIndex: number;
   onSelectIndex?: (index: number, item: T) => void;
   onActivateIndex?: (index: number, item: T) => void;
+  isNavigable?: (item: T, index: number) => boolean;
   rootBefore?: ReactNode;
   rootAfter?: ReactNode;
   rootWidth?: number;
@@ -58,6 +59,7 @@ export function DataTableStackView<
   selectedIndex,
   onSelectIndex,
   onActivateIndex,
+  isNavigable,
   rootBefore,
   rootAfter,
   rootWidth,
@@ -101,6 +103,7 @@ export function DataTableStackView<
       selectedIndex={selectedIndex}
       onSelectIndex={onSelectIndex}
       onActivateIndex={onActivateIndex}
+      isNavigable={isNavigable}
       rootBefore={rootBefore}
       rootAfter={rootAfter}
       rootWidth={rootWidth}

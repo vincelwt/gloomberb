@@ -3,12 +3,14 @@ import { act, useState } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../state/app-context";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { colors } from "../../theme/colors";
 import { createDefaultConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
 import { Box } from "../../ui";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
 import { ChatContent, ChatStatusWidget, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
 import { ChatController } from "./chat-controller";
@@ -144,6 +146,7 @@ function createHarness(
     configureState?: (state: ReturnType<typeof createInitialState>) => void;
     close?: () => void;
     withFooter?: boolean;
+    runtime?: PluginRuntimeAccess;
   },
 ) {
   const width = options?.width ?? 60;
@@ -178,7 +181,9 @@ function createHarness(
 
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
-      {content}
+      <PluginRenderProvider pluginId="gloomberb-cloud" runtime={options?.runtime ?? createTestPluginRuntime()}>
+        {content}
+      </PluginRenderProvider>
     </AppContext>
   );
 }
@@ -954,12 +959,14 @@ describe("ChatContent", () => {
 
       return (
         <AppContext value={{ state, dispatch: () => {} }}>
-          <ChatContent
-            controller={controller}
-            width={size.width}
-            height={size.height}
-            focused
-          />
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={size.width}
+              height={size.height}
+              focused
+            />
+          </PluginRenderProvider>
         </AppContext>
       );
     }
@@ -999,7 +1006,7 @@ describe("ChatContent", () => {
     const opened: string[] = [];
 
     setSharedRegistryForTests({
-      pinTickerFn(symbol: string) {
+      pinTicker(symbol: string) {
         opened.push(symbol);
       },
     } as any);
@@ -1145,7 +1152,9 @@ describe("ChatContent", () => {
     await act(async () => {
       testSetup = await testRender(
         <AppContext value={{ state, dispatch: () => {} }}>
-          <ChatStatusWidget controller={controller} />
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
         </AppContext>,
         { width: 40, height: 1 },
       );
@@ -1168,16 +1177,18 @@ describe("ChatContent", () => {
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
     state.config.disabledPlugins = [];
 
-    setSharedRegistryForTests({
-      openCommandBarFn(query?: string) {
+    const runtime = createTestPluginRuntime({
+      openCommandBar(query?: string) {
         openedQueries.push(query ?? "");
       },
-    } as any);
+    });
 
     await act(async () => {
       testSetup = await testRender(
         <AppContext value={{ state, dispatch: () => {} }}>
-          <ChatStatusWidget controller={controller} />
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={runtime}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
         </AppContext>,
         { width: 40, height: 1 },
       );
@@ -1214,11 +1225,11 @@ describe("ChatContent", () => {
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
     state.config.disabledPlugins = [];
 
-    setSharedRegistryForTests({
+    const runtime = createTestPluginRuntime({
       showWidget(paneId: string) {
         openedWidgets.push(paneId);
       },
-    } as any);
+    });
 
     await act(async () => {
       (controller as any).mergeMessages([{
@@ -1234,7 +1245,9 @@ describe("ChatContent", () => {
     await act(async () => {
       testSetup = await testRender(
         <AppContext value={{ state, dispatch: () => {} }}>
-          <ChatStatusWidget controller={controller} />
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={runtime}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
         </AppContext>,
         { width: 40, height: 1 },
       );

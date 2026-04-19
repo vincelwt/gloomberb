@@ -3,14 +3,13 @@
 export { PriceSelectorDialog } from "./price-selector-dialog";
 export type { PriceSelectorDialogProps } from "./price-selector-dialog";
 export { StockChart } from "./chart/stock-chart";
+export { StaticChartSurface } from "./chart/static-chart-surface";
 export type { ChartViewState, TimeRange, ChartRenderMode, ChartColors } from "./chart/chart-types";
 export * from "./ui";
 export { ToggleList } from "./toggle-list";
 export type { ToggleListItem, ToggleListProps } from "./toggle-list";
 export { Tabs as TabBar } from "./ui/tabs";
 export type { TabItem as Tab, TabsProps as TabBarProps } from "./ui/tabs";
-export { Spinner } from "./spinner";
-export type { SpinnerProps } from "./spinner";
 export { TickerListTable } from "./ticker-list-table";
 export type { QuoteFlashDirection, TickerListTableProps, TickerTableCell } from "./ticker-list-table";
 export { TickerListTableView } from "./ticker-list-table-view";

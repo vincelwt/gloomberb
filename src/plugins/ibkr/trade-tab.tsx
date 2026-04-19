@@ -229,7 +229,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
           choices={gatewayInstances.map((instance) => ({
             id: instance.id,
             label: instance.label,
-            desc: "Gateway / TWS",
+            description: "Gateway / TWS",
           }))}
         />
       ),
@@ -299,7 +299,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
       const choices = results.slice(0, 12).map((result, index) => ({
         id: String(index),
         label: `${result.symbol} ${result.type}`.trim(),
-        desc: `${selectedInstance.label} · ${result.name} · ${result.exchange || "SMART"}`,
+        description: `${selectedInstance.label} · ${result.name} · ${result.exchange || "SMART"}`,
       }));
       if (choices.length === 0) {
         setTradeTicketMessage(symbol, undefined, `No IBKR contracts matched "${search}".`, ticker);
@@ -346,7 +346,7 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
           choices={nextAccounts.map((account) => ({
             id: account.accountId,
             label: `${selectedInstance.label} → ${account.accountId}`,
-            desc: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
+            description: `${formatCurrency(account.netLiquidation || 0, account.currency || "USD")} net liq`,
           }))}
         />
       ),
@@ -435,10 +435,10 @@ export function TradeTab({ focused, width, onCapture }: DetailTabProps) {
           {...ctx}
           title="Order Type"
           choices={[
-            { id: "MKT", label: "Market", desc: "Execute at market price" },
-            { id: "LMT", label: "Limit", desc: "Set a limit price" },
-            { id: "STP", label: "Stop", desc: "Trigger at a stop price" },
-            { id: "STP LMT", label: "Stop Limit", desc: "Trigger a limit order at a stop price" },
+            { id: "MKT", label: "Market", description: "Execute at market price" },
+            { id: "LMT", label: "Limit", description: "Set a limit price" },
+            { id: "STP", label: "Stop", description: "Trigger at a stop price" },
+            { id: "STP LMT", label: "Stop Limit", description: "Trigger a limit order at a stop price" },
           ]}
         />
       ),

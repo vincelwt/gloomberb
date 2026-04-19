@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { Box, Input, ScrollBox, Text, editableTextContextMenuItems, useRendererHost, useUiCapabilities } from "../../../ui";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
@@ -10,12 +10,7 @@ import type { TextFieldProps } from "../../../components/ui/fields";
 import type { DialogFrameProps } from "../../../components/ui/frame";
 import type { ListRowState, ListViewItem, ListViewProps } from "../../../components/ui/list-view";
 import type { PageStackViewProps } from "../../../components/ui/page-stack-view";
-import type {
-  CheckboxProps,
-  RadioGroupProps,
-  SegmentedControlProps,
-  SwitchProps,
-} from "../../../components/ui/toggle";
+import type { SegmentedControlProps } from "../../../components/ui/toggle";
 
 const CONTROL_RADIUS = 6;
 const PANEL_BORDER = blendHex(colors.border, colors.borderFocused, 0.18);
@@ -392,165 +387,6 @@ export function WebListView({
           </Text>
         </Box>
       )}
-    </Box>
-  );
-}
-
-function desktopRowShell(props: {
-  disabled: boolean;
-  selected?: boolean;
-  onMouseDown?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Box
-      height={1}
-      alignItems="center"
-      flexDirection="row"
-      onMouseDown={props.disabled ? undefined : props.onMouseDown}
-      data-gloom-interactive={props.disabled ? undefined : "true"}
-      style={{
-        border: `1px solid ${controlBorderColor(false, props.selected === true)}`,
-        borderRadius: CONTROL_RADIUS,
-        paddingInline: 8,
-        backgroundColor: props.selected ? "rgba(84, 201, 159, 0.10)" : PANEL_FILL,
-        cursor: props.disabled ? "default" : "pointer",
-      }}
-    >
-      {props.children}
-    </Box>
-  );
-}
-
-export function WebCheckbox({
-  label,
-  checked,
-  disabled = false,
-  selected = false,
-  onChange,
-}: CheckboxProps) {
-  return desktopRowShell({
-    disabled,
-    selected,
-    onMouseDown: () => onChange?.(!checked),
-    children: (
-      <>
-        <Box
-          width={1}
-          height={1}
-          alignItems="center"
-          justifyContent="center"
-          backgroundColor={checked ? colors.borderFocused : "transparent"}
-          style={{
-            border: `1px solid ${checked ? colors.borderFocused : PANEL_BORDER}`,
-            borderRadius: 4,
-            marginRight: 8,
-          }}
-        >
-          <Text fg={checked ? colors.bg : "transparent"} style={{ fontWeight: 700 }}>
-            x
-          </Text>
-        </Box>
-        <Text
-          fg={disabled ? colors.textMuted : colors.text}
-          attributes={selected ? TextAttributes.BOLD : 0}
-        >
-          {label}
-        </Text>
-      </>
-    ),
-  });
-}
-
-export function WebSwitch({
-  label,
-  checked,
-  disabled = false,
-  onChange,
-}: SwitchProps) {
-  return desktopRowShell({
-    disabled,
-    onMouseDown: () => onChange?.(!checked),
-    children: (
-      <>
-        <Text fg={disabled ? colors.textMuted : colors.text} style={{ marginRight: 8 }}>
-          {label}
-        </Text>
-        <Box
-          width={4}
-          height={1}
-          alignItems="center"
-          justifyContent={checked ? "flex-end" : "flex-start"}
-          backgroundColor={checked ? colors.positive : "rgba(94, 106, 120, 0.28)"}
-          style={{
-            border: `1px solid ${checked ? colors.positive : PANEL_BORDER}`,
-            borderRadius: 999,
-            paddingInline: 3,
-          }}
-        >
-          <Box
-            width={1}
-            height={1}
-            backgroundColor={checked ? colors.bg : colors.textMuted}
-            style={{ borderRadius: 999 }}
-          />
-        </Box>
-      </>
-    ),
-  });
-}
-
-export function WebRadioGroup({
-  label,
-  options,
-  value,
-  onChange,
-}: RadioGroupProps) {
-  return (
-    <Box flexDirection="column" gap={1}>
-      {label && (
-        <Box height={1}>
-          <Text fg={colors.textDim} style={{ fontWeight: 600 }}>
-            {label}
-          </Text>
-        </Box>
-      )}
-      {options.map((option) => {
-        const checked = option.value === value;
-        return desktopRowShell({
-          disabled: option.disabled === true,
-          selected: checked,
-          onMouseDown: () => onChange?.(option.value),
-          children: (
-            <>
-              <Box
-                width={1}
-                height={1}
-                alignItems="center"
-                justifyContent="center"
-                style={{
-                  border: `1px solid ${checked ? colors.borderFocused : PANEL_BORDER}`,
-                  borderRadius: 999,
-                  marginRight: 8,
-                }}
-              >
-                <Box
-                  width={0.5}
-                  height={0.5}
-                  backgroundColor={checked ? colors.borderFocused : "transparent"}
-                  style={{ borderRadius: 999 }}
-                />
-              </Box>
-              <Text
-                fg={option.disabled ? colors.textMuted : colors.text}
-                attributes={checked ? TextAttributes.BOLD : 0}
-              >
-                {option.label}
-              </Text>
-            </>
-          ),
-        });
-      })}
     </Box>
   );
 }

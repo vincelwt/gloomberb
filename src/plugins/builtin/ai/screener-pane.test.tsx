@@ -8,6 +8,7 @@ import { createDefaultConfig } from "../../../types/config";
 import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { createTestDataProvider } from "../../../test-support/data-provider";
+import { createStatefulTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { Box } from "../../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
 import { getSharedDataProvider, setSharedDataProviderForTests, setSharedRegistryForTests } from "../../registry";
@@ -19,41 +20,9 @@ const PANE_ID = "ai-screener:test";
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 function makeRuntime(): PluginRuntimeAccess {
-  const resumeState = new Map<string, unknown>();
-  const listeners = new Map<string, Set<() => void>>();
-
-  return {
+  return createStatefulTestPluginRuntime({
     getDataProvider: () => getSharedDataProvider() ?? null,
-    pinTicker() {},
-    navigateTicker() {},
-    subscribeResumeState(pluginId, key, listener) {
-      const storeKey = `${pluginId}:${key}`;
-      if (!listeners.has(storeKey)) listeners.set(storeKey, new Set());
-      listeners.get(storeKey)!.add(listener);
-      return () => listeners.get(storeKey)?.delete(listener);
-    },
-    getResumeState(pluginId, key) {
-      return (resumeState.get(`${pluginId}:${key}`) as any) ?? null;
-    },
-    setResumeState(pluginId, key, value) {
-      const storeKey = `${pluginId}:${key}`;
-      resumeState.set(storeKey, value);
-      for (const listener of listeners.get(storeKey) ?? []) listener();
-    },
-    deleteResumeState(pluginId, key) {
-      const storeKey = `${pluginId}:${key}`;
-      resumeState.delete(storeKey);
-      for (const listener of listeners.get(storeKey) ?? []) listener();
-    },
-    getConfigState() {
-      return null;
-    },
-    async setConfigState() {},
-    async deleteConfigState() {},
-    getConfigStateKeys() {
-      return [];
-    },
-  };
+  });
 }
 
 function makeTicker(symbol: string, name: string): TickerRecord {
@@ -212,7 +181,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -244,7 +213,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -282,7 +251,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -320,7 +289,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {
@@ -358,7 +327,7 @@ describe("AiScreenerPane", () => {
         saveTicker: async () => {},
       },
       events: { emit() {} },
-      pinTickerFn() {},
+      pinTicker() {},
     } as any);
 
     testSetup = await testRender(<ScreenerHarness prompt="Find quality compounders." providerId="shell" />, {

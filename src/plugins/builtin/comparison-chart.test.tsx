@@ -11,6 +11,7 @@ import {
 } from "../../state/app-context";
 import { Box } from "../../ui";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -99,9 +100,9 @@ function createProvider(historyBySymbol: Record<string, number[]>, currencyBySym
 
 function createRegistrySpy(spy: { selected: string[]; focused: string[] }): PluginRegistry {
   return {
-    selectTickerFn: (symbol: string) => { spy.selected.push(symbol); },
+    selectTicker: (symbol: string) => { spy.selected.push(symbol); },
     focusPaneFn: (paneId: string) => { spy.focused.push(paneId); },
-    navigateTickerFn: (symbol: string) => {
+    navigateTicker: (symbol: string) => {
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
     },
@@ -109,8 +110,7 @@ function createRegistrySpy(spy: { selected: string[]; focused: string[] }): Plug
 }
 
 function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): PluginRuntimeAccess {
-  return {
-    getDataProvider: () => null,
+  return createTestPluginRuntime({
     pinTicker: (symbol: string) => {
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
@@ -119,15 +119,7 @@ function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): Plugi
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
     },
-    subscribeResumeState: () => () => {},
-    getResumeState: () => null,
-    setResumeState: () => {},
-    deleteResumeState: () => {},
-    getConfigState: () => null,
-    setConfigState: async () => {},
-    deleteConfigState: async () => {},
-    getConfigStateKeys: () => [],
-  };
+  });
 }
 
 function createComparisonHarness(
