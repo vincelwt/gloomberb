@@ -96,10 +96,10 @@ function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId)
 function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn[] {
   const fixedWidths: Record<Exclude<NewsColumnId, "title">, number> = {
     rank: 4,
-    time: 5,
+    time: 4,
     source: 10,
-    tickers: 12,
-    categories: 14,
+    tickers: 10,
+    categories: 10,
     importance: 5,
   };
   const labels: Record<NewsColumnId, string> = {
