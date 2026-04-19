@@ -3,6 +3,7 @@ import { appReducer, createInitialState, resolveCollectionForPane, resolveTicker
 import { cloneLayout, createDefaultConfig, createPaneInstance } from "../types/config";
 import type { AppSessionSnapshot } from "../core/state/session-persistence";
 import { buildBrokerPortfolioId } from "../utils/broker-instances";
+import type { DesktopSharedStateSnapshot } from "../types/desktop-window";
 
 describe("resolveTickerForPane", () => {
   test("uses a portfolio pane cursor for inspector follow panes", () => {
@@ -73,6 +74,72 @@ describe("resolveTickerForPane", () => {
       activeTabId: "financials",
     });
     expect(state.focusedPaneId).toBe("ticker-detail:main");
+  });
+
+  test("raises the session-focused floating pane above stale saved z-order", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.layout = {
+      ...config.layout,
+      dockRoot: null,
+      floating: [
+        { instanceId: "ticker-detail:main", x: 4, y: 2, width: 60, height: 22, zIndex: 5 },
+        { instanceId: "chat:main", x: 8, y: 4, width: 48, height: 18, zIndex: 20 },
+      ],
+    };
+    config.layouts = config.layouts.map((entry, index) => (
+      index === config.activeLayoutIndex ? { ...entry, layout: cloneLayout(config.layout) } : entry
+    ));
+    const sessionSnapshot: AppSessionSnapshot = {
+      paneState: {},
+      focusedPaneId: "ticker-detail:main",
+      activePanel: "right",
+      statusBarVisible: true,
+      openPaneIds: ["ticker-detail:main", "chat:main"],
+      hydrationTargets: [],
+      exchangeCurrencies: ["USD"],
+      savedAt: Date.now(),
+    };
+
+    const state = createInitialState(config, sessionSnapshot);
+    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
+    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
+
+    expect(tickerEntry?.zIndex).toBe(21);
+    expect((tickerEntry?.zIndex ?? 0) > (chatEntry?.zIndex ?? 0)).toBe(true);
+    expect(state.config.layouts[state.config.activeLayoutIndex]?.layout.floating.find(
+      (entry) => entry.instanceId === "ticker-detail:main",
+    )?.zIndex).toBe(21);
+  });
+
+  test("raises the desktop-snapshot focused floating pane during hydration", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.layout = {
+      ...config.layout,
+      dockRoot: null,
+      floating: [
+        { instanceId: "ticker-detail:main", x: 4, y: 2, width: 60, height: 22, zIndex: 5 },
+        { instanceId: "chat:main", x: 8, y: 4, width: 48, height: 18, zIndex: 20 },
+      ],
+    };
+    config.layouts = config.layouts.map((entry, index) => (
+      index === config.activeLayoutIndex ? { ...entry, layout: cloneLayout(config.layout) } : entry
+    ));
+    const initial = createInitialState(config);
+    const snapshot: DesktopSharedStateSnapshot = {
+      config,
+      paneState: {},
+      focusedPaneId: "ticker-detail:main",
+      activePanel: "right",
+      statusBarVisible: true,
+    };
+
+    const state = appReducer(initial, { type: "HYDRATE_DESKTOP_SNAPSHOT", snapshot });
+    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
+    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
+
+    expect(state.focusedPaneId).toBe("ticker-detail:main");
+    expect(tickerEntry?.zIndex).toBe(21);
+    expect((tickerEntry?.zIndex ?? 0) > (chatEntry?.zIndex ?? 0)).toBe(true);
   });
 
   test("preserves broker portfolio selection until broker portfolios are restored", () => {
