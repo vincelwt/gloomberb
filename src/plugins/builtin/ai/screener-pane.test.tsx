@@ -26,6 +26,9 @@ function makeRuntime(): PluginRuntimeAccess {
     getDataProvider: () => getSharedDataProvider() ?? null,
     pinTicker() {},
     navigateTicker() {},
+    openCommandBar() {},
+    showWidget() {},
+    hideWidget() {},
     openPluginCommandWorkflow() {},
     notify() {},
     subscribeResumeState(pluginId, key, listener) {

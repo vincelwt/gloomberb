@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { colors, hoverBg } from "../../theme/colors";
 import { getSharedRegistry } from "../registry";
+import { usePluginAppActions } from "../plugin-runtime";
 
 function ShortcutBadge({ label }: { label: string }) {
   return (
@@ -109,20 +110,21 @@ function resolveWindowTemplates(registry: ReturnType<typeof getSharedRegistry>) 
 
 export function HelpPane({ width, height }: PaneProps) {
   const registry = getSharedRegistry();
+  const { openCommandBar, showWidget } = usePluginAppActions();
   const compact = width < 78;
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const windowTemplates = resolveWindowTemplates(registry);
 
   const openDebugLog = () => {
-    registry?.showWidget("debug");
+    showWidget("debug");
   };
 
   const openLayoutActions = () => {
-    registry?.openCommandBarFn("LAY ");
+    openCommandBar("LAY ");
   };
 
   const openPluginManager = () => {
-    registry?.openCommandBarFn("PL ");
+    openCommandBar("PL ");
   };
 
   return (

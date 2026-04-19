@@ -133,6 +133,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
   navigateTicker = (symbol: string) => {
     this.navigateTickerFn(symbol);
   };
+  openCommandBar = (query?: string) => {
+    this.openCommandBarFn(query);
+  };
   openPluginCommandWorkflow = (commandId: string) => {
     this.openPluginCommandWorkflowFn(commandId);
   };
@@ -605,7 +608,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       selectTicker: (symbol, paneId) => this.selectTickerFn(symbol, paneId),
       switchPanel: (panel) => this.switchPanelFn(panel),
       switchTab: (tabId, paneId) => this.switchTabFn(tabId, paneId),
-      openCommandBar: (query) => this.openCommandBarFn(query),
+      openCommandBar: this.openCommandBar,
       showPane: (paneId) => this.showPaneFn(paneId),
       createPaneFromTemplate: (templateId, options) => this.createPaneFromTemplateFn(templateId, options),
       hidePane: (paneId) => this.hidePaneFn(paneId),

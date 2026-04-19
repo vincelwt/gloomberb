@@ -119,6 +119,9 @@ function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): Plugi
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
     },
+    openCommandBar() {},
+    showWidget() {},
+    hideWidget() {},
     openPluginCommandWorkflow() {},
     notify() {},
     subscribeResumeState: () => () => {},

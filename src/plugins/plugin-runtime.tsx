@@ -23,6 +23,9 @@ export interface PluginRuntimeAccess {
   getDataProvider(): DataProvider | null;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
+  openCommandBar(query?: string): void;
+  showWidget(widgetId: string): void;
+  hideWidget(widgetId: string): void;
   openPluginCommandWorkflow(commandId: string): void;
   notify(notification: AppNotificationRequest): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
@@ -77,6 +80,15 @@ export function usePluginTickerActions() {
 
 export function usePluginAppActions() {
   const { runtime } = usePluginRenderContext();
+  const openCommandBar = useCallback((query?: string) => {
+    runtime.openCommandBar(query);
+  }, [runtime]);
+  const showWidget = useCallback((widgetId: string) => {
+    runtime.showWidget(widgetId);
+  }, [runtime]);
+  const hideWidget = useCallback((widgetId: string) => {
+    runtime.hideWidget(widgetId);
+  }, [runtime]);
   const openPluginCommandWorkflow = useCallback((commandId: string) => {
     runtime.openPluginCommandWorkflow(commandId);
   }, [runtime]);
@@ -85,6 +97,9 @@ export function usePluginAppActions() {
   }, [runtime]);
 
   return {
+    openCommandBar,
+    showWidget,
+    hideWidget,
     openPluginCommandWorkflow,
     notify,
   };

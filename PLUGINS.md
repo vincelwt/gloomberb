@@ -605,10 +605,12 @@ import {
   usePluginState,
   usePluginConfigState,
   usePluginTickerActions,
+  usePluginAppActions,
 } from "gloomberb/plugins/plugin-runtime";
 
 const dataProvider = usePluginDataProvider();
 const { navigateTicker, pinTicker } = usePluginTickerActions();
+const { openCommandBar, showWidget, hideWidget, notify } = usePluginAppActions();
 
 // Per-pane transient state (scoped to the current pane instance)
 const [expanded, setExpanded] = usePluginPaneState("expanded", false);

@@ -14,6 +14,7 @@ import {
   getPluginPaneStateValue,
   setPluginPaneStateValue,
   type PluginRuntimeAccess,
+  usePluginAppActions,
   useDebouncedPluginPaneState,
   usePluginConfigState,
   usePluginPaneState,
@@ -61,6 +62,9 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      openCommandBar() {},
+      showWidget() {},
+      hideWidget() {},
       openPluginCommandWorkflow() {},
       notify() {},
       subscribeResumeState: () => () => {},
@@ -131,6 +135,9 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      openCommandBar() {},
+      showWidget() {},
+      hideWidget() {},
       openPluginCommandWorkflow() {},
       notify() {},
       subscribeResumeState(pluginId, key, listener) {
@@ -255,5 +262,69 @@ describe("plugin runtime hooks", () => {
       displayMode: "expanded",
     });
     expect(resumeState.get("news:provider")).toBe("codex");
+  });
+
+  test("exposes renderer app actions through the plugin hook", async () => {
+    const calls: string[] = [];
+    let actions: ReturnType<typeof usePluginAppActions> | null = null;
+
+    const runtime: PluginRuntimeAccess = {
+      getDataProvider: () => null,
+      pinTicker() {},
+      navigateTicker() {},
+      openCommandBar(query?: string) {
+        calls.push(`command:${query ?? ""}`);
+      },
+      showWidget(widgetId: string) {
+        calls.push(`show:${widgetId}`);
+      },
+      hideWidget(widgetId: string) {
+        calls.push(`hide:${widgetId}`);
+      },
+      openPluginCommandWorkflow(commandId: string) {
+        calls.push(`workflow:${commandId}`);
+      },
+      notify(notification) {
+        calls.push(`notify:${notification.body}`);
+      },
+      subscribeResumeState: () => () => {},
+      getResumeState: () => null,
+      setResumeState() {},
+      deleteResumeState() {},
+      getConfigState: () => null,
+      setConfigState: async () => {},
+      deleteConfigState: async () => {},
+      getConfigStateKeys: () => [],
+    };
+
+    function HookProbe() {
+      actions = usePluginAppActions();
+      return <text>actions</text>;
+    }
+
+    testSetup = await testRender(
+      <PluginRenderProvider pluginId="help" runtime={runtime}>
+        <HookProbe />
+      </PluginRenderProvider>,
+      { width: 40, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    actions?.openCommandBar("PL ");
+    actions?.showWidget("debug");
+    actions?.hideWidget("chat");
+    actions?.openPluginCommandWorkflow("set-alert");
+    actions?.notify({ body: "Saved", type: "success" });
+
+    expect(calls).toEqual([
+      "command:PL ",
+      "show:debug",
+      "hide:chat",
+      "workflow:set-alert",
+      "notify:Saved",
+    ]);
   });
 });

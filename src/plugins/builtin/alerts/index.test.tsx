@@ -75,6 +75,9 @@ function makeRuntime(overrides: Partial<PluginRuntimeAccess> = {}): PluginRuntim
     getDataProvider: () => null,
     pinTicker() {},
     navigateTicker() {},
+    openCommandBar() {},
+    showWidget() {},
+    hideWidget() {},
     openPluginCommandWorkflow() {},
     notify() {},
     subscribeResumeState(pluginId, key, listener) {
