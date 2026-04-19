@@ -15,6 +15,7 @@ import { WebInputHostProvider } from "./input-host";
 import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
 import { webRendererHost, webUiHost } from "./ui-host";
+import { createApplicationMenuBridge } from "./application-menu-bridge";
 import { createDesktopWindowBridge } from "./desktop-window-bridge";
 import { prepareDetachedSnapshot } from "./desktop-window-snapshot";
 
@@ -58,6 +59,7 @@ async function boot() {
     : init.desktopSnapshot;
   const config = desktopSnapshot?.config ?? init.config;
   const desktopWindowBridge = createDesktopWindowBridge(init.windowKind, init.paneId);
+  const desktopApplicationMenuBridge = createApplicationMenuBridge();
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
       <UiHostProvider ui={webUiHost} renderer={webRendererHost} nativeRenderer={webNativeRenderer}>
@@ -67,6 +69,7 @@ async function boot() {
               <App
                 config={config}
                 desktopWindowBridge={desktopWindowBridge}
+                desktopApplicationMenuBridge={desktopApplicationMenuBridge}
                 desktopSnapshot={desktopSnapshot}
               />
             </WebDialogHostProvider>
