@@ -31,6 +31,7 @@ describe("HelpPane", () => {
       deleteResumeState() {},
       getConfigState: () => null,
       setConfigState: async () => {},
+      setConfigStates: async () => {},
       deleteConfigState: async () => {},
       getConfigStateKeys: () => [],
     };
