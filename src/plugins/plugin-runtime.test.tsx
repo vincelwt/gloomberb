@@ -17,6 +17,7 @@ import {
   usePluginAppActions,
   useDebouncedPluginPaneState,
   usePluginConfigState,
+  usePluginPaneActions,
   usePluginPaneState,
   usePluginState,
   useSetPluginConfigStates,
@@ -63,6 +64,9 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      selectTicker() {},
+      switchTab() {},
+      switchPanel() {},
       openCommandBar() {},
       showWidget() {},
       hideWidget() {},
@@ -137,6 +141,9 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      selectTicker() {},
+      switchTab() {},
+      switchPanel() {},
       openCommandBar() {},
       showWidget() {},
       hideWidget() {},
@@ -301,6 +308,9 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      selectTicker() {},
+      switchTab() {},
+      switchPanel() {},
       openCommandBar(query?: string) {
         calls.push(`command:${query ?? ""}`);
       },
@@ -355,6 +365,66 @@ describe("plugin runtime hooks", () => {
       "hide:chat",
       "workflow:set-alert",
       "notify:Saved",
+    ]);
+  });
+
+  test("exposes renderer pane actions through the plugin hook", async () => {
+    const calls: string[] = [];
+    let actions: ReturnType<typeof usePluginPaneActions> | null = null;
+
+    const runtime: PluginRuntimeAccess = {
+      getDataProvider: () => null,
+      pinTicker() {},
+      navigateTicker() {},
+      selectTicker(symbol: string, paneId?: string) {
+        calls.push(`select:${symbol}:${paneId ?? ""}`);
+      },
+      switchTab(tabId: string, paneId?: string) {
+        calls.push(`tab:${tabId}:${paneId ?? ""}`);
+      },
+      switchPanel(panel: "left" | "right") {
+        calls.push(`panel:${panel}`);
+      },
+      openCommandBar() {},
+      showWidget() {},
+      hideWidget() {},
+      openPluginCommandWorkflow() {},
+      notify() {},
+      subscribeResumeState: () => () => {},
+      getResumeState: () => null,
+      setResumeState() {},
+      deleteResumeState() {},
+      getConfigState: () => null,
+      setConfigState: async () => {},
+      setConfigStates: async () => {},
+      deleteConfigState: async () => {},
+      getConfigStateKeys: () => [],
+    };
+
+    function HookProbe() {
+      actions = usePluginPaneActions();
+      return <text>pane-actions</text>;
+    }
+
+    testSetup = await testRender(
+      <PluginRenderProvider pluginId="ibkr" runtime={runtime}>
+        <HookProbe />
+      </PluginRenderProvider>,
+      { width: 40, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    actions?.selectTicker("AAPL", "ibkr:main");
+    actions?.switchTab("ibkr-trade", "ibkr:main");
+    actions?.switchPanel("right");
+
+    expect(calls).toEqual([
+      "select:AAPL:ibkr:main",
+      "tab:ibkr-trade:ibkr:main",
+      "panel:right",
     ]);
   });
 });

@@ -18,7 +18,7 @@ import type { Quote } from "../../types/financials";
 import { formatCurrency, padTo } from "../../utils/format";
 import { formatMarketPrice, formatMarketQuantity } from "../../utils/market-format";
 import { getBrokerInstance } from "../../utils/broker-instances";
-import { getSharedRegistry } from "../registry";
+import { usePluginPaneActions } from "../plugin-runtime";
 import { isGatewayConfigured } from "./config";
 import { ChoiceDialog } from "./dialogs";
 import { useIbkrGatewaySelection } from "./gateway-selection";
@@ -45,6 +45,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   const tickers = useAppSelector((state) => state.tickers);
   const paneId = usePaneInstanceId();
   const { collectionId } = usePaneCollection(paneId);
+  const { selectTicker, switchTab, switchPanel } = usePluginPaneActions();
   const dialog = useDialog();
   const tradeState = useTradingPaneState();
   const {
@@ -242,7 +243,6 @@ export function TradingPane({ focused, width, height }: PaneProps) {
 
   const openSelectedOrder = useCallback(() => {
     if (!selectedOrder) return;
-    const registry = getSharedRegistry();
     const ticker = findTickerForOrder(selectedOrder, tickers);
     if (!ticker) {
       setTradingMessage(undefined, `No local ticker exists for ${selectedOrder.contract.localSymbol || selectedOrder.contract.symbol}.`);
@@ -255,10 +255,10 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       lastInfo: `Loaded order ${selectedOrder.orderId} into ${ticker.metadata.ticker}.`,
       lastError: undefined,
     });
-    registry?.selectTickerFn(ticker.metadata.ticker, paneId);
-    registry?.switchTabFn("ibkr-trade", paneId);
-    registry?.switchPanelFn("right");
-  }, [selectedOrder, tickers, paneId]);
+    selectTicker(ticker.metadata.ticker, paneId);
+    switchTab("ibkr-trade", paneId);
+    switchPanel("right");
+  }, [selectedOrder, tickers, paneId, selectTicker, switchTab, switchPanel]);
 
   const footerActionsRef = useRef<{
     chooseBrokerInstance: () => Promise<void>;
@@ -450,7 +450,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
                   onMouseDown={() => {
                     const symbol = execution.contract.symbol;
                     if (symbol && tickers.has(symbol)) {
-                      getSharedRegistry()?.selectTickerFn(symbol, paneId);
+                      selectTicker(symbol, paneId);
                     }
                   }}
                 >

@@ -23,6 +23,9 @@ export interface PluginRuntimeAccess {
   getDataProvider(): DataProvider | null;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
+  selectTicker(symbol: string, paneId?: string): void;
+  switchTab(tabId: string, paneId?: string): void;
+  switchPanel(panel: "left" | "right"): void;
   openCommandBar(query?: string): void;
   showWidget(widgetId: string): void;
   hideWidget(widgetId: string): void;
@@ -76,6 +79,25 @@ export function usePluginTickerActions() {
   return {
     pinTicker: runtime.pinTicker,
     navigateTicker: runtime.navigateTicker,
+  };
+}
+
+export function usePluginPaneActions() {
+  const { runtime } = usePluginRenderContext();
+  const selectTicker = useCallback((symbol: string, paneId?: string) => {
+    runtime.selectTicker(symbol, paneId);
+  }, [runtime]);
+  const switchTab = useCallback((tabId: string, paneId?: string) => {
+    runtime.switchTab(tabId, paneId);
+  }, [runtime]);
+  const switchPanel = useCallback((panel: "left" | "right") => {
+    runtime.switchPanel(panel);
+  }, [runtime]);
+
+  return {
+    selectTicker,
+    switchTab,
+    switchPanel,
   };
 }
 
