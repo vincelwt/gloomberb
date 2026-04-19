@@ -921,7 +921,7 @@ describe("ChatContent", () => {
     await flushFrame();
 
     const frameAfterUpdate = testSetup.captureCharFrame();
-    expect(frameAfterUpdate).toContain("7 messages");
+    expect(frameAfterUpdate).not.toContain("7 messages");
     expect(frameAfterUpdate).toContain("message 7");
     expect(frameAfterUpdate).not.toContain("message 1");
   });

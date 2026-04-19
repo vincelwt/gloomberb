@@ -361,6 +361,60 @@ describe("ChatController", () => {
     });
   });
 
+  test("backfills from cached transcript when persisted cursor is ahead of the cache", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const cached: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "cached",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u1", username: "vince", displayName: "Vince" },
+    };
+    const fresh: ChatMessage = {
+      id: "m2",
+      channelId: "everyone",
+      content: "fresh",
+      replyToId: null,
+      createdAt: "2026-03-28T00:01:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    persistence.setState("channel:everyone", {
+      draft: "",
+      replyToId: null,
+      lastCursor: "m99",
+      lastViewedMessageId: "m1",
+    }, { schemaVersion: 1 });
+    persistence.setResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, {
+      messages: [cached],
+    }, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+      cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
+    });
+
+    controller.attachPersistence(persistence);
+
+    const calls: Array<{ channelId: string; opts?: { after?: string; before?: string; limit?: number } }> = [];
+    apiClient.getMessages = async (channelId, opts) => {
+      calls.push({ channelId, opts });
+      return opts?.after === "m1" ? [fresh] : [];
+    };
+
+    await controller.refreshMessages();
+
+    expect(calls).toEqual([{
+      channelId: "everyone",
+      opts: { limit: 50, after: "m1" },
+    }]);
+    expect(controller.getSnapshot().messages.map((entry) => entry.id)).toEqual(["m1", "m2"]);
+    expect(persistence.getState<{ lastCursor: string }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
+      lastCursor: "m2",
+    });
+  });
+
   test("shows a pending message immediately and replaces it when the send succeeds", async () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();

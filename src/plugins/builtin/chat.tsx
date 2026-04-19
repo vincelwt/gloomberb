@@ -515,10 +515,9 @@ export function ChatContent({
   usePaneFooter("chat", () => ({
     info: [
       { id: "channel", parts: [{ text: "#everyone", tone: "value", bold: true }] },
-      { id: "messages", parts: [{ text: `${messages.length} messages`, tone: "muted" }] },
       { id: "status", parts: [{ text: chatStatus, tone: canSend ? "positive" : "warning" }] },
     ],
-  }), [canSend, chatStatus, messages.length]);
+  }), [canSend, chatStatus]);
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;

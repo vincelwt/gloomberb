@@ -80,6 +80,21 @@ function isLegacyTimestampCursor(cursor: string | null): boolean {
   return !!cursor && ISO_TIMESTAMP_CURSOR.test(cursor);
 }
 
+function getLatestMessageId(messages: ChatMessage[]): string | null {
+  return messages[messages.length - 1]?.id ?? null;
+}
+
+function resolveHydratedCursor(messages: ChatMessage[], persistedCursor: string | null): string | null {
+  const transcriptCursor = getLatestMessageId(messages);
+  if (!transcriptCursor) return null;
+  if (!persistedCursor || isLegacyTimestampCursor(persistedCursor)) {
+    return persistedCursor ?? transcriptCursor;
+  }
+  // Desktop web can persist channel state without persisting the matching transcript cache.
+  // Backfill from the transcript we actually loaded when those two cursors diverge.
+  return persistedCursor === transcriptCursor ? persistedCursor : transcriptCursor;
+}
+
 function compareMessages(a: ChatMessage, b: ChatMessage): number {
   // Preserve server/insertion order inside same-timestamp batches so the bottom-most
   // rendered message stays the one selected first from the composer.
@@ -158,11 +173,9 @@ export class ChatController {
       allowExpired: true,
     });
     this.messages = transcript?.value.messages ?? [];
-    this.lastCursor = this.messages.length > 0
-      ? persistedCursor ?? this.messages[this.messages.length - 1]?.id ?? null
-      : null;
+    this.lastCursor = resolveHydratedCursor(this.messages, persistedCursor);
     this.lastViewedMessageId = this.user?.id && apiClient.getSessionToken()
-      ? persistedViewedMessageId ?? this.messages[this.messages.length - 1]?.id ?? null
+      ? persistedViewedMessageId ?? getLatestMessageId(this.messages)
       : null;
     this.syncVerificationPolling();
   }
