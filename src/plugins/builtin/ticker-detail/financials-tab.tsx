@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text } from "../../../ui";
+import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -255,6 +255,7 @@ export function ResolvedFinancialsTab({
   const bodyScrollRef = useRef<ScrollBoxRenderable>(null);
   const headerScrollRef = useRef<ScrollBoxRenderable>(null);
   const resolvedPeriodForFooter = resolveFinancialPeriod(period, hasAnnualStatements, hasQuarterlyStatements);
+  const { nativePaneChrome } = useUiCapabilities();
 
   usePaneFooter("financials", () => ({
     info: financials ? [
@@ -345,7 +346,14 @@ export function ResolvedFinancialsTab({
   }, [displayStatements.length, isAnnual, subTabIdx, subTab.metrics.length]);
 
   return (
-    <Box flexDirection="column" flexGrow={1} paddingX={2} paddingBottom={1}>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexBasis={0}
+      paddingX={2}
+      paddingBottom={nativePaneChrome ? 0 : 1}
+      overflow="hidden"
+    >
       <Box flexDirection="row" height={1}>
         <Box width={FINANCIAL_SUB_TABS_WIDTH} height={1}>
           <TabBar
@@ -400,6 +408,7 @@ export function ResolvedFinancialsTab({
         id={bodyScrollId}
         ref={bodyScrollRef}
         flexGrow={1}
+        flexBasis={0}
         scrollX
         scrollY
         focusable={false}

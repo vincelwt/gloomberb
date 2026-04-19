@@ -1129,7 +1129,7 @@ describe("ChatContent", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("message 1");
     expect(frame).toContain("Read-only chat.");
-    expect(frame).toContain("Login");
+    expect(frame).toContain("Log In");
     expect(frame).toContain("Sign Up");
     expect(frame).not.toContain("Type a message...");
   });
@@ -1187,22 +1187,22 @@ describe("ChatContent", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("☁");
-    expect(frame).toContain("Login");
-    expect(frame).toContain("Sign Up");
+    expect(frame).toContain("Log In");
+    expect(frame).not.toContain("Sign Up");
     expect(frame).not.toContain("Shift+C");
 
     const line = frame.split("\n")[0] ?? "";
-    const signUpCol = line.indexOf("Sign Up");
+    const loginCol = line.indexOf("Log In");
 
-    expect(signUpCol).toBeGreaterThanOrEqual(0);
+    expect(loginCol).toBeGreaterThanOrEqual(0);
 
     await act(async () => {
-      await testSetup!.mockMouse.click(signUpCol + 1, 0);
+      await testSetup!.mockMouse.click(loginCol + 1, 0);
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
     });
 
-    expect(openedQueries).toEqual(["Sign Up"]);
+    expect(openedQueries).toEqual(["Log In"]);
   });
 
   test("shows an unread mention badge and opens chat from the status widget", async () => {

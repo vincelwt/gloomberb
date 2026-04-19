@@ -1,6 +1,7 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 import type { ContextMenuItem } from "../types/context-menu";
 import type { AppNotificationRequest } from "../types/plugin";
+import type { AsciiFontName } from "./ascii-font";
 
 export const TextAttributes = {
   NONE: 0,
@@ -171,6 +172,15 @@ export interface SpinnerMarkProps extends BoxProps {
   name?: string;
   color?: string;
 }
+export interface AsciiTextProps extends BoxProps {
+  text: string;
+  font?: AsciiFontName;
+  color?: string;
+  fg?: string;
+  bg?: string;
+  backgroundColor?: string;
+  selectable?: boolean;
+}
 
 export interface HostTabItem {
   label: string;
@@ -232,6 +242,7 @@ export interface UiHost {
   ChartSurface: ComponentType<ChartSurfaceProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;
+  AsciiText: ComponentType<AsciiTextProps>;
   Button?: ComponentType<any>;
   TextField?: ComponentType<any>;
   ListView?: ComponentType<any>;
