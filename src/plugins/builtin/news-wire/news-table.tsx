@@ -7,6 +7,7 @@ import {
 } from "../../../components";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
+import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 
 export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
 
@@ -62,7 +63,10 @@ function compareArticle(a: MarketNewsItem, b: MarketNewsItem, columnId: NewsColu
     case "title":
       return compareText(a.title, b.title);
     case "tickers":
-      return compareText(a.tickers.join(" "), b.tickers.join(" "));
+      return compareText(
+        collectNewsDisplayTickers(a.tickers).join(" "),
+        collectNewsDisplayTickers(b.tickers).join(" "),
+      );
     case "categories":
       return compareText(a.categories.join(" "), b.categories.join(" "));
   }
@@ -130,6 +134,7 @@ interface NewsArticleStackViewProps extends NewsArticleStackBaseProps {
   detailOpen: boolean;
   onBack: () => void;
   detailContent: ReactNode;
+  detailTitle?: string;
   rootBefore?: ReactNode;
   rootHeight?: number;
   onRootKeyDown?: (event: {
@@ -154,6 +159,7 @@ export function NewsArticleStackView({
   detailOpen,
   onBack,
   detailContent,
+  detailTitle,
   rootBefore,
   onRootKeyDown,
   columns: columnIds,
@@ -217,7 +223,10 @@ export function NewsArticleStackView({
             : TextAttributes.BOLD,
         };
       case "tickers":
-        return { text: item.tickers.join(" "), color: selectedColor ?? colors.textBright };
+        return {
+          text: collectNewsDisplayTickers(item.tickers).join(" "),
+          color: selectedColor ?? colors.textBright,
+        };
       case "categories":
         return { text: item.categories[0] ?? "—", color: selectedColor ?? colors.textDim };
       case "importance":
@@ -234,6 +243,7 @@ export function NewsArticleStackView({
       detailOpen={detailOpen}
       onBack={onBack}
       detailContent={detailContent}
+      detailTitle={detailTitle}
       selectedIndex={activeIdx}
       onSelectIndex={selectIndex}
       onActivateIndex={openIndex}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { GloomberbCloudProvider } from "./gloomberb-cloud";
+import { GloomberbCloudProvider, createGloomberbCloudNewsSource } from "./gloomberb-cloud";
 import { apiClient, type AuthUser } from "../utils/api-client";
 
 const verifiedUser: AuthUser = {
@@ -298,5 +298,74 @@ describe("GloomberbCloudProvider", () => {
       publishedAt: new Date("2026-04-01T10:05:00.000Z"),
       summary: "Apple lifted its outlook after stronger iPhone demand.",
     }]);
+  });
+
+  test("maps news ticker links to unique display tickers", async () => {
+    apiClient.getCloudNews = async () => ({
+      items: [{
+        id: "story-media",
+        headline: "Media merger draws opposition",
+        summary: "Hollywood figures oppose a proposed merger.",
+        topic: "mna",
+        topics: ["mna"],
+        category: "mna",
+        sentiment: "neutral",
+        sectors: ["communication_services"],
+        firstPublishedAt: "2026-04-13T21:00:00.000Z",
+        lastPublishedAt: "2026-04-13T21:28:00.000Z",
+        firstSeenAt: "2026-04-13T21:00:10.000Z",
+        lastSeenAt: "2026-04-13T21:28:10.000Z",
+        primaryUrl: "https://example.com/media-merger",
+        primarySource: "example-wire",
+        scores: {
+          importance: 60,
+          urgency: 40,
+          marketImpact: 50,
+          novelty: 30,
+          confidence: 90,
+        },
+        flags: {
+          breaking: false,
+          developing: false,
+          stale: false,
+        },
+        variantCount: 1,
+        sourceCount: 1,
+        sources: ["example-wire"],
+        entities: [{
+          id: "wbd",
+          entityType: "security",
+          symbol: "WBD",
+          exchange: "XNAS",
+          canonicalTicker: "WBD:XNAS",
+          name: "Warner Bros Discovery",
+          role: null,
+          confidence: 0.8,
+        }],
+        tickerLinks: [{
+          symbol: "NFLX",
+          exchange: "XNAS",
+          canonicalTicker: "NFLX:XNAS",
+          relationType: "related",
+          displayTier: "related",
+          confidence: 0.9,
+          relevanceScore: 85,
+        }, {
+          symbol: "PARA",
+          exchange: "XNAS",
+          canonicalTicker: "PARA:XNAS",
+          relationType: "direct",
+          displayTier: "primary",
+          confidence: 0.95,
+          relevanceScore: 92,
+        }],
+      }],
+      nextCursor: null,
+    });
+
+    const source = createGloomberbCloudNewsSource();
+    const news = await source.fetchNews({ feed: "top", limit: 10 });
+
+    expect(news[0]?.tickers).toEqual(["NFLX", "PARA"]);
   });
 });

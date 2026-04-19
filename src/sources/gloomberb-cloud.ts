@@ -19,6 +19,7 @@ import {
 import type { NewsArticle, NewsQuery, NewsSource } from "../types/news-source";
 import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
 import { canonicalTickerKey, publicExchange } from "../utils/exchanges";
+import { collectNewsDisplayTickers } from "../news/ticker-symbols";
 import { createProviderMiss } from "./provider-errors";
 
 const providerId = "gloomberb-cloud" as const;
@@ -119,13 +120,17 @@ function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): N
     novelty: item.scores?.novelty ?? 0,
     confidence: item.scores?.confidence ?? 0,
   };
-  const tickers = uniqueStrings([
-    ...item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
-    ...item.entities.flatMap((entity) => [entity.symbol, entity.canonicalTicker].filter((value): value is string => typeof value === "string")),
+  const linkTickers = collectNewsDisplayTickers(
+    item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
+  );
+  const entityTickers = collectNewsDisplayTickers(
+    item.entities.flatMap((entity) => [entity.symbol, entity.canonicalTicker]),
+  );
+  const tickers = collectNewsDisplayTickers([
+    ...linkTickers,
+    ...(linkTickers.length > 0 ? [] : entityTickers),
+    fallbackTicker,
   ]);
-  if (fallbackTicker && !tickers.includes(fallbackTicker.trim().toUpperCase())) {
-    tickers.push(fallbackTicker.trim().toUpperCase());
-  }
   return {
     id: item.id,
     title: item.headline,

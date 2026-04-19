@@ -643,6 +643,7 @@ export function WebPageStackView({
   onBack,
   rootContent,
   detailContent,
+  detailTitle,
   backLabel = "Back",
   backHint,
 }: PageStackViewProps) {
@@ -664,13 +665,13 @@ export function WebPageStackView({
   return (
     <Box flexDirection="column" flexGrow={1} overflow="hidden">
       <Box
-        height={1}
         flexDirection="row"
         alignItems="center"
         paddingX={1}
-        backgroundColor={colors.bg}
+        gap={1}
+        flexShrink={0}
         style={{
-          boxShadow: `inset 0 -1px 0 ${PANEL_BORDER}`,
+          paddingBlock: 8,
         }}
       >
         <Box
@@ -695,7 +696,25 @@ export function WebPageStackView({
             {`← ${backLabel}`}
           </Text>
         </Box>
-        <Box flexGrow={1} />
+        {detailTitle ? (
+          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            <Text
+              fg={colors.textBright}
+              attributes={TextAttributes.BOLD}
+              style={{
+                display: "block",
+                fontWeight: 700,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {detailTitle}
+            </Text>
+          </Box>
+        ) : (
+          <Box flexGrow={1} />
+        )}
         {backHint ? (
           <Text fg={colors.textMuted}>
             {backHint}

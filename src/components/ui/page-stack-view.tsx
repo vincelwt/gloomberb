@@ -1,4 +1,4 @@
-import { Box, Text, useUiHost } from "../../ui";
+import { Box, Text, TextAttributes, useUiHost } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { type ComponentType, type ReactNode } from "react";
 import { colors } from "../../theme/colors";
@@ -10,6 +10,7 @@ export interface PageStackViewProps {
   onBack: () => void;
   rootContent: ReactNode;
   detailContent: ReactNode;
+  detailTitle?: string;
   backLabel?: string;
   backHint?: string;
 }
@@ -20,6 +21,7 @@ export function PageStackView({
   onBack,
   rootContent,
   detailContent,
+  detailTitle,
   backLabel = "Back",
   backHint,
 }: PageStackViewProps) {
@@ -32,6 +34,7 @@ export function PageStackView({
         onBack={onBack}
         rootContent={rootContent}
         detailContent={detailContent}
+        detailTitle={detailTitle}
         backLabel={backLabel}
         backHint={backHint}
       />
@@ -65,7 +68,18 @@ export function PageStackView({
         >
           <Text fg={colors.textBright}>{`← ${backLabel}`}</Text>
         </Box>
-        <Box flexGrow={1} />
+        {detailTitle ? (
+          <>
+            <Box width={1} flexShrink={0} />
+            <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+                {detailTitle}
+              </Text>
+            </Box>
+          </>
+        ) : (
+          <Box flexGrow={1} />
+        )}
         {backHint ? <Text fg={colors.textMuted}>{backHint}</Text> : null}
       </Box>
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
