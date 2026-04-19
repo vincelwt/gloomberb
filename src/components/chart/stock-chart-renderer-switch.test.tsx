@@ -18,6 +18,7 @@ import type { PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { Box } from "../../ui";
 import { StockChart } from "./stock-chart";
+import { getNativeSurfaceManager } from "./native/surface-manager";
 
 const TEST_PANE_ID = "ticker-detail:test";
 const CHART_DETAIL_REQUEST_DEBOUNCE_WAIT_MS = 220;
@@ -125,12 +126,14 @@ function ChartHarness({
   financials,
   interactive = false,
   activateOnMouse = false,
+  width = 84,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials;
   interactive?: boolean;
   activateOnMouse?: boolean;
+  width?: number;
 }) {
   const initialState = createInitialState(config);
   initialState.focusedPaneId = TEST_PANE_ID;
@@ -147,15 +150,15 @@ function ChartHarness({
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PaneFooterProvider>
           {(footer) => (
-            <Box flexDirection="column" width={84} height={16}>
+            <Box flexDirection="column" width={width} height={16}>
               <StockChart
-                width={84}
+                width={width}
                 height={15}
                 focused
                 interactive={effectiveInteractive}
                 onActivate={activateOnMouse ? () => setMouseInteractive(true) : undefined}
               />
-              <PaneFooterBar footer={footer} focused width={84} />
+              <PaneFooterBar footer={footer} focused width={width} />
             </Box>
           )}
         </PaneFooterProvider>
@@ -338,6 +341,94 @@ describe("StockChart renderer switching", () => {
     expect(footerLine).not.toContain("Dec 2024");
   });
 
+  test("keeps the native chart surface clear of the time axis row", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.chartPreferences.renderer = "kitty";
+    const ticker = makeTicker(symbol);
+    const history = makeMonthlyHistory(72, new Date(Date.UTC(2019, 0, 1)));
+    const provider = makeProvider({ [symbol]: history });
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: history,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    ((testSetup.renderer as unknown) as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+    ((testSetup.renderer as unknown) as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+        />,
+      );
+    });
+
+    await flushFrames(4);
+    const lines = testSetup.captureCharFrame().split("\n");
+    const axisLineIndex = lines.findIndex((line) => line.includes("Dec 2019"));
+    const footerLineIndex = lines.findIndex((line) => line.includes("[m]ode"));
+    expect(axisLineIndex).toBeGreaterThanOrEqual(0);
+    expect(footerLineIndex).toBeGreaterThan(axisLineIndex);
+
+    const manager = getNativeSurfaceManager(testSetup.renderer as never) as unknown as {
+      surfaces: Map<string, { snapshot: { rect: { height: number } } }>;
+    };
+    expect(manager.surfaces.get("chart-surface:ticker-detail:test:full:base")?.snapshot.rect.height).toBe(11);
+  });
+
+  test("moves candle OHLC summary into the pane footer", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.chartPreferences.defaultRenderMode = "candles";
+    const ticker = makeTicker(symbol);
+    const history = makeHistory(96);
+    const provider = makeProvider({ [symbol]: history });
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedDataProviderForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: history,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 140, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+          width={120}
+        />,
+      );
+    });
+
+    await flushFrames(4);
+    const lines = testSetup.captureCharFrame().split("\n");
+    const chartAndFooterLines = lines.slice(0, 16);
+    const footerLine = chartAndFooterLines.at(-1) ?? "";
+
+    expect(chartAndFooterLines.join("\n")).not.toContain("AAPL -");
+    expect(footerLine).toContain("O $");
+    expect(footerLine).toContain("H $");
+    expect(footerLine).toContain("L $");
+    expect(footerLine).toContain("C $");
+    expect(footerLine).toContain("V ");
+    expect(footerLine).toContain("[m]ode");
+  });
+
   test("pans the visible window with mouse drag", async () => {
     const symbol = "AAPL";
     const config = makeChartConfig(symbol);
@@ -426,7 +517,7 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames();
-    expect(testSetup.captureCharFrame()).toContain("AAPL");
+    expect(testSetup.captureCharFrame()).toContain("AUTO 1M");
 
     const nextConfig: AppConfig = {
       ...config,
@@ -441,7 +532,7 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames();
-    expect(testSetup.captureCharFrame()).toContain("AAPL");
+    expect(testSetup.captureCharFrame()).toContain("AUTO 1M");
   });
 
   test("applies preset hotkeys without reverting to the previous stored range", async () => {
@@ -472,15 +563,14 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames(3);
-    expect(testSetup.captureCharFrame()).toContain("AAPL - AUTO");
+    expect(testSetup.captureCharFrame()).toContain("AUTO 1M");
 
     await emitKeypress({ name: "3", sequence: "3" });
     await flushFrames(3);
     await flushDebouncedChartRequests();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).not.toContain("AAPL - AUTO");
-    expect(frame).toContain("AAPL - 15M");
+    expect(frame).not.toContain("AAPL -");
     expect(frame).toContain("May 28");
     expect(frame).not.toContain("view:");
   });
@@ -543,7 +633,7 @@ describe("StockChart renderer switching", () => {
 
     await flushFrames(6);
     await flushDebouncedChartRequests();
-    expect(testSetup.captureCharFrame()).toContain("AAPL - AUTO");
+    expect(testSetup.captureCharFrame()).toContain("AUTO 1M");
     expect(detailBarSizes).toContain("15m");
 
     for (let index = 0; index < 6; index += 1) {
@@ -744,18 +834,18 @@ describe("StockChart renderer switching", () => {
 
     await flushFrames(6);
     const initialFrame = testSetup.captureCharFrame();
-    const titleRow = getFrameRowContaining(initialFrame, "AAPL - AUTO");
-    expect(titleRow).toBeGreaterThanOrEqual(0);
+    const controlsRow = getFrameRowContaining(initialFrame, "AUTO 1M");
+    expect(controlsRow).toBeGreaterThanOrEqual(0);
 
     await act(async () => {
-      await testSetup!.mockMouse.scroll(1, titleRow, "up");
+      await testSetup!.mockMouse.scroll(1, controlsRow, "up");
       await testSetup!.renderOnce();
     });
     await flushFrames(2);
 
     for (let index = 0; index < 4; index += 1) {
       await act(async () => {
-        await testSetup!.mockMouse.scroll(68, titleRow + 3, "up");
+        await testSetup!.mockMouse.scroll(68, controlsRow + 3, "up");
         await testSetup!.renderOnce();
       });
       await flushFrames(2);
@@ -763,8 +853,8 @@ describe("StockChart renderer switching", () => {
     await flushDebouncedChartRequests();
 
     const pannedFrame = testSetup.captureCharFrame();
-    const pannedHeader = getFrameLineContaining(pannedFrame, "AAPL - AUTO");
-    expect(pannedHeader).not.toContain("view:");
+    const pannedControls = getFrameLineContaining(pannedFrame, "AUTO 1M");
+    expect(pannedControls).not.toContain("view:");
     expect(detailRequests.some((request) => /(m|h)$/i.test(request))).toBe(false);
   });
 
@@ -825,14 +915,14 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames(6);
-    expect(testSetup.captureCharFrame()).toContain("AAPL - 1D");
+    expect(testSetup.captureCharFrame()).toContain("1D");
 
     await emitKeypress({ name: "a", sequence: "a" });
     await flushFrames(3);
 
     const loadingFrame = testSetup.captureCharFrame();
     expect(pendingResolvers.length).toBeGreaterThan(0);
-    expect(loadingFrame).toContain("AAPL - 1D");
+    expect(loadingFrame).toContain("1D");
     expect(loadingFrame).not.toContain("Loading chart...");
 
     await emitKeypress({ name: "a", sequence: "a" });
@@ -906,7 +996,7 @@ describe("StockChart renderer switching", () => {
     });
 
     await flushFrames(6);
-    expect(testSetup.captureCharFrame()).toContain("AAPL - 1D");
+    expect(testSetup.captureCharFrame()).toContain("1D");
 
     holdDetailRequests = true;
     for (let index = 0; index < 5; index += 1) {
@@ -917,7 +1007,7 @@ describe("StockChart renderer switching", () => {
 
     const loadingFrame = testSetup.captureCharFrame();
     expect(pendingResolvers.length).toBeGreaterThan(0);
-    expect(loadingFrame).toContain("AAPL - 1D");
+    expect(loadingFrame).toContain("1D");
     expect(loadingFrame).not.toContain("Loading chart...");
 
     await act(async () => {
@@ -999,7 +1089,6 @@ describe("StockChart renderer switching", () => {
     const firstFrame = testSetup.captureCharFrame();
     expect(pendingOneDayResolvers.length).toBeGreaterThan(0);
     expect(fallbackRequests).toBeGreaterThan(0);
-    expect(firstFrame).toContain("AAPL - 1D");
     expect(firstFrame).toContain("showing 1W");
     expect(firstFrame).toContain("updating");
     expect(firstFrame).not.toContain("Loading chart...");
@@ -1069,7 +1158,6 @@ describe("StockChart renderer switching", () => {
     const frame = testSetup.captureCharFrame();
     expect(detailRequests).toContain("1m");
     expect(detailRequests).toContain("1d");
-    expect(frame).toContain("AAPL - 1M");
     expect(frame).toContain("showing 1D");
     expect(frame).not.toContain("No price history available.");
   });

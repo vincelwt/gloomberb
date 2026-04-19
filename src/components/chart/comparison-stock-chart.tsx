@@ -1813,7 +1813,6 @@ function ComparisonStockChartView({
       width={chartWidth}
       height={chartHeight}
       flexDirection="column"
-      backgroundColor={chartColors.bgColor}
       bitmaps={plotBitmaps}
       crosshair={canvasCrosshair}
       onMouseMove={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotMove : undefined}

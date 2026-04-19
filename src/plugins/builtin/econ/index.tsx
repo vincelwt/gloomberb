@@ -400,7 +400,7 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
           {/* Chart */}
           {chartResult ? (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
-              <Box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
+              <Box flexDirection="column" height={chartHeight}>
                 {chartResult.lines.map((line, i) => (
                   <Text key={i} content={chartLineContent(line)} />
                 ))}
