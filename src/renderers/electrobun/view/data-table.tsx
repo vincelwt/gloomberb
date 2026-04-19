@@ -343,6 +343,7 @@ function WebDataTableRowInner<
               height: WEB_CELL_HEIGHT,
               flex: "0 0 auto",
               overflow: "visible",
+              backgroundColor: cell.backgroundColor ?? rowBg,
             }}
             onMouseDown={(event) => {
               focusPane();
@@ -407,6 +408,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   virtualize = true,
   overscan = 3,
   showHorizontalScrollbar = true,
+  scrollToIndex,
+  scrollToIndexAlign = "nearest",
+  scrollToIndexVersion = 0,
 }: DataTableProps<T, C>) {
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
@@ -464,6 +468,39 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const totalHeight = virtualize
     ? rowVirtualizer.getTotalSize()
     : WEB_CELL_HEIGHT + items.length * WEB_CELL_HEIGHT;
+
+  useEffect(() => {
+    if (scrollToIndex == null || items.length === 0) return;
+    const targetIndex = Math.max(0, Math.min(scrollToIndex, items.length - 1));
+    if (virtualize) {
+      rowVirtualizer.scrollToIndex(targetIndex, {
+        align: scrollToIndexAlign === "center" ? "center" : "auto",
+      });
+      return;
+    }
+    const element = bodyElementRef.current;
+    if (!element) return;
+    const viewportRows = Math.max(1, Math.floor(element.clientHeight / WEB_CELL_HEIGHT) - 1);
+    const currentTop = toCellY(element.scrollTop);
+    let nextTop = currentTop;
+    if (scrollToIndexAlign === "center") {
+      nextTop = Math.max(0, targetIndex - Math.floor(viewportRows / 2));
+    } else if (targetIndex < currentTop) {
+      nextTop = targetIndex;
+    } else if (targetIndex >= currentTop + viewportRows) {
+      nextTop = targetIndex - viewportRows + 1;
+    }
+    if (nextTop !== currentTop) {
+      element.scrollTop = nextTop * WEB_CELL_HEIGHT;
+    }
+  }, [
+    items.length,
+    rowVirtualizer,
+    scrollToIndex,
+    scrollToIndexAlign,
+    scrollToIndexVersion,
+    virtualize,
+  ]);
 
   useScrollBoxHandle(
     headerScrollRef,
@@ -572,7 +609,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     minWidth: px(column.width + 1),
                     height: WEB_CELL_HEIGHT,
                     flex: "0 0 auto",
-                    backgroundColor: colors.panel,
+                    backgroundColor: column.headerBackgroundColor ?? colors.panel,
                   }}
                   onMouseDown={(event) => {
                     focusPane();
@@ -582,7 +619,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                 >
                   <span
                     style={cellTextStyle(
-                      isSorted ? colors.text : colors.textDim,
+                      isSorted ? colors.text : column.headerColor ?? colors.textDim,
                       TextAttributes.BOLD,
                     )}
                   >

@@ -1,26 +1,76 @@
 import { Box, Text } from "../../ui";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../react/input";
-import { TextAttributes } from "../../ui";
+import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
-import { ListView, type ListViewItem } from "../../components/ui";
-import { colors, hoverBg } from "../../theme/colors";
-import { padTo, formatCompact, formatNumber } from "../../utils/format";
+import { blendHex, colors } from "../../theme/colors";
+import { formatCompact, formatNumber } from "../../utils/format";
 import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
-import { Spinner } from "../../components/spinner";
-import { TabBar } from "../../components/tab-bar";
 import { setOptionsAvailability } from "./options-availability";
-import { usePaneFooter } from "../../components";
+import { DataTable, Spinner, TabBar, usePaneFooter, type DataTableCell, type DataTableColumn } from "../../components";
 
-function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
-  const { ticker } = usePaneTicker();
+type OptionColumnId =
+  | "callLast"
+  | "callBid"
+  | "callAsk"
+  | "callVolume"
+  | "callOpenInterest"
+  | "callIv"
+  | "strike"
+  | "putLast"
+  | "putBid"
+  | "putAsk"
+  | "putVolume"
+  | "putOpenInterest"
+  | "putIv";
+
+type OptionColumn = DataTableColumn & { id: OptionColumnId };
+
+interface OptionTableRow {
+  strike: number;
+  call?: OptionContract;
+  put?: OptionContract;
+  isPositionStrike: boolean;
+}
+
+const OPTION_CALL_COLOR = "#5ed69a";
+const OPTION_PUT_COLOR = "#ff9c7a";
+const OPTION_PRICE_COLOR = "#dfc05b";
+const OPTION_ACTIVITY_COLOR = "#35a7d6";
+const OPTION_IV_COLOR = "#8bd878";
+const OPTION_STRIKE_COLOR = "#8fb7ff";
+
+const OPTION_COLUMNS: OptionColumn[] = [
+  { id: "callOpenInterest", label: "C OI", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
+  { id: "callVolume", label: "C VOL", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
+  { id: "callLast", label: "C LAST", width: 7, align: "right", headerColor: OPTION_CALL_COLOR },
+  { id: "callIv", label: "C IV", width: 6, align: "right", headerColor: OPTION_IV_COLOR },
+  { id: "callBid", label: "C BID", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
+  { id: "callAsk", label: "C ASK", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
+  { id: "strike", label: "STRIKE", width: 9, align: "center", headerColor: OPTION_STRIKE_COLOR },
+  { id: "putBid", label: "P BID", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
+  { id: "putAsk", label: "P ASK", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
+  { id: "putIv", label: "P IV", width: 6, align: "right", headerColor: OPTION_IV_COLOR },
+  { id: "putLast", label: "P LAST", width: 7, align: "right", headerColor: OPTION_PUT_COLOR },
+  { id: "putVolume", label: "P VOL", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
+  { id: "putOpenInterest", label: "P OI", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
+];
+
+export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
+  const { ticker, financials } = usePaneTicker();
   const [expIdx, setExpIdx] = useState(0);
   const [strikeIdx, setStrikeIdx] = useState(0);
+  const [autoScrollVersion, setAutoScrollVersion] = useState(0);
+  const [scrollToIndexAlign, setScrollToIndexAlign] = useState<"nearest" | "center">("nearest");
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [interactive, setInteractive] = useState(false);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const headerScrollRef = useRef<ScrollBoxRenderable>(null);
+  const userSelectedStrikeRef = useRef(false);
   const target = resolveOptionsTarget(ticker);
   const isOpt = target?.isOptionTicker ?? false;
   const parsed = target?.parsedOption ?? null;
@@ -72,6 +122,8 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   // Exit interactive mode when ticker changes
   useEffect(() => {
+    userSelectedStrikeRef.current = false;
+    setScrollToIndexAlign("nearest");
     exitInteractive();
     setExpIdx(0);
     setStrikeIdx(0);
@@ -92,16 +144,40 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   }, [expIdx, initialChain, parsed]);
 
   useEffect(() => {
-    setStrikeIdx(0);
+    userSelectedStrikeRef.current = false;
   }, [expIdx]);
 
   // Build sorted strike list from the union of calls and puts
-  const strikes = chain ? buildStrikeList(chain) : [];
-  const callsByStrike = new Map<number, OptionContract>(chain?.calls.map((c) => [c.strike, c]) ?? []);
-  const putsByStrike = new Map<number, OptionContract>(chain?.puts.map((p) => [p.strike, p]) ?? []);
+  const strikes = useMemo(() => chain ? buildStrikeList(chain) : [], [chain]);
+  const callsByStrike = useMemo(
+    () => new Map<number, OptionContract>(chain?.calls.map((c) => [c.strike, c]) ?? []),
+    [chain],
+  );
+  const putsByStrike = useMemo(
+    () => new Map<number, OptionContract>(chain?.puts.map((p) => [p.strike, p]) ?? []),
+    [chain],
+  );
+  const rows = useMemo<OptionTableRow[]>(() => strikes.map((strike) => ({
+    strike,
+    call: callsByStrike.get(strike),
+    put: putsByStrike.get(strike),
+    isPositionStrike: !!parsed && Math.abs(strike - parsed.strike) < 0.01,
+  })), [callsByStrike, parsed, putsByStrike, strikes]);
   const selectedStrike = strikes[strikeIdx];
   const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
   const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
+
+  const syncHeaderScroll = useCallback(() => {
+    const bodyScrollBox = scrollRef.current;
+    const headerScrollBox = headerScrollRef.current;
+    if (bodyScrollBox && headerScrollBox && headerScrollBox.scrollLeft !== bodyScrollBox.scrollLeft) {
+      headerScrollBox.scrollLeft = bodyScrollBox.scrollLeft;
+    }
+  }, []);
+
+  const handleBodyScrollActivity = useCallback(() => {
+    syncHeaderScroll();
+  }, [syncHeaderScroll]);
 
   usePaneFooter("options", () => {
     const info = [
@@ -122,12 +198,21 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
     selectedStrike,
   ]);
 
-  // Auto-scroll to matching strike when viewing an option position
   useEffect(() => {
-    if (!parsed || strikes.length === 0) return;
-    const matchIdx = strikes.findIndex((s) => Math.abs(s - parsed.strike) < 0.01);
-    if (matchIdx >= 0) setStrikeIdx(matchIdx);
-  }, [strikes.length, parsed?.strike]);
+    setStrikeIdx((index) => {
+      if (strikes.length === 0) return 0;
+      return Math.min(index, strikes.length - 1);
+    });
+  }, [strikes.length]);
+
+  useEffect(() => {
+    if (strikes.length === 0 || userSelectedStrikeRef.current) return;
+    const targetStrike = resolveDefaultStrikeTarget(parsed?.strike, financials?.quote?.price);
+    if (targetStrike == null) return;
+    setScrollToIndexAlign("center");
+    setStrikeIdx(findNearestStrikeIndex(strikes, targetStrike));
+    setAutoScrollVersion((version) => version + 1);
+  }, [expIdx, financials?.quote?.price, parsed?.strike, strikes]);
 
   // Keyboard navigation
   useShortcut((event) => {
@@ -137,25 +222,46 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
     // Enter/Escape for interactive mode
     if (isEnter && !interactive) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       enterInteractive();
       return;
     }
     if (event.name === "escape" && interactive) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       exitInteractive();
       return;
     }
 
-    if (!interactive) return;
-
-    // Arrow keys + j/k/h/l in interactive mode
-    const numExp = chain.expirationDates.length;
+    // Row movement follows the shared table panes and does not require capture.
     if (event.name === "j" || event.name === "down") {
+      if (strikes.length === 0) return;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      userSelectedStrikeRef.current = true;
+      setScrollToIndexAlign("nearest");
       setStrikeIdx((i) => Math.min(i + 1, strikes.length - 1));
     } else if (event.name === "k" || event.name === "up") {
+      if (strikes.length === 0) return;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      userSelectedStrikeRef.current = true;
+      setScrollToIndexAlign("nearest");
       setStrikeIdx((i) => Math.max(i - 1, 0));
-    } else if (event.name === "h" || event.name === "left") {
+    }
+
+    if (!interactive) return;
+
+    // Left/right switch expirations once the tab has captured input.
+    const numExp = chain.expirationDates.length;
+    if (event.name === "h" || event.name === "left") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       setExpIdx((i) => Math.max(i - 1, 0));
     } else if (event.name === "l" || event.name === "right") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       setExpIdx((i) => Math.min(i + 1, numExp - 1));
     }
   });
@@ -167,12 +273,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
 
   const innerWidth = Math.max(width - 4, 60);
 
-  // Column widths for each side
-  const colW = { last: 7, bid: 7, ask: 7, vol: 6, oi: 6 };
-  const sideW = colW.last + colW.bid + colW.ask + colW.vol + colW.oi + 4; // 4 gaps
-  const strikeW = 9;
-  const divW = 1;
-
   // Position info
   const posShares = isOpt && parsed
     ? ticker!.metadata.positions.reduce((sum, p) => sum + p.shares, 0)
@@ -182,13 +282,6 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
   const maxExpVisible = Math.max(Math.floor((innerWidth - 14) / 13), 3);
   const expStart = Math.max(0, Math.min(expIdx - Math.floor(maxExpVisible / 2), chain.expirationDates.length - maxExpVisible));
   const visibleExps = chain.expirationDates.slice(expStart, expStart + maxExpVisible);
-
-  const strikeItems: ListViewItem[] = strikes.map((strike) => ({
-    id: String(strike),
-    label: formatStrikeLabel(strike),
-  }));
-
-  const hoverColor = hoverBg();
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1} onMouseDown={() => { if (!interactive) enterInteractive(); }}>
@@ -222,84 +315,31 @@ function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
         </Box>
       )}
 
-      {/* Header labels */}
-      <Box flexDirection="row" height={1}>
-        <Box width={sideW}><Text attributes={TextAttributes.BOLD} fg={colors.positive}>CALLS</Text></Box>
-        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
-        <Box width={strikeW} />
-        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
-        <Box width={sideW}><Text attributes={TextAttributes.BOLD} fg={colors.negative}>PUTS</Text></Box>
-      </Box>
-
-      {/* Column headers */}
-      <Box flexDirection="row" height={1}>
-        <Box width={sideW}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("Last", colW.last)} {padTo("Bid", colW.bid)} {padTo("Ask", colW.ask)} {padTo("Vol", colW.vol)} {padTo("OI", colW.oi)}
-          </Text>
-        </Box>
-        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
-        <Box width={strikeW}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>{padTo("Strike", strikeW, "center")}</Text>
-        </Box>
-        <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
-        <Box width={sideW}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.textDim}>
-            {padTo("Last", colW.last)} {padTo("Bid", colW.bid)} {padTo("Ask", colW.ask)} {padTo("Vol", colW.vol)} {padTo("OI", colW.oi)}
-          </Text>
-        </Box>
-      </Box>
-
-      {/* Chain rows */}
-      <ListView
-        items={strikeItems}
-        selectedIndex={interactive ? strikeIdx : -1}
-        scrollIndex={strikeIdx}
-        onSelect={(index) => {
+      <DataTable<OptionTableRow, OptionColumn>
+        columns={OPTION_COLUMNS}
+        items={rows}
+        sortColumnId={null}
+        sortDirection="asc"
+        onHeaderClick={() => {}}
+        headerScrollRef={headerScrollRef}
+        scrollRef={scrollRef}
+        syncHeaderScroll={syncHeaderScroll}
+        onBodyScrollActivity={handleBodyScrollActivity}
+        hoveredIdx={hoveredIdx}
+        setHoveredIdx={setHoveredIdx}
+        getItemKey={(row) => String(row.strike)}
+        isSelected={(_row, index) => index === strikeIdx}
+        onSelect={(_row, index) => {
+          userSelectedStrikeRef.current = true;
+          setScrollToIndexAlign("nearest");
           enterInteractive();
           setStrikeIdx(index);
         }}
-        renderRow={(_, state, i) => {
-          const strike = strikes[i]!;
-          const call = callsByStrike.get(strike);
-          const put = putsByStrike.get(strike);
-          const isSelected = state.selected;
-          const isPositionStrike = parsed && Math.abs(strike - parsed.strike) < 0.01;
-          const callItm = call?.inTheMoney;
-          const putItm = put?.inTheMoney;
-
-          return (
-            <Box flexDirection="row">
-              <Box width={sideW}>
-                <Text fg={callItm ? colors.textBright : colors.text}>
-                  {formatContractRow(call, colW)}
-                </Text>
-              </Box>
-              <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
-              <Box width={strikeW}>
-                <Text fg={isSelected ? colors.textBright : colors.neutral} attributes={isSelected ? TextAttributes.BOLD : 0}>
-                  {padTo(formatStrikeLabel(strike), strikeW, "center")}
-                </Text>
-              </Box>
-              <Box width={divW}><Text fg={colors.textDim}>{"\u2502"}</Text></Box>
-              <Box width={sideW}>
-                <Text fg={putItm ? colors.textBright : colors.text}>
-                  {formatContractRow(put, colW)}
-                </Text>
-              </Box>
-            </Box>
-          );
-        }}
-        getRowBackgroundColor={(_, state, i) => {
-          const strike = strikes[i]!;
-          const isPositionStrike = parsed && Math.abs(strike - parsed.strike) < 0.01;
-          if (state.selected) return colors.selected;
-          if (state.hovered) return hoverColor;
-          return isPositionStrike ? colors.selected : colors.bg;
-        }}
-        hoverBgColor={hoverColor}
-        flexGrow={1}
-        scrollable
+        renderCell={renderOptionCell}
+        emptyStateTitle="No strikes available."
+        scrollToIndex={strikeIdx}
+        scrollToIndexAlign={scrollToIndexAlign}
+        scrollToIndexVersion={autoScrollVersion}
       />
 
     </Box>
@@ -313,6 +353,28 @@ function buildStrikeList(chain: OptionsChain): number[] {
   return Array.from(set).sort((a, b) => a - b);
 }
 
+function resolveDefaultStrikeTarget(
+  optionStrike: number | undefined,
+  quotePrice: number | undefined,
+): number | null {
+  if (optionStrike != null && Number.isFinite(optionStrike)) return optionStrike;
+  if (quotePrice != null && Number.isFinite(quotePrice)) return quotePrice;
+  return null;
+}
+
+function findNearestStrikeIndex(strikes: number[], targetStrike: number): number {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < strikes.length; index += 1) {
+    const distance = Math.abs(strikes[index]! - targetStrike);
+    if (distance < bestDistance) {
+      bestIndex = index;
+      bestDistance = distance;
+    }
+  }
+  return bestIndex;
+}
+
 function formatStrikeLabel(strike: number): string {
   const decimals = strike % 1 === 0 ? 0 : 2;
   return formatNumber(strike, decimals).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
@@ -323,25 +385,93 @@ function formatIv(value: number | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-interface ColWidths {
-  last: number;
-  bid: number;
-  ask: number;
-  vol: number;
-  oi: number;
+function optionContractForColumn(row: OptionTableRow, columnId: OptionColumnId): OptionContract | undefined {
+  return columnId.startsWith("call") ? row.call : row.put;
 }
 
-function formatContractRow(contract: { lastPrice: number; bid: number; ask: number; volume: number; openInterest: number } | undefined, w: ColWidths): string {
-  if (!contract) {
-    return padTo("—", w.last) + " " + padTo("—", w.bid) + " " + padTo("—", w.ask) + " " + padTo("—", w.vol) + " " + padTo("—", w.oi);
+function optionColumnColor(columnId: OptionColumnId): string {
+  if (columnId === "strike") return OPTION_STRIKE_COLOR;
+  if (columnId.endsWith("Iv")) return OPTION_IV_COLOR;
+  if (columnId.endsWith("Volume") || columnId.endsWith("OpenInterest")) return OPTION_ACTIVITY_COLOR;
+  if (columnId.endsWith("Bid") || columnId.endsWith("Ask")) return OPTION_PRICE_COLOR;
+  return columnId.startsWith("call") ? OPTION_CALL_COLOR : OPTION_PUT_COLOR;
+}
+
+function optionMoneynessBackground(
+  row: OptionTableRow,
+  contract: OptionContract | undefined,
+  columnId: OptionColumnId,
+  rowState: { selected: boolean; hovered: boolean },
+): string | undefined {
+  if (rowState.selected || rowState.hovered) return undefined;
+  const inTheMoney = inferColumnMoneyness(row, contract, columnId);
+  const sideColor = columnId.startsWith("call") ? colors.positive : colors.negative;
+  return inTheMoney
+    ? blendHex(colors.bg, sideColor, 0.13)
+    : blendHex(colors.bg, colors.neutral, 0.055);
+}
+
+function inferColumnMoneyness(
+  row: OptionTableRow,
+  contract: OptionContract | undefined,
+  columnId: OptionColumnId,
+): boolean {
+  if (contract) return contract.inTheMoney;
+  const oppositeContract = columnId.startsWith("call") ? row.put : row.call;
+  return oppositeContract ? !oppositeContract.inTheMoney : false;
+}
+
+function formatOptionContractCell(contract: OptionContract | undefined, column: OptionColumn): string {
+  if (!contract) return "—";
+  switch (column.id) {
+    case "callLast":
+    case "putLast":
+      return formatMarketPrice(contract.lastPrice, { assetCategory: "OPT", maxWidth: column.width });
+    case "callBid":
+    case "putBid":
+      return formatMarketPrice(contract.bid, { assetCategory: "OPT", maxWidth: column.width });
+    case "callAsk":
+    case "putAsk":
+      return formatMarketPrice(contract.ask, { assetCategory: "OPT", maxWidth: column.width });
+    case "callVolume":
+    case "putVolume":
+      return formatCompact(contract.volume);
+    case "callOpenInterest":
+    case "putOpenInterest":
+      return formatCompact(contract.openInterest);
+    case "callIv":
+    case "putIv":
+      return formatIv(contract.impliedVolatility);
+    case "strike":
+      return formatStrikeLabel(contract.strike);
   }
-  return (
-    padTo(formatMarketPrice(contract.lastPrice, { assetCategory: "OPT", maxWidth: w.last }), w.last) + " " +
-    padTo(formatMarketPrice(contract.bid, { assetCategory: "OPT", maxWidth: w.bid }), w.bid) + " " +
-    padTo(formatMarketPrice(contract.ask, { assetCategory: "OPT", maxWidth: w.ask }), w.ask) + " " +
-    padTo(formatCompact(contract.volume), w.vol) + " " +
-    padTo(formatCompact(contract.openInterest), w.oi)
-  );
+}
+
+function renderOptionCell(
+  row: OptionTableRow,
+  column: OptionColumn,
+  _index: number,
+  rowState: { selected: boolean; hovered: boolean },
+): DataTableCell {
+  const selectedColor = rowState.selected ? colors.selectedText : undefined;
+
+  if (column.id === "strike") {
+    return {
+      text: formatStrikeLabel(row.strike),
+      color: selectedColor ?? OPTION_STRIKE_COLOR,
+      backgroundColor: rowState.selected || rowState.hovered
+        ? undefined
+        : blendHex(colors.bg, row.isPositionStrike ? colors.borderFocused : colors.header, row.isPositionStrike ? 0.18 : 0.1),
+      attributes: rowState.selected || row.isPositionStrike ? TextAttributes.BOLD : TextAttributes.NONE,
+    };
+  }
+
+  const contract = optionContractForColumn(row, column.id);
+  return {
+    text: formatOptionContractCell(contract, column),
+    color: selectedColor ?? (contract ? optionColumnColor(column.id) : colors.textDim),
+    backgroundColor: optionMoneynessBackground(row, contract, column.id, rowState),
+  };
 }
 
 export const optionsPlugin: GloomPlugin = {

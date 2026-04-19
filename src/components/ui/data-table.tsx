@@ -15,11 +15,15 @@ import { tableContentWidthProps, useMeasuredTableContentWidth } from "./table-la
 export type DataTableColumn = Pick<
   ColumnConfig,
   "id" | "label" | "width" | "align"
->;
+> & {
+  headerColor?: string;
+  headerBackgroundColor?: string;
+};
 
 export interface DataTableCell {
   text: string;
   color?: string;
+  backgroundColor?: string;
   attributes?: number;
   onMouseDown?: (event: any) => void;
 }
@@ -30,6 +34,8 @@ export interface DataTableSectionHeader {
   backgroundColor?: string;
   attributes?: number;
 }
+
+export type DataTableScrollAlign = "nearest" | "center";
 
 export interface DataTableProps<
   T,
@@ -66,11 +72,33 @@ export interface DataTableProps<
   virtualize?: boolean;
   overscan?: number;
   showHorizontalScrollbar?: boolean;
+  scrollToIndex?: number | null;
+  scrollToIndexAlign?: DataTableScrollAlign;
+  scrollToIndexVersion?: number;
 }
 
 interface DataTableRowPointerTarget<T> {
   item: T;
   index: number;
+}
+
+function resolveScrollTopForIndex(
+  targetIndex: number,
+  currentTop: number,
+  visibleHeight: number,
+  itemCount: number,
+  align: DataTableScrollAlign,
+): number {
+  const maxTop = Math.max(0, itemCount - visibleHeight);
+  let nextTop = currentTop;
+  if (align === "center") {
+    nextTop = targetIndex - Math.floor(visibleHeight / 2);
+  } else if (targetIndex < currentTop) {
+    nextTop = targetIndex;
+  } else if (targetIndex >= currentTop + visibleHeight) {
+    nextTop = targetIndex - visibleHeight + 1;
+  }
+  return Math.max(0, Math.min(maxTop, nextTop));
 }
 
 export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
@@ -109,6 +137,9 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   virtualize = true,
   overscan = 3,
   showHorizontalScrollbar = true,
+  scrollToIndex,
+  scrollToIndexAlign = "nearest",
+  scrollToIndexVersion = 0,
 }: DataTableProps<T, C>) {
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
@@ -184,6 +215,43 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
   }, [dispatch, paneInstanceId]);
 
+  const applyScrollToIndex = useCallback(() => {
+    if (scrollToIndex == null || items.length === 0) return true;
+    const scrollBox = scrollRef.current;
+    if (!scrollBox?.viewport) return false;
+
+    const targetIndex = Math.max(0, Math.min(scrollToIndex, items.length - 1));
+    const visibleHeight = Math.max(
+      1,
+      Math.min(scrollBox.viewport.height, Math.ceil(appViewport.height)),
+    );
+    const currentTop = scrollBox.scrollTop;
+    const nextTop = resolveScrollTopForIndex(
+      targetIndex,
+      currentTop,
+      visibleHeight,
+      items.length,
+      scrollToIndexAlign,
+    );
+
+    if (nextTop === currentTop) return true;
+    scrollBox.scrollTo(nextTop);
+    if (scrollBox.scrollTop !== nextTop) return false;
+    if (virtualize) {
+      setScrollVersion((current) => current + 1);
+    }
+    syncHeaderScroll();
+    return true;
+  }, [
+    appViewport.height,
+    items.length,
+    scrollRef,
+    scrollToIndex,
+    scrollToIndexAlign,
+    syncHeaderScroll,
+    virtualize,
+  ]);
+
   useEffect(() => {
     if (headerScrollRef.current) {
       headerScrollRef.current.horizontalScrollBar.visible = false;
@@ -198,6 +266,22 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
       }
     }
   }, [columns.length, headerScrollRef, items.length, scrollRef, showHorizontalScrollbar]);
+
+  useEffect(() => {
+    if (applyScrollToIndex()) return;
+    let cancelled = false;
+    const retry = () => {
+      if (!cancelled) applyScrollToIndex();
+    };
+    process.nextTick(retry);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyScrollToIndex,
+    measuredViewportHeight,
+    scrollToIndexVersion,
+  ]);
 
   return (
     <Box
@@ -240,7 +324,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
               <Box
                 key={column.id}
                 width={column.width + 1}
-                backgroundColor={colors.panel}
+                backgroundColor={column.headerBackgroundColor ?? colors.panel}
                 onMouseDown={(event) => {
                   focusPane();
                   event.preventDefault();
@@ -249,7 +333,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
               >
                 <Text
                   attributes={TextAttributes.BOLD}
-                  fg={isSorted ? colors.text : colors.textDim}
+                  fg={isSorted ? colors.text : column.headerColor ?? colors.textDim}
                 >
                   {labelText}
                 </Text>
@@ -353,6 +437,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                         <Box
                           key={column.id}
                           width={column.width + 1}
+                          backgroundColor={cell.backgroundColor ?? rowBg}
                           onMouseDown={(event) => {
                             focusPane();
                             if (cell.onMouseDown) {
