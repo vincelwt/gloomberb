@@ -376,7 +376,7 @@ export function renderComparisonChart(
   }
 
   return {
-    lines: bufferToBrailleLines(buf, scene.colors.bgColor),
+    lines: bufferToBrailleLines(buf),
     axisLabels: [...axisLabelsByRow.entries()].map(([row, label]) => ({ row, label })),
     timeLabels: scene.timeLabels,
     activeDate: scene.activeDate,

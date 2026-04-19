@@ -91,14 +91,15 @@ export interface ResolvedChartPalette extends ChartColors {
 
 type VolumeTrendMode = "previousClose" | "openClose";
 
-function makeChunk(text: string, fgColor: string, bgColor: string): StyledChunk {
-  return {
+function makeChunk(text: string, fgColor?: string, bgColor?: string): StyledChunk {
+  const chunk: StyledChunk = {
     __isChunk: true,
     text,
-    fg: RGBA.fromHex(fgColor),
-    bg: RGBA.fromHex(bgColor),
     attributes: 0,
   };
+  if (fgColor) chunk.fg = RGBA.fromHex(fgColor);
+  if (bgColor) chunk.bg = RGBA.fromHex(bgColor);
+  return chunk;
 }
 
 function blendHex(a: string, b: string, ratio: number): string {
@@ -506,7 +507,7 @@ export function drawGridLines(
 // Braille buffer → styled terminal output
 // ---------------------------------------------------------------------------
 
-export function bufferToBrailleLines(buf: PixelBuffer, bgColor: string): StyledContent[] {
+export function bufferToBrailleLines(buf: PixelBuffer): StyledContent[] {
   const lines: StyledContent[] = [];
   const termCols = Math.ceil(buf.width / 2);
   const termRows = Math.ceil(buf.height / 4);
@@ -514,8 +515,8 @@ export function bufferToBrailleLines(buf: PixelBuffer, bgColor: string): StyledC
   for (let row = 0; row < termRows; row++) {
     const chunks: StyledChunk[] = [];
     let runChar = "";
-    let runFg = "";
-    let runBg = "";
+    let runFg: string | undefined;
+    let runBg: string | undefined;
     let runLen = 0;
 
     const flushRun = () => {
@@ -552,13 +553,13 @@ export function bufferToBrailleLines(buf: PixelBuffer, bgColor: string): StyledC
       }
 
       let char: string;
-      let cellFg: string;
-      let cellBg: string;
+      let cellFg: string | undefined;
+      let cellBg: string | undefined;
 
       if (topLayer < 0) {
         char = " ";
-        cellFg = bgColor;
-        cellBg = bgColor;
+        cellFg = undefined;
+        cellBg = undefined;
       } else {
         // Only show dots from the highest layer — keeps lines thin in mixed
         // cells (e.g. area chart where line and fill overlap).
@@ -573,7 +574,7 @@ export function bufferToBrailleLines(buf: PixelBuffer, bgColor: string): StyledC
         }
 
         cellFg = topColor;
-        cellBg = bgColor;
+        cellBg = undefined;
       }
 
       if (char === runChar && cellFg === runFg && cellBg === runBg) {
@@ -1350,7 +1351,7 @@ export function renderChart(
   const timeAxisDates = opts.timeAxisDates ?? points.map((point) => point.date);
 
   return {
-    lines: bufferToBrailleLines(buf, palette.bgColor),
+    lines: bufferToBrailleLines(buf),
     axisLabels: [...axisLabelsByRow.entries()].map(([row, label]) => ({ row, label })),
     timeLabels: buildTimeAxis(timeAxisDates, width),
     activePoint,

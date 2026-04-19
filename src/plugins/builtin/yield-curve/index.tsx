@@ -162,7 +162,7 @@ export function YieldCurvePane({ focused, width, height }: PaneProps) {
           {/* Chart */}
           {chartResult && chartResult.lines.length > 0 ? (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
-              <Box flexDirection="column" height={chartHeight} backgroundColor={palette.bgColor}>
+              <Box flexDirection="column" height={chartHeight}>
                 {chartResult.lines.map((line, i) => (
                   <Text key={i} content={line} />
                 ))}

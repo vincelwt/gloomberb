@@ -4,7 +4,7 @@ import { TextAttributes, type BoxRenderable, type NativeRendererHost as CliRende
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
-import { usePaneFooter, type PaneHint } from "../layout/pane-footer";
+import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../layout/pane-footer";
 import { saveConfig } from "../../data/config-store";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { colors } from "../../theme/colors";
@@ -82,7 +82,6 @@ import {
 import {
   buildChartScene,
   formatAxisCell,
-  formatDateShort,
   formatCursorAxisValue,
   getActivePointIndex,
   getPointTerminalColumn,
@@ -1531,6 +1530,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const [lastReadyRenderView, setLastReadyRenderView] = useState<CachedRenderedView | null>(null);
   const showVolume = showVolumeOverride ?? !compact;
   const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
+  const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
+  const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
+  const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const [canvasBaseBitmapState, setCanvasBaseBitmapState] = useState<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -1778,11 +1780,14 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const axisGap = axisSectionWidthBudget > 0 ? 1 : 0;
   const minChartWidth = compact ? 12 : 20;
   const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
-  const headerRows = compact ? 0 : 3;
+  const headerRows = compact ? 0 : 2;
   const helpRow = compact ? 1 : 0;
   const timeAxisRow = 1;
+  // Native/canvas surfaces can cover the last physical row after pixel rounding;
+  // keep the text x-axis one row clear of the pane footer.
+  const nativeSurfaceGuardRow = !compact && (useCanvasChart || effectiveRenderer === "kitty") ? 1 : 0;
   const volumeHeight = showVolume && !compact ? 3 : 0;
-  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow, 4);
+  const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow - nativeSurfaceGuardRow, 4);
   const chartCurrency = currencyOverride ?? financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
   const chartAssetCategory = ticker?.metadata.assetCategory;
   const boundsHistory = compact
@@ -3138,10 +3143,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     indicators,
   }), [axisMode, chartColors, chartHeight, chartWidth, compact, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
-  const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
-  const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
-  const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
-
   const staticResult = useMemo(() => renderChart(projection.points, {
     width: chartWidth,
     height: chartHeight,
@@ -3431,11 +3432,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const hasHistory = chartWindow.points.length > 0;
   const requestedMode = projection.requestedMode;
   const showOhlcSummary = projection.effectiveMode === "candles" || projection.effectiveMode === "ohlc";
-  const hasSelectionCursor = selectionCursorX !== null;
   const hasDisplayCursor = displayCursorX !== null && displayCursorY !== null;
-  const displayDate = hasSelectionCursor || showOhlcSummary
-    ? (selectionScene?.dateAtCursor ? formatDateShort(selectionScene.dateAtCursor) : null)
-    : null;
   const activePoint = showOhlcSummary ? (selectionScene?.activePoint ?? null) : null;
   const visiblePriceRange = selectionScene
     ? Math.max(selectionScene.max - selectionScene.min, 0)
@@ -3457,6 +3454,16 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     : null;
   const isUpdating = !compact && (renderBodyState.updating || boundsBodyState.updating);
   const timeAxisLabel = selectionScene?.timeLabels ?? staticResult.timeLabels;
+  const timeAxisBox = (
+    <Box
+      height={1}
+      width={chartWidth}
+      overflow="hidden"
+      data-gloom-role="chart-time-axis"
+    >
+      <Text fg={colors.textDim} style={{ whiteSpace: "pre" }}>{timeAxisLabel}</Text>
+    </Box>
+  );
   const chartFooterHints = useMemo<PaneHint[]>(() => {
     if (compact) return [];
 
@@ -3544,14 +3551,49 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     width,
   ]);
 
+  const chartFooterInfo = useMemo<PaneFooterSegment[]>(() => {
+    if (compact || !showOhlcSummary || !activePoint) return [];
+
+    const formatPrice = (value: number) => formatMarketPriceWithCurrency(value, chartCurrency, {
+      assetCategory: chartAssetCategory,
+      minimumFractionDigits: 2,
+      precisionOffset: 1,
+      priceRange: visiblePriceRange,
+    });
+
+    return [{
+      id: "ohlc",
+      parts: [
+        { text: "O", tone: "label" },
+        { text: formatPrice(activePoint.open), tone: "value" },
+        { text: "H", tone: "label" },
+        { text: formatPrice(activePoint.high), tone: "value" },
+        { text: "L", tone: "label" },
+        { text: formatPrice(activePoint.low), tone: "value" },
+        { text: "C", tone: "label" },
+        { text: formatPrice(activePoint.close), tone: "value" },
+        { text: "V", tone: "label" },
+        { text: formatCompact(activePoint.volume), tone: "value" },
+      ],
+    }];
+  }, [
+    activePoint,
+    chartAssetCategory,
+    chartCurrency,
+    compact,
+    showOhlcSummary,
+    visiblePriceRange,
+  ]);
+
   usePaneFooter("stock-chart", () => (
     compact
       ? null
       : {
           order: 10,
+          info: chartFooterInfo,
           hints: chartFooterHints,
         }
-  ), [chartFooterHints, compact]);
+  ), [chartFooterHints, chartFooterInfo, compact]);
 
   useEffect(() => {
     queueMicrotask(() => renderer.requestRender());
@@ -3896,7 +3938,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       width={chartWidth}
       height={chartHeight}
       flexDirection="column"
-      backgroundColor={chartColors.bgColor}
       bitmaps={plotBitmaps}
       crosshair={canvasCrosshair}
       onMouseMove={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotMove}
@@ -3943,9 +3984,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
           {plotBox}
           {axisBox}
         </Box>
-        <Box height={1}>
-          <Text fg={colors.textDim}>{selectionScene?.timeLabels ?? staticResult.timeLabels}</Text>
-        </Box>
+        {timeAxisBox}
       </Box>
     );
   }
@@ -3956,45 +3995,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       flexGrow={1}
       onMouseScroll={compact || !hasHistory || isBlockingBody || !!bodyMessage ? undefined : handlePlotScroll}
     >
-      <Box flexDirection="row" gap={2} height={1}>
-        <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {ticker?.metadata.ticker ?? ""} - {getChartResolutionLabel(selectedResolution)}
-        </Text>
-        {fallbackResolutionLabel && (
-          <Text fg={colors.textDim}>{fallbackResolutionLabel}</Text>
-        )}
-        {displayDate && <Text fg={colors.textDim}>{displayDate}</Text>}
-        {showOhlcSummary && activePoint && (
-          <>
-            <Text fg={colors.textDim}>O {formatMarketPriceWithCurrency(activePoint.open, chartCurrency, {
-              assetCategory: chartAssetCategory,
-              minimumFractionDigits: 2,
-              precisionOffset: 1,
-              priceRange: visiblePriceRange,
-            })}</Text>
-            <Text fg={colors.textDim}>H {formatMarketPriceWithCurrency(activePoint.high, chartCurrency, {
-              assetCategory: chartAssetCategory,
-              minimumFractionDigits: 2,
-              precisionOffset: 1,
-              priceRange: visiblePriceRange,
-            })}</Text>
-            <Text fg={colors.textDim}>L {formatMarketPriceWithCurrency(activePoint.low, chartCurrency, {
-              assetCategory: chartAssetCategory,
-              minimumFractionDigits: 2,
-              precisionOffset: 1,
-              priceRange: visiblePriceRange,
-            })}</Text>
-            <Text fg={colors.textDim}>C {formatMarketPriceWithCurrency(activePoint.close, chartCurrency, {
-              assetCategory: chartAssetCategory,
-              minimumFractionDigits: 2,
-              precisionOffset: 1,
-              priceRange: visiblePriceRange,
-            })}</Text>
-            <Text fg={colors.textDim}>V {formatCompact(activePoint.volume)}</Text>
-          </>
-        )}
-      </Box>
-
       <Box flexDirection="row" height={1}>
         <Box flexDirection="row" gap={1}>
           {TIME_RANGES.map((range, index) => (
@@ -4030,6 +4030,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
           ))}
           {isUpdating && (
             <Text fg={colors.textDim}>updating</Text>
+          )}
+          {fallbackResolutionLabel && (
+            <Text fg={colors.textDim}>{fallbackResolutionLabel}</Text>
           )}
         </Box>
         <Box flexGrow={1} />
@@ -4078,9 +4081,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         {axisBox}
       </Box>
 
-      <Box height={1}>
-        <Text fg={colors.textDim}>{timeAxisLabel}</Text>
-      </Box>
+      {timeAxisBox}
 
       {compact && (
         <>

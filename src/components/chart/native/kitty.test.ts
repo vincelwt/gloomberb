@@ -99,7 +99,7 @@ describe("computeNativePlacement", () => {
 });
 
 describe("renderNativeChartBase", () => {
-  test("fills the bitmap background opaquely", () => {
+  test("leaves untouched bitmap pixels transparent", () => {
     const palette = resolveChartPalette({
       bg: "#112233",
       border: "#333333",
@@ -126,9 +126,17 @@ describe("renderNativeChartBase", () => {
     expect(scene).not.toBeNull();
 
     const bitmap = renderNativeChartBase(scene!, 24, 12);
+    let transparentPixels = 0;
+    let drawnPixels = 0;
     for (let offset = 3; offset < bitmap.pixels.length; offset += 4) {
-      expect(bitmap.pixels[offset]).toBe(0xff);
+      if (bitmap.pixels[offset] === 0) {
+        transparentPixels += 1;
+      } else {
+        drawnPixels += 1;
+      }
     }
+    expect(transparentPixels).toBeGreaterThan(0);
+    expect(drawnPixels).toBeGreaterThan(0);
   });
 
   test("keeps solid candle bodies opaque over the wick", () => {
@@ -277,7 +285,7 @@ describe("renderNativeChartBase", () => {
 });
 
 describe("renderNativeComparisonChartBase", () => {
-  test("renders multi-series comparison overlays into an opaque bitmap", () => {
+  test("renders multi-series comparison overlays over transparent pixels", () => {
     const projection = projectComparisonChartData([
       {
         symbol: "AAPL",
@@ -302,7 +310,6 @@ describe("renderNativeComparisonChartBase", () => {
         ],
       },
     ], 12, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",
@@ -323,17 +330,25 @@ describe("renderNativeComparisonChartBase", () => {
     expect(scene).not.toBeNull();
 
     const bitmap = renderNativeComparisonChartBase(scene!, 120, 60);
+    let transparentPixels = 0;
+    let drawnPixels = 0;
     for (let offset = 3; offset < bitmap.pixels.length; offset += 4) {
-      expect(bitmap.pixels[offset]).toBe(0xff);
-    }
-
-    const brightPixels = [];
-    for (let offset = 0; offset < bitmap.pixels.length; offset += 4) {
-      if (bitmap.pixels[offset] !== 17 || bitmap.pixels[offset + 1] !== 34 || bitmap.pixels[offset + 2] !== 51) {
-        brightPixels.push(offset);
+      if (bitmap.pixels[offset] === 0) {
+        transparentPixels += 1;
+      } else {
+        drawnPixels += 1;
       }
     }
-    expect(brightPixels.length).toBeGreaterThan(0);
+    expect(transparentPixels).toBeGreaterThan(0);
+    expect(drawnPixels).toBeGreaterThan(0);
+
+    const visiblePixels = [];
+    for (let offset = 0; offset < bitmap.pixels.length; offset += 4) {
+      if (bitmap.pixels[offset + 3] !== 0) {
+        visiblePixels.push(offset);
+      }
+    }
+    expect(visiblePixels.length).toBeGreaterThan(0);
   });
 });
 

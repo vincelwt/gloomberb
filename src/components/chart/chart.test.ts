@@ -368,6 +368,24 @@ describe("renderChart", () => {
     expect(result.axisLabels.every((entry) => Number.isInteger(entry.row))).toBe(true);
   });
 
+  test("keeps terminal chart cells transparent", () => {
+    const projection = projectChartData(chartFixture, 12, "area", false);
+    const result = renderChart(projection.points, {
+      width: 12,
+      height: 5,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: projection.effectiveMode,
+      colors: palette,
+    });
+
+    const chunks = result.lines.flatMap((line) => line.chunks);
+    expect(chunks.some((chunk) => chunk.text.trim().length > 0)).toBe(true);
+    expect(chunks.every((chunk) => chunk.bg === undefined)).toBe(true);
+  });
+
   test("keeps one decimal on zoomed equity axes even when whole-dollar ticks are distinct", () => {
     const mediumRangeFixture: PricePoint[] = [
       { date: new Date("2024-01-02T09:30:00Z"), close: 233.82, volume: 100 },

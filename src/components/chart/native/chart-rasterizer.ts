@@ -99,16 +99,6 @@ function blendPixel(
   data[index + 3] = Math.round(outAlpha * 255);
 }
 
-function fillBackground(data: Uint8Array, width: number, height: number, color: RgbaColor) {
-  for (let index = 0; index < width * height; index += 1) {
-    const offset = index * 4;
-    data[offset] = color.r;
-    data[offset + 1] = color.g;
-    data[offset + 2] = color.b;
-    data[offset + 3] = color.a;
-  }
-}
-
 function drawLine(
   data: Uint8Array,
   width: number,
@@ -482,7 +472,6 @@ export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pix
       return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
     }
 
-    fillBackground(pixels, pixelWidth, pixelHeight, parseHex(scene.colors.bgColor, 1));
     const layout = getChartPixelLayout(scene, pixelWidth, pixelHeight);
     drawPriceGrid(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
 
@@ -587,7 +576,6 @@ export function renderNativeComparisonChartBase(
     return { width: Math.max(pixelWidth, 1), height: Math.max(pixelHeight, 1), pixels };
   }
 
-  fillBackground(pixels, pixelWidth, pixelHeight, parseHex(scene.colors.bgColor, 1));
   const layout = getComparisonPixelLayout(pixelWidth, pixelHeight);
   drawPriceGrid(
     pixels,

@@ -40,7 +40,6 @@ describe("renderComparisonChart", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "#00ff00", [18.02, 17.91, 17.84, 17.73]),
     ], 24, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",
@@ -68,7 +67,6 @@ describe("renderComparisonChart", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "#00ff00", [233.82, 232.14, 230.21, 231.67, 228.94]),
     ], 24, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",
@@ -96,7 +94,6 @@ describe("renderComparisonChart", () => {
       makeSeries("AAPL", "#00ff00", [10, 12, 11, 13]),
       makeSeries("MSFT", "#ff0000", [8, 9, 10, 11]),
     ], 12, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",
@@ -122,12 +119,38 @@ describe("renderComparisonChart", () => {
     expect(result.activeDate?.toISOString()).toBe("2024-01-03T00:00:00.000Z");
   });
 
+  test("keeps terminal comparison chart cells transparent", () => {
+    const projection = projectComparisonChartData([
+      makeSeries("AAPL", "#00ff00", [10, 12, 11, 13]),
+    ], 12, {
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "area",
+    }, "percent");
+
+    const result = renderComparisonChart(projection, {
+      width: 12,
+      height: 6,
+      cursorX: null,
+      cursorY: null,
+      selectedSymbol: "AAPL",
+      colors: {
+        bgColor: "#000000",
+        gridColor: "#333333",
+        crosshairColor: "#ffffff",
+      },
+    });
+
+    const chunks = result.lines.flatMap((line) => line.chunks);
+    expect(chunks.some((chunk) => chunk.text.trim().length > 0)).toBe(true);
+    expect(chunks.every((chunk) => chunk.bg === undefined)).toBe(true);
+  });
+
   test("builds a scene with the selected series driving the hover readout", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "#00ff00", [100, 102, 104]),
       makeSeries("NVDA", "#ff0000", [200, 210, 220]),
     ], 10, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "area",
