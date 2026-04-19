@@ -509,6 +509,7 @@ import {
   NumberField,
   EmptyState,
   DialogFrame,
+  ChoiceDialog,
   ExternalLink,
   ExternalLinkText,
   openUrl,
@@ -556,6 +557,7 @@ Available components:
 - `TextField`, `NumberField` — input controls
 - `EmptyState` — empty or unavailable-state feedback
 - `DialogFrame` — shared dialog framing
+- `ChoiceDialog` — shared single-choice dialog with keyboard and mouse selection
 - `ExternalLink`, `ExternalLinkText`, `openUrl` — renderer-neutral link helpers
 - `PageStackView` — stacked page navigation view
 - `Spinner` — loading indicator
