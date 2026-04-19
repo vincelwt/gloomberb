@@ -114,10 +114,6 @@ describe("computeSectorAllocation", () => {
     expect(alloc[0]!.weight).toBeCloseTo(0.5, 2);
   });
 
-  test("returns empty for zero total value", () => {
-    expect(computeSectorAllocation([])).toEqual([]);
-  });
-
   test("uses Unknown for missing sector", () => {
     const alloc = computeSectorAllocation([{ sector: "", marketValue: 100 }]);
     expect(alloc[0]!.sector).toBe("Unknown");

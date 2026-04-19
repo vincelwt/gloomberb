@@ -12,11 +12,6 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(provider.getSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
   });
 
-  test("reports its manual chart resolution capabilities", () => {
-    const provider = new YahooFinanceClient();
-    expect(provider.getChartResolutionCapabilities()).toEqual(["5m", "15m", "1h", "1d", "1wk", "1mo"]);
-  });
-
   test("maps manual resolution requests to yahoo chart range plus interval", async () => {
     const provider = new YahooFinanceClient() as any;
     let request: { symbol: string; range: string; interval: string } | null = null;

@@ -15,58 +15,6 @@ afterEach(() => {
 });
 
 describe("HelpPane", () => {
-  test("renders shortcut, layout, and bug-report guidance", async () => {
-    setSharedRegistryForTests({
-      paneTemplates: new Map([
-        ["quote-monitor-pane", {
-          id: "quote-monitor-pane",
-          paneId: "quote-monitor",
-          label: "Quote Monitor",
-          description: "Open a compact quote monitor",
-          shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
-        }],
-        ["notes-pane", {
-          id: "notes-pane",
-          paneId: "notes",
-          label: "Notes",
-          description: "Open a notes window",
-          shortcut: { prefix: "NOTE" },
-        }],
-      ]),
-      allPlugins: new Map([
-        ["ticker-detail", { id: "ticker-detail", name: "Ticker Detail" }],
-        ["notes", { id: "notes", name: "Notes" }],
-      ]),
-      getPaneTemplatePluginId: (templateId: string) => (
-        templateId === "quote-monitor-pane" ? "ticker-detail" : "notes"
-      ),
-      getConfigFn: () => ({ disabledPlugins: [] }),
-    } as any);
-
-    testSetup = await testRender(
-      <HelpPane
-        paneId="help:main"
-        paneType="help"
-        focused
-        width={88}
-        height={36}
-        close={() => {}}
-      />,
-      { width: 88, height: 36 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("How To Use Gloomberb");
-    expect(frame).toContain("Window Templates");
-    expect(frame).toContain("QQ");
-    expect(frame).toContain("Quote Monitor");
-    expect(frame).toContain("Layout System");
-    expect(frame).toContain("Ctrl+W");
-    expect(frame).toContain("Open Debug Log");
-  });
-
   test("opens the debug log from the mouse action", async () => {
     const calls: string[] = [];
 

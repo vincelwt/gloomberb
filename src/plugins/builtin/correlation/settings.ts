@@ -24,7 +24,7 @@ export function normalizeCorrelationRange(value: unknown): CorrelationRangePrese
   return isCorrelationRangePreset(value) ? value : DEFAULT_CORRELATION_RANGE;
 }
 
-export function parseCorrelationSymbolsInput(raw: string, maxTickers = MAX_CORRELATION_TICKERS): string[] {
+function parseCorrelationSymbolsInput(raw: string, maxTickers = MAX_CORRELATION_TICKERS): string[] {
   return parseTickerListInput(raw, maxTickers);
 }
 

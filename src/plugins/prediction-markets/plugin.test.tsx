@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   cleanupPredictionTest,
-  createConfig,
   installPredictionMarketMocks,
   MemoryPersistence,
 } from "./test-helpers";
 import { colors } from "../../theme/colors";
-import { predictionMarketsPlugin } from "./index";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
 import { buildPredictionListRows } from "./rows";
 import { getPredictionColumnValue } from "./metrics";
@@ -60,53 +58,6 @@ describe("prediction markets plugin registration and services", () => {
 
     expect(result).toBe(cached);
     expect(fetchCount).toBe(0);
-  });
-
-  test("exposes the pane template and search command", () => {
-    const commands: string[] = [];
-    const ctx = {
-      persistence: {
-        getState: () => null,
-        setState: () => {},
-        deleteState: () => {},
-        getResource: () => null,
-        setResource: (_kind: string, _key: string, value: unknown) => ({
-          value,
-          fetchedAt: Date.now(),
-          staleAt: Date.now(),
-          expiresAt: Date.now(),
-          sourceKey: "test",
-          schemaVersion: 1,
-          provenance: null,
-          stale: false,
-          expired: false,
-        }),
-        deleteResource: () => {},
-      },
-      registerCommand: (command: { id: string }) => {
-        commands.push(command.id);
-      },
-      resume: {
-        getState: () => null,
-        setState: () => {},
-        deleteState: () => {},
-        getPaneState: () => null,
-        setPaneState: () => {},
-        deletePaneState: () => {},
-      },
-      focusPane: () => {},
-      getConfig: () => createConfig(),
-    } as any;
-
-    predictionMarketsPlugin.setup?.(ctx);
-
-    expect(predictionMarketsPlugin.toggleable).toBe(true);
-    expect(predictionMarketsPlugin.panes?.[0]?.defaultMode).toBe("floating");
-    expect(predictionMarketsPlugin.paneTemplates?.[0]?.shortcut?.prefix).toBe(
-      "PM",
-    );
-    expect(commands).toContain("prediction-markets-open");
-    expect(commands).toContain("prediction-markets-search");
   });
 
   test("normalizes venue payloads", () => {

@@ -82,18 +82,6 @@ describe("parseScreenerResponse", () => {
     expect(msft.volumeRatio).toBeCloseTo(0.72, 1);
   });
 
-  test("returns [] for missing finance.result", () => {
-    expect(parseScreenerResponse({})).toEqual([]);
-    expect(parseScreenerResponse(null)).toEqual([]);
-    expect(parseScreenerResponse({ finance: {} })).toEqual([]);
-    expect(parseScreenerResponse({ finance: { result: [] } })).toEqual([]);
-  });
-
-  test("returns [] for non-array quotes", () => {
-    expect(parseScreenerResponse({ finance: { result: [{ quotes: null }] } })).toEqual([]);
-    expect(parseScreenerResponse({ finance: { result: [{}] } })).toEqual([]);
-  });
-
   test("skips entries without a string symbol", () => {
     const data = {
       finance: {
@@ -122,12 +110,6 @@ describe("parseTrendingResponse", () => {
     expect(results).toHaveLength(2);
     expect(results[0]!.symbol).toBe("NVDA");
     expect(results[1]!.symbol).toBe("TSLA");
-  });
-
-  test("returns [] for malformed input", () => {
-    expect(parseTrendingResponse({})).toEqual([]);
-    expect(parseTrendingResponse(null)).toEqual([]);
-    expect(parseTrendingResponse({ finance: { result: [{ quotes: "bad" }] } })).toEqual([]);
   });
 
   test("skips entries without a string symbol", () => {

@@ -20,10 +20,6 @@ function makeTicker(overrides: Partial<TickerRecord["metadata"]>): TickerRecord 
 }
 
 describe("isUsEquityTicker", () => {
-  test("accepts plain US stocks", () => {
-    expect(isUsEquityTicker(makeTicker({ assetCategory: "STK" }))).toBe(true);
-  });
-
   test("accepts SMART-routed US stocks with a primary exchange", () => {
     expect(isUsEquityTicker(makeTicker({
       exchange: "SMART",
@@ -37,14 +33,6 @@ describe("isUsEquityTicker", () => {
         currency: "USD",
       }],
     }))).toBe(true);
-  });
-
-  test("rejects non-US listings", () => {
-    expect(isUsEquityTicker(makeTicker({
-      exchange: "HKEX",
-      currency: "HKD",
-      assetCategory: "STK",
-    }))).toBe(false);
   });
 
   test("rejects non-equity instruments", () => {

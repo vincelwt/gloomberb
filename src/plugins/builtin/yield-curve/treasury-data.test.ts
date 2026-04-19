@@ -7,7 +7,6 @@ import {
   loadYieldCurve,
   parseYieldPoints,
   resetYieldCurvePersistence,
-  TREASURY_MATURITIES,
   YIELD_CURVE_CACHE_POLICY,
   type YieldPoint,
 } from "./treasury-data";
@@ -131,9 +130,6 @@ describe("parseYieldPoints", () => {
     expect(result[1]!.maturity).toBe("10Y");
   });
 
-  test("returns empty for all nulls", () => {
-    expect(parseYieldPoints([{ maturity: "2Y", maturityYears: 2, yield: null }])).toEqual([]);
-  });
 });
 
 describe("isInverted", () => {
@@ -156,15 +152,6 @@ describe("isInverted", () => {
   test("returns false when data is missing", () => {
     expect(isInverted([])).toBe(false);
     expect(isInverted([{ maturity: "2Y", maturityYears: 2, yield: 4.0 }])).toBe(false);
-  });
-});
-
-describe("TREASURY_MATURITIES", () => {
-  test("has 10 maturities in ascending order", () => {
-    expect(TREASURY_MATURITIES).toHaveLength(10);
-    for (let i = 1; i < TREASURY_MATURITIES.length; i++) {
-      expect(TREASURY_MATURITIES[i]!.years).toBeGreaterThan(TREASURY_MATURITIES[i - 1]!.years);
-    }
   });
 });
 

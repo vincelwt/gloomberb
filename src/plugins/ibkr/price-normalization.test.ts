@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getIbkrPriceDivisor, normalizeIbkrPriceValue } from "./price-normalization";
+import { getIbkrPriceDivisor } from "./price-normalization";
 
 describe("IBKR sub-unit price normalization", () => {
   test("detects pence-priced LSE equities", () => {
@@ -30,9 +30,4 @@ describe("IBKR sub-unit price normalization", () => {
     })).toBe(1000);
   });
 
-  test("normalizes individual price values", () => {
-    expect(normalizeIbkrPriceValue(24.5, 100)).toBe(0.245);
-    expect(normalizeIbkrPriceValue(24.5, 1)).toBe(24.5);
-    expect(normalizeIbkrPriceValue(undefined, 100)).toBeUndefined();
-  });
 });

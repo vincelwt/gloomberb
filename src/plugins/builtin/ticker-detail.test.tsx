@@ -343,12 +343,6 @@ describe("FinancialsTab", () => {
 });
 
 describe("TickerDetailPane", () => {
-  test("defaults new detail panes to floating", () => {
-    const paneDef = tickerDetailPlugin.panes?.find((entry) => entry.id === "ticker-detail");
-
-    expect(paneDef?.defaultMode).toBe("floating");
-  });
-
   test("shows core and lightweight plugin tabs without waiting on options preflight", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));

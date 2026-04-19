@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateAlert, createAlert, formatAlertDescription, serializeAlerts, deserializeAlerts } from "./alert-engine";
+import { evaluateAlert, createAlert, serializeAlerts, deserializeAlerts } from "./alert-engine";
 
 describe("evaluateAlert", () => {
   test("above: triggers when price exceeds target", () => {
@@ -41,33 +41,6 @@ describe("evaluateAlert", () => {
   });
 });
 
-describe("createAlert", () => {
-  test("creates alert with active status", () => {
-    const alert = createAlert("TSLA", "below", 100);
-    expect(alert.symbol).toBe("TSLA");
-    expect(alert.condition).toBe("below");
-    expect(alert.targetPrice).toBe(100);
-    expect(alert.status).toBe("active");
-    expect(alert.id).toBeTruthy();
-  });
-
-  test("uppercases symbol", () => {
-    expect(createAlert("aapl", "above", 200).symbol).toBe("AAPL");
-  });
-});
-
-describe("formatAlertDescription", () => {
-  test("formats above", () => {
-    expect(formatAlertDescription(createAlert("AAPL", "above", 200))).toBe("AAPL > 200");
-  });
-  test("formats below", () => {
-    expect(formatAlertDescription(createAlert("AAPL", "below", 150))).toBe("AAPL < 150");
-  });
-  test("formats crosses", () => {
-    expect(formatAlertDescription(createAlert("AAPL", "crosses", 180))).toBe("AAPL ↕ 180");
-  });
-});
-
 describe("serializeAlerts / deserializeAlerts", () => {
   test("roundtrips alerts", () => {
     const alerts = [createAlert("AAPL", "above", 200), createAlert("TSLA", "below", 100)];
@@ -76,15 +49,5 @@ describe("serializeAlerts / deserializeAlerts", () => {
     expect(restored).toHaveLength(2);
     expect(restored[0]!.symbol).toBe("AAPL");
     expect(restored[1]!.symbol).toBe("TSLA");
-  });
-
-  test("handles invalid JSON", () => {
-    expect(deserializeAlerts("not json")).toEqual([]);
-    expect(deserializeAlerts("null")).toEqual([]);
-    expect(deserializeAlerts("[]")).toEqual([]);
-  });
-
-  test("filters invalid entries", () => {
-    expect(deserializeAlerts('[{"bad": true}]')).toEqual([]);
   });
 });

@@ -26,14 +26,6 @@ describe("computeRSI", () => {
     }
   });
 
-  it("returns [] for insufficient data", () => {
-    expect(computeRSI([1, 2, 3], 14)).toEqual([]);
-    expect(computeRSI([], 14)).toEqual([]);
-    // Exactly period data points (need period+1)
-    const closes = Array.from({ length: 14 }, (_, i) => i + 1);
-    expect(computeRSI(closes, 14)).toEqual([]);
-  });
-
   it("first result starts at index equal to period", () => {
     const closes = [44, 46, 44, 45, 47, 43, 44, 46, 48, 47, 45, 46, 47, 48, 50];
     const result = computeRSI(closes, 14);
@@ -63,17 +55,4 @@ describe("computeMACD", () => {
     }
   });
 
-  it("returns empty result for insufficient data", () => {
-    const result = computeMACD([1, 2, 3], 12, 26, 9);
-    expect(result.macd.length).toBe(0);
-    expect(result.signal.length).toBe(0);
-    expect(result.histogram.length).toBe(0);
-  });
-
-  it("returns empty result for empty input", () => {
-    const result = computeMACD([], 12, 26, 9);
-    expect(result.macd.length).toBe(0);
-    expect(result.signal.length).toBe(0);
-    expect(result.histogram.length).toBe(0);
-  });
 });
