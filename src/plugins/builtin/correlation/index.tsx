@@ -4,7 +4,7 @@ import { TextAttributes } from "../../../ui";
 import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
-import { getSharedRegistry } from "../../registry";
+import { usePluginTickerActions } from "../../plugin-runtime";
 import { useAppSelector, usePaneInstance } from "../../../state/app-context";
 import { useChartQueries } from "../../../market-data/hooks";
 import { buildChartKey } from "../../../market-data/selectors";
@@ -149,6 +149,7 @@ function buildCorrelationPaneTitle(symbols: string[], rangePreset: CorrelationRa
 
 export function CorrelationMatrixPane({ width, height }: PaneProps) {
   const pane = usePaneInstance();
+  const { navigateTicker } = usePluginTickerActions();
   const tickers = useAppSelector((state) => state.tickers);
   const settings = useMemo(() => getCorrelationPaneSettings(pane?.settings), [pane?.settings]);
 
@@ -287,7 +288,7 @@ export function CorrelationMatrixPane({ width, height }: PaneProps) {
                 width={rowHeaderWidth}
                 flexShrink={0}
                 overflow="hidden"
-                onMouseDown={() => getSharedRegistry()?.navigateTickerFn(rowSym)}
+                onMouseDown={() => navigateTicker(rowSym)}
               >
                 <Text
                   fg={rowHeaderColor(seriesBySymbol.get(rowSym)?.status ?? "loading")}
