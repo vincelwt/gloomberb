@@ -1,6 +1,6 @@
 import { Box, Text, useRendererHost, useUiCapabilities } from "../../ui";
-import { useCallback, useEffect, useMemo } from "react";
-import { useViewport } from "../../react/input";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShortcut, useViewport } from "../../react/input";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { findPaneInstance } from "../../types/config";
@@ -28,6 +28,10 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);
   const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const inputCaptured = useAppSelector((state) => state.inputCaptured);
+  const [windowFocused, setWindowFocused] = useState(() => (
+    typeof document === "undefined" ? true : document.hasFocus()
+  ));
   const { width, height } = useViewport();
   const { cellHeightPx = 18, nativePaneChrome, titleBarOverlay } = useUiCapabilities();
   const instance = useAppSelector((state) => findPaneInstance(state.config.layout, desktopWindowBridge.paneId) ?? null);
@@ -40,18 +44,50 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   const title = instance && paneDef
     ? getPaneDisplayTitle(titleState, instance, paneDef)
     : "Detached Pane";
-  const focused = focusedPaneId === desktopWindowBridge.paneId || focusedPaneId == null;
+  const focused = windowFocused;
   const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(width)) : getPaneBodyWidth(width);
 
-  useEffect(() => {
-    if (desktopWindowBridge.paneId && focusedPaneId !== desktopWindowBridge.paneId) {
-      dispatch({ type: "FOCUS_PANE", paneId: desktopWindowBridge.paneId });
-    }
-  }, [desktopWindowBridge.paneId, dispatch, focusedPaneId]);
-
   const focusPane = useCallback(() => {
+    setWindowFocused(true);
     dispatch({ type: "FOCUS_PANE", paneId: desktopWindowBridge.paneId });
   }, [desktopWindowBridge.paneId, dispatch]);
+
+  useEffect(() => {
+    if (windowFocused && focusedPaneId !== desktopWindowBridge.paneId) {
+      focusPane();
+    }
+  }, [desktopWindowBridge.paneId, focusPane, focusedPaneId, windowFocused]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const handleFocus = () => {
+      setWindowFocused(true);
+      focusPane();
+    };
+    const handleBlur = () => setWindowFocused(false);
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+    if (document.hasFocus()) {
+      handleFocus();
+    } else {
+      handleBlur();
+    }
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [focusPane]);
+
+  useShortcut((event) => {
+    if (event.name !== "w" || (!event.ctrl && !event.meta && !event.super)) return;
+    if (inputCaptured && event.ctrl && !event.meta && !event.super) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void desktopWindowBridge.closeDetachedPane?.(desktopWindowBridge.paneId);
+  });
 
   const startWindowDrag = useCallback(() => {
     focusPane();
@@ -78,6 +114,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
         const headerHeightRows = titleBarOverlay ? TITLEBAR_OVERLAY_HEIGHT_PX / cellHeightPx : 1;
         const footerHeightRows = showFooter ? 1 : 0;
         const bodyHeight = Math.max(1, height - headerHeightRows - footerHeightRows);
+        const background = floatingPaneBg(focused);
         const titleBackground = floatingPaneTitleBg(focused);
 
         return (
@@ -86,7 +123,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
             flexGrow={1}
             width={width}
             height={height}
-            backgroundColor={floatingPaneBg(focused)}
+            backgroundColor={background}
             data-gloom-role="detached-pane-window"
             data-focused={focused ? "true" : "false"}
             onMouseDown={focusPane}
@@ -128,7 +165,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 )}
               </Box>
             </Box>
-            <Box height={bodyHeight} overflow="hidden" backgroundColor={colors.bg}>
+            <Box height={bodyHeight} overflow="hidden" backgroundColor={background}>
               <PaneContent
                 component={paneDef.component}
                 paneId={instance.instanceId}

@@ -677,9 +677,11 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
       cancelActiveDrag();
       return;
     }
-    if (event.name !== "w" || !event.ctrl) return;
+    if (event.name !== "w" || (!event.ctrl && !event.meta && !event.super)) return;
     if (dragRef.current || overlayOpen || inputCaptured) return;
-    closeFocusedPane();
+    if (!closeFocusedPane()) return;
+    event.preventDefault();
+    event.stopPropagation();
   });
 
   const disabledPaneIds = useMemo(() => {
@@ -716,8 +718,9 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   }, [config, dispatch]);
 
   const closeFocusedPane = useCallback(() => {
-    if (!focusedPaneId || !isPaneInLayout(visibleLayout, focusedPaneId)) return;
+    if (!focusedPaneId || !isPaneInLayout(visibleLayout, focusedPaneId)) return false;
     persistLayout(removePane(visibleLayout, focusedPaneId));
+    return true;
   }, [focusedPaneId, persistLayout, visibleLayout]);
 
   const focusPane = useCallback((paneId: string) => {

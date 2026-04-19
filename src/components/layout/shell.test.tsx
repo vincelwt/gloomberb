@@ -856,6 +856,47 @@ describe("Shell", () => {
     expect(updateLayout?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "portfolio-list:main" });
   });
 
+  test("closes the focused floating pane with Cmd+W", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!mainPane || !detailPane) throw new Error("missing default panes");
+
+    const mixedLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8 }],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: cloneLayout(mixedLayout),
+        layouts: [{ name: "Default", layout: cloneLayout(mixedLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </DialogProvider>
+      </AppContext>,
+      { width: 40, height: 12 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressKey("w", { meta: true });
+      await testSetup!.renderOnce();
+    });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.instances.map((instance: { instanceId: string }) => instance.instanceId)).toEqual(["portfolio-list:main"]);
+    expect(updateLayout?.layout.floating).toEqual([]);
+  });
+
   test("keeps a floating pane at the preview rect after a free drag release", () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-drag-test");
     const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");

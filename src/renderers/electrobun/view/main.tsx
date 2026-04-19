@@ -16,6 +16,7 @@ import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
 import { webRendererHost, webUiHost } from "./ui-host";
 import { createDesktopWindowBridge } from "./desktop-window-bridge";
+import { prepareDetachedSnapshot } from "./desktop-window-snapshot";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -51,7 +52,10 @@ async function boot() {
   installElectrobunPredictionMarketsFetchTransport();
   await installElectrobunAiHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
-  const config = init.desktopSnapshot?.config ?? init.config;
+  const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot
+    ? prepareDetachedSnapshot(init.desktopSnapshot, init.paneId)
+    : init.desktopSnapshot;
+  const config = desktopSnapshot?.config ?? init.config;
   const desktopWindowBridge = createDesktopWindowBridge(init.windowKind, init.paneId);
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
@@ -62,7 +66,7 @@ async function boot() {
               <App
                 config={config}
                 desktopWindowBridge={desktopWindowBridge}
-                desktopSnapshot={init.desktopSnapshot}
+                desktopSnapshot={desktopSnapshot}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>
