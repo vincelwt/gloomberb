@@ -9,8 +9,6 @@ export { ToggleList } from "./toggle-list";
 export type { ToggleListItem, ToggleListProps } from "./toggle-list";
 export { Tabs as TabBar } from "./ui/tabs";
 export type { TabItem as Tab, TabsProps as TabBarProps } from "./ui/tabs";
-export { Spinner } from "./spinner";
-export type { SpinnerProps } from "./spinner";
 export { TickerListTable } from "./ticker-list-table";
 export type { QuoteFlashDirection, TickerListTableProps, TickerTableCell } from "./ticker-list-table";
 export { TickerListTableView } from "./ticker-list-table-view";

@@ -4,8 +4,7 @@ import type { RefObject } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import { useNativeRenderer } from "../../ui";
 import { useViewport } from "../../react/input";
-import { Spinner } from "../spinner";
-import { Button, NumberField, TextField } from "../ui";
+import { Button, NumberField, Spinner, TextField } from "../ui";
 import { ToggleList } from "../toggle-list";
 import {
   colors,
