@@ -11,6 +11,7 @@ import {
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
+import { createConfigBackedTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { Box } from "../../../ui";
 import { deserializeAlerts, serializeAlerts } from "./alert-engine";
 import { AlertsPane, alertsPlugin } from "./index";
@@ -68,95 +69,10 @@ function createAlertsConfig(alerts: AlertRule[]): AppConfig {
 }
 
 function makeRuntime(overrides: Partial<PluginRuntimeAccess> = {}): PluginRuntimeAccess {
-  const resumeState = new Map<string, unknown>();
-  const listeners = new Map<string, Set<() => void>>();
-
-  return {
-    getDataProvider: () => null,
-    pinTicker() {},
-    navigateTicker() {},
-    selectTicker() {},
-    switchTab() {},
-    switchPanel() {},
-    openCommandBar() {},
-    showWidget() {},
-    hideWidget() {},
-    openPluginCommandWorkflow() {},
-    notify() {},
-    subscribeResumeState(pluginId, key, listener) {
-      const storeKey = `${pluginId}:${key}`;
-      if (!listeners.has(storeKey)) listeners.set(storeKey, new Set());
-      listeners.get(storeKey)!.add(listener);
-      return () => listeners.get(storeKey)?.delete(listener);
-    },
-    getResumeState(pluginId, key) {
-      return (resumeState.get(`${pluginId}:${key}`) as any) ?? null;
-    },
-    setResumeState(pluginId, key, value) {
-      const storeKey = `${pluginId}:${key}`;
-      resumeState.set(storeKey, value);
-      for (const listener of listeners.get(storeKey) ?? []) listener();
-    },
-    deleteResumeState(pluginId, key) {
-      const storeKey = `${pluginId}:${key}`;
-      resumeState.delete(storeKey);
-      for (const listener of listeners.get(storeKey) ?? []) listener();
-    },
-    getConfigState(pluginId, key) {
-      return (harnessState?.config.pluginConfig[pluginId]?.[key] as any) ?? null;
-    },
-    async setConfigState(pluginId, key, value) {
-      const currentState = harnessState!;
-      harnessDispatch?.({
-        type: "SET_CONFIG",
-        config: {
-          ...currentState.config,
-          pluginConfig: {
-            ...currentState.config.pluginConfig,
-            [pluginId]: {
-              ...(currentState.config.pluginConfig[pluginId] ?? {}),
-              [key]: value,
-            },
-          },
-        },
-      });
-    },
-    async setConfigStates(pluginId, values) {
-      const currentState = harnessState!;
-      harnessDispatch?.({
-        type: "SET_CONFIG",
-        config: {
-          ...currentState.config,
-          pluginConfig: {
-            ...currentState.config.pluginConfig,
-            [pluginId]: {
-              ...(currentState.config.pluginConfig[pluginId] ?? {}),
-              ...values,
-            },
-          },
-        },
-      });
-    },
-    async deleteConfigState(pluginId, key) {
-      const currentState = harnessState!;
-      const currentPluginConfig = { ...(currentState.config.pluginConfig[pluginId] ?? {}) };
-      delete currentPluginConfig[key];
-      const pluginConfig = { ...currentState.config.pluginConfig };
-      if (Object.keys(currentPluginConfig).length === 0) delete pluginConfig[pluginId];
-      else pluginConfig[pluginId] = currentPluginConfig;
-      harnessDispatch?.({
-        type: "SET_CONFIG",
-        config: {
-          ...currentState.config,
-          pluginConfig,
-        },
-      });
-    },
-    getConfigStateKeys(pluginId) {
-      return Object.keys(harnessState?.config.pluginConfig[pluginId] ?? {}).sort();
-    },
-    ...overrides,
-  };
+  return createConfigBackedTestPluginRuntime({
+    getConfig: () => harnessState?.config,
+    setConfig: (config) => harnessDispatch?.({ type: "SET_CONFIG", config }),
+  }, overrides);
 }
 
 function AlertsHarness({

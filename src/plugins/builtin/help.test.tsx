@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
+import { PluginRenderProvider } from "../plugin-runtime";
 import { HelpPane } from "./help";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -16,28 +17,10 @@ afterEach(() => {
 describe("HelpPane", () => {
   test("opens the debug log from the mouse action", async () => {
     const calls: string[] = [];
-    const runtime: PluginRuntimeAccess = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
-      selectTicker() {},
-      switchTab() {},
-      switchPanel() {},
+    const runtime = createTestPluginRuntime({
       openCommandBar: (query?: string) => calls.push(`command:${query ?? ""}`),
       showWidget: (paneId: string) => calls.push(`widget:${paneId}`),
-      hideWidget() {},
-      openPluginCommandWorkflow() {},
-      notify() {},
-      subscribeResumeState: () => () => {},
-      getResumeState: () => null,
-      setResumeState() {},
-      deleteResumeState() {},
-      getConfigState: () => null,
-      setConfigState: async () => {},
-      setConfigStates: async () => {},
-      deleteConfigState: async () => {},
-      getConfigStateKeys: () => [],
-    };
+    });
 
     testSetup = await testRender(
       <PluginRenderProvider pluginId="help" runtime={runtime}>

@@ -17,13 +17,14 @@ import {
   type AppConfig,
   type BrokerInstanceConfig,
 } from "../../types/config";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { DetailTabDef } from "../../types/plugin";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../registry";
 import { setSharedRegistryForTests } from "../registry";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
+import { PluginRenderProvider } from "../plugin-runtime";
 import { resetOptionsAvailabilityCache } from "./options-availability";
 import { FinancialsTab, tickerDetailPlugin } from "./ticker-detail";
 import { isUsEquityTicker } from "../../utils/sec";
@@ -34,28 +35,7 @@ let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessDispatch: React.Dispatch<AppAction> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 
-const runtime: PluginRuntimeAccess = {
-  getDataProvider: () => null,
-  pinTicker() {},
-  navigateTicker() {},
-  selectTicker() {},
-  switchTab() {},
-  switchPanel() {},
-  openCommandBar() {},
-  showWidget() {},
-  hideWidget() {},
-  openPluginCommandWorkflow() {},
-  notify() {},
-  subscribeResumeState: () => () => {},
-  getResumeState: () => null,
-  setResumeState() {},
-  deleteResumeState() {},
-  getConfigState: () => null,
-  setConfigState: async () => {},
-  setConfigStates: async () => {},
-  deleteConfigState: async () => {},
-  getConfigStateKeys: () => [],
-};
+const runtime = createTestPluginRuntime();
 
 const DetailPane = tickerDetailPlugin.panes![0]!.component as (props: {
   paneId: string;

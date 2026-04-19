@@ -11,7 +11,8 @@ import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedRegistryForTests } from "../../plugins/registry";
 import { portfolioListPlugin } from "../../plugins/builtin/portfolio-list";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugins/plugin-runtime";
+import { PluginRenderProvider } from "../../plugins/plugin-runtime";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { PaneProps } from "../../types/plugin";
 import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
@@ -84,28 +85,13 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
   if (!pane) throw new Error("missing portfolio pane");
 
   let registry: PluginRegistry;
-  const runtime: PluginRuntimeAccess = {
-    getDataProvider: () => null,
+  const runtime = createTestPluginRuntime({
     pinTicker: (symbol, options) => registry.pinTicker(symbol, options),
     navigateTicker: (symbol) => registry.navigateTicker(symbol),
     selectTicker: (symbol, paneId) => registry.selectTicker(symbol, paneId),
     switchTab: (tabId, paneId) => registry.switchTab(tabId, paneId),
     switchPanel: (panel) => registry.switchPanel(panel),
-    openCommandBar: () => {},
-    showWidget: () => {},
-    hideWidget: () => {},
-    openPluginCommandWorkflow: () => {},
-    notify: () => {},
-    subscribeResumeState: () => () => {},
-    getResumeState: () => null,
-    setResumeState: () => {},
-    deleteResumeState: () => {},
-    getConfigState: () => null,
-    setConfigState: async () => {},
-    setConfigStates: async () => {},
-    deleteConfigState: async () => {},
-    getConfigStateKeys: () => [],
-  };
+  });
   const wrappedPane = {
     ...pane,
     component: (props: PaneProps) => (

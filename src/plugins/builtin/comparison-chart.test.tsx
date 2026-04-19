@@ -11,6 +11,7 @@ import {
 } from "../../state/app-context";
 import { Box } from "../../ui";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -109,8 +110,7 @@ function createRegistrySpy(spy: { selected: string[]; focused: string[] }): Plug
 }
 
 function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): PluginRuntimeAccess {
-  return {
-    getDataProvider: () => null,
+  return createTestPluginRuntime({
     pinTicker: (symbol: string) => {
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
@@ -119,24 +119,7 @@ function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): Plugi
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
     },
-    selectTicker() {},
-    switchTab() {},
-    switchPanel() {},
-    openCommandBar() {},
-    showWidget() {},
-    hideWidget() {},
-    openPluginCommandWorkflow() {},
-    notify() {},
-    subscribeResumeState: () => () => {},
-    getResumeState: () => null,
-    setResumeState: () => {},
-    deleteResumeState: () => {},
-    getConfigState: () => null,
-    setConfigState: async () => {},
-    setConfigStates: async () => {},
-    deleteConfigState: async () => {},
-    getConfigStateKeys: () => [],
-  };
+  });
 }
 
 function createComparisonHarness(

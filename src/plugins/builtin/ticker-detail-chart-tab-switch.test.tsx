@@ -11,10 +11,11 @@ import {
   type AppAction,
 } from "../../state/app-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
+import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { getNativeSurfaceManager } from "../../components/chart/native/surface-manager";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
+import { PluginRenderProvider } from "../plugin-runtime";
 import { tickerDetailPlugin } from "./ticker-detail";
 
 const TEST_PANE_ID = "ticker-detail:test";
@@ -31,28 +32,7 @@ let root: ReturnType<typeof createRoot> | undefined;
 let harnessDispatch: ((action: AppAction) => void) | null = null;
 const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
-const runtime: PluginRuntimeAccess = {
-  getDataProvider: () => null,
-  pinTicker() {},
-  navigateTicker() {},
-  selectTicker() {},
-  switchTab() {},
-  switchPanel() {},
-  openCommandBar() {},
-  showWidget() {},
-  hideWidget() {},
-  openPluginCommandWorkflow() {},
-  notify() {},
-  subscribeResumeState: () => () => {},
-  getResumeState: () => null,
-  setResumeState() {},
-  deleteResumeState() {},
-  getConfigState: () => null,
-  setConfigState: async () => {},
-  setConfigStates: async () => {},
-  deleteConfigState: async () => {},
-  getConfigStateKeys: () => [],
-};
+const runtime = createTestPluginRuntime();
 
 function makeTicker(symbol: string): TickerRecord {
   return {

@@ -7,13 +7,13 @@ import {
   appReducer,
   createInitialState,
 } from "../state/app-context";
+import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../test-support/plugin-runtime";
 import { createDefaultConfig } from "../types/config";
 import {
   PluginRenderProvider,
   deletePluginPaneStateValue,
   getPluginPaneStateValue,
   setPluginPaneStateValue,
-  type PluginRuntimeAccess,
   usePluginAppActions,
   useDebouncedPluginPaneState,
   usePluginConfigState,
@@ -60,28 +60,7 @@ describe("plugin runtime hooks", () => {
     const stateRef: { current: ReturnType<typeof createInitialState> | null } = { current: null };
     let setSelection: ((value: SetStateAction<string>) => void) | null = null;
 
-    const runtime = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
-      selectTicker() {},
-      switchTab() {},
-      switchPanel() {},
-      openCommandBar() {},
-      showWidget() {},
-      hideWidget() {},
-      openPluginCommandWorkflow() {},
-      notify() {},
-      subscribeResumeState: () => () => {},
-      getResumeState: () => null,
-      setResumeState() {},
-      deleteResumeState() {},
-      getConfigState: () => null,
-      setConfigState: async () => {},
-      setConfigStates: async () => {},
-      deleteConfigState: async () => {},
-      getConfigStateKeys: () => [],
-    } satisfies PluginRuntimeAccess;
+    const runtime = createTestPluginRuntime();
 
     function HookHarness() {
       const [state, dispatch] = useReducer(appReducer, createInitialState(config));
@@ -134,98 +113,10 @@ describe("plugin runtime hooks", () => {
     const config = createDefaultConfig("/tmp/gloomberb-plugin-runtime");
     const stateRef: { current: ReturnType<typeof createInitialState> | null } = { current: null };
     const dispatchRef: { current: React.Dispatch<any> | null } = { current: null };
-    const resumeState = new Map<string, unknown>();
-    const listeners = new Map<string, Set<() => void>>();
-
-    const runtime: PluginRuntimeAccess = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
-      selectTicker() {},
-      switchTab() {},
-      switchPanel() {},
-      openCommandBar() {},
-      showWidget() {},
-      hideWidget() {},
-      openPluginCommandWorkflow() {},
-      notify() {},
-      subscribeResumeState(pluginId, key, listener) {
-        const listenerKey = `${pluginId}:${key}`;
-        if (!listeners.has(listenerKey)) listeners.set(listenerKey, new Set());
-        listeners.get(listenerKey)!.add(listener);
-        return () => {
-          const current = listeners.get(listenerKey);
-          if (!current) return;
-          current.delete(listener);
-        };
-      },
-      getResumeState(pluginId, key) {
-        return (resumeState.get(`${pluginId}:${key}`) as any) ?? null;
-      },
-      setResumeState(pluginId, key, value) {
-        const listenerKey = `${pluginId}:${key}`;
-        resumeState.set(listenerKey, value);
-        for (const listener of listeners.get(listenerKey) ?? []) listener();
-      },
-      deleteResumeState(pluginId, key) {
-        const listenerKey = `${pluginId}:${key}`;
-        resumeState.delete(listenerKey);
-        for (const listener of listeners.get(listenerKey) ?? []) listener();
-      },
-      getConfigState(pluginId, key) {
-        return (stateRef.current?.config.pluginConfig[pluginId]?.[key] as any) ?? null;
-      },
-      async setConfigState(pluginId, key, value) {
-        const currentState = stateRef.current!;
-        dispatchRef.current?.({
-          type: "SET_CONFIG",
-          config: {
-            ...currentState.config,
-            pluginConfig: {
-              ...currentState.config.pluginConfig,
-              [pluginId]: {
-                ...(currentState.config.pluginConfig[pluginId] ?? {}),
-                [key]: value,
-              },
-            },
-          },
-        });
-      },
-      async setConfigStates(pluginId, values) {
-        const currentState = stateRef.current!;
-        dispatchRef.current?.({
-          type: "SET_CONFIG",
-          config: {
-            ...currentState.config,
-            pluginConfig: {
-              ...currentState.config.pluginConfig,
-              [pluginId]: {
-                ...(currentState.config.pluginConfig[pluginId] ?? {}),
-                ...values,
-              },
-            },
-          },
-        });
-      },
-      async deleteConfigState(pluginId, key) {
-        const currentState = stateRef.current!;
-        const currentPluginConfig = { ...(currentState.config.pluginConfig[pluginId] ?? {}) };
-        delete currentPluginConfig[key];
-        const nextPluginConfig = { ...currentState.config.pluginConfig };
-        if (Object.keys(currentPluginConfig).length === 0) delete nextPluginConfig[pluginId];
-        else nextPluginConfig[pluginId] = currentPluginConfig;
-        dispatchRef.current?.({
-          type: "SET_CONFIG",
-          config: {
-            ...currentState.config,
-            pluginConfig: nextPluginConfig,
-          },
-        });
-      },
-      getConfigStateKeys(pluginId) {
-        return Object.keys(stateRef.current?.config.pluginConfig[pluginId] ?? {}).sort();
-      },
-    };
+    const runtime = createConfigBackedTestPluginRuntime({
+      getConfig: () => stateRef.current?.config,
+      setConfig: (config) => dispatchRef.current?.({ type: "SET_CONFIG", config }),
+    });
 
     function HookHarness() {
       const [state, dispatch] = useReducer(appReducer, createInitialState(config));
@@ -297,20 +188,14 @@ describe("plugin runtime hooks", () => {
       displayMode: "expanded",
       layoutMode: "wide",
     });
-    expect(resumeState.get("news:provider")).toBe("codex");
+    expect(runtime.getResumeState("news", "provider")).toBe("codex");
   });
 
   test("exposes renderer app actions through the plugin hook", async () => {
     const calls: string[] = [];
     let actions: ReturnType<typeof usePluginAppActions> | null = null;
 
-    const runtime: PluginRuntimeAccess = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
-      selectTicker() {},
-      switchTab() {},
-      switchPanel() {},
+    const runtime = createTestPluginRuntime({
       openCommandBar(query?: string) {
         calls.push(`command:${query ?? ""}`);
       },
@@ -326,16 +211,7 @@ describe("plugin runtime hooks", () => {
       notify(notification) {
         calls.push(`notify:${notification.body}`);
       },
-      subscribeResumeState: () => () => {},
-      getResumeState: () => null,
-      setResumeState() {},
-      deleteResumeState() {},
-      getConfigState: () => null,
-      setConfigState: async () => {},
-      setConfigStates: async () => {},
-      deleteConfigState: async () => {},
-      getConfigStateKeys: () => [],
-    };
+    });
 
     function HookProbe() {
       actions = usePluginAppActions();
@@ -372,10 +248,7 @@ describe("plugin runtime hooks", () => {
     const calls: string[] = [];
     let actions: ReturnType<typeof usePluginPaneActions> | null = null;
 
-    const runtime: PluginRuntimeAccess = {
-      getDataProvider: () => null,
-      pinTicker() {},
-      navigateTicker() {},
+    const runtime = createTestPluginRuntime({
       selectTicker(symbol: string, paneId?: string) {
         calls.push(`select:${symbol}:${paneId ?? ""}`);
       },
@@ -385,21 +258,7 @@ describe("plugin runtime hooks", () => {
       switchPanel(panel: "left" | "right") {
         calls.push(`panel:${panel}`);
       },
-      openCommandBar() {},
-      showWidget() {},
-      hideWidget() {},
-      openPluginCommandWorkflow() {},
-      notify() {},
-      subscribeResumeState: () => () => {},
-      getResumeState: () => null,
-      setResumeState() {},
-      deleteResumeState() {},
-      getConfigState: () => null,
-      setConfigState: async () => {},
-      setConfigStates: async () => {},
-      deleteConfigState: async () => {},
-      getConfigStateKeys: () => [],
-    };
+    });
 
     function HookProbe() {
       actions = usePluginPaneActions();
