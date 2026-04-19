@@ -7,6 +7,10 @@ export function getPaneDisplayTitle(
   instance: PaneInstanceConfig,
   paneDef: PaneDef,
 ): string {
+  if (instance.paneId === "chat") {
+    return instance.title ?? "#everyone";
+  }
+
   if (instance.paneId === "ticker-detail") {
     const ticker = resolveTickerForPane(state as AppState, instance.instanceId);
     if (ticker) return ticker;
