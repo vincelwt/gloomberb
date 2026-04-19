@@ -264,6 +264,7 @@ export interface RendererHost {
   openExternal(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
   readText(): Promise<string>;
+  supportsNativeDesktopNotifications?: boolean;
   notify(notification: AppNotificationRequest): void;
   showContextMenu?(items: ContextMenuItem[]): Promise<boolean>;
 }

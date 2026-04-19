@@ -1203,6 +1203,7 @@ export const webUiHost: UiHost = {
 };
 
 export const webRendererHost: RendererHost = {
+  supportsNativeDesktopNotifications: true,
   requestExit() {
     void backendRequest("host.exit").catch(() => window.close());
   },
@@ -1230,6 +1231,8 @@ export const webRendererHost: RendererHost = {
     void backendRequest("host.notify", {
       title: notification.title,
       body: notification.body,
+      subtitle: notification.subtitle,
+      sound: notification.sound,
     }).catch(() => {});
   },
   async showContextMenu(items) {

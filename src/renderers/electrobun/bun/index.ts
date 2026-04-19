@@ -24,6 +24,7 @@ import type { PaneRuntimeState } from "../../../core/state/app-state";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { BrokerOrderRequest } from "../../../types/trading";
+import { buildSoundCommand } from "../../../notifications/app-notifier";
 import { isPaneDetached } from "../../../plugins/pane-manager";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
@@ -236,6 +237,21 @@ function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
 
 function normalizeText(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function playNotificationSound(sound: string | undefined): void {
+  if (!sound) return;
+  const command = buildSoundCommand(sound);
+  if (!command) return;
+  try {
+    const child = Bun.spawn([command.command, ...command.args], { stdio: ["ignore", "ignore", "ignore"] });
+    child.unref();
+  } catch (error) {
+    console.warn("notification sound failed", {
+      command: command.command,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 function syncBackendCloudAuthState(pluginId: string, key: string, value: unknown): void {
@@ -1190,9 +1206,12 @@ async function handleBackendRequest(
     case "host.readText":
       return Utils.clipboardReadText() ?? "";
     case "host.notify":
+      playNotificationSound(normalizeText(payload.sound));
       Utils.showNotification({
         title: normalizeText(payload.title) ?? "Gloomberb",
         body: normalizeText(payload.body),
+        subtitle: normalizeText(payload.subtitle),
+        silent: true,
       });
       return null;
     case "host.showContextMenu": {
