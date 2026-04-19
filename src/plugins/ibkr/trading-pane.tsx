@@ -1,8 +1,9 @@
 import { Box, ScrollBox, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
+import { usePaneFooter } from "../../components";
 import { useShortcut } from "../../react/input";
 import { useDialog } from "../../ui/dialog";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { resolveTickerFinancialsForInstrument } from "../../market-data/coordinator";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import {
@@ -259,6 +260,37 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     registry?.switchPanelFn("right");
   }, [selectedOrder, tickers, paneId]);
 
+  const footerActionsRef = useRef<{
+    chooseBrokerInstance: () => Promise<void>;
+    chooseAccount: () => Promise<void>;
+    openSelectedOrder: () => void;
+    cancelSelectedOrder: () => Promise<void>;
+    refresh: () => Promise<void>;
+  }>({
+    chooseBrokerInstance: async () => {},
+    chooseAccount: async () => {},
+    openSelectedOrder: () => {},
+    cancelSelectedOrder: async () => {},
+    refresh: async () => {},
+  });
+  footerActionsRef.current = {
+    chooseBrokerInstance,
+    chooseAccount,
+    openSelectedOrder,
+    cancelSelectedOrder,
+    refresh,
+  };
+
+  usePaneFooter("ibkr-trading-pane", () => ({
+    hints: [
+      { id: "profile", key: "i", label: "profile", onPress: () => footerActionsRef.current.chooseBrokerInstance().catch(() => {}) },
+      { id: "account", key: "a", label: "ccount", onPress: () => footerActionsRef.current.chooseAccount().catch(() => {}) },
+      { id: "open", key: "m", label: "open", onPress: () => footerActionsRef.current.openSelectedOrder() },
+      { id: "cancel", key: "c", label: "ancel", onPress: () => footerActionsRef.current.cancelSelectedOrder().catch(() => {}) },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => footerActionsRef.current.refresh().catch(() => {}) },
+    ],
+  }), []);
+
   useShortcut((event) => {
     if (!focused) return;
     event.stopPropagation?.();
@@ -299,7 +331,7 @@ export function TradingPane({ focused, width, height }: PaneProps) {
   const activeAccount = availableAccounts.find((account) => account.accountId === (tradeState.accountId || ""));
   const orderPanelWidth = Math.max(36, Math.floor(width * 0.6));
   const listPanelWidth = Math.max(24, width - orderPanelWidth - 1);
-  const listHeight = Math.max(4, height - 6);
+  const listHeight = Math.max(4, height - 4);
   const getOrderQuote = useCallback((symbol: string): Quote | null => {
     const ticker = tickers.get(symbol) ?? null;
     const instrument = instrumentFromTicker(ticker, symbol);
@@ -436,13 +468,6 @@ export function TradingPane({ focused, width, height }: PaneProps) {
         </Box>
       </Box>
 
-      <Box flexDirection="row" height={1}>
-        <Text fg={colors.textMuted} onMouseDown={() => chooseBrokerInstance().catch(() => {})}>{" [i] Profile "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => chooseAccount().catch(() => {})}>{" [a] Account "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => openSelectedOrder()}>{" [Enter] Open "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => cancelSelectedOrder().catch(() => {})}>{" [c] Cancel "}</Text>
-        <Text fg={colors.textMuted} onMouseDown={() => refresh().catch(() => {})}>{" [r] Refresh "}</Text>
-      </Box>
     </Box>
   );
 }
