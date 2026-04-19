@@ -2,7 +2,7 @@ import { Box, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
-import { PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
+import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
 import { getPaneBodyHeight } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
@@ -55,7 +55,9 @@ export function FloatingPaneWrapper({
 }: FloatingPaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = floatingPaneBg(focused);
-  const bodyHeight = getPaneBodyHeight(height);
+  const showFooter = hasPaneFooterContent(footer);
+  const reserveFooter = !nativePaneChrome || showFooter;
+  const bodyHeight = getPaneBodyHeight(height, reserveFooter);
 
   return (
     <Box
@@ -96,7 +98,7 @@ export function FloatingPaneWrapper({
         {children}
       </Box>
 
-      <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={2} />
+      {reserveFooter && <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={2} />}
 
       {nativePaneChrome ? (
         <Box

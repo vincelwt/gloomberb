@@ -159,7 +159,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
       {!paneSettings.hideTabs && (
         <TabBar
           tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
@@ -168,37 +168,39 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
         />
       )}
 
-      {resolvedTabId === "overview" && (
-        <OverviewTab
-          width={width}
-          symbol={symbol}
-          ticker={ticker}
-          financials={financials}
-        />
-      )}
-      {resolvedTabId === "financials" && <ResolvedFinancialsTab focused={focused} financials={financials} />}
-      {resolvedTabId === "chart" && (
-        <ChartTab
-          width={width}
-          height={contentHeight}
-          focused={focused}
-          interactive={chartInteractive}
-          axisMode={paneSettings.chartAxisMode}
-          onActivate={() => setChartInteractiveEager(true)}
-          symbol={symbol}
-          ticker={ticker}
-          financials={financials}
-        />
-      )}
+      <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
+        {resolvedTabId === "overview" && (
+          <OverviewTab
+            width={width}
+            symbol={symbol}
+            ticker={ticker}
+            financials={financials}
+          />
+        )}
+        {resolvedTabId === "financials" && <ResolvedFinancialsTab focused={focused} financials={financials} />}
+        {resolvedTabId === "chart" && (
+          <ChartTab
+            width={width}
+            height={contentHeight}
+            focused={focused}
+            interactive={chartInteractive}
+            axisMode={paneSettings.chartAxisMode}
+            onActivate={() => setChartInteractiveEager(true)}
+            symbol={symbol}
+            ticker={ticker}
+            financials={financials}
+          />
+        )}
 
-      {activePluginTab && (
-        <activePluginTab.component
-          width={width}
-          height={contentHeight}
-          focused={focused}
-          onCapture={handlePluginCapture}
-        />
-      )}
+        {activePluginTab && (
+          <activePluginTab.component
+            width={width}
+            height={contentHeight}
+            focused={focused}
+            onCapture={handlePluginCapture}
+          />
+        )}
+      </Box>
     </Box>
   );
 }

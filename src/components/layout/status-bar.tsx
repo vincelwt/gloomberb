@@ -10,11 +10,7 @@ import {
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
 import {
-  marketStateLabel,
-  marketStateColor,
-  exchangeShortName,
   getExtendedHoursInfo,
-  quoteSourceLabel,
 } from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
@@ -44,15 +40,6 @@ export function StatusBar() {
   const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
   const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
-
-  const q = focusedFinancials?.quote;
-  const mktState = q?.marketState;
-  const exchName = q
-    ? exchangeShortName(q.listingExchangeName ?? q.exchangeName, q.listingExchangeFullName ?? q.fullExchangeName)
-    : "";
-  const sessionLabel = mktState ? marketStateLabel(mktState) : "?";
-  const priceSourceLabel = q?.provenance?.price ? quoteSourceLabel(q.provenance.price, "price") : "";
-  const sessionSourceLabel = q?.provenance?.session ? quoteSourceLabel(q.provenance.session, "session") : "";
 
   // Extended hours info for selected ticker
   const extInfo = getExtendedHoursInfo(focusedFinancials?.quote);
@@ -258,34 +245,6 @@ export function StatusBar() {
             <Text fg={extColor}>{symbol} {extText}</Text>
           </Box>
         )}
-        {(exchName || mktState || q?.provenance?.session) && (
-          <Box
-            paddingRight={1}
-            height={1}
-            flexDirection="row"
-            alignItems="center"
-            backgroundColor="rgba(8, 12, 15, 0.30)"
-            style={{
-              border: "1px solid rgba(132, 145, 161, 0.22)",
-              borderRadius: 5,
-              paddingInline: 6,
-            }}
-          >
-            <Text fg={mktState ? marketStateColor(mktState) : colors.textDim}>
-              {exchName ? `${exchName} ` : ""}{sessionLabel}
-            </Text>
-          </Box>
-        )}
-        {priceSourceLabel && (
-          <Box paddingRight={1}>
-            <Text fg={colors.textDim}>px {priceSourceLabel}</Text>
-          </Box>
-        )}
-        {sessionSourceLabel && sessionSourceLabel !== priceSourceLabel && (
-          <Box paddingRight={1}>
-            <Text fg={colors.textDim}>ses {sessionSourceLabel}</Text>
-          </Box>
-        )}
         <PluginSlot name="status:widget" />
       </Box>
     );
@@ -348,23 +307,6 @@ export function StatusBar() {
       {extText && (
         <Box paddingRight={1}>
           <Text fg={extColor}>{symbol} {extText}</Text>
-        </Box>
-      )}
-      {(exchName || mktState || q?.provenance?.session) && (
-        <Box paddingRight={1}>
-          <Text fg={mktState ? marketStateColor(mktState) : colors.textDim}>
-            {exchName ? `${exchName} ` : ""}{sessionLabel}
-          </Text>
-        </Box>
-      )}
-      {priceSourceLabel && (
-        <Box paddingRight={1}>
-          <Text fg={colors.textDim}>px {priceSourceLabel}</Text>
-        </Box>
-      )}
-      {sessionSourceLabel && sessionSourceLabel !== priceSourceLabel && (
-        <Box paddingRight={1}>
-          <Text fg={colors.textDim}>ses {sessionSourceLabel}</Text>
         </Box>
       )}
       {/* Plugin status widgets */}

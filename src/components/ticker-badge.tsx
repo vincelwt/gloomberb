@@ -52,8 +52,8 @@ export function TickerBadge({
 }: TickerBadgeProps) {
   const registry = getSharedRegistry();
   const { nativeContextMenu } = useUiCapabilities();
-  const ticker = registry?.getTickerFn(symbol) ?? null;
-  const financials = registry?.getDataFn(symbol) ?? null;
+  const ticker = registry?.getTickerFn?.(symbol) ?? null;
+  const financials = registry?.getDataFn?.(symbol) ?? null;
   const openTickerContextMenu = useTickerContextMenu({
     ticker,
     financials,
