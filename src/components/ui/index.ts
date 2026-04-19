@@ -16,6 +16,9 @@ export type { TabItem, TabsProps } from "./tabs";
 export { Button } from "./button";
 export type { ButtonProps, ButtonVariant } from "./button";
 
+export { getShortcutHintWidth, ShortcutHint } from "./shortcut-hint";
+export type { ShortcutHintMouseEvent, ShortcutHintProps } from "./shortcut-hint";
+
 export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-select-dialog";
 export type { MultiSelectDialogButtonProps, MultiSelectDialogContentProps } from "./multi-select-dialog";
 export type { MultiSelectOption } from "./multi-select";

@@ -9,8 +9,9 @@ import {
   type DependencyList,
   type ReactNode,
 } from "react";
-import { Box, Span, StyledText, Text, TextAttributes, useUiCapabilities } from "../../ui";
+import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { colors, blendHex } from "../../theme/colors";
+import { getShortcutHintWidth, ShortcutHint } from "../ui/shortcut-hint";
 
 export interface PaneFooterRegistration {
   order?: number;
@@ -243,7 +244,7 @@ function SegmentView({ segment }: { segment: PaneFooterSegment }) {
 }
 
 function hintTextLength(hint: PaneHint, index: number): number {
-  return (index > 0 ? 1 : 0) + hint.key.length + hint.label.length + 2;
+  return getShortcutHintWidth(hint.key, hint.label, index > 0 ? " " : "");
 }
 
 function totalHintsWidth(hints: PaneHint[]): number {
@@ -251,26 +252,14 @@ function totalHintsWidth(hints: PaneHint[]): number {
 }
 
 function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
-  const interactive = !!hint.onPress && !hint.disabled;
-  const keyColor = hint.disabled ? colors.textMuted : colors.textBright;
-  const labelColor = hint.disabled ? colors.textMuted : colors.textDim;
-  const prefix = prefixSpace ? " " : "";
-  const text = `${prefix}[${hint.key}]${hint.label}`;
-
   return (
-    <Text
-      width={text.length}
-      content={new StyledText([
-        ...(prefix ? [{ text: prefix, fg: labelColor }] : []),
-        { text: `[${hint.key}]`, fg: keyColor },
-        { text: hint.label, fg: labelColor },
-      ])}
-      fg={hint.disabled ? colors.textMuted : colors.textDim}
-      attributes={interactive ? TextAttributes.BOLD : 0}
-      data-gloom-role="pane-hint"
-      onMouseDown={interactive ? stopMouseEvent : undefined}
-      onMouseUp={interactive ? hint.onPress : undefined}
-      {...(interactive ? { "data-gloom-interactive": "true" } : {})}
+    <ShortcutHint
+      hotkey={hint.key}
+      label={hint.label}
+      prefix={prefixSpace ? " " : ""}
+      disabled={hint.disabled}
+      dataGloomRole="pane-hint"
+      onPress={hint.onPress}
     />
   );
 }

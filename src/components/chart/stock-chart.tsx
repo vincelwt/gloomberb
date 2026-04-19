@@ -5,6 +5,7 @@ import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
 import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../layout/pane-footer";
+import { ShortcutHint } from "../ui";
 import { saveConfig } from "../../data/config-store";
 import { getSharedDataProvider } from "../../plugins/registry";
 import { colors } from "../../theme/colors";
@@ -107,7 +108,6 @@ import {
   type ChartViewState,
   type ResolvedChartRenderer,
 } from "./chart-types";
-import { ChartControlHint } from "./chart-control-hint";
 import {
   computeBitmapSize,
   intersectCellRects,
@@ -1533,6 +1533,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
   const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
+  const showNativeUnavailable = rendererState.nativeUnavailable && !useCanvasChart;
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const [canvasBaseBitmapState, setCanvasBaseBitmapState] = useState<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -4054,7 +4055,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
             {projection.fallbackMode && (
               <Text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</Text>
             )}
-            {rendererState.nativeUnavailable && (
+            {showNativeUnavailable && (
               <Text fg={colors.textDim}>native unavailable</Text>
             )}
           </Box>
@@ -4064,7 +4065,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
             {projection.fallbackMode && (
               <Text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</Text>
             )}
-            {rendererState.nativeUnavailable && (
+            {showNativeUnavailable && (
               <Text fg={colors.textDim}>native unavailable</Text>
             )}
           </Box>
@@ -4086,12 +4087,12 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       {compact && (
         <>
           <Box height={1} flexDirection="row" gap={1}>
-            <ChartControlHint hotkey="m" label="ode" />
+            <ShortcutHint hotkey="m" label="ode" />
             {footerControls}
-            <ChartControlHint hotkey="r" label="es" />
-            <ChartControlHint hotkey="+/-" label="zoom" />
-            <ChartControlHint hotkey="0" label="reset" />
-            {width >= 72 && <ChartControlHint hotkey="1-7" label="range" />}
+            <ShortcutHint hotkey="r" label="es" />
+            <ShortcutHint hotkey="+/-" label="zoom" />
+            <ShortcutHint hotkey="0" label="reset" />
+            {width >= 72 && <ShortcutHint hotkey="1-7" label="range" />}
           </Box>
         </>
       )}
