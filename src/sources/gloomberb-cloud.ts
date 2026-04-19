@@ -12,6 +12,7 @@ import {
   type CloudCompanyProfile,
   type CloudFundamentals,
   type CloudMarketResponse,
+  type CloudNewsTickerLinkPayload,
   type CloudNewsPayload,
   type CloudPricePointPayload,
   type CloudQuotePayload,
@@ -107,6 +108,24 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function normalizeTickerLabel(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toUpperCase();
+  return normalized ? normalized : null;
+}
+
+function displayTickerForLink(link: CloudNewsTickerLinkPayload): string | null {
+  return normalizeTickerLabel(link.canonicalTicker) ?? normalizeTickerLabel(link.symbol);
+}
+
+function mapCloudNewsTickers(item: CloudNewsPayload, fallbackTicker?: string): string[] {
+  const tickers = uniqueStrings(item.tickerLinks.flatMap((link) => displayTickerForLink(link) ?? []));
+  const fallback = normalizeTickerLabel(fallbackTicker);
+  if (fallback && tickers.length === 0) {
+    tickers.push(fallback);
+  }
+  return tickers;
+}
+
 function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): NewsArticle {
   const publishedAt = new Date(item.lastPublishedAt || item.firstPublishedAt || item.lastSeenAt);
   const topic = item.topic ?? item.category ?? "general";
@@ -119,13 +138,7 @@ function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): N
     novelty: item.scores?.novelty ?? 0,
     confidence: item.scores?.confidence ?? 0,
   };
-  const tickers = uniqueStrings([
-    ...item.tickerLinks.flatMap((link) => [link.symbol, link.canonicalTicker]),
-    ...item.entities.flatMap((entity) => [entity.symbol, entity.canonicalTicker].filter((value): value is string => typeof value === "string")),
-  ]);
-  if (fallbackTicker && !tickers.includes(fallbackTicker.trim().toUpperCase())) {
-    tickers.push(fallbackTicker.trim().toUpperCase());
-  }
+  const tickers = mapCloudNewsTickers(item, fallbackTicker);
   return {
     id: item.id,
     title: item.headline,
