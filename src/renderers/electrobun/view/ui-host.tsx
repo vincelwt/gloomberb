@@ -26,10 +26,12 @@ import {
   type RendererHost,
   type ScrollBoxRenderable,
   type TextareaRenderable,
+  type AsciiTextProps,
   type TextProps,
   type UiHost,
   type StyledTextChunk,
 } from "../../../ui/host";
+import { renderAsciiText } from "../../../ui/ascii-font";
 import { editableTextContextMenuItems } from "../../../ui/context-menu";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { backendRequest, onContextMenuSelect } from "./backend-rpc";
@@ -175,7 +177,7 @@ function cleanDomProps(props: Record<string, unknown>): Record<string, unknown> 
     "focused", "focusedBackgroundColor", "textColor", "focusedTextColor", "placeholderColor",
     "cursorColor", "selectionBg", "selectionFg", "showCursor", "keyBindings", "wrapText",
     "initialValue", "value", "onInput", "onChange", "onSubmit", "onCursorChange", "onMouse",
-    "scrollX", "scrollY", "focusable", "bitmap", "bitmaps", "crosshair",
+    "scrollX", "scrollY", "focusable", "bitmap", "bitmaps", "crosshair", "text", "font",
   ]) {
     delete next[key];
   }
@@ -819,6 +821,45 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
   },
 );
 
+function WebAsciiText({
+  text,
+  font = "tiny",
+  color,
+  fg,
+  bg,
+  backgroundColor,
+  selectable = false,
+  ...props
+}: AsciiTextProps) {
+  const lines = renderAsciiText(text, font);
+  const resolvedColor = color ?? fg;
+  const resolvedBackground = bg ?? backgroundColor;
+  return (
+    <div
+      {...cleanDomProps(props)}
+      data-gloom-role={(props["data-gloom-role"] as string | undefined) ?? "ascii-text"}
+      style={{
+        ...commonStyle({ ...props, fg: resolvedColor, bg: resolvedBackground }),
+        display: "flex",
+        flexDirection: "column",
+        flexShrink: 0,
+        color: resolvedColor,
+        backgroundColor: resolvedBackground,
+        lineHeight: "12px",
+        whiteSpace: "pre",
+        userSelect: selectable ? "text" : "none",
+        ...(props.style as CSSProperties | undefined),
+      }}
+    >
+      {lines.map((line, index) => (
+        <span key={index} style={{ display: "block", height: "12px", lineHeight: "12px" }}>
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 type CssVars = CSSProperties & Record<`--${string}`, string>;
 
 function WebTabs({
@@ -1158,6 +1199,7 @@ export const webUiHost: UiHost = {
       *
     </span>
   ),
+  AsciiText: WebAsciiText,
 };
 
 export const webRendererHost: RendererHost = {

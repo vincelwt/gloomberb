@@ -93,7 +93,12 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   );
 
   const detailContent = detailArticle ? (
-    <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
+    <NewsDetailView
+      item={detailArticle}
+      focused={focused}
+      width={width}
+      showTitle={false}
+    />
   ) : (
     <Box flexGrow={1} />
   );
@@ -114,6 +119,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
+      detailTitle={detailArticle?.title}
       rootBefore={rootBefore}
       onRootKeyDown={handleRootKeyDown}
       columns={["time", "source", "title", "tickers", "categories"]}

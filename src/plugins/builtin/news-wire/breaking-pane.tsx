@@ -111,7 +111,12 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   }), [aiError, aiRunning, spinFrame]);
 
   const detailContent = detailArticle ? (
-    <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
+    <NewsDetailView
+      item={detailArticle}
+      focused={focused}
+      width={width}
+      showTitle={false}
+    />
   ) : (
     <Box flexGrow={1} />
   );
@@ -136,6 +141,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
+      detailTitle={detailArticle?.title}
       columns={["time", "source", "title", "tickers", "importance"]}
       emptyStateTitle="No breaking news"
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."

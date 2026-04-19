@@ -188,7 +188,10 @@ describe("FeedDataTableStackView", () => {
     await clickAt(2, filingRow);
     await renderSettled();
 
-    expect(testSetup.captureCharFrame()).toContain("Quarterly report details.");
+    const detailFrame = testSetup.captureCharFrame();
+    expect(detailFrame).toContain("\u2190 Back 10-Q filing");
+    expect(detailFrame).toContain("Quarterly report details.");
+    expect(detailFrame.match(/10-Q filing/g)?.length ?? 0).toBe(1);
 
     await act(async () => {
       setHarnessItems?.([

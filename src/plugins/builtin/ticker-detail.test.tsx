@@ -525,7 +525,7 @@ describe("TickerDetailPane", () => {
     expect(frame).toContain("Builds widgets for industrial customers.");
   });
 
-  test("shows listing venue, session, sources, and route separately in Overview", async () => {
+  test("shows listing venue, session, compact sources, and route in Overview", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
 
@@ -567,9 +567,64 @@ describe("TickerDetailPane", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("NASDAQ");
     expect(frame).toContain("PRE-MKT");
-    expect(frame).toContain("Price source: IBKR live");
-    expect(frame).toContain("Session source: Yahoo");
-    expect(frame).toContain("Route: SMART");
+    expect(frame).toContain("src IBKR live/Yahoo");
+    expect(frame).toContain("route SMART");
+  });
+
+  test("renders compact quote book, spread percent, and range widgets without duplicate overview rows", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AMD")}
+        ticker={makeTicker("AMD", "Advanced Micro Devices")}
+        financials={makeFinancials({
+          quote: {
+            symbol: "AMD",
+            price: 100,
+            currency: "USD",
+            change: -1,
+            changePercent: -1,
+            previousClose: 101,
+            open: 99,
+            high: 102,
+            low: 98,
+            high52w: 130,
+            low52w: 80,
+            volume: 12_500_000,
+            marketCap: 250_000_000_000,
+            bid: 99.5,
+            ask: 100.5,
+            bidSize: 400,
+            askSize: 500,
+            lastUpdated: Date.now(),
+          },
+          fundamentals: {
+            sharesOutstanding: 1_000_000_000,
+            trailingPE: 25,
+          },
+        })}
+        width={110}
+        height={28}
+      />,
+      { width: 110, height: 28 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Bid");
+    expect(frame).toContain("400 x $99.5");
+    expect(frame).toContain("Ask");
+    expect(frame).toContain("500 x $100.5");
+    expect(frame).toContain("Spr");
+    expect(frame).toContain("1.00%");
+    expect(frame).toContain("Day Range");
+    expect(frame).toContain("52W Range");
+    expect(frame).not.toContain("Prior Close");
+    expect(frame).toContain("Volume");
+    expect(frame).toContain("Market Cap");
+    expect(frame).toContain("P/E");
   });
 
   test("keeps quote prices native while converting market cap and position totals to base currency", async () => {
@@ -583,11 +638,11 @@ describe("TickerDetailPane", () => {
           exchange: "XETRA",
           currency: "EUR",
           positions: [{
-            portfolio: "main",
+            portfolio: "broker:ibkr-interactive-brokers:UTEST12345",
             shares: 10,
             avgCost: 100,
             currency: "EUR",
-            broker: "manual",
+            broker: "ibkr",
             markPrice: 125,
             marketValue: 1250,
             unrealizedPnl: 250,
@@ -618,11 +673,20 @@ describe("TickerDetailPane", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("€125");
     expect(frame).toContain("2.2B USD");
-    expect(frame).toContain("@ €100");
-    expect(frame).toContain("= $1,100.00");
-    expect(frame).toContain("P&L: +$275.00");
-    expect(frame).toContain("Mark: €125");
-    expect(frame).toContain("Mkt Value: $1,375.00");
+    expect(frame).toContain("Account");
+    expect(frame).toContain("Qty");
+    expect(frame).toContain("Avg");
+    expect(frame).toContain("Cost");
+    expect(frame).toContain("Value");
+    expect(frame).toContain("Ret");
+    expect(frame).toContain("UTEST12345");
+    expect(frame).toContain("10 sh");
+    expect(frame).toContain("€100");
+    expect(frame).toContain("€125");
+    expect(frame).toContain("$1,100.00");
+    expect(frame).toContain("$1,375.00");
+    expect(frame).toContain("+$275.00");
+    expect(frame).toContain("+25.00%");
   });
 
   test("falls back to Overview when a hidden active tab becomes unavailable", async () => {

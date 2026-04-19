@@ -59,6 +59,7 @@ function Harness() {
               <box flexGrow={1} />
             )
           }
+          detailTitle={openRow?.title}
           selectedIndex={selectedIndex}
           onSelectIndex={(index) => setSelectedIndex(index)}
           onActivateIndex={(_index, row) => setOpenRow(row)}
@@ -118,6 +119,7 @@ describe("DataTableStackView", () => {
 
     const detailFrame = testSetup.captureCharFrame();
     expect(detailFrame).toContain("\u2190 Back");
+    expect(detailFrame).toContain("\u2190 Back Second row");
     expect(detailFrame).toContain("Second detail");
 
     await emitKeypress({ name: "escape", sequence: "\u001b" });

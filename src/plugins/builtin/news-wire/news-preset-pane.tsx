@@ -50,7 +50,12 @@ export function NewsPresetPane({
   usePaneFooter(`news-wire:${paneKey}`, () => null, [paneKey]);
 
   const detailContent = detailArticle ? (
-    <NewsDetailView item={detailArticle} focused={focused} width={width} height={Math.max(height - 1, 1)} />
+    <NewsDetailView
+      item={detailArticle}
+      focused={focused}
+      width={width}
+      showTitle={false}
+    />
   ) : (
     <Box flexGrow={1} />
   );
@@ -75,6 +80,7 @@ export function NewsPresetPane({
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
+      detailTitle={detailArticle?.title}
       columns={columns}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
