@@ -7,11 +7,8 @@ import { Button } from "./button";
 import { DataTable } from "./data-table";
 import { TextField } from "./fields";
 import { ListView } from "./list-view";
-import { MultiSelectChips } from "./multi-select-chips";
 import { MultiSelectDialogButton } from "./multi-select-dialog";
 import { toggleMultiSelectValue } from "./multi-select";
-import { ProgressBar } from "./loading";
-import { Notice } from "./status";
 import { Tabs } from "./tabs";
 import { ToggleList } from "../toggle-list";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
@@ -21,7 +18,6 @@ let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setListSelection: ((index: number) => void) | null = null;
 let selectedTableRow: string | null = null;
 let activatedTableRow: string | null = null;
-let selectedChips: string[] = [];
 let tableHorizontalScrollbarVisible: boolean | null = null;
 let closedTab: string | null = null;
 let addedTab = false;
@@ -183,24 +179,6 @@ function DataTableVirtualizationHarness() {
   );
 }
 
-function MultiSelectChipsHarness() {
-  const [values, setValues] = useState(["sma"]);
-  selectedChips = values;
-
-  return (
-    <MultiSelectChips
-      label="IND"
-      selectedValues={values}
-      onChange={setValues}
-      idPrefix="indicator-chip"
-      options={[
-        { value: "sma", label: "SMA" },
-        { value: "ema", label: "EMA" },
-      ]}
-    />
-  );
-}
-
 function MultiSelectDialogButtonHarness() {
   const [values, setValues] = useState(["sma"]);
 
@@ -229,14 +207,13 @@ afterEach(() => {
   setListSelection = null;
   selectedTableRow = null;
   activatedTableRow = null;
-  selectedChips = [];
   tableHorizontalScrollbarVisible = null;
   closedTab = null;
   addedTab = false;
 });
 
 describe("shared UI kit", () => {
-  test("renders navigation and feedback primitives", async () => {
+  test("renders navigation and button primitives", async () => {
     testSetup = await testRender(
       <box flexDirection="column">
         <Tabs
@@ -249,12 +226,8 @@ describe("shared UI kit", () => {
         />
         <box height={1} />
         <Button label="Save" variant="primary" shortcut="⌘S" onPress={() => {}} />
-        <box height={1} />
-        <ProgressBar value={0.5} width={8} label="Syncing" />
-        <box height={1} />
-        <Notice title="Connected" message="Broker session is live" tone="success" />
       </box>,
-      { width: 40, height: 10 },
+      { width: 40, height: 6 },
     );
 
     await testSetup.renderOnce();
@@ -262,8 +235,6 @@ describe("shared UI kit", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Overview");
     expect(frame).toContain("Save");
-    expect(frame).toContain("Syncing");
-    expect(frame).toContain("Connected");
   });
 
   test("scrolls overflowing tabs horizontally with the mouse wheel", async () => {
@@ -384,33 +355,6 @@ describe("shared UI kit", () => {
     expect(frame).toContain("[✓] News");
     expect(frame).toContain("Notes");
     expect(frame).toContain("Headlines and previews");
-  });
-
-  test("toggles multi-select chips with the mouse", async () => {
-    testSetup = await testRender(<MultiSelectChipsHarness />, { width: 32, height: 3 });
-
-    await act(async () => {
-      await testSetup!.renderOnce();
-    });
-
-    let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("[x] SMA");
-    expect(frame).toContain("[ ] EMA");
-    const emaChip = testSetup.renderer.root.findDescendantById("indicator-chip:ema") as BoxRenderable | undefined;
-    expect(emaChip).toBeDefined();
-
-    await act(async () => {
-      await testSetup!.mockMouse.click(emaChip!.x + 1, emaChip!.y);
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await act(async () => {
-      await testSetup!.renderOnce();
-    });
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("[x] SMA");
-    expect(frame).toContain("[x] EMA");
-    expect(selectedChips).toEqual(["sma", "ema"]);
   });
 
   test("opens compact multi-select dialogs from a button", async () => {

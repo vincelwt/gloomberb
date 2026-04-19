@@ -2,7 +2,7 @@ import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import { useNewsArticles } from "../../../news/hooks";
-import { Spinner } from "../../../components/spinner";
+import { Spinner } from "../../../components";
 import { usePluginPaneState } from "../../plugin-runtime";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../ai/providers";

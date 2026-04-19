@@ -161,18 +161,6 @@ export function TextField({
   );
 }
 
-export interface SearchFieldProps extends Omit<TextFieldProps, "label"> {
-  label?: string;
-}
-
-export function SearchField({
-  label = "Search",
-  hint = "Type to filter",
-  ...props
-}: SearchFieldProps) {
-  return <TextField label={label} hint={hint} placeholder={props.placeholder ?? "Search..."} {...props} />;
-}
-
 function sanitizeNumberInput(value: string, allowDecimal: boolean, allowNegative: boolean): string {
   const allowed = allowDecimal ? /[0-9.-]/g : /[0-9-]/g;
   let next = (value.match(allowed) ?? []).join("");
