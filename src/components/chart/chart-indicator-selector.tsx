@@ -1,6 +1,5 @@
-import { MultiSelectDialogButton } from "../ui";
+import { MultiSelectDialogButton, ShortcutHint } from "../ui";
 import { usePaneHints } from "../layout/pane-footer";
-import { ChartControlHint } from "./chart-control-hint";
 import {
   CHART_INDICATOR_OPTIONS,
   normalizeChartIndicatorSelection,
@@ -63,7 +62,7 @@ export function ChartIndicatorSelector({
         )
         : variant === "hint"
         ? ({ disabled, openDialog }) => (
-          <ChartControlHint
+          <ShortcutHint
             hotkey="i"
             label="ndicators"
             disabled={disabled}
