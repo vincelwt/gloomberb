@@ -142,6 +142,8 @@ export function createRuntime(): PluginRuntimeAccess {
     getDataProvider: () => null,
     pinTicker() {},
     navigateTicker() {},
+    openPluginCommandWorkflow() {},
+    notify() {},
     subscribeResumeState(pluginId, key, listener) {
       const listenerKey = `${pluginId}:${key}`;
       if (!listeners.has(listenerKey)) listeners.set(listenerKey, new Set());

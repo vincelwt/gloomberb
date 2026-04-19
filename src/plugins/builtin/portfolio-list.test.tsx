@@ -37,6 +37,8 @@ function createPluginRuntime(overrides: Partial<PluginRuntimeAccess> = {}): Plug
     getDataProvider: () => null,
     pinTicker() {},
     navigateTicker() {},
+    openPluginCommandWorkflow() {},
+    notify() {},
     subscribeResumeState: () => () => {},
     getResumeState: () => null,
     setResumeState() {},

@@ -17,11 +17,14 @@ import {
   type PaneRuntimeState,
 } from "../state/app-context";
 import type { DataProvider } from "../types/data-provider";
+import type { AppNotificationRequest } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
   getDataProvider(): DataProvider | null;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
+  openPluginCommandWorkflow(commandId: string): void;
+  notify(notification: AppNotificationRequest): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
   getResumeState<T = unknown>(pluginId: string, key: string, schemaVersion?: number): T | null;
   setResumeState(pluginId: string, key: string, value: unknown, schemaVersion?: number): void;
@@ -69,6 +72,21 @@ export function usePluginTickerActions() {
   return {
     pinTicker: runtime.pinTicker,
     navigateTicker: runtime.navigateTicker,
+  };
+}
+
+export function usePluginAppActions() {
+  const { runtime } = usePluginRenderContext();
+  const openPluginCommandWorkflow = useCallback((commandId: string) => {
+    runtime.openPluginCommandWorkflow(commandId);
+  }, [runtime]);
+  const notify = useCallback((notification: AppNotificationRequest) => {
+    runtime.notify(notification);
+  }, [runtime]);
+
+  return {
+    openPluginCommandWorkflow,
+    notify,
   };
 }
 

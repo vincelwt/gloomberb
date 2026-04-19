@@ -26,6 +26,8 @@ function makeRuntime(): PluginRuntimeAccess {
     getDataProvider: () => getSharedDataProvider() ?? null,
     pinTicker() {},
     navigateTicker() {},
+    openPluginCommandWorkflow() {},
+    notify() {},
     subscribeResumeState(pluginId, key, listener) {
       const storeKey = `${pluginId}:${key}`;
       if (!listeners.has(storeKey)) listeners.set(storeKey, new Set());

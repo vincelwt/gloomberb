@@ -4,6 +4,7 @@ import { useShortcut } from "../../react/input";
 import { TextAttributes } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { usePaneFooter } from "../../components";
+import { usePluginAppActions } from "../plugin-runtime";
 import { colors, hoverBg } from "../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../utils/debug-log";
 import { writeFileSync } from "fs";
@@ -55,6 +56,7 @@ function formatTimestamp(ts: number): string {
 }
 
 function DebugPane({ focused, width, height }: PaneProps) {
+  const { notify } = usePluginAppActions();
   const [entries, setEntries] = useState<LogEntry[]>(() => debugLog.getEntries());
   const [filterLevel, setFilterLevel] = useState<LogLevel | null>(null);
   const [filterSource, setFilterSource] = useState<string | null>(null);
@@ -81,13 +83,12 @@ function DebugPane({ focused, width, height }: PaneProps) {
 
   const exportLogs = useCallback(() => {
     const result = exportDebugLogFile({ filterLevel, filterSource });
-    const registry = (globalThis as any).__gloomRegistry;
     if (result.ok) {
-      registry?.notify?.({ body: `Exported to ~/Downloads/${result.filename}`, type: "success" });
+      notify({ body: `Exported to ~/Downloads/${result.filename}`, type: "success" });
       return;
     }
-    registry?.notify?.({ body: "Failed to export logs", type: "error" });
-  }, [filterLevel, filterSource]);
+    notify({ body: "Failed to export logs", type: "error" });
+  }, [filterLevel, filterSource, notify]);
 
   const clearLogs = useCallback(() => {
     debugLog.clear();

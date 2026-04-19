@@ -61,6 +61,8 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      openPluginCommandWorkflow() {},
+      notify() {},
       subscribeResumeState: () => () => {},
       getResumeState: () => null,
       setResumeState() {},
@@ -129,6 +131,8 @@ describe("plugin runtime hooks", () => {
       getDataProvider: () => null,
       pinTicker() {},
       navigateTicker() {},
+      openPluginCommandWorkflow() {},
+      notify() {},
       subscribeResumeState(pluginId, key, listener) {
         const listenerKey = `${pluginId}:${key}`;
         if (!listeners.has(listenerKey)) listeners.set(listenerKey, new Set());

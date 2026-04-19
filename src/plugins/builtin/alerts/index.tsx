@@ -4,8 +4,7 @@ import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn,
 import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../../types/plugin";
 import type { AlertCondition, AlertRule } from "./types";
 import { colors } from "../../../theme/colors";
-import { getSharedRegistry } from "../../registry";
-import { usePluginConfigState } from "../../plugin-runtime";
+import { usePluginAppActions, usePluginConfigState } from "../../plugin-runtime";
 import {
   createAlert,
   evaluateAlert,
@@ -133,6 +132,7 @@ const ALERT_TABLE_CONTENT_WIDTH = ALERT_COLUMNS.reduce(
 
 export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const [alertsJson, setAlertsJson] = usePluginConfigState<string>(ALERTS_KEY, "[]");
+  const { openPluginCommandWorkflow } = usePluginAppActions();
   const [selectedIdx, setSelectedIdx] = useState(0);
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
 
@@ -169,8 +169,8 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   }, [alerts, saveAlerts]);
 
   const openSetAlertCommand = useCallback(() => {
-    getSharedRegistry()?.openPluginCommandWorkflow("set-alert");
-  }, []);
+    openPluginCommandWorkflow("set-alert");
+  }, [openPluginCommandWorkflow]);
 
   const deleteSelectedAlert = useCallback(() => {
     const selected = rows[selectedIdx];

@@ -12,7 +12,6 @@ import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
 import { Box } from "../../../ui";
-import { setSharedRegistryForTests } from "../../registry";
 import { deserializeAlerts, serializeAlerts } from "./alert-engine";
 import { AlertsPane, alertsPlugin } from "./index";
 import type { AlertCondition, AlertRule, AlertStatus } from "./types";
@@ -68,7 +67,7 @@ function createAlertsConfig(alerts: AlertRule[]): AppConfig {
   };
 }
 
-function makeRuntime(): PluginRuntimeAccess {
+function makeRuntime(overrides: Partial<PluginRuntimeAccess> = {}): PluginRuntimeAccess {
   const resumeState = new Map<string, unknown>();
   const listeners = new Map<string, Set<() => void>>();
 
@@ -76,6 +75,8 @@ function makeRuntime(): PluginRuntimeAccess {
     getDataProvider: () => null,
     pinTicker() {},
     navigateTicker() {},
+    openPluginCommandWorkflow() {},
+    notify() {},
     subscribeResumeState(pluginId, key, listener) {
       const storeKey = `${pluginId}:${key}`;
       if (!listeners.has(storeKey)) listeners.set(storeKey, new Set());
@@ -132,6 +133,7 @@ function makeRuntime(): PluginRuntimeAccess {
     getConfigStateKeys(pluginId) {
       return Object.keys(harnessState?.config.pluginConfig[pluginId] ?? {}).sort();
     },
+    ...overrides,
   };
 }
 
@@ -139,10 +141,12 @@ function AlertsHarness({
   alerts,
   width = 110,
   height = 12,
+  runtime = makeRuntime(),
 }: {
   alerts: AlertRule[];
   width?: number;
   height?: number;
+  runtime?: PluginRuntimeAccess;
 }) {
   const initialState = createInitialState(createAlertsConfig(alerts));
   initialState.focusedPaneId = TEST_PANE_ID;
@@ -153,7 +157,7 @@ function AlertsHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId="alerts" runtime={makeRuntime()}>
+        <PluginRenderProvider pluginId="alerts" runtime={runtime}>
           <PaneFooterProvider>
             {(footer) => (
               <Box flexDirection="column" width={width} height={height}>
@@ -204,7 +208,6 @@ function storedAlerts(): AlertRule[] {
 }
 
 afterEach(() => {
-  setSharedRegistryForTests(undefined);
   harnessState = null;
   harnessDispatch = null;
   if (testSetup) {
@@ -266,13 +269,13 @@ describe("AlertsPane", () => {
 
   test("opens the command-bar alert workflow from keyboard and mouse", async () => {
     const workflowCalls: string[] = [];
-    setSharedRegistryForTests({
+    const runtime = makeRuntime({
       openPluginCommandWorkflow(commandId: string) {
         workflowCalls.push(commandId);
       },
-    } as any);
+    });
 
-    testSetup = await testRender(<AlertsHarness alerts={[]} />, {
+    testSetup = await testRender(<AlertsHarness alerts={[]} runtime={runtime} />, {
       width: 110,
       height: 12,
     });

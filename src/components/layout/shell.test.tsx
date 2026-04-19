@@ -88,6 +88,8 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
     getDataProvider: () => null,
     pinTicker: (symbol, options) => registry.pinTickerFn(symbol, options),
     navigateTicker: (symbol) => registry.navigateTickerFn(symbol),
+    openPluginCommandWorkflow: () => {},
+    notify: () => {},
     subscribeResumeState: () => () => {},
     getResumeState: () => null,
     setResumeState: () => {},
