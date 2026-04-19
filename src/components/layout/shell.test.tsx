@@ -717,7 +717,11 @@ describe("Shell", () => {
       spanColumn += span.width;
     }
     expect(resolutionCol).toBeGreaterThanOrEqual(0);
-    expect(testSetup.captureCharFrame()).toContain("AAPL - AUTO");
+    const initialBoldResolutionText = resolutionSpansBefore
+      .filter((span) => (span.attributes & TextAttributes.BOLD) !== 0)
+      .map((span) => span.text)
+      .join("");
+    expect(initialBoldResolutionText).toContain("AUTO");
 
     await act(async () => {
       await testSetup!.mockMouse.click(resolutionCol, resolutionRow);

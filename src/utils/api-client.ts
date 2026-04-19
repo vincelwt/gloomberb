@@ -13,6 +13,15 @@ const HARD_SESSION_INVALID_PATTERNS = [
   /\b(no|unknown|missing)\s+(user|account)\b/i,
 ];
 
+type CloudApiResponse = Pick<Response, "ok" | "status" | "headers" | "text">;
+type CloudApiFetchTransport = (url: string, init?: RequestInit) => Promise<CloudApiResponse>;
+
+let cloudApiFetchTransport: CloudApiFetchTransport = (url, init) => fetch(url, init);
+
+export function setCloudApiFetchTransport(transport: CloudApiFetchTransport | null): void {
+  cloudApiFetchTransport = transport ?? ((url, init) => fetch(url, init));
+}
+
 function getCloudApiBaseUrl(): string {
   if (typeof process === "undefined") {
     return DEFAULT_API_URL;
@@ -297,6 +306,13 @@ class GloomApiClient {
     this.ensureSocket();
   }
 
+  private requireCapturedSession(message: string): void {
+    if (this.sessionToken) return;
+    this.websocketToken = null;
+    this.setCurrentUser(null);
+    throw new Error(message);
+  }
+
   private extractSessionCookie(res: Response): void {
     const setCookie = res.headers.getSetCookie?.() ?? [];
     const fallbackHeader = res.headers.get("set-cookie");
@@ -336,7 +352,7 @@ class GloomApiClient {
     this.setSessionCookieHeader(headers);
     headers.set("Origin", this.baseUrl);
 
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await cloudApiFetchTransport(`${this.baseUrl}${path}`, {
       ...options,
       headers,
       credentials: "include",
@@ -551,6 +567,9 @@ class GloomApiClient {
       method: "POST",
       body: JSON.stringify({ email, username, name, password }),
     });
+    this.requireCapturedSession(
+      "Account created, but Gloomberb could not save the login session. Please try logging in again.",
+    );
     this.setCurrentUser(result.user);
     return result.user;
   }
@@ -560,6 +579,9 @@ class GloomApiClient {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
+    this.requireCapturedSession(
+      "Logged in, but Gloomberb could not save the login session. Please try again.",
+    );
     this.setCurrentUser(result.user);
     return result.user;
   }

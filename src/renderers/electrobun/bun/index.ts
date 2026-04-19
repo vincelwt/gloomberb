@@ -31,6 +31,7 @@ import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
 import { contextMenuSelectionMessage } from "./context-menu-click";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
 import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
+import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
 import {
   DEFAULT_WINDOW_FRAME,
   DETACHED_WINDOW_MIN_SIZE,
@@ -47,6 +48,10 @@ const MAIN_WINDOW_RPC_KEY = "main";
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
 type WindowMoveEvent = { data?: { x?: number; y?: number } };
 type WindowResizeEvent = { data?: Partial<WindowFrame> };
+type PersistedCloudSession = {
+  sessionToken?: string | null;
+  user?: PersistedAuthUser | null;
+};
 
 console.log = (...args) => console.error(...args);
 console.info = (...args) => console.error(...args);
@@ -233,6 +238,19 @@ function normalizeText(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function syncBackendCloudAuthState(pluginId: string, key: string, value: unknown): void {
+  if (pluginId !== "gloomberb-cloud" || (key !== "session" && key !== "resume:session")) return;
+
+  const session = value && typeof value === "object" ? value as PersistedCloudSession : null;
+  const token = typeof session?.sessionToken === "string" && session.sessionToken.length > 0
+    ? session.sessionToken
+    : null;
+
+  apiClient.setSessionToken(token);
+  apiClient.setWebSocketToken(null);
+  apiClient.restoreCachedUser(token ? session?.user ?? null : null);
+}
+
 function notePath(dataDir: string, symbol: string): string {
   return join(dataDir, `${symbol}.md`);
 }
@@ -294,11 +312,17 @@ async function handleHttpFetch(payload: Record<string, unknown>) {
   response.headers.forEach((value, key) => {
     responseHeaders[key] = value;
   });
+  const setCookieHeaders = [...(response.headers.getSetCookie?.() ?? [])];
+  const fallbackSetCookie = response.headers.get("set-cookie");
+  if (fallbackSetCookie && setCookieHeaders.length === 0) {
+    setCookieHeaders.push(fallbackSetCookie);
+  }
 
   return {
     status: response.status,
     statusText: response.statusText,
     headers: responseHeaders,
+    setCookie: setCookieHeaders,
     body: await response.text(),
   };
 }
@@ -1138,9 +1162,11 @@ async function handleBackendRequest(
       return null;
     case "pluginState.set":
       requireServices().persistence.pluginState.set(payload.pluginId as string, payload.key as string, payload.value, payload.schemaVersion as number | undefined);
+      syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, payload.value);
       return null;
     case "pluginState.delete":
       requireServices().persistence.pluginState.delete(payload.pluginId as string, payload.key as string);
+      syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, null);
       return null;
     case "host.exit":
       closeAllDetachedWindows();

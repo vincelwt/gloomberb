@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AuthUser } from "./api-client";
-import { apiClient } from "./api-client";
+import { apiClient, setCloudApiFetchTransport } from "./api-client";
 
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
@@ -41,6 +41,7 @@ afterEach(() => {
   apiClient.dispose();
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
+  setCloudApiFetchTransport(null);
   apiClient.setSessionToken(null);
   apiClient.setWebSocketToken(null);
 });
@@ -72,6 +73,38 @@ describe("apiClient auth cookies", () => {
       null,
       "__Secure-gloomberb.session_token=signed-token.value",
     ]);
+  });
+
+  test("uses an installed cloud API fetch transport for auth cookie capture", async () => {
+    const seenCookies: Array<string | null> = [];
+    globalThis.fetch = mockFetch(async () => {
+      throw new Error("global fetch should not be used");
+    });
+    setCloudApiFetchTransport(async (_url, init) => {
+      const headers = new Headers(init?.headers);
+      seenCookies.push(headers.get("Cookie"));
+      return createResponse(
+        { token: "ws-token", user: verifiedUser },
+        { cookies: ["gloomberb.session_token=signed-token.value; Path=/; HttpOnly; SameSite=Lax"] },
+      );
+    });
+
+    await apiClient.signIn("test@example.com", "password");
+
+    expect(apiClient.getSessionToken()).toBe("signed-token.value");
+    expect(apiClient.getWebSocketToken()).toBe("ws-token");
+    expect(seenCookies).toEqual([null]);
+  });
+
+  test("rejects login success without a captured session cookie", async () => {
+    globalThis.fetch = mockFetch(async () => createResponse({ token: "raw-session-token", user: verifiedUser }));
+
+    await expect(apiClient.signIn("test@example.com", "password")).rejects.toThrow(
+      "could not save the login session",
+    );
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.getWebSocketToken()).toBeNull();
+    expect(apiClient.getCurrentUser()).toBeNull();
   });
 
   test("replays both supported cookie names when restoring a saved session token", async () => {
