@@ -6,8 +6,7 @@ import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import { useInlineTickers } from "../../state/use-inline-tickers";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
-import { usePaneFooter } from "../../components";
-import { colors, hoverBg } from "../../theme/colors";
+import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -259,14 +258,20 @@ export function ChatContent({
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => (
     initialSnapshot.replyToId ? initialSnapshot.messages.find((message) => message.id === initialSnapshot.replyToId) ?? null : null
   ));
+  const { nativePaneChrome } = useUiCapabilities();
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const applyingExternalDraftRef = useRef(false);
   const canSend = !!user?.emailVerified;
   const messageBodyWidth = Math.max(contentWidth - 4 - MESSAGE_ACTION_WIDTH, 1);
-  const composerPrefixWidth = 3;
+  const composerPrefixWidth = nativePaneChrome ? 0 : 3;
   const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
-  const composerHeight = canSend ? estimateComposerHeight(inputValue, composerTextWidth) : 0;
+  const composerRows = estimateComposerHeight(inputValue, composerTextWidth);
+  const composerHeight = canSend
+    ? nativePaneChrome
+      ? Math.min(CHAT_COMPOSER_MAX_ROWS + 1, Math.max(2, composerRows + 1))
+      : composerRows
+    : 0;
   const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
   const stickyTranscript = followMessages && !selectionActive;
 
@@ -399,15 +404,19 @@ export function ChatContent({
     }
   }, [focused, inputFocused]);
 
+  const commitLocalDraft = useCallback((draft: string) => {
+    if (applyingExternalDraftRef.current) return;
+    inputValueRef.current = draft;
+    setInputValue((current) => (current === draft ? current : draft));
+    controller.setDraft(draft);
+  }, [controller]);
+
   useEffect(() => {
     const textarea = inputRef.current;
     if (!textarea) return;
 
     textarea.onContentChange = () => {
-      if (applyingExternalDraftRef.current) return;
-      const draft = textarea.editBuffer.getText();
-      setInputValue((current) => (current === draft ? current : draft));
-      controller.setDraft(draft);
+      commitLocalDraft(textarea.editBuffer.getText());
     };
 
     return () => {
@@ -415,7 +424,7 @@ export function ChatContent({
         textarea.onContentChange = undefined;
       }
     };
-  }, [controller]);
+  }, [commitLocalDraft]);
 
   useEffect(() => {
     if (canSend || !replyTo) return;
@@ -532,24 +541,13 @@ export function ChatContent({
 
   const inputMetaHeight = canSend && replyTo ? 1 : 0;
   const inputAreaHeight = canSend ? composerHeight + inputMetaHeight : 2;
-  const headerHeight = 1;
-  const separatorHeight = 1;
-  const footerSeparatorHeight = 1;
-  const messageAreaHeight = Math.max(1, height - headerHeight - separatorHeight - footerSeparatorHeight - inputAreaHeight);
-  const chatStatus = canSend
-    ? user?.username ? `@${user.username}` : "signed in"
-    : !user && !hasSavedSession
-      ? "read-only"
-      : !user
-        ? "login needed"
-        : "verify email";
-
-  usePaneFooter("chat", () => ({
-    info: [
-      { id: "channel", parts: [{ text: "#everyone", tone: "value", bold: true }] },
-      { id: "status", parts: [{ text: chatStatus, tone: canSend ? "positive" : "warning" }] },
-    ],
-  }), [canSend, chatStatus]);
+  const topSeparatorHeight = nativePaneChrome ? 0 : 1;
+  const footerSeparatorHeight = nativePaneChrome ? 0 : 1;
+  const messageAreaHeight = Math.max(1, height - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
+  const composerBackground = nativePaneChrome ? blendHex(colors.panel, colors.bg, 0.22) : colors.bg;
+  const composerBorder = inputFocused && focused
+    ? blendHex(colors.borderFocused, colors.textBright, 0.24)
+    : blendHex(colors.border, colors.borderFocused, 0.18);
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;
@@ -596,13 +594,11 @@ export function ChatContent({
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} width={contentWidth} flexDirection="row">
-        <Text fg={colors.positive} attributes={TextAttributes.BOLD}> #everyone</Text>
-      </Box>
-
-      <Box height={1} width={contentWidth}>
-        <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
-      </Box>
+      {!nativePaneChrome && (
+        <Box height={1} width={contentWidth}>
+          <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+        </Box>
+      )}
 
       <ScrollBox
         ref={scrollRef}
@@ -677,7 +673,7 @@ export function ChatContent({
                   <Text fg={authorColor} attributes={authorAttributes}>
                     {msg.user.username ?? "anon"}
                   </Text>
-                  <Text fg={headerStatusColor}> ({headerStatus})</Text>
+                  <Text fg={headerStatusColor}> {headerStatus}</Text>
                 </Box>
               )}
               {bodyLines.map((line, lineIndex) => (
@@ -714,9 +710,11 @@ export function ChatContent({
         })}
       </ScrollBox>
 
-      <Box height={1} width={contentWidth}>
-        <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
-      </Box>
+      {!nativePaneChrome && (
+        <Box height={1} width={contentWidth}>
+          <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
+        </Box>
+      )}
 
       {canSend ? (
         <>
@@ -735,20 +733,43 @@ export function ChatContent({
           )}
 
           <Box height={composerHeight} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
-            <Box width={composerPrefixWidth} height={composerHeight}>
-              <Text fg={colors.textDim}> {">"} </Text>
-            </Box>
-            <Box width={composerTextWidth} height={composerHeight}>
+            {!nativePaneChrome && (
+              <Box width={composerPrefixWidth} height={composerHeight}>
+                <Text fg={colors.textDim}> {">"} </Text>
+              </Box>
+            )}
+            <Box
+              width={nativePaneChrome ? "100%" : composerTextWidth}
+              height={composerHeight}
+              backgroundColor={nativePaneChrome ? composerBackground : undefined}
+              style={nativePaneChrome ? {
+                border: `1px solid ${composerBorder}`,
+                borderRadius: 6,
+                boxShadow: inputFocused && focused
+                  ? "0 0 0 1px rgba(84, 201, 159, 0.16), inset 0 1px 0 rgba(255,255,255,0.05)"
+                  : "inset 0 1px 0 rgba(255,255,255,0.04)",
+                overflow: "hidden",
+              } : undefined}
+            >
               <Textarea
                 ref={inputRef}
                 initialValue={inputValue}
-                width={composerTextWidth}
+                width={nativePaneChrome ? "100%" : composerTextWidth}
                 height={composerHeight}
                 focused={inputFocused && focused}
                 placeholder={inputPlaceholder}
                 placeholderColor={colors.textMuted}
                 textColor={colors.text}
-                backgroundColor={colors.bg}
+                backgroundColor={composerBackground}
+                focusedBackgroundColor={composerBackground}
+                cursorColor={colors.textBright}
+                style={nativePaneChrome ? {
+                  padding: "6px 10px",
+                  lineHeight: "20px",
+                  fontSize: "13px",
+                  borderRadius: 6,
+                } : undefined}
+                onInput={commitLocalDraft}
                 keyBindings={[
                   { name: "return", action: "submit" },
                   { name: "linefeed", action: "submit" },
