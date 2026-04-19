@@ -427,6 +427,17 @@ function focusPaneState(state: AppState, paneId: string): AppState {
   };
 }
 
+function bringFocusedFloatingPaneToFront(config: AppConfig, focusedPaneId: string | null): AppConfig {
+  if (!focusedPaneId) return config;
+  const layout = bringFloatingToFront(config.layout, focusedPaneId);
+  if (layout === config.layout) return config;
+  return {
+    ...config,
+    layout,
+    layouts: syncLayouts(config.layouts, config.activeLayoutIndex, layout),
+  };
+}
+
 function withFocusedPane(state: AppState, config: AppConfig): AppState {
   const normalizedLayout = normalizePaneLayout(config.layout);
   const nextConfig = normalizedLayout === config.layout
@@ -438,11 +449,12 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
     };
   const nextPaneState = reconcilePaneState(nextConfig, state.paneState);
   const focusedPaneId = resolveFocusedPaneId(state.config.layout, nextConfig.layout, state.focusedPaneId);
+  const focusedConfig = bringFocusedFloatingPaneToFront(nextConfig, focusedPaneId);
   return {
     ...state,
-    config: nextConfig,
+    config: focusedConfig,
     paneState: nextPaneState,
-    brokerAccounts: reconcileBrokerAccounts(nextConfig, state.brokerAccounts),
+    brokerAccounts: reconcileBrokerAccounts(focusedConfig, state.brokerAccounts),
     focusedPaneId,
   };
 }
@@ -848,8 +860,9 @@ export function createInitialState(config: AppConfig, sessionSnapshot: AppSessio
     && config.layout.instances.some((instance) => instance.instanceId === sessionSnapshot.focusedPaneId)
     ? sessionSnapshot.focusedPaneId
     : defaultFocusedPaneId;
+  const focusedConfig = bringFocusedFloatingPaneToFront(config, focusedPaneId);
   return {
-    config,
+    config: focusedConfig,
     tickers: new Map(),
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
