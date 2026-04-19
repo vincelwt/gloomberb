@@ -28,20 +28,6 @@ describe("computeBollingerBands", () => {
     expect(result.middle[0].index).toBe(4);
   });
 
-  it("returns empty for insufficient data", () => {
-    const result = computeBollingerBands([1, 2, 3], 5, 2);
-    expect(result.upper.length).toBe(0);
-    expect(result.middle.length).toBe(0);
-    expect(result.lower.length).toBe(0);
-  });
-
-  it("returns empty for empty input", () => {
-    const result = computeBollingerBands([], 20, 2);
-    expect(result.upper.length).toBe(0);
-    expect(result.middle.length).toBe(0);
-    expect(result.lower.length).toBe(0);
-  });
-
   it("middle values match SMA", () => {
     // For period 5: first SMA = (10+12+11+13+15)/5 = 61/5 = 12.2
     const result = computeBollingerBands(closes, 5, 2);

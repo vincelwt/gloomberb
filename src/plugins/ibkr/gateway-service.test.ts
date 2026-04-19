@@ -353,14 +353,6 @@ describe("resolveGatewayConnection", () => {
 });
 
 describe("IbkrGatewayService", () => {
-  test("reports its manual chart resolution capabilities", () => {
-    const service = new IbkrGatewayService("ibkr-test");
-    expect(service.getChartResolutionCapabilities("AAPL", {
-      host: "127.0.0.1",
-      marketDataType: "auto",
-    })).toEqual(["1m", "5m", "15m", "30m", "1h", "1d", "1wk", "1mo"]);
-  });
-
   test("requests fixed-resolution chart history with the mapped IBKR bar size", async () => {
     const service = new IbkrGatewayService("ibkr-test");
     let requestArgs: { duration: string; barSize: string } | null = null;

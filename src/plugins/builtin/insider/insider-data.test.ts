@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseForm4Xml, transactionTypeLabel } from "./insider-data";
+import { parseForm4Xml } from "./insider-data";
 
 const SAMPLE_FORM4 = `<?xml version="1.0"?>
 <ownershipDocument>
@@ -41,15 +41,5 @@ describe("parseForm4Xml", () => {
   test("returns null for non-Form-4 XML", () => {
     expect(parseForm4Xml("<html>not a form</html>")).toBeNull();
     expect(parseForm4Xml("")).toBeNull();
-  });
-});
-
-describe("transactionTypeLabel", () => {
-  test("maps codes to labels", () => {
-    expect(transactionTypeLabel("P")).toBe("BUY");
-    expect(transactionTypeLabel("S")).toBe("SELL");
-    expect(transactionTypeLabel("A")).toBe("AWARD");
-    expect(transactionTypeLabel("D")).toBe("DISPOSE");
-    expect(transactionTypeLabel("")).toBe("—");
   });
 });

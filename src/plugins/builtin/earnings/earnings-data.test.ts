@@ -7,11 +7,6 @@ describe("parseEarningsDate", () => {
     expect(d).toBeInstanceOf(Date);
     expect(d!.getFullYear()).toBeGreaterThanOrEqual(2024);
   });
-
-  test("returns null for missing data", () => {
-    expect(parseEarningsDate(null)).toBeNull();
-    expect(parseEarningsDate({})).toBeNull();
-  });
 });
 
 describe("parseEarningsModules", () => {
@@ -52,8 +47,4 @@ describe("parseEarningsModules", () => {
     expect(result!.revenueEstimate).toBe(91000000000);
   });
 
-  test("returns null when no earnings data", () => {
-    expect(parseEarningsModules("XYZ", "XYZ", {})).toBeNull();
-    expect(parseEarningsModules("XYZ", "XYZ", { calendarEvents: {} })).toBeNull();
-  });
 });

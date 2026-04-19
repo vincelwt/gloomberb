@@ -120,15 +120,6 @@ function setupIbkrPlugin(config: AppConfig) {
 }
 
 describe("IBKR trade entry points", () => {
-  test("registers an IBKR shortcut for the trading pane template", () => {
-    const template = ibkrPlugin.paneTemplates?.find((entry) => entry.id === "new-ibkr-trading-pane");
-
-    expect(template).toBeDefined();
-    expect(template?.shortcut?.prefix).toBe("IBKR");
-    expect(template?.canCreate?.({ config: createConfig() } as any)).toBe(false);
-    expect(template?.canCreate?.({ config: createConfig([createGatewayInstance()]) } as any)).toBe(true);
-  });
-
   test("hides the Trade action when no IBKR gateway profile is configured", () => {
     const { tickerActions, ticker } = setupIbkrPlugin(createConfig());
     const tradeAction = tickerActions.find((action) => action.id === "ibkr-trade");

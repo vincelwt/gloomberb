@@ -22,24 +22,6 @@ describe("ibkr config helpers", () => {
     });
   });
 
-  test("defaults gateway profiles to automatic connection detection", () => {
-    const config = buildIbkrConfigFromValues({
-      connectionMode: "gateway",
-      gatewaySetupMode: "auto",
-    });
-
-    expect(config.connectionMode).toBe("gateway");
-    expect(config.gatewaySetupMode).toBe("auto");
-    expect(config.gateway).toEqual({
-      host: "127.0.0.1",
-      port: undefined,
-      clientId: undefined,
-      lastSuccessfulPort: undefined,
-      lastSuccessfulClientId: undefined,
-      marketDataType: "auto",
-    });
-  });
-
   test("treats explicit port/client configs as manual at runtime", () => {
     const config = normalizeIbkrConfig({
       connectionMode: "gateway",

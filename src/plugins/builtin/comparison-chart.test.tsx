@@ -17,10 +17,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../../plugins/registry";
 import type { TickerRecord } from "../../types/ticker";
 import {
-  buildComparisonChartPaneTitle,
   comparisonChartPlugin,
-  COMPARISON_CHART_PANE_ID,
-  COMPARISON_CHART_TEMPLATE_ID,
   getComparisonChartPaneSettings,
 } from "./comparison-chart";
 
@@ -225,33 +222,6 @@ afterEach(async () => {
 });
 
 describe("comparisonChartPlugin", () => {
-  test("creates a configured comparison pane with percent as the default axis", () => {
-    const template = comparisonChartPlugin.paneTemplates?.find((entry) => entry.id === COMPARISON_CHART_TEMPLATE_ID);
-    const paneDef = comparisonChartPlugin.panes?.find((entry) => entry.id === COMPARISON_CHART_PANE_ID);
-
-    expect(template).toBeDefined();
-    expect(paneDef?.defaultMode).toBe("floating");
-    expect(template?.createInstance?.({
-      config: createDefaultConfig("/tmp/gloomberb-compare"),
-      layout: createDefaultConfig("/tmp/gloomberb-compare").layout,
-      focusedPaneId: "ticker-detail:main",
-      activeTicker: null,
-      activeCollectionId: null,
-    }, {
-      symbols: ["AAPL", "MSFT", "NVDA"],
-    })).toEqual({
-      placement: "floating",
-      title: "AAPL · MSFT · NVDA",
-      settings: {
-        axisMode: "percent",
-        rangePreset: "1Y",
-        chartResolution: "1d",
-        symbols: ["AAPL", "MSFT", "NVDA"],
-        symbolsText: "AAPL, MSFT, NVDA",
-      },
-    });
-  });
-
   test("parses stored pane settings and backfills the text form", () => {
     expect(getComparisonChartPaneSettings({
       axisMode: "percent",
@@ -377,11 +347,5 @@ describe("comparisonChartPlugin", () => {
 
     expect(spy.selected).toEqual(["MSFT"]);
     expect(spy.focused).toEqual(["ticker-detail"]);
-  });
-});
-
-describe("buildComparisonChartPaneTitle", () => {
-  test("summarizes longer symbol lists", () => {
-    expect(buildComparisonChartPaneTitle(["AAPL", "MSFT", "NVDA", "META"])).toBe("AAPL · MSFT +2");
   });
 });

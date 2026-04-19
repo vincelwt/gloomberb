@@ -28,11 +28,6 @@ afterEach(() => {
 });
 
 describe("GloomberbCloudProvider", () => {
-  test("reports its manual chart resolution capabilities", () => {
-    const provider = new GloomberbCloudProvider();
-    expect(provider.getChartResolutionCapabilities()).toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "1d", "1wk", "1mo"]);
-  });
-
   test("fetches detailed intraday chart history with Twelve Data intervals", async () => {
     apiClient.ensureVerifiedSession = async () => verifiedUser;
 

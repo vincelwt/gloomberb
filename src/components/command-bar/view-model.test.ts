@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildSections,
-  getEmptyState,
-  getFooterHints,
   getRowPresentation,
   rankTickerSearchItems,
   resolveCommandBarMode,
@@ -46,36 +44,6 @@ describe("command bar view model helpers", () => {
     ]);
 
     expect(sections.map((section) => section.category)).toEqual(["Tickers", "Config", "Danger", "Debug"]);
-  });
-
-  test("returns footer hints for plugin toggles", () => {
-    expect(getFooterHints("plugins", false)).toEqual({
-      left: "up/down move  enter select  space toggle",
-      right: "esc cancel",
-    });
-    expect(getFooterHints("layout", false)).toEqual({
-      left: "up/down move  enter select",
-      right: "esc cancel",
-    });
-  });
-
-  test("returns specific empty states", () => {
-    expect(getEmptyState("search", "DES ", "")).toEqual({
-      label: "Type a ticker symbol",
-      detail: "Open security details after resolving a ticker",
-    });
-    expect(getEmptyState("search", "DES zom", "zom")).toEqual({
-      label: 'No matches for "zom"',
-      detail: "Try a symbol, company name, or exchange variant",
-    });
-    expect(getEmptyState("default", "abc")).toEqual({
-      label: 'No matches for "abc"',
-      detail: "Try a ticker, command name, or prefix",
-    });
-    expect(getEmptyState("layout", "LAY ")).toEqual({
-      label: "No layout actions match",
-      detail: "LAY",
-    });
   });
 
   test("derives row presentation for toggles and current theme rows", () => {

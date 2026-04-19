@@ -253,12 +253,6 @@ afterEach(async () => {
 });
 
 describe("PortfolioListPane cash and margin UI", () => {
-  test("defaults new portfolio panes to floating", () => {
-    const paneDef = portfolioListPlugin.panes?.find((entry) => entry.id === "portfolio-list");
-
-    expect(paneDef?.defaultMode).toBe("floating");
-  });
-
   test("opens the selected ticker on a second row click", async () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
     const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);

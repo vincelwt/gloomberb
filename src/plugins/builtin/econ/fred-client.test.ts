@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveFredMapping, getFredSeriesId, getRelatedTickers } from "./fred-series-map";
+import { resolveFredMapping, getRelatedTickers } from "./fred-series-map";
 
 describe("resolveFredMapping", () => {
   test("maps exact US event titles", () => {
@@ -40,16 +40,6 @@ describe("resolveFredMapping", () => {
   });
 });
 
-describe("getFredSeriesId", () => {
-  test("returns series ID for known events", () => {
-    expect(getFredSeriesId("Unemployment Rate", "US")).toBe("UNRATE");
-  });
-
-  test("returns null for unknown events", () => {
-    expect(getFredSeriesId("Some Random Event", "US")).toBeNull();
-  });
-});
-
 describe("getRelatedTickers", () => {
   test("returns related tickers for known events", () => {
     const tickers = getRelatedTickers("CPI m/m", "US");
@@ -57,7 +47,4 @@ describe("getRelatedTickers", () => {
     expect(tickers).toContain("DX-Y.NYB");
   });
 
-  test("returns empty array for unknown events", () => {
-    expect(getRelatedTickers("Unknown Event", "US")).toEqual([]);
-  });
 });

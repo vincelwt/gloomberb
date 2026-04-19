@@ -220,7 +220,8 @@ function AppInner({
       else if (type === "error") toastId = toast.error(notification.body, options);
       else toastId = toast.info(notification.body, options);
     },
-  }), []);
+    desktop: rendererHost.supportsNativeDesktopNotifications ? rendererHost : undefined,
+  }), [rendererHost, toast]);
   const notify = useCallback((body: string, options?: { type?: "info" | "success" | "error" }) => {
     pluginRegistry.notify({ body, ...options });
   }, [pluginRegistry]);

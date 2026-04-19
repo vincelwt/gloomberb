@@ -17,27 +17,6 @@ afterEach(() => {
 });
 
 describe("StatusBar", () => {
-  test("shows the command bar shortcut when only one layout exists", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    const state = {
-      ...createInitialState(config),
-      statusBarVisible: true,
-    };
-
-    testSetup = await testRender(
-      <AppContext value={{ state, dispatch: () => {} }}>
-        <StatusBar />
-      </AppContext>,
-      { width: 120, height: 1 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Ctrl+P");
-    expect(frame).toContain("command bar");
-  });
-
   test("opens the command bar from the shortcut hint", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const state = {

@@ -143,6 +143,7 @@ function hasAttribute(attributes: unknown, flag: number): boolean {
 
 function textStyle(props: TextProps): CSSProperties {
   const attributes = props.attributes;
+  const shouldWrap = props.wrapText || props.wrapMode === "word" || props.wrapMode === "char";
   return {
     color: props.fg,
     backgroundColor: props.bg,
@@ -156,11 +157,14 @@ function textStyle(props: TextProps): CSSProperties {
     ].filter(Boolean).join(" ") || undefined,
     opacity: props.dim || hasAttribute(attributes, TextAttributes.DIM) ? 0.65 : undefined,
     filter: props.inverse || hasAttribute(attributes, TextAttributes.INVERSE) ? "invert(1)" : undefined,
-    whiteSpace: props.wrapText ? "pre-wrap" : "pre",
+    whiteSpace: shouldWrap ? "pre-wrap" : "pre",
+    overflowWrap: shouldWrap ? "break-word" : undefined,
     overflow: "visible",
     textOverflow: "clip",
-    minWidth: 0,
-    flexShrink: 0,
+    width: cellWidth(props.width),
+    maxWidth: cellWidth(props.maxWidth),
+    minWidth: cellWidth(props.minWidth) ?? 0,
+    flexShrink: shouldWrap ? 1 : 0,
   };
 }
 
@@ -175,7 +179,7 @@ function cleanDomProps(props: Record<string, unknown>): Record<string, unknown> 
     "zIndex", "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "gap",
     "border", "borderStyle", "borderColor", "overflow", "selectable", "name", "color",
     "focused", "focusedBackgroundColor", "textColor", "focusedTextColor", "placeholderColor",
-    "cursorColor", "selectionBg", "selectionFg", "showCursor", "keyBindings", "wrapText",
+    "cursorColor", "selectionBg", "selectionFg", "showCursor", "keyBindings", "wrapText", "wrapMode",
     "initialValue", "value", "onInput", "onChange", "onSubmit", "onCursorChange", "onMouse",
     "scrollX", "scrollY", "focusable", "bitmap", "bitmaps", "crosshair", "text", "font",
   ]) {
@@ -1203,6 +1207,7 @@ export const webUiHost: UiHost = {
 };
 
 export const webRendererHost: RendererHost = {
+  supportsNativeDesktopNotifications: true,
   requestExit() {
     void backendRequest("host.exit").catch(() => window.close());
   },
@@ -1230,6 +1235,8 @@ export const webRendererHost: RendererHost = {
     void backendRequest("host.notify", {
       title: notification.title,
       body: notification.body,
+      subtitle: notification.subtitle,
+      sound: notification.sound,
     }).catch(() => {});
   },
   async showContextMenu(items) {

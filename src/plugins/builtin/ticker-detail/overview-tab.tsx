@@ -614,9 +614,9 @@ export function OverviewTab({
 
         {/* Description — last, collapsed */}
         {description && (
-          <Box flexDirection="column">
+          <Box flexDirection="column" width={contentWidth}>
             <SectionHeader title="Description" />
-            <Text fg={colors.text}>{description}</Text>
+            <Text fg={colors.text} width={contentWidth} wrapMode="word" wrapText>{description}</Text>
           </Box>
         )}
       </Box>

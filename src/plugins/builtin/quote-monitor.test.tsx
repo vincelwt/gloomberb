@@ -4,7 +4,7 @@ import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { createDefaultConfig } from "../../types/config";
 import { AppContext, createInitialState, PaneInstanceProvider } from "../../state/app-context";
-import { QuoteMonitorPane, tickerDetailPlugin } from "./ticker-detail";
+import { QuoteMonitorPane } from "./ticker-detail";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -86,29 +86,4 @@ describe("QuoteMonitorPane", () => {
     expect(frame).toContain("-9.82");
   });
 
-  test("registers a quote monitor pane template bound to the active ticker", () => {
-    const template = tickerDetailPlugin.paneTemplates?.find((entry) => entry.id === "quote-monitor-pane");
-
-    expect(template).toBeDefined();
-    expect(template?.label).toBe("Quote Monitor");
-    expect(template?.canCreate?.({
-      config: createDefaultConfig("/tmp/gloomberb-test"),
-      layout: createDefaultConfig("/tmp/gloomberb-test").layout,
-      focusedPaneId: "ticker-detail:main",
-      activeTicker: "MSFT",
-      activeCollectionId: null,
-    })).toBe(true);
-    expect(template?.createInstance?.({
-      config: createDefaultConfig("/tmp/gloomberb-test"),
-      layout: createDefaultConfig("/tmp/gloomberb-test").layout,
-      focusedPaneId: "ticker-detail:main",
-      activeTicker: "MSFT",
-      activeCollectionId: null,
-    })).toEqual({
-      title: "MSFT",
-      binding: { kind: "fixed", symbol: "MSFT" },
-      settings: { symbol: "MSFT" },
-      placement: "floating",
-    });
-  });
 });

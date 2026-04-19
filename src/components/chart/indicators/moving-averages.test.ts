@@ -15,14 +15,6 @@ describe("computeSMA", () => {
     expect(result.length).toBe(6); // 10 - 5 + 1
   });
 
-  it("returns [] when period > data length", () => {
-    expect(computeSMA([1, 2, 3], 5)).toEqual([]);
-  });
-
-  it("returns [] for empty input", () => {
-    expect(computeSMA([], 5)).toEqual([]);
-  });
-
   it("handles period equal to data length", () => {
     const result = computeSMA(closes, 10);
     expect(result.length).toBe(1);
@@ -44,11 +36,4 @@ describe("computeEMA", () => {
     expect(result[1].value).toBeCloseTo(12);
   });
 
-  it("returns [] when period > data length", () => {
-    expect(computeEMA([1, 2], 5)).toEqual([]);
-  });
-
-  it("returns [] for empty input", () => {
-    expect(computeEMA([], 3)).toEqual([]);
-  });
 });

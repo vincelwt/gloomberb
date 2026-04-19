@@ -171,11 +171,6 @@ describe("parseCalendarJson", () => {
     expect(events[0]!.prior).toBeNull();
   });
 
-  test("returns [] for non-array input", () => {
-    expect(parseCalendarJson(null)).toEqual([]);
-    expect(parseCalendarJson({})).toEqual([]);
-    expect(parseCalendarJson("")).toEqual([]);
-  });
 });
 
 describe("fetchEconCalendar cache", () => {

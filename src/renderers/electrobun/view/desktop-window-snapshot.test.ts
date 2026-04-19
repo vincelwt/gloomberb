@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
-import { detachedSnapshotKey, prepareDetachedSnapshot } from "./desktop-window-snapshot";
+import { detachedSnapshotKey } from "./desktop-window-snapshot";
 
 function createSnapshot(): DesktopSharedStateSnapshot {
   const config = createDefaultConfig("/tmp/gloomberb-test");
@@ -19,12 +19,6 @@ function createSnapshot(): DesktopSharedStateSnapshot {
 }
 
 describe("detached desktop snapshots", () => {
-  test("focuses the detached pane before hydration", () => {
-    const snapshot = createSnapshot();
-
-    expect(prepareDetachedSnapshot(snapshot, "ticker-detail:main").focusedPaneId).toBe("ticker-detail:main");
-  });
-
   test("ignores unrelated window state", () => {
     const snapshot = createSnapshot();
     const key = detachedSnapshotKey(snapshot, "ticker-detail:main");

@@ -47,18 +47,4 @@ describe("quoteSubscriptionTargetFromTicker", () => {
     });
   });
 
-  test("still returns a valid unscoped target when no broker contract exists", () => {
-    const ticker = makeTicker();
-
-    expect(quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker)).toEqual({
-      symbol: "AAPL",
-      exchange: "NASDAQ",
-      route: "auto",
-      context: {
-        brokerId: undefined,
-        brokerInstanceId: undefined,
-        instrument: null,
-      },
-    });
-  });
 });

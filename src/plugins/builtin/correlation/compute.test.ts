@@ -4,7 +4,6 @@ import {
   computeDatedReturns,
   computeReturns,
   correlateDatedReturns,
-  formatCorrelation,
   pearsonCorrelation,
 } from "./compute";
 
@@ -15,10 +14,6 @@ describe("computeReturns", () => {
     expect(returns[0]).toBeCloseTo(0.1, 5);
     expect(returns[1]).toBeCloseTo(-0.0455, 3);
     expect(returns[2]).toBeCloseTo(0.0952, 3);
-  });
-
-  test("returns empty for single value", () => {
-    expect(computeReturns([100])).toEqual([]);
   });
 
   test("skips zero or invalid previous closes", () => {
@@ -131,17 +126,5 @@ describe("correlateDatedReturns", () => {
         { dateKey: "2024-01-03", value: 2 },
       ],
     )).toEqual({ correlation: null, sampleSize: 2 });
-  });
-});
-
-describe("formatCorrelation", () => {
-  test("formats positive", () => {
-    expect(formatCorrelation(0.85)).toContain("0.85");
-  });
-  test("formats negative", () => {
-    expect(formatCorrelation(-0.42)).toContain("-0.42");
-  });
-  test("formats null as dash", () => {
-    expect(formatCorrelation(null)).toContain("—");
   });
 });

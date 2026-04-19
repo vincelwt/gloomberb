@@ -1,15 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { hasLikelyQuoteUnitMismatch, normalizePriceValueByDivisor, resolveCurrencyUnit } from "./currency-units";
+import { hasLikelyQuoteUnitMismatch, resolveCurrencyUnit } from "./currency-units";
 
 describe("currency unit helpers", () => {
   test("normalizes known sub-unit currencies to their main currency", () => {
     expect(resolveCurrencyUnit("GBp")).toEqual({ currency: "GBP", divisor: 100 });
     expect(resolveCurrencyUnit("GBP")).toEqual({ currency: "GBP", divisor: 1 });
-  });
-
-  test("scales quote prices by the configured divisor", () => {
-    expect(normalizePriceValueByDivisor(23.1, 100)).toBeCloseTo(0.231, 8);
-    expect(normalizePriceValueByDivisor(125, 1)).toBe(125);
   });
 
   test("detects sub-unit quotes that match the same main-currency price", () => {

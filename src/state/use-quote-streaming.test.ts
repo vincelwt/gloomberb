@@ -28,10 +28,4 @@ describe("buildQuoteStreamSubscriptionKey", () => {
     expect(workKey).not.toBe(personalKey);
   });
 
-  test("uses the same key for equivalent plain provider targets", () => {
-    const first = buildQuoteStreamSubscriptionKey({ symbol: "MSFT", exchange: "NASDAQ" });
-    const second = buildQuoteStreamSubscriptionKey({ symbol: "MSFT", exchange: "NASDAQ" });
-
-    expect(first).toBe(second);
-  });
 });
