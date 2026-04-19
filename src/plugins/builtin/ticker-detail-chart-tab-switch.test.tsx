@@ -14,6 +14,7 @@ import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/co
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { getNativeSurfaceManager } from "../../components/chart/native/surface-manager";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { tickerDetailPlugin } from "./ticker-detail";
 
 const TEST_PANE_ID = "ticker-detail:test";
@@ -29,6 +30,23 @@ let testSetup: Awaited<ReturnType<typeof createTestRenderer>> | undefined;
 let root: ReturnType<typeof createRoot> | undefined;
 let harnessDispatch: ((action: AppAction) => void) | null = null;
 const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+
+const runtime: PluginRuntimeAccess = {
+  getDataProvider: () => null,
+  pinTicker() {},
+  navigateTicker() {},
+  openPluginCommandWorkflow() {},
+  notify() {},
+  subscribeResumeState: () => () => {},
+  getResumeState: () => null,
+  setResumeState() {},
+  deleteResumeState() {},
+  getConfigState: () => null,
+  setConfigState: async () => {},
+  setConfigStates: async () => {},
+  deleteConfigState: async () => {},
+  getConfigStateKeys: () => [],
+};
 
 function makeTicker(symbol: string): TickerRecord {
   return {
@@ -101,13 +119,15 @@ function DetailHarness({
     <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
       <AppContext value={{ state, dispatch }}>
         <PaneInstanceProvider paneId={TEST_PANE_ID}>
-          <DetailPane
-            paneId={TEST_PANE_ID}
-            paneType="ticker-detail"
-            focused
-            width={90}
-            height={28}
-          />
+          <PluginRenderProvider pluginId={tickerDetailPlugin.id} runtime={runtime}>
+            <DetailPane
+              paneId={TEST_PANE_ID}
+              paneType="ticker-detail"
+              focused
+              width={90}
+              height={28}
+            />
+          </PluginRenderProvider>
         </PaneInstanceProvider>
       </AppContext>
     </DialogProvider>

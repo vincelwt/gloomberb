@@ -54,6 +54,7 @@ function makeRuntime(): PluginRuntimeAccess {
       return null;
     },
     async setConfigState() {},
+    async setConfigStates() {},
     async deleteConfigState() {},
     getConfigStateKeys() {
       return [];

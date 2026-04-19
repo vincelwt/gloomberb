@@ -48,6 +48,7 @@ function createPluginRuntime(overrides: Partial<PluginRuntimeAccess> = {}): Plug
     deleteResumeState() {},
     getConfigState: () => null,
     setConfigState: async () => {},
+    setConfigStates: async () => {},
     deleteConfigState: async () => {},
     getConfigStateKeys: () => [],
     ...overrides,

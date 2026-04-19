@@ -99,6 +99,7 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
     deleteResumeState: () => {},
     getConfigState: () => null,
     setConfigState: async () => {},
+    setConfigStates: async () => {},
     deleteConfigState: async () => {},
     getConfigStateKeys: () => [],
   };

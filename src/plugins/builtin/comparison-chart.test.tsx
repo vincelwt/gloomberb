@@ -130,6 +130,7 @@ function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): Plugi
     deleteResumeState: () => {},
     getConfigState: () => null,
     setConfigState: async () => {},
+    setConfigStates: async () => {},
     deleteConfigState: async () => {},
     getConfigStateKeys: () => [],
   };

@@ -19,6 +19,7 @@ import {
   usePluginConfigState,
   usePluginPaneState,
   usePluginState,
+  useSetPluginConfigStates,
 } from "./plugin-runtime";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -73,6 +74,7 @@ describe("plugin runtime hooks", () => {
       deleteResumeState() {},
       getConfigState: () => null,
       setConfigState: async () => {},
+      setConfigStates: async () => {},
       deleteConfigState: async () => {},
       getConfigStateKeys: () => [],
     } satisfies PluginRuntimeAccess;
@@ -182,6 +184,22 @@ describe("plugin runtime hooks", () => {
           },
         });
       },
+      async setConfigStates(pluginId, values) {
+        const currentState = stateRef.current!;
+        dispatchRef.current?.({
+          type: "SET_CONFIG",
+          config: {
+            ...currentState.config,
+            pluginConfig: {
+              ...currentState.config.pluginConfig,
+              [pluginId]: {
+                ...(currentState.config.pluginConfig[pluginId] ?? {}),
+                ...values,
+              },
+            },
+          },
+        });
+      },
       async deleteConfigState(pluginId, key) {
         const currentState = stateRef.current!;
         const currentPluginConfig = { ...(currentState.config.pluginConfig[pluginId] ?? {}) };
@@ -223,16 +241,24 @@ describe("plugin runtime hooks", () => {
       const [venueScope, setVenueScope] = usePluginPaneState<string>("venueScope", "all");
       const [provider, setProvider] = usePluginState<string>("provider", "claude");
       const [mode, setMode] = usePluginConfigState<string>("displayMode", "compact");
+      const [layoutMode] = usePluginConfigState<string>("layoutMode", "default");
+      const setConfigStates = useSetPluginConfigStates();
 
       useEffect(() => {
         if (paneSelection === 0) setPaneSelection(3);
         if (venueScope === "all") setVenueScope("kalshi");
         if (provider === "claude") setProvider("codex");
-        if (mode === "compact") setMode("expanded");
+        if (mode === "compact") {
+          setMode("expanded");
+        } else if (layoutMode === "default") {
+          setConfigStates({ layoutMode: "wide", density: "dense" });
+        }
       }, [
+        layoutMode,
         mode,
         paneSelection,
         provider,
+        setConfigStates,
         setMode,
         setPaneSelection,
         setProvider,
@@ -240,7 +266,7 @@ describe("plugin runtime hooks", () => {
         venueScope,
       ]);
 
-      return <text>{`${paneSelection}|${venueScope}|${provider}|${mode}`}</text>;
+      return <text>{`${paneSelection}|${venueScope}|${provider}|${mode}|${layoutMode}`}</text>;
     }
 
     testSetup = await testRender(<HookHarness />, { width: 40, height: 5 });
@@ -248,10 +274,11 @@ describe("plugin runtime hooks", () => {
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("3|kalshi|codex|expanded");
+    expect(frame).toContain("3|kalshi|codex|expanded|wide");
     expect(stateRef.current?.paneState["portfolio-list:main"]?.pluginState).toEqual({
       news: {
         selectedIdx: 3,
@@ -259,7 +286,9 @@ describe("plugin runtime hooks", () => {
       },
     });
     expect(stateRef.current?.config.pluginConfig.news).toEqual({
+      density: "dense",
       displayMode: "expanded",
+      layoutMode: "wide",
     });
     expect(resumeState.get("news:provider")).toBe("codex");
   });

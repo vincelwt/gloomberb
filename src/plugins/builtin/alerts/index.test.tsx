@@ -118,6 +118,22 @@ function makeRuntime(overrides: Partial<PluginRuntimeAccess> = {}): PluginRuntim
         },
       });
     },
+    async setConfigStates(pluginId, values) {
+      const currentState = harnessState!;
+      harnessDispatch?.({
+        type: "SET_CONFIG",
+        config: {
+          ...currentState.config,
+          pluginConfig: {
+            ...currentState.config.pluginConfig,
+            [pluginId]: {
+              ...(currentState.config.pluginConfig[pluginId] ?? {}),
+              ...values,
+            },
+          },
+        },
+      });
+    },
     async deleteConfigState(pluginId, key) {
       const currentState = harnessState!;
       const currentPluginConfig = { ...(currentState.config.pluginConfig[pluginId] ?? {}) };

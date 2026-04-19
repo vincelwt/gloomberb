@@ -152,6 +152,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   applyPaneSettingValueFn: ((paneId: string, field: import("../types/plugin").PaneSettingField, value: unknown) => Promise<void>) = async () => {};
   getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = () => null;
   setPluginConfigValueFn: ((pluginId: string, key: string, value: unknown) => Promise<void>) = async () => {};
+  setPluginConfigValuesFn: ((pluginId: string, values: Record<string, unknown>) => Promise<void>) = async () => {};
   deletePluginConfigValueFn: ((pluginId: string, key: string) => Promise<void>) = async () => {};
 
   readonly Slot;
@@ -346,6 +347,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   setConfigState(pluginId: string, key: string, value: unknown): Promise<void> {
     return this.setPluginConfigValueFn(pluginId, key, value);
+  }
+
+  setConfigStates(pluginId: string, values: Record<string, unknown>): Promise<void> {
+    return this.setPluginConfigValuesFn(pluginId, values);
   }
 
   deleteConfigState(pluginId: string, key: string): Promise<void> {

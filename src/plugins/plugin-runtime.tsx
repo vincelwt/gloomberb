@@ -34,6 +34,7 @@ export interface PluginRuntimeAccess {
   deleteResumeState(pluginId: string, key: string): void;
   getConfigState<T = unknown>(pluginId: string, key: string): T | null;
   setConfigState(pluginId: string, key: string, value: unknown): Promise<void>;
+  setConfigStates(pluginId: string, values: Record<string, unknown>): Promise<void>;
   deleteConfigState(pluginId: string, key: string): Promise<void>;
   getConfigStateKeys(pluginId: string): string[];
 }
@@ -353,4 +354,15 @@ export function usePluginConfigState<T>(key: string, fallback: T): [T, (value: S
   }, [key, pluginId, runtime]);
 
   return [value, setValue];
+}
+
+export function useSetPluginConfigStates(): (values: Record<string, unknown>) => void {
+  const { pluginId, runtime } = usePluginRenderContext();
+
+  return useCallback((values: Record<string, unknown>) => {
+    if (Object.keys(values).length === 0) {
+      return;
+    }
+    void runtime.setConfigStates(pluginId, values);
+  }, [pluginId, runtime]);
 }
