@@ -32,6 +32,8 @@ import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
 import { contextMenuSelectionMessage } from "./context-menu-click";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
 import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
+import { buildApplicationMenu } from "./application-menu";
+import { applicationMenuCommand } from "./application-menu-click";
 import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
 import {
   DEFAULT_WINDOW_FRAME,
@@ -1231,43 +1233,7 @@ async function handleBackendRequest(
 }
 
 function installApplicationMenu() {
-  ApplicationMenu.setApplicationMenu([
-    {
-      label: "Gloomberb",
-      submenu: [
-        { role: "about" },
-        { type: "divider" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "showAll" },
-        { type: "divider" },
-        { role: "quit" },
-      ],
-    },
-    {
-      label: "Edit",
-      submenu: [
-        { role: "undo" },
-        { role: "redo" },
-        { type: "divider" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
-      ],
-    },
-    {
-      label: "Window",
-      submenu: [
-        { role: "minimize" },
-        { role: "zoom" },
-        { type: "divider" },
-        { role: "toggleFullScreen" },
-        { type: "divider" },
-        { role: "close" },
-      ],
-    },
-  ]);
+  ApplicationMenu.setApplicationMenu(buildApplicationMenu());
 }
 
 function createWindowRpc(key: string): DesktopRpc {
@@ -1296,6 +1262,12 @@ Electrobun.events.on("context-menu-clicked", (event: unknown) => {
   forEachReadyWindowRpc((windowRpc) => {
     windowRpc.send["context-menu.select"](message);
   });
+});
+
+ApplicationMenu.on("application-menu-clicked", (event: unknown) => {
+  const command = applicationMenuCommand(event);
+  if (!command || !readyWindowRpcs.has(MAIN_WINDOW_RPC_KEY)) return;
+  windowRpcs.get(MAIN_WINDOW_RPC_KEY)?.send["application-menu.select"]({ command });
 });
 
 installApplicationMenu();

@@ -1,5 +1,6 @@
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
+import type { DesktopApplicationMenuCommand } from "../../../types/desktop-menu";
 import type { AppConfig } from "../../../types/config";
 
 export const ELECTROBUN_CONTEXT_MENU_ACTION = "gloom.context-menu.select";
@@ -46,6 +47,10 @@ export interface ContextMenuSelectMessage {
   itemId: string;
 }
 
+export interface ApplicationMenuSelectMessage {
+  command: DesktopApplicationMenuCommand;
+}
+
 export interface DesktopStateMessage {
   snapshot: DesktopSharedStateSnapshot;
 }
@@ -73,6 +78,7 @@ export interface ElectrobunDesktopRpcSchema {
       "ibkr.quote.update": QuoteUpdateMessage;
       "ai.chunk": AiChunkMessage;
       "context-menu.select": ContextMenuSelectMessage;
+      "application-menu.select": ApplicationMenuSelectMessage;
       "desktop.state": DesktopStateMessage;
       "desktop.dockPreview": DesktopDockPreviewMessage;
     };

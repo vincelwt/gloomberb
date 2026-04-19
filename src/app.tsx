@@ -47,6 +47,7 @@ import type { DataProvider } from "./types/data-provider";
 import type { TickerFinancials } from "./types/financials";
 import type { BrokerAccount } from "./types/trading";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopWindowBridge } from "./types/desktop-window";
+import type { DesktopApplicationMenuBridge } from "./types/desktop-menu";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
 
 // Built-in plugins
@@ -67,9 +68,11 @@ import {
   getDockLeafLayouts,
   getDockedPaneIds,
   getLeafRect,
+  gridlockAllPanes,
   isPaneInLayout,
   removePane,
 } from "./plugins/pane-manager";
+import { notifyGridlockComplete } from "./plugins/gridlock-notification";
 import {
   createBrokerInstanceId,
   getBrokerInstance,
@@ -138,6 +141,7 @@ interface AppInnerProps {
   marketData: MarketDataCoordinator;
   sessionSnapshot?: AppSessionSnapshot | null;
   desktopWindowBridge?: DesktopWindowBridge;
+  desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
 }
 
 function AppInner({
@@ -147,6 +151,7 @@ function AppInner({
   marketData,
   sessionSnapshot = null,
   desktopWindowBridge,
+  desktopApplicationMenuBridge,
 }: AppInnerProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
@@ -640,6 +645,54 @@ function AppInner({
   useEffect(() => {
     void runUpdateCheck(false);
   }, [runUpdateCheck]);
+
+  useEffect(() => {
+    if (desktopWindowBridge?.kind !== "main" || !desktopApplicationMenuBridge) return;
+    return desktopApplicationMenuBridge.subscribe((command) => {
+      switch (command.type) {
+        case "open-command-bar":
+          dispatch({ type: "SET_COMMAND_BAR", open: true, query: command.query });
+          break;
+        case "open-plugin-workflow":
+          pluginRegistry.openPluginCommandWorkflowFn(command.commandId);
+          break;
+        case "open-url":
+          void rendererHost.openExternal(command.url).catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            pluginRegistry.notify({ body: `Failed to open link: ${message}`, type: "error" });
+          });
+          break;
+        case "check-for-updates":
+          void runUpdateCheck(true);
+          break;
+        case "toggle-status-bar":
+          dispatch({ type: "TOGGLE_STATUS_BAR" });
+          break;
+        case "layout-undo":
+          dispatch({ type: "UNDO_LAYOUT" });
+          break;
+        case "layout-redo":
+          dispatch({ type: "REDO_LAYOUT" });
+          break;
+        case "layout-gridlock": {
+          const { width, height } = pluginRegistry.getTermSizeFn();
+          pluginRegistry.updateLayoutFn(gridlockAllPanes(stateRef.current.config.layout, { x: 0, y: 0, width, height }));
+          notifyGridlockComplete(pluginRegistry.notify.bind(pluginRegistry), () => {
+            dispatch({ type: "UNDO_LAYOUT" });
+          });
+          break;
+        }
+      }
+    });
+  }, [
+    desktopApplicationMenuBridge,
+    desktopWindowBridge?.kind,
+    dispatch,
+    pluginRegistry,
+    rendererHost,
+    runUpdateCheck,
+    stateRef,
+  ]);
 
   useEffect(() => {
     if (!state.updateAvailable || state.updateProgress || state.updateCheckInProgress) return;
@@ -1456,6 +1509,7 @@ interface AppProps {
   externalPlugins?: import("./plugins/loader").LoadedExternalPlugin[];
   cliLaunchRequest?: CliLaunchRequest | null;
   desktopWindowBridge?: DesktopWindowBridge;
+  desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
 }
 
@@ -1464,6 +1518,7 @@ export function App({
   externalPlugins = [],
   cliLaunchRequest = null,
   desktopWindowBridge,
+  desktopApplicationMenuBridge,
   desktopSnapshot = null,
 }: AppProps) {
   const renderer = useNativeRenderer();
@@ -1579,6 +1634,7 @@ export function App({
         marketData={services.marketData}
         sessionSnapshot={sessionSnapshot}
         desktopWindowBridge={desktopWindowBridge}
+        desktopApplicationMenuBridge={desktopApplicationMenuBridge}
       />
     </AppProvider>
   );

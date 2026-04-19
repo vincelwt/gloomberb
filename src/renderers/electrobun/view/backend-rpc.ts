@@ -2,6 +2,7 @@
 import { Electroview } from "electrobun/view";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
+  type ApplicationMenuSelectMessage,
   type AiChunkMessage,
   type ContextMenuSelectMessage,
   type DesktopDockPreviewMessage,
@@ -19,6 +20,7 @@ type IbkrSnapshotListener = (message: IbkrSnapshotMessage) => void;
 type IbkrResolvedListener = (message: IbkrResolvedMessage) => void;
 type AiChunkListener = (message: AiChunkMessage) => void;
 type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
+type ApplicationMenuSelectListener = (message: ApplicationMenuSelectMessage) => void;
 type DesktopStateListener = (message: DesktopStateMessage) => void;
 type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
 
@@ -29,6 +31,7 @@ const ibkrSnapshotListeners = new Map<string, Set<IbkrSnapshotListener>>();
 const ibkrResolvedListeners = new Set<IbkrResolvedListener>();
 const aiChunkListeners = new Map<string, Set<AiChunkListener>>();
 const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener>>();
+const applicationMenuSelectListeners = new Set<ApplicationMenuSelectListener>();
 const desktopStateListeners = new Set<DesktopStateListener>();
 const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
 
@@ -101,6 +104,12 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
       },
       "context-menu.select": (message) => {
         dispatch(contextMenuSelectListeners, message.requestId, message);
+      },
+      "application-menu.select": (message) => {
+        const decoded = { command: decodeRpcValue<ApplicationMenuSelectMessage["command"]>(message.command) };
+        for (const listener of applicationMenuSelectListeners) {
+          listener(decoded);
+        }
       },
       "desktop.state": (message) => {
         for (const listener of desktopStateListeners) {
@@ -189,6 +198,13 @@ export function onContextMenuSelect(
   listener: (message: ContextMenuSelectMessage) => void,
 ): () => void {
   return subscribe(contextMenuSelectListeners, requestId, listener);
+}
+
+export function onApplicationMenuSelect(listener: ApplicationMenuSelectListener): () => void {
+  applicationMenuSelectListeners.add(listener);
+  return () => {
+    applicationMenuSelectListeners.delete(listener);
+  };
 }
 
 export function onDesktopState(listener: DesktopStateListener): () => void {
