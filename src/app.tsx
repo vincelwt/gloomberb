@@ -643,8 +643,9 @@ function AppInner({
 
   // Check for updates on mount
   useEffect(() => {
+    if (isDetachedWindow) return;
     void runUpdateCheck(false);
-  }, [runUpdateCheck]);
+  }, [isDetachedWindow, runUpdateCheck]);
 
   useEffect(() => {
     if (desktopWindowBridge?.kind !== "main" || !desktopApplicationMenuBridge) return;
@@ -695,10 +696,11 @@ function AppInner({
   ]);
 
   useEffect(() => {
+    if (isDetachedWindow) return;
     if (!state.updateAvailable || state.updateProgress || state.updateCheckInProgress) return;
     if (!canSelfUpdate(state.updateAvailable)) return;
     startUpdate(state.updateAvailable);
-  }, [startUpdate, state.updateAvailable, state.updateCheckInProgress, state.updateProgress]);
+  }, [isDetachedWindow, startUpdate, state.updateAvailable, state.updateCheckInProgress, state.updateProgress]);
 
   // Load tickers on mount
   useEffect(() => {

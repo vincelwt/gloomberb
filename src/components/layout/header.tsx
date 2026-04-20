@@ -82,7 +82,7 @@ function UpdateStatus() {
       );
     }
     if (updateProgress.phase === "done") {
-      return <Text fg={colors.headerText}>Update installed, restart to apply</Text>;
+      return <Text fg={colors.headerText}>{updateProgress.message ?? "Update installed, restart to apply"}</Text>;
     }
     if (updateProgress.phase === "error") {
       return <Text fg={colors.headerText}>Update failed: {updateProgress.error}</Text>;

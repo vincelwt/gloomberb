@@ -11,6 +11,7 @@ import { installElectrobunAiHost } from "./ai-host";
 import { installElectrobunConfigStoreHost } from "./config-host";
 import { WebDialogHostProvider } from "./dialog-host";
 import { installElectrobunCloudApiFetchTransport, installElectrobunPredictionMarketsFetchTransport } from "./http-fetch";
+import { installElectrobunUpdateHost } from "./update-host";
 import { WebInputHostProvider } from "./input-host";
 import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
@@ -52,6 +53,7 @@ async function boot() {
   installElectrobunConfigStoreHost();
   installElectrobunPredictionMarketsFetchTransport();
   installElectrobunCloudApiFetchTransport();
+  installElectrobunUpdateHost();
   await installElectrobunAiHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot
