@@ -473,18 +473,28 @@ function isStyledTextContent(value: unknown): value is { chunks: StyledTextChunk
     || (!!value && typeof value === "object" && Array.isArray((value as { chunks?: unknown }).chunks));
 }
 
+function styledTextChunkStyle(baseProps: TextProps, chunk: StyledTextChunk): CSSProperties {
+  const style = textStyle({
+    ...baseProps,
+    fg: typeof chunk.fg === "string" ? chunk.fg : baseProps.fg,
+    bg: typeof chunk.bg === "string" ? chunk.bg : baseProps.bg,
+    attributes: chunk.attributes,
+  });
+  style.display = "inline";
+  style.width = undefined;
+  style.maxWidth = undefined;
+  style.minWidth = undefined;
+  style.flexShrink = undefined;
+  return style;
+}
+
 function renderTextContent(children: ReactNode, content: TextProps["content"], baseProps: TextProps): ReactNode {
   const resolved = children ?? content;
   if (!isStyledTextContent(resolved)) return resolved;
   return resolved.chunks.map((chunk, index) => (
     <span
       key={index}
-      style={textStyle({
-        ...baseProps,
-        fg: typeof chunk.fg === "string" ? chunk.fg : baseProps.fg,
-        bg: typeof chunk.bg === "string" ? chunk.bg : baseProps.bg,
-        attributes: chunk.attributes,
-      })}
+      style={styledTextChunkStyle(baseProps, chunk)}
     >
       {chunk.text}
     </span>
@@ -877,7 +887,7 @@ function WebTabs({
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const [hoveredValue, setHoveredValue] = useState<string | null>(null);
   const showUnderline = variant === "underline" && !compact;
-  const listHeight = showUnderline ? 28 : "100%";
+  const listHeight = showUnderline ? 28 : compact ? WEB_CELL_HEIGHT : "100%";
   const tabFontSize = compact || showUnderline ? 12 : 13;
   const tabPaddingInline = showUnderline ? 10 : 8;
   const tabPaddingBlock = variant === "bare" || variant === "pill" ? 2 : 0;

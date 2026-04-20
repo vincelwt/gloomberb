@@ -353,6 +353,7 @@ export function PaneFooterBar({
   const borderColor = focused ? colors.borderFocused : colors.border;
   const topBorderColor = colors.border;
   const reservedRight = Math.max(0, reserveRight);
+  const rightPadding = reservedRight > 0 ? reservedRight : 1;
 
   if (nativePaneChrome) {
     return (
@@ -360,7 +361,7 @@ export function PaneFooterBar({
         height={1}
         flexDirection="row"
         paddingLeft={1}
-        paddingRight={reservedRight + 1}
+        paddingRight={rightPadding}
         alignItems="center"
         data-gloom-role="pane-footer"
         data-focused={focused ? "true" : "false"}
@@ -375,7 +376,7 @@ export function PaneFooterBar({
         <FooterContent
           footer={resolvedFooter}
           focused={focused}
-          width={width > 0 ? Math.max(0, Math.floor(width) - reservedRight - 2) : undefined}
+          width={width > 0 ? Math.max(0, Math.floor(width) - rightPadding - 1) : undefined}
           showBackground={false}
         />
       </Box>
