@@ -10,6 +10,7 @@ import {
   detectUpdateAction,
   performUpdate,
   resolveSelfUpdateTargetPath,
+  setUpdateHost,
   type ReleaseInfo,
   type UpdateProgress,
 } from "./updater";
@@ -18,6 +19,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  setUpdateHost(null);
 });
 
 function expectedAssetName(compressed = false): string {
@@ -96,6 +98,73 @@ describe("canSelfUpdate", () => {
     expect(canSelfUpdate({
       updateAction: { kind: "self" },
     })).toBe(true);
+  });
+
+  test("returns true for desktop update releases", () => {
+    expect(canSelfUpdate({
+      updateAction: { kind: "desktop" },
+    })).toBe(true);
+  });
+});
+
+describe("update host", () => {
+  test("delegates update checks to an installed host", async () => {
+    setUpdateHost({
+      async checkForUpdateDetailed() {
+        return {
+          kind: "available",
+          release: {
+            version: "0.4.0",
+            tagName: "v0.4.0",
+            downloadUrl: "https://example.com/stable-macos-arm64-update.json",
+            publishedAt: "",
+            updateAction: { kind: "desktop" },
+          },
+        };
+      },
+      async performUpdate() {},
+    });
+
+    await expect(checkForUpdateDetailed("0.3.1")).resolves.toEqual({
+      kind: "available",
+      release: {
+        version: "0.4.0",
+        tagName: "v0.4.0",
+        downloadUrl: "https://example.com/stable-macos-arm64-update.json",
+        publishedAt: "",
+        updateAction: { kind: "desktop" },
+      },
+    });
+  });
+
+  test("delegates update installation and progress to an installed host", async () => {
+    const progress: UpdateProgress[] = [];
+    const release: ReleaseInfo = {
+      version: "0.4.0",
+      tagName: "v0.4.0",
+      downloadUrl: "https://example.com/stable-macos-arm64-update.json",
+      publishedAt: "",
+      updateAction: { kind: "desktop" },
+    };
+
+    setUpdateHost({
+      async checkForUpdateDetailed() {
+        return { kind: "current" };
+      },
+      async performUpdate(_release, onProgress) {
+        onProgress({ phase: "downloading", percent: 50 });
+        onProgress({ phase: "done", message: "Update installed, restarting..." });
+      },
+    });
+
+    await performUpdate(release, (entry) => {
+      progress.push(entry);
+    });
+
+    expect(progress).toEqual([
+      { phase: "downloading", percent: 50 },
+      { phase: "done", message: "Update installed, restarting..." },
+    ]);
   });
 });
 

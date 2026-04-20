@@ -2,6 +2,7 @@ import type { AppSessionSnapshot } from "../../../core/state/session-persistence
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { DesktopApplicationMenuCommand } from "../../../types/desktop-menu";
 import type { AppConfig } from "../../../types/config";
+import type { UpdateProgress } from "../../../updater";
 
 export const ELECTROBUN_CONTEXT_MENU_ACTION = "gloom.context-menu.select";
 
@@ -59,6 +60,10 @@ export interface DesktopDockPreviewMessage {
   preview: DesktopDockPreviewState;
 }
 
+export interface UpdateProgressMessage {
+  progress: UpdateProgress;
+}
+
 export interface ElectrobunDesktopRpcSchema {
   bun: {
     requests: {
@@ -81,6 +86,7 @@ export interface ElectrobunDesktopRpcSchema {
       "application-menu.select": ApplicationMenuSelectMessage;
       "desktop.state": DesktopStateMessage;
       "desktop.dockPreview": DesktopDockPreviewMessage;
+      "update.progress": UpdateProgressMessage;
     };
   };
 }

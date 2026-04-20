@@ -1,6 +1,8 @@
 import type { ElectrobunConfig } from "electrobun/bun";
 import pkg from "./package.json";
 
+const RELEASE_BASE_URL = "https://github.com/vincelwt/gloomberb/releases/latest/download";
+
 const config: ElectrobunConfig = {
   app: {
     name: "Gloomberb",
@@ -31,7 +33,9 @@ const config: ElectrobunConfig = {
       "node_modules/**",
     ],
     mac: {
-      createDmg: false,
+      codesign: true,
+      createDmg: true,
+      notarize: true,
       icons: "icon.iconset",
       defaultRenderer: "native",
     },
@@ -44,6 +48,9 @@ const config: ElectrobunConfig = {
   },
   runtime: {
     exitOnLastWindowClosed: true,
+  },
+  release: {
+    baseUrl: RELEASE_BASE_URL,
   },
 };
 
