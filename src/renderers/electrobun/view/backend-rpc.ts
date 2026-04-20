@@ -12,6 +12,7 @@ import {
   type IbkrResolvedMessage,
   type IbkrSnapshotMessage,
   type QuoteUpdateMessage,
+  type UpdateProgressMessage,
 } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "./rpc-codec";
 
@@ -23,6 +24,7 @@ type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
 type ApplicationMenuSelectListener = (message: ApplicationMenuSelectMessage) => void;
 type DesktopStateListener = (message: DesktopStateMessage) => void;
 type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
+type UpdateProgressListener = (message: UpdateProgressMessage) => void;
 
 let initSnapshot: ElectrobunBackendInit | null = null;
 const quoteListeners = new Map<string, Set<QuoteListener>>();
@@ -34,6 +36,7 @@ const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener
 const applicationMenuSelectListeners = new Set<ApplicationMenuSelectListener>();
 const desktopStateListeners = new Set<DesktopStateListener>();
 const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
+const updateProgressListeners = new Set<UpdateProgressListener>();
 
 function dispatch<T>(
   listeners: Map<string, Set<(value: T) => void>>,
@@ -119,6 +122,12 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
       "desktop.dockPreview": (message) => {
         for (const listener of desktopDockPreviewListeners) {
           listener({ preview: decodeRpcValue(message.preview) });
+        }
+      },
+      "update.progress": (message) => {
+        const decoded = { progress: decodeRpcValue<UpdateProgressMessage["progress"]>(message.progress) };
+        for (const listener of updateProgressListeners) {
+          listener(decoded);
         }
       },
     },
@@ -218,5 +227,12 @@ export function onDesktopDockPreview(listener: DesktopDockPreviewListener): () =
   desktopDockPreviewListeners.add(listener);
   return () => {
     desktopDockPreviewListeners.delete(listener);
+  };
+}
+
+export function onUpdateProgress(listener: UpdateProgressListener): () => void {
+  updateProgressListeners.add(listener);
+  return () => {
+    updateProgressListeners.delete(listener);
   };
 }

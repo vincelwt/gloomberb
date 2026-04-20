@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
 import { dirname, join } from "path";
-import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu, type UpdateStatusEntry } from "electrobun/bun";
 import { getAiProviderDefinitions } from "../../../plugins/builtin/ai/providers";
 import { runAiPrompt, type AiRunController } from "../../../plugins/builtin/ai/runner";
 import {
@@ -24,6 +24,7 @@ import type { PaneRuntimeState } from "../../../core/state/app-state";
 import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import type { BrokerOrderRequest } from "../../../types/trading";
+import type { ReleaseInfo, UpdateCheckResult, UpdateProgress } from "../../../updater";
 import { buildSoundCommand } from "../../../notifications/app-notifier";
 import { isPaneDetached } from "../../../plugins/pane-manager";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
@@ -68,6 +69,7 @@ let services: AppServices | null = null;
 let mainWindow: BrowserWindow | null = null;
 let desktopWorkspace: DesktopWorkspace | null = null;
 let currentDockPreview: DesktopDockPreviewState = { paneId: null, edge: null };
+let desktopUpdateInProgress = false;
 
 const detachedWindows = new Map<string, BrowserWindow>();
 const detachedFrameTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -253,6 +255,166 @@ function playNotificationSound(sound: string | undefined): void {
       command: command.command,
       message: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+function desktopReleasePlatformPrefix(channel: string): string {
+  const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "win" : "linux";
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  return `${channel}-${os}-${arch}`;
+}
+
+async function desktopReleaseInfo(updateInfo: {
+  version?: string;
+  hash?: string;
+}, currentVersion: string): Promise<ReleaseInfo> {
+  const [channel, baseUrl] = await Promise.all([
+    Electrobun.Updater.localInfo.channel(),
+    Electrobun.Updater.localInfo.baseUrl(),
+  ]);
+  const version = updateInfo.version || currentVersion;
+  return {
+    version,
+    tagName: `v${version}`,
+    downloadUrl: `${baseUrl.replace(/\/+$/, "")}/${desktopReleasePlatformPrefix(channel)}-update.json`,
+    publishedAt: "",
+    updateAction: { kind: "desktop" },
+  };
+}
+
+function mapDesktopUpdateStatus(entry: UpdateStatusEntry): UpdateProgress | null {
+  const progress = entry.details?.progress;
+  switch (entry.status) {
+    case "downloading":
+    case "download-starting":
+    case "checking-local-tar":
+    case "local-tar-found":
+    case "local-tar-missing":
+    case "fetching-patch":
+    case "patch-found":
+    case "patch-not-found":
+    case "downloading-patch":
+    case "downloading-full-bundle":
+    case "download-progress":
+      return {
+        phase: "downloading",
+        percent: typeof progress === "number" ? progress : undefined,
+      };
+    case "applying-patch":
+    case "patch-applied":
+    case "extracting-version":
+    case "patch-chain-complete":
+    case "decompressing":
+    case "download-complete":
+    case "applying":
+    case "extracting":
+    case "replacing-app":
+    case "launching-new-version":
+      return { phase: "replacing" };
+    case "complete":
+      return { phase: "done", message: "Update installed, restarting..." };
+    case "error":
+      return {
+        phase: "error",
+        error: entry.details?.errorMessage || entry.message,
+      };
+    default:
+      return null;
+  }
+}
+
+function sendUpdateProgress(rpc: DesktopRpc, progress: UpdateProgress): void {
+  try {
+    rpc.send["update.progress"]({
+      progress: encodeRpcValue(progress),
+    });
+  } catch (error) {
+    console.warn("update progress send failed", summarizeError(error));
+  }
+}
+
+async function checkDesktopUpdate(currentVersion: string): Promise<UpdateCheckResult> {
+  try {
+    const [channel, baseUrl] = await Promise.all([
+      Electrobun.Updater.localInfo.channel(),
+      Electrobun.Updater.localInfo.baseUrl(),
+    ]);
+    if (channel === "dev" || !baseUrl) {
+      return { kind: "disabled" };
+    }
+
+    const info = await Electrobun.Updater.checkForUpdate();
+    if (info.error) {
+      return { kind: "error", error: info.error };
+    }
+    if (!info.updateAvailable) {
+      return { kind: "current" };
+    }
+
+    return {
+      kind: "available",
+      release: await desktopReleaseInfo(info, currentVersion),
+    };
+  } catch (error) {
+    return {
+      kind: "error",
+      error: error instanceof Error ? error.message : "Desktop update check failed",
+    };
+  }
+}
+
+async function runDesktopUpdate(rpc: DesktopRpc, currentVersion: string): Promise<void> {
+  if (desktopUpdateInProgress) {
+    sendUpdateProgress(rpc, {
+      phase: "error",
+      error: "A desktop update is already in progress.",
+    });
+    return;
+  }
+
+  desktopUpdateInProgress = true;
+  Electrobun.Updater.clearStatusHistory();
+  Electrobun.Updater.onStatusChange((entry) => {
+    const progress = mapDesktopUpdateStatus(entry);
+    if (progress) sendUpdateProgress(rpc, progress);
+  });
+
+  try {
+    sendUpdateProgress(rpc, { phase: "downloading", percent: 0 });
+    const result = await checkDesktopUpdate(currentVersion);
+    if (result.kind === "error") {
+      sendUpdateProgress(rpc, { phase: "error", error: result.error });
+      return;
+    }
+    if (result.kind !== "available") {
+      sendUpdateProgress(rpc, {
+        phase: "done",
+        message: result.kind === "disabled" ? "Desktop updates are unavailable in this build" : "Already on the latest version",
+      });
+      return;
+    }
+
+    await Electrobun.Updater.downloadUpdate();
+    const updateInfo = Electrobun.Updater.updateInfo();
+    if (updateInfo?.error) {
+      sendUpdateProgress(rpc, { phase: "error", error: updateInfo.error });
+      return;
+    }
+    if (!updateInfo?.updateReady) {
+      sendUpdateProgress(rpc, { phase: "error", error: "Desktop update did not finish downloading." });
+      return;
+    }
+
+    sendUpdateProgress(rpc, { phase: "replacing" });
+    await Electrobun.Updater.applyUpdate();
+  } catch (error) {
+    sendUpdateProgress(rpc, {
+      phase: "error",
+      error: error instanceof Error ? error.message : "Desktop update failed",
+    });
+  } finally {
+    desktopUpdateInProgress = false;
+    Electrobun.Updater.onStatusChange(null);
   }
 }
 
@@ -1129,6 +1291,18 @@ async function handleBackendRequest(
   if (method.startsWith("desktop.")) return handleDesktop(rpc, method, payload);
 
   switch (method) {
+    case "update.check":
+      return checkDesktopUpdate(typeof payload.currentVersion === "string" ? payload.currentVersion : "");
+    case "update.start": {
+      const release = payload.release && typeof payload.release === "object"
+        ? payload.release as Partial<ReleaseInfo>
+        : null;
+      void runDesktopUpdate(
+        rpc,
+        typeof payload.currentVersion === "string" ? payload.currentVersion : release?.version ?? "",
+      );
+      return null;
+    }
     case "ticker.loadAll":
       return requireServices().tickerRepository.loadAllTickers();
     case "ticker.load":

@@ -18,10 +18,12 @@ export interface UpdateProgress {
   phase: "downloading" | "replacing" | "done" | "error";
   percent?: number;
   error?: string;
+  message?: string;
 }
 
 export type UpdateAction =
   | { kind: "self" }
+  | { kind: "desktop" }
   | { kind: "manual"; command: string };
 
 export type UpdateCheckResult =
@@ -29,6 +31,17 @@ export type UpdateCheckResult =
   | { kind: "current" }
   | { kind: "disabled" }
   | { kind: "error"; error: string };
+
+export interface UpdateHost {
+  checkForUpdateDetailed(currentVersion: string): Promise<UpdateCheckResult>;
+  performUpdate(release: ReleaseInfo, onProgress: (p: UpdateProgress) => void): Promise<void>;
+}
+
+let updateHost: UpdateHost | null = null;
+
+export function setUpdateHost(host: UpdateHost | null): void {
+  updateHost = host;
+}
 
 function compareSemver(a: string, b: string): number {
   const pa = a.split(".").map(Number);
@@ -146,12 +159,16 @@ export function detectUpdateAction(
 }
 
 export function canSelfUpdate(release: Pick<ReleaseInfo, "updateAction"> | null | undefined): boolean {
-  return release?.updateAction.kind === "self";
+  return release?.updateAction.kind === "self" || release?.updateAction.kind === "desktop";
 }
 
 export async function checkForUpdateDetailed(
   currentVersion: string,
 ): Promise<UpdateCheckResult> {
+  if (updateHost) {
+    return updateHost.checkForUpdateDetailed(currentVersion);
+  }
+
   const updateAction = detectUpdateAction();
   if (!updateAction) {
     return { kind: "disabled" };
@@ -225,10 +242,25 @@ export async function performUpdate(
   release: ReleaseInfo,
   onProgress: (p: UpdateProgress) => void,
 ): Promise<void> {
+  if (updateHost) {
+    await updateHost.performUpdate(release, onProgress);
+    return;
+  }
+
   if (!canSelfUpdate(release)) {
     onProgress({
       phase: "error",
-      error: `Run ${release.updateAction.command}`,
+      error: release.updateAction.kind === "manual"
+        ? `Run ${release.updateAction.command}`
+        : "This update type is unavailable in the current runtime.",
+    });
+    return;
+  }
+
+  if (release.updateAction.kind === "desktop") {
+    onProgress({
+      phase: "error",
+      error: "Desktop updates are unavailable outside the packaged desktop app.",
     });
     return;
   }
