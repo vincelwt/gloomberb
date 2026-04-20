@@ -20,6 +20,7 @@
     "desktop:view:build": "bun run scripts/build-electrobun-view.ts",
     "desktop:dev": "electrobun dev --watch",
     "desktop:build": "electrobun build",
+    "desktop:release": "electrobun build --env=stable",
     "test": "bun test",
     "release": "./scripts/release.sh"
   },
