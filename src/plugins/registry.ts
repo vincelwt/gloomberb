@@ -74,6 +74,7 @@ interface PluginItems {
   contextMenuProviders: string[];
   eventDisposers: Array<() => void>;
   newsSourceDisposers: Array<() => void>;
+  newsQueryWatchDisposers: Array<() => void>;
 }
 
 export class PluginRegistry implements PluginRuntimeAccess {
@@ -82,6 +83,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private unregisterFns = new Map<string, () => void>();
   private pluginItems = new Map<string, PluginItems>();
   private commandOwners = new Map<string, string>();
+  private paneOwners = new Map<string, string>();
   private paneTemplateOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
   private dataProviderOwners = new Map<string, string>();
@@ -154,12 +156,18 @@ export class PluginRegistry implements PluginRuntimeAccess {
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
   registerNewsSourceFn: ((source: import("../types/news-source").NewsSource) => () => void) = () => () => {};
+  watchNewsQueryFn: ((
+    query: import("../types/news-source").NewsQuery,
+    listener: (state: import("../types/news-source").NewsQueryState) => void,
+  ) => () => void) = () => () => {};
 
   notifyFn: ((notification: AppNotificationRequest) => void) = () => {};
   getPaneRuntimeStateFn: ((paneId: string) => PaneRuntimeState | null) = () => null;
   updatePaneRuntimeStateFn: ((paneId: string, patch: Partial<PaneRuntimeState>) => void) = () => {};
   applyPaneSettingValueFn: ((paneId: string, field: import("../types/plugin").PaneSettingField, value: unknown) => Promise<void>) = async () => {};
-  getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = () => null;
+  getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = (pluginId, key) => (
+    (this.getConfigFn().pluginConfig[pluginId]?.[key] as T | undefined) ?? null
+  );
   setPluginConfigValueFn: ((pluginId: string, key: string, value: unknown) => Promise<void>) = async () => {};
   setPluginConfigValuesFn: ((pluginId: string, values: Record<string, unknown>) => Promise<void>) = async () => {};
   deletePluginConfigValueFn: ((pluginId: string, key: string) => Promise<void>) = async () => {};
@@ -280,6 +288,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       contextMenuProviders: [],
       eventDisposers: [],
       newsSourceDisposers: [],
+      newsQueryWatchDisposers: [],
     };
     this.pluginItems.set(pluginId, items);
     return items;
@@ -376,6 +385,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   resolvePaneSettings(paneId: string): {
     paneId: string;
+    pluginId?: string;
     pane: PaneInstanceConfig;
     paneDef: PaneDef;
     settingsDef: PaneSettingsDef;
@@ -392,6 +402,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
     if (!paneDef?.settings) return null;
 
     const config = this.getConfigFn();
+    const pluginId = this.paneOwners.get(pane.paneId);
+    const paneSettings = getPaneSettings(pane);
     const paneStateMap = Object.fromEntries(
       layout.instances.map((instance) => [instance.instanceId, this.getPaneRuntimeStateFn(instance.instanceId) ?? {}]),
     );
@@ -406,7 +418,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       paneId: targetPaneId,
       paneType: pane.paneId,
       pane,
-      settings: getPaneSettings(pane),
+      settings: paneSettings,
       paneState,
       activeTicker: resolveTickerForPane(stateView, targetPaneId),
       activeCollectionId: resolveCollectionForPane(stateView, targetPaneId),
@@ -416,8 +428,23 @@ export class PluginRegistry implements PluginRuntimeAccess {
       : paneDef.settings;
     if (!settingsDef) return null;
 
+    if (pluginId) {
+      const resolvedSettings = { ...paneSettings };
+      for (const field of settingsDef.fields) {
+        if (field.storage !== "plugin") continue;
+        const configValue = this.getConfigState(pluginId, field.key);
+        if (configValue === null) {
+          delete resolvedSettings[field.key];
+        } else {
+          resolvedSettings[field.key] = configValue;
+        }
+      }
+      context.settings = resolvedSettings;
+    }
+
     return {
       paneId: targetPaneId,
+      pluginId,
       pane,
       paneDef,
       settingsDef,
@@ -549,7 +576,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
     };
 
     return {
-      registerPane: (pane) => { this.panesMap.set(pane.id, this.wrapPaneDef(pluginId, pane)); items.panes.push(pane.id); },
+      registerPane: (pane) => {
+        this.panesMap.set(pane.id, this.wrapPaneDef(pluginId, pane));
+        this.paneOwners.set(pane.id, pluginId);
+        items.panes.push(pane.id);
+      },
       registerPaneTemplate: (template) => {
         this.paneTemplatesMap.set(template.id, template);
         this.paneTemplateOwners.set(template.id, pluginId);
@@ -594,6 +625,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
         };
         const dispose = this.registerNewsSourceFn(ownedSource);
         items.newsSourceDisposers.push(dispose);
+        return dispose;
+      },
+      watchNewsQuery: (query, listener) => {
+        const dispose = this.watchNewsQueryFn(query, listener);
+        items.newsQueryWatchDisposers.push(dispose);
         return dispose;
       },
 
@@ -653,6 +689,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     if (plugin.panes) {
       for (const pane of plugin.panes) {
         this.panesMap.set(pane.id, this.wrapPaneDef(plugin.id, pane));
+        this.paneOwners.set(pane.id, plugin.id);
         items.panes.push(pane.id);
       }
     }
@@ -734,7 +771,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
     const items = this.pluginItems.get(pluginId);
     if (items) {
-      for (const paneId of items.panes) this.panesMap.delete(paneId);
+      for (const paneId of items.panes) {
+        this.panesMap.delete(paneId);
+        this.paneOwners.delete(paneId);
+      }
       for (const templateId of items.paneTemplates) {
         this.paneTemplatesMap.delete(templateId);
         this.paneTemplateOwners.delete(templateId);
@@ -758,6 +798,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
       for (const dispose of items.eventDisposers) dispose();
       for (const dispose of items.newsSourceDisposers) dispose();
+      for (const dispose of items.newsQueryWatchDisposers) dispose();
       this.pluginItems.delete(pluginId);
     }
 

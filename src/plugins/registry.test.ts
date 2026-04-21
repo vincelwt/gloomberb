@@ -148,3 +148,48 @@ describe("PluginRegistry context menu providers", () => {
     expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual(["Works"]);
   });
 });
+
+describe("PluginRegistry pane settings", () => {
+  test("resolves plugin-scoped pane setting values from plugin config", async () => {
+    const registry = createRegistry();
+    const config = createDefaultConfig("/tmp/gloomberb-pane-settings-test");
+    config.layout = {
+      dockRoot: { kind: "pane", instanceId: "test-pane:main" },
+      instances: [{
+        instanceId: "test-pane:main",
+        paneId: "test-pane",
+        binding: { kind: "none" },
+        settings: { breakingNewsNotificationsEnabled: false },
+      }],
+      floating: [],
+      detached: [],
+    };
+    config.pluginConfig = {
+      news: { breakingNewsNotificationsEnabled: true },
+    };
+    registry.getConfigFn = () => config;
+    registry.getLayoutFn = () => config.layout;
+
+    await registry.register(plugin("news", (ctx) => {
+      ctx.registerPane({
+        id: "test-pane",
+        name: "Test Pane",
+        defaultPosition: "right",
+        component: () => null,
+        settings: {
+          fields: [{
+            key: "breakingNewsNotificationsEnabled",
+            label: "Notifications",
+            type: "toggle",
+            storage: "plugin",
+          }],
+        },
+      });
+    }));
+
+    const descriptor = registry.resolvePaneSettings("test-pane:main");
+
+    expect(descriptor?.pluginId).toBe("news");
+    expect(descriptor?.context.settings.breakingNewsNotificationsEnabled).toBe(true);
+  });
+});
