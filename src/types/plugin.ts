@@ -73,6 +73,7 @@ interface PaneSettingFieldBase {
   key: string;
   label: string;
   description?: string;
+  storage?: "pane" | "plugin";
 }
 
 export interface PaneSettingToggleField extends PaneSettingFieldBase {
@@ -410,6 +411,10 @@ export interface GloomPluginContext {
   registerTickerAction(action: TickerAction): void;
   registerContextMenuProvider(provider: ContextMenuProviderDef): void;
   registerNewsSource?(source: import("./news-source").NewsSource): () => void;
+  watchNewsQuery?(
+    query: import("./news-source").NewsQuery,
+    listener: (state: import("./news-source").NewsQueryState) => void,
+  ): () => void;
 
   getData(ticker: string): TickerFinancials | null;
   getTicker(ticker: string): TickerRecord | null;

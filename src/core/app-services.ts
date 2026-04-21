@@ -50,6 +50,7 @@ export function createAppServices({
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
   pluginRegistry.registerNewsSourceFn = (source) => newsService.register(source);
+  pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
 
   setSharedNewsService(newsService);
   setSharedMarketDataCoordinator(marketData);

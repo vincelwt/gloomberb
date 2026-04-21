@@ -5,6 +5,8 @@ export interface NewsServiceOptions {
   pollIntervalMs?: number;
 }
 
+export type NewsQueryListener = (state: NewsQueryState) => void;
+
 const MAX_ARTICLES = 500;
 const DEFAULT_POLL_INTERVAL_MS = 2 * 60 * 1000;
 const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
@@ -161,6 +163,7 @@ export class NewsService {
   private readonly listeners = new Set<() => void>();
   private readonly queryStates = new Map<string, NewsQueryState>();
   private readonly queryByKey = new Map<string, NewsQuery>();
+  private readonly watchedQueries = new Map<string, { query: NewsQuery; refs: number }>();
   private readonly inFlight = new Map<string, Promise<NewsQueryState>>();
   private articles: NewsArticle[] = [];
   private version = 0;
@@ -201,6 +204,35 @@ export class NewsService {
     return () => this.listeners.delete(listener);
   }
 
+  watchQuery(query: NewsQuery, listener: NewsQueryListener): () => void {
+    const normalized = normalizeQuery(query);
+    const key = buildNewsQueryKey(normalized);
+    const currentWatch = this.watchedQueries.get(key);
+    this.watchedQueries.set(key, {
+      query: normalized,
+      refs: (currentWatch?.refs ?? 0) + 1,
+    });
+
+    const emit = () => listener(this.queryStates.get(key) ?? createIdleState());
+    const unsubscribe = this.subscribe(emit);
+    emit();
+    void this.refreshQuery(normalized, false, { track: false });
+
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      unsubscribe();
+      const watch = this.watchedQueries.get(key);
+      if (!watch) return;
+      if (watch.refs <= 1) {
+        this.watchedQueries.delete(key);
+      } else {
+        this.watchedQueries.set(key, { query: watch.query, refs: watch.refs - 1 });
+      }
+    };
+  }
+
   getVersion(): number {
     return this.version;
   }
@@ -228,14 +260,26 @@ export class NewsService {
   }
 
   private async pollActiveQueries(): Promise<void> {
-    const queries = [...this.queryByKey.values()];
-    if (queries.length === 0) return;
-    await Promise.allSettled(queries.map((query) => this.refreshQuery(query, false)));
+    const queries = new Map<string, NewsQuery>();
+    for (const query of this.queryByKey.values()) {
+      queries.set(buildNewsQueryKey(query), query);
+    }
+    for (const [key, watch] of this.watchedQueries) {
+      queries.set(key, watch.query);
+    }
+    if (queries.size === 0) return;
+    await Promise.allSettled([...queries.values()].map((query) => this.refreshQuery(query, false, { track: false })));
   }
 
-  private async refreshQuery(query: NewsQuery, showLoading: boolean): Promise<NewsQueryState> {
+  private async refreshQuery(
+    query: NewsQuery,
+    showLoading: boolean,
+    options: { track?: boolean } = {},
+  ): Promise<NewsQueryState> {
     const key = buildNewsQueryKey(query);
-    this.queryByKey.set(key, query);
+    if (options.track !== false) {
+      this.queryByKey.set(key, query);
+    }
     const existingFlight = this.inFlight.get(key);
     if (existingFlight) return existingFlight;
 

@@ -4,6 +4,10 @@ import { TopPane } from "./top-pane";
 import { FeedPane } from "./feed-pane";
 import { IndustryPane } from "./industry-pane";
 import { BreakingPane } from "./breaking-pane";
+import {
+  BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
+  setupBreakingNewsNotifications,
+} from "./breaking-notifications";
 import { setDigestPersistence } from "./digest-store";
 import {
   addUserNewsFeed,
@@ -12,12 +16,30 @@ import {
   saveNewsFeedSettings,
 } from "./feed-config";
 
-export function registerNewsWireFeatures(ctx: GloomPluginContext): void {
+export function registerNewsWireFeatures(ctx: GloomPluginContext): () => void {
   setDigestPersistence(ctx.persistence);
   ctx.registerPane({ id: "news-top", name: "Top News", icon: "T", component: TopPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } });
   ctx.registerPane({ id: "news-feed", name: "News Feed", icon: "N", component: FeedPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } });
   ctx.registerPane({ id: "news-industry", name: "Sector News", icon: "S", component: IndustryPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } });
-  ctx.registerPane({ id: "news-breaking", name: "Breaking News", icon: "!", component: BreakingPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 85, height: 20 } });
+  ctx.registerPane({
+    id: "news-breaking",
+    name: "Breaking News",
+    icon: "!",
+    component: BreakingPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 85, height: 20 },
+    settings: {
+      title: "Breaking News Settings",
+      fields: [{
+        key: BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
+        label: "Notifications",
+        description: "Notify when new breaking stories arrive, even while this pane is closed.",
+        type: "toggle",
+        storage: "plugin",
+      }],
+    },
+  });
 
   ctx.registerPaneTemplate({ id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Curated top market stories ranked by importance", keywords: ["top", "news", "headlines", "stories"], shortcut: { prefix: "TOP" } });
   ctx.registerPaneTemplate({ id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream"], shortcut: { prefix: "N" } });
@@ -65,4 +87,6 @@ export function registerNewsWireFeatures(ctx: GloomPluginContext): void {
       ctx.notify({ body: `Added news feed: ${feed.name}`, type: "success" });
     },
   });
+
+  return setupBreakingNewsNotifications(ctx);
 }

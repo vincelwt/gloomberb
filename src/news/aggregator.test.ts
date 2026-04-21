@@ -188,6 +188,26 @@ describe("NewsService", () => {
     expect(callCount).toBe(2); // unsubscribed, no more calls
   });
 
+  it("watchQuery refreshes a query without a mounted pane", async () => {
+    const item = makeItem({ url: "https://watch.example.com/1", isBreaking: true });
+    const states: string[][] = [];
+
+    agg.register(makeSource("watch", [item]));
+    const dispose = agg.watchQuery(
+      { feed: "breaking", breaking: true, limit: 20 },
+      (state) => states.push(state.articles.map((article) => article.url)),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(states).toContainEqual([item.url]);
+
+    const callCount = states.length;
+    dispose();
+    await agg.poll({ feed: "breaking", breaking: true, limit: 20 });
+    expect(states).toHaveLength(callCount);
+  });
+
   it("seeds cached source items immediately on register", () => {
     const cached = makeItem({ url: "https://cached.example.com/1", importance: 70 });
     let callCount = 0;

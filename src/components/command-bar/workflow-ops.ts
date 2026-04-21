@@ -356,6 +356,14 @@ export async function applyPaneSettingFieldValue(
   const state = deps.getState();
   const shouldPushHistory = options?.pushHistory !== false;
 
+  if (field.storage === "plugin") {
+    if (!descriptor.pluginId) {
+      throw new Error("This pane setting is not owned by a plugin.");
+    }
+    await deps.pluginRegistry.setConfigState(descriptor.pluginId, field.key, value);
+    return;
+  }
+
   if (descriptor.pane.paneId === "quote-monitor" && field.key === "symbol") {
     const rawQuery = typeof value === "string" ? value.trim() : "";
     const resolvedTicker = await resolveTickerSearch({

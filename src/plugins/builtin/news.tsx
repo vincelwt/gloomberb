@@ -19,6 +19,7 @@ const ARTICLE_SUMMARY_CACHE_POLICY = {
   expireMs: 90 * 24 * 60 * 60_000,
 };
 const NEWS_ITEM_LIMIT = 50;
+let disposeNewsWireFeatures: (() => void) | null = null;
 
 function getFeedItems(
   news: NewsArticle[],
@@ -158,6 +159,11 @@ export const newsPlugin: GloomPlugin = {
       order: 40,
       component: NewsTab,
     });
-    registerNewsWireFeatures(ctx);
+    disposeNewsWireFeatures = registerNewsWireFeatures(ctx);
+  },
+
+  dispose() {
+    disposeNewsWireFeatures?.();
+    disposeNewsWireFeatures = null;
   },
 };
