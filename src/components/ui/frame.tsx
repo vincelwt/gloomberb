@@ -7,13 +7,14 @@ export interface DialogFrameProps {
   title: string;
   children: ReactNode;
   footer?: string;
+  showTitleDivider?: boolean;
 }
 
-export function DialogFrame({ title, children, footer }: DialogFrameProps) {
+export function DialogFrame({ title, children, footer, showTitleDivider = true }: DialogFrameProps) {
   const HostDialogFrame = useUiHost().DialogFrame as ComponentType<DialogFrameProps> | undefined;
   if (HostDialogFrame) {
     return (
-      <HostDialogFrame title={title} footer={footer}>
+      <HostDialogFrame title={title} footer={footer} showTitleDivider={showTitleDivider}>
         {children}
       </HostDialogFrame>
     );

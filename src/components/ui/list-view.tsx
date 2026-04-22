@@ -30,6 +30,9 @@ export interface ListViewProps {
   bgColor?: string;
   selectedBgColor?: string;
   hoverBgColor?: string;
+  rowGap?: number;
+  rowHeight?: number;
+  surface?: "framed" | "plain";
   height?: number;
   flexGrow?: number;
   scrollable?: boolean;
@@ -77,6 +80,9 @@ export function ListView({
   bgColor,
   selectedBgColor,
   hoverBgColor,
+  rowGap,
+  rowHeight,
+  surface,
   height,
   flexGrow,
   scrollable = false,
@@ -99,6 +105,9 @@ export function ListView({
         bgColor={bgColor}
         selectedBgColor={selectedBgColor}
         hoverBgColor={hoverBgColor}
+        rowGap={rowGap}
+        rowHeight={rowHeight}
+        surface={surface}
         height={height}
         flexGrow={flexGrow}
         scrollable={scrollable}

@@ -272,6 +272,9 @@ export function WebListView({
   bgColor,
   selectedBgColor,
   hoverBgColor,
+  rowGap = 1,
+  rowHeight = 1,
+  surface = "framed",
   height,
   flexGrow,
   scrollable = false,
@@ -291,19 +294,21 @@ export function WebListView({
     if (!scrollBox) return;
     const safeIndex = Math.min(activeScrollIndex, items.length - 1);
     const viewportHeight = Math.max(scrollBox.viewport.height, 1);
-    if (safeIndex < scrollBox.scrollTop) {
-      scrollBox.scrollTo(safeIndex);
-    } else if (safeIndex >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(safeIndex - viewportHeight + 1);
+    const rowTop = safeIndex * rowHeight;
+    const rowBottom = rowTop + rowHeight;
+    if (rowTop < scrollBox.scrollTop) {
+      scrollBox.scrollTo(rowTop);
+    } else if (rowBottom > scrollBox.scrollTop + viewportHeight) {
+      scrollBox.scrollTo(rowBottom - viewportHeight);
     }
-  }, [activeScrollIndex, autoScrollToIndex, items.length, scrollable]);
+  }, [activeScrollIndex, autoScrollToIndex, items.length, rowHeight, scrollable]);
 
   useEffect(() => {
     if (!scrollable) return;
     const scrollBox = scrollRef.current;
     if (!scrollBox) return;
-    scrollBox.verticalScrollBar.visible = items.length > scrollBox.viewport.height;
-  }, [items.length, height, flexGrow, scrollable]);
+    scrollBox.verticalScrollBar.visible = items.length * rowHeight > scrollBox.viewport.height;
+  }, [items.length, height, flexGrow, rowHeight, scrollable]);
 
   const rows = items.length === 0
     ? (
@@ -322,7 +327,7 @@ export function WebListView({
       return (
         <Box
           key={item.id}
-          height={1}
+          height={rowHeight}
           width="100%"
           backgroundColor={rowBg}
           alignItems="center"
@@ -355,19 +360,26 @@ export function WebListView({
           flexGrow={flexGrow}
           scrollY
           focusable={false}
-          style={{
-            border: `1px solid ${PANEL_BORDER}`,
-            borderRadius: CONTROL_RADIUS,
-            padding: 4,
-            backgroundColor: "rgba(9, 12, 15, 0.22)",
-          }}
+          style={surface === "plain"
+            ? {
+              border: "none",
+              borderRadius: 0,
+              padding: 0,
+              backgroundColor: "transparent",
+            }
+            : {
+              border: `1px solid ${PANEL_BORDER}`,
+              borderRadius: CONTROL_RADIUS,
+              padding: 4,
+              backgroundColor: "rgba(9, 12, 15, 0.22)",
+            }}
         >
-          <Box flexDirection="column" gap={1}>
+          <Box flexDirection="column" gap={rowGap}>
             {rows}
           </Box>
         </ScrollBox>
       ) : (
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column" gap={rowGap}>
           {rows}
         </Box>
       )}
@@ -439,7 +451,12 @@ export function WebSegmentedControl({
   );
 }
 
-export function WebDialogFrame({ title, children, footer }: DialogFrameProps) {
+export function WebDialogFrame({
+  title,
+  children,
+  footer,
+  showTitleDivider = true,
+}: DialogFrameProps) {
   return (
     <Box flexDirection="column" style={{ padding: 14 }}>
       <Box
@@ -447,9 +464,9 @@ export function WebDialogFrame({ title, children, footer }: DialogFrameProps) {
         flexDirection="row"
         alignItems="center"
         style={{
-          borderBottom: `1px solid ${PANEL_BORDER}`,
-          paddingBottom: 8,
-          marginBottom: 10,
+          borderBottom: showTitleDivider ? `1px solid ${PANEL_BORDER}` : "none",
+          paddingBottom: showTitleDivider ? 8 : 0,
+          marginBottom: showTitleDivider ? 10 : 14,
         }}
       >
         <Text fg={colors.text} attributes={TextAttributes.BOLD} style={{ fontWeight: 700 }}>

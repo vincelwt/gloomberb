@@ -1,13 +1,14 @@
-import { Box, Text } from "../ui";
+import { Box, Text, useUiHost } from "../ui";
 import { TextAttributes } from "../ui";
 import { colors } from "../theme/colors";
-import { ListView, type ListViewItem } from "./ui/list-view";
+import { ListView, type ListRowState, type ListViewItem } from "./ui/list-view";
 
 export interface ToggleListItem {
   id: string;
   label: string;
   enabled: boolean;
   description?: string;
+  disabled?: boolean;
 }
 
 export interface ToggleListProps {
@@ -22,6 +23,89 @@ export interface ToggleListProps {
   scrollable?: boolean;
   showSelectedDescription?: boolean;
   rowIdPrefix?: string;
+  rowGap?: number;
+  rowHeight?: number;
+  surface?: "framed" | "plain";
+}
+
+function DesktopToggleRow({
+  item,
+  state,
+  rowIdPrefix,
+  enabled,
+}: {
+  item: ListViewItem;
+  state: ListRowState;
+  rowIdPrefix?: string;
+  enabled: boolean;
+}) {
+  const checkboxBorder = enabled
+    ? colors.borderFocused
+    : state.selected
+    ? colors.textMuted
+    : colors.border;
+  const textColor = state.disabled
+    ? colors.textMuted
+    : state.selected
+    ? colors.text
+    : colors.textDim;
+
+  return (
+    <Box
+      id={rowIdPrefix ? `${rowIdPrefix}:${item.id}` : undefined}
+      flexDirection="row"
+      alignItems="center"
+      width="100%"
+      minWidth={0}
+      style={{
+        paddingInline: 8,
+        opacity: state.disabled ? 0.55 : 1,
+      }}
+    >
+      <Box
+        alignItems="center"
+        justifyContent="center"
+        marginRight={1}
+        backgroundColor={enabled ? colors.borderFocused : "transparent"}
+        style={{
+          width: 16,
+          height: 16,
+          minWidth: 16,
+          alignSelf: "center",
+          border: `1px solid ${checkboxBorder}`,
+          borderRadius: 4,
+          boxShadow: enabled
+            ? "inset 0 1px 0 rgba(255,255,255,0.28)"
+            : "inset 0 1px 0 rgba(255,255,255,0.05)",
+        }}
+      >
+        {enabled && (
+          <Text
+            fg={colors.bg}
+            attributes={TextAttributes.BOLD}
+            style={{ fontSize: 12, lineHeight: "14px", fontWeight: 800 }}
+          >
+            {"✓"}
+          </Text>
+        )}
+      </Box>
+      <Box minWidth={0} flexShrink={1}>
+        <Text
+          fg={textColor}
+          attributes={state.selected ? TextAttributes.BOLD : 0}
+          style={{
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontWeight: state.selected ? 700 : 500,
+          }}
+        >
+          {item.label}
+        </Text>
+      </Box>
+    </Box>
+  );
 }
 
 export function ToggleList({
@@ -35,11 +119,16 @@ export function ToggleList({
   scrollable,
   showSelectedDescription = true,
   rowIdPrefix,
+  rowGap,
+  rowHeight,
+  surface,
 }: ToggleListProps) {
+  const isDesktopWeb = useUiHost().kind === "desktop-web";
   const listItems: ListViewItem[] = items.map((item) => ({
     id: item.id,
     label: item.label,
     description: item.description,
+    disabled: item.disabled,
   }));
 
   return (
@@ -51,12 +140,26 @@ export function ToggleList({
       height={height}
       flexGrow={flexGrow}
       scrollable={scrollable}
+      rowGap={rowGap ?? (isDesktopWeb ? 0 : undefined)}
+      rowHeight={rowHeight}
+      surface={surface}
       onSelect={onSelect}
       onActivate={(item) => {
         onToggle?.(item.id);
       }}
       renderRow={(item, state, index) => {
         const toggleItem = items.find((entry) => entry.id === item.id);
+        if (isDesktopWeb) {
+          return (
+            <DesktopToggleRow
+              item={item}
+              state={state}
+              rowIdPrefix={rowIdPrefix}
+              enabled={toggleItem?.enabled === true}
+            />
+          );
+        }
+
         const checked = toggleItem?.enabled ? "\u2713" : " ";
         const activate = (event: any) => {
           event.stopPropagation?.();

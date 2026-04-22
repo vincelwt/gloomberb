@@ -1,4 +1,4 @@
-import { Box, Text } from "../../ui";
+import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { type AlertContext, useDialog, useDialogKeyboard } from "../../ui/dialog";
@@ -81,6 +81,7 @@ export function MultiSelectDialogContent({
   ordered = false,
   idPrefix,
 }: MultiSelectDialogContentProps) {
+  const isDesktopWeb = useUiHost().kind === "desktop-web";
   const optionByValue = useMemo(() => new Map(options.map((option) => [option.value, option])), [options]);
   const [selectedValues, setSelectedValues] = useState(() => normalizeMultiSelectValues(options, selectedValuesProp));
   const knownSelectedValues = selectedValues.filter((value) => optionByValue.has(value));
@@ -112,11 +113,14 @@ export function MultiSelectDialogContent({
     return {
       id: option.value,
       label: option.label,
+      disabled: option.disabled,
       enabled: selectedValues.includes(option.value),
       description: [option.description, orderDescription].filter((entry): entry is string => !!entry).join(" "),
     };
   });
-  const listHeight = Math.min(12, Math.max(6, toggleItems.length));
+  const listHeight = isDesktopWeb
+    ? Math.min(12, Math.max(5, toggleItems.length * 1.35))
+    : Math.min(12, Math.max(6, toggleItems.length));
 
   const applySelectedValues = async (nextValues: string[]) => {
     const previousValues = selectedValues;
@@ -159,23 +163,35 @@ export function MultiSelectDialogContent({
   }, dialogId);
 
   return (
-    <DialogFrame title={title}>
-      <Box flexDirection="column" gap={1}>
+    <DialogFrame title={title} showTitleDivider={!isDesktopWeb}>
+      <Box
+        flexDirection="column"
+        gap={1}
+        style={isDesktopWeb ? { minWidth: 520 } : undefined}
+      >
         <ToggleList
           items={toggleItems}
           selectedIdx={selectedIndex}
-          bgColor={colors.commandBg}
+          bgColor={isDesktopWeb ? "transparent" : colors.commandBg}
           height={listHeight}
           scrollable
           showSelectedDescription={false}
           rowIdPrefix={idPrefix ? `${idPrefix}:option` : undefined}
+          rowGap={isDesktopWeb ? 0 : undefined}
+          rowHeight={isDesktopWeb ? 1.35 : undefined}
+          surface={isDesktopWeb ? "plain" : undefined}
           onSelect={(index) => setSelectedOptionId(options[index]?.value ?? selectedOptionId)}
           onToggle={(id) => {
             setSelectedOptionId(id);
             void toggleOption(optionByValue.get(id)).catch(() => {});
           }}
         />
-        <Box flexDirection="row" gap={1}>
+        <Box
+          flexDirection="row"
+          gap={1}
+          justifyContent={isDesktopWeb ? "flex-end" : undefined}
+          style={isDesktopWeb ? { paddingTop: 6 } : undefined}
+        >
           {ordered && (
             <>
               <Button label="Move Up" variant="ghost" disabled={!canMoveUp} onPress={() => { void moveOption("up").catch(() => {}); }} />
@@ -203,6 +219,7 @@ export function MultiSelectDialogButton({
   shortcutKey,
   shortcutActive = false,
 }: MultiSelectDialogButtonProps) {
+  const isDesktopWeb = useUiHost().kind === "desktop-web";
   const dialog = useDialog();
   const summary = summarizeMultiSelectValues({ options, selectedValues, emptyLabel });
   const buttonLabel = `${label}: ${summary}`;
@@ -241,6 +258,25 @@ export function MultiSelectDialogButton({
       openDialog,
       stopMouseEvent,
     });
+  }
+
+  if (isDesktopWeb) {
+    return (
+      <Box
+        id={idPrefix ? `${idPrefix}:button` : undefined}
+        height={1}
+        flexDirection="row"
+        onMouseDown={stopMouseEvent}
+        onMouseUp={stopMouseEvent}
+      >
+        <Button
+          label={buttonLabel}
+          variant="secondary"
+          disabled={disabled}
+          onPress={() => openDialog()}
+        />
+      </Box>
+    );
   }
 
   return (
