@@ -1740,6 +1740,15 @@ function ComparisonStockChartView({
       : null;
   }, [canvasBaseBitmapKey, canvasBaseBitmapState]);
 
+  const visibleCanvasBaseBitmap = useMemo<NativeChartBitmap | null>(() => {
+    if (canvasBaseBitmap) return canvasBaseBitmap;
+    if (!canvasBaseBitmapKey || !canvasBitmapSize || !canvasBaseBitmapState) return null;
+    return canvasBaseBitmapState.bitmap.width === canvasBitmapSize.pixelWidth
+      && canvasBaseBitmapState.bitmap.height === canvasBitmapSize.pixelHeight
+      ? canvasBaseBitmapState.bitmap
+      : null;
+  }, [canvasBaseBitmap, canvasBaseBitmapKey, canvasBaseBitmapState, canvasBitmapSize]);
+
   useEffect(() => {
     if (!canvasBitmapSize || !canvasBaseBitmapKey || !canvasBaseScene) {
       lastCanvasBaseBitmapRef.current = null;
@@ -1758,23 +1767,23 @@ function ComparisonStockChartView({
     }
 
     let cancelled = false;
-    const timer = setTimeout(() => {
+    const frame = requestAnimationFrameSafe(() => {
       const bitmap = renderNativeComparisonChartBase(canvasBaseScene, canvasBitmapSize.pixelWidth, canvasBitmapSize.pixelHeight);
       if (cancelled) return;
       lastCanvasBaseBitmapRef.current = { key: canvasBaseBitmapKey, bitmap };
       setCanvasBaseBitmapState((current) => (
         current?.key === canvasBaseBitmapKey ? current : { key: canvasBaseBitmapKey, bitmap }
       ));
-    }, 0);
+    });
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancelAnimationFrameSafe(frame);
     };
   }, [canvasBaseBitmapKey, canvasBaseScene, canvasBitmapSize]);
 
   const canvasCrosshair = useMemo(() => {
-    if (!canvasBitmapSize || !canvasBaseBitmap || !nativeCrosshair) return null;
+    if (!canvasBitmapSize || !visibleCanvasBaseBitmap || !nativeCrosshair) return null;
     const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
     const overlayPixelX = scaleLocalPixelCoordinate(
       nativeCrosshair.pixelX,
@@ -1792,12 +1801,12 @@ function ComparisonStockChartView({
       pixelY: overlayPixelY,
       color: nativeCrosshair.colors.crosshairColor,
     };
-  }, [canvasBaseBitmap, canvasBitmapSize, nativeCrosshair, renderer]);
+  }, [canvasBitmapSize, nativeCrosshair, renderer, visibleCanvasBaseBitmap]);
 
   const plotBitmaps = useMemo(() => {
-    if (!canvasBaseBitmap) return null;
-    return [canvasBaseBitmap];
-  }, [canvasBaseBitmap]);
+    if (!visibleCanvasBaseBitmap) return null;
+    return [visibleCanvasBaseBitmap];
+  }, [visibleCanvasBaseBitmap]);
 
   const plotLines: Array<string | StyledContent> = effectiveRenderer === "kitty"
     ? blankPlotLines
