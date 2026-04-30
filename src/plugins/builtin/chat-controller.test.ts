@@ -730,4 +730,79 @@ describe("ChatController", () => {
       lastCursor: "m2",
     });
   });
+
+  test("loads older messages before the oldest cached message without moving the latest cursor", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const cached: ChatMessage[] = [
+      {
+        id: "m3",
+        channelId: "everyone",
+        content: "cached older",
+        replyToId: null,
+        createdAt: "2026-03-28T00:03:00.000Z",
+        user: { id: "u3", username: "cara", displayName: "Cara" },
+      },
+      {
+        id: "m4",
+        channelId: "everyone",
+        content: "cached newer",
+        replyToId: null,
+        createdAt: "2026-03-28T00:04:00.000Z",
+        user: { id: "u4", username: "drew", displayName: "Drew" },
+      },
+    ];
+    const older: ChatMessage[] = [
+      {
+        id: "m1",
+        channelId: "everyone",
+        content: "oldest",
+        replyToId: null,
+        createdAt: "2026-03-28T00:01:00.000Z",
+        user: { id: "u1", username: "alice", displayName: "Alice" },
+      },
+      {
+        id: "m2",
+        channelId: "everyone",
+        content: "older",
+        replyToId: null,
+        createdAt: "2026-03-28T00:02:00.000Z",
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      },
+    ];
+
+    persistence.setState("channel:everyone", {
+      draft: "",
+      replyToId: null,
+      lastCursor: "m4",
+      lastViewedMessageId: "m4",
+    }, { schemaVersion: 1 });
+    persistence.setResource(TRANSCRIPT_KIND, TRANSCRIPT_KEY, {
+      messages: cached,
+    }, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+      cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
+    });
+
+    controller.attachPersistence(persistence);
+
+    const calls: Array<{ channelId: string; opts?: { after?: string; before?: string; limit?: number } }> = [];
+    apiClient.getMessages = async (channelId, opts) => {
+      calls.push({ channelId, opts });
+      return opts?.before === "m3" ? older : [];
+    };
+
+    await controller.loadOlderMessages();
+
+    expect(calls).toEqual([{
+      channelId: "everyone",
+      opts: { limit: 50, before: "m3" },
+    }]);
+    expect(controller.getSnapshot().messages.map((entry) => entry.id)).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(controller.getSnapshot().hasOlderMessages).toBe(false);
+    expect(persistence.getState<{ lastCursor: string }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
+      lastCursor: "m4",
+    });
+  });
 });

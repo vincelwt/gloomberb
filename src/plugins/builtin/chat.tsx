@@ -23,7 +23,15 @@ interface ChatContentProps {
   close?: () => void;
   controller?: Pick<
     ChatController,
-    "attachView" | "getSnapshot" | "refreshMessages" | "refreshSession" | "send" | "setDraft" | "setReplyToId" | "subscribe"
+    | "attachView"
+    | "getSnapshot"
+    | "loadOlderMessages"
+    | "refreshMessages"
+    | "refreshSession"
+    | "send"
+    | "setDraft"
+    | "setReplyToId"
+    | "subscribe"
   >;
 }
 
@@ -33,6 +41,7 @@ interface ChatStatusWidgetProps {
 
 const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;
 const CHAT_COMPOSER_MAX_ROWS = 5;
+const NATIVE_CHAT_COMPOSER_TOP_GAP_PX = 12;
 const MESSAGE_ACTION_WIDTH = 9;
 const COMPOSER_ACTION_WIDTH = 10;
 const MESSAGE_SELECTION_BOTTOM_INSET = 1;
@@ -257,6 +266,8 @@ export function ChatContent({
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [user, setUser] = useState<{ id: string; username: string; emailVerified: boolean } | null>(initialSnapshot.user);
   const [loading, setLoading] = useState(initialSnapshot.loading);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(initialSnapshot.loadingOlderMessages);
+  const [hasOlderMessages, setHasOlderMessages] = useState(initialSnapshot.hasOlderMessages);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState(initialSnapshot.draft);
   const [selectedIdx, setSelectedIdx] = useState(-1);
@@ -270,7 +281,14 @@ export function ChatContent({
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const applyingExternalDraftRef = useRef(false);
+  const prependAnchorRef = useRef<{
+    oldestMessageId: string | null;
+    scrollHeight: number;
+    scrollTop: number;
+    selectedMessageId: string | null;
+  } | null>(null);
   const canSend = !!user?.emailVerified;
+  const nativeComposerTopGap = nativePaneChrome && canSend ? NATIVE_CHAT_COMPOSER_TOP_GAP_PX : 0;
   const messageBodyWidth = Math.max(contentWidth - 4, 1);
   const composerPrefixWidth = nativePaneChrome ? 0 : 3;
   const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
@@ -293,6 +311,8 @@ export function ChatContent({
       setHasSavedSession(snapshot.hasSavedSession);
       setUser(snapshot.user);
       setLoading(snapshot.loading);
+      setLoadingOlderMessages(snapshot.loadingOlderMessages);
+      setHasOlderMessages(snapshot.hasOlderMessages);
       setInputValue((current) => (current === snapshot.draft ? current : snapshot.draft));
       const textarea = inputRef.current;
       if (textarea && textarea.editBuffer.getText() !== snapshot.draft) {
@@ -393,6 +413,28 @@ export function ChatContent({
     setSelectedIdx(-1);
     setFollowMessages(true);
   }, [controller]);
+
+  const requestOlderMessages = useCallback(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox || loadingOlderMessages || !hasOlderMessages || messages.length === 0) return;
+
+    prependAnchorRef.current = {
+      oldestMessageId: messages[0]?.id ?? null,
+      scrollHeight: scrollBox.scrollHeight,
+      scrollTop: scrollBox.scrollTop,
+      selectedMessageId: selectedIdx >= 0 ? messages[selectedIdx]?.id ?? null : null,
+    };
+    setFollowMessages(false);
+    void controller.loadOlderMessages().catch(() => {
+      prependAnchorRef.current = null;
+    });
+  }, [controller, hasOlderMessages, loadingOlderMessages, messages, selectedIdx]);
+
+  const requestOlderMessagesIfNeeded = useCallback(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox || scrollBox.scrollTop > 1) return;
+    requestOlderMessages();
+  }, [requestOlderMessages]);
 
   useEffect(() => {
     if (!canSend && inputFocused) {
@@ -505,6 +547,10 @@ export function ChatContent({
     if (event.name === "k" || event.name === "up") {
       event.preventDefault?.();
       event.stopPropagation?.();
+      if (selectedIdx === 0 && hasOlderMessages && !loadingOlderMessages) {
+        requestOlderMessages();
+        return;
+      }
       moveMessageSelection("up");
       return;
     }
@@ -522,6 +568,7 @@ export function ChatContent({
       setSelectedIdx(0);
       setFollowMessages(false);
       scrollRef.current?.scrollTo(0);
+      queueMicrotask(requestOlderMessagesIfNeeded);
       return;
     }
     if (event.name === "g" && event.shift) {
@@ -539,9 +586,13 @@ export function ChatContent({
     clearReplyTarget,
     focused,
     inputFocused,
+    hasOlderMessages,
+    loadingOlderMessages,
     messages.length,
     moveMessageSelection,
     replyTo,
+    requestOlderMessages,
+    requestOlderMessagesIfNeeded,
     returnToComposer,
     selectedIdx,
     shouldLeaveComposerForSelection,
@@ -567,6 +618,32 @@ export function ChatContent({
     if (!stickyTranscript) return;
     queueMicrotask(() => scrollToBottom(scrollRef.current));
   }, [contentWidth, height, messages, messageAreaHeight, stickyTranscript]);
+
+  useEffect(() => {
+    const anchor = prependAnchorRef.current;
+    if (!anchor || loadingOlderMessages) return;
+
+    queueMicrotask(() => {
+      const currentAnchor = prependAnchorRef.current;
+      const scrollBox = scrollRef.current;
+      if (!currentAnchor || !scrollBox) return;
+
+      const previousOldestIndex = currentAnchor.oldestMessageId
+        ? messages.findIndex((message) => message.id === currentAnchor.oldestMessageId)
+        : -1;
+      const addedRows = previousOldestIndex > 0
+        ? getMessageTopOffset(messages, previousOldestIndex, contentWidth)
+        : Math.max(0, scrollBox.scrollHeight - currentAnchor.scrollHeight);
+      scrollBox.scrollTo(currentAnchor.scrollTop + addedRows);
+      if (currentAnchor.selectedMessageId) {
+        const selectedMessageIndex = messages.findIndex((message) => message.id === currentAnchor.selectedMessageId);
+        if (selectedMessageIndex >= 0) {
+          setSelectedIdx(selectedMessageIndex);
+        }
+      }
+      prependAnchorRef.current = null;
+    });
+  }, [contentWidth, loadingOlderMessages, messages]);
 
   useEffect(() => {
     if (!focused || !stickyTranscript) return;
@@ -621,7 +698,14 @@ export function ChatContent({
         focusable={false}
         stickyScroll={stickyTranscript}
         stickyStart="bottom"
+        onMouseScroll={() => queueMicrotask(requestOlderMessagesIfNeeded)}
+        style={nativeComposerTopGap > 0 ? { paddingBottom: nativeComposerTopGap } : undefined}
       >
+        {loadingOlderMessages && (
+          <Box alignItems="center" justifyContent="center" height={1} width={contentWidth}>
+            <Text fg={colors.textDim}>Loading earlier messages...</Text>
+          </Box>
+        )}
         {messages.length === 0 && (
           <Box alignItems="center" justifyContent="center" flexGrow={1}>
             <Text fg={colors.textDim}>No messages yet. Be the first to say something!</Text>

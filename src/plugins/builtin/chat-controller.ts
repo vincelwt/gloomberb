@@ -7,6 +7,7 @@ const SESSION_STATE_KEY = "session";
 const CHANNEL_STATE_KEY = "channel:everyone";
 const TRANSCRIPT_KIND = "channel-transcript";
 const TRANSCRIPT_SOURCE = "server";
+const MESSAGE_PAGE_SIZE = 50;
 const MAX_CACHED_MESSAGES = 50;
 const SESSION_SCHEMA_VERSION = 1;
 const CHANNEL_SCHEMA_VERSION = 1;
@@ -40,6 +41,8 @@ interface PersistedTranscript {
 
 export interface ChatControllerSnapshot {
   loading: boolean;
+  loadingOlderMessages: boolean;
+  hasOlderMessages: boolean;
   hasSavedSession: boolean;
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
@@ -108,7 +111,10 @@ export class ChatController {
   private hydrated = false;
   private sessionChecked = false;
   private messagesLoading = false;
+  private olderMessagesLoading = false;
   private refreshMessagesPromise: Promise<void> | null = null;
+  private loadOlderMessagesPromise: Promise<void> | null = null;
+  private reachedOldestMessage = false;
   private user: { id: string; username: string; emailVerified: boolean } | null = null;
   private messages: ChatMessage[] = [];
   private pendingMessages: ChatMessage[] = [];
@@ -191,6 +197,8 @@ export class ChatController {
   getSnapshot(): ChatControllerSnapshot {
     return {
       loading: !this.sessionChecked || this.messagesLoading,
+      loadingOlderMessages: this.olderMessagesLoading,
+      hasOlderMessages: this.messages.length > 0 && !this.reachedOldestMessage,
       hasSavedSession: !!apiClient.getSessionToken(),
       user: this.user,
       messages: this.getVisibleMessages(),
@@ -276,6 +284,28 @@ export class ChatController {
     return request;
   }
 
+  async loadOlderMessages(): Promise<void> {
+    if (this.loadOlderMessagesPromise) return this.loadOlderMessagesPromise;
+    const before = this.messages[0]?.id ?? null;
+    if (!before || this.reachedOldestMessage) return;
+
+    this.olderMessagesLoading = true;
+    this.emit();
+
+    const request = this.fetchOlderMessages(before)
+      .catch(() => {
+        this.persistChannelState();
+      })
+      .finally(() => {
+        this.olderMessagesLoading = false;
+        this.loadOlderMessagesPromise = null;
+        this.emit();
+      });
+
+    this.loadOlderMessagesPromise = request;
+    return request;
+  }
+
   setDraft(draft: string): void {
     if (draft === this.draft) return;
     this.draft = draft;
@@ -332,6 +362,7 @@ export class ChatController {
     this.replyToId = null;
     this.lastCursor = null;
     this.lastViewedMessageId = null;
+    this.reachedOldestMessage = false;
     this.openViewCount = 0;
     if (clearSession) {
       this.user = null;
@@ -355,7 +386,9 @@ export class ChatController {
     this.wsConnection = null;
     this.wsConnected = false;
     this.messagesLoading = false;
+    this.olderMessagesLoading = false;
     this.refreshMessagesPromise = null;
+    this.loadOlderMessagesPromise = null;
     this.openViewCount = 0;
     this.notifyFn = () => {};
     this.listeners.clear();
@@ -442,18 +475,25 @@ export class ChatController {
 
   private async fetchMessages(): Promise<void> {
     const legacyTimestampCursor = isLegacyTimestampCursor(this.lastCursor);
+    const hasIncrementalCursor = !!this.lastCursor;
 
     try {
       const messages = await apiClient.getMessages("everyone", {
-        limit: MAX_CACHED_MESSAGES,
+        limit: MESSAGE_PAGE_SIZE,
         after: this.lastCursor ?? undefined,
       });
+      if (!hasIncrementalCursor && messages.length < MESSAGE_PAGE_SIZE) {
+        this.reachedOldestMessage = true;
+      }
       if (messages.length > 0) {
         this.mergeMessages(messages);
         return;
       }
       if (legacyTimestampCursor) {
-        const fullRefresh = await apiClient.getMessages("everyone", { limit: MAX_CACHED_MESSAGES });
+        const fullRefresh = await apiClient.getMessages("everyone", { limit: MESSAGE_PAGE_SIZE });
+        if (fullRefresh.length < MESSAGE_PAGE_SIZE) {
+          this.reachedOldestMessage = true;
+        }
         if (fullRefresh.length > 0) {
           this.mergeMessages(fullRefresh);
           return;
@@ -463,7 +503,10 @@ export class ChatController {
       this.persistChannelState();
       return;
     } catch {
-      const messages = await apiClient.getMessages("everyone", { limit: MAX_CACHED_MESSAGES });
+      const messages = await apiClient.getMessages("everyone", { limit: MESSAGE_PAGE_SIZE });
+      if (messages.length < MESSAGE_PAGE_SIZE) {
+        this.reachedOldestMessage = true;
+      }
       if (messages.length > 0) {
         this.mergeMessages(messages);
         return;
@@ -472,7 +515,22 @@ export class ChatController {
     }
   }
 
-  private mergeMessages(messages: ChatMessage[]): void {
+  private async fetchOlderMessages(before: string): Promise<void> {
+    const messages = await apiClient.getMessages("everyone", {
+      limit: MESSAGE_PAGE_SIZE,
+      before,
+    });
+    if (messages.length < MESSAGE_PAGE_SIZE) {
+      this.reachedOldestMessage = true;
+    }
+    if (messages.length === 0) {
+      this.persistChannelState();
+      return;
+    }
+    this.mergeMessages(messages, { notifyMentions: false });
+  }
+
+  private mergeMessages(messages: ChatMessage[], options?: { notifyMentions?: boolean }): void {
     this.reconcilePendingMessages(messages);
     const merged = new Map<string, ChatMessage>();
     const incoming = new Map<string, ChatMessage>();
@@ -484,13 +542,14 @@ export class ChatController {
       merged.set(message.id, message);
     }
     this.messages = [...merged.values()]
-      .sort(compareMessages)
-      .slice(-MAX_CACHED_MESSAGES);
+      .sort(compareMessages);
     this.lastCursor = this.messages[this.messages.length - 1]?.id ?? this.lastCursor;
     if (this.openViewCount > 0) {
       this.markViewedThroughLatestMessage(false);
     }
-    this.trackUnreadMentions([...incoming.values()]);
+    if (options?.notifyMentions !== false) {
+      this.trackUnreadMentions([...incoming.values()]);
+    }
     this.persistTranscript();
     this.emit();
   }
@@ -531,7 +590,7 @@ export class ChatController {
     }
 
     this.persistence?.setResource(TRANSCRIPT_KIND, "everyone", {
-      messages: this.messages,
+      messages: this.messages.slice(-MAX_CACHED_MESSAGES),
     } satisfies PersistedTranscript, {
       sourceKey: TRANSCRIPT_SOURCE,
       schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
@@ -604,8 +663,7 @@ export class ChatController {
 
   private getVisibleMessages(): ChatMessage[] {
     return [...this.messages, ...this.pendingMessages]
-      .sort(compareMessages)
-      .slice(-MAX_CACHED_MESSAGES);
+      .sort(compareMessages);
   }
 
   private createPendingMessage(content: string, replyToId?: string): ChatMessage {
