@@ -982,6 +982,59 @@ describe("ChatContent", () => {
     expect(frameAfterUpdate).not.toContain("message 1");
   });
 
+  test("loads older messages at the top without jumping away from the current transcript", async () => {
+    const controller = createController({
+      messages: [
+        makeMessage(4),
+        makeMessage(5),
+        makeMessage(6),
+        makeMessage(7),
+        makeMessage(8),
+        makeMessage(9),
+        makeMessage(10),
+      ],
+    });
+    let loadCount = 0;
+    controller.loadOlderMessages = async () => {
+      loadCount += 1;
+      (controller as any).mergeMessages([
+        makeMessage(1),
+        makeMessage(2),
+        makeMessage(3),
+      ], { notifyMentions: false });
+    };
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 60, height: 13 }), {
+        width: 60,
+        height: 13,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("message 10");
+
+    await emitKeypress({ name: "g", sequence: "g" });
+    await flushFrame();
+
+    expect(loadCount).toBe(1);
+    expect(controller.getSnapshot().messages.map((message) => message.id)).toEqual([
+      "m1",
+      "m2",
+      "m3",
+      "m4",
+      "m5",
+      "m6",
+      "m7",
+      "m8",
+      "m9",
+      "m10",
+    ]);
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("message 4");
+    expect(frame).not.toContain("message 1");
+  });
+
   test("repins the transcript to the latest message when a following chat pane regains focus", async () => {
     const controller = createController({
       messages: [

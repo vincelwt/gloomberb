@@ -213,6 +213,21 @@ describe("apiClient auth cookies", () => {
 });
 
 describe("apiClient chat timestamps", () => {
+  test("sends the before cursor when loading older chat messages", async () => {
+    let requestedUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      requestedUrl = String(input);
+      return createResponse([]);
+    });
+
+    await apiClient.getMessages("everyone", { limit: 50, before: "m42" });
+
+    const url = new URL(requestedUrl);
+    expect(url.pathname).toBe("/chat/channels/everyone/messages");
+    expect(url.searchParams.get("limit")).toBe("50");
+    expect(url.searchParams.get("before")).toBe("m42");
+  });
+
   test("normalizes transcript and send-response timestamps to UTC ISO strings", async () => {
     const responses = [
       createResponse([{
