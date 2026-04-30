@@ -917,6 +917,45 @@ describe("ChatContent", () => {
     expect(sentMessages).toEqual(["first line\nsecond line"]);
   });
 
+  test("keeps typed shortcut letters in the composer instead of moving message selection", async () => {
+    const controller = createController({
+      messages: Array.from({ length: 18 }, (_, index) => makeMessage(index + 1)),
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frameBeforeClick = testSetup.captureCharFrame().split("\n");
+    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = frameBeforeClick[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("g");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frameAfterType = testSetup.captureCharFrame();
+    expect(frameAfterType).toContain("> g");
+    expect(frameAfterType).not.toContain("user1 3/30/26");
+    expect(frameAfterType).not.toContain("message 1 ");
+  });
+
   test("renders optimistic sends with a sending status", async () => {
     const controller = createController({
       messages: [{

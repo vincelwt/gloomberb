@@ -1,16 +1,16 @@
-import { Box, Input, ScrollBox, Text, Textarea, useUiCapabilities } from "../../../ui";
+import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
-import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
 import type { DetailTabProps } from "../../../types/plugin";
 import { useAppSelector, usePaneTicker } from "../../../state/app-context";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePluginState } from "../../../plugins/plugin-runtime";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 import { MarkdownText } from "../../../components/markdown-text";
-import { Spinner, usePaneFooter } from "../../../components";
-import { blendHex, colors } from "../../../theme/colors";
+import { getMessageComposerBlockHeight, MessageComposer, Spinner, usePaneFooter } from "../../../components";
+import { colors } from "../../../theme/colors";
 import { buildTickerAiContext } from "./ticker-context";
 import { detectProviders, getAvailableProviders, resolveDefaultAiProviderId, __setDetectedProvidersForTests, type AiProvider } from "./providers";
 import { runAiPrompt } from "./runner";
@@ -61,7 +61,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
-  const inputRef = useRef<InputRenderable>(null);
+  const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const runRef = useRef<ReturnType<typeof runAiPrompt> | null>(null);
   const availableProviders = getAvailableProviders(providers);
@@ -263,120 +263,78 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   }
 
   const contentWidth = Math.max(width - 2, 0);
-  const dividerWidth = Math.max(contentWidth, 0);
   const composerHeight = nativePaneChrome ? 2 : 1;
-  const chatHeight = nativePaneChrome
-    ? Math.max(height - composerHeight, 4)
-    : Math.max(height - 3, 4);
-  const composerBackground = blendHex(colors.panel, colors.bg, 0.22);
-  const composerBorder = inputFocused && focused
-    ? blendHex(colors.borderFocused, colors.textBright, 0.24)
-    : colors.border;
+  const terminalFooterClearance = nativePaneChrome ? 0 : 1;
+  const composerBlockHeight = getMessageComposerBlockHeight({
+    height: composerHeight,
+    nativePaneChrome,
+    terminalBottomInset: terminalFooterClearance,
+  });
+  const chatHeight = Math.max(height - composerBlockHeight, 0);
 
   return (
-    <Box flexDirection="column" paddingX={nativePaneChrome ? 0 : 1} height={height}>
-      <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
-        <Box flexDirection="column" paddingX={nativePaneChrome ? 1 : 0}>
-          {messages.length === 0 ? (
-            <Box paddingTop={1}>
-              <Text fg={colors.textDim}>
-                Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
-              </Text>
-            </Box>
-          ) : (
-            messages.map((message, index) => (
-              <Box key={index} flexDirection="column" paddingTop={index > 0 ? 1 : 0}>
-                <Box height={1}>
-                  <Text
-                    attributes={TextAttributes.BOLD}
-                    fg={message.role === "user" ? colors.textBright : colors.positive}
-                  >
-                    {message.role === "user" ? "You" : currentProvider?.name || "AI"}
-                    {message.loading ? " (thinking...)" : ""}
-                  </Text>
-                </Box>
-                <Box>
-                  {message.content ? (
-                    <MarkdownText
-                      text={message.content}
-                      lineWidth={contentWidth}
-                      catalog={catalog}
-                      textColor={colors.text}
-                      openTicker={openTicker}
-                    />
-                  ) : message.loading ? (
-                    <Spinner label="Generating..." />
-                  ) : (
-                    <Text fg={colors.text}>{""}</Text>
-                  )}
-                </Box>
+    <Box flexDirection="column" paddingX={nativePaneChrome ? 0 : 1} height={height} overflow="hidden">
+      {chatHeight > 0 && (
+        <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
+          <Box flexDirection="column" paddingX={nativePaneChrome ? 1 : 0}>
+            {messages.length === 0 ? (
+              <Box paddingTop={1}>
+                <Text fg={colors.textDim}>
+                  Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
+                </Text>
               </Box>
-            ))
-          )}
-        </Box>
-      </ScrollBox>
-
-      {nativePaneChrome ? (
-        <Box
-          flexDirection="row"
-          width={width}
-          height={composerHeight}
-          backgroundColor={composerBackground}
-          style={{
-            borderTop: `1px solid ${composerBorder}`,
-          }}
-          onMouseDown={focusInput}
-        >
-          <Textarea
-            ref={inputRef}
-            initialValue={inputValue}
-            width="100%"
-            height={composerHeight}
-            focused={inputFocused && focused}
-            placeholder="Ask a question..."
-            placeholderColor={colors.textMuted}
-            textColor={colors.text}
-            backgroundColor="transparent"
-            focusedBackgroundColor="transparent"
-            cursorColor={colors.textBright}
-            style={{
-              padding: "6px 12px",
-              lineHeight: "20px",
-              fontSize: "13px",
-            }}
-            onInput={(value) => setInputValue(value)}
-            keyBindings={[
-              { name: "return", action: "submit" },
-              { name: "linefeed", action: "submit" },
-            ]}
-            onSubmit={submitInput}
-            wrapText
-          />
-        </Box>
-      ) : (
-        <>
-          <Box height={1}>
-            <Text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</Text>
+            ) : (
+              messages.map((message, index) => (
+                <Box key={index} flexDirection="column" paddingTop={index > 0 ? 1 : 0}>
+                  <Box height={1}>
+                    <Text
+                      attributes={TextAttributes.BOLD}
+                      fg={message.role === "user" ? colors.textBright : colors.positive}
+                    >
+                      {message.role === "user" ? "You" : currentProvider?.name || "AI"}
+                      {message.loading ? " (thinking...)" : ""}
+                    </Text>
+                  </Box>
+                  <Box>
+                    {message.content ? (
+                      <MarkdownText
+                        text={message.content}
+                        lineWidth={contentWidth}
+                        catalog={catalog}
+                        textColor={colors.text}
+                        openTicker={openTicker}
+                      />
+                    ) : message.loading ? (
+                      <Spinner label="Generating..." />
+                    ) : (
+                      <Text fg={colors.text}>{""}</Text>
+                    )}
+                  </Box>
+                </Box>
+              ))
+            )}
           </Box>
-
-          <Box flexDirection="row" height={1} onMouseDown={focusInput}>
-            <Text fg={colors.textMuted}>{"> "}</Text>
-            <Box flexGrow={1}>
-              <Input
-                ref={inputRef}
-                placeholder="Ask a question..."
-                focused={inputFocused && focused}
-                textColor={colors.text}
-                placeholderColor={colors.textDim}
-                backgroundColor={inputFocused && focused ? colors.panel : colors.bg}
-                onInput={(value) => setInputValue(value)}
-                onChange={(value) => setInputValue(value)}
-                onSubmit={submitInput}
-              />
-            </Box>
-          </Box>
-        </>
+        </ScrollBox>
       )}
+
+      <MessageComposer
+        inputRef={inputRef}
+        initialValue={inputValue}
+        focused={inputFocused && focused}
+        placeholder="Ask a question..."
+        terminalPrefix=" > "
+        terminalBottomInset={terminalFooterClearance}
+        width={nativePaneChrome ? width : contentWidth}
+        height={composerHeight}
+        onFocusRequest={focusInput}
+        onInput={(value) => setInputValue(value)}
+        keyBindings={[
+          { name: "return", action: "submit" },
+          { name: "linefeed", action: "submit" },
+        ]}
+        onSubmit={submitInput}
+        wrapText={nativePaneChrome}
+      />
     </Box>
   );
 }

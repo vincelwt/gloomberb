@@ -38,6 +38,9 @@ export type {
   NumberFieldProps,
 } from "./fields";
 
+export { getMessageComposerBlockHeight, MessageComposer } from "./message-composer";
+export type { MessageComposerBlockHeightOptions, MessageComposerProps } from "./message-composer";
+
 export { EmptyState } from "./status";
 export type { EmptyStateProps } from "./status";
 
