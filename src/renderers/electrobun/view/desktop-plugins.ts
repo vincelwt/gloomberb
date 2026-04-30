@@ -64,8 +64,13 @@ export function createDesktopBuiltinPlugins(fetchYahooNews: (ticker: string, cou
     },
   };
 
-  const layoutManagerIndex = uiBuiltinPlugins.findIndex((plugin) => plugin.id === "layout-manager");
-  const insertIndex = layoutManagerIndex >= 0 ? layoutManagerIndex : uiBuiltinPlugins.length;
+  const insertionAnchors = [
+    uiBuiltinPlugins.findIndex((plugin) => plugin.id === "broker-manager"),
+    uiBuiltinPlugins.findIndex((plugin) => plugin.id === "layout-manager"),
+  ].filter((index) => index >= 0);
+  const insertIndex = insertionAnchors.length > 0
+    ? Math.min(...insertionAnchors)
+    : uiBuiltinPlugins.length;
 
   return [
     yahooNewsPlugin,

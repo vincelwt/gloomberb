@@ -11,6 +11,11 @@ export function createTestPluginRuntime(
 ): PluginRuntimeAccess {
   return {
     getDataProvider: () => null,
+    getBrokerAdapter: () => null,
+    connectBrokerInstance: async () => {},
+    updateBrokerInstance: async () => {},
+    syncBrokerInstance: async () => {},
+    removeBrokerInstance: async () => {},
     pinTicker() {},
     navigateTicker() {},
     selectTicker() {},

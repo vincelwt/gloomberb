@@ -16,11 +16,17 @@ import {
   usePaneInstanceId,
   type PaneRuntimeState,
 } from "../state/app-context";
+import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider } from "../types/data-provider";
-import type { AppNotificationRequest } from "../types/plugin";
+import type { AppNotificationRequest, BrokerInstanceUpdateOptions } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
   getDataProvider(): DataProvider | null;
+  getBrokerAdapter(brokerType: string): BrokerAdapter | null;
+  connectBrokerInstance(instanceId: string): Promise<void>;
+  updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;
+  syncBrokerInstance(instanceId: string): Promise<void>;
+  removeBrokerInstance(instanceId: string): Promise<void>;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
   selectTicker(symbol: string, paneId?: string): void;
@@ -131,6 +137,17 @@ export function usePluginAppActions() {
 export function usePluginDataProvider(): DataProvider | null {
   const { runtime } = usePluginRenderContext();
   return runtime.getDataProvider();
+}
+
+export function usePluginBrokerActions() {
+  const { runtime } = usePluginRenderContext();
+  return {
+    getBrokerAdapter: runtime.getBrokerAdapter,
+    connectBrokerInstance: runtime.connectBrokerInstance,
+    updateBrokerInstance: runtime.updateBrokerInstance,
+    syncBrokerInstance: runtime.syncBrokerInstance,
+    removeBrokerInstance: runtime.removeBrokerInstance,
+  };
 }
 
 export function getPluginPaneStateValue<T>(

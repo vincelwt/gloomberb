@@ -835,15 +835,37 @@ function AppInner({
     pluginRegistry.events.emit("config:changed", { config: nextConfig });
     return instance;
   };
-  pluginRegistry.updateBrokerInstanceFn = async (instanceId, values) => {
+  pluginRegistry.connectBrokerInstanceFn = async (instanceId) => {
+    const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
+    if (!instance) throw new Error("Broker profile not found.");
+    if (instance.enabled === false) throw new Error(`Broker profile "${instance.label}" is disabled.`);
+
+    const broker = pluginRegistry.brokers.get(instance.brokerType);
+    if (!broker) throw new Error(`Broker "${instance.brokerType}" is not available.`);
+
+    const valid = await broker.validate(instance).catch(() => false);
+    if (!valid) throw new Error(`${broker.name} setup is incomplete.`);
+
+    await broker.connect?.(instance);
+    if (broker.listAccounts) {
+      const accounts = await broker.listAccounts(instance);
+      dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts });
+    }
+  };
+  pluginRegistry.updateBrokerInstanceFn = async (instanceId, values, options = {}) => {
     const currentInstance = state.config.brokerInstances.find((instance) => instance.id === instanceId);
     const nextInstances = state.config.brokerInstances.map((instance) =>
       instance.id === instanceId
-        ? {
-          ...instance,
-          connectionMode: typeof values.connectionMode === "string" ? values.connectionMode : instance.connectionMode,
-          config: { ...instance.config, ...values },
-        }
+        ? (() => {
+          const nextValues = options.replaceConfig ? values : { ...instance.config, ...values };
+          return {
+            ...instance,
+            label: options.label ?? instance.label,
+            enabled: options.enabled ?? instance.enabled,
+            connectionMode: typeof nextValues.connectionMode === "string" ? nextValues.connectionMode : instance.connectionMode,
+            config: nextValues,
+          };
+        })()
         : instance,
     );
     const nextInstance = nextInstances.find((instance) => instance.id === instanceId);

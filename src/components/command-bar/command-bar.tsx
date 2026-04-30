@@ -50,8 +50,10 @@ import {
   resolveFollowBindingInstance,
   type LayoutConfig,
 } from "../../types/config";
-import { resolveBrokerConfigFields, type BrokerConfigField } from "../../types/broker";
-import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import {
+  buildBrokerProfileConfig,
+  validateBrokerProfileValues,
+} from "../../brokers/profile-form";
 import {
   addPaneFloating,
   addPaneToLayout,
@@ -804,17 +806,10 @@ export function CommandBar({
       throw new Error(`Unknown broker "${brokerId}".`);
     }
 
-    const requiredFields = resolveBrokerConfigFields(adapter, values).filter((field) => field.required);
-    for (const field of requiredFields) {
-      const nextValue = String(values[field.key] ?? "").trim();
-      if (!nextValue) {
-        throw new Error(`${field.label} is required.`);
-      }
-    }
+    const validationError = validateBrokerProfileValues(adapter, values);
+    if (validationError) throw new Error(validationError);
 
-    const brokerValues = brokerId === "ibkr"
-      ? buildIbkrConfigFromValues(values)
-      : values;
+    const brokerValues = buildBrokerProfileConfig(adapter, values);
     const instance = await pluginRegistry.createBrokerInstanceFn(
       brokerId,
       adapter.name.trim(),

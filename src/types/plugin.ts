@@ -399,6 +399,12 @@ export interface AppNotificationRequest {
   };
 }
 
+export interface BrokerInstanceUpdateOptions {
+  label?: string;
+  enabled?: boolean;
+  replaceConfig?: boolean;
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
@@ -430,7 +436,7 @@ export interface GloomPluginContext {
   readonly paneSettings: PluginPaneSettingsState;
 
   createBrokerInstance(brokerType: string, label: string, values: Record<string, unknown>): Promise<BrokerInstanceConfig>;
-  updateBrokerInstance(instanceId: string, values: Record<string, unknown>): Promise<void>;
+  updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;
   syncBrokerInstance(instanceId: string): Promise<void>;
   removeBrokerInstance(instanceId: string): Promise<void>;
 
