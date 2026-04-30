@@ -83,7 +83,6 @@ export function buildCorrelationSettingsDef(): PaneSettingsDef {
       {
         key: "rangePreset",
         label: "Range",
-        description: "Use daily closes over this range.",
         type: "select",
         options: CORRELATION_RANGE_OPTIONS.map((range) => ({
           value: range,

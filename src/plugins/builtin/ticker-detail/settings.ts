@@ -81,7 +81,6 @@ export function buildTickerDetailSettingsDef(settings: TickerDetailPaneSettings)
         ? [{
           key: "lockedTabId",
           label: "Locked Tab",
-          description: "Choose which tab this pane should stay pinned to when tabs are hidden.",
           type: "select" as const,
           options: tabs.map((tab) => ({ value: tab.id, label: tab.name })),
         }]
@@ -107,7 +106,6 @@ export function buildQuoteMonitorSettingsDef(): PaneSettingsDef {
       {
         key: "symbol",
         label: "Ticker",
-        description: "Set the fixed ticker symbol for this quote monitor.",
         type: "text",
         placeholder: "AAPL",
       },

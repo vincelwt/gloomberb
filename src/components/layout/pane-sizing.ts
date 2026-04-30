@@ -2,6 +2,10 @@
 const PANE_HEADER_ROWS = 1;
 const PANE_FOOTER_ROWS = 1;
 
+export function shouldReservePaneFooter(nativePaneChrome: boolean | undefined, showFooter: boolean): boolean {
+  return !nativePaneChrome || showFooter;
+}
+
 export function getPaneBodyHeight(height: number, reserveFooter = true): number {
   return Math.max(1, height - PANE_HEADER_ROWS - (reserveFooter ? PANE_FOOTER_ROWS : 0));
 }

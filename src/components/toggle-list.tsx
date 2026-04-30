@@ -58,14 +58,15 @@ function DesktopToggleRow({
       width="100%"
       minWidth={0}
       style={{
-        paddingInline: 8,
+        height: "100%",
+        gap: 10,
+        paddingInline: 10,
         opacity: state.disabled ? 0.55 : 1,
       }}
     >
       <Box
         alignItems="center"
         justifyContent="center"
-        marginRight={1}
         backgroundColor={enabled ? colors.borderFocused : "transparent"}
         style={{
           width: 16,
@@ -99,6 +100,7 @@ function DesktopToggleRow({
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
             fontWeight: state.selected ? 700 : 500,
+            lineHeight: "16px",
           }}
         >
           {item.label}

@@ -1,5 +1,5 @@
 import { Box, ScrollBox, Span, Text, Textarea, useUiCapabilities } from "../../ui";
-import { Fragment, useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
@@ -86,7 +86,7 @@ function wrapTextLines(text: string, width: number) {
 }
 
 function getMessageBodyLines(message: ChatMessage, width: number) {
-  const contentLineWidth = Math.max(width - 4 - MESSAGE_ACTION_WIDTH, 1);
+  const contentLineWidth = Math.max(width - 4, 1);
   return wrapTextLines(message.content, contentLineWidth);
 }
 
@@ -271,7 +271,7 @@ export function ChatContent({
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const applyingExternalDraftRef = useRef(false);
   const canSend = !!user?.emailVerified;
-  const messageBodyWidth = Math.max(contentWidth - 4 - MESSAGE_ACTION_WIDTH, 1);
+  const messageBodyWidth = Math.max(contentWidth - 4, 1);
   const composerPrefixWidth = nativePaneChrome ? 0 : 3;
   const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
   const composerRows = estimateComposerHeight(inputValue, composerTextWidth);
@@ -555,7 +555,8 @@ export function ChatContent({
   const composerBackground = nativePaneChrome ? blendHex(colors.panel, colors.bg, 0.22) : colors.bg;
   const composerBorder = inputFocused && focused
     ? blendHex(colors.borderFocused, colors.textBright, 0.24)
-    : blendHex(colors.border, colors.borderFocused, 0.18);
+    : colors.border;
+  const composerWidth = nativePaneChrome ? width : contentWidth;
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;
@@ -566,6 +567,11 @@ export function ChatContent({
     if (!stickyTranscript) return;
     queueMicrotask(() => scrollToBottom(scrollRef.current));
   }, [contentWidth, height, messages, messageAreaHeight, stickyTranscript]);
+
+  useEffect(() => {
+    if (!focused || !stickyTranscript) return;
+    queueMicrotask(() => scrollToBottom(scrollRef.current));
+  }, [focused, stickyTranscript]);
 
   useEffect(() => {
     const sb = scrollRef.current;
@@ -644,16 +650,27 @@ export function ChatContent({
           const authorAttributes = (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD;
           const bodyColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
           const bodyLines = getMessageBodyLines(msg, contentWidth);
+          const showInlineReplyAction = !grouped && (nativePaneChrome ? canSend : showReplyAction);
+          const showGroupedReplyAction = grouped && (nativePaneChrome ? canSend : showReplyAction);
           const setHovered = () => setHoveredIdx((current) => (current === index ? current : index));
           const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
           const messageRowProps = {
             width: contentWidth,
             backgroundColor: bgColor,
-            onMouseMove: setHovered,
-            onMouseOut: clearHovered,
+            "data-gloom-role": nativePaneChrome ? "chat-message-row" : undefined,
+            "data-selected": nativePaneChrome ? (isSelected ? "true" : "false") : undefined,
+            onMouseMove: nativePaneChrome ? undefined : setHovered,
+            onMouseOut: nativePaneChrome ? undefined : clearHovered,
           };
           return (
-            <Fragment key={msg.id}>
+            <Box
+              key={msg.id}
+              width={contentWidth}
+              flexDirection="column"
+              data-gloom-role={nativePaneChrome ? "chat-message" : undefined}
+              data-selected={nativePaneChrome ? (isSelected ? "true" : "false") : undefined}
+              style={nativePaneChrome ? { "--chat-hover-bg": hoverBg() } : undefined}
+            >
               {msg.replyTo && (
                 <Box
                   {...messageRowProps}
@@ -682,6 +699,23 @@ export function ChatContent({
                     {msg.user.username ?? "anon"}
                   </Text>
                   <Text fg={headerStatusColor}> {headerStatus}</Text>
+                  {showInlineReplyAction && (
+                    <>
+                      <Text fg={headerStatusColor}> </Text>
+                      <Box
+                        width={MESSAGE_ACTION_WIDTH}
+                        height={1}
+                        data-gloom-role={nativePaneChrome ? "chat-message-reply-action" : undefined}
+                      >
+                        <ChatActionChip
+                          label="Reply"
+                          width={MESSAGE_ACTION_WIDTH}
+                          emphasized={isSelected}
+                          onPress={() => beginReplyTo(index)}
+                        />
+                      </Box>
+                    </>
+                  )}
                 </Box>
               )}
               {bodyLines.map((line, lineIndex) => (
@@ -691,6 +725,7 @@ export function ChatContent({
                   paddingLeft={3}
                   height={1}
                   flexDirection="row"
+                  position={grouped ? "relative" : undefined}
                 >
                   <Box width={messageBodyWidth} height={1}>
                     <TickerBadgeText
@@ -701,19 +736,26 @@ export function ChatContent({
                       openTicker={openTicker}
                     />
                   </Box>
-                  <Box width={MESSAGE_ACTION_WIDTH} height={1}>
-                    {lineIndex === 0 && showReplyAction && (
+                  {lineIndex === 0 && showGroupedReplyAction && (
+                    <Box
+                      position="absolute"
+                      top={0}
+                      right={0}
+                      width={MESSAGE_ACTION_WIDTH}
+                      height={1}
+                      data-gloom-role={nativePaneChrome ? "chat-message-reply-action" : undefined}
+                    >
                       <ChatActionChip
                         label="Reply"
                         width={MESSAGE_ACTION_WIDTH}
                         emphasized={isSelected}
                         onPress={() => beginReplyTo(index)}
                       />
-                    )}
-                  </Box>
+                    </Box>
+                  )}
                 </Box>
               ))}
-            </Fragment>
+            </Box>
           );
         })}
       </ScrollBox>
@@ -740,7 +782,16 @@ export function ChatContent({
             </Box>
           )}
 
-          <Box height={composerHeight} width={contentWidth} flexDirection="row" onMouseDown={focusInput}>
+          <Box
+            height={composerHeight}
+            width={composerWidth}
+            flexDirection="row"
+            backgroundColor={nativePaneChrome ? composerBackground : undefined}
+            style={nativePaneChrome ? {
+              borderTop: `1px solid ${composerBorder}`,
+            } : undefined}
+            onMouseDown={focusInput}
+          >
             {!nativePaneChrome && (
               <Box width={composerPrefixWidth} height={composerHeight}>
                 <Text fg={colors.textDim}> {">"} </Text>
@@ -749,15 +800,7 @@ export function ChatContent({
             <Box
               width={nativePaneChrome ? "100%" : composerTextWidth}
               height={composerHeight}
-              backgroundColor={nativePaneChrome ? composerBackground : undefined}
-              style={nativePaneChrome ? {
-                border: `1px solid ${composerBorder}`,
-                borderRadius: 6,
-                boxShadow: inputFocused && focused
-                  ? "0 0 0 1px rgba(84, 201, 159, 0.16), inset 0 1px 0 rgba(255,255,255,0.05)"
-                  : "inset 0 1px 0 rgba(255,255,255,0.04)",
-                overflow: "hidden",
-              } : undefined}
+              backgroundColor={nativePaneChrome ? "transparent" : undefined}
             >
               <Textarea
                 ref={inputRef}
@@ -768,14 +811,13 @@ export function ChatContent({
                 placeholder={inputPlaceholder}
                 placeholderColor={colors.textMuted}
                 textColor={colors.text}
-                backgroundColor={composerBackground}
-                focusedBackgroundColor={composerBackground}
+                backgroundColor={nativePaneChrome ? "transparent" : composerBackground}
+                focusedBackgroundColor={nativePaneChrome ? "transparent" : composerBackground}
                 cursorColor={colors.textBright}
                 style={nativePaneChrome ? {
-                  padding: "6px 10px",
+                  padding: "6px 12px",
                   lineHeight: "20px",
                   fontSize: "13px",
-                  borderRadius: 6,
                 } : undefined}
                 onInput={commitLocalDraft}
                 keyBindings={[

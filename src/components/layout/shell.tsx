@@ -50,8 +50,8 @@ import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } fr
 import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneContent } from "./pane-content";
 import { PaneWrapper } from "./pane";
-import { PaneFooterProvider } from "./pane-footer";
-import { getPaneBodyHeight, getPaneBodyWidth } from "./pane-sizing";
+import { hasPaneFooterContent, PaneFooterProvider } from "./pane-footer";
+import { getPaneBodyHeight, getPaneBodyWidth, shouldReservePaneFooter } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 
@@ -1500,7 +1500,8 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
           >
             <PaneFooterProvider>
               {(footer) => {
-                const bodyHeight = getPaneBodyHeight(leaf.rect.height);
+                const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
+                const bodyHeight = getPaneBodyHeight(leaf.rect.height, reserveFooter);
                 return (
                   <PaneWrapper
                     title={getPaneTitle(pane)}
@@ -1543,7 +1544,8 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         return (
           <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
             {(footer) => {
-              const bodyHeight = getPaneBodyHeight(preview.height);
+              const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
+              const bodyHeight = getPaneBodyHeight(preview.height, reserveFooter);
               return (
                 <FloatingPaneWrapper
                   title={getPaneTitle(pane)}

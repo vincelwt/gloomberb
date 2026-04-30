@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { colors, paneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
-import { getPaneBodyHeight } from "./pane-sizing";
+import { getPaneBodyHeight, shouldReservePaneFooter } from "./pane-sizing";
 
 interface PaneWrapperProps {
   title?: string;
@@ -43,7 +43,7 @@ export function PaneWrapper({
   const { nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
-  const reserveFooter = !nativePaneChrome || showFooter;
+  const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
   const bodyHeight = typeof height === "number"
     ? title ? getPaneBodyHeight(height, reserveFooter) : height
     : undefined;

@@ -5,6 +5,7 @@ import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type Te
 import { useNativeRenderer } from "../../ui";
 import { useViewport } from "../../react/input";
 import { Button, NumberField, Spinner, TextField } from "../ui";
+import { NativeSelect, openNativeSelect, type NativeSelectElement } from "../ui/native-select";
 import { ToggleList } from "../toggle-list";
 import {
   colors,
@@ -376,6 +377,8 @@ export function CommandBar({
   const previousRootModeRef = useRef(rootModeInfo.kind);
   const rootThemeBaseIdRef = useRef<string | null>(null);
   const workflowInputRefs = useRef<Record<string, RefObject<InputRenderable | TextareaRenderable | null>>>({});
+  const workflowNativeSelectRefs = useRef(new Map<string, NativeSelectElement>());
+  const workflowScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const nativeListScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const visibleListStateRef = useRef<ListScreenState | null>(null);
   const processedLaunchSequenceRef = useRef<number | null>(null);
@@ -602,6 +605,14 @@ export function CommandBar({
     if (!activeField || !isWorkflowTextField(activeField)) return;
     const inputRef = getInputRef(workflowInputRefs.current, activeField.id);
     inputRef.current?.focus?.();
+  }, []);
+
+  const setWorkflowNativeSelectRef = useCallback((fieldId: string, element: NativeSelectElement | null) => {
+    if (element) {
+      workflowNativeSelectRefs.current.set(fieldId, element);
+    } else {
+      workflowNativeSelectRefs.current.delete(fieldId);
+    }
   }, []);
 
   const openWorkflowRoute = useCallback((route: CommandBarWorkflowRoute) => {
@@ -4766,11 +4777,19 @@ export function CommandBar({
           return;
         }
 
-        if (event.name === "return" || event.name === "enter") {
+        if (
+          event.name === "return"
+          || event.name === "enter"
+          || (nativePaneChrome && event.name === "space" && activeField?.type === "select")
+        ) {
           if (!activeField) return;
           if (activeField.type === "select" || activeField.type === "multi-select" || activeField.type === "ordered-multi-select" || activeField.type === "toggle") {
             event.stopPropagation();
             event.preventDefault();
+            if (nativePaneChrome && activeField.type === "select") {
+              openNativeSelect(workflowNativeSelectRefs.current.get(activeField.id));
+              return;
+            }
             openWorkflowFieldPicker(currentRoute, activeField);
             return;
           }
@@ -4933,6 +4952,7 @@ export function CommandBar({
     handleMultiSelectToggle,
     moveListSelection,
     moveWorkflowFocus,
+    nativePaneChrome,
     openWorkflowFieldPicker,
     popRoute,
     renderer,
@@ -4997,6 +5017,25 @@ export function CommandBar({
       scrollBox.scrollTo(nativeSelectedRowIndex - viewportHeight + 1);
     }
   }, [listBodyHeight, nativePaneChrome, nativeSelectedRowIndex, visibleListState?.kind, visibleListState?.query]);
+
+  useEffect(() => {
+    if (!nativePaneChrome || currentRoute?.kind !== "workflow") return;
+    const scrollBox = workflowScrollRef.current;
+    if (!scrollBox) return;
+    const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
+    const activeIndex = visibleFields.findIndex((field) => field.id === currentRoute.activeFieldId);
+    if (activeIndex < 0) return;
+
+    const estimatedFieldHeight = 4;
+    const fieldTop = activeIndex * estimatedFieldHeight;
+    const fieldBottom = fieldTop + estimatedFieldHeight;
+    const viewportHeight = Math.max(1, scrollBox.viewport?.height ?? bodyHeight);
+    if (fieldTop < scrollBox.scrollTop) {
+      scrollBox.scrollTo(fieldTop);
+    } else if (fieldBottom > scrollBox.scrollTop + viewportHeight) {
+      scrollBox.scrollTo(fieldBottom - viewportHeight);
+    }
+  }, [bodyHeight, currentRoute, nativePaneChrome]);
 
   const renderListBody = () => {
     if (!visibleListState) return null;
@@ -5135,8 +5174,8 @@ export function CommandBar({
   const renderWorkflowBody = () => {
     if (currentRoute?.kind !== "workflow") return null;
     const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
-    return (
-      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
+    const workflowContent = (
+      <>
         {currentRoute.subtitle && (
           <Box height={1}>
             <Text fg={paletteSubtleText}>{truncateText(currentRoute.subtitle, queryDisplayWidth)}</Text>
@@ -5154,6 +5193,7 @@ export function CommandBar({
           const borderColor = active ? paletteSelectedBg : paletteBg;
           const fieldBg = nativePaneChrome ? "transparent" : active ? inputBg : panelBg;
           const nativeFieldRule = active ? "rgba(84, 201, 159, 0.48)" : "rgba(132, 145, 161, 0.18)";
+          const useNativeSelect = nativePaneChrome && field.type === "select";
           return (
             <Box
               key={field.id}
@@ -5166,7 +5206,7 @@ export function CommandBar({
                 updateTopRoute((route) => route.kind === "workflow"
                   ? { ...route, activeFieldId: field.id, error: null }
                   : route);
-                if (!isWorkflowTextField(field)) {
+                if (!isWorkflowTextField(field) && !useNativeSelect) {
                   openWorkflowFieldPicker(currentRoute, field);
                 }
               }}
@@ -5258,6 +5298,19 @@ export function CommandBar({
                     }}
                   />
                 )
+              ) : useNativeSelect ? (
+                <NativeSelect
+                  value={coerceFieldString(value)}
+                  options={field.options}
+                  width="100%"
+                  selectRef={(element) => setWorkflowNativeSelectRef(field.id, element)}
+                  onFocus={() => {
+                    updateTopRoute((route) => route.kind === "workflow"
+                      ? { ...route, activeFieldId: field.id, error: null }
+                      : route);
+                  }}
+                  onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
+                />
               ) : (
                 <Box
                   height={1}
@@ -5298,10 +5351,35 @@ export function CommandBar({
             <Spinner label={currentRoute.pendingLabel} />
           </Box>
         )}
-        <Box flexGrow={1} />
+        {!nativePaneChrome && <Box flexGrow={1} />}
         <Box flexDirection="row" gap={1} justifyContent={visibleFields.some((field) => field.type === "textarea") ? "flex-end" : "flex-start"}>
           <Button label={currentRoute.submitLabel} variant="primary" onPress={() => { void submitWorkflowRoute(currentRoute); }} disabled={currentRoute.pending} />
         </Box>
+      </>
+    );
+
+    if (nativePaneChrome) {
+      return (
+        <ScrollBox
+          ref={workflowScrollRef}
+          height={bodyHeight}
+          scrollY
+          style={{ overflowX: "hidden", paddingRight: 4 }}
+        >
+          <Box
+            flexDirection="column"
+            paddingX={contentPadding}
+            style={{ paddingBottom: 8 }}
+          >
+            {workflowContent}
+          </Box>
+        </ScrollBox>
+      );
+    }
+
+    return (
+      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
+        {workflowContent}
       </Box>
     );
   };
