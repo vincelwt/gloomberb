@@ -603,7 +603,7 @@ class GloomApiClient {
   }
 
   async signUp(email: string, username: string, name: string, password: string): Promise<AuthUser> {
-    const result = await this.request<{ user: AuthUser }>("/api/auth/api/auth/sign-up/email", {
+    const result = await this.request<{ user: AuthUser }>("/auth/sign-up/email", {
       method: "POST",
       body: JSON.stringify({ email, username, name, password }),
     });
@@ -615,7 +615,7 @@ class GloomApiClient {
   }
 
   async signIn(email: string, password: string): Promise<AuthUser> {
-    const result = await this.request<{ user: AuthUser }>("/api/auth/api/auth/sign-in/email", {
+    const result = await this.request<{ user: AuthUser }>("/auth/sign-in/email", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
@@ -628,7 +628,7 @@ class GloomApiClient {
 
   async signOut(): Promise<void> {
     try {
-      await this.request("/api/auth/api/auth/sign-out", { method: "POST" });
+      await this.request("/auth/sign-out", { method: "POST" });
     } finally {
       this.setSessionToken(null);
     }
@@ -636,7 +636,7 @@ class GloomApiClient {
 
   async getSession(): Promise<AuthUser | null> {
     try {
-      const result = await this.request<{ user: AuthUser }>("/api/auth/api/auth/get-session", {
+      const result = await this.request<{ user: AuthUser }>("/auth/get-session", {
         method: "GET",
       });
       const user = result?.user ?? null;
