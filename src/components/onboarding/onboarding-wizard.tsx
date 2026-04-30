@@ -9,7 +9,7 @@ import { saveConfig } from "../../data/config-store";
 import type { AppConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField } from "../../types/broker";
-import { buildIbkrConfigFromValues } from "../../plugins/ibkr/config";
+import { buildBrokerProfileConfig, validateBrokerProfileValues } from "../../brokers/profile-form";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
@@ -228,10 +228,13 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
     }
 
     const brokerOption = brokerOptions.find((option) => option.id === selectedBrokerId);
+    const adapter = brokerOption?.adapter;
+    if (!adapter) throw new Error(`Unknown broker "${selectedBrokerId}".`);
+    const validationError = validateBrokerProfileValues(adapter, selectedValues);
+    if (validationError) throw new Error(validationError);
+
     const label = brokerOption?.name || selectedBrokerId;
-    const brokerConfig = (selectedBrokerId === "ibkr"
-      ? buildIbkrConfigFromValues(selectedValues)
-      : { ...selectedValues }) as unknown as Record<string, unknown>;
+    const brokerConfig = buildBrokerProfileConfig(adapter, selectedValues);
     const instanceId = createBrokerInstanceId(
       selectedBrokerId,
       label,

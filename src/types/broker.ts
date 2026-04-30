@@ -74,6 +74,9 @@ export interface BrokerAdapter {
   connect?(instance: BrokerInstanceConfig): Promise<void>;
   disconnect?(instance: BrokerInstanceConfig): Promise<void>;
   getStatus?(instance: BrokerInstanceConfig): BrokerConnectionStatus;
+  subscribeStatus?(instance: BrokerInstanceConfig, listener: () => void): () => void;
+  toConfigValues?(instance: BrokerInstanceConfig): Record<string, unknown>;
+  fromConfigValues?(values: Record<string, unknown>, previous?: BrokerInstanceConfig): Record<string, unknown>;
   listAccounts?(instance: BrokerInstanceConfig): Promise<BrokerAccount[]>;
   searchInstruments?(query: string, instance: BrokerInstanceConfig): Promise<InstrumentSearchResult[]>;
   getTickerFinancials?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<TickerFinancials>;

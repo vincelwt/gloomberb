@@ -22,6 +22,7 @@ import { alertsPlugin } from "./builtin/alerts";
 import { fxMatrixPlugin } from "./builtin/fx-matrix";
 import { sectorsPlugin } from "./builtin/sectors";
 import { earningsPlugin } from "./builtin/earnings";
+import { brokerManagerPlugin } from "./builtin/broker-manager";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
@@ -29,6 +30,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   tickerDetailPlugin,
   manualEntryPlugin,
   ibkrPlugin,
+  brokerManagerPlugin,
   layoutManagerPlugin,
   newsPlugin,
   secPlugin,

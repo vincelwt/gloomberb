@@ -1,6 +1,7 @@
 import type { BrokerAdapter, BrokerPosition } from "../../types/broker";
 import type { BrokerInstanceConfig } from "../../types/config";
 import {
+  buildIbkrConfigFromValues,
   getGatewayConfig,
   IBKR_CONFIG_FIELDS,
   isFlexConfigured,
@@ -49,7 +50,51 @@ export const ibkrBroker: BrokerAdapter = {
   },
 
   getStatus(instance) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    if (normalized.connectionMode !== "gateway") {
+      return {
+        state: "disconnected",
+        message: "Flex profiles sync on demand",
+        mode: "flex",
+        updatedAt: 0,
+      };
+    }
     return { ...ibkrGatewayManager.getSnapshot(instance.id).status, mode: "gateway" };
+  },
+
+  subscribeStatus(instance, listener) {
+    return ibkrGatewayManager.subscribe(instance.id, listener);
+  },
+
+  toConfigValues(instance) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    return {
+      connectionMode: normalized.connectionMode,
+      token: normalized.flex.token,
+      queryId: normalized.flex.queryId,
+      endpoint: normalized.flex.endpoint,
+      gatewaySetupMode: normalized.gatewaySetupMode,
+      host: normalized.gateway.host,
+      port: normalized.gateway.port,
+      clientId: normalized.gateway.clientId,
+      marketDataType: normalized.gateway.marketDataType,
+    };
+  },
+
+  fromConfigValues(values, previous) {
+    const next = buildIbkrConfigFromValues(values);
+    const previousConfig = previous ? normalizeIbkrConfig(previous.config) : null;
+    if (!previousConfig || next.connectionMode !== "gateway") return next;
+
+    return {
+      ...next,
+      gateway: {
+        ...next.gateway,
+        marketDataType: next.gateway.marketDataType ?? previousConfig.gateway.marketDataType,
+        lastSuccessfulPort: previousConfig.gateway.lastSuccessfulPort,
+        lastSuccessfulClientId: previousConfig.gateway.lastSuccessfulClientId,
+      },
+    };
   },
 
   async listAccounts(instance) {

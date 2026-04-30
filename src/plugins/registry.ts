@@ -8,6 +8,7 @@ import type { DataSource } from "../types/data-source";
 import type { TickerFinancials } from "../types/financials";
 import type {
   AppNotificationRequest,
+  BrokerInstanceUpdateOptions,
   CommandDef,
   ContextMenuProviderDef,
   CustomColumnDef,
@@ -112,7 +113,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
   createBrokerInstanceFn: ((brokerType: string, label: string, values: Record<string, unknown>) => Promise<BrokerInstanceConfig>) = async () => {
     throw new Error("createBrokerInstanceFn not set");
   };
-  updateBrokerInstanceFn: ((instanceId: string, values: Record<string, unknown>) => Promise<void>) = async () => {};
+  connectBrokerInstanceFn: ((instanceId: string) => Promise<void>) = async () => {};
+  updateBrokerInstanceFn: ((instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions) => Promise<void>) = async () => {};
   syncBrokerInstanceFn: ((instanceId: string) => Promise<void>) = async () => {};
   removeBrokerInstanceFn: ((instanceId: string) => Promise<void>) = async () => {};
 
@@ -130,6 +132,13 @@ export class PluginRegistry implements PluginRuntimeAccess {
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
   navigateTickerFn: ((symbol: string) => void) = () => {};
   getMarketData = () => this.marketData;
+  getBrokerAdapter = (brokerType: string) => this.brokersMap.get(brokerType) ?? null;
+  connectBrokerInstance = (instanceId: string) => this.connectBrokerInstanceFn(instanceId);
+  updateBrokerInstance = (instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions) => (
+    this.updateBrokerInstanceFn(instanceId, values, options)
+  );
+  syncBrokerInstance = (instanceId: string) => this.syncBrokerInstanceFn(instanceId);
+  removeBrokerInstance = (instanceId: string) => this.removeBrokerInstanceFn(instanceId);
   pinTicker = (symbol: string, options?: { floating?: boolean; paneType?: string }) => {
     this.pinTickerFn(symbol, options);
   };
@@ -648,7 +657,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       },
 
       createBrokerInstance: (brokerType, label, values) => this.createBrokerInstanceFn(brokerType, label, values),
-      updateBrokerInstance: (instanceId, values) => this.updateBrokerInstanceFn(instanceId, values),
+      updateBrokerInstance: (instanceId, values, options) => this.updateBrokerInstanceFn(instanceId, values, options),
       syncBrokerInstance: (instanceId) => this.syncBrokerInstanceFn(instanceId),
       removeBrokerInstance: (instanceId) => this.removeBrokerInstanceFn(instanceId),
 
