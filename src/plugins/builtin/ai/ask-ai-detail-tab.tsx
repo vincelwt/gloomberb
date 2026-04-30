@@ -1,4 +1,4 @@
-import { Box, Input, ScrollBox, Text } from "../../../ui";
+import { Box, Input, ScrollBox, Text, Textarea, useUiCapabilities } from "../../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
@@ -10,7 +10,7 @@ import { usePluginState } from "../../../plugins/plugin-runtime";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 import { MarkdownText } from "../../../components/markdown-text";
 import { Spinner, usePaneFooter } from "../../../components";
-import { colors } from "../../../theme/colors";
+import { blendHex, colors } from "../../../theme/colors";
 import { buildTickerAiContext } from "./ticker-context";
 import { detectProviders, getAvailableProviders, resolveDefaultAiProviderId, __setDetectedProvidersForTests, type AiProvider } from "./providers";
 import { runAiPrompt } from "./runner";
@@ -42,6 +42,7 @@ export function __resetAskAiHistoryForTests(): void {
 }
 
 export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabProps) {
+  const { nativePaneChrome } = useUiCapabilities();
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
   const { ticker, financials } = usePaneTicker();
@@ -194,6 +195,15 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     }
   }, [baseCurrency, currentProvider, effectiveExchangeRates, financials, ticker]);
 
+  const submitInput = useCallback(() => {
+    const currentValue = inputRef.current?.editBuffer.getText() ?? inputValue;
+    const trimmed = currentValue.trim();
+    if (!trimmed) return;
+    void sendMessage(trimmed);
+    setInputValue("");
+    inputRef.current?.editBuffer.setText?.("");
+  }, [inputValue, sendMessage]);
+
   useShortcut((event) => {
     if (!focused) return;
 
@@ -254,12 +264,19 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
 
   const contentWidth = Math.max(width - 2, 0);
   const dividerWidth = Math.max(contentWidth, 0);
-  const chatHeight = Math.max(height - 3, 4);
+  const composerHeight = nativePaneChrome ? 2 : 1;
+  const chatHeight = nativePaneChrome
+    ? Math.max(height - composerHeight, 4)
+    : Math.max(height - 3, 4);
+  const composerBackground = blendHex(colors.panel, colors.bg, 0.22);
+  const composerBorder = inputFocused && focused
+    ? blendHex(colors.borderFocused, colors.textBright, 0.24)
+    : colors.border;
 
   return (
-    <Box flexDirection="column" paddingX={1} height={height}>
+    <Box flexDirection="column" paddingX={nativePaneChrome ? 0 : 1} height={height}>
       <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
-        <Box flexDirection="column">
+        <Box flexDirection="column" paddingX={nativePaneChrome ? 1 : 0}>
           {messages.length === 0 ? (
             <Box paddingTop={1}>
               <Text fg={colors.textDim}>
@@ -299,31 +316,67 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
         </Box>
       </ScrollBox>
 
-      <Box height={1}>
-        <Text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</Text>
-      </Box>
-
-      <Box flexDirection="row" height={1} onMouseDown={focusInput}>
-        <Text fg={colors.textMuted}>{"> "}</Text>
-        <Box flexGrow={1}>
-          <Input
+      {nativePaneChrome ? (
+        <Box
+          flexDirection="row"
+          width={width}
+          height={composerHeight}
+          backgroundColor={composerBackground}
+          style={{
+            borderTop: `1px solid ${composerBorder}`,
+          }}
+          onMouseDown={focusInput}
+        >
+          <Textarea
             ref={inputRef}
-            placeholder="Ask a question..."
+            initialValue={inputValue}
+            width="100%"
+            height={composerHeight}
             focused={inputFocused && focused}
+            placeholder="Ask a question..."
+            placeholderColor={colors.textMuted}
             textColor={colors.text}
-            placeholderColor={colors.textDim}
-            backgroundColor={inputFocused && focused ? colors.panel : colors.bg}
-            onInput={(value) => setInputValue(value)}
-            onChange={(value) => setInputValue(value)}
-            onSubmit={() => {
-              if (!inputValue.trim()) return;
-              void sendMessage(inputValue.trim());
-              setInputValue("");
-              (inputRef.current as any)?.editBuffer?.setText?.("");
+            backgroundColor="transparent"
+            focusedBackgroundColor="transparent"
+            cursorColor={colors.textBright}
+            style={{
+              padding: "6px 12px",
+              lineHeight: "20px",
+              fontSize: "13px",
             }}
+            onInput={(value) => setInputValue(value)}
+            keyBindings={[
+              { name: "return", action: "submit" },
+              { name: "linefeed", action: "submit" },
+            ]}
+            onSubmit={submitInput}
+            wrapText
           />
         </Box>
-      </Box>
+      ) : (
+        <>
+          <Box height={1}>
+            <Text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</Text>
+          </Box>
+
+          <Box flexDirection="row" height={1} onMouseDown={focusInput}>
+            <Text fg={colors.textMuted}>{"> "}</Text>
+            <Box flexGrow={1}>
+              <Input
+                ref={inputRef}
+                placeholder="Ask a question..."
+                focused={inputFocused && focused}
+                textColor={colors.text}
+                placeholderColor={colors.textDim}
+                backgroundColor={inputFocused && focused ? colors.panel : colors.bg}
+                onInput={(value) => setInputValue(value)}
+                onChange={(value) => setInputValue(value)}
+                onSubmit={submitInput}
+              />
+            </Box>
+          </Box>
+        </>
+      )}
     </Box>
   );
 }
