@@ -146,6 +146,29 @@ describe("AskAiTab", () => {
     expect(frame).toContain("[t]provider");
   });
 
+  test("keeps the terminal composer clear of the pane footer", async () => {
+    setProviders([
+      { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
+    ]);
+
+    await act(async () => {
+      testSetup = await testRender(
+        createAskAiHarness(80, 8),
+        { width: 80, height: 8 },
+      );
+    });
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const inputRow = lines.findIndex((line) => line.includes("Ask a question..."));
+    const footerRow = lines.findIndex((line) => line.includes("Provider Claude"));
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(footerRow).toBeGreaterThan(inputRow + 1);
+    expect(lines[inputRow + 1]?.trim()).toBe("");
+  });
+
   test("focuses the input when the prompt row is clicked", async () => {
     setProviders([
       { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },

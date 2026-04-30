@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { Box, Input, ScrollBox, Text, editableTextContextMenuItems, useRendererHost, useUiCapabilities } from "../../../ui";
+import { Box, Input, ScrollBox, Text, Textarea, editableTextContextMenuItems, useRendererHost, useUiCapabilities } from "../../../ui";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { blendHex, colors, hoverBg } from "../../../theme/colors";
@@ -9,6 +9,7 @@ import type { ButtonProps } from "../../../components/ui/button";
 import type { TextFieldProps } from "../../../components/ui/fields";
 import type { DialogFrameProps } from "../../../components/ui/frame";
 import type { ListRowState, ListViewItem, ListViewProps } from "../../../components/ui/list-view";
+import type { MessageComposerProps } from "../../../components/ui/message-composer";
 import type { PageStackViewProps } from "../../../components/ui/page-stack-view";
 import type { SegmentedControlProps } from "../../../components/ui/toggle";
 
@@ -213,6 +214,72 @@ export function WebTextField({
           </Text>
         </Box>
       )}
+    </Box>
+  );
+}
+
+export function WebMessageComposer({
+  inputRef,
+  initialValue = "",
+  focused = false,
+  placeholder = "",
+  width,
+  height = 2,
+  onFocusRequest,
+  onInput,
+  onSubmit,
+  keyBindings,
+  wrapText = false,
+}: MessageComposerProps) {
+  const borderColor = focused
+    ? blendHex(colors.borderFocused, colors.textBright, 0.24)
+    : colors.border;
+  const requestFocus = () => {
+    onFocusRequest?.();
+    inputRef?.current?.focus?.();
+  };
+  const handleInput = (value: string) => {
+    if (!focused) onFocusRequest?.();
+    onInput?.(value);
+  };
+
+  return (
+    <Box
+      flexDirection="row"
+      width={width}
+      height={height}
+      backgroundColor={PANEL_FILL}
+      onMouseDown={requestFocus}
+      data-gloom-role="desktop-message-composer"
+      style={{
+        borderTop: `1px solid ${borderColor}`,
+        overflow: "hidden",
+      }}
+    >
+      <Textarea
+        ref={inputRef}
+        initialValue={initialValue}
+        width="100%"
+        height={height}
+        focused={focused}
+        placeholder={placeholder}
+        placeholderColor={colors.textMuted}
+        textColor={colors.text}
+        backgroundColor="transparent"
+        focusedBackgroundColor="transparent"
+        cursorColor={colors.textBright}
+        style={{
+          padding: "6px 12px",
+          lineHeight: "20px",
+          fontSize: "13px",
+        }}
+        onMouseDown={requestFocus}
+        onFocus={requestFocus}
+        onInput={handleInput}
+        keyBindings={keyBindings}
+        onSubmit={onSubmit}
+        wrapText={wrapText}
+      />
     </Box>
   );
 }
