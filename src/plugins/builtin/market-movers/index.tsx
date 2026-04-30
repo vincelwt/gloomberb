@@ -5,7 +5,7 @@ import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableC
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
-import { usePluginDataProvider, usePluginTickerActions } from "../../plugin-runtime";
+import { useMarketData, usePluginTickerActions } from "../../plugin-runtime";
 import {
   fetchScreener,
   fetchTrending,
@@ -192,7 +192,7 @@ const INDEX_SHORT: Record<string, string> = {
 };
 
 export function MarketMoversPane({ focused, width, height }: PaneProps) {
-  const dataProvider = usePluginDataProvider();
+  const dataProvider = useMarketData();
   const { pinTicker } = usePluginTickerActions();
   const [activeTab, setActiveTab] = useState<TabId>("gainers");
   const [quotes, setQuotes] = useState<ScreenerQuote[]>([]);

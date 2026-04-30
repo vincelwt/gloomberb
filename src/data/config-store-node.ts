@@ -20,6 +20,7 @@ import { isLayoutConfig, sanitizeLayout } from "./config-layout";
 
 const configLog = debugLog.createLogger("config");
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
+const BUILTIN_SOURCE_IDS = new Set(["yahoo", "gloomberb-cloud"]);
 
 function getGlobalConfigDir(): string {
   return join(process.env.HOME || "~", ".gloomberb");
@@ -77,6 +78,10 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     index === activeLayoutIndex ? { ...entry, layout: cloneLayout(layout) } : entry
   ));
 
+  const disabledPlugins = sanitizeDisabledPlugins(saved, defaults.disabledPlugins, {
+    enableCloudDefault: shouldEnableCloudDefault,
+  });
+
   const config: AppConfig = {
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
@@ -89,9 +94,8 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     activeLayoutIndex,
     brokerInstances: sanitizeBrokerInstances(saved.brokerInstances),
     plugins: sanitizeStringArray(saved.plugins, defaults.plugins),
-    disabledPlugins: sanitizeDisabledPlugins(saved, defaults.disabledPlugins, {
-      enableCloudDefault: shouldEnableCloudDefault,
-    }),
+    disabledPlugins,
+    disabledSources: sanitizeDisabledSources(saved, defaults.disabledSources, disabledPlugins),
     pluginConfig: sanitizePluginConfig(saved.pluginConfig),
     theme: typeof saved.theme === "string" ? saved.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(saved.chartPreferences, defaults.chartPreferences),
@@ -105,6 +109,7 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
     || !Array.isArray((saved.layout as { instances?: unknown })?.instances)
     || !Array.isArray(saved.layouts)
     || !Array.isArray(saved.brokerInstances)
+    || !Array.isArray(saved.disabledSources)
     || !isPluginConfigMap(saved.pluginConfig)
     || !isChartPreferences(saved.chartPreferences)
     || typeof saved.activeLayoutIndex !== "number";
@@ -133,6 +138,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
     disabledPlugins: sanitizeDisabledPluginList(config.disabledPlugins),
+    disabledSources: sanitizeDisabledPluginList(config.disabledSources),
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
@@ -187,6 +193,13 @@ function sanitizeDisabledPlugins(
   return options.enableCloudDefault
     ? disabled.filter((pluginId) => pluginId !== "gloomberb-cloud")
     : disabled;
+}
+
+function sanitizeDisabledSources(saved: Record<string, unknown>, fallback: string[], disabledPlugins: string[]): string[] {
+  const explicit = sanitizeDisabledPluginList(saved.disabledSources ?? fallback);
+  const legacyPluginIds = sanitizeDisabledPluginList(disabledPlugins)
+    .filter((pluginId) => BUILTIN_SOURCE_IDS.has(pluginId));
+  return [...new Set([...explicit, ...legacyPluginIds])];
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

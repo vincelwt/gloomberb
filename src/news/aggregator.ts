@@ -1,5 +1,7 @@
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
-import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState, NewsSource } from "./types";
+import type { DataSource } from "../types/data-source";
+import { sourcePriority } from "../types/data-source";
+import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
 
 export interface NewsServiceOptions {
   pollIntervalMs?: number;
@@ -159,7 +161,7 @@ interface SourceFetchResult {
 }
 
 export class NewsService {
-  private readonly sources = new Map<string, NewsSource>();
+  private readonly sources = new Map<string, DataSource>();
   private readonly listeners = new Set<() => void>();
   private readonly queryStates = new Map<string, NewsQueryState>();
   private readonly queryByKey = new Map<string, NewsQuery>();
@@ -174,7 +176,7 @@ export class NewsService {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   }
 
-  register(source: NewsSource): () => void {
+  register(source: DataSource): () => void {
     this.sources.set(source.id, source);
     this.seedCachedSource(source);
     if (this.pollTimer !== null) {
@@ -326,11 +328,12 @@ export class NewsService {
     return promise;
   }
 
-  private enabledSources(query: NewsQuery): NewsSource[] {
+  private enabledSources(query: NewsQuery): DataSource[] {
     return [...this.sources.values()]
       .filter((source) => source.isEnabled?.() !== false)
-      .filter((source) => source.supports?.(query) ?? true)
-      .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000));
+      .filter((source) => !!source.news)
+      .filter((source) => source.news?.supports?.(query) ?? true)
+      .sort((a, b) => sourcePriority(a) - sourcePriority(b));
   }
 
   private async fetchFromSources(query: NewsQuery): Promise<SourceFetchResult> {
@@ -341,11 +344,11 @@ export class NewsService {
     return this.fetchMergedNews(query, sources);
   }
 
-  private async fetchTickerNews(query: NewsQuery, sources: NewsSource[]): Promise<SourceFetchResult> {
+  private async fetchTickerNews(query: NewsQuery, sources: DataSource[]): Promise<SourceFetchResult> {
     let firstEmpty: SourceFetchResult | null = null;
     for (const source of sources) {
       try {
-        const articles = await source.fetchNews(query);
+        const articles = await source.news!.fetchNews(query);
         const result = { articles, sourceIds: [source.id] };
         if (articles.length > 0) return result;
         firstEmpty ??= result;
@@ -356,11 +359,11 @@ export class NewsService {
     return firstEmpty ?? { articles: [], sourceIds: [] };
   }
 
-  private async fetchMergedNews(query: NewsQuery, sources: NewsSource[]): Promise<SourceFetchResult> {
+  private async fetchMergedNews(query: NewsQuery, sources: DataSource[]): Promise<SourceFetchResult> {
     const settled = await Promise.allSettled(
       sources.map(async (source) => ({
         source,
-        articles: await source.fetchNews(query),
+        articles: await source.news!.fetchNews(query),
       })),
     );
     const articles: NewsArticle[] = [];
@@ -373,14 +376,16 @@ export class NewsService {
     return { articles, sourceIds };
   }
 
-  private seedCachedSource(source: NewsSource): void {
+  private seedCachedSource(source: DataSource): void {
+    const news = source.news;
+    if (!news) return;
     const queries = [...this.queryByKey.values()];
     if (queries.length === 0) queries.push(DEFAULT_GLOBAL_QUERY);
 
     let changed = false;
     for (const query of queries) {
-      if (source.isEnabled?.() === false || source.supports?.(query) === false) continue;
-      const cached = source.getCachedNews?.(query) ?? [];
+      if (source.isEnabled?.() === false || news.supports?.(query) === false) continue;
+      const cached = news.getCachedNews?.(query) ?? [];
       if (cached.length === 0) continue;
       const key = buildNewsQueryKey(query);
       const current = this.queryStates.get(key) ?? createIdleState();

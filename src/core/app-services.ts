@@ -7,7 +7,7 @@ import { setSharedNewsService } from "../news/hooks";
 import { getLoadablePlugins } from "../plugins/catalog";
 import type { LoadedExternalPlugin } from "../plugins/loader";
 import { PluginRegistry } from "../plugins/registry";
-import { ProviderRouter } from "../sources/provider-router";
+import { SourceRouter } from "../sources/provider-router";
 import type { AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
 import { debugLog } from "../utils/debug-log";
@@ -18,7 +18,7 @@ const servicesLog = debugLog.createLogger("services");
 export interface AppServices {
   persistence: AppPersistence;
   tickerRepository: TickerRepository;
-  providerRouter: ProviderRouter;
+  providerRouter: SourceRouter;
   dataProvider: DataProvider;
   marketData: MarketDataCoordinator;
   pluginRegistry: PluginRegistry;
@@ -40,7 +40,7 @@ export function createAppServices({
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const persistence = measurePerf("startup.services.persistence", () => new AppPersistence(dbPath));
   const tickerRepository = measurePerf("startup.services.ticker-repository", () => new TickerRepository(persistence.tickers));
-  const providerRouter = measurePerf("startup.services.provider-router", () => new ProviderRouter(null, [], persistence.resources));
+  const providerRouter = measurePerf("startup.services.source-router", () => new SourceRouter(null, [], persistence.resources));
   const dataProvider: DataProvider = providerRouter;
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence);
@@ -49,7 +49,7 @@ export function createAppServices({
   providerRouter.attachRegistry(pluginRegistry);
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
-  pluginRegistry.registerNewsSourceFn = (source) => newsService.register(source);
+  pluginRegistry.registerDataSourceFn = (source) => newsService.register(source);
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
 
   setSharedNewsService(newsService);

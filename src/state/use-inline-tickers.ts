@@ -69,7 +69,7 @@ export function useInlineTickers(texts: readonly string[]): {
               query: symbol,
               activeTicker: null,
               tickers: current.tickers,
-              dataProvider: activeRegistry.dataProvider,
+              dataProvider: activeRegistry.marketData,
             });
 
             if (!resolved) {
@@ -112,7 +112,7 @@ export function useInlineTickers(texts: readonly string[]): {
           if (!latestTicker) return;
 
           const instrument = latestTicker.metadata.broker_contracts?.[0] ?? null;
-          const quote = await activeRegistry.dataProvider.getQuote(
+          const quote = await activeRegistry.marketData.getQuote(
             symbol,
             latestTicker.metadata.exchange,
             instrument

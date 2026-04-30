@@ -11,7 +11,7 @@ import { createTestDataProvider } from "../../../test-support/data-provider";
 import { createStatefulTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { Box } from "../../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
-import { getSharedDataProvider, setSharedDataProviderForTests, setSharedRegistryForTests } from "../../registry";
+import { getSharedMarketData, setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import { AiScreenerPane } from "./screener-pane";
 import { __setDetectedProvidersForTests, type AiProvider } from "./providers";
 
@@ -21,7 +21,7 @@ let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 function makeRuntime(): PluginRuntimeAccess {
   return createStatefulTestPluginRuntime({
-    getDataProvider: () => getSharedDataProvider() ?? null,
+    getMarketData: () => getSharedMarketData() ?? null,
   });
 }
 
@@ -156,7 +156,7 @@ async function waitForFrameToContain(text: string, attempts = 30): Promise<strin
 afterEach(() => {
   __setDetectedProvidersForTests(null);
   setSharedRegistryForTests(undefined);
-  setSharedDataProviderForTests(undefined);
+  setSharedMarketDataForTests(undefined);
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;
@@ -172,7 +172,7 @@ describe("AiScreenerPane", () => {
     __setDetectedProvidersForTests([provider]);
 
     const dataProvider = createTestDataProvider();
-    setSharedDataProviderForTests(dataProvider);
+    setSharedMarketDataForTests(dataProvider);
     setSharedRegistryForTests({
       dataProvider,
       tickerRepository: {
@@ -204,7 +204,7 @@ describe("AiScreenerPane", () => {
     __setDetectedProvidersForTests([provider]);
 
     const dataProvider = createTestDataProvider();
-    setSharedDataProviderForTests(dataProvider);
+    setSharedMarketDataForTests(dataProvider);
     setSharedRegistryForTests({
       dataProvider,
       tickerRepository: {
@@ -242,7 +242,7 @@ describe("AiScreenerPane", () => {
     __setDetectedProvidersForTests([provider]);
 
     const dataProvider = createTestDataProvider();
-    setSharedDataProviderForTests(dataProvider);
+    setSharedMarketDataForTests(dataProvider);
     setSharedRegistryForTests({
       dataProvider,
       tickerRepository: {
@@ -280,7 +280,7 @@ describe("AiScreenerPane", () => {
     __setDetectedProvidersForTests([provider]);
 
     const dataProvider = createTestDataProvider();
-    setSharedDataProviderForTests(dataProvider);
+    setSharedMarketDataForTests(dataProvider);
     setSharedRegistryForTests({
       dataProvider,
       tickerRepository: {
@@ -318,7 +318,7 @@ describe("AiScreenerPane", () => {
     __setDetectedProvidersForTests([provider]);
 
     const dataProvider = createTestDataProvider();
-    setSharedDataProviderForTests(dataProvider);
+    setSharedMarketDataForTests(dataProvider);
     setSharedRegistryForTests({
       dataProvider,
       tickerRepository: {

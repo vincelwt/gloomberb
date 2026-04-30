@@ -7,7 +7,7 @@ import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runti
 import { createDefaultConfig } from "../../types/config";
 import { Box } from "../../ui";
 import { PluginRenderProvider } from "../plugin-runtime";
-import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
+import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
 import {
   AskAiDetailTab as AskAiTab,
   __resetAskAiHistoryForTests,
@@ -99,7 +99,7 @@ afterEach(() => {
   __setDetectedProvidersForTests(null);
   __resetAskAiHistoryForTests();
   setSharedRegistryForTests(undefined);
-  setSharedDataProviderForTests(undefined);
+  setSharedMarketDataForTests(undefined);
   if (testSetup) {
     testSetup.renderer.destroy();
     testSetup = undefined;

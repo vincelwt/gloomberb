@@ -423,12 +423,13 @@ describe("quote merging", () => {
       priceHistory: [],
       quote: {
         symbol: "IQE.L",
+        providerId: "yahoo",
         price: 0.245,
         currency: "GBP",
         change: -0.021,
         changePercent: -7.89,
         lastUpdated: Date.now() - 1000,
-        dataSource: "yahoo",
+        dataSource: "delayed",
       },
     });
 
@@ -449,7 +450,7 @@ describe("quote merging", () => {
 
     expect(next.financials.get("IQE")?.quote?.price).toBe(0.245);
     expect(next.financials.get("IQE")?.quote?.symbol).toBe("IQE.L");
-    expect(next.financials.get("IQE")?.quote?.dataSource).toBe("yahoo");
+    expect(next.financials.get("IQE")?.quote?.dataSource).toBe("delayed");
   });
 });
 

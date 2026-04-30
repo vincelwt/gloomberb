@@ -20,7 +20,7 @@ import type { DataProvider } from "../types/data-provider";
 import type { AppNotificationRequest } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
-  getDataProvider(): DataProvider | null;
+  getMarketData(): DataProvider | null;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
   navigateTicker(symbol: string): void;
   selectTicker(symbol: string, paneId?: string): void;
@@ -128,9 +128,9 @@ export function usePluginAppActions() {
   };
 }
 
-export function usePluginDataProvider(): DataProvider | null {
+export function useMarketData(): DataProvider | null {
   const { runtime } = usePluginRenderContext();
-  return runtime.getDataProvider();
+  return runtime.getMarketData();
 }
 
 export function getPluginPaneStateValue<T>(

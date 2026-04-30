@@ -269,7 +269,7 @@ describe("alertsPlugin command", () => {
           store.set(key, value);
         },
       },
-      dataProvider: {
+      marketData: {
         getQuote: async () => null,
       },
       notify(notification: any) {

@@ -1,4 +1,5 @@
-import type { DataProvider, NewsItem, SecFilingItem } from "../types/data-provider";
+import type { DataProvider, SecFilingItem } from "../types/data-provider";
+import type { NewsArticle } from "../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "./request-types";
 import { QueryStore } from "./query-store";
@@ -179,7 +180,7 @@ export class MarketDataCoordinator {
   private readonly fundamentalsStore = new QueryStore<TickerFinancials["fundamentals"]>((key) => this.bump(key));
   private readonly statementsStore = new QueryStore<Pick<TickerFinancials, "annualStatements" | "quarterlyStatements">>((key) => this.bump(key));
   private readonly chartStore = new QueryStore<PricePoint[]>((key) => this.bump(key));
-  private readonly newsStore = new QueryStore<NewsItem[]>((key) => this.bump(key));
+  private readonly newsStore = new QueryStore<NewsArticle[]>((key) => this.bump(key));
   private readonly optionsStore = new QueryStore<OptionsChain>((key) => this.bump(key));
   private readonly secFilingsStore = new QueryStore<SecFilingItem[]>((key) => this.bump(key));
   private readonly secContentStore = new QueryStore<string | null>((key) => this.bump(key));
@@ -264,7 +265,7 @@ export class MarketDataCoordinator {
     return this.chartStore.get(buildChartKey(request));
   }
 
-  getNewsEntry(request: NewsRequest): QueryEntry<NewsItem[]> {
+  getNewsEntry(request: NewsRequest): QueryEntry<NewsArticle[]> {
     return this.newsStore.get(buildNewsKey(request));
   }
 
@@ -576,7 +577,7 @@ export class MarketDataCoordinator {
     });
   }
 
-  async loadNews(request: NewsRequest): Promise<QueryEntry<NewsItem[]>> {
+  async loadNews(request: NewsRequest): Promise<QueryEntry<NewsArticle[]>> {
     const key = buildNewsKey(request);
     const current = this.newsStore.get(key);
     if (hasFreshReadyEntry(current, NEWS_CACHE_TTL_MS)) {
@@ -586,12 +587,23 @@ export class MarketDataCoordinator {
       this.newsStore.update(key, loadingEntry);
       const startedAt = Date.now();
       try {
-        const data = await this.dataProvider.getNews(
-          request.instrument.symbol,
-          request.count ?? 50,
-          request.instrument.exchange ?? "",
-          toMarketDataContext(request.instrument),
-        );
+        const newsProvider = this.dataProvider as DataProvider & {
+          getNews?: (query: {
+            feed: "ticker";
+            ticker: string;
+            exchange?: string;
+            tickerTier: "primary";
+            limit?: number;
+          }) => Promise<NewsArticle[]>;
+        };
+        if (!newsProvider.getNews) throw new Error("No news provider available");
+        const data = await newsProvider.getNews({
+          feed: "ticker",
+          ticker: request.instrument.symbol,
+          exchange: request.instrument.exchange ?? "",
+          tickerTier: "primary",
+          limit: request.count ?? 50,
+        });
         const attempts = [createAttempt(this.dataProvider.id, startedAt, data.length > 0 ? "success" : "empty", data.length === 0 ? "NO_DATA" : undefined)];
         return this.newsStore.update(key, (current) => readyEntry(current, data.length > 0 ? data : null, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
       } catch (error) {

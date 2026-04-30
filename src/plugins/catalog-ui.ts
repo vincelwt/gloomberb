@@ -9,6 +9,7 @@ import { notesPlugin } from "./builtin/notes";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/chat";
 import { helpPlugin } from "./builtin/help";
+import { ibkrPlugin } from "./ibkr";
 import { comparisonChartPlugin } from "./builtin/comparison-chart";
 import { worldIndicesPlugin } from "./builtin/world-indices";
 import { marketMoversPlugin } from "./builtin/market-movers";
@@ -27,6 +28,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   portfolioListPlugin,
   tickerDetailPlugin,
   manualEntryPlugin,
+  ibkrPlugin,
   layoutManagerPlugin,
   newsPlugin,
   secPlugin,
@@ -46,3 +48,11 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   sectorsPlugin,
   earningsPlugin,
 ];
+
+export function getRendererBuiltinPlugins(): GloomPlugin[] {
+  return uiBuiltinPlugins.map((plugin) => (
+    plugin.dataSources?.length
+      ? { ...plugin, dataSources: [] }
+      : plugin
+  ));
+}

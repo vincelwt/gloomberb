@@ -1,5 +1,5 @@
 import type { GloomPluginContext } from "../../../types/plugin";
-import { createRssNewsSource } from "./rss-source";
+import { createRssDataSource } from "./rss-source";
 import { TopPane } from "./top-pane";
 import { FeedPane } from "./feed-pane";
 import { IndustryPane } from "./industry-pane";
@@ -51,11 +51,11 @@ export function registerNewsWireFeatures(ctx: GloomPluginContext): () => void {
     void saveNewsFeedSettings(ctx.configState, initialSettings);
   }
 
-  const source = createRssNewsSource(
+  const source = createRssDataSource(
     () => getEnabledNewsFeeds(loadNewsFeedSettings(ctx.configState)),
     { persistence: ctx.persistence },
   );
-  ctx.registerNewsSource?.(source);
+  ctx.registerDataSource(source);
 
   ctx.registerCommand({
     id: "add-news-feed",

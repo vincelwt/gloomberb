@@ -5,6 +5,7 @@ import {
   type ManualChartResolution,
 } from "../components/chart/chart-resolution";
 import type { DataProvider, MarketDataRequestContext, NewsItem, QuoteSubscriptionTarget, SearchRequestContext, SecFilingItem } from "../types/data-provider";
+import type { DataSource } from "../types/data-source";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import {
@@ -16,7 +17,7 @@ import {
   type CloudPricePointPayload,
   type CloudQuotePayload,
 } from "../utils/api-client";
-import type { NewsArticle, NewsQuery, NewsSource } from "../types/news-source";
+import type { NewsArticle, NewsQuery } from "../types/news-source";
 import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
 import { canonicalTickerKey, publicExchange } from "../utils/exchanges";
 import { collectNewsDisplayTickers } from "../news/ticker-symbols";
@@ -512,21 +513,24 @@ export function createGloomberbCloudProvider(): DataProvider {
   return new GloomberbCloudProvider();
 }
 
-export function createGloomberbCloudNewsSource(): NewsSource {
+export function createGloomberbCloudSource(provider = createGloomberbCloudProvider()): DataSource {
   return {
     id: providerId,
     name: "Gloomberb Cloud",
     priority: 10,
-    supports(query: NewsQuery): boolean {
-      const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-      return feed === "ticker" ? !!query.ticker : true;
-    },
-    async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
-      const response = await withCloudFallback(
-        () => apiClient.getCloudNews(cloudNewsParams(query)),
-        "Cloud news is unavailable",
-      );
-      return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
+    market: provider,
+    news: {
+      supports(query: NewsQuery): boolean {
+        const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+        return feed === "ticker" ? !!query.ticker : true;
+      },
+      async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
+        const response = await withCloudFallback(
+          () => apiClient.getCloudNews(cloudNewsParams(query)),
+          "Cloud news is unavailable",
+        );
+        return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
+      },
     },
   };
 }
