@@ -78,7 +78,6 @@ export interface DataProvider {
   getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote>;
   getExchangeRate(fromCurrency: string): Promise<number>;
   search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]>;
-  getNews(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<NewsItem[]>;
   getSecFilings?(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]>;
   getEarningsCalendar?(symbols: string[], context?: MarketDataRequestContext): Promise<EarningsEvent[]>;
   getSecFilingContent?(filing: SecFilingItem): Promise<string | null>;

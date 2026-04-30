@@ -16,7 +16,7 @@ import {
   usePaneInstanceId,
   type AppAction,
 } from "../../../state/app-context";
-import { usePluginDataProvider, usePluginPaneState, usePluginState, usePluginTickerActions } from "../../../plugins/plugin-runtime";
+import { useMarketData, usePluginPaneState, usePluginState, usePluginTickerActions } from "../../../plugins/plugin-runtime";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker, quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
@@ -323,7 +323,7 @@ function sortScreenerRows(
 }
 
 export function AiScreenerPane({ focused, width, height }: PaneProps) {
-  const dataProvider = usePluginDataProvider();
+  const dataProvider = useMarketData();
   const { pinTicker } = usePluginTickerActions();
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();

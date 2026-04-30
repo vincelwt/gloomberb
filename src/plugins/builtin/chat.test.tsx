@@ -11,7 +11,7 @@ import type { PluginPersistence } from "../../types/plugin";
 import { Box } from "../../ui";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
-import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../registry";
+import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
 import { ChatContent, ChatStatusWidget, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
 import { ChatController } from "./chat-controller";
 
@@ -235,7 +235,7 @@ function hexToRgbaInts(hex: string) {
 
 afterEach(async () => {
   setSharedRegistryForTests(undefined);
-  setSharedDataProviderForTests(undefined);
+  setSharedMarketDataForTests(undefined);
   apiClient.connectChannel = originalConnectChannel;
   apiClient.setSessionToken(null);
 

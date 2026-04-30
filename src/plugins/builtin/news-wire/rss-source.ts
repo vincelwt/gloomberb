@@ -1,5 +1,6 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
-import type { NewsQuery, MarketNewsItem, NewsSource } from "../../../types/news-source";
+import type { DataSource } from "../../../types/data-source";
+import type { NewsQuery, MarketNewsItem } from "../../../types/news-source";
 import type { PluginPersistence } from "../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./rss-parser";
 import { enrichNewsItem } from "./categories";
@@ -28,7 +29,7 @@ const rssClient = createThrottledFetch({
   },
 });
 
-export interface RssNewsSourceOptions {
+export interface RssDataSourceOptions {
   knownTickers?: Set<string>;
   persistence?: PluginPersistence;
   fetchText?: (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>;
@@ -124,10 +125,10 @@ function writeFeedCache(
   });
 }
 
-export function createRssNewsSource(
+export function createRssDataSource(
   feedsOrGetter: RssFeedConfig[] | (() => RssFeedConfig[]),
-  options: RssNewsSourceOptions = {},
-): NewsSource {
+  options: RssDataSourceOptions = {},
+): DataSource {
   const fetchText = options.fetchText ?? ((url: string) => rssClient.fetch(url));
   const getFeeds = () => Array.isArray(feedsOrGetter) ? feedsOrGetter : feedsOrGetter();
 
@@ -152,27 +153,29 @@ export function createRssNewsSource(
     id: "rss",
     name: "RSS Feeds",
     priority: 2000,
-    supports: supportsQuery,
-    getCachedNews(query: NewsQuery): MarketNewsItem[] {
-      if (!supportsQuery(query)) return [];
-      const enabledFeeds = getFeeds().filter((feed) => feed.enabled);
-      return enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []);
-    },
-    async fetchNews(query: NewsQuery): Promise<MarketNewsItem[]> {
-      if (!supportsQuery(query)) return [];
-      const enabledFeeds = getFeeds().filter((f) => f.enabled);
-      const results = await Promise.allSettled(
-        enabledFeeds.map(fetchFeed),
-      );
+    news: {
+      supports: supportsQuery,
+      getCachedNews(query: NewsQuery): MarketNewsItem[] {
+        if (!supportsQuery(query)) return [];
+        const enabledFeeds = getFeeds().filter((feed) => feed.enabled);
+        return enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []);
+      },
+      async fetchNews(query: NewsQuery): Promise<MarketNewsItem[]> {
+        if (!supportsQuery(query)) return [];
+        const enabledFeeds = getFeeds().filter((f) => f.enabled);
+        const results = await Promise.allSettled(
+          enabledFeeds.map(fetchFeed),
+        );
 
-      const allItems: MarketNewsItem[] = [];
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          allItems.push(...result.value);
+        const allItems: MarketNewsItem[] = [];
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            allItems.push(...result.value);
+          }
         }
-      }
 
-      return allItems;
+        return allItems;
+      },
     },
   };
 }

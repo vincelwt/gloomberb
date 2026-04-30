@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { PluginPersistence } from "../../../types/plugin";
 import type { PersistedResourceValue } from "../../../types/persistence";
-import { createRssNewsSource, RSS_FEED_CACHE_POLICY } from "./rss-source";
+import { createRssDataSource, RSS_FEED_CACHE_POLICY } from "./rss-source";
 import type { RssFeedConfig } from "./rss-parser";
 
 class MemoryPersistence implements PluginPersistence {
@@ -74,27 +74,27 @@ const RSS_FIXTURE = `<rss version="2.0"><channel><item>
   <description>NVIDIA shares moved higher.</description>
 </item></channel></rss>`;
 
-describe("createRssNewsSource", () => {
+describe("createRssDataSource", () => {
   test("caches fetched feed items with feed authority scoring", async () => {
     const persistence = new MemoryPersistence();
     const fetchText = mock(async () => ({
       ok: true,
       text: async () => RSS_FIXTURE,
     }));
-    const source = createRssNewsSource([FEED], { persistence, fetchText });
+    const source = createRssDataSource([FEED], { persistence, fetchText });
 
-    const items = await source.fetchNews({ scope: "global" });
+    const items = await source.news!.fetchNews({ scope: "global" });
 
     expect(fetchText).toHaveBeenCalledTimes(1);
     expect(items).toHaveLength(1);
     expect(items[0]!.importance).toBeGreaterThanOrEqual(FEED.authority);
     expect(items[0]!.isBreaking).toBe(true);
-    expect(source.getCachedNews?.({ scope: "global" })).toHaveLength(1);
+    expect(source.news!.getCachedNews?.({ scope: "global" })).toHaveLength(1);
   });
 
   test("uses fresh plugin cache without refetching", async () => {
     const persistence = new MemoryPersistence();
-    const source = createRssNewsSource([FEED], {
+    const source = createRssDataSource([FEED], {
       persistence,
       fetchText: async () => {
         throw new Error("should not fetch");
@@ -118,7 +118,7 @@ describe("createRssNewsSource", () => {
       cachePolicy: RSS_FEED_CACHE_POLICY,
     });
 
-    const items = await source.fetchNews({ scope: "global" });
+    const items = await source.news!.fetchNews({ scope: "global" });
 
     expect(items).toHaveLength(1);
     expect(items[0]!.title).toBe("Cached headline");
@@ -144,14 +144,14 @@ describe("createRssNewsSource", () => {
       cachePolicy: stalePolicy,
     });
 
-    const source = createRssNewsSource([FEED], {
+    const source = createRssDataSource([FEED], {
       persistence,
       fetchText: async () => {
         throw new Error("network down");
       },
     });
 
-    const items = await source.fetchNews({ scope: "global" });
+    const items = await source.news!.fetchNews({ scope: "global" });
 
     expect(items).toHaveLength(1);
     expect(items[0]!.title).toBe("Stale headline");

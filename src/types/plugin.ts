@@ -13,6 +13,7 @@ import type {
   PaneInstanceConfig,
 } from "./config";
 import type { DataProvider } from "./data-provider";
+import type { DataSource } from "./data-source";
 import type { TickerFinancials } from "./financials";
 import type { CachePolicy, PersistedResourceValue } from "./persistence";
 import type { TickerRecord } from "./ticker";
@@ -405,12 +406,11 @@ export interface GloomPluginContext {
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
-  registerDataProvider(provider: DataProvider): void;
+  registerDataSource(source: DataSource): void;
   registerDetailTab(tab: DetailTabDef): void;
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
   registerContextMenuProvider(provider: ContextMenuProviderDef): void;
-  registerNewsSource?(source: import("./news-source").NewsSource): () => void;
   watchNewsQuery?(
     query: import("./news-source").NewsQuery,
     listener: (state: import("./news-source").NewsQueryState) => void,
@@ -421,7 +421,7 @@ export interface GloomPluginContext {
   getConfig(): import("./config").AppConfig;
   getPaneDef(paneId: string): PaneDef | undefined;
 
-  readonly dataProvider: DataProvider;
+  readonly marketData: DataProvider;
   readonly tickerRepository: TickerRepository;
   readonly persistence: PluginPersistence;
   readonly log: PluginLogger;
@@ -469,7 +469,7 @@ export interface GloomPlugin {
   panes?: PaneDef[];
   paneTemplates?: PaneTemplateDef[];
   broker?: BrokerAdapter;
-  dataProvider?: DataProvider;
+  dataSources?: DataSource[];
   slots?: Partial<{
     [K in keyof GloomSlots]: (props: GloomSlots[K]) => ReactNode;
   }>;

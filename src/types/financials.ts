@@ -1,7 +1,7 @@
 
 export type MarketState = "PRE" | "REGULAR" | "POST" | "PREPRE" | "POSTPOST" | "CLOSED";
 export type SessionConfidence = "explicit" | "derived" | "unknown";
-export type QuoteDataSource = "live" | "delayed" | "yahoo";
+export type QuoteDataSource = "live" | "delayed" | "snapshot";
 
 export interface QuoteFieldProvenance {
   providerId: string;
@@ -55,7 +55,7 @@ export interface Quote {
   low?: number;
   mark?: number;
   provenance?: QuoteProvenance;
-  /** Where the quote data came from: live broker feed, delayed broker feed, or a fallback like Yahoo. */
+  /** Freshness class for the quote data. Provider identity lives in providerId/provenance. */
   dataSource?: QuoteDataSource;
 }
 

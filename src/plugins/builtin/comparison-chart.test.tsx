@@ -16,7 +16,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { PluginRegistry } from "../../plugins/registry";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugins/plugin-runtime";
-import { setSharedDataProviderForTests, setSharedRegistryForTests } from "../../plugins/registry";
+import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../plugins/registry";
 import type { TickerRecord } from "../../types/ticker";
 import {
   comparisonChartPlugin,
@@ -234,7 +234,7 @@ afterEach(async () => {
   sharedCoordinator = null;
   setSharedMarketDataCoordinator(null);
   setSharedRegistryForTests(undefined);
-  setSharedDataProviderForTests(undefined);
+  setSharedMarketDataForTests(undefined);
 });
 
 describe("comparisonChartPlugin", () => {
@@ -259,7 +259,7 @@ describe("comparisonChartPlugin", () => {
       AAPL: "USD",
       "7203": "JPY",
     });
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
@@ -301,7 +301,7 @@ describe("comparisonChartPlugin", () => {
       AAPL: "USD",
       MSFT: "USD",
     });
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
@@ -338,7 +338,7 @@ describe("comparisonChartPlugin", () => {
       MSFT: "USD",
       NVDA: "USD",
     });
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
     setSharedRegistryForTests(createRegistrySpy(spy));

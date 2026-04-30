@@ -3,7 +3,7 @@ import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn,
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
-import { usePluginDataProvider, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
+import { useMarketData, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
 import { SECTORS, type SectorDef } from "./sector-data";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -110,7 +110,7 @@ function nextSortPreference(current: SectorSortPreference, columnId: string): Se
 }
 
 export function SectorPerformancePane({ focused, width, height }: PaneProps) {
-  const dataProvider = usePluginDataProvider();
+  const dataProvider = useMarketData();
   const { navigateTicker } = usePluginTickerActions();
   const [rows, setRows] = useState<SectorRow[]>(
     SECTORS.map((sector) => ({ ...sector, price: null, changePercent: null, currency: "USD", loading: true })),

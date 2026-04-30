@@ -12,7 +12,7 @@ import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
 import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../utils/market-format";
-import { getSharedDataProvider } from "../../plugins/registry";
+import { getSharedMarketData } from "../../plugins/registry";
 import {
   applyComparisonZoomAroundAnchor,
   getMaxComparisonPanOffset,
@@ -739,7 +739,7 @@ function ComparisonStockChartView({
   ), [nativeSurfaceManager]);
 
   useEffect(() => {
-    const provider = getSharedDataProvider();
+    const provider = getSharedMarketData();
     if ((!provider?.getChartResolutionSupport && !provider?.getChartResolutionCapabilities) || symbolSources.length === 0) {
       setResolutionSupport(null);
       return;

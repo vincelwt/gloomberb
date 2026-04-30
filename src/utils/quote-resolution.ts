@@ -96,7 +96,6 @@ function sessionConfidenceRank(confidence?: SessionConfidence): number {
 
 function inferQuoteProviderId(quote: Quote | QuoteContribution): string {
   if (quote.providerId?.trim()) return quote.providerId;
-  if (quote.dataSource === "yahoo") return "yahoo";
   return "quote";
 }
 

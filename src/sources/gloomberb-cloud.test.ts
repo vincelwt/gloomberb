@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createGloomberbCloudNewsSource, GloomberbCloudProvider } from "./gloomberb-cloud";
+import { createGloomberbCloudSource, GloomberbCloudProvider } from "./gloomberb-cloud";
 import { apiClient, type AuthUser } from "../utils/api-client";
 
 const verifiedUser: AuthUser = {
@@ -381,8 +381,8 @@ describe("GloomberbCloudProvider", () => {
       nextCursor: null,
     });
 
-    const source = createGloomberbCloudNewsSource();
-    const news = await source.fetchNews({ feed: "top", ticker: "SNY" });
+    const source = createGloomberbCloudSource();
+    const news = await source.news!.fetchNews({ feed: "top", ticker: "SNY" });
 
     expect(news[0]?.tickers).toEqual(["SNY", "MRNA"]);
     expect(news[0]?.importance).toBe(77);

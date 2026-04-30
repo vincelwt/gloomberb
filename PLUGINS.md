@@ -87,7 +87,7 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerPane(pane)` | Add a full pane (left/right/bottom) |
 | `ctx.registerPaneTemplate(template)` | Add a reusable pane template (see [Pane templates](#pane-templates)) |
 | `ctx.registerBroker(broker)` | Add a broker integration |
-| `ctx.registerDataProvider(provider)` | Add a data source |
+| `ctx.registerDataSource(source)` | Add a data source |
 | `ctx.registerShortcut(shortcut)` | Add a global keyboard shortcut |
 | `ctx.registerTickerAction(action)` | Add a per-ticker action (shown via `a` key) |
 | `ctx.registerContextMenuProvider(provider)` | Add renderer-neutral context menu items |
@@ -207,9 +207,36 @@ return {
 | `ctx.getData(ticker)` | Cached financials for a ticker |
 | `ctx.getTicker(ticker)` | Ticker metadata record |
 | `ctx.getConfig()` | Current app config |
-| `ctx.dataProvider` | The active data provider instance |
+| `ctx.marketData` | The active market data router |
 | `ctx.tickerRepository` | The ticker metadata persistence store |
 | `ctx.log` | Scoped logger for debug output |
+
+### Data sources
+
+Plugins may contribute data through `dataSources` or `ctx.registerDataSource(source)`. A data source can expose `market`, `news`, or both. Plugins remain feature modules; the source is the provider identity used for routing, cache policy, and provenance.
+
+```typescript
+import type { GloomPlugin } from "gloomberb/types/plugin";
+import type { DataSource } from "gloomberb/types/data-source";
+
+const source: DataSource = {
+  id: "my-source",
+  name: "My Source",
+  priority: 100,
+  market: myMarketProvider,
+  news: {
+    supports: (query) => query.feed === "ticker",
+    fetchNews: async (query) => [],
+  },
+};
+
+export const myPlugin: GloomPlugin = {
+  id: "my-plugin",
+  name: "My Plugin",
+  version: "1.0.0",
+  dataSources: [source],
+};
+```
 
 ### Plugin storage
 
@@ -596,11 +623,11 @@ Do not register basic navigation hints. Pane hints must omit `Esc`, `Enter`, arr
 
 ### Plugin runtime hooks
 
-These hooks are available inside pane and tab components rendered by a plugin. They provide app actions, provider access, and reactive access to the plugin's storage layers:
+These hooks are available inside pane and tab components rendered by a plugin. They provide app actions, market data access, and reactive access to the plugin's storage layers:
 
 ```typescript
 import {
-  usePluginDataProvider,
+  useMarketData,
   usePluginPaneState,
   usePluginState,
   usePluginConfigState,
@@ -608,7 +635,7 @@ import {
   usePluginAppActions,
 } from "gloomberb/plugins/plugin-runtime";
 
-const dataProvider = usePluginDataProvider();
+const marketData = useMarketData();
 const { navigateTicker, pinTicker } = usePluginTickerActions();
 const { openCommandBar, showWidget, hideWidget, notify } = usePluginAppActions();
 

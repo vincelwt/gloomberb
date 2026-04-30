@@ -391,7 +391,7 @@ export const alertsPlugin: GloomPlugin = {
       for (const alert of alerts) {
         if (alert.status !== "active") continue;
         try {
-          const quote = await ctx.dataProvider.getQuote(alert.symbol, "");
+          const quote = await ctx.marketData.getQuote(alert.symbol, "");
           if (!quote || typeof quote.price !== "number") {
             ctx.log.warn("poll: no quote", { symbol: alert.symbol });
             continue;

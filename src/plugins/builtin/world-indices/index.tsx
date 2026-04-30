@@ -6,7 +6,7 @@ import type { Quote } from "../../../types/financials";
 import type { MarketState } from "../../../types/financials";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
-import { usePluginDataProvider, usePluginTickerActions } from "../../plugin-runtime";
+import { useMarketData, usePluginTickerActions } from "../../plugin-runtime";
 import { WORLD_INDICES, REGION_LABELS, REGION_ORDER, getIndicesByRegion, type IndexEntry } from "./indices";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -149,7 +149,7 @@ function nextSortPreference(
 }
 
 export function WorldIndicesPane({ focused, width, height }: PaneProps) {
-  const dataProvider = usePluginDataProvider();
+  const dataProvider = useMarketData();
   const { pinTicker } = usePluginTickerActions();
   const [quotes, setQuotes] = useState<QuoteMap>(new Map());
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);

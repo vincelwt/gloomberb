@@ -14,7 +14,8 @@ import {
 import { exchangeShortName, marketStateLabel } from "../../utils/market-status";
 import type { AppConfig } from "../../types/config";
 import type { FinancialStatement, TickerFinancials } from "../../types/financials";
-import type { NewsItem, SecFilingItem } from "../../types/data-provider";
+import type { SecFilingItem } from "../../types/data-provider";
+import type { NewsArticle } from "../../news/types";
 import type { TickerRecord } from "../../types/ticker";
 import { createBaseConverter } from "../base-converter";
 import { initMarketData } from "../context";
@@ -187,7 +188,7 @@ export async function buildTickerReport({
   config: AppConfig;
   toBase: (value: number, fromCurrency: string) => Promise<number>;
   notes?: string;
-  recentNews?: NewsItem[];
+  recentNews?: NewsArticle[];
   recentSecFilings?: SecFilingItem[];
 }): Promise<string> {
   const quote = financials.quote;
@@ -391,7 +392,14 @@ export async function ticker(symbol: string, dependencies: TickerCommandDependen
   const notesFiles = new NotesFiles(dataDir);
   const [notesResult, newsResult, secFilingsResult] = await Promise.allSettled([
     notesFiles.load(normalized),
-    dataProvider.getNews(normalized, NEWS_ITEM_LIMIT, exchange || quote.exchangeName || ""),
+    dataProvider.getNews({
+      feed: "ticker",
+      scope: "ticker",
+      ticker: normalized,
+      exchange: exchange || quote.exchangeName || "",
+      tickerTier: "primary",
+      limit: NEWS_ITEM_LIMIT,
+    }),
     shouldFetchSecFilings(tickerFile, resolvedFinancials) && dataProvider.getSecFilings
       ? dataProvider.getSecFilings(normalized, SEC_FILING_LIMIT, exchange || quote.exchangeName || "")
       : Promise.resolve([]),

@@ -63,13 +63,3 @@ export interface NewsQueryState {
   updatedAt: number | null;
   sourceIds: string[];
 }
-
-export interface NewsSource {
-  readonly id: string;
-  readonly name: string;
-  readonly priority?: number;
-  isEnabled?(): boolean;
-  supports?(query: NewsQuery): boolean;
-  getCachedNews?(query: NewsQuery): NewsArticle[];
-  fetchNews(query: NewsQuery): Promise<NewsArticle[]>;
-}

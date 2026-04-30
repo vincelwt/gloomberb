@@ -691,7 +691,7 @@ export class YahooFinanceClient implements DataProvider {
       listingExchangeFullName: meta.fullExchangeName,
       marketState,
       sessionConfidence: "derived",
-      dataSource: "yahoo",
+      dataSource: "delayed",
       ...quoteSupplement,
       ...extHours,
     };
@@ -833,7 +833,7 @@ export class YahooFinanceClient implements DataProvider {
           listingExchangeFullName: meta.fullExchangeName,
           marketState,
           sessionConfidence: "derived",
-          dataSource: "yahoo",
+          dataSource: "delayed",
           ...quoteSupplement,
           ...extHours,
         };
