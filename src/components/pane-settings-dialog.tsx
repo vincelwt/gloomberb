@@ -11,8 +11,7 @@ import type {
 import type { PluginRegistry } from "../plugins/registry";
 import { colors } from "../theme/colors";
 import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
-
-type NativeSelectElement = HTMLSelectElement & { showPicker?: () => void };
+import { NativeSelect, openNativeSelect, type NativeSelectElement } from "./ui/native-select";
 
 interface PaneSettingsDialogContentProps extends AlertContext {
   paneId: string;
@@ -195,73 +194,6 @@ function DesktopValuePill({ value }: { value: string }) {
   );
 }
 
-function DesktopSelectControl({
-  field,
-  currentValue,
-  selectRef,
-  onChange,
-}: {
-  field: SelectPaneSettingField;
-  currentValue: unknown;
-  selectRef?: (element: NativeSelectElement | null) => void;
-  onChange: (value: string) => void;
-}) {
-  const value = typeof currentValue === "string" ? currentValue : "";
-  const hasCurrentValue = field.options.some((option) => option.value === value);
-
-  return (
-    <Box
-      height="28px"
-      flexDirection="row"
-      alignItems="center"
-      onMouseDown={(event: any) => {
-        event.stopPropagation?.();
-      }}
-      onMouseUp={(event: any) => {
-        event.stopPropagation?.();
-      }}
-    >
-      <select
-        ref={selectRef}
-        value={value}
-        data-gloom-interactive="true"
-        onMouseDown={(event) => {
-          event.stopPropagation();
-        }}
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
-        onChange={(event) => {
-          onChange(event.currentTarget.value);
-        }}
-        style={{
-          width: 184,
-          height: 28,
-          color: colors.text,
-          backgroundColor: "rgba(255, 255, 255, 0.06)",
-          border: `1px solid ${colors.border}`,
-          borderRadius: 6,
-          padding: "0 8px",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
-          cursor: "pointer",
-          font: "inherit",
-          letterSpacing: 0,
-          outline: "none",
-          appearance: "auto",
-          WebkitAppearance: "menulist",
-        }}
-      >
-        {!hasCurrentValue && <option value="">Unset</option>}
-        {field.options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </Box>
-  );
-}
-
 function DesktopSettingsRow({
   field,
   selected,
@@ -286,9 +218,10 @@ function DesktopSettingsRow({
   const control = field.type === "toggle" ? (
     <DesktopSwitch checked={currentValue === true} onChange={(checked) => onApply(field, checked)} />
   ) : field.type === "select" ? (
-    <DesktopSelectControl
-      field={field}
-      currentValue={currentValue}
+    <NativeSelect
+      value={typeof currentValue === "string" ? currentValue : ""}
+      options={field.options}
+      includeUnsetOption
       selectRef={(element) => onSelectRef(field.key, element)}
       onChange={(value) => onApply(field, value)}
     />
@@ -403,16 +336,6 @@ function useSelectFieldDialogController({
   });
 
   return { selectedIndex, setSelectedIndex, applyOption };
-}
-
-function openNativeSelect(element: NativeSelectElement | null | undefined) {
-  if (!element) return;
-  element.focus();
-  try {
-    element.showPicker?.();
-  } catch {
-    element.click();
-  }
 }
 
 function TuiSelectFieldDialog(props: SelectFieldDialogProps) {
