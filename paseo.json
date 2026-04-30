@@ -1,0 +1,10 @@
+{
+  "worktree": {
+    "setup": "bun install"
+  },
+  "scripts": {
+    "preview-mac": {
+      "command": "preview-this"
+    }
+  }
+}
