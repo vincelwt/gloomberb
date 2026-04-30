@@ -907,7 +907,7 @@ async function handleDataProvider(
     case "data.search":
       return provider.search(payload.query as string, payload.context as never);
     case "data.getNews":
-      return provider.getNews(payload.ticker as string, payload.count as number | undefined, payload.exchange as string | undefined, payload.context as never);
+      return (provider as typeof provider & { getNews?: (query: never) => unknown }).getNews?.(payload.query as never) ?? [];
     case "data.getSecFilings":
       return provider.getSecFilings?.(payload.ticker as string, payload.count as number | undefined, payload.exchange as string | undefined, payload.context as never) ?? [];
     case "data.getSecFilingContent":

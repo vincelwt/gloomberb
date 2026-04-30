@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import type { NewsItem, SecFilingItem } from "../types/data-provider";
+import type { SecFilingItem } from "../types/data-provider";
+import type { NewsArticle } from "../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "./request-types";
@@ -221,7 +222,7 @@ export function useChartQueries(
   return useMemo(() => new Map(entries), [entries]);
 }
 
-export function useNewsQuery(request: NewsRequest | null | undefined): QueryEntry<NewsItem[]> | null {
+export function useNewsQuery(request: NewsRequest | null | undefined): QueryEntry<NewsArticle[]> | null {
   const requestKey = request ? buildNewsKey(request) : null;
   useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
   const coordinator = getSharedMarketDataCoordinator();

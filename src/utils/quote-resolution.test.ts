@@ -40,7 +40,7 @@ describe("quote-resolution", () => {
       yahoo: {
         symbol: "AMD",
         providerId: "yahoo",
-        dataSource: "yahoo",
+        dataSource: "delayed",
         price: 99.7,
         currency: "USD",
         change: 0.7,
@@ -88,7 +88,7 @@ describe("quote-resolution", () => {
       yahoo: {
         symbol: "ELF",
         providerId: "yahoo",
-        dataSource: "yahoo",
+        dataSource: "delayed",
         price: 87.5,
         currency: "USD",
         change: 0,
@@ -127,7 +127,7 @@ describe("quote-resolution", () => {
       yahoo: {
         symbol: "AMD",
         providerId: "yahoo",
-        dataSource: "yahoo",
+        dataSource: "delayed",
         price: 221.53,
         currency: "USD",
         change: 1.35,
@@ -195,7 +195,7 @@ describe("quote-resolution", () => {
       yahoo: {
         symbol: "HY9H",
         providerId: "yahoo",
-        dataSource: "yahoo",
+        dataSource: "delayed",
         price: 598,
         currency: "EUR",
         change: 6,
@@ -220,7 +220,7 @@ describe("quote-resolution", () => {
       yahoo: {
         symbol: "HY9H",
         providerId: "yahoo",
-        dataSource: "yahoo",
+        dataSource: "delayed",
         price: 598,
         currency: "EUR",
         change: 6,

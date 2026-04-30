@@ -21,7 +21,7 @@ import type { DataProvider } from "../types/data-provider";
 import type { AppNotificationRequest, BrokerInstanceUpdateOptions } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
-  getDataProvider(): DataProvider | null;
+  getMarketData(): DataProvider | null;
   getBrokerAdapter(brokerType: string): BrokerAdapter | null;
   connectBrokerInstance(instanceId: string): Promise<void>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;
@@ -134,9 +134,9 @@ export function usePluginAppActions() {
   };
 }
 
-export function usePluginDataProvider(): DataProvider | null {
+export function useMarketData(): DataProvider | null {
   const { runtime } = usePluginRenderContext();
-  return runtime.getDataProvider();
+  return runtime.getMarketData();
 }
 
 export function usePluginBrokerActions() {

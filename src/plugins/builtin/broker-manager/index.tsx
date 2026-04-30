@@ -378,6 +378,11 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         setEditDraft(null);
         return;
       }
+      if (event.name === "enter" || event.name === "return") {
+        event.stopPropagation();
+        saveEdit().catch(() => {});
+        return;
+      }
       if (event.name === "up" || event.name === "k") {
         event.stopPropagation();
         const index = editKeys.indexOf(activeEditKey);

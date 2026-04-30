@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { NewsService } from "./aggregator";
-import type { MarketNewsItem, NewsSource } from "../types/news-source";
+import type { DataSource } from "../types/data-source";
+import type { MarketNewsItem } from "../types/news-source";
 
 function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketNewsItem {
   return {
@@ -29,20 +30,24 @@ function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketN
   };
 }
 
-function makeSource(id: string, items: MarketNewsItem[]): NewsSource {
+function makeSource(id: string, items: MarketNewsItem[]): DataSource {
   return {
     id,
     name: id,
-    fetchNews: mock(async () => items),
+    news: {
+      fetchNews: mock(async () => items),
+    },
   };
 }
 
-function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems: MarketNewsItem[] = []): NewsSource {
+function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems: MarketNewsItem[] = []): DataSource {
   return {
     id,
     name: id,
-    getCachedNews: () => cachedItems,
-    fetchNews: mock(async () => fetchItems),
+    news: {
+      getCachedNews: () => cachedItems,
+      fetchNews: mock(async () => fetchItems),
+    },
   };
 }
 
@@ -236,8 +241,22 @@ describe("NewsService", () => {
     const empty = makeSource("empty", []);
     const fallbackItem = makeItem({ url: "https://fallback.example.com/1", tickers: ["AAPL"] });
     const fallback = makeSource("fallback", [fallbackItem]);
-    agg.register({ ...empty, priority: 10, supports: (query) => query.feed === "ticker" || query.scope === "ticker" });
-    agg.register({ ...fallback, priority: 100, supports: (query) => query.feed === "ticker" || query.scope === "ticker" });
+    agg.register({
+      ...empty,
+      priority: 10,
+      news: {
+        ...empty.news!,
+        supports: (query) => query.feed === "ticker" || query.scope === "ticker",
+      },
+    });
+    agg.register({
+      ...fallback,
+      priority: 100,
+      news: {
+        ...fallback.news!,
+        supports: (query) => query.feed === "ticker" || query.scope === "ticker",
+      },
+    });
 
     const state = await agg.load({ feed: "ticker", ticker: "AAPL", limit: 10 });
 

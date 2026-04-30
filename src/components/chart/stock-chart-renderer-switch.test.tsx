@@ -11,7 +11,7 @@ import {
   type AppAction,
 } from "../../state/app-context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
-import { setSharedDataProviderForTests } from "../../plugins/registry";
+import { setSharedMarketDataForTests } from "../../plugins/registry";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { PricePoint, TickerFinancials } from "../../types/financials";
@@ -252,7 +252,7 @@ afterEach(async () => {
   harnessDispatch = null;
   sharedCoordinator = null;
   setSharedMarketDataCoordinator(null);
-  setSharedDataProviderForTests(undefined);
+  setSharedMarketDataForTests(undefined);
   if (root) {
     await act(async () => {
       root!.unmount();
@@ -274,7 +274,7 @@ describe("StockChart renderer switching", () => {
     const provider = makeProvider({ [symbol]: [] });
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -310,7 +310,7 @@ describe("StockChart renderer switching", () => {
     const provider = makeProvider({ [symbol]: history });
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -350,7 +350,7 @@ describe("StockChart renderer switching", () => {
     const provider = makeProvider({ [symbol]: history });
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -394,7 +394,7 @@ describe("StockChart renderer switching", () => {
     const provider = makeProvider({ [symbol]: history });
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -449,7 +449,7 @@ describe("StockChart renderer switching", () => {
     const provider = makeProvider({ [symbol]: history });
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -542,7 +542,7 @@ describe("StockChart renderer switching", () => {
     const provider = makeProvider({ [symbol]: makeHistory(180) });
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -611,7 +611,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -683,7 +683,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -752,7 +752,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -812,7 +812,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -894,7 +894,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -975,7 +975,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -1063,7 +1063,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -1130,7 +1130,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],
@@ -1191,7 +1191,7 @@ describe("StockChart renderer switching", () => {
     } satisfies DataProvider;
     sharedCoordinator = new MarketDataCoordinator(provider);
     setSharedMarketDataCoordinator(sharedCoordinator);
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     const financials: TickerFinancials = {
       annualStatements: [],
       quarterlyStatements: [],

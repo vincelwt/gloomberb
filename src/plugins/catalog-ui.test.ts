@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createDesktopBuiltinPlugins } from "./desktop-plugins";
+import { getRendererBuiltinPlugins } from "./catalog-ui";
 
-describe("desktop builtin plugins", () => {
+describe("renderer builtin plugins", () => {
   test("includes broker manager after the IBKR broker adapter", () => {
-    const pluginIds = createDesktopBuiltinPlugins(async () => []).map((plugin) => plugin.id);
+    const pluginIds = getRendererBuiltinPlugins().map((plugin) => plugin.id);
 
     expect(pluginIds).toContain("ibkr");
     expect(pluginIds).toContain("broker-manager");

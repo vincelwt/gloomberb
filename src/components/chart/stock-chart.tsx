@@ -7,7 +7,7 @@ import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, use
 import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../layout/pane-footer";
 import { ShortcutHint } from "../ui";
 import { saveConfig } from "../../data/config-store";
-import { getSharedDataProvider } from "../../plugins/registry";
+import { getSharedMarketData } from "../../plugins/registry";
 import { colors } from "../../theme/colors";
 import { formatCompact } from "../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../utils/market-format";
@@ -1646,7 +1646,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     () => instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null),
     [ticker],
   );
-  const dataProvider = getSharedDataProvider();
+  const dataProvider = getSharedMarketData();
   const capabilityKey = instrumentRef ? [
     instrumentRef.symbol,
     instrumentRef.exchange ?? "",

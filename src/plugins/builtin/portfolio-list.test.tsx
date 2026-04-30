@@ -6,7 +6,7 @@ import { act, useReducer } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppPersistence } from "../../data/app-persistence";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider, type AppAction } from "../../state/app-context";
-import { ProviderRouter } from "../../sources/provider-router";
+import { SourceRouter } from "../../sources/provider-router";
 import { cloneLayout, createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
@@ -734,9 +734,6 @@ describe("PortfolioListPane cash and margin UI", () => {
       async search() {
         return [];
       },
-      async getNews() {
-        return [];
-      },
       async getArticleSummary() {
         return null;
       },
@@ -830,9 +827,6 @@ describe("PortfolioListPane cash and margin UI", () => {
       async search() {
         return [];
       },
-      async getNews() {
-        return [];
-      },
       async getArticleSummary() {
         return null;
       },
@@ -865,7 +859,7 @@ describe("PortfolioListPane cash and margin UI", () => {
       },
     };
 
-    const seedRouter = new ProviderRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const seedRouter = new SourceRouter(yahooProvider, [cloudProvider], persistence.resources);
     await seedRouter.getTickerFinancials("AAPL", "NASDAQ", {
       brokerId: "ibkr",
       brokerInstanceId: "ibkr-live",
@@ -873,7 +867,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     });
 
     let liveCalls = 0;
-    const cachedRouter = new ProviderRouter({
+    const cachedRouter = new SourceRouter({
       ...yahooProvider,
       async getTickerFinancials() {
         liveCalls += 1;
@@ -1019,9 +1013,6 @@ describe("PortfolioListPane cash and margin UI", () => {
         return 1;
       },
       async search() {
-        return [];
-      },
-      async getNews() {
         return [];
       },
       async getArticleSummary() {

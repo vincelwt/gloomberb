@@ -5,7 +5,9 @@ import { PluginRegistry } from "../../../plugins/registry";
 import type { AppServices } from "../../../core/app-services";
 import type { AppConfig } from "../../../types/config";
 import type { DataProvider, MarketDataRequestContext, SearchRequestContext, QuoteSubscriptionTarget } from "../../../types/data-provider";
+import type { DataSource } from "../../../types/data-source";
 import type { TickerFinancials, Quote } from "../../../types/financials";
+import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../../types/instrument";
 import type { TickerRecord, TickerMetadata } from "../../../types/ticker";
 import type { TimeRange } from "../../../components/chart/chart-types";
@@ -19,7 +21,7 @@ import { backendRequest, getElectrobunBackendInitSnapshot, onQuoteSubscription }
 import { DesktopMemoryResourceStore } from "./resource-store";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerf } from "../../../utils/perf-marks";
-import { createDesktopBuiltinPlugins } from "./desktop-plugins";
+import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 
 const REMOTE_DATA_REQUEST_CACHE_LIMIT = 150;
 const servicesLog = debugLog.createLogger("services");
@@ -90,8 +92,8 @@ class RemoteDataProvider implements DataProvider {
     return backendRequest("data.search", { query, context });
   }
 
-  getNews(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext) {
-    return this.cachedRequest("data.getNews", { ticker, count, exchange, context });
+  getNews(query: NewsQuery): Promise<NewsArticle[]> {
+    return this.cachedRequest("data.getNews", { query });
   }
 
   getSecFilings(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext) {
@@ -298,13 +300,24 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
 
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
-  pluginRegistry.registerNewsSourceFn = (source) => newsService.register(source);
+  pluginRegistry.registerDataSourceFn = () => () => {};
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
 
   setSharedMarketDataCoordinator(marketData);
   setSharedNewsService(newsService);
 
-  const plugins = createDesktopBuiltinPlugins((ticker, count, exchange) => dataProvider.getNews(ticker, count, exchange));
+  const remoteDataSource: DataSource = {
+    id: dataProvider.id,
+    name: dataProvider.name,
+    priority: 0,
+    market: dataProvider,
+    news: {
+      fetchNews: (query) => dataProvider.getNews(query),
+    },
+  };
+  newsService.register(remoteDataSource);
+
+  const plugins = getRendererBuiltinPlugins();
   for (const plugin of plugins) {
     measurePerf("startup.services.register-plugin", () => {
       void pluginRegistry.register(plugin);

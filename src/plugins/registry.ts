@@ -4,6 +4,7 @@ import type { TickerRepository } from "../data/ticker-repository";
 import type { BrokerAdapter } from "../types/broker";
 import type { BrokerInstanceConfig, LayoutConfig, PaneInstanceConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
+import type { DataSource } from "../types/data-source";
 import type { TickerFinancials } from "../types/financials";
 import type {
   AppNotificationRequest,
@@ -40,7 +41,7 @@ import {
 } from "../core/state/app-state";
 import { deletePaneSetting, getPaneSettings, setPaneSetting } from "../pane-settings";
 
-let sharedDataProvider: DataProvider | undefined;
+let sharedMarketData: DataProvider | undefined;
 let sharedRegistry: PluginRegistry | undefined;
 type SlotEntry = {
   pluginId: string;
@@ -53,10 +54,10 @@ interface ContextMenuProviderEntry {
   provider: ContextMenuProviderDef;
 }
 
-export function getSharedDataProvider(): DataProvider | undefined { return sharedDataProvider; }
+export function getSharedMarketData(): DataProvider | undefined { return sharedMarketData; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
-export function setSharedDataProviderForTests(provider: DataProvider | undefined): void {
-  sharedDataProvider = provider;
+export function setSharedMarketDataForTests(provider: DataProvider | undefined): void {
+  sharedMarketData = provider;
 }
 export function setSharedRegistryForTests(registry: PluginRegistry | undefined): void {
   sharedRegistry = registry;
@@ -68,13 +69,13 @@ interface PluginItems {
   commands: string[];
   columns: string[];
   brokers: string[];
-  dataProviders: string[];
+  dataSources: string[];
   detailTabs: string[];
   shortcuts: string[];
   tickerActions: string[];
   contextMenuProviders: string[];
   eventDisposers: Array<() => void>;
-  newsSourceDisposers: Array<() => void>;
+  dataSourceDisposers: Array<() => void>;
   newsQueryWatchDisposers: Array<() => void>;
 }
 
@@ -87,7 +88,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private paneOwners = new Map<string, string>();
   private paneTemplateOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
-  private dataProviderOwners = new Map<string, string>();
+  private dataSourceOwners = new Map<string, string>();
   private pluginResumeListeners = new Map<string, Set<() => void>>();
 
   private panesMap = new Map<string, PaneDef>();
@@ -95,14 +96,14 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private commandsMap = new Map<string, CommandDef>();
   private columnsMap = new Map<string, CustomColumnDef>();
   private brokersMap = new Map<string, BrokerAdapter>();
-  private dataProvidersMap = new Map<string, DataProvider>();
+  private dataSourcesMap = new Map<string, DataSource>();
   private detailTabsMap = new Map<string, DetailTabDef>();
   private shortcutsMap = new Map<string, KeyboardShortcut>();
   private tickerActionsMap = new Map<string, TickerAction>();
   private contextMenuProvidersMap = new Map<string, ContextMenuProviderEntry>();
 
   readonly events: EventBus;
-  readonly dataProvider: DataProvider;
+  readonly marketData: DataProvider;
   readonly tickerRepository: TickerRepository;
   readonly persistence: AppPersistence;
 
@@ -130,7 +131,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
   navigateTickerFn: ((symbol: string) => void) = () => {};
-  getDataProvider = () => this.dataProvider;
+  getMarketData = () => this.marketData;
   getBrokerAdapter = (brokerType: string) => this.brokersMap.get(brokerType) ?? null;
   connectBrokerInstance = (instanceId: string) => this.connectBrokerInstanceFn(instanceId);
   updateBrokerInstance = (instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions) => (
@@ -164,7 +165,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
-  registerNewsSourceFn: ((source: import("../types/news-source").NewsSource) => () => void) = () => () => {};
+  registerDataSourceFn: ((source: DataSource) => () => void) = () => () => {};
   watchNewsQueryFn: ((
     query: import("../types/news-source").NewsQuery,
     listener: (state: import("../types/news-source").NewsQueryState) => void,
@@ -183,13 +184,13 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   readonly Slot;
 
-  constructor(dataProvider: DataProvider, tickerRepository: TickerRepository, persistence: AppPersistence) {
-    this.dataProvider = dataProvider;
+  constructor(marketData: DataProvider, tickerRepository: TickerRepository, persistence: AppPersistence) {
+    this.marketData = marketData;
     this.tickerRepository = tickerRepository;
     this.persistence = persistence;
     this.events = new EventBus();
 
-    sharedDataProvider = dataProvider;
+    sharedMarketData = marketData;
     sharedRegistry = this;
     (globalThis as any).__gloomRegistry = this;
     this.Slot = ({ name, ...props }: { name: keyof GloomSlots } & Record<string, unknown>) => (
@@ -202,7 +203,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   get commands(): ReadonlyMap<string, CommandDef> { return this.commandsMap; }
   get columns(): ReadonlyMap<string, CustomColumnDef> { return this.columnsMap; }
   get brokers(): ReadonlyMap<string, BrokerAdapter> { return this.brokersMap; }
-  get dataProviders(): ReadonlyMap<string, DataProvider> { return this.dataProvidersMap; }
+  get dataSources(): ReadonlyMap<string, DataSource> { return this.dataSourcesMap; }
   get detailTabs(): ReadonlyMap<string, DetailTabDef> { return this.detailTabsMap; }
   get shortcuts(): ReadonlyMap<string, KeyboardShortcut> { return this.shortcutsMap; }
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this.tickerActionsMap; }
@@ -236,21 +237,22 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return items;
   }
 
-  getDataProviderPluginId(providerId: string): string | undefined {
-    return this.dataProviderOwners.get(providerId);
+  getDataSourcePluginId(sourceId: string): string | undefined {
+    return this.dataSourceOwners.get(sourceId);
   }
 
-  getEnabledDataProviders(): DataProvider[] {
+  getEnabledDataSources(): DataSource[] {
     const disabledPlugins = new Set(this.getConfigFn().disabledPlugins ?? []);
-    return [...this.dataProvidersMap.values()].filter((provider) => {
-      const ownerId = this.dataProviderOwners.get(provider.id);
-      return !ownerId || !disabledPlugins.has(ownerId);
+    const disabledSources = new Set(this.getConfigFn().disabledSources ?? []);
+    return [...this.dataSourcesMap.values()].filter((source) => {
+      const ownerId = this.dataSourceOwners.get(source.id);
+      return !disabledSources.has(source.id) && (!ownerId || !disabledPlugins.has(ownerId));
     });
   }
 
-  getActiveProvider(): DataProvider | undefined {
-    let active: DataProvider | undefined;
-    for (const provider of this.dataProvidersMap.values()) active = provider;
+  getActiveSource(): DataSource | undefined {
+    let active: DataSource | undefined;
+    for (const source of this.dataSourcesMap.values()) active = source;
     return active;
   }
 
@@ -290,13 +292,13 @@ export class PluginRegistry implements PluginRuntimeAccess {
       commands: [],
       columns: [],
       brokers: [],
-      dataProviders: [],
+      dataSources: [],
       detailTabs: [],
       shortcuts: [],
       tickerActions: [],
       contextMenuProviders: [],
       eventDisposers: [],
-      newsSourceDisposers: [],
+      dataSourceDisposers: [],
       newsQueryWatchDisposers: [],
     };
     this.pluginItems.set(pluginId, items);
@@ -602,10 +604,21 @@ export class PluginRegistry implements PluginRuntimeAccess {
       },
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
       registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
-      registerDataProvider: (provider) => {
-        this.dataProvidersMap.set(provider.id, provider);
-        this.dataProviderOwners.set(provider.id, pluginId);
-        items.dataProviders.push(provider.id);
+      registerDataSource: (source) => {
+        const ownedSource: DataSource = {
+          ...source,
+          isEnabled: () => {
+            const config = this.getConfigFn();
+            const disabledPlugin = config.disabledPlugins.includes(pluginId);
+            const disabledSource = config.disabledSources?.includes(source.id) ?? false;
+            return !disabledPlugin && !disabledSource && (source.isEnabled?.() ?? true);
+          },
+        };
+        this.dataSourcesMap.set(source.id, ownedSource);
+        this.dataSourceOwners.set(source.id, pluginId);
+        items.dataSources.push(source.id);
+        const dispose = this.registerDataSourceFn(ownedSource);
+        items.dataSourceDisposers.push(dispose);
       },
       registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, this.wrapDetailTabDef(pluginId, tab)); items.detailTabs.push(tab.id); },
       registerShortcut: (shortcut) => {
@@ -619,23 +632,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
         this.contextMenuProvidersMap.set(providerKey, { pluginId, provider });
         items.contextMenuProviders.push(providerKey);
       },
-      registerNewsSource: (source) => {
-        const ownedSource: import("../types/news-source").NewsSource = {
-          id: source.id,
-          name: source.name,
-          priority: source.priority,
-          isEnabled: () => {
-            const disabled = this.getConfigFn().disabledPlugins.includes(pluginId);
-            return !disabled && (source.isEnabled?.() ?? true);
-          },
-          supports: (query) => source.supports?.(query) ?? true,
-          getCachedNews: (query) => source.getCachedNews?.(query) ?? [],
-          fetchNews: (query) => source.fetchNews(query),
-        };
-        const dispose = this.registerNewsSourceFn(ownedSource);
-        items.newsSourceDisposers.push(dispose);
-        return dispose;
-      },
       watchNewsQuery: (query, listener) => {
         const dispose = this.watchNewsQueryFn(query, listener);
         items.newsQueryWatchDisposers.push(dispose);
@@ -647,7 +643,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       getConfig: () => this.getConfigFn(),
       getPaneDef: (paneId) => this.panesMap.get(paneId),
 
-      dataProvider: this.dataProvider,
+      marketData: this.marketData,
       tickerRepository: this.tickerRepository,
       persistence,
       log,
@@ -716,10 +712,23 @@ export class PluginRegistry implements PluginRuntimeAccess {
       items.brokers.push(plugin.broker.id);
     }
 
-    if (plugin.dataProvider) {
-      this.dataProvidersMap.set(plugin.dataProvider.id, plugin.dataProvider);
-      this.dataProviderOwners.set(plugin.dataProvider.id, plugin.id);
-      items.dataProviders.push(plugin.dataProvider.id);
+    if (plugin.dataSources) {
+      for (const source of plugin.dataSources) {
+        const ownedSource: DataSource = {
+          ...source,
+          isEnabled: () => {
+            const config = this.getConfigFn();
+            const disabledPlugin = config.disabledPlugins.includes(plugin.id);
+            const disabledSource = config.disabledSources?.includes(source.id) ?? false;
+            return !disabledPlugin && !disabledSource && (source.isEnabled?.() ?? true);
+          },
+        };
+        this.dataSourcesMap.set(source.id, ownedSource);
+        this.dataSourceOwners.set(source.id, plugin.id);
+        items.dataSources.push(source.id);
+        const dispose = this.registerDataSourceFn(ownedSource);
+        items.dataSourceDisposers.push(dispose);
+      }
     }
 
     if (plugin.slots) {
@@ -794,9 +803,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
       }
       for (const columnId of items.columns) this.columnsMap.delete(columnId);
       for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
-      for (const providerId of items.dataProviders) {
-        this.dataProvidersMap.delete(providerId);
-        this.dataProviderOwners.delete(providerId);
+      for (const sourceId of items.dataSources) {
+        this.dataSourcesMap.delete(sourceId);
+        this.dataSourceOwners.delete(sourceId);
       }
       for (const tabId of items.detailTabs) this.detailTabsMap.delete(tabId);
       for (const shortcutId of items.shortcuts) {
@@ -806,7 +815,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
       for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
       for (const dispose of items.eventDisposers) dispose();
-      for (const dispose of items.newsSourceDisposers) dispose();
+      for (const dispose of items.dataSourceDisposers) dispose();
       for (const dispose of items.newsQueryWatchDisposers) dispose();
       this.pluginItems.delete(pluginId);
     }
@@ -830,8 +839,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
     if (sharedRegistry === this) {
       sharedRegistry = undefined;
     }
-    if (sharedDataProvider === this.dataProvider) {
-      sharedDataProvider = undefined;
+    if (sharedMarketData === this.marketData) {
+      sharedMarketData = undefined;
     }
     if ((globalThis as any).__gloomRegistry === this) {
       delete (globalThis as any).__gloomRegistry;

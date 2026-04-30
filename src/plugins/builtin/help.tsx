@@ -2,10 +2,11 @@ import { Box, ScrollBox, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import type { CommandDef, GloomPlugin, KeyboardShortcut, PaneProps } from "../../types/plugin";
 import { colors, hoverBg } from "../../theme/colors";
 import { getSharedRegistry } from "../registry";
 import { usePluginAppActions } from "../plugin-runtime";
+import { commands as coreCommands } from "../../components/command-bar/command-registry";
 
 function ShortcutBadge({ label }: { label: string }) {
   return (
@@ -32,7 +33,7 @@ function ShortcutRow({
         {badges.map((badge) => <ShortcutBadge key={badge} label={badge} />)}
       </Box>
       <Box flexGrow={1}>
-        <Text fg={colors.text}>{description}</Text>
+        <Text fg={colors.text} wrapText>{description}</Text>
       </Box>
     </Box>
   );
@@ -40,12 +41,17 @@ function ShortcutRow({
 
 function HelpSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" marginTop={1}>
       <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title}</Text>
-      <Box height={1} />
       {children}
     </Box>
   );
+}
+
+interface HelpShortcutEntry {
+  id: string;
+  badges: string[];
+  description: string;
 }
 
 function ActionButton({
@@ -80,7 +86,7 @@ function ActionButton({
 function resolveWindowTemplates(registry: ReturnType<typeof getSharedRegistry>) {
   if (!registry || !registry.paneTemplates) return [];
 
-  const disabledPlugins = new Set(registry.getConfigFn?.().disabledPlugins ?? []);
+  const disabledPlugins = resolveDisabledPlugins(registry);
   const allPlugins = registry.allPlugins ?? new Map<string, { name?: string }>();
 
   return [...registry.paneTemplates.values()]
@@ -108,11 +114,109 @@ function resolveWindowTemplates(registry: ReturnType<typeof getSharedRegistry>) 
     ));
 }
 
+function resolveDisabledPlugins(registry: ReturnType<typeof getSharedRegistry>): Set<string> {
+  try {
+    return new Set(registry?.getConfigFn?.().disabledPlugins ?? []);
+  } catch {
+    return new Set();
+  }
+}
+
+function formatPlaceholder(value: string | undefined): string | null {
+  return value ? `<${value}>` : null;
+}
+
+function withPluginName(description: string | undefined, pluginName: string | null | undefined): string {
+  const base = description?.trim() || "Run command";
+  return pluginName ? `${base} (${pluginName})` : base;
+}
+
+function resolveCommandShortcuts(registry: ReturnType<typeof getSharedRegistry>): HelpShortcutEntry[] {
+  const coreRows: HelpShortcutEntry[] = coreCommands
+    .filter((command) => command.prefix.trim().length > 0)
+    .map((command) => ({
+      id: `core:${command.id}`,
+      badges: [
+        command.prefix.toUpperCase(),
+        formatPlaceholder(command.argPlaceholder),
+      ].filter((value): value is string => !!value),
+      description: command.description,
+    }));
+
+  if (!registry || !registry.commands) return coreRows;
+
+  const disabledPlugins = resolveDisabledPlugins(registry);
+  const allPlugins = registry.allPlugins ?? new Map<string, { name?: string }>();
+  const pluginRows = [...registry.commands.values()]
+    .filter((command: CommandDef) => command.shortcut?.trim().length)
+    .filter((command: CommandDef) => {
+      const pluginId = registry.getCommandPluginId?.(command.id);
+      if (pluginId && disabledPlugins.has(pluginId)) return false;
+      return !(command.hidden?.() ?? false);
+    })
+    .map((command: CommandDef) => {
+      const pluginId = registry.getCommandPluginId?.(command.id);
+      const pluginName = pluginId ? allPlugins.get(pluginId)?.name : null;
+      return {
+        id: `plugin-command:${command.id}`,
+        badges: [
+          command.shortcut!.toUpperCase(),
+          formatPlaceholder(command.shortcutArg?.placeholder),
+        ].filter((value): value is string => !!value),
+        description: withPluginName(command.label, pluginName),
+      };
+    })
+    .sort((left, right) => (
+      left.badges.join(" ").localeCompare(right.badges.join(" "))
+      || left.description.localeCompare(right.description)
+    ));
+
+  return [...coreRows, ...pluginRows];
+}
+
+function formatShortcutKey(shortcut: KeyboardShortcut): string {
+  const key = shortcut.key.length === 1
+    ? shortcut.key.toUpperCase()
+    : shortcut.key[0]!.toUpperCase() + shortcut.key.slice(1);
+  return [
+    shortcut.ctrl ? "Ctrl" : null,
+    shortcut.shift ? "Shift" : null,
+    key,
+  ].filter((value): value is string => !!value).join("+");
+}
+
+function resolvePluginShortcuts(registry: ReturnType<typeof getSharedRegistry>): HelpShortcutEntry[] {
+  if (!registry || !registry.shortcuts) return [];
+
+  const disabledPlugins = resolveDisabledPlugins(registry);
+  const allPlugins = registry.allPlugins ?? new Map<string, { name?: string }>();
+  return [...registry.shortcuts.values()]
+    .filter((shortcut: KeyboardShortcut) => {
+      const pluginId = registry.getShortcutPluginId?.(shortcut.id);
+      return !pluginId || !disabledPlugins.has(pluginId);
+    })
+    .map((shortcut: KeyboardShortcut) => {
+      const pluginId = registry.getShortcutPluginId?.(shortcut.id);
+      const pluginName = pluginId ? allPlugins.get(pluginId)?.name : null;
+      return {
+        id: `plugin-shortcut:${shortcut.id}`,
+        badges: [formatShortcutKey(shortcut)],
+        description: withPluginName(shortcut.description, pluginName),
+      };
+    })
+    .sort((left, right) => (
+      left.badges.join(" ").localeCompare(right.badges.join(" "))
+      || left.description.localeCompare(right.description)
+    ));
+}
+
 export function HelpPane({ width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const { openCommandBar, showWidget } = usePluginAppActions();
   const compact = width < 78;
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
+  const commandShortcuts = resolveCommandShortcuts(registry);
+  const pluginShortcuts = resolvePluginShortcuts(registry);
   const windowTemplates = resolveWindowTemplates(registry);
 
   const openDebugLog = () => {
@@ -165,25 +269,46 @@ export function HelpPane({ width, height }: PaneProps) {
 
           <HelpSection title="Command Bar">
             <ShortcutRow
-              badges={["Ctrl+P", "`"]}
-              description="Open the command bar from anywhere."
+              badges={["Ctrl+P", "Cmd+K", "`"]}
+              description="Open or toggle the command bar from anywhere."
               compact={compact}
             />
             <ShortcutRow
-              badges={["help"]}
-              description="Open this help window directly."
+              badges={["<ticker>"]}
+              description="Search for a ticker or open the best matching security."
               compact={compact}
             />
             <ShortcutRow
-              badges={["DES <ticker>"]}
-              description="Open security details for a ticker."
+              badges={["Up/Down", "Ctrl+P/N"]}
+              description="Move through command bar results."
               compact={compact}
             />
             <ShortcutRow
-              badges={["PS", "PL"]}
-              description="Edit pane settings and manage plugins."
+              badges={["Enter", "Shift+Enter"]}
+              description="Run the selected result or its secondary action."
               compact={compact}
             />
+            <ShortcutRow
+              badges={["Tab"]}
+              description="Accept an inferred shortcut argument from the focused ticker."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["Esc", "`"]}
+              description="Close the command bar."
+              compact={compact}
+            />
+          </HelpSection>
+
+          <HelpSection title="Command Prefixes">
+            {commandShortcuts.map((shortcut) => (
+              <ShortcutRow
+                key={shortcut.id}
+                badges={shortcut.badges}
+                description={shortcut.description}
+                compact={compact}
+              />
+            ))}
           </HelpSection>
 
           <HelpSection title="Window Templates">
@@ -199,14 +324,65 @@ export function HelpPane({ width, height }: PaneProps) {
             )}
           </HelpSection>
 
-          <HelpSection title="Move Around">
+          {pluginShortcuts.length > 0 && (
+            <HelpSection title="Plugin Shortcuts">
+              {pluginShortcuts.map((shortcut) => (
+                <ShortcutRow
+                  key={shortcut.id}
+                  badges={shortcut.badges}
+                  description={shortcut.description}
+                  compact={compact}
+                />
+              ))}
+            </HelpSection>
+          )}
+
+          <HelpSection title="Global Keys">
             <ShortcutRow
               badges={["Tab", "Shift+Tab"]}
               description="Move focus between panes and floating windows."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Ctrl+W"]}
+              badges={["Ctrl+1-9"]}
+              description="Switch saved layouts by number."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["r", "Shift+R"]}
+              description="Refresh the focused ticker or refresh everything."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["a"]}
+              description="Open ticker actions for the focused ticker."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["q"]}
+              description="Quit the terminal app."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["Cmd+C", "Ctrl+Shift+C"]}
+              description="Copy the active terminal selection."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["Cmd+V", "Ctrl+Shift+V"]}
+              description="Paste clipboard text into the active input."
+              compact={compact}
+            />
+            <ShortcutRow
+              badges={["u"]}
+              description="Install an available app update when one is shown."
+              compact={compact}
+            />
+          </HelpSection>
+
+          <HelpSection title="Pane Management">
+            <ShortcutRow
+              badges={["Cmd/Ctrl+W"]}
               description="Close the focused pane, docked or floating."
               compact={compact}
             />
@@ -221,20 +397,12 @@ export function HelpPane({ width, height }: PaneProps) {
               compact={compact}
             />
             <ShortcutRow
-              badges={["j", "k"]}
-              description="Move through lists in most panes. Arrow keys also work."
+              badges={["Cmd/Ctrl+Shift+O"]}
+              description="Pop the focused pane out to a desktop window."
               compact={compact}
             />
             <ShortcutRow
-              badges={["r", "Shift+R"]}
-              description="Refresh the focused ticker or refresh everything."
-              compact={compact}
-            />
-          </HelpSection>
-
-          <HelpSection title="Layout System">
-            <ShortcutRow
-              badges={["LAY", "Cmd/Ctrl+Shift+L"]}
+              badges={["Cmd/Ctrl+Shift+L"]}
               description="Open layout actions."
               compact={compact}
             />
@@ -243,12 +411,20 @@ export function HelpPane({ width, height }: PaneProps) {
               description="Gridlock all windows."
               compact={compact}
             />
+            <ShortcutRow
+              badges={["Esc"]}
+              description="Cancel an active pane drag."
+              compact={compact}
+            />
+          </HelpSection>
+
+          <HelpSection title="Layout System">
             <Text fg={colors.text}>Docked panes stay in the saved layout.</Text>
             <Box flexDirection="column">
               <Text fg={colors.text}>Floating panes can be dragged by the title bar</Text>
               <Text fg={colors.text}>and resized from the lower-right corner.</Text>
             </Box>
-            <Text fg={colors.text}>Run Gridlock All Windows if the layout gets messy.</Text>
+            <Text fg={colors.text}>Use Layout Actions for split, move, duplicate, undo, redo, and layout presets.</Text>
           </HelpSection>
 
           <HelpSection title="If There Is A Bug">

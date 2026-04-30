@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { act, createElement, useReducer } from "react";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
-import { setSharedDataProviderForTests } from "../../plugins/registry";
+import { setSharedMarketDataForTests } from "../../plugins/registry";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedRegistryForTests } from "../../plugins/registry";
@@ -41,7 +41,7 @@ afterEach(() => {
   }
   harnessState = null;
   setSharedMarketDataCoordinator(null);
-  setSharedDataProviderForTests(undefined);
+  setSharedMarketDataForTests(undefined);
   setSharedRegistryForTests(undefined);
 });
 
@@ -702,7 +702,7 @@ describe("Shell", () => {
     };
 
     const provider = createChartShellDataProvider({ [symbol]: history });
-    setSharedDataProviderForTests(provider);
+    setSharedMarketDataForTests(provider);
     setSharedMarketDataCoordinator(new MarketDataCoordinator(provider));
 
     const pluginRegistry = createShellPluginRegistry({

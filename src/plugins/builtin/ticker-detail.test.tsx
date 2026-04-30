@@ -554,7 +554,7 @@ describe("TickerDetailPane", () => {
             preMarketChangePercent: 2,
             provenance: {
               price: { providerId: "ibkr", dataSource: "live" },
-              session: { providerId: "yahoo", dataSource: "yahoo" },
+              session: { providerId: "yahoo", dataSource: "delayed" },
             },
           },
         })}

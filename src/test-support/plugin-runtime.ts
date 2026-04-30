@@ -10,7 +10,7 @@ export function createTestPluginRuntime(
   overrides: Partial<PluginRuntimeAccess> = {},
 ): PluginRuntimeAccess {
   return {
-    getDataProvider: () => null,
+    getMarketData: () => null,
     getBrokerAdapter: () => null,
     connectBrokerInstance: async () => {},
     updateBrokerInstance: async () => {},

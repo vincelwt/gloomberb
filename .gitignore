@@ -28,6 +28,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .eslintcache
 .cache
 *.tsbuildinfo
+paseo.json
 src-tauri/target
 src-tauri/gen
 

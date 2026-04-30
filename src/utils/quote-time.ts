@@ -27,11 +27,7 @@ export function formatQuoteAgeWithSource(
   const age = formatQuoteAge(quote.lastUpdated, now);
   if (age === "—") return age;
 
-  const prefix = quote.dataSource === "delayed"
-    ? "◷"
-    : quote.dataSource === "yahoo"
-      ? "◌"
-      : "";
+  const prefix = quote.dataSource === "delayed" ? "◷" : "";
   return prefix ? `${prefix}${age}` : age;
 }
 

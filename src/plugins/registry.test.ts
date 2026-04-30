@@ -3,6 +3,7 @@ import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
 import { createDefaultConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
+import type { DataSource } from "../types/data-source";
 import type { GloomPlugin, GloomPluginContext } from "../types/plugin";
 import { PluginRegistry } from "./registry";
 
@@ -20,7 +21,6 @@ const dataProvider: DataProvider = {
   }),
   getExchangeRate: async () => 1,
   search: async () => [],
-  getNews: async () => [],
   getArticleSummary: async () => null,
   getPriceHistory: async () => [],
 };
@@ -28,7 +28,7 @@ const dataProvider: DataProvider = {
 let currentRegistry: PluginRegistry | null = null;
 let currentPersistence: AppPersistence | null = null;
 
-function createRegistry(disabledPlugins: string[] = []): PluginRegistry {
+function createRegistry(options: { disabledPlugins?: string[]; disabledSources?: string[] } = {}): PluginRegistry {
   const persistence = new AppPersistence(":memory:");
   const registry = new PluginRegistry(
     dataProvider,
@@ -37,7 +37,8 @@ function createRegistry(disabledPlugins: string[] = []): PluginRegistry {
   );
   registry.getConfigFn = () => ({
     ...createDefaultConfig("/tmp/gloomberb-context-menu-test"),
-    disabledPlugins,
+    disabledPlugins: options.disabledPlugins ?? [],
+    disabledSources: options.disabledSources ?? [],
   });
   currentRegistry = registry;
   currentPersistence = persistence;
@@ -111,7 +112,7 @@ describe("PluginRegistry context menu providers", () => {
   });
 
   test("filters providers from disabled plugins", async () => {
-    const registry = createRegistry(["disabled-tools"]);
+    const registry = createRegistry({ disabledPlugins: ["disabled-tools"] });
     await registry.register(plugin("disabled-tools", (ctx) => {
       ctx.registerContextMenuProvider({
         id: "hidden",
@@ -146,6 +147,39 @@ describe("PluginRegistry context menu providers", () => {
     }));
 
     expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual(["Works"]);
+  });
+});
+
+describe("PluginRegistry data sources", () => {
+  const source = (id: string): DataSource => ({
+    id,
+    name: id,
+    market: dataProvider,
+  });
+
+  test("disabled plugins disable their contributed data sources", async () => {
+    const registry = createRegistry({ disabledPlugins: ["source-plugin"] });
+    await registry.register({
+      id: "source-plugin",
+      name: "Source Plugin",
+      version: "1.0.0",
+      dataSources: [source("source-a")],
+    });
+
+    expect([...registry.dataSources.keys()]).toEqual(["source-a"]);
+    expect(registry.getEnabledDataSources()).toEqual([]);
+  });
+
+  test("disabledSources disables only the matching source", async () => {
+    const registry = createRegistry({ disabledSources: ["source-a"] });
+    await registry.register({
+      id: "source-plugin",
+      name: "Source Plugin",
+      version: "1.0.0",
+      dataSources: [source("source-a"), source("source-b")],
+    });
+
+    expect(registry.getEnabledDataSources().map((entry) => entry.id)).toEqual(["source-b"]);
   });
 });
 

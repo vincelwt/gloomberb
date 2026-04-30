@@ -63,7 +63,7 @@ function setupIbkrPlugin(config: AppConfig) {
     registerCommand: (command: CommandDef) => { commands.push(command); },
     registerColumn: () => {},
     registerBroker: () => {},
-    registerDataProvider: () => {},
+    registerDataSource: () => {},
     registerDetailTab: () => {},
     registerShortcut: () => {},
     registerTickerAction: (action: TickerAction) => { tickerActions.push(action); },
@@ -73,7 +73,7 @@ function setupIbkrPlugin(config: AppConfig) {
     getPaneDef: () => undefined,
     persistence: {} as any,
     storage: {} as any,
-    dataProvider: {} as any,
+    marketData: {} as any,
     tickerRepository: {} as any,
     log: {
       info: () => {},
