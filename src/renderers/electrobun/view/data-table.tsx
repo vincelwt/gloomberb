@@ -26,6 +26,7 @@ import type {
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
+import { useScrollbarActivity } from "./scrollbar-activity";
 
 interface VirtualRow {
   index: number;
@@ -419,6 +420,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const headerVertical = useScrollbarState(false);
   const bodyHorizontal = useScrollbarState(showHorizontalScrollbar);
   const bodyVertical = useScrollbarState(true);
+  const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
   const tableWidth = useMemo(
     () => columns.reduce((sum, column) => sum + column.width + 1, 2),
     [columns],
@@ -556,6 +558,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             : "hidden"
         }
         data-gloom-scrollbar-y={bodyVertical.visible ? "visible" : "hidden"}
+        data-gloom-scrollbar-active={scrollbarActive ? "true" : undefined}
         style={bodyScrollerStyle}
         onMouseDown={() => {
           focusPane();
@@ -564,7 +567,11 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
           if (hoveredIdx !== null) setHoveredIdx(null);
         }}
         onScroll={() => {
+          markScrollbarActive();
           scheduleBodyScrollActivity();
+        }}
+        onWheel={() => {
+          markScrollbarActive();
         }}
       >
         <div

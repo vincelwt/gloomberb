@@ -116,8 +116,6 @@ export function buildPredictionMarketsPaneSettingsDef(
     {
       key: "columnIds",
       label: "Columns",
-      description:
-        "Choose which columns this prediction-markets pane shows and in what order.",
       type: "ordered-multi-select",
       options: PREDICTION_COLUMN_DEFS.map((column) => ({
         value: column.id,
@@ -137,7 +135,6 @@ export function buildPredictionMarketsPaneSettingsDef(
     fields.push({
       key: "lockedVenueScope",
       label: "Locked Venue Scope",
-      description: "Choose the venue scope to show when tabs are hidden.",
       type: "select",
       options: VENUE_SCOPE_OPTIONS,
     });
@@ -146,13 +143,11 @@ export function buildPredictionMarketsPaneSettingsDef(
   fields.push({
     key: "hideHeader",
     label: "Hide Header",
-    description: "Hide the compact status header above the table.",
     type: "toggle",
   });
   fields.push({
     key: "defaultBrowseTab",
     label: "Default Browse Tab",
-    description: "Choose the initial market slice for new panes.",
     type: "select",
     options: BROWSE_TAB_OPTIONS,
   });

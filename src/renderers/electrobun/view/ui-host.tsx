@@ -49,6 +49,7 @@ import {
   WebSegmentedControl,
   WebTextField,
 } from "./desktop-controls";
+import { useScrollbarActivity } from "./scrollbar-activity";
 
 function cellWidth(value: unknown): CSSProperties["width"] {
   if (typeof value === "number") return `${value * WEB_CELL_WIDTH}px`;
@@ -793,6 +794,7 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
     const verticalScrollBarVisibleRef = useRef(verticalScrollBarVisible);
     const scrollFrameRef = useRef<number | null>(null);
     const lastWheelAtRef = useRef(0);
+    const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
 
     const getElement = () => elementRef.current;
     const toCellY = (pixels: number) => Math.max(0, Math.round(pixels / WEB_CELL_HEIGHT));
@@ -883,9 +885,11 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
       },
     }), [horizontalScrollBar, verticalScrollBar]);
 
+    const scrollable = props.scrollX === true || props.scrollY === true;
     const overflowX = props.scrollX === true ? "auto" : "hidden";
     const overflowY = props.scrollY === true ? "auto" : "hidden";
     const handleScroll = useCallback(() => {
+      markScrollbarActive();
       if (typeof props.onMouseScroll !== "function") return;
       if (Date.now() - lastWheelAtRef.current < 32) return;
       if (scrollFrameRef.current != null) return;
@@ -893,11 +897,12 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         scrollFrameRef.current = null;
         (props.onMouseScroll as () => void)();
       });
-    }, [props.onMouseScroll]);
+    }, [markScrollbarActive, props.onMouseScroll]);
     const handleWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+      markScrollbarActive();
       lastWheelAtRef.current = Date.now();
       callMouseHandler(props.onMouseScroll, event, "scroll");
-    }, [props.onMouseScroll]);
+    }, [markScrollbarActive, props.onMouseScroll]);
 
     return (
       <div
@@ -905,13 +910,14 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         ref={elementRef}
         data-gloom-scrollbar-x={props.scrollX === true ? (horizontalScrollBarVisible ? "visible" : "hidden") : undefined}
         data-gloom-scrollbar-y={props.scrollY === true ? (verticalScrollBarVisible ? "visible" : "hidden") : undefined}
+        data-gloom-scrollbar-active={scrollbarActive ? "true" : undefined}
         data-gloom-interactive={hasDirectMouseHandler(props) ? "true" : undefined}
         onMouseDown={(event) => callMouseHandler(props.onMouseDown, event, "down")}
         onMouseMove={(event) => callMouseHandler(props.onMouseMove, event, "move")}
         onMouseUp={(event) => callMouseHandler(props.onMouseUp, event, "up")}
         onMouseOut={(event) => callMouseHandler(props.onMouseOut, event, "out")}
-        onScroll={typeof props.onMouseScroll === "function" ? handleScroll : undefined}
-        onWheel={typeof props.onMouseScroll === "function" ? handleWheel : undefined}
+        onScroll={scrollable ? handleScroll : undefined}
+        onWheel={scrollable ? handleWheel : undefined}
         style={{ ...commonStyle(props), overflowX, overflowY, ...(props.style as CSSProperties | undefined) }}
       >
         {children as ReactNode}

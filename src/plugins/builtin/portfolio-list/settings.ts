@@ -196,7 +196,6 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     {
       key: "columnIds",
       label: "Columns",
-      description: "Choose which columns this pane shows and in what order.",
       type: "ordered-multi-select",
       options: PORTFOLIO_COLUMN_DEFS.map((column) => ({
         value: column.id,
@@ -209,7 +208,6 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     {
       key: "collectionScope",
       label: "Collections",
-      description: "Control which portfolios or watchlists appear in this pane.",
       type: "select",
       options: COLLECTION_SCOPE_OPTIONS,
     },
@@ -219,7 +217,6 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     fields.push({
       key: "visibleCollectionIds",
       label: "Visible Collections",
-      description: "Pick the exact collections that should appear in this pane.",
       type: "multi-select",
       options: allCollectionOptions,
     });
@@ -234,19 +231,16 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
   fields.push({
     key: "hideHeader",
     label: "Hide Header Bar",
-    description: "Hide the summary bar showing portfolio value, P&L, and account metrics.",
     type: "toggle",
   });
   fields.push({
     key: "hideCash",
     label: "Hide Cash Positions",
-    description: "Hide the cash & margin drawer at the bottom of the pane.",
     type: "toggle",
   });
   fields.push({
     key: "showSparklines",
     label: "Sparklines",
-    description: "Show a tiny price history chart in each row.",
     type: "toggle",
   });
 
@@ -254,7 +248,6 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     fields.push({
       key: "lockedCollectionId",
       label: "Locked Collection",
-      description: "Choose which collection this pane should stay pinned to.",
       type: "select",
       options: lockedCollectionOptions,
     });

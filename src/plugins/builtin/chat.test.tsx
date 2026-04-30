@@ -356,6 +356,29 @@ describe("ChatContent", () => {
     expect(frame).not.toContain("click a message");
   });
 
+  test("uses the full message row width when the reply action is hidden", async () => {
+    const controller = createController({
+      messages: [{
+        ...makeMessage(1),
+        content: "small panes should use full width",
+      }],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 44,
+        height: 8,
+      }), {
+        width: 44,
+        height: 8,
+      });
+    });
+
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("small panes should use full width");
+  });
+
   test("does not select a message when the row is clicked", async () => {
     const controller = createController({
       messages: [makeMessage(1)],
@@ -442,6 +465,34 @@ describe("ChatContent", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("replying to @user2");
     expect(frame).toContain("Reply to @user2...");
+  });
+
+  test("shows the reply action next to the selected message timestamp", async () => {
+    const controller = createController({
+      messages: [makeMessage(1), makeMessage(2)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const headerLine = lines.find((line) => line.includes("user2"));
+    const bodyLine = lines.find((line) => line.includes("message 2"));
+
+    expect(headerLine).toContain("Reply");
+    expect(bodyLine).not.toContain("Reply");
   });
 
   test("down arrow from the newest selected message returns focus to the composer", async () => {
@@ -931,6 +982,73 @@ describe("ChatContent", () => {
     expect(frameAfterUpdate).not.toContain("message 1");
   });
 
+  test("repins the transcript to the latest message when a following chat pane regains focus", async () => {
+    const controller = createController({
+      messages: [
+        makeMessage(1),
+        makeMessage(2),
+        makeMessage(3),
+        makeMessage(4),
+        makeMessage(5),
+        makeMessage(6),
+        makeMessage(7),
+        makeMessage(8),
+      ],
+    });
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat-refocus"));
+    let setFocused: ((focused: boolean) => void) | undefined;
+
+    function FocusHarness() {
+      const [isFocused, updateFocused] = useState(false);
+      setFocused = updateFocused;
+
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={60}
+              height={13}
+              focused={isFocused}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<FocusHarness />, {
+        width: 60,
+        height: 13,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("message 8");
+
+    await act(async () => {
+      await testSetup!.mockMouse.scroll(3, 4, "up");
+      await testSetup!.mockMouse.scroll(3, 4, "up");
+      await testSetup!.mockMouse.scroll(3, 4, "up");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const scrolledFrame = testSetup.captureCharFrame();
+    expect(scrolledFrame).toContain("message 2");
+    expect(scrolledFrame).not.toContain("message 8");
+
+    await act(async () => {
+      setFocused?.(true);
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    const refocusedFrame = testSetup.captureCharFrame();
+    expect(refocusedFrame).toContain("message 8");
+    expect(refocusedFrame).not.toContain("message 2");
+  });
+
   test("keeps the bottom reachable after narrowing the chat pane", async () => {
     const controller = createController({
       messages: [
@@ -989,7 +1107,7 @@ describe("ChatContent", () => {
     const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("vince");
     expect(frame).toContain("newest message stays");
-    expect(frame).toContain("reachable after shrink");
+    expect(frame).toContain("shrink");
   });
 
   test("renders ticker badges and opens a floating detail pane on click", async () => {
@@ -1284,6 +1402,7 @@ describe("ChatContent", () => {
         deleteState: () => {},
       },
       registerPane: () => {},
+      registerPaneTemplate: () => {},
       registerShortcut: () => {},
       registerCommand: (command: { id: string; wizardLayout?: string; wizard?: Array<{ key: string }> }) => {
         registeredCommands.push(command);

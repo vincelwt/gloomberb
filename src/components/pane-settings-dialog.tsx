@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import { Box, Text, useUiHost } from "../ui";
 import { TextAttributes } from "../ui";
 import { type AlertContext, useDialog, useDialogKeyboard } from "../ui/dialog";
@@ -8,7 +10,9 @@ import type {
 } from "../types/plugin";
 import type { PluginRegistry } from "../plugins/registry";
 import { colors } from "../theme/colors";
-import { Button, DialogFrame, ListView, MultiSelectDialogContent, SegmentedControl, TextField } from "./ui";
+import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
+
+type NativeSelectElement = HTMLSelectElement & { showPicker?: () => void };
 
 interface PaneSettingsDialogContentProps extends AlertContext {
   paneId: string;
@@ -191,6 +195,73 @@ function DesktopValuePill({ value }: { value: string }) {
   );
 }
 
+function DesktopSelectControl({
+  field,
+  currentValue,
+  selectRef,
+  onChange,
+}: {
+  field: SelectPaneSettingField;
+  currentValue: unknown;
+  selectRef?: (element: NativeSelectElement | null) => void;
+  onChange: (value: string) => void;
+}) {
+  const value = typeof currentValue === "string" ? currentValue : "";
+  const hasCurrentValue = field.options.some((option) => option.value === value);
+
+  return (
+    <Box
+      height="28px"
+      flexDirection="row"
+      alignItems="center"
+      onMouseDown={(event: any) => {
+        event.stopPropagation?.();
+      }}
+      onMouseUp={(event: any) => {
+        event.stopPropagation?.();
+      }}
+    >
+      <select
+        ref={selectRef}
+        value={value}
+        data-gloom-interactive="true"
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
+        onChange={(event) => {
+          onChange(event.currentTarget.value);
+        }}
+        style={{
+          width: 184,
+          height: 28,
+          color: colors.text,
+          backgroundColor: "rgba(255, 255, 255, 0.06)",
+          border: `1px solid ${colors.border}`,
+          borderRadius: 6,
+          padding: "0 8px",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+          cursor: "pointer",
+          font: "inherit",
+          letterSpacing: 0,
+          outline: "none",
+          appearance: "auto",
+          WebkitAppearance: "menulist",
+        }}
+      >
+        {!hasCurrentValue && <option value="">Unset</option>}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </Box>
+  );
+}
+
 function DesktopSettingsRow({
   field,
   selected,
@@ -198,6 +269,7 @@ function DesktopSettingsRow({
   currentValue,
   onHover,
   onEdit,
+  onSelectRef,
   onApply,
 }: {
   field: PaneSettingField;
@@ -206,32 +278,20 @@ function DesktopSettingsRow({
   currentValue: unknown;
   onHover: () => void;
   onEdit: () => void;
+  onSelectRef: (fieldKey: string, element: NativeSelectElement | null) => void;
   onApply: (field: PaneSettingField, value: unknown) => void;
 }) {
   const isToggle = field.type === "toggle";
-  const isSelect = field.type === "select";
-  const rowInteractive = !isSelect;
   const summary = summarizeValue(field, currentValue);
   const control = field.type === "toggle" ? (
     <DesktopSwitch checked={currentValue === true} onChange={(checked) => onApply(field, checked)} />
   ) : field.type === "select" ? (
-    <Box
-      width="100%"
-      style={{
-        marginTop: 4,
-        overflowX: "auto",
-        overflowY: "hidden",
-      }}
-    >
-      <SegmentedControl
-        value={typeof currentValue === "string" ? currentValue : ""}
-        options={field.options.map((option) => ({
-          value: option.value,
-          label: option.label,
-        }))}
-        onChange={(value) => onApply(field, value)}
-      />
-    </Box>
+    <DesktopSelectControl
+      field={field}
+      currentValue={currentValue}
+      selectRef={(element) => onSelectRef(field.key, element)}
+      onChange={(value) => onApply(field, value)}
+    />
   ) : (
     <Box flexDirection="row" alignItems="center" gap={1}>
       <DesktopValuePill value={summary} />
@@ -242,37 +302,34 @@ function DesktopSettingsRow({
   return (
     <Box
       flexDirection="column"
-      minHeight={field.description || isSelect ? undefined : 2}
+      minHeight={field.description ? undefined : 2}
       backgroundColor={hovered || selected ? "rgba(255, 255, 255, 0.045)" : "transparent"}
       onMouseMove={onHover}
-      onMouseDown={rowInteractive
-        ? (event: any) => {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          if (isToggle) onApply(field, currentValue !== true);
-          else onEdit();
-        }
-        : undefined}
-      data-gloom-interactive={rowInteractive ? "true" : undefined}
+      onMouseDown={field.type === "select" ? undefined : (event: any) => {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        if (isToggle) onApply(field, currentValue !== true);
+        else onEdit();
+      }}
+      data-gloom-interactive={field.type === "select" ? undefined : "true"}
       style={{
-        borderBottom: `1px solid ${hovered || selected ? colors.borderFocused : colors.border}`,
-        cursor: rowInteractive ? "pointer" : "default",
-        padding: "6px 2px 7px",
-        transition: "background-color 100ms ease, border-color 100ms ease",
+        borderRadius: 6,
+        cursor: field.type === "select" ? "default" : "pointer",
+        padding: "7px 4px 8px",
+        transition: "background-color 100ms ease",
       }}
     >
       <Box flexDirection="row" alignItems="center" width="100%">
         <Box flexDirection="row" flexGrow={1} minWidth={0} style={{ paddingRight: 12 }}>
           <Text fg={colors.text} style={desktopText(650)}>{field.label}</Text>
         </Box>
-        {!isSelect && control}
+        {control}
       </Box>
       {field.description && (
         <Text fg={colors.textMuted} wrapText style={desktopText()}>
           {field.description}
         </Text>
       )}
-      {isSelect && control}
     </Box>
   );
 }
@@ -284,6 +341,7 @@ function DesktopSettingsList({
   settings,
   onHover,
   onEdit,
+  onSelectRef,
   onApply,
 }: {
   fields: PaneSettingField[];
@@ -292,13 +350,14 @@ function DesktopSettingsList({
   settings: Record<string, unknown>;
   onHover: (field: PaneSettingField, index: number) => void;
   onEdit: (field: PaneSettingField, index: number) => void;
+  onSelectRef: (fieldKey: string, element: NativeSelectElement | null) => void;
   onApply: (field: PaneSettingField, value: unknown, index: number) => void;
 }) {
   return (
     <Box
       flexDirection="column"
       style={{
-        borderTop: `1px solid ${colors.border}`,
+        marginTop: 2,
       }}
     >
       {fields.map((field, index) => (
@@ -310,6 +369,7 @@ function DesktopSettingsList({
           currentValue={settings[field.key]}
           onHover={() => onHover(field, index)}
           onEdit={() => onEdit(field, index)}
+          onSelectRef={onSelectRef}
           onApply={(targetField, value) => onApply(targetField, value, index)}
         />
       ))}
@@ -345,61 +405,14 @@ function useSelectFieldDialogController({
   return { selectedIndex, setSelectedIndex, applyOption };
 }
 
-function SelectFieldDialog(props: SelectFieldDialogProps) {
-  return useUiHost().kind === "desktop-web"
-    ? <DesktopSelectFieldDialog {...props} />
-    : <TuiSelectFieldDialog {...props} />;
-}
-
-function DesktopSelectFieldDialog(props: SelectFieldDialogProps) {
-  const { dismiss, field, currentValue } = props;
-  const { selectedIndex, setSelectedIndex, applyOption } = useSelectFieldDialogController(props);
-
-  return (
-    <DesktopDialogSurface
-      title={field.label}
-      subtitle={field.description}
-      dismiss={dismiss}
-    >
-      <Box flexDirection="column" style={{ borderTop: `1px solid ${colors.border}` }}>
-        {field.options.map((option, index) => {
-          const selected = option.value === currentValue;
-          const focused = index === selectedIndex;
-          return (
-            <Box
-              key={option.value}
-              minHeight={option.description ? 4 : 3}
-              flexDirection="row"
-              alignItems="center"
-              backgroundColor={selected || focused ? "rgba(255, 255, 255, 0.045)" : "transparent"}
-              onMouseMove={() => setSelectedIndex(index)}
-              onMouseDown={(event: any) => {
-                event.stopPropagation?.();
-                event.preventDefault?.();
-                applyOption(option.value);
-              }}
-              data-gloom-interactive="true"
-              style={{
-                borderBottom: `1px solid ${selected || focused ? colors.borderFocused : colors.border}`,
-                cursor: "pointer",
-                padding: "6px 2px 7px",
-              }}
-            >
-              <Box flexDirection="column" flexGrow={1} minWidth={0}>
-                <Text fg={colors.textBright} style={desktopText(650)}>{option.label}</Text>
-                {option.description && (
-                  <Text fg={colors.textMuted} wrapText style={{ ...desktopText(), marginTop: 3 }}>
-                    {option.description}
-                  </Text>
-                )}
-              </Box>
-              {selected && <DesktopValuePill value="Selected" />}
-            </Box>
-          );
-        })}
-      </Box>
-    </DesktopDialogSurface>
-  );
+function openNativeSelect(element: NativeSelectElement | null | undefined) {
+  if (!element) return;
+  element.focus();
+  try {
+    element.showPicker?.();
+  } catch {
+    element.click();
+  }
 }
 
 function TuiSelectFieldDialog(props: SelectFieldDialogProps) {
@@ -587,6 +600,7 @@ function DesktopPaneSettingsDialogBody({
   settings,
   onHover,
   onEdit,
+  onSelectRef,
   onApply,
 }: {
   title: string;
@@ -597,6 +611,7 @@ function DesktopPaneSettingsDialogBody({
   settings: Record<string, unknown>;
   onHover: (field: PaneSettingField, index: number) => void;
   onEdit: (field: PaneSettingField, index: number) => void;
+  onSelectRef: (fieldKey: string, element: NativeSelectElement | null) => void;
   onApply: (field: PaneSettingField, value: unknown, index: number) => void;
 }) {
   return (
@@ -616,6 +631,7 @@ function DesktopPaneSettingsDialogBody({
           settings={settings}
           onHover={onHover}
           onEdit={onEdit}
+          onSelectRef={onSelectRef}
           onApply={onApply}
         />
       )}
@@ -694,6 +710,7 @@ export function PaneSettingsDialogContent({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hoveredFieldKey, setHoveredFieldKey] = useState<string | null>(null);
   const [, setSettingsRevision] = useState(0);
+  const desktopSelectRefs = useRef(new Map<string, NativeSelectElement>());
 
   const fields = descriptor?.settingsDef.fields ?? [];
 
@@ -708,6 +725,11 @@ export function PaneSettingsDialogContent({
     setSettingsRevision((revision) => revision + 1);
   };
 
+  const setDesktopSelectRef = (fieldKey: string, element: NativeSelectElement | null) => {
+    if (element) desktopSelectRefs.current.set(fieldKey, element);
+    else desktopSelectRefs.current.delete(fieldKey);
+  };
+
   const openFieldEditor = async (field: PaneSettingField | undefined) => {
     if (!field || !descriptor) return;
     const currentValue = descriptor.context.settings[field.key];
@@ -718,9 +740,13 @@ export function PaneSettingsDialogContent({
     }
 
     if (field.type === "select") {
+      if (isDesktop) {
+        openNativeSelect(desktopSelectRefs.current.get(field.key));
+        return;
+      }
       await dialog.alert({
         content: (ctx: AlertContext) => (
-          <SelectFieldDialog
+          <TuiSelectFieldDialog
             {...ctx}
             field={field}
             currentValue={currentValue}
@@ -787,6 +813,7 @@ export function PaneSettingsDialogContent({
         setSelectedIndex(index);
         setHoveredFieldKey(field.key);
       }}
+      onSelectRef={setDesktopSelectRef}
       onEdit={(field, index) => {
         setSelectedIndex(index);
         void openFieldEditor(field).catch(() => {});

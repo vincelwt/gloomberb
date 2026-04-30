@@ -64,7 +64,6 @@ export function buildAiScreenerPaneSettingsDef(settings: AiScreenerPaneSettings)
       {
         key: "columnIds",
         label: "Columns",
-        description: "Choose which columns this screener shows and in what order.",
         type: "ordered-multi-select",
         options: AI_SCREENER_COLUMN_DEFS.map((column) => ({
           value: column.id,

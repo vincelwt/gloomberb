@@ -4,13 +4,20 @@ import { useShortcut } from "../../react/input";
 import { type AlertContext, useDialog, useDialogKeyboard } from "../../ui/dialog";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { colors } from "../../theme/colors";
+import { isDetailBackNavigationKey } from "../../utils/back-navigation";
 import { ToggleList } from "../toggle-list";
 import { Button } from "./button";
 import { DialogFrame } from "./frame";
 import {
+  getMultiSelectDisplayValues,
+  mergeMultiSelectDisplayValues,
+  moveMultiSelectDisplayValue,
   moveMultiSelectValue,
   normalizeMultiSelectValues,
+  normalizeOrderedMultiSelectValues,
+  orderMultiSelectOptionsForDisplay,
   summarizeMultiSelectValues,
+  toggleOrderedMultiSelectValue,
   toggleMultiSelectValue,
   type MultiSelectOption,
 } from "./multi-select";
@@ -71,6 +78,16 @@ function matchesShortcut(event: { name?: string; sequence?: string }, shortcutKe
   });
 }
 
+function normalizeDialogSelectedValues(
+  options: readonly MultiSelectOption[],
+  values: readonly string[],
+  ordered: boolean,
+): string[] {
+  return ordered
+    ? normalizeOrderedMultiSelectValues(options, values)
+    : normalizeMultiSelectValues(options, values);
+}
+
 export function MultiSelectDialogContent({
   dismiss,
   dialogId,
@@ -83,11 +100,16 @@ export function MultiSelectDialogContent({
 }: MultiSelectDialogContentProps) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const optionByValue = useMemo(() => new Map(options.map((option) => [option.value, option])), [options]);
-  const [selectedValues, setSelectedValues] = useState(() => normalizeMultiSelectValues(options, selectedValuesProp));
+  const [selectedValues, setSelectedValues] = useState(() => normalizeDialogSelectedValues(options, selectedValuesProp, ordered));
+  const [displayValues, setDisplayValues] = useState(() => getMultiSelectDisplayValues(options, selectedValuesProp, ordered));
   const knownSelectedValues = selectedValues.filter((value) => optionByValue.has(value));
+  const displayOptions = useMemo(
+    () => orderMultiSelectOptionsForDisplay(options, displayValues),
+    [displayValues, options],
+  );
   const [selectedOptionId, setSelectedOptionId] = useState(options[0]?.value ?? "");
-  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === selectedOptionId));
-  const selectedOption = options[selectedIndex];
+  const selectedIndex = Math.max(0, displayOptions.findIndex((option) => option.value === selectedOptionId));
+  const selectedOption = displayOptions[selectedIndex];
   const selectedOptionValue = selectedOption?.value ?? "";
   const selectedValueOrder = knownSelectedValues.indexOf(selectedOptionValue);
   const canMoveUp = ordered && selectedValueOrder > 0;
@@ -96,15 +118,16 @@ export function MultiSelectDialogContent({
     && selectedValueOrder < knownSelectedValues.length - 1;
 
   useEffect(() => {
-    setSelectedValues(normalizeMultiSelectValues(options, selectedValuesProp));
-  }, [options, selectedValuesProp]);
+    setSelectedValues((values) => normalizeDialogSelectedValues(options, values, ordered));
+    setDisplayValues((values) => mergeMultiSelectDisplayValues(options, values));
+  }, [options, ordered]);
 
   useEffect(() => {
-    if (options.some((option) => option.value === selectedOptionId)) return;
-    setSelectedOptionId(options[0]?.value ?? "");
-  }, [options, selectedOptionId]);
+    if (displayOptions.some((option) => option.value === selectedOptionId)) return;
+    setSelectedOptionId(displayOptions[0]?.value ?? "");
+  }, [displayOptions, selectedOptionId]);
 
-  const toggleItems = options.map((option) => {
+  const toggleItems = displayOptions.map((option) => {
     const order = knownSelectedValues.indexOf(option.value);
     const orderDescription = ordered && order >= 0
       ? `Order ${order + 1} of ${knownSelectedValues.length}.`
@@ -119,45 +142,53 @@ export function MultiSelectDialogContent({
     };
   });
   const listHeight = isDesktopWeb
-    ? Math.min(12, Math.max(5, toggleItems.length * 1.35))
+    ? Math.min(12, Math.max(5, displayOptions.length * 1.35))
     : Math.min(12, Math.max(6, toggleItems.length));
 
-  const applySelectedValues = async (nextValues: string[]) => {
+  const applySelectedValues = async (nextValues: string[], nextDisplayValues = displayValues) => {
     const previousValues = selectedValues;
+    const previousDisplayValues = displayValues;
     setSelectedValues(nextValues);
+    setDisplayValues(nextDisplayValues);
     try {
       await onChange(nextValues);
     } catch (error) {
       setSelectedValues(previousValues);
+      setDisplayValues(previousDisplayValues);
       throw error;
     }
   };
 
   const toggleOption = async (option: MultiSelectOption | undefined) => {
     if (!option || option.disabled) return;
-    await applySelectedValues(toggleMultiSelectValue(options, selectedValues, option.value));
+    await applySelectedValues(ordered
+      ? toggleOrderedMultiSelectValue(options, selectedValues, option.value)
+      : toggleMultiSelectValue(options, selectedValues, option.value));
   };
 
   const moveOption = async (direction: "up" | "down") => {
     if (!ordered || !selectedOption) return;
-    await applySelectedValues(moveMultiSelectValue(options, selectedValues, selectedOption.value, direction));
+    await applySelectedValues(
+      moveMultiSelectValue(options, selectedValues, selectedOption.value, direction),
+      moveMultiSelectDisplayValue(displayValues, knownSelectedValues, selectedOption.value, direction),
+    );
   };
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
     if (event.name === "up" || event.name === "k") {
       const nextIndex = Math.max(0, selectedIndex - 1);
-      setSelectedOptionId(options[nextIndex]?.value ?? selectedOptionId);
+      setSelectedOptionId(displayOptions[nextIndex]?.value ?? selectedOptionId);
     } else if (event.name === "down" || event.name === "j") {
-      const nextIndex = Math.min(options.length - 1, selectedIndex + 1);
-      setSelectedOptionId(options[nextIndex]?.value ?? selectedOptionId);
+      const nextIndex = Math.min(displayOptions.length - 1, selectedIndex + 1);
+      setSelectedOptionId(displayOptions[nextIndex]?.value ?? selectedOptionId);
     } else if (isSpaceKey(event)) {
       void toggleOption(selectedOption).catch(() => {});
     } else if (event.name === "[" && ordered) {
       void moveOption("up").catch(() => {});
     } else if (event.name === "]" && ordered) {
       void moveOption("down").catch(() => {});
-    } else if (event.name === "enter" || event.name === "return" || event.name === "escape") {
+    } else if (event.name === "enter" || event.name === "return" || event.name === "escape" || isDetailBackNavigationKey(event)) {
       dismiss();
     }
   }, dialogId);
@@ -180,7 +211,7 @@ export function MultiSelectDialogContent({
           rowGap={isDesktopWeb ? 0 : undefined}
           rowHeight={isDesktopWeb ? 1.35 : undefined}
           surface={isDesktopWeb ? "plain" : undefined}
-          onSelect={(index) => setSelectedOptionId(options[index]?.value ?? selectedOptionId)}
+          onSelect={(index) => setSelectedOptionId(displayOptions[index]?.value ?? selectedOptionId)}
           onToggle={(id) => {
             setSelectedOptionId(id);
             void toggleOption(optionByValue.get(id)).catch(() => {});

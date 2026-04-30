@@ -78,6 +78,7 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
         color: #d8dde3;
         cursor: default;
         user-select: none;
+        color-scheme: dark;
         -webkit-font-smoothing: antialiased;
         text-rendering: geometricPrecision;
       }
@@ -172,6 +173,18 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      [data-gloom-role="chat-message"]:hover [data-gloom-role="chat-message-row"][data-selected="false"] {
+        background-color: var(--chat-hover-bg);
+      }
+      [data-gloom-role="chat-message-reply-action"] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      [data-gloom-role="chat-message"]:hover [data-gloom-role="chat-message-reply-action"],
+      [data-gloom-role="chat-message"][data-selected="true"] [data-gloom-role="chat-message-reply-action"] {
+        opacity: 1;
+        pointer-events: auto;
+      }
       [data-gloom-role="status-bar"] {
         min-height: var(--cell-h);
         max-height: var(--cell-h);
@@ -241,6 +254,51 @@ await writeFile(join(outdir, "index.html"), `<!doctype html>
       }
       [data-gloom-role="tab-close"]:hover {
         background: rgba(255,255,255,.1);
+      }
+      [data-gloom-scrollbar-x],
+      [data-gloom-scrollbar-y] {
+        scrollbar-color: transparent transparent;
+        scrollbar-width: thin;
+      }
+      [data-gloom-scrollbar-active="true"] {
+        scrollbar-color: rgba(216,221,227,.26) transparent;
+      }
+      [data-gloom-scrollbar-x]::-webkit-scrollbar,
+      [data-gloom-scrollbar-y]::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+        background: transparent;
+      }
+      [data-gloom-scrollbar-x]::-webkit-scrollbar-track,
+      [data-gloom-scrollbar-y]::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      [data-gloom-scrollbar-x]::-webkit-scrollbar-thumb,
+      [data-gloom-scrollbar-y]::-webkit-scrollbar-thumb {
+        min-width: 24px;
+        min-height: 24px;
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        background-clip: content-box;
+      }
+      [data-gloom-scrollbar-x]::-webkit-scrollbar-thumb:hover,
+      [data-gloom-scrollbar-y]::-webkit-scrollbar-thumb:hover {
+        background: transparent;
+        background-clip: content-box;
+      }
+      [data-gloom-scrollbar-active="true"]::-webkit-scrollbar-thumb,
+      [data-gloom-scrollbar-active="true"]::-webkit-scrollbar-thumb:hover {
+        background: rgba(216,221,227,.24);
+        background-clip: content-box;
+      }
+      [data-gloom-scrollbar-x]::-webkit-scrollbar-corner,
+      [data-gloom-scrollbar-y]::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+      [data-gloom-scrollbar-x="hidden"]:not([data-gloom-scrollbar-y="visible"]),
+      [data-gloom-scrollbar-y="hidden"]:not([data-gloom-scrollbar-x="visible"]) {
+        scrollbar-width: none;
       }
       [data-gloom-scrollbar-x="hidden"]::-webkit-scrollbar:horizontal {
         height: 0;

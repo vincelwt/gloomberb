@@ -9,7 +9,14 @@ import { DataTable } from "./data-table";
 import { TextField } from "./fields";
 import { ListView } from "./list-view";
 import { MultiSelectDialogButton } from "./multi-select-dialog";
-import { toggleMultiSelectValue } from "./multi-select";
+import {
+  getMultiSelectDisplayValues,
+  moveMultiSelectDisplayValue,
+  normalizeOrderedMultiSelectValues,
+  orderMultiSelectOptionsForDisplay,
+  toggleMultiSelectValue,
+  toggleOrderedMultiSelectValue,
+} from "./multi-select";
 import { Tabs } from "./tabs";
 import { ToggleList } from "../toggle-list";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
@@ -492,6 +499,24 @@ describe("shared UI kit", () => {
 
     expect(toggleMultiSelectValue(options, ["sma"], "ema")).toEqual(["sma", "ema"]);
     expect(toggleMultiSelectValue(options, ["sma", "ema"], "sma")).toEqual(["ema"]);
+  });
+
+  test("keeps ordered multi-select values in user order", () => {
+    const options = [
+      { value: "market", label: "MARKET" },
+      { value: "target", label: "TARGET" },
+      { value: "venue", label: "VENUE" },
+      { value: "odds", label: "TOP ODDS" },
+    ];
+
+    expect(normalizeOrderedMultiSelectValues(options, ["venue", "market"])).toEqual(["venue", "market"]);
+    expect(toggleOrderedMultiSelectValue(options, ["venue", "market"], "target")).toEqual(["venue", "market", "target"]);
+
+    const displayValues = getMultiSelectDisplayValues(options, ["venue", "market", "target"], true);
+    expect(orderMultiSelectOptionsForDisplay(options, displayValues).map((option) => option.value))
+      .toEqual(["venue", "market", "target", "odds"]);
+    expect(moveMultiSelectDisplayValue(displayValues, ["venue", "market", "target"], "market", "up"))
+      .toEqual(["market", "venue", "target", "odds"]);
   });
 
   test("auto-scrolls a scrollable list to keep the selected row visible", async () => {

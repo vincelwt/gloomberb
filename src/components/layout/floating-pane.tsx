@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { colors, floatingPaneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
-import { getPaneBodyHeight } from "./pane-sizing";
+import { getPaneBodyHeight, shouldReservePaneFooter } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
   title: string;
@@ -56,7 +56,7 @@ export function FloatingPaneWrapper({
   const { nativePaneChrome } = useUiCapabilities();
   const bg = floatingPaneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
-  const reserveFooter = !nativePaneChrome || showFooter;
+  const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
   const bodyHeight = getPaneBodyHeight(height, reserveFooter);
 
   return (
