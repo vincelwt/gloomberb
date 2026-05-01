@@ -67,6 +67,7 @@ See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface av
 | **FX Cross Rates** | Currency cross-rate matrix for major FX pairs |
 | **Sector Performance** | S&P 500 sector performance via ETF proxies |
 | **Earnings Calendar** | Upcoming earnings dates and estimates |
+| **Research** | Analyst ratings, corporate actions, and relative valuation |
 
 ### Data providers
 
@@ -149,6 +150,9 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `GC` | Yield Curve |
 | `BI` | Sector Performance |
 | `ERN` | Earnings Calendar |
+| `ANR <ticker>` | Analyst Research |
+| `EVT <ticker>` | Corporate Actions |
+| `RV <tickers>` | Relative Valuation |
 
 | Shortcut | Command |
 |----------|---------|

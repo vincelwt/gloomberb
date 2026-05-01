@@ -13,7 +13,7 @@ import type {
 } from "../types/data-provider";
 import type { DataSource } from "../types/data-source";
 import { sourcePriority } from "../types/data-source";
-import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
+import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { NewsArticle, NewsQuery } from "../news/types";
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
@@ -50,6 +50,9 @@ const DEFAULT_CACHE_POLICIES: Record<string, CachePolicy> = {
   priceHistoryIntraday: { staleMs: 5 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
   priceHistoryDaily: { staleMs: 24 * 60 * 60_000, expireMs: 30 * 24 * 60 * 60_000 },
   news: { staleMs: 15 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
+  holders: { staleMs: 24 * 60 * 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+  analystResearch: { staleMs: 24 * 60 * 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+  corporateActions: { staleMs: 24 * 60 * 60_000, expireMs: 14 * 24 * 60 * 60_000 },
   secFilings: { staleMs: 15 * 60_000, expireMs: 2 * 24 * 60 * 60_000 },
   secFilingContent: { staleMs: 30 * 24 * 60 * 60_000, expireMs: 365 * 24 * 60 * 60_000 },
   articleSummary: { staleMs: 30 * 24 * 60 * 60_000, expireMs: 90 * 24 * 60 * 60_000 },
@@ -140,6 +143,20 @@ function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolea
     || data.profile?.sector
     || data.profile?.industry
   );
+}
+
+function hasAnalystResearchValue(data: AnalystResearchData): boolean {
+  return !!data.priceTarget
+    || data.recommendations.length > 0
+    || data.ratings.length > 0
+    || data.earningsEstimates.length > 0
+    || data.revenueEstimates.length > 0;
+}
+
+function hasCorporateActionsValue(data: CorporateActionsData): boolean {
+  return data.dividends.length > 0
+    || data.splits.length > 0
+    || data.earnings.length > 0;
 }
 
 function hasLikelyPriceUnitMismatch(primary: TickerFinancials, fallback: TickerFinancials): boolean {
@@ -459,6 +476,60 @@ export class SourceRouter implements DataProvider {
 
     const settled = await Promise.allSettled(sources.map((source) => source.news!.fetchNews(query)));
     return settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  }
+
+  async getHolders(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<HolderData> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKeys = this.getTickerVariantCandidates(exchange);
+    const cached = this.selectCachedResource<HolderData>("holders", entityKey, variantKeys, this.getProviderSourceKeys(), false);
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached && !forceRefresh) {
+      this.scheduleRevalidation(this.makeRevalidationKey("holders", ticker, exchange, context), async () => {
+        await this.revalidateHolders(ticker, exchange, context);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderHolders(ticker, exchange, context);
+    if (result) return result.value;
+    if (cached) return cached.value;
+    throw new Error(`No holder data provider available for ${ticker}`);
+  }
+
+  async getAnalystResearch(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKeys = this.getTickerVariantCandidates(exchange);
+    const cached = this.selectCachedResource<AnalystResearchData>("analystResearch", entityKey, variantKeys, this.getProviderSourceKeys(), false);
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached && !forceRefresh) {
+      this.scheduleRevalidation(this.makeRevalidationKey("analystResearch", ticker, exchange, context), async () => {
+        await this.revalidateAnalystResearch(ticker, exchange, context);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderAnalystResearch(ticker, exchange, context);
+    if (result) return result.value;
+    if (cached) return cached.value;
+    throw new Error(`No analyst research provider available for ${ticker}`);
+  }
+
+  async getCorporateActions(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKeys = this.getTickerVariantCandidates(exchange);
+    const cached = this.selectCachedResource<CorporateActionsData>("corporateActions", entityKey, variantKeys, this.getProviderSourceKeys(), false);
+    const forceRefresh = context?.cacheMode === "refresh";
+    if (cached && !forceRefresh) {
+      this.scheduleRevalidation(this.makeRevalidationKey("corporateActions", ticker, exchange, context), async () => {
+        await this.revalidateCorporateActions(ticker, exchange, context);
+      });
+      return cached.value;
+    }
+
+    const result = await this.fetchProviderCorporateActions(ticker, exchange, context);
+    if (result) return result.value;
+    if (cached) return cached.value;
+    throw new Error(`No corporate actions provider available for ${ticker}`);
   }
 
   async getSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
@@ -1448,6 +1519,99 @@ export class SourceRouter implements DataProvider {
     return result;
   }
 
+  private async fetchProviderHolders(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<HolderData> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
+    let firstEmptyResult: SourceResult<HolderData> | null = null;
+    let lastError: unknown = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getHolders) continue;
+      try {
+        const value = await provider.getHolders(ticker, exchange, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("holders", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("holders", provider));
+        if (value.holders.length > 0) return { sourceKey, value };
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (firstEmptyResult) return firstEmptyResult;
+    if (lastError) throw lastError;
+    return null;
+  }
+
+  private async fetchProviderAnalystResearch(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<AnalystResearchData> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
+    let firstEmptyResult: SourceResult<AnalystResearchData> | null = null;
+    let lastError: unknown = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getAnalystResearch) continue;
+      try {
+        const value = await provider.getAnalystResearch(ticker, exchange, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("analystResearch", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("analystResearch", provider));
+        if (hasAnalystResearchValue(value)) return { sourceKey, value };
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (firstEmptyResult) return firstEmptyResult;
+    if (lastError) throw lastError;
+    return null;
+  }
+
+  private async fetchProviderCorporateActions(
+    ticker: string,
+    exchange?: string,
+    context?: MarketDataRequestContext,
+  ): Promise<SourceResult<CorporateActionsData> | null> {
+    const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
+    const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
+    let firstEmptyResult: SourceResult<CorporateActionsData> | null = null;
+    let lastError: unknown = null;
+
+    for (const provider of this.providersInPriorityOrder()) {
+      if (!provider.getCorporateActions) continue;
+      try {
+        const value = await provider.getCorporateActions(ticker, exchange, context);
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("corporateActions", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("corporateActions", provider));
+        if (hasCorporateActionsValue(value)) return { sourceKey, value };
+        firstEmptyResult ??= { sourceKey, value };
+      } catch (error) {
+        lastError = error;
+        if (shouldLogProviderError(error)) {
+          providerLog.error(`${provider.id} failed: ${error}`);
+        }
+      }
+    }
+
+    if (firstEmptyResult) return firstEmptyResult;
+    if (lastError) throw lastError;
+    return null;
+  }
+
   private async fetchProviderSecFilings(
     ticker: string,
     count = 15,
@@ -1533,6 +1697,18 @@ export class SourceRouter implements DataProvider {
 
   private async revalidateSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
     await this.fetchProviderSecFilings(ticker, count, exchange, context);
+  }
+
+  private async revalidateHolders(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
+    await this.fetchProviderHolders(ticker, exchange, context);
+  }
+
+  private async revalidateAnalystResearch(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
+    await this.fetchProviderAnalystResearch(ticker, exchange, context);
+  }
+
+  private async revalidateCorporateActions(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
+    await this.fetchProviderCorporateActions(ticker, exchange, context);
   }
 
   private async revalidateSecFilingContent(filing: SecFilingItem): Promise<void> {

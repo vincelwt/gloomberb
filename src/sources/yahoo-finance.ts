@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile } from "../types/financials";
+import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile, HolderData, HolderRecord } from "../types/financials";
 import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import {
@@ -146,6 +146,13 @@ type TimeseriesResponse = { timeseries?: { result?: Array<Record<string, any>>; 
 type QuoteSummaryResponse = {
   quoteSummary?: {
     result?: Array<{
+      price?: {
+        symbol?: string;
+        currency?: string;
+        shortName?: string;
+        longName?: string;
+        exchangeName?: string;
+      };
       assetProfile?: {
         longBusinessSummary?: string;
         sector?: string;
@@ -160,6 +167,22 @@ type QuoteSummaryResponse = {
         open?: { raw?: number } | number | null;
         dayHigh?: { raw?: number } | number | null;
         dayLow?: { raw?: number } | number | null;
+      };
+      majorHoldersBreakdown?: {
+        insidersPercentHeld?: { raw?: number } | number | null;
+        institutionsPercentHeld?: { raw?: number } | number | null;
+        institutionsFloatPercentHeld?: { raw?: number } | number | null;
+        institutionsCount?: { raw?: number } | number | null;
+      };
+      institutionOwnership?: {
+        ownershipList?: Array<{
+          organization?: string;
+          reportDate?: { raw?: number; fmt?: string } | number | string | null;
+          position?: { raw?: number } | number | null;
+          value?: { raw?: number } | number | null;
+          pctHeld?: { raw?: number } | number | null;
+          pctChange?: { raw?: number } | number | null;
+        }>;
       };
     }>;
     error?: { description?: string } | null;
@@ -203,6 +226,25 @@ function normalizePositiveMarketValue(value: number | undefined, divisor = 1): n
 function normalizeMarketValue(value: number | undefined, divisor = 1): number | undefined {
   if (value == null || !Number.isFinite(value)) return undefined;
   return value / divisor;
+}
+
+function yahooRawDate(value: unknown): string | undefined {
+  if (value && typeof value === "object") {
+    const fmt = (value as { fmt?: unknown }).fmt;
+    if (typeof fmt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fmt)) return fmt;
+  }
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const raw = financeRawNumber(value);
+  if (raw == null) return undefined;
+  const date = new Date(raw * 1000);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+}
+
+function deriveShareChange(position: number | undefined, changePercent: number | undefined): number | undefined {
+  if (position == null || changePercent == null || !Number.isFinite(position) || !Number.isFinite(changePercent)) return undefined;
+  const denominator = 1 + changePercent;
+  if (denominator <= 0) return undefined;
+  return Math.round(position - position / denominator);
 }
 
 function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
@@ -908,6 +950,68 @@ export class YahooFinanceClient implements DataProvider {
     } catch {
       return [];
     }
+  }
+
+  async getHolders(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<HolderData> {
+    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    let lastError: any;
+
+    for (const symbol of symbolsToTry) {
+      try {
+        const params = new URLSearchParams({
+          modules: "price,majorHoldersBreakdown,institutionOwnership",
+        });
+        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
+        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`holders ${symbol}`, url);
+        const result = data.quoteSummary?.result?.[0];
+        if (!result) throw new Error(`No holder data for ${symbol}`);
+
+        const holders: HolderRecord[] = (result.institutionOwnership?.ownershipList ?? [])
+          .map((item): HolderRecord | null => {
+            const name = item.organization?.trim();
+            if (!name) return null;
+            const shares = financeRawNumber(item.position);
+            const changePercent = financeRawNumber(item.pctChange);
+            return {
+              providerId: this.id,
+              ownerType: "institution",
+              name,
+              reportDate: yahooRawDate(item.reportDate),
+              shares,
+              value: financeRawNumber(item.value),
+              percentHeld: financeRawNumber(item.pctHeld),
+              changePercent,
+              changeShares: deriveShareChange(shares, changePercent),
+            };
+          })
+          .filter((holder): holder is HolderRecord => holder !== null);
+        const asOf = holders
+          .map((holder) => holder.reportDate)
+          .filter((date): date is string => !!date)
+          .sort()
+          .at(-1);
+
+        return {
+          providerId: this.id,
+          symbol: result.price?.symbol ?? symbol,
+          name: result.price?.shortName ?? result.price?.longName,
+          currency: result.price?.currency,
+          exchange: result.price?.exchangeName,
+          asOf,
+          summary: {
+            insidersPercentHeld: financeRawNumber(result.majorHoldersBreakdown?.insidersPercentHeld),
+            institutionsPercentHeld: financeRawNumber(result.majorHoldersBreakdown?.institutionsPercentHeld),
+            institutionsFloatPercentHeld: financeRawNumber(result.majorHoldersBreakdown?.institutionsFloatPercentHeld),
+            institutionsCount: financeRawNumber(result.majorHoldersBreakdown?.institutionsCount),
+          },
+          holders,
+        };
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error(`No holder data for ${ticker}`);
   }
 
   async getSecFilings(ticker: string, count = 10, _exchange = "", _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {

@@ -6,12 +6,15 @@ import {
 } from "../components/chart/chart-resolution";
 import type { DataProvider, MarketDataRequestContext, NewsItem, QuoteSubscriptionTarget, SearchRequestContext, SecFilingItem } from "../types/data-provider";
 import type { DataSource } from "../types/data-source";
-import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
+import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import {
   apiClient,
+  type CloudAnalystResearchPayload,
   type CloudCompanyProfile,
+  type CloudCorporateActionsPayload,
   type CloudFundamentals,
+  type CloudHoldersPayload,
   type CloudMarketResponse,
   type CloudNewsPayload,
   type CloudPricePointPayload,
@@ -397,6 +400,30 @@ export class GloomberbCloudProvider implements DataProvider {
       `Cloud news is unavailable for ${ticker}`,
     );
     return response.items.map(mapCloudNewsItem);
+  }
+
+  async getHolders(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<HolderData> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudHolders(ticker, exchange);
+      return unwrapRequiredCloudResponse(response, `Cloud holders are unavailable for ${ticker}`) as CloudHoldersPayload;
+    }, `Cloud holders are unavailable for ${ticker}`);
+  }
+
+  async getAnalystResearch(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<AnalystResearchData> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudAnalystResearch(ticker, exchange);
+      return unwrapRequiredCloudResponse(response, `Cloud analyst research is unavailable for ${ticker}`) as CloudAnalystResearchPayload;
+    }, `Cloud analyst research is unavailable for ${ticker}`);
+  }
+
+  async getCorporateActions(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<CorporateActionsData> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudCorporateActions(ticker, exchange);
+      return unwrapRequiredCloudResponse(response, `Cloud corporate actions are unavailable for ${ticker}`) as CloudCorporateActionsPayload;
+    }, `Cloud corporate actions are unavailable for ${ticker}`);
   }
 
   async getSecFilings(_ticker: string, _count?: number, _exchange?: string, _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {

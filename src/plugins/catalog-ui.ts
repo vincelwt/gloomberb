@@ -18,11 +18,13 @@ import { predictionMarketsPlugin } from "./prediction-markets";
 import { correlationPlugin } from "./builtin/correlation";
 import { analyticsPlugin } from "./builtin/analytics";
 import { insiderPlugin } from "./builtin/insider";
+import { holdersPlugin } from "./builtin/holders";
 import { alertsPlugin } from "./builtin/alerts";
 import { fxMatrixPlugin } from "./builtin/fx-matrix";
 import { sectorsPlugin } from "./builtin/sectors";
 import { earningsPlugin } from "./builtin/earnings";
 import { brokerManagerPlugin } from "./builtin/broker-manager";
+import { researchPlugin } from "./builtin/research";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
@@ -43,12 +45,14 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   correlationPlugin,
   analyticsPlugin,
   insiderPlugin,
+  holdersPlugin,
   worldIndicesPlugin,
   marketMoversPlugin,
   alertsPlugin,
   fxMatrixPlugin,
   sectorsPlugin,
   earningsPlugin,
+  researchPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {

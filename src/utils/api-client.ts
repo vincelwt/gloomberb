@@ -1,4 +1,14 @@
-import type { CompanyProfile, Fundamentals, PricePoint, Quote, TickerFinancials } from "../types/financials";
+import type {
+  AnalystResearchData,
+  CompanyProfile,
+  CorporateActionsData,
+  Fundamentals,
+  HolderData,
+  HolderRecord,
+  PricePoint,
+  Quote,
+  TickerFinancials,
+} from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { debugLog } from "./debug-log";
 import { canonicalExchange, normalizeSymbol, publicTickerKey } from "./exchanges";
@@ -69,6 +79,24 @@ export interface CloudQuotePayload extends Quote {
 export interface CloudCompanyProfile extends CompanyProfile {}
 
 export interface CloudFundamentals extends Fundamentals {}
+
+export interface CloudHolderPayload extends HolderRecord {
+  providerId: "gloomberb-cloud";
+  ownerType: "institution";
+}
+
+export interface CloudHoldersPayload extends HolderData {
+  providerId: "gloomberb-cloud";
+  holders: CloudHolderPayload[];
+}
+
+export interface CloudAnalystResearchPayload extends AnalystResearchData {
+  providerId: "gloomberb-cloud";
+}
+
+export interface CloudCorporateActionsPayload extends CorporateActionsData {
+  providerId: "gloomberb-cloud";
+}
 
 export interface CloudPricePointPayload {
   date: string;
@@ -849,6 +877,24 @@ class GloomApiClient {
     const params = new URLSearchParams({ symbol });
     if (exchange) params.set("exchange", exchange);
     return this.request<CloudMarketResponse<CloudFundamentals>>(`/market/fundamentals?${params.toString()}`);
+  }
+
+  async getCloudHolders(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudHoldersPayload>> {
+    const params = new URLSearchParams({ symbol });
+    if (exchange) params.set("exchange", exchange);
+    return this.request<CloudMarketResponse<CloudHoldersPayload>>(`/market/holders?${params.toString()}`);
+  }
+
+  async getCloudAnalystResearch(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudAnalystResearchPayload>> {
+    const params = new URLSearchParams({ symbol });
+    if (exchange) params.set("exchange", exchange);
+    return this.request<CloudMarketResponse<CloudAnalystResearchPayload>>(`/market/analyst?${params.toString()}`);
+  }
+
+  async getCloudCorporateActions(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCorporateActionsPayload>> {
+    const params = new URLSearchParams({ symbol });
+    if (exchange) params.set("exchange", exchange);
+    return this.request<CloudMarketResponse<CloudCorporateActionsPayload>>(`/market/corporate-actions?${params.toString()}`);
   }
 
   async getCloudStatements(

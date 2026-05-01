@@ -1,4 +1,13 @@
-import type { Quote, Fundamentals, TickerFinancials, PricePoint, OptionsChain } from "./financials";
+import type {
+  AnalystResearchData,
+  CorporateActionsData,
+  Quote,
+  Fundamentals,
+  TickerFinancials,
+  PricePoint,
+  OptionsChain,
+  HolderData,
+} from "./financials";
 import type { TimeRange } from "../components/chart/chart-types";
 import type { ChartResolutionSupport, ManualChartResolution } from "../components/chart/chart-resolution";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
@@ -79,6 +88,9 @@ export interface DataProvider {
   getExchangeRate(fromCurrency: string): Promise<number>;
   search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]>;
   getSecFilings?(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext): Promise<SecFilingItem[]>;
+  getHolders?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<HolderData>;
+  getAnalystResearch?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData>;
+  getCorporateActions?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData>;
   getEarningsCalendar?(symbols: string[], context?: MarketDataRequestContext): Promise<EarningsEvent[]>;
   getSecFilingContent?(filing: SecFilingItem): Promise<string | null>;
   /** Fetch article summary/description by URL (lazy-loaded on selection) */

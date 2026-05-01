@@ -150,6 +150,50 @@ describe("SourceRouter", () => {
     expect(articles).toEqual([article]);
   });
 
+  test("falls back to later providers when holder data is empty", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getHolders(symbol) {
+        return {
+          providerId: "cloud",
+          symbol,
+          holders: [],
+        };
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getHolders(symbol) {
+        return {
+          providerId: "yahoo",
+          symbol,
+          currency: "USD",
+          holders: [{
+            providerId: "yahoo",
+            ownerType: "institution",
+            name: "Vanguard Group Inc",
+            shares: 1_200_000_000,
+            value: 250_000_000_000,
+            percentHeld: 0.08,
+            changePercent: 0.02,
+          }],
+        };
+      },
+    };
+
+    const router = new SourceRouter(yahooProvider, [cloudProvider]);
+    const holders = await router.getHolders("AAPL", "NASDAQ");
+
+    expect(holders.providerId).toBe("yahoo");
+    expect(holders.holders[0]?.name).toBe("Vanguard Group Inc");
+  });
+
   test("prefers broker quotes over fallback quotes", async () => {
     const router = new SourceRouter(fallbackProvider);
     const broker: BrokerAdapter = {

@@ -85,6 +85,126 @@ export interface Fundamentals {
   sharesOutstanding?: number;
 }
 
+export type HolderOwnerType = "institution" | "fund" | "direct" | "insider";
+
+export interface HolderRecord {
+  providerId?: string;
+  ownerType: HolderOwnerType;
+  name: string;
+  reportDate?: string;
+  shares?: number;
+  value?: number;
+  percentHeld?: number;
+  changeShares?: number;
+  changePercent?: number;
+}
+
+export interface HolderSummary {
+  insidersPercentHeld?: number;
+  institutionsPercentHeld?: number;
+  institutionsFloatPercentHeld?: number;
+  institutionsCount?: number;
+}
+
+export interface HolderData {
+  providerId?: string;
+  symbol: string;
+  name?: string;
+  currency?: string;
+  exchange?: string;
+  asOf?: string;
+  summary?: HolderSummary;
+  holders: HolderRecord[];
+}
+
+export interface AnalystPriceTarget {
+  high?: number;
+  median?: number;
+  low?: number;
+  average?: number;
+  current?: number;
+  currency?: string;
+}
+
+export interface AnalystRecommendationTrend {
+  period: string;
+  strongBuy?: number;
+  buy?: number;
+  hold?: number;
+  sell?: number;
+  strongSell?: number;
+}
+
+export interface AnalystRatingRecord {
+  date: string;
+  firm: string;
+  action?: string;
+  current?: string;
+  prior?: string;
+}
+
+export interface AnalystEstimateRecord {
+  date: string;
+  period: string;
+  analysts?: number;
+  average?: number;
+  low?: number;
+  high?: number;
+  yearAgo?: number;
+  growth?: number;
+}
+
+export interface AnalystResearchData {
+  providerId?: string;
+  symbol: string;
+  name?: string;
+  currency?: string;
+  exchange?: string;
+  micCode?: string;
+  exchangeTimezone?: string;
+  priceTarget?: AnalystPriceTarget;
+  recommendationRating?: number;
+  recommendations: AnalystRecommendationTrend[];
+  ratings: AnalystRatingRecord[];
+  earningsEstimates: AnalystEstimateRecord[];
+  revenueEstimates: AnalystEstimateRecord[];
+}
+
+export interface DividendAction {
+  exDate: string;
+  amount: number;
+}
+
+export interface SplitAction {
+  date: string;
+  description?: string;
+  ratio?: number;
+  fromFactor?: number;
+  toFactor?: number;
+}
+
+export interface EarningsAction {
+  date: string;
+  time?: string;
+  epsEstimate?: number;
+  epsActual?: number;
+  difference?: number;
+  surprisePercent?: number;
+}
+
+export interface CorporateActionsData {
+  providerId?: string;
+  symbol: string;
+  name?: string;
+  currency?: string;
+  exchange?: string;
+  micCode?: string;
+  exchangeTimezone?: string;
+  dividends: DividendAction[];
+  splits: SplitAction[];
+  earnings: EarningsAction[];
+}
+
 export interface CompanyProfile {
   description?: string;
   sector?: string;
