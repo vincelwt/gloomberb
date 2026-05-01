@@ -1,12 +1,13 @@
-import { Box, ScrollBox, Span, Text, Textarea, useUiCapabilities } from "../../ui";
+import { Box, ScrollBox, Span, Text, useUiCapabilities } from "../../ui";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import { useInlineTickers } from "../../state/use-inline-tickers";
+import { getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
-import { blendHex, colors, hoverBg } from "../../theme/colors";
+import { colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -343,6 +344,12 @@ export function ChatContent({
     inputRef.current?.focus();
   }, [dispatch]);
 
+  const focusComposer = useCallback(() => {
+    setSelectedIdx(-1);
+    setFollowMessages(true);
+    focusInput();
+  }, [focusInput]);
+
   const blurInput = useCallback(() => {
     setInputFocused(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
@@ -520,7 +527,7 @@ export function ChatContent({
     if ((isEnterKey || event.name === "i") && canSend) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      queueMicrotask(() => focusInput());
+      queueMicrotask(() => focusComposer());
       return;
     }
 
@@ -584,6 +591,7 @@ export function ChatContent({
     blurInput,
     canSend,
     clearReplyTarget,
+    focusComposer,
     focused,
     inputFocused,
     hasOlderMessages,
@@ -599,14 +607,13 @@ export function ChatContent({
   ]);
 
   const inputMetaHeight = canSend && replyTo ? 1 : 0;
-  const inputAreaHeight = canSend ? composerHeight + inputMetaHeight : 2;
+  const composerBlockHeight = canSend
+    ? getMessageComposerBlockHeight({ height: composerHeight, nativePaneChrome })
+    : 0;
+  const inputAreaHeight = canSend ? composerBlockHeight + inputMetaHeight : 2;
   const topSeparatorHeight = nativePaneChrome ? 0 : 1;
-  const footerSeparatorHeight = nativePaneChrome ? 0 : 1;
+  const footerSeparatorHeight = !nativePaneChrome && !canSend ? 1 : 0;
   const messageAreaHeight = Math.max(1, height - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
-  const composerBackground = nativePaneChrome ? blendHex(colors.panel, colors.bg, 0.22) : colors.bg;
-  const composerBorder = inputFocused && focused
-    ? blendHex(colors.borderFocused, colors.textBright, 0.24)
-    : colors.border;
   const composerWidth = nativePaneChrome ? width : contentWidth;
 
   useEffect(() => {
@@ -844,7 +851,7 @@ export function ChatContent({
         })}
       </ScrollBox>
 
-      {!nativePaneChrome && (
+      {!nativePaneChrome && !canSend && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
         </Box>
@@ -866,61 +873,31 @@ export function ChatContent({
             </Box>
           )}
 
-          <Box
-            height={composerHeight}
+          <MessageComposer
+            inputRef={inputRef}
+            initialValue={inputValue}
+            focused={inputFocused && focused}
+            placeholder={inputPlaceholder}
+            terminalPrefix=" > "
             width={composerWidth}
-            flexDirection="row"
-            backgroundColor={nativePaneChrome ? composerBackground : undefined}
-            style={nativePaneChrome ? {
-              borderTop: `1px solid ${composerBorder}`,
-            } : undefined}
-            onMouseDown={focusInput}
-          >
-            {!nativePaneChrome && (
-              <Box width={composerPrefixWidth} height={composerHeight}>
-                <Text fg={colors.textDim}> {">"} </Text>
-              </Box>
-            )}
-            <Box
-              width={nativePaneChrome ? "100%" : composerTextWidth}
-              height={composerHeight}
-              backgroundColor={nativePaneChrome ? "transparent" : undefined}
-            >
-              <Textarea
-                ref={inputRef}
-                initialValue={inputValue}
-                width={nativePaneChrome ? "100%" : composerTextWidth}
-                height={composerHeight}
-                focused={inputFocused && focused}
-                placeholder={inputPlaceholder}
-                placeholderColor={colors.textMuted}
-                textColor={colors.text}
-                backgroundColor={nativePaneChrome ? "transparent" : composerBackground}
-                focusedBackgroundColor={nativePaneChrome ? "transparent" : composerBackground}
-                cursorColor={colors.textBright}
-                style={nativePaneChrome ? {
-                  padding: "6px 12px",
-                  lineHeight: "20px",
-                  fontSize: "13px",
-                } : undefined}
-                onInput={commitLocalDraft}
-                keyBindings={[
-                  { name: "return", action: "submit" },
-                  { name: "linefeed", action: "submit" },
-                  { name: "return", shift: true, action: "newline" },
-                  { name: "linefeed", shift: true, action: "newline" },
-                  { name: "return", meta: true, action: "submit" },
-                  { name: "linefeed", meta: true, action: "submit" },
-                ]}
-                onSubmit={() => {
-                  if (inputValueRef.current.trim()) {
-                    sendMessage();
-                  }
-                }}
-                wrapText
-              />
-            </Box>
-          </Box>
+            height={composerHeight}
+            onFocusRequest={focusComposer}
+            onInput={commitLocalDraft}
+            keyBindings={[
+              { name: "return", action: "submit" },
+              { name: "linefeed", action: "submit" },
+              { name: "return", shift: true, action: "newline" },
+              { name: "linefeed", shift: true, action: "newline" },
+              { name: "return", meta: true, action: "submit" },
+              { name: "linefeed", meta: true, action: "submit" },
+            ]}
+            onSubmit={() => {
+              if (inputValueRef.current.trim()) {
+                sendMessage();
+              }
+            }}
+            wrapText
+          />
         </>
       ) : (
         <Box width={contentWidth} height={2} flexDirection="column">

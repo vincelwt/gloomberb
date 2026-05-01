@@ -245,6 +245,7 @@ export interface UiHost {
   AsciiText: ComponentType<AsciiTextProps>;
   Button?: ComponentType<any>;
   TextField?: ComponentType<any>;
+  MessageComposer?: ComponentType<any>;
   ListView?: ComponentType<any>;
   SegmentedControl?: ComponentType<any>;
   DialogFrame?: ComponentType<any>;

@@ -1,15 +1,15 @@
-import { Box, Input, ScrollBox, Text } from "../../../ui";
+import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
-import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
 import type { DetailTabProps } from "../../../types/plugin";
 import { useAppSelector, usePaneTicker } from "../../../state/app-context";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePluginState } from "../../../plugins/plugin-runtime";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 import { MarkdownText } from "../../../components/markdown-text";
-import { Spinner, usePaneFooter } from "../../../components";
+import { getMessageComposerBlockHeight, MessageComposer, Spinner, usePaneFooter } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { buildTickerAiContext } from "./ticker-context";
 import { detectProviders, getAvailableProviders, resolveDefaultAiProviderId, __setDetectedProvidersForTests, type AiProvider } from "./providers";
@@ -42,6 +42,7 @@ export function __resetAskAiHistoryForTests(): void {
 }
 
 export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabProps) {
+  const { nativePaneChrome } = useUiCapabilities();
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
   const { ticker, financials } = usePaneTicker();
@@ -60,7 +61,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
-  const inputRef = useRef<InputRenderable>(null);
+  const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const runRef = useRef<ReturnType<typeof runAiPrompt> | null>(null);
   const availableProviders = getAvailableProviders(providers);
@@ -194,6 +195,15 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     }
   }, [baseCurrency, currentProvider, effectiveExchangeRates, financials, ticker]);
 
+  const submitInput = useCallback(() => {
+    const currentValue = inputRef.current?.editBuffer.getText() ?? inputValue;
+    const trimmed = currentValue.trim();
+    if (!trimmed) return;
+    void sendMessage(trimmed);
+    setInputValue("");
+    inputRef.current?.editBuffer.setText?.("");
+  }, [inputValue, sendMessage]);
+
   useShortcut((event) => {
     if (!focused) return;
 
@@ -253,77 +263,78 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   }
 
   const contentWidth = Math.max(width - 2, 0);
-  const dividerWidth = Math.max(contentWidth, 0);
-  const chatHeight = Math.max(height - 3, 4);
+  const composerHeight = nativePaneChrome ? 2 : 1;
+  const terminalFooterClearance = nativePaneChrome ? 0 : 1;
+  const composerBlockHeight = getMessageComposerBlockHeight({
+    height: composerHeight,
+    nativePaneChrome,
+    terminalBottomInset: terminalFooterClearance,
+  });
+  const chatHeight = Math.max(height - composerBlockHeight, 0);
 
   return (
-    <Box flexDirection="column" paddingX={1} height={height}>
-      <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
-        <Box flexDirection="column">
-          {messages.length === 0 ? (
-            <Box paddingTop={1}>
-              <Text fg={colors.textDim}>
-                Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
-              </Text>
-            </Box>
-          ) : (
-            messages.map((message, index) => (
-              <Box key={index} flexDirection="column" paddingTop={index > 0 ? 1 : 0}>
-                <Box height={1}>
-                  <Text
-                    attributes={TextAttributes.BOLD}
-                    fg={message.role === "user" ? colors.textBright : colors.positive}
-                  >
-                    {message.role === "user" ? "You" : currentProvider?.name || "AI"}
-                    {message.loading ? " (thinking...)" : ""}
-                  </Text>
-                </Box>
-                <Box>
-                  {message.content ? (
-                    <MarkdownText
-                      text={message.content}
-                      lineWidth={contentWidth}
-                      catalog={catalog}
-                      textColor={colors.text}
-                      openTicker={openTicker}
-                    />
-                  ) : message.loading ? (
-                    <Spinner label="Generating..." />
-                  ) : (
-                    <Text fg={colors.text}>{""}</Text>
-                  )}
-                </Box>
+    <Box flexDirection="column" paddingX={nativePaneChrome ? 0 : 1} height={height} overflow="hidden">
+      {chatHeight > 0 && (
+        <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
+          <Box flexDirection="column" paddingX={nativePaneChrome ? 1 : 0}>
+            {messages.length === 0 ? (
+              <Box paddingTop={1}>
+                <Text fg={colors.textDim}>
+                  Ask questions about {ticker.metadata.ticker}. Financial data will be included as context.
+                </Text>
               </Box>
-            ))
-          )}
-        </Box>
-      </ScrollBox>
+            ) : (
+              messages.map((message, index) => (
+                <Box key={index} flexDirection="column" paddingTop={index > 0 ? 1 : 0}>
+                  <Box height={1}>
+                    <Text
+                      attributes={TextAttributes.BOLD}
+                      fg={message.role === "user" ? colors.textBright : colors.positive}
+                    >
+                      {message.role === "user" ? "You" : currentProvider?.name || "AI"}
+                      {message.loading ? " (thinking...)" : ""}
+                    </Text>
+                  </Box>
+                  <Box>
+                    {message.content ? (
+                      <MarkdownText
+                        text={message.content}
+                        lineWidth={contentWidth}
+                        catalog={catalog}
+                        textColor={colors.text}
+                        openTicker={openTicker}
+                      />
+                    ) : message.loading ? (
+                      <Spinner label="Generating..." />
+                    ) : (
+                      <Text fg={colors.text}>{""}</Text>
+                    )}
+                  </Box>
+                </Box>
+              ))
+            )}
+          </Box>
+        </ScrollBox>
+      )}
 
-      <Box height={1}>
-        <Text fg={colors.textDim}>{"\u2500".repeat(dividerWidth)}</Text>
-      </Box>
-
-      <Box flexDirection="row" height={1} onMouseDown={focusInput}>
-        <Text fg={colors.textMuted}>{"> "}</Text>
-        <Box flexGrow={1}>
-          <Input
-            ref={inputRef}
-            placeholder="Ask a question..."
-            focused={inputFocused && focused}
-            textColor={colors.text}
-            placeholderColor={colors.textDim}
-            backgroundColor={inputFocused && focused ? colors.panel : colors.bg}
-            onInput={(value) => setInputValue(value)}
-            onChange={(value) => setInputValue(value)}
-            onSubmit={() => {
-              if (!inputValue.trim()) return;
-              void sendMessage(inputValue.trim());
-              setInputValue("");
-              (inputRef.current as any)?.editBuffer?.setText?.("");
-            }}
-          />
-        </Box>
-      </Box>
+      <MessageComposer
+        inputRef={inputRef}
+        initialValue={inputValue}
+        focused={inputFocused && focused}
+        placeholder="Ask a question..."
+        terminalPrefix=" > "
+        terminalBottomInset={terminalFooterClearance}
+        width={nativePaneChrome ? width : contentWidth}
+        height={composerHeight}
+        onFocusRequest={focusInput}
+        onInput={(value) => setInputValue(value)}
+        keyBindings={[
+          { name: "return", action: "submit" },
+          { name: "linefeed", action: "submit" },
+        ]}
+        onSubmit={submitInput}
+        wrapText={nativePaneChrome}
+      />
     </Box>
   );
 }
