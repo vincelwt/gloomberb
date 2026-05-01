@@ -1937,6 +1937,38 @@ describe("CommandBar", () => {
     });
   });
 
+  test("does not duplicate placeholder text as workflow field help", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="Duplicate Form"
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("plugin:duplicate-form", {
+          id: "plugin:duplicate-form",
+          label: "Duplicate Form",
+          description: "Check workflow field copy",
+          category: "config",
+          wizard: [
+            { key: "name", label: "Name", type: "text", placeholder: "Profile name" },
+            { key: "token", label: "Token", type: "text", placeholder: "repeat marker", body: ["repeat marker"] },
+          ],
+          execute: async () => {},
+        } as any);
+        pluginRegistry.getCommandPluginId = () => "notes";
+      }}
+    />, {
+      width: 100,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame.match(/repeat marker/g)?.length ?? 0).toBe(1);
+  });
+
   test("does not treat backspace as Back inside workflow text fields", async () => {
     testSetup = await testRender(<CommandBarHarness
       query="Plugin Login"
