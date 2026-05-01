@@ -220,6 +220,33 @@ function getInputRef(
   return store[fieldId]!;
 }
 
+function normalizeWorkflowCopy(value?: string): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function getWorkflowFieldDescription(field: CommandBarWorkflowField, active: boolean): string | null {
+  const description = field.description?.trim();
+  if (!description) return null;
+  if (normalizeWorkflowCopy(description) === normalizeWorkflowCopy(field.placeholder)) return null;
+  return field.type === "textarea" && active ? `${description} Ctrl+S submits.` : description;
+}
+
+function estimateWorkflowBodyRows(route: CommandBarWorkflowRoute): number {
+  const visibleFields = getVisibleWorkflowFields(route.fields, route.values);
+  const introRows = (route.subtitle ? 1 : 0)
+    + (route.description?.length ?? 0)
+    + (route.subtitle || (route.description?.length ?? 0) > 0 ? 1 : 0);
+  const fieldRows = visibleFields.reduce((total, field, index) => {
+    const active = field.id === route.activeFieldId;
+    const controlRows = field.type === "textarea" ? 6 : 1;
+    const descriptionRows = getWorkflowFieldDescription(field, active) ? 1 : 0;
+    const gapRows = index === visibleFields.length - 1 ? 0 : 1;
+    return total + 1 + controlRows + descriptionRows + gapRows;
+  }, 0);
+  const statusRows = (route.error ? 1 : 0) + (route.pending && route.pendingLabel ? 1 : 0);
+  return introRows + fieldRows + statusRows + 1;
+}
+
 function orderListResults(results: ResultItem[]): ResultItem[] {
   return buildSections(results).flatMap((section) => section.items);
 }
@@ -4959,7 +4986,7 @@ export function CommandBar({
   const barWidth = nativePaneChrome
     ? Math.max(46, Math.min(78, termWidth - 10, Math.floor(termWidth * 0.64)))
     : Math.max(42, Math.min(72, termWidth - 8, Math.floor(termWidth * 0.68)));
-  const bodyHeight = Math.min(16, Math.max(9, termHeight - 9));
+  const baseBodyHeight = Math.min(16, Math.max(9, termHeight - 9));
   const contentPadding = nativePaneChrome ? 1 : 3;
   const paletteBg = commandBarBg();
   const paletteHeadingText = commandBarHeadingText();
@@ -4976,15 +5003,27 @@ export function CommandBar({
   const showCustomMultiSelectPicker = currentRoute?.kind === "picker" && currentRoute.pickerId === "field-multi-select";
   const listRows = visibleListState ? buildListRows(visibleListState) : [];
   const nativeListRows = visibleListState ? buildNativeListRows(visibleListState, listRows) : [];
-  const listBodyHeight = bodyHeight;
+  const workflowBodyHeight = currentRoute?.kind === "workflow"
+    ? Math.min(
+      Math.max(9, termHeight - (nativePaneChrome ? 7 : 9)),
+      Math.max(7, estimateWorkflowBodyRows(currentRoute)),
+    )
+    : baseBodyHeight;
+  const bodyHeight = currentRoute?.kind === "workflow" ? workflowBodyHeight : baseBodyHeight;
+  const listBodyHeight = baseBodyHeight;
   const nativePanelPaddingColumns = nativePaneChrome
     ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_X_PX * 2) / Math.max(1, cellWidthPx))
     : 0;
   const nativePanelPaddingRows = nativePaneChrome
     ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_Y_PX * 2) / Math.max(1, cellHeightPx))
     : 0;
+  const nativeBodyChromeRows = (currentRoute?.kind === "workflow"
+    || currentRoute?.kind === "confirm"
+    || showCustomMultiSelectPicker)
+    ? 1
+    : 3;
   const barHeight = nativePaneChrome
-    ? bodyHeight + 3 + nativePanelPaddingRows
+    ? bodyHeight + nativeBodyChromeRows + nativePanelPaddingRows
     : bodyHeight + 7;
   const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
   const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
@@ -5045,19 +5084,19 @@ export function CommandBar({
       visibleRows = [{ kind: "message", id: "empty", label: visibleListState.emptyLabel }];
     } else {
       const selectedRowIdx = allRows.findIndex((row) => row.kind === "item" && row.globalIdx === visibleListState.selectedIdx);
-      const halfWindow = Math.floor(bodyHeight / 2);
-      let windowStart = Math.max(0, Math.min(selectedRowIdx - halfWindow, allRows.length - bodyHeight));
+      const halfWindow = Math.floor(listBodyHeight / 2);
+      let windowStart = Math.max(0, Math.min(selectedRowIdx - halfWindow, allRows.length - listBodyHeight));
       if (windowStart < 0) windowStart = 0;
-      visibleRows = allRows.slice(windowStart, windowStart + bodyHeight);
+      visibleRows = allRows.slice(windowStart, windowStart + listBodyHeight);
       if (visibleListState.searching) {
-        if (visibleRows.length >= bodyHeight) {
-          visibleRows = visibleRows.slice(0, bodyHeight - 1);
+        if (visibleRows.length >= listBodyHeight) {
+          visibleRows = visibleRows.slice(0, listBodyHeight - 1);
         }
         visibleRows.push({ kind: "spinner", id: "searching", label: "Searching…" });
       }
     }
 
-    while (!nativePaneChrome && visibleRows.length < bodyHeight) {
+    while (!nativePaneChrome && visibleRows.length < listBodyHeight) {
       visibleRows.push({ kind: "filler", id: `filler:${visibleRows.length}` });
     }
 
@@ -5158,7 +5197,7 @@ export function CommandBar({
     return (
       <Box
         flexDirection="column"
-        height={bodyHeight}
+        height={listBodyHeight}
         onMouseScroll={handleListScroll}
       >
         {renderedRows}
@@ -5182,18 +5221,19 @@ export function CommandBar({
           </Box>
         ))}
         {currentRoute.subtitle || (currentRoute.description?.length ?? 0) > 0 ? <Box height={1} /> : null}
-        {visibleFields.map((field) => {
+        {visibleFields.map((field, fieldIndex) => {
           const active = field.id === currentRoute.activeFieldId;
+          const isLastField = fieldIndex === visibleFields.length - 1;
           const value = currentRoute.values[field.id];
           const borderColor = active ? paletteSelectedBg : paletteBg;
           const fieldBg = nativePaneChrome ? "transparent" : active ? inputBg : panelBg;
-          const nativeFieldRule = active ? "rgba(84, 201, 159, 0.48)" : "rgba(132, 145, 161, 0.18)";
           const useNativeSelect = nativePaneChrome && field.type === "select";
+          const fieldDescription = getWorkflowFieldDescription(field, active);
           return (
             <Box
               key={field.id}
               flexDirection="column"
-              marginBottom={1}
+              {...(!nativePaneChrome ? { marginBottom: isLastField ? 0 : 1 } : {})}
               backgroundColor={fieldBg}
               onMouseDown={(event: any) => {
                 event.stopPropagation?.();
@@ -5206,8 +5246,8 @@ export function CommandBar({
                 }
               }}
               style={nativePaneChrome ? {
-                borderBottom: `1px solid ${nativeFieldRule}`,
-                paddingBlock: 4,
+                marginBottom: isLastField ? 8 : 10,
+                paddingBlock: 3,
               } : undefined}
             >
               <Box height={1}>
@@ -5222,8 +5262,8 @@ export function CommandBar({
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
-                    variant={nativePaneChrome ? "plain" : "default"}
-                    backgroundColor={fieldBg}
+                    variant="default"
+                    backgroundColor={nativePaneChrome ? inputBg : fieldBg}
                     onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
                     onSubmit={() => {
                       const index = visibleFields.findIndex((entry) => entry.id === field.id);
@@ -5240,8 +5280,12 @@ export function CommandBar({
                     height={6}
                     border={!nativePaneChrome}
                     borderColor={active ? paletteSelectedBg : paletteBg}
-                    backgroundColor={fieldBg}
-                    style={nativePaneChrome ? { overflow: "hidden" } : undefined}
+                    backgroundColor={nativePaneChrome ? inputBg : fieldBg}
+                    style={nativePaneChrome ? {
+                      border: `1px solid ${active ? colors.borderFocused : colors.border}`,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                    } : undefined}
                   >
                     {active ? (
                       <Textarea
@@ -5252,7 +5296,7 @@ export function CommandBar({
                         focused={!currentRoute.pending}
                         textColor={paletteText}
                         placeholderColor={paletteSubtleText}
-                        backgroundColor={nativePaneChrome ? "transparent" : colors.panel}
+                        backgroundColor={nativePaneChrome ? inputBg : colors.panel}
                         flexGrow={1}
                         wrapText
                       />
@@ -5280,8 +5324,8 @@ export function CommandBar({
                     value={coerceFieldString(value)}
                     placeholder={field.placeholder}
                     focused={active && !currentRoute.pending}
-                    variant={nativePaneChrome ? "plain" : "default"}
-                    backgroundColor={fieldBg}
+                    variant="default"
+                    backgroundColor={nativePaneChrome ? inputBg : fieldBg}
                     onChange={(nextValue) => updateWorkflowValue(field.id, nextValue)}
                     onSubmit={() => {
                       const index = visibleFields.findIndex((entry) => entry.id === field.id);
@@ -5321,15 +5365,10 @@ export function CommandBar({
                   </Text>
                 </Box>
               )}
-              {field.description && (
+              {fieldDescription && (
                 <Box height={1}>
                   <Text fg={paletteSubtleText}>
-                    {truncateText(
-                      field.type === "textarea" && active
-                        ? `${field.description} Ctrl+S submits.`
-                        : field.description,
-                      queryDisplayWidth,
-                    )}
+                    {truncateText(fieldDescription, queryDisplayWidth)}
                   </Text>
                 </Box>
               )}
@@ -5364,7 +5403,6 @@ export function CommandBar({
           <Box
             flexDirection="column"
             paddingX={contentPadding}
-            style={{ paddingBottom: 8 }}
           >
             {workflowContent}
           </Box>

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
+import { Box } from "../../../ui";
+import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../../state/app-context";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
@@ -74,6 +76,22 @@ function Harness({
   );
 }
 
+function FooterHarness(props: {
+  instance?: BrokerInstanceConfig;
+  calls: string[];
+}) {
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box width={92} height={25} flexDirection="column">
+          <Harness {...props} />
+          <PaneFooterBar footer={footer} focused width={92} />
+        </Box>
+      )}
+    </PaneFooterProvider>
+  );
+}
+
 describe("BrokersPane", () => {
   test("shows empty state and opens add broker flow", async () => {
     const calls: string[] = [];
@@ -82,12 +100,27 @@ describe("BrokersPane", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("No broker profiles.");
+    expect(frame).not.toContain("Press a or click Add Broker.");
     await act(async () => {
       testSetup!.mockInput.pressKey("a");
       await testSetup!.renderOnce();
     });
 
     expect(calls).toEqual(["command:Add Broker Account"]);
+  });
+
+  test("hides unavailable footer actions with no broker profile", async () => {
+    const calls: string[] = [];
+    testSetup = await testRender(<FooterHarness calls={calls} />, { width: 92, height: 25 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[a]dd");
+    expect(frame).not.toContain("[c]onnect");
+    expect(frame).not.toContain("[d]isconnect");
   });
 
   test("renders IBKR details and invokes broker actions", async () => {

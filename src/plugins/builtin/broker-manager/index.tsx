@@ -1,6 +1,6 @@
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, EmptyState, NumberField, SegmentedControl, TextField, usePaneFooter } from "../../../components";
+import { Button, EmptyState, NumberField, SegmentedControl, TextField, usePaneFooter, type PaneHint } from "../../../components";
 import {
   buildBrokerProfileConfig,
   createBrokerProfileDraft,
@@ -334,6 +334,14 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     }
   }, [dialog, removeBrokerInstance, selectedRow]);
 
+  const hasSelectedRow = selectedRow !== null;
+  const selectedHasAdapter = !!selectedRow?.adapter;
+  const canUseSelectedBroker = selectedHasAdapter && !busy;
+  const canOpenSelectedConsole = hasSelectedRow
+    && selectedRow.brokerType === "ibkr"
+    && selectedRow.mode.toLowerCase() === "gateway";
+  const canRemoveSelected = hasSelectedRow && !busy;
+
   const footerActionsRef = useRef({
     openAddBroker,
     startEdit,
@@ -353,21 +361,36 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     saveEdit,
   };
 
-  usePaneFooter("broker-manager", () => ({
-    hints: editDraft
-      ? [
+  const footerHints = useMemo<PaneHint[]>(() => {
+    if (editDraft) {
+      return [
         { id: "save", key: "enter", label: "save", onPress: () => footerActionsRef.current.saveEdit().catch(() => {}) },
         { id: "cancel", key: "esc", label: "cancel", onPress: () => setEditDraft(null) },
-      ]
-      : [
-        { id: "add", key: "a", label: "dd", onPress: () => footerActionsRef.current.openAddBroker() },
+      ];
+    }
+
+    const hints: PaneHint[] = [
+      { id: "add", key: "a", label: "dd", onPress: () => footerActionsRef.current.openAddBroker() },
+    ];
+    if (canUseSelectedBroker) {
+      hints.push(
         { id: "edit", key: "e", label: "dit", onPress: () => footerActionsRef.current.startEdit() },
         { id: "connect", key: "c", label: "onnect", onPress: () => footerActionsRef.current.connectSelected().catch(() => {}) },
         { id: "sync", key: "s", label: "ync", onPress: () => footerActionsRef.current.syncSelected().catch(() => {}) },
-        { id: "open", key: "o", label: "pen", onPress: () => footerActionsRef.current.openConsole() },
-        { id: "disconnect", key: "d", label: "isconnect", onPress: () => footerActionsRef.current.removeSelected().catch(() => {}) },
-      ],
-  }), [editDraft]);
+      );
+    }
+    if (canOpenSelectedConsole) {
+      hints.push({ id: "open", key: "o", label: "pen", onPress: () => footerActionsRef.current.openConsole() });
+    }
+    if (canRemoveSelected) {
+      hints.push({ id: "disconnect", key: "d", label: "isconnect", onPress: () => footerActionsRef.current.removeSelected().catch(() => {}) });
+    }
+    return hints;
+  }, [canOpenSelectedConsole, canRemoveSelected, canUseSelectedBroker, editDraft]);
+
+  usePaneFooter("broker-manager", () => ({
+    hints: footerHints,
+  }), [footerHints]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -413,19 +436,19 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         openAddBroker();
         break;
       case "e":
-        startEdit();
+        if (canUseSelectedBroker) startEdit();
         break;
       case "c":
-        connectSelected().catch(() => {});
+        if (canUseSelectedBroker) connectSelected().catch(() => {});
         break;
       case "s":
-        syncSelected().catch(() => {});
+        if (canUseSelectedBroker) syncSelected().catch(() => {});
         break;
       case "o":
-        openConsole();
+        if (canOpenSelectedConsole) openConsole();
         break;
       case "d":
-        removeSelected().catch(() => {});
+        if (canRemoveSelected) removeSelected().catch(() => {});
         break;
     }
   });
@@ -464,9 +487,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
 
       {rows.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
-          <EmptyState title="No broker profiles." message="Add a broker profile to test connections and sync positions." hint="Press a or click Add Broker." />
-          <Box height={1} />
-          <Button label="Add Broker" variant="primary" onPress={openAddBroker} />
+          <EmptyState title="No broker profiles." message="Add a broker profile to test connections and sync positions." />
         </Box>
       ) : (
         <Box flexDirection="row" height={bodyHeight}>
