@@ -499,7 +499,7 @@ function makeSnapGuides(width: number, height: number): SnapGuide[] {
   const cornerWidth = Math.max(8, Math.min(16, Math.floor(width * 0.2)));
   const cornerHeight = Math.max(4, Math.min(8, Math.floor(height * 0.22)));
   const edgeWidth = Math.max(6, Math.min(10, Math.floor(width * 0.1)));
-  const edgeHeight = Math.max(3, Math.min(6, Math.floor(height * 0.14)));
+  const topBottomEdgeHeight = Math.max(2, Math.min(4, Math.floor(height * 0.1)));
 
   return [
     {
@@ -549,16 +549,16 @@ function makeSnapGuides(width: number, height: number): SnapGuide[] {
     },
     {
       position: "top",
-      triggerRect: { x: cornerWidth, y: 0, width: Math.max(1, width - (cornerWidth * 2)), height: edgeHeight },
+      triggerRect: { x: cornerWidth, y: 0, width: Math.max(1, width - (cornerWidth * 2)), height: topBottomEdgeHeight },
       previewRect: { x: 0, y: 0, width, height: halfHeight },
     },
     {
       position: "bottom",
       triggerRect: {
         x: cornerWidth,
-        y: Math.max(0, height - edgeHeight),
+        y: Math.max(0, height - topBottomEdgeHeight),
         width: Math.max(1, width - (cornerWidth * 2)),
-        height: edgeHeight,
+        height: topBottomEdgeHeight,
       },
       previewRect: { x: 0, y: Math.max(0, height - halfHeight), width, height: halfHeight },
     },
