@@ -218,6 +218,10 @@ function financeRawNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function financeRawNumberOrNull(value: unknown): number | null {
+  return financeRawNumber(value) ?? null;
+}
+
 function normalizePositiveMarketValue(value: number | undefined, divisor = 1): number | undefined {
   if (value == null || !Number.isFinite(value) || value <= 0) return undefined;
   return value / divisor;
@@ -226,6 +230,20 @@ function normalizePositiveMarketValue(value: number | undefined, divisor = 1): n
 function normalizeMarketValue(value: number | undefined, divisor = 1): number | undefined {
   if (value == null || !Number.isFinite(value)) return undefined;
   return value / divisor;
+}
+
+function yahooRawDateTime(value: unknown): Date | null {
+  const raw = financeRawNumber(value);
+  if (raw == null) return null;
+  const date = new Date(raw * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function inferEarningsTiming(date: Date): EarningsEvent["timing"] {
+  const hour = date.getUTCHours();
+  if (hour >= 20) return "AMC";
+  if (hour <= 13) return "BMO";
+  return "";
 }
 
 function yahooRawDate(value: unknown): string | undefined {
@@ -1188,15 +1206,46 @@ export class YahooFinanceClient implements DataProvider {
                 calendarEvents?: {
                   earnings?: {
                     earningsDate?: Array<{ raw: number }>;
+                    earningsCallDate?: Array<{ raw: number }>;
+                    isEarningsDateEstimate?: boolean;
                     earningsAverage?: { raw: number };
+                    earningsLow?: { raw: number };
+                    earningsHigh?: { raw: number };
                     revenueAverage?: { raw: number };
+                    revenueLow?: { raw: number };
+                    revenueHigh?: { raw: number };
                   };
                 };
                 earningsTrend?: {
                   trend?: Array<{
                     period: string;
-                    earningsEstimate?: { avg?: { raw: number } };
-                    revenueEstimate?: { avg?: { raw: number } };
+                    earningsEstimate?: {
+                      avg?: { raw: number };
+                      low?: { raw: number };
+                      high?: { raw: number };
+                      yearAgoEps?: { raw: number };
+                      numberOfAnalysts?: { raw: number };
+                      growth?: { raw: number };
+                    };
+                    revenueEstimate?: {
+                      avg?: { raw: number };
+                      low?: { raw: number };
+                      high?: { raw: number };
+                      yearAgoRevenue?: { raw: number };
+                      numberOfAnalysts?: { raw: number };
+                      growth?: { raw: number };
+                    };
+                    epsTrend?: {
+                      current?: { raw: number };
+                      "7daysAgo"?: { raw: number };
+                      "30daysAgo"?: { raw: number };
+                    };
+                    epsRevisions?: {
+                      upLast7days?: { raw: number };
+                      upLast30days?: { raw: number };
+                      downLast7Days?: { raw: number };
+                      downLast30days?: { raw: number };
+                    };
                   }>;
                 };
                 quoteType?: {
@@ -1217,18 +1266,40 @@ export class YahooFinanceClient implements DataProvider {
           if (isNaN(earningsDate.getTime())) return null;
 
           const currentQtr = mod.earningsTrend?.trend?.find((t) => t.period === "0q");
+          const earningsEstimate = currentQtr?.earningsEstimate;
+          const revenueEstimate = currentQtr?.revenueEstimate;
+          const epsTrend = currentQtr?.epsTrend;
+          const epsRevisions = currentQtr?.epsRevisions;
           const name = mod.quoteType?.shortName || mod.quoteType?.longName || symbol;
 
           return {
             symbol,
             name,
             earningsDate,
-            epsEstimate: currentQtr?.earningsEstimate?.avg?.raw ?? cal.earningsAverage?.raw ?? null,
+            earningsCallDate: yahooRawDateTime(cal.earningsCallDate?.[0]),
+            isDateEstimate: cal.isEarningsDateEstimate ?? null,
+            epsEstimate: financeRawNumberOrNull(earningsEstimate?.avg ?? cal.earningsAverage),
+            epsLow: financeRawNumberOrNull(earningsEstimate?.low ?? cal.earningsLow),
+            epsHigh: financeRawNumberOrNull(earningsEstimate?.high ?? cal.earningsHigh),
+            epsYearAgo: financeRawNumberOrNull(earningsEstimate?.yearAgoEps),
+            epsGrowth: financeRawNumberOrNull(earningsEstimate?.growth),
+            epsAnalysts: financeRawNumberOrNull(earningsEstimate?.numberOfAnalysts),
+            epsTrend7dAgo: financeRawNumberOrNull(epsTrend?.["7daysAgo"]),
+            epsTrend30dAgo: financeRawNumberOrNull(epsTrend?.["30daysAgo"]),
+            epsRevisionUp7d: financeRawNumberOrNull(epsRevisions?.upLast7days),
+            epsRevisionUp30d: financeRawNumberOrNull(epsRevisions?.upLast30days),
+            epsRevisionDown7d: financeRawNumberOrNull(epsRevisions?.downLast7Days),
+            epsRevisionDown30d: financeRawNumberOrNull(epsRevisions?.downLast30days),
             epsActual: null,
-            revenueEstimate: currentQtr?.revenueEstimate?.avg?.raw ?? cal.revenueAverage?.raw ?? null,
+            revenueEstimate: financeRawNumberOrNull(revenueEstimate?.avg ?? cal.revenueAverage),
+            revenueLow: financeRawNumberOrNull(revenueEstimate?.low ?? cal.revenueLow),
+            revenueHigh: financeRawNumberOrNull(revenueEstimate?.high ?? cal.revenueHigh),
+            revenueYearAgo: financeRawNumberOrNull(revenueEstimate?.yearAgoRevenue),
+            revenueGrowth: financeRawNumberOrNull(revenueEstimate?.growth),
+            revenueAnalysts: financeRawNumberOrNull(revenueEstimate?.numberOfAnalysts),
             revenueActual: null,
             surprise: null,
-            timing: "" as const,
+            timing: inferEarningsTiming(earningsDate),
           };
         }),
       );
