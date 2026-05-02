@@ -450,6 +450,31 @@ describe("TickerDetailPane", () => {
     expect(frame).toContain("SEC");
   });
 
+  test("hides plugin tabs when their owner plugin is disabled", async () => {
+    setSharedRegistryForTests({
+      ...makeRegistry(),
+      getDetailTabPluginId: (tabId: string) => (
+        tabId === "sec" ? "company-research" : tabId
+      ),
+    } as unknown as PluginRegistry);
+    setOptionsProvider(createProvider(false));
+    const config = createDetailConfig("AAPL");
+    config.disabledPlugins = ["company-research"];
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={config}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("SEC");
+  });
+
   test("passes visible tab content height to plugin tabs", async () => {
     let receivedHeight: number | null = null;
     const probeTab: DetailTabDef["component"] = ({ height }) => {

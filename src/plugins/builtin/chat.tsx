@@ -14,8 +14,6 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
-import { registerEconCalendarFeature } from "./econ";
-import { registerYieldCurveFeature } from "./yield-curve";
 
 interface ChatContentProps {
   width: number;
@@ -1021,8 +1019,6 @@ export const gloomberbCloudPlugin: GloomPlugin = {
   setup(ctx) {
     chatController.attachPersistence(ctx.persistence, ctx.resume);
     chatController.setNotifier(ctx.notify);
-    registerEconCalendarFeature(ctx);
-    registerYieldCurveFeature(ctx);
 
     ctx.registerPane({
       id: "chat",
