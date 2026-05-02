@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { NewsService } from "./aggregator";
-import type { DataSource } from "../types/data-source";
+import { newsProvider, type NewsCapability } from "../capabilities";
 import type { MarketNewsItem } from "../types/news-source";
 
 function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketNewsItem {
@@ -30,25 +30,25 @@ function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketN
   };
 }
 
-function makeSource(id: string, items: MarketNewsItem[]): DataSource {
-  return {
+function makeSource(id: string, items: MarketNewsItem[]): NewsCapability {
+  return newsProvider({
     id,
     name: id,
-    news: {
+    provider: {
       fetchNews: mock(async () => items),
     },
-  };
+  });
 }
 
-function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems: MarketNewsItem[] = []): DataSource {
-  return {
+function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems: MarketNewsItem[] = []): NewsCapability {
+  return newsProvider({
     id,
     name: id,
-    news: {
+    provider: {
       getCachedNews: () => cachedItems,
       fetchNews: mock(async () => fetchItems),
     },
-  };
+  });
 }
 
 describe("NewsService", () => {
@@ -244,16 +244,16 @@ describe("NewsService", () => {
     agg.register({
       ...empty,
       priority: 10,
-      news: {
-        ...empty.news!,
+      provider: {
+        ...empty.provider,
         supports: (query) => query.feed === "ticker" || query.scope === "ticker",
       },
     });
     agg.register({
       ...fallback,
       priority: 100,
-      news: {
-        ...fallback.news!,
+      provider: {
+        ...fallback.provider,
         supports: (query) => query.feed === "ticker" || query.scope === "ticker",
       },
     });

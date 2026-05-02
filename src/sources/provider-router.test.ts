@@ -3,10 +3,11 @@ import { existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { AppPersistence } from "../data/app-persistence";
-import { SourceRouter } from "./provider-router";
+import { AssetDataRouter } from "./provider-router";
+import { assetDataProvider } from "../capabilities";
 import type { BrokerAdapter } from "../types/broker";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
-import type { DataSource } from "../types/data-source";
+import type { CapabilityRouteSource } from "../types/capability-route-source";
 import type { NewsArticle } from "../news/types";
 import { cloneLayout, CURRENT_CONFIG_VERSION, DEFAULT_LAYOUT } from "../types/config";
 
@@ -81,9 +82,9 @@ function makeArticle(id: string): NewsArticle {
   };
 }
 
-describe("SourceRouter", () => {
+describe("AssetDataRouter", () => {
   test("routes market calls only through sources with market capability", async () => {
-    const newsOnlySource: DataSource = {
+    const newsOnlySource: CapabilityRouteSource = {
       id: "news-only",
       name: "News Only",
       priority: 1,
@@ -93,7 +94,7 @@ describe("SourceRouter", () => {
         },
       },
     };
-    const marketSource: DataSource = {
+    const marketSource: CapabilityRouteSource = {
       id: "market-source",
       name: "Market Source",
       priority: 10,
@@ -115,7 +116,7 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(fallbackProvider, [newsOnlySource, marketSource]);
+    const router = new AssetDataRouter(fallbackProvider, [newsOnlySource, marketSource]);
 
     const quote = await router.getQuote("AAPL", "NASDAQ");
 
@@ -125,7 +126,7 @@ describe("SourceRouter", () => {
 
   test("routes news calls only through sources with news capability", async () => {
     const article = makeArticle("source-news");
-    const marketOnlySource: DataSource = {
+    const marketOnlySource: CapabilityRouteSource = {
       id: "market-only",
       name: "Market Only",
       priority: 1,
@@ -135,7 +136,7 @@ describe("SourceRouter", () => {
         name: "Market Only",
       },
     };
-    const newsSource: DataSource = {
+    const newsSource: CapabilityRouteSource = {
       id: "news-source",
       name: "News Source",
       priority: 10,
@@ -143,7 +144,7 @@ describe("SourceRouter", () => {
         fetchNews: async () => [article],
       },
     };
-    const router = new SourceRouter(null, [marketOnlySource, newsSource]);
+    const router = new AssetDataRouter(null, [marketOnlySource, newsSource]);
 
     const articles = await router.getNews({ feed: "latest", limit: 10 });
 
@@ -187,7 +188,7 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(yahooProvider, [cloudProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const holders = await router.getHolders("AAPL", "NASDAQ");
 
     expect(holders.providerId).toBe("yahoo");
@@ -195,7 +196,7 @@ describe("SourceRouter", () => {
   });
 
   test("prefers broker quotes over fallback quotes", async () => {
-    const router = new SourceRouter(fallbackProvider);
+    const router = new AssetDataRouter(fallbackProvider);
     const broker: BrokerAdapter = {
       id: "ibkr",
       name: "IBKR",
@@ -220,7 +221,7 @@ describe("SourceRouter", () => {
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -256,7 +257,7 @@ describe("SourceRouter", () => {
   });
 
   test("prefers the requested broker instance in search results", async () => {
-    const router = new SourceRouter(fallbackProvider);
+    const router = new AssetDataRouter(fallbackProvider);
     const broker: BrokerAdapter = {
       id: "ibkr",
       name: "IBKR",
@@ -285,7 +286,7 @@ describe("SourceRouter", () => {
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -375,11 +376,11 @@ describe("SourceRouter", () => {
         }];
       },
     };
-    const router = new SourceRouter(fallbackProvider, [provider]);
+    const router = new AssetDataRouter(fallbackProvider, [provider]);
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -417,46 +418,46 @@ describe("SourceRouter", () => {
   });
 
   test("ignores disabled plugin sources when the registry filters them out", async () => {
-    const disabledProvider: DataProvider = {
-      id: "gloomberb-cloud",
-      name: "Cloud",
-      priority: 10,
-      async getTickerFinancials() {
-        throw new Error("disabled provider should not be used");
-      },
-      async getQuote() {
-        throw new Error("disabled provider should not be used");
-      },
-      async getExchangeRate() {
-        throw new Error("disabled provider should not be used");
-      },
-      async search() {
-        throw new Error("disabled provider should not be used");
-      },
-      async getArticleSummary() {
-        throw new Error("disabled provider should not be used");
-      },
-      async getPriceHistory() {
-        throw new Error("disabled provider should not be used");
-      },
-    };
-
-    const router = new SourceRouter(fallbackProvider);
+    const router = new AssetDataRouter(fallbackProvider);
     router.attachRegistry({
       brokers: new Map(),
-      dataSources: new Map([["gloomberb-cloud", {
-        id: "gloomberb-cloud",
-        name: "Cloud",
-        market: disabledProvider,
-      } satisfies DataSource]]),
-      getEnabledDataSources() {
-        return [];
-      },
+      getEnabledCapabilities: () => [],
     } as any);
 
     const quote = await router.getQuote("AAPL", "NASDAQ");
     expect(quote.price).toBe(100);
     expect(quote.providerId).toBeUndefined();
+  });
+
+  test("routes through registered asset-data capabilities", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 10,
+      async getQuote() {
+        return {
+          symbol: "AAPL",
+          providerId: "cloud",
+          price: 125,
+          currency: "USD",
+          change: 1,
+          changePercent: 0.8,
+          lastUpdated: Date.now(),
+        };
+      },
+    };
+    const router = new AssetDataRouter(fallbackProvider);
+    router.attachRegistry({
+      brokers: new Map(),
+      getEnabledCapabilities: (kind?: string) => (
+        kind === "asset-data" ? [assetDataProvider(cloudProvider)] : []
+      ),
+    } as any);
+
+    const quote = await router.getQuote("AAPL", "NASDAQ");
+    expect(quote.price).toBe(125);
+    expect(quote.providerId).toBe("cloud");
   });
 
   test("prefers provider quote streams when one is available", () => {
@@ -510,10 +511,10 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(fallbackProvider, [streamingProvider]);
+    const router = new AssetDataRouter(fallbackProvider, [streamingProvider]);
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -613,10 +614,10 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(fallbackProvider, [streamingProvider]);
+    const router = new AssetDataRouter(fallbackProvider, [streamingProvider]);
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -675,7 +676,7 @@ describe("SourceRouter", () => {
     const dbPath = createTempDbPath("cache-merge");
     const persistence = new AppPersistence(dbPath);
     const providerCalls = { broker: 0, fallback: 0 };
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         providerCalls.fallback += 1;
@@ -718,7 +719,7 @@ describe("SourceRouter", () => {
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -770,7 +771,7 @@ describe("SourceRouter", () => {
   });
 
   test("keeps broker price authority when a fallback quote is off by a likely 100x unit mismatch", async () => {
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         return {
@@ -823,7 +824,7 @@ describe("SourceRouter", () => {
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -866,7 +867,7 @@ describe("SourceRouter", () => {
   });
 
   test("preserves fallback profile data when broker already has fundamentals", async () => {
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         return {
@@ -903,7 +904,7 @@ describe("SourceRouter", () => {
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -994,7 +995,7 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(yahooProvider, [cloudProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const merged = await router.getTickerFinancials("AAPL", "NASDAQ");
 
     expect(merged.quote?.price).toBe(125);
@@ -1061,13 +1062,13 @@ describe("SourceRouter", () => {
       },
     };
 
-    const seedRouter = new SourceRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const seedRouter = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
     const seeded = await seedRouter.getTickerFinancials("AAPL", "NASDAQ");
     expect(seeded.quote?.marketCap).toBe(2_000_000_000);
 
     let cloudCalls = 0;
     let yahooCalls = 0;
-    const cachedRouter = new SourceRouter({
+    const cachedRouter = new AssetDataRouter({
       ...yahooProvider,
       async getTickerFinancials() {
         yahooCalls += 1;
@@ -1148,7 +1149,7 @@ describe("SourceRouter", () => {
       recentTickers: [],
     };
 
-    const seedRouter = new SourceRouter({
+    const seedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         return {
@@ -1160,7 +1161,7 @@ describe("SourceRouter", () => {
     }, [], persistence.resources);
     seedRouter.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     seedRouter.setConfigAccessor(() => config);
 
@@ -1170,7 +1171,7 @@ describe("SourceRouter", () => {
     });
     expect(seeded.profile).toBeUndefined();
 
-    const refreshedRouter = new SourceRouter({
+    const refreshedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         return {
@@ -1187,7 +1188,7 @@ describe("SourceRouter", () => {
     }, [], persistence.resources);
     refreshedRouter.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     refreshedRouter.setConfigAccessor(() => config);
 
@@ -1204,7 +1205,7 @@ describe("SourceRouter", () => {
   test("does not reuse another broker instance's financials when a specific instance is requested", async () => {
     const dbPath = createTempDbPath("instance-scoped-financials");
     const persistence = new AppPersistence(dbPath);
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         return {
@@ -1258,7 +1259,7 @@ describe("SourceRouter", () => {
 
     router.attachRegistry({
       brokers: new Map([["ibkr", broker]]),
-      dataSources: new Map(),
+      getEnabledCapabilities: () => [],
     } as any);
     router.setConfigAccessor(() => ({
       dataDir: "",
@@ -1409,7 +1410,7 @@ describe("SourceRouter", () => {
         throw new Error("should not fetch cloud financials");
       },
     };
-    const router = new SourceRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
 
     const financials = await router.getTickerFinancials("IQE", "LSE", {
       instrument: {
@@ -1503,7 +1504,7 @@ describe("SourceRouter", () => {
       },
     );
 
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
@@ -1604,7 +1605,7 @@ describe("SourceRouter", () => {
       },
     );
 
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
@@ -1641,7 +1642,7 @@ describe("SourceRouter", () => {
         throw new Error('[404] {"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}}');
       },
     };
-    const router = new SourceRouter(fallbackProvider, [noisyProvider]);
+    const router = new AssetDataRouter(fallbackProvider, [noisyProvider]);
     const logged: unknown[][] = [];
     console.error = (...args: unknown[]) => {
       logged.push(args);
@@ -1676,11 +1677,11 @@ describe("SourceRouter", () => {
       },
     };
 
-    const seedRouter = new SourceRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const seedRouter = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
     const seeded = await seedRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
     expect(seeded[0]?.close).toBe(101);
 
-    const cachedRouter = new SourceRouter(yahooProvider, [cloudProvider], persistence.resources);
+    const cachedRouter = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
     const cached = await cachedRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
     expect(cached[0]?.close).toBe(101);
 
@@ -1688,7 +1689,7 @@ describe("SourceRouter", () => {
   });
 
   test("sorts reversed chart history into chronological order", async () => {
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       id: "cloud",
       name: "Cloud",
@@ -1728,7 +1729,7 @@ describe("SourceRouter", () => {
     );
 
     let providerCalls = 0;
-    const router = new SourceRouter({
+    const router = new AssetDataRouter({
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
@@ -1753,7 +1754,7 @@ describe("SourceRouter", () => {
     const dbPath = createTempDbPath("forced-financial-refresh");
     const persistence = new AppPersistence(dbPath);
 
-    const seedRouter = new SourceRouter({
+    const seedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         return {
@@ -1774,7 +1775,7 @@ describe("SourceRouter", () => {
     await seedRouter.getTickerFinancials("AAPL", "NASDAQ");
 
     let providerCalls = 0;
-    const refreshRouter = new SourceRouter({
+    const refreshRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getTickerFinancials() {
         providerCalls += 1;
@@ -1807,7 +1808,7 @@ describe("SourceRouter", () => {
     const dbPath = createTempDbPath("stale-chart-refresh");
     const persistence = new AppPersistence(dbPath);
 
-    const seedRouter = new SourceRouter({
+    const seedRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getPriceHistory() {
         return [{ date: new Date("2026-03-27T00:00:00Z"), close: 101 }];
@@ -1820,7 +1821,7 @@ describe("SourceRouter", () => {
       .run(Date.now() - 1, "market", "price-history", "AAPL");
 
     let providerCalls = 0;
-    const refreshRouter = new SourceRouter({
+    const refreshRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getPriceHistory() {
         providerCalls += 1;
@@ -1856,7 +1857,7 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(yahooProvider, [cloudProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const history = await router.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "1d");
 
     expect(history[0]?.close).toBe(102);
@@ -1882,7 +1883,7 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(yahooProvider, [cloudProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     expect(await router.getChartResolutionCapabilities("AAPL", "NASDAQ")).toEqual(["1d", "1wk"]);
   });
 
@@ -1906,7 +1907,7 @@ describe("SourceRouter", () => {
       },
     };
 
-    const router = new SourceRouter(yahooProvider, [cloudProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const history = await router.getDetailedPriceHistory(
       "AAPL",
       "NASDAQ",

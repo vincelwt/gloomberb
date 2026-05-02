@@ -11,6 +11,7 @@ export function createTestPluginRuntime(
 ): PluginRuntimeAccess {
   return {
     getMarketData: () => null,
+    getCapability: () => null,
     getBrokerAdapter: () => null,
     connectBrokerInstance: async () => {},
     updateBrokerInstance: async () => {},

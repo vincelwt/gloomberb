@@ -4,20 +4,17 @@ import { setSharedNewsService } from "../../../news/hooks";
 import { PluginRegistry } from "../../../plugins/registry";
 import type { AppServices } from "../../../core/app-services";
 import type { AppConfig } from "../../../types/config";
-import type { DataProvider, MarketDataRequestContext, SearchRequestContext, QuoteSubscriptionTarget } from "../../../types/data-provider";
-import type { DataSource } from "../../../types/data-source";
-import type { AnalystResearchData, CorporateActionsData, HolderData, TickerFinancials, Quote } from "../../../types/financials";
+import type { DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
+import type { Quote } from "../../../types/financials";
 import type { NewsArticle, NewsQuery } from "../../../news/types";
-import type { BrokerContractRef, InstrumentSearchResult } from "../../../types/instrument";
 import type { TickerRecord, TickerMetadata } from "../../../types/ticker";
-import type { TimeRange } from "../../../components/chart/chart-types";
-import type { ManualChartResolution } from "../../../components/chart/chart-resolution";
+import { newsProvider, type CapabilityManifest } from "../../../capabilities";
 import {
   createPersistScheduler,
   PLUGIN_STATE_SAVE_DEBOUNCE_MS,
   SESSION_SAVE_DEBOUNCE_MS,
 } from "../../../state/persist-scheduler";
-import { backendRequest, getElectrobunBackendInitSnapshot, onQuoteSubscription } from "./backend-rpc";
+import { backendRequest, getElectrobunBackendInitSnapshot, onCapabilityEvent } from "./backend-rpc";
 import { DesktopMemoryResourceStore } from "./resource-store";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerf } from "../../../utils/perf-marks";
@@ -25,6 +22,8 @@ import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 
 const REMOTE_DATA_REQUEST_CACHE_LIMIT = 150;
 const servicesLog = debugLog.createLogger("services");
+const ASSET_DATA_CAPABILITY_ID = "asset-data.asset-data-router";
+const NEWS_CAPABILITY_ID = "news.core";
 
 class RemoteTickerRepository {
   async loadAllTickers(): Promise<TickerRecord[]> {
@@ -50,146 +49,134 @@ class RemoteTickerRepository {
   }
 }
 
-class RemoteDataProvider implements DataProvider {
-  readonly id = "desktop-backend";
-  readonly name = "Gloomberb Backend";
-  private readonly requestCache = new Map<string, Promise<unknown>>();
-  private nextSubscriptionId = 1;
+type RemoteAssetDataClient = DataProvider & {
+  getNews(query: NewsQuery): Promise<NewsArticle[]>;
+};
 
-  private cachedRequest<T>(method: string, payload: unknown): Promise<T> {
-    const key = `${method}:${JSON.stringify(payload)}`;
-    const cached = this.requestCache.get(key);
+type PayloadBuilder = (...args: any[]) => Record<string, unknown>;
+
+const assetDataPayloads: Record<string, PayloadBuilder> = {
+  canProvide: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getTickerFinancials: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getQuote: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getExchangeRate: (fromCurrency) => ({ fromCurrency }),
+  search: (query, context) => ({ query, context }),
+  getSecFilings: (ticker, count, exchange, context) => ({ ticker, count, exchange, context }),
+  getHolders: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getAnalystResearch: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getCorporateActions: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getSecFilingContent: (filing) => ({ filing }),
+  getEarningsCalendar: (symbols, context) => ({ symbols, context }),
+  getArticleSummary: (url) => ({ url }),
+  getPriceHistory: (ticker, exchange, range, context) => ({ ticker, exchange, range, context }),
+  getPriceHistoryForResolution: (ticker, exchange, bufferRange, resolution, context) => ({ ticker, exchange, bufferRange, resolution, context }),
+  getDetailedPriceHistory: (ticker, exchange, startDate, endDate, barSize, context) => ({ ticker, exchange, startDate, endDate, barSize, context }),
+  getChartResolutionSupport: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getChartResolutionCapabilities: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getOptionsChain: (ticker, exchange, expirationDate, context) => ({ ticker, exchange, expirationDate, context }),
+};
+
+function findCapabilityManifest(capabilityId: string): CapabilityManifest | null {
+  return getElectrobunBackendInitSnapshot()?.capabilityManifests.find((manifest) => manifest.id === capabilityId) ?? null;
+}
+
+function getRendererOperationIds(capabilityId: string): Set<string> | null {
+  const manifest = findCapabilityManifest(capabilityId);
+  if (!manifest) return null;
+  return new Set(
+    manifest.operations
+      .filter((operation) => operation.rendererSafe)
+      .map((operation) => operation.id),
+  );
+}
+
+function hasRendererOperation(operations: Set<string> | null, operationId: string): boolean {
+  return operations === null || operations.has(operationId);
+}
+
+function createCapabilityInvoker() {
+  const requestCache = new Map<string, Promise<unknown>>();
+  return function invoke<T>(capabilityId: string, operationId: string, payload: unknown): Promise<T> {
+    const requestPayload = { capabilityId, operationId, payload };
+    const key = JSON.stringify(requestPayload);
+    const cached = requestCache.get(key);
     if (cached) return cached as Promise<T>;
-    const promise = backendRequest<T>(method, payload).catch((error) => {
-      this.requestCache.delete(key);
+    const promise = backendRequest<T>("capability.invoke", requestPayload).catch((error) => {
+      requestCache.delete(key);
       throw error;
     });
-    this.requestCache.set(key, promise);
-    if (this.requestCache.size > REMOTE_DATA_REQUEST_CACHE_LIMIT) {
-      const oldestKey = this.requestCache.keys().next().value;
-      if (oldestKey) this.requestCache.delete(oldestKey);
+    requestCache.set(key, promise);
+    if (requestCache.size > REMOTE_DATA_REQUEST_CACHE_LIMIT) {
+      const oldestKey = requestCache.keys().next().value;
+      if (oldestKey) requestCache.delete(oldestKey);
     }
     return promise;
-  }
+  };
+}
 
-  getCachedFinancialsForTargets(): Map<string, TickerFinancials> {
-    return new Map();
-  }
+function createRemoteAssetDataClient(): RemoteAssetDataClient {
+  const invoke = createCapabilityInvoker();
+  const assetDataOperations = getRendererOperationIds(ASSET_DATA_CAPABILITY_ID);
+  const newsOperations = getRendererOperationIds(NEWS_CAPABILITY_ID);
+  let nextSubscriptionId = 1;
+  const base = {
+    id: "desktop-backend",
+    name: "Gloomberb Backend",
+    getCachedFinancialsForTargets: () => new Map(),
+    getNews: (query: NewsQuery) => (
+      hasRendererOperation(newsOperations, "fetchNews")
+        ? invoke<NewsArticle[]>(NEWS_CAPABILITY_ID, "fetchNews", { query })
+        : Promise.resolve([])
+    ),
+    subscribeQuotes: (
+      targets: QuoteSubscriptionTarget[],
+      onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
+    ) => {
+      if (!hasRendererOperation(assetDataOperations, "subscribeQuotes")) return () => {};
+      const uniqueTargets = [...new Map(
+        targets.map((target) => [
+          `${target.symbol}:${target.exchange ?? ""}:${target.context?.brokerId ?? ""}:${target.context?.brokerInstanceId ?? ""}`,
+          target,
+        ] as const),
+      ).values()];
+      if (uniqueTargets.length === 0) return () => {};
 
-  getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    return backendRequest("data.getTickerFinancials", { ticker, exchange, context });
-  }
+      const subscriptionId = `quote:${nextSubscriptionId++}`;
+      const disposeMessages = onCapabilityEvent(subscriptionId, (message) => {
+        const event = message.event as { target: QuoteSubscriptionTarget; quote: Quote };
+        onQuote(event.target, event.quote);
+      });
+      let disposed = false;
 
-  getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote> {
-    return backendRequest("data.getQuote", { ticker, exchange, context });
-  }
+      void backendRequest("capability.subscribe", {
+        subscriptionId,
+        capabilityId: ASSET_DATA_CAPABILITY_ID,
+        operationId: "subscribeQuotes",
+        payload: { targets: uniqueTargets },
+      }).catch((error) => {
+        disposeMessages();
+        console.error("Failed to subscribe to backend quotes", error);
+      });
 
-  getExchangeRate(fromCurrency: string): Promise<number> {
-    return backendRequest("data.getExchangeRate", { fromCurrency });
-  }
+      return () => {
+        if (disposed) return;
+        disposed = true;
+        disposeMessages();
+        void backendRequest("capability.unsubscribe", { subscriptionId }).catch(() => {});
+      };
+    },
+  };
 
-  search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
-    return backendRequest("data.search", { query, context });
-  }
-
-  getNews(query: NewsQuery): Promise<NewsArticle[]> {
-    return this.cachedRequest("data.getNews", { query });
-  }
-
-  getSecFilings(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext) {
-    return this.cachedRequest("data.getSecFilings", { ticker, count, exchange, context });
-  }
-
-  getHolders(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<HolderData> {
-    return this.cachedRequest("data.getHolders", { ticker, exchange, context });
-  }
-
-  getAnalystResearch(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData> {
-    return this.cachedRequest("data.getAnalystResearch", { ticker, exchange, context });
-  }
-
-  getCorporateActions(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData> {
-    return this.cachedRequest("data.getCorporateActions", { ticker, exchange, context });
-  }
-
-  getSecFilingContent(filing: unknown): Promise<string | null> {
-    return this.cachedRequest("data.getSecFilingContent", { filing });
-  }
-
-  getEarningsCalendar(symbols: string[], context?: MarketDataRequestContext) {
-    return backendRequest("data.getEarningsCalendar", { symbols, context });
-  }
-
-  getArticleSummary(url: string): Promise<string | null> {
-    return this.cachedRequest("data.getArticleSummary", { url });
-  }
-
-  getPriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext) {
-    return this.cachedRequest("data.getPriceHistory", { ticker, exchange, range, context });
-  }
-
-  getPriceHistoryForResolution(
-    ticker: string,
-    exchange: string,
-    bufferRange: TimeRange,
-    resolution: ManualChartResolution,
-    context?: MarketDataRequestContext,
-  ) {
-    return this.cachedRequest("data.getPriceHistoryForResolution", { ticker, exchange, bufferRange, resolution, context });
-  }
-
-  getDetailedPriceHistory(
-    ticker: string,
-    exchange: string,
-    startDate: Date,
-    endDate: Date,
-    barSize: string,
-    context?: MarketDataRequestContext,
-  ) {
-    return this.cachedRequest("data.getDetailedPriceHistory", { ticker, exchange, startDate, endDate, barSize, context });
-  }
-
-  getChartResolutionSupport(ticker: string, exchange?: string, context?: MarketDataRequestContext) {
-    return this.cachedRequest("data.getChartResolutionSupport", { ticker, exchange, context });
-  }
-
-  getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext) {
-    return this.cachedRequest("data.getOptionsChain", { ticker, exchange, expirationDate, context });
-  }
-
-  subscribeQuotes(
-    targets: QuoteSubscriptionTarget[],
-    onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
-  ): () => void {
-    const uniqueTargets = [...new Map(
-      targets.map((target) => [
-        `${target.symbol}:${target.exchange ?? ""}:${target.brokerId ?? ""}:${target.brokerInstanceId ?? ""}`,
-        target,
-      ] as const),
-    ).values()];
-    if (uniqueTargets.length === 0) return () => {};
-
-    const subscriptionId = `quote:${this.nextSubscriptionId++}`;
-    const disposeMessages = onQuoteSubscription(subscriptionId, (message) => {
-      onQuote(message.target as QuoteSubscriptionTarget, message.quote as Quote);
-    });
-    let disposed = false;
-
-    void backendRequest("data.subscribeQuotes", {
-      subscriptionId,
-      targets: uniqueTargets,
-    }).catch((error) => {
-      disposeMessages();
-      console.error("Failed to subscribe to backend quotes", error);
-    });
-
-    return () => {
-      if (disposed) return;
-      disposed = true;
-      disposeMessages();
-      void backendRequest("data.unsubscribeQuotes", { subscriptionId }).catch(() => {});
-    };
-  }
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      if (typeof prop !== "string" || prop in target) {
+        return Reflect.get(target, prop, receiver);
+      }
+      const buildPayload = assetDataPayloads[prop];
+      if (!buildPayload || !hasRendererOperation(assetDataOperations, prop)) return undefined;
+      return (...args: unknown[]) => invoke(ASSET_DATA_CAPABILITY_ID, prop, buildPayload(...args));
+    },
+  }) as RemoteAssetDataClient;
 }
 
 class RemoteSessionStore {
@@ -305,29 +292,29 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
   });
   const persistence = measurePerf("startup.services.persistence", () => new RemotePersistence());
   const tickerRepository = measurePerf("startup.services.ticker-repository", () => new RemoteTickerRepository());
-  const dataProvider = measurePerf("startup.services.data-provider", () => new RemoteDataProvider());
+  const dataProvider = measurePerf("startup.services.data-provider", () => createRemoteAssetDataClient());
   const marketData = new MarketDataCoordinator(dataProvider);
-  const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository as never, persistence as never);
+  const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository as never, persistence as never, {
+    enableCapabilityHandlers: false,
+  });
   const newsService = new NewsService();
 
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
-  pluginRegistry.registerDataSourceFn = () => () => {};
+  pluginRegistry.registerNewsCapabilityFn = () => () => {};
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
 
   setSharedMarketDataCoordinator(marketData);
   setSharedNewsService(newsService);
 
-  const remoteDataSource: DataSource = {
+  newsService.register(newsProvider({
     id: dataProvider.id,
     name: dataProvider.name,
     priority: 0,
-    market: dataProvider,
-    news: {
+    provider: {
       fetchNews: (query) => dataProvider.getNews(query),
     },
-  };
-  newsService.register(remoteDataSource);
+  }));
 
   const plugins = getRendererBuiltinPlugins();
   for (const plugin of plugins) {

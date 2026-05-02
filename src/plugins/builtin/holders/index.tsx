@@ -15,7 +15,7 @@ import type { HolderData, HolderRecord } from "../../../types/financials";
 import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
 import { normalizeTickerInput } from "../../../utils/ticker-search";
-import { useMarketData, usePluginPaneState } from "../../plugin-runtime";
+import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
 
 type ViewMode = "table" | "chart";
 type HolderColumnId = "holder" | "value" | "shares" | "changeShares" | "changePercent" | "percentHeld" | "reportDate";
@@ -683,7 +683,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
 
 export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused" | "width" | "height">) {
   const { symbol, ticker } = usePaneTicker();
-  const dataProvider = useMarketData();
+  const dataProvider = useAssetData();
   const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "table");
   const [sortPreference, setSortPreference] = usePluginPaneState<SortPreference>("sortPreference", DEFAULT_SORT);
   const [data, setData] = useState<HolderData | null>(null);
@@ -706,7 +706,7 @@ export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused
     if (!symbol || !dataProvider?.getHolders) {
       setData(null);
       setLoading(false);
-      setError(dataProvider?.getHolders ? null : "Holder data source unavailable");
+      setError(dataProvider?.getHolders ? null : "Holder data unavailable");
       return;
     }
 

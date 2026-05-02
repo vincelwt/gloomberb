@@ -3,6 +3,7 @@ import type { TickerRepository } from "../data/ticker-repository";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
+import type { PluginCapability } from "../capabilities";
 import type { ContextMenuContext, ContextMenuItem } from "./context-menu";
 import type {
   AppConfig,
@@ -13,7 +14,6 @@ import type {
   PaneInstanceConfig,
 } from "./config";
 import type { DataProvider } from "./data-provider";
-import type { DataSource } from "./data-source";
 import type { TickerFinancials } from "./financials";
 import type { CachePolicy, PersistedResourceValue } from "./persistence";
 import type { TickerRecord } from "./ticker";
@@ -412,7 +412,7 @@ export interface GloomPluginContext {
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
-  registerDataSource(source: DataSource): void;
+  registerCapability(capability: PluginCapability): void;
   registerDetailTab(tab: DetailTabDef): void;
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
@@ -475,7 +475,7 @@ export interface GloomPlugin {
   panes?: PaneDef[];
   paneTemplates?: PaneTemplateDef[];
   broker?: BrokerAdapter;
-  dataSources?: DataSource[];
+  capabilities?: PluginCapability[];
   slots?: Partial<{
     [K in keyof GloomSlots]: (props: GloomSlots[K]) => ReactNode;
   }>;

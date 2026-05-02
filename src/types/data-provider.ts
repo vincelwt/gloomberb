@@ -75,7 +75,7 @@ export interface QuoteSubscriptionTarget {
   route?: "auto" | "provider" | "broker";
 }
 
-export interface DataProvider {
+export interface AssetDataProvider {
   readonly id: string;
   readonly name: string;
   readonly priority?: number;
@@ -121,3 +121,5 @@ export interface DataProvider {
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void;
 }
+
+export type DataProvider = AssetDataProvider;

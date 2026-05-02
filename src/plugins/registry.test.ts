@@ -3,8 +3,8 @@ import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
 import { createDefaultConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
-import type { DataSource } from "../types/data-source";
 import type { GloomPlugin, GloomPluginContext } from "../types/plugin";
+import { assetDataProvider } from "../capabilities";
 import { PluginRegistry } from "./registry";
 
 const dataProvider: DataProvider = {
@@ -28,12 +28,17 @@ const dataProvider: DataProvider = {
 let currentRegistry: PluginRegistry | null = null;
 let currentPersistence: AppPersistence | null = null;
 
-function createRegistry(options: { disabledPlugins?: string[]; disabledSources?: string[] } = {}): PluginRegistry {
+function createRegistry(options: {
+  disabledPlugins?: string[];
+  disabledSources?: string[];
+  enableCapabilityHandlers?: boolean;
+} = {}): PluginRegistry {
   const persistence = new AppPersistence(":memory:");
   const registry = new PluginRegistry(
     dataProvider,
     new TickerRepository(persistence.tickers),
     persistence,
+    { enableCapabilityHandlers: options.enableCapabilityHandlers },
   );
   registry.getConfigFn = () => ({
     ...createDefaultConfig("/tmp/gloomberb-context-menu-test"),
@@ -150,36 +155,50 @@ describe("PluginRegistry context menu providers", () => {
   });
 });
 
-describe("PluginRegistry data sources", () => {
-  const source = (id: string): DataSource => ({
-    id,
-    name: id,
-    market: dataProvider,
-  });
+describe("PluginRegistry capabilities", () => {
+  const source = (id: string) => assetDataProvider({ ...dataProvider, id, name: id });
 
-  test("disabled plugins disable their contributed data sources", async () => {
+  test("disabled plugins disable their contributed capabilities", async () => {
     const registry = createRegistry({ disabledPlugins: ["source-plugin"] });
     await registry.register({
       id: "source-plugin",
       name: "Source Plugin",
       version: "1.0.0",
-      dataSources: [source("source-a")],
+      capabilities: [source("source-a")],
     });
 
-    expect([...registry.dataSources.keys()]).toEqual(["source-a"]);
-    expect(registry.getEnabledDataSources()).toEqual([]);
+    expect(registry.getCapability("asset-data.source-a")?.sourceId).toBe("source-a");
+    expect(registry.getCapabilityPluginId("asset-data.source-a")).toBe("source-plugin");
+    expect(registry.getEnabledCapabilities("asset-data")).toEqual([]);
   });
 
-  test("disabledSources disables only the matching source", async () => {
+  test("disabledSources disables only the matching capability source", async () => {
     const registry = createRegistry({ disabledSources: ["source-a"] });
     await registry.register({
       id: "source-plugin",
       name: "Source Plugin",
       version: "1.0.0",
-      dataSources: [source("source-a"), source("source-b")],
+      capabilities: [source("source-a"), source("source-b")],
     });
 
-    expect(registry.getEnabledDataSources().map((entry) => entry.id)).toEqual(["source-b"]);
+    expect(registry.getEnabledCapabilities("asset-data").map((entry) => entry.sourceId)).toEqual(["source-b"]);
+  });
+
+  test("can skip plugin capability handlers in renderer registries", async () => {
+    const registry = createRegistry({ enableCapabilityHandlers: false });
+    await registry.register({
+      id: "source-plugin",
+      name: "Source Plugin",
+      version: "1.0.0",
+      capabilities: [source("source-a")],
+      setup(ctx) {
+        ctx.registerCapability(source("source-b"));
+      },
+    });
+
+    expect(registry.getCapability("asset-data.source-a")).toBeNull();
+    expect(registry.getCapability("asset-data.source-b")).toBeNull();
+    expect(registry.getEnabledCapabilities("asset-data")).toEqual([]);
   });
 });
 

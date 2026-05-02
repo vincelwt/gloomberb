@@ -1,23 +1,23 @@
-import type { DataProvider } from "./data-provider";
+import type { AssetDataProvider } from "./data-provider";
 import type { NewsArticle, NewsQuery } from "../news/types";
 import type { CachePolicyMap } from "./persistence";
 
-export interface DataSourceNewsCapability {
+export interface NewsDataProvider {
   supports?(query: NewsQuery): boolean;
   getCachedNews?(query: NewsQuery): NewsArticle[];
   fetchNews(query: NewsQuery): Promise<NewsArticle[]>;
 }
 
-export interface DataSource {
+export interface CapabilityRouteSource {
   readonly id: string;
   readonly name: string;
   readonly priority?: number;
   readonly cachePolicy?: CachePolicyMap;
   isEnabled?(): boolean;
-  readonly market?: DataProvider;
-  readonly news?: DataSourceNewsCapability;
+  readonly market?: AssetDataProvider;
+  readonly news?: NewsDataProvider;
 }
 
-export function sourcePriority(source: Pick<DataSource, "priority">): number {
+export function routeSourcePriority(source: Pick<CapabilityRouteSource, "priority">): number {
   return source.priority ?? 1000;
 }

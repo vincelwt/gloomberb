@@ -5,7 +5,7 @@ import { useShortcut } from "../../../react/input";
 import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
-import { useMarketData } from "../../plugin-runtime";
+import { useAssetData } from "../../plugin-runtime";
 import { MAJOR_CURRENCIES, CURRENCY_FLAGS, formatRate, type MajorCurrency } from "./pairs";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -19,7 +19,7 @@ function formatAge(ms: number): string {
 }
 
 export function FxMatrixPane({ focused, width, height }: PaneProps) {
-  const dataProvider = useMarketData();
+  const dataProvider = useAssetData();
   const [rates, setRates] = useState<Map<MajorCurrency, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);

@@ -56,9 +56,5 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {
-  return uiBuiltinPlugins.map((plugin) => (
-    plugin.dataSources?.length
-      ? { ...plugin, dataSources: [] }
-      : plugin
-  ));
+  return uiBuiltinPlugins;
 }
