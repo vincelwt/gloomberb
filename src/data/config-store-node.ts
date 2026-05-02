@@ -21,6 +21,20 @@ import { isLayoutConfig, sanitizeLayout } from "./config-layout";
 const configLog = debugLog.createLogger("config");
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 const BUILTIN_SOURCE_IDS = new Set(["yahoo", "gloomberb-cloud"]);
+const BUILTIN_PLUGIN_GROUP_ALIASES: Record<string, string> = {
+  "comparison-chart": "market-overview",
+  correlation: "market-overview",
+  "earnings-calendar": "macro",
+  "fx-matrix": "market-overview",
+  holders: "company-research",
+  insider: "company-research",
+  "market-movers": "market-overview",
+  options: "company-research",
+  research: "company-research",
+  sectors: "market-overview",
+  sec: "company-research",
+  "world-indices": "market-overview",
+};
 
 function getGlobalConfigDir(): string {
   return join(process.env.HOME || "~", ".gloomberb");
@@ -138,7 +152,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     brokerInstances: sanitizeBrokerInstances(config.brokerInstances),
     plugins: sanitizeStringArray(config.plugins, []),
     disabledPlugins: sanitizeDisabledPluginList(config.disabledPlugins),
-    disabledSources: sanitizeDisabledPluginList(config.disabledSources),
+    disabledSources: sanitizeUniqueStringList(config.disabledSources),
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, createDefaultConfig(config.dataDir).chartPreferences),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
@@ -180,8 +194,21 @@ function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
     : fallback;
 }
 
-function sanitizeDisabledPluginList(value: unknown): string[] {
+function normalizeBuiltinPluginId(pluginId: string): string {
+  return BUILTIN_PLUGIN_GROUP_ALIASES[pluginId] ?? pluginId;
+}
+
+function sanitizeUniqueStringList(value: unknown): string[] {
   return [...new Set(sanitizeStringArray(value, []))];
+}
+
+function sanitizeDisabledPluginList(value: unknown, options: { expandLegacyCloudMacro?: boolean } = {}): string[] {
+  const raw = sanitizeUniqueStringList(value);
+  const disabled = raw.map(normalizeBuiltinPluginId);
+  if (options.expandLegacyCloudMacro && raw.includes("gloomberb-cloud")) {
+    disabled.push("macro");
+  }
+  return [...new Set(disabled)];
 }
 
 function sanitizeDisabledPlugins(
@@ -189,15 +216,20 @@ function sanitizeDisabledPlugins(
   fallback: string[],
   options: { enableCloudDefault?: boolean } = {},
 ): string[] {
-  const disabled = sanitizeDisabledPluginList(saved.disabledPlugins ?? fallback);
+  const expandLegacyCloudMacro =
+    !options.enableCloudDefault
+    && (typeof saved.configVersion !== "number" || saved.configVersion < CURRENT_CONFIG_VERSION);
+  const disabled = sanitizeDisabledPluginList(saved.disabledPlugins ?? fallback, {
+    expandLegacyCloudMacro,
+  });
   return options.enableCloudDefault
     ? disabled.filter((pluginId) => pluginId !== "gloomberb-cloud")
     : disabled;
 }
 
 function sanitizeDisabledSources(saved: Record<string, unknown>, fallback: string[], disabledPlugins: string[]): string[] {
-  const explicit = sanitizeDisabledPluginList(saved.disabledSources ?? fallback);
-  const legacyPluginIds = sanitizeDisabledPluginList(disabledPlugins)
+  const explicit = sanitizeUniqueStringList(saved.disabledSources ?? fallback);
+  const legacyPluginIds = sanitizeUniqueStringList(disabledPlugins)
     .filter((pluginId) => BUILTIN_SOURCE_IDS.has(pluginId));
   return [...new Set([...explicit, ...legacyPluginIds])];
 }
@@ -214,7 +246,16 @@ function isPluginConfigMap(value: unknown): value is Record<string, Record<strin
 function sanitizePluginConfig(value: unknown): Record<string, Record<string, unknown>> {
   if (!isPluginConfigMap(value)) return {};
   return Object.fromEntries(
-    Object.entries(value).map(([pluginId, state]) => [pluginId, { ...state }]),
+    Object.entries(value).reduce<Array<[string, Record<string, unknown>]>>((entries, [pluginId, state]) => {
+      const normalizedPluginId = normalizeBuiltinPluginId(pluginId);
+      const existing = entries.find(([entryPluginId]) => entryPluginId === normalizedPluginId);
+      if (existing) {
+        existing[1] = { ...state, ...existing[1] };
+      } else {
+        entries.push([normalizedPluginId, { ...state }]);
+      }
+      return entries;
+    }, []),
   );
 }
 

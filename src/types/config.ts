@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 14;
+export const CURRENT_CONFIG_VERSION = 15;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
