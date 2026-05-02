@@ -20,7 +20,7 @@ const DIGEST_PROMPT = `You are a financial news wire editor. Condense this headl
 Headline: {title}
 Summary: {summary}`;
 
-const DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
+const DEFAULT_SORT: NewsSortPreference = { columnId: "importance", direction: "desc" };
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function buildDigestPrompt(item: MarketNewsItem): string {
@@ -148,7 +148,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       onBack={closeDetail}
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
-      columns={["time", "source", "title", "tickers", "importance"]}
+      columns={["time", "title", "tickers", "importance"]}
       emptyStateTitle="No breaking news"
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."
       titleForArticle={titleForArticle}

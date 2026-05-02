@@ -3,6 +3,7 @@ export type {
   NewsQuery,
   NewsQueryPhase,
   NewsQueryState,
+  NewsStoryItem,
 } from "../news/types";
 
 export type { NewsArticle as MarketNewsItem } from "../news/types";

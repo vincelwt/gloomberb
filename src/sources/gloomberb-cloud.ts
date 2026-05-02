@@ -17,10 +17,11 @@ import {
   type CloudHoldersPayload,
   type CloudMarketResponse,
   type CloudNewsPayload,
+  type CloudNewsStoryItemPayload,
   type CloudPricePointPayload,
   type CloudQuotePayload,
 } from "../utils/api-client";
-import type { NewsArticle, NewsQuery } from "../types/news-source";
+import type { NewsArticle, NewsQuery, NewsStoryItem } from "../types/news-source";
 import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
 import { canonicalTickerKey, publicExchange } from "../utils/exchanges";
 import { collectNewsDisplayTickers } from "../news/ticker-symbols";
@@ -121,6 +122,20 @@ function mapCloudNewsTickers(item: CloudNewsPayload, fallbackTicker?: string): s
   return tickers;
 }
 
+function mapCloudNewsStoryItem(item: CloudNewsStoryItemPayload): NewsStoryItem {
+  const publishedAt = new Date(item.publishedAt);
+  return {
+    id: item.id,
+    sourceKey: item.sourceKey,
+    sourceName: item.sourceName || item.sourceKey,
+    title: item.title,
+    summary: item.summary,
+    url: item.url,
+    publishedAt: Number.isNaN(publishedAt.getTime()) ? new Date(0) : publishedAt,
+    hasArticleText: item.hasArticleText,
+  };
+}
+
 function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): NewsArticle {
   const publishedAt = new Date(item.lastPublishedAt || item.firstPublishedAt || item.lastSeenAt);
   const topic = item.topic ?? item.category ?? "general";
@@ -151,6 +166,7 @@ function mapCloudNewsArticle(item: CloudNewsPayload, fallbackTicker?: string): N
     importance: scores.importance,
     isBreaking: !!item.flags?.breaking,
     isDeveloping: !!item.flags?.developing,
+    items: item.items?.map(mapCloudNewsStoryItem) ?? [],
   };
 }
 
