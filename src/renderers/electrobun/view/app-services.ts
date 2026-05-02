@@ -6,7 +6,7 @@ import type { AppServices } from "../../../core/app-services";
 import type { AppConfig } from "../../../types/config";
 import type { DataProvider, MarketDataRequestContext, SearchRequestContext, QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { DataSource } from "../../../types/data-source";
-import type { TickerFinancials, Quote } from "../../../types/financials";
+import type { AnalystResearchData, CorporateActionsData, TickerFinancials, Quote } from "../../../types/financials";
 import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../../types/instrument";
 import type { TickerRecord, TickerMetadata } from "../../../types/ticker";
@@ -98,6 +98,14 @@ class RemoteDataProvider implements DataProvider {
 
   getSecFilings(ticker: string, count?: number, exchange?: string, context?: MarketDataRequestContext) {
     return this.cachedRequest("data.getSecFilings", { ticker, count, exchange, context });
+  }
+
+  getAnalystResearch(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData> {
+    return this.cachedRequest("data.getAnalystResearch", { ticker, exchange, context });
+  }
+
+  getCorporateActions(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<CorporateActionsData> {
+    return this.cachedRequest("data.getCorporateActions", { ticker, exchange, context });
   }
 
   getSecFilingContent(filing: unknown): Promise<string | null> {

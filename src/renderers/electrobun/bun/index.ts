@@ -910,6 +910,12 @@ async function handleDataProvider(
       return (provider as typeof provider & { getNews?: (query: never) => unknown }).getNews?.(payload.query as never) ?? [];
     case "data.getSecFilings":
       return provider.getSecFilings?.(payload.ticker as string, payload.count as number | undefined, payload.exchange as string | undefined, payload.context as never) ?? [];
+    case "data.getAnalystResearch":
+      if (!provider.getAnalystResearch) throw new Error("Analyst data source unavailable");
+      return provider.getAnalystResearch(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
+    case "data.getCorporateActions":
+      if (!provider.getCorporateActions) throw new Error("Corporate actions source unavailable");
+      return provider.getCorporateActions(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
     case "data.getSecFilingContent":
       return provider.getSecFilingContent?.(payload.filing as never) ?? null;
     case "data.getEarningsCalendar":

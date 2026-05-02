@@ -53,7 +53,8 @@ function useTickerRequest<T>(
     const gen = fetchGenRef.current;
     setState((current) => ({ ...current, loading: true, error: null }));
 
-    loader(symbol, exchange, forceRefresh)
+    Promise.resolve()
+      .then(() => loader(symbol, exchange, forceRefresh))
       .then((data) => {
         if (fetchGenRef.current !== gen) return;
         setState({ data, loading: false, error: null });
@@ -184,7 +185,7 @@ function AnalystResearchView({ focused, width, height }: { focused: boolean; wid
   const dataProvider = useMarketData();
   const { symbol, exchange } = useSymbolBinding();
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
-    if (!dataProvider.getAnalystResearch) throw new Error("Analyst data source unavailable");
+    if (!dataProvider?.getAnalystResearch) throw new Error("Analyst data source unavailable");
     return dataProvider.getAnalystResearch(nextSymbol, nextExchange, forceRefresh ? { cacheMode: "refresh" } : undefined);
   }, [dataProvider]);
   const { data, loading, error, reload } = useTickerRequest<AnalystResearchData>(loader, symbol, exchange);
@@ -323,7 +324,7 @@ function CorporateActionsView({ focused, width, height }: { focused: boolean; wi
   const dataProvider = useMarketData();
   const { symbol, exchange, currency } = useSymbolBinding();
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
-    if (!dataProvider.getCorporateActions) throw new Error("Corporate actions source unavailable");
+    if (!dataProvider?.getCorporateActions) throw new Error("Corporate actions source unavailable");
     return dataProvider.getCorporateActions(nextSymbol, nextExchange, forceRefresh ? { cacheMode: "refresh" } : undefined);
   }, [dataProvider]);
   const { data, loading, error, reload } = useTickerRequest<CorporateActionsData>(loader, symbol, exchange);
