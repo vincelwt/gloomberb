@@ -7,6 +7,7 @@ import { colors, hoverBg } from "../../theme/colors";
 import { getSharedRegistry } from "../registry";
 import { usePluginAppActions } from "../plugin-runtime";
 import { commands as coreCommands } from "../../components/command-bar/command-registry";
+import { detectShortcutPlatform, formatPrimaryShortcut } from "../../utils/shortcut-labels";
 
 function ShortcutBadge({ label }: { label: string }) {
   return (
@@ -218,6 +219,8 @@ export function HelpPane({ width, height }: PaneProps) {
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
   const windowTemplates = resolveWindowTemplates(registry);
+  const shortcutPlatform = detectShortcutPlatform();
+  const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform);
 
   const openDebugLog = () => {
     showWidget("debug");
@@ -382,32 +385,32 @@ export function HelpPane({ width, height }: PaneProps) {
 
           <HelpSection title="Pane Management">
             <ShortcutRow
-              badges={["Cmd/Ctrl+W"]}
+              badges={[platformShortcut("W")]}
               description="Close the focused pane, docked or floating."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd/Ctrl+,"]}
+              badges={[platformShortcut(",")]}
               description="Edit settings for the focused pane."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd/Ctrl+Shift+D"]}
+              badges={[platformShortcut(["Shift", "D"])]}
               description="Dock or float the focused pane."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd/Ctrl+Shift+O"]}
+              badges={[platformShortcut(["Shift", "O"])]}
               description="Pop the focused pane out to a desktop window."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd/Ctrl+Shift+L"]}
+              badges={[platformShortcut(["Shift", "L"])]}
               description="Open layout actions."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd/Ctrl+Shift+G"]}
+              badges={[platformShortcut(["Shift", "G"])]}
               description="Gridlock all windows."
               compact={compact}
             />

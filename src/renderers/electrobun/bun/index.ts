@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
 import { dirname, join } from "path";
+import { Buffer } from "node:buffer";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu, type UpdateStatusEntry } from "electrobun/bun";
 import { getAiProviderDefinitions } from "../../../plugins/builtin/ai/providers";
 import { runAiPrompt, type AiRunController } from "../../../plugins/builtin/ai/runner";
@@ -1388,6 +1389,12 @@ async function handleBackendRequest(
     case "host.copyText":
       Utils.clipboardWriteText(normalizeText(payload.text) ?? "");
       return null;
+    case "host.copyPngImage": {
+      const pngBase64 = normalizeText(payload.pngBase64);
+      if (!pngBase64) throw new Error("host.copyPngImage requires PNG data.");
+      Utils.clipboardWriteImage(new Uint8Array(Buffer.from(pngBase64, "base64")));
+      return null;
+    }
     case "host.readText":
       return Utils.clipboardReadText() ?? "";
     case "host.notify":
