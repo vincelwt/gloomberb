@@ -4,8 +4,8 @@ import {
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../components/chart/chart-resolution";
-import type { DataProvider, MarketDataRequestContext, NewsItem, QuoteSubscriptionTarget, SearchRequestContext, SecFilingItem } from "../types/data-provider";
-import type { DataSource } from "../types/data-source";
+import { assetDataProvider, newsProvider, type PluginCapability } from "../capabilities";
+import type { AssetDataProvider, MarketDataRequestContext, NewsItem, QuoteSubscriptionTarget, SearchRequestContext, SecFilingItem } from "../types/data-provider";
 import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import {
@@ -338,7 +338,7 @@ function unwrapOptionalCloudResponse<T>(response: CloudMarketResponse<T>): T | n
   throw new Error(response.reasonCode ?? "Cloud data request failed");
 }
 
-export class GloomberbCloudProvider implements DataProvider {
+export class GloomberbCloudProvider implements AssetDataProvider {
   readonly id = providerId;
   readonly name = "Gloomberb Cloud";
   readonly priority = 100;
@@ -552,28 +552,30 @@ export class GloomberbCloudProvider implements DataProvider {
   }
 }
 
-export function createGloomberbCloudProvider(): DataProvider {
+export function createGloomberbCloudProvider(): AssetDataProvider {
   return new GloomberbCloudProvider();
 }
 
-export function createGloomberbCloudSource(provider = createGloomberbCloudProvider()): DataSource {
-  return {
-    id: providerId,
-    name: "Gloomberb Cloud",
-    priority: 10,
-    market: provider,
-    news: {
-      supports(query: NewsQuery): boolean {
-        const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-        return feed === "ticker" ? !!query.ticker : true;
+export function createGloomberbCloudCapabilities(provider = createGloomberbCloudProvider()): PluginCapability[] {
+  return [
+    assetDataProvider(provider),
+    newsProvider({
+      id: providerId,
+      name: "Gloomberb Cloud",
+      priority: 10,
+      provider: {
+        supports(query: NewsQuery): boolean {
+          const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+          return feed === "ticker" ? !!query.ticker : true;
+        },
+        async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
+          const response = await withCloudFallback(
+            () => apiClient.getCloudNews(cloudNewsParams(query)),
+            "Cloud news is unavailable",
+          );
+          return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
+        },
       },
-      async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
-        const response = await withCloudFallback(
-          () => apiClient.getCloudNews(cloudNewsParams(query)),
-          "Cloud news is unavailable",
-        );
-        return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
-      },
-    },
-  };
+    }),
+  ];
 }

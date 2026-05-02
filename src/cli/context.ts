@@ -3,8 +3,8 @@ import { existsSync } from "fs";
 import { getDataDir, loadConfig } from "../data/config-store";
 import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
-import { SourceRouter } from "../sources/provider-router";
-import type { DataSource } from "../types/data-source";
+import { AssetDataRouter } from "../sources/provider-router";
+import type { PluginCapability } from "../capabilities";
 import type { AppConfig } from "../types/config";
 import type { GloomPlugin } from "../types/plugin";
 import { getLoadablePlugins } from "../plugins/catalog";
@@ -15,13 +15,19 @@ interface CliContextOptions {
   plugins?: GloomPlugin[];
 }
 
-function resolveCliDataSources(config: AppConfig, plugins: GloomPlugin[]): DataSource[] {
+function resolveCliCapabilities(config: AppConfig, plugins: GloomPlugin[]): PluginCapability[] {
   const disabledPlugins = new Set(config.disabledPlugins ?? []);
   const disabledSources = new Set(config.disabledSources ?? []);
   return plugins
     .filter((plugin) => !disabledPlugins.has(plugin.id))
-    .flatMap((plugin) => plugin.dataSources ?? [])
-    .filter((source) => !disabledSources.has(source.id));
+    .flatMap((plugin) => (
+      (plugin.capabilities ?? [])
+        .filter((capability) => {
+          if (capability.kind !== "asset-data" && capability.kind !== "news") return false;
+          const sourceId = capability.sourceId ?? capability.id;
+          return !disabledSources.has(sourceId);
+        })
+    ));
 }
 
 export async function loadCliConfigIfAvailable(): Promise<AppConfig | null> {
@@ -47,10 +53,11 @@ export async function initConfigData(): Promise<ConfigContext> {
 export async function initMarketData(options: CliContextOptions = {}): Promise<MarketContext> {
   const context = await initConfigData();
   const plugins = options.plugins ?? getLoadablePlugins();
-  const dataProvider = new SourceRouter(
-    null,
-    resolveCliDataSources(context.config, plugins),
-    context.persistence.resources,
-  );
+  const capabilities = resolveCliCapabilities(context.config, plugins);
+  const dataProvider = new AssetDataRouter(null, [], context.persistence.resources);
+  dataProvider.attachRegistry({
+    brokers: new Map(),
+    getEnabledCapabilities: (kind?: string) => capabilities.filter((capability) => !kind || capability.kind === kind),
+  } as any);
   return { ...context, dataProvider };
 }

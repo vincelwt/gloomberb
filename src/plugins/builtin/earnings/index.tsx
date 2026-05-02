@@ -7,7 +7,7 @@ import { colors } from "../../../theme/colors";
 import { useAppSelector, getFocusedCollectionId } from "../../../state/app-context";
 import { getCollectionTickers } from "../../../state/selectors";
 import { formatCompact } from "../../../utils/format";
-import { useMarketData, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
+import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
 import {
   attachEarningsCalendarPersistence,
   loadEarningsCalendar,
@@ -100,7 +100,7 @@ function buildColumns(width: number): EarningsColumn[] {
 }
 
 function EarningsCalendarPane({ focused, width, height }: PaneProps) {
-  const dataProvider = useMarketData();
+  const dataProvider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
   const [events, setEvents] = useState<EarningsEvent[]>([]);
   const [loading, setLoading] = useState(false);

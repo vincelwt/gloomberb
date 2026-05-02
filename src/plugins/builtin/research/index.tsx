@@ -14,7 +14,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { parseTickerListInput, formatTickerListInput } from "../../../utils/ticker-list";
 import { normalizeTickerInput } from "../../../utils/ticker-search";
-import { useMarketData, usePluginTickerActions } from "../../plugin-runtime";
+import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
 
 type LoadState<T> = {
   data: T | null;
@@ -122,7 +122,7 @@ function AnalystSummary({ data, width }: { data: AnalystResearchData | null; wid
     return (
       <Box flexDirection="column" paddingX={1} height={2}>
         <Text fg={colors.textDim}>Analyst data</Text>
-        <Text fg={colors.textDim}>Waiting for a data source.</Text>
+        <Text fg={colors.textDim}>Waiting for asset data.</Text>
       </Box>
     );
   }
@@ -182,10 +182,10 @@ const RATING_COLUMNS: RatingColumn[] = [
 ];
 
 function AnalystResearchView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
-  const dataProvider = useMarketData();
+  const dataProvider = useAssetData();
   const { symbol, exchange } = useSymbolBinding();
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
-    if (!dataProvider?.getAnalystResearch) throw new Error("Analyst data source unavailable");
+    if (!dataProvider?.getAnalystResearch) throw new Error("Analyst data unavailable");
     return dataProvider.getAnalystResearch(nextSymbol, nextExchange, forceRefresh ? { cacheMode: "refresh" } : undefined);
   }, [dataProvider]);
   const { data, loading, error, reload } = useTickerRequest<AnalystResearchData>(loader, symbol, exchange);
@@ -321,7 +321,7 @@ function toneColor(tone: ActionRow["tone"]): string {
 }
 
 function CorporateActionsView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
-  const dataProvider = useMarketData();
+  const dataProvider = useAssetData();
   const { symbol, exchange, currency } = useSymbolBinding();
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider?.getCorporateActions) throw new Error("Corporate actions source unavailable");
@@ -444,7 +444,7 @@ function RelativeValuationPane({ focused, width, height }: PaneProps) {
     () => relativeSymbolsFromPane(symbol, pane?.settings),
     [pane?.settings, symbol],
   );
-  const dataProvider = useMarketData();
+  const dataProvider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
   const [rows, setRows] = useState<RelativeRow[]>([]);
   const [loading, setLoading] = useState(false);

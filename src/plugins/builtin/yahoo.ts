@@ -1,8 +1,8 @@
 import type { GloomPlugin } from "../../types/plugin";
-import type { DataSource } from "../../types/data-source";
 import type { NewsArticle, NewsQuery } from "../../types/news-source";
 import type { NewsItem } from "../../types/data-provider";
 import { YahooFinanceClient } from "../../sources/yahoo-finance";
+import { assetDataProvider, newsProvider } from "../../capabilities";
 
 class YahooPluginProvider extends YahooFinanceClient {
   readonly priority = 1000;
@@ -42,35 +42,31 @@ function mapYahooNewsItem(item: NewsItem, ticker: string): NewsArticle {
   };
 }
 
-function createYahooSource(provider: YahooPluginProvider): DataSource {
+function createYahooNewsProvider(provider: YahooPluginProvider) {
   return {
-    id: "yahoo",
-    name: "Yahoo Finance",
-    priority: 1000,
-    market: provider,
-    news: {
-      supports(query: NewsQuery): boolean {
-        const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-        return feed === "ticker" && !!query.ticker;
-      },
-      async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
-        const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-        if (feed !== "ticker" || !query.ticker) return [];
-        const ticker = query.ticker.trim().toUpperCase();
-        const items = await provider.getNews(ticker, query.limit ?? 50, query.exchange ?? "");
-        return items.map((item) => mapYahooNewsItem(item, ticker));
-      },
+    supports(query: NewsQuery): boolean {
+      const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+      return feed === "ticker" && !!query.ticker;
+    },
+    async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
+      const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
+      if (feed !== "ticker" || !query.ticker) return [];
+      const ticker = query.ticker.trim().toUpperCase();
+      const items = await provider.getNews(ticker, query.limit ?? 50, query.exchange ?? "");
+      return items.map((item) => mapYahooNewsItem(item, ticker));
     },
   };
 }
 
 const yahooProvider = createYahooProvider();
-const yahooSource = createYahooSource(yahooProvider);
 
 export const yahooPlugin: GloomPlugin = {
   id: "yahoo",
   name: "Yahoo Fallback",
   version: "1.0.0",
   description: "Built-in delayed fallback for quotes, fundamentals, charts, and unsupported cloud data.",
-  dataSources: [yahooSource],
+  capabilities: [
+    assetDataProvider(yahooProvider),
+    newsProvider({ id: "yahoo", name: "Yahoo Finance", priority: 1000, provider: createYahooNewsProvider(yahooProvider) }),
+  ],
 };

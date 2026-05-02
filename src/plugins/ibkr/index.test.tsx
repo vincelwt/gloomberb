@@ -63,7 +63,7 @@ function setupIbkrPlugin(config: AppConfig) {
     registerCommand: (command: CommandDef) => { commands.push(command); },
     registerColumn: () => {},
     registerBroker: () => {},
-    registerDataSource: () => {},
+    registerCapability: () => {},
     registerDetailTab: () => {},
     registerShortcut: () => {},
     registerTickerAction: (action: TickerAction) => { tickerActions.push(action); },

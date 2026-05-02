@@ -1,5 +1,6 @@
 import type { CachedResourceRecord, ResourceStore } from "../data/resource-store";
 import type { PluginRegistry } from "../plugins/registry";
+import type { AssetDataCapability, NewsCapability } from "../capabilities";
 import type { BrokerAdapter } from "../types/broker";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
@@ -11,8 +12,8 @@ import type {
   SearchRequestContext,
   SecFilingItem,
 } from "../types/data-provider";
-import type { DataSource } from "../types/data-source";
-import { sourcePriority } from "../types/data-source";
+import type { CapabilityRouteSource } from "../types/capability-route-source";
+import { routeSourcePriority } from "../types/capability-route-source";
 import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { NewsArticle, NewsQuery } from "../news/types";
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
@@ -37,7 +38,7 @@ import {
 } from "../utils/quote-resolution";
 import { isProviderMiss } from "./provider-errors";
 
-const providerLog = debugLog.createLogger("provider-router");
+const providerLog = debugLog.createLogger("asset-data-router");
 
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
 const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
@@ -245,7 +246,9 @@ interface SourceResult<T> {
   value: T;
 }
 
-function dataSourceFromMarketProvider(provider: DataProvider): DataSource {
+type RouteSourceCapability = AssetDataCapability | NewsCapability;
+
+function routeSourceFromMarketProvider(provider: DataProvider): CapabilityRouteSource {
   return {
     id: provider.id,
     name: provider.name,
@@ -255,30 +258,50 @@ function dataSourceFromMarketProvider(provider: DataProvider): DataSource {
   };
 }
 
-function normalizeDataSource(source: DataSource | DataProvider): DataSource {
+function normalizeRouteSource(source: CapabilityRouteSource | DataProvider): CapabilityRouteSource {
   return "market" in source || "news" in source
-    ? source as DataSource
-    : dataSourceFromMarketProvider(source as DataProvider);
+    ? source as CapabilityRouteSource
+    : routeSourceFromMarketProvider(source as DataProvider);
 }
 
-export class SourceRouter implements DataProvider {
-  readonly id = "source-router";
-  readonly name = "Source Router";
+function capabilityRouteSourceId(capability: RouteSourceCapability): string {
+  return capability.sourceId ?? capability.id;
+}
+
+function mergeCapabilityRouteSource(current: CapabilityRouteSource | undefined, capability: RouteSourceCapability): CapabilityRouteSource {
+  const priority = Math.min(
+    current?.priority ?? Number.MAX_SAFE_INTEGER,
+    capability.priority ?? 1000,
+  );
+  return {
+    id: capabilityRouteSourceId(capability),
+    name: current?.name ?? capability.name,
+    priority,
+    cachePolicy: capability.cachePolicy ?? current?.cachePolicy,
+    isEnabled: capability.isEnabled ?? current?.isEnabled,
+    market: capability.kind === "asset-data" ? capability.provider : current?.market,
+    news: capability.kind === "news" ? capability.provider : current?.news,
+  };
+}
+
+export class AssetDataRouter implements DataProvider {
+  readonly id = "asset-data-router";
+  readonly name = "Asset Data Router";
   readonly priority = Number.MAX_SAFE_INTEGER;
 
   private registry: PluginRegistry | null = null;
   private readonly revalidationInFlight = new Map<string, Promise<unknown>>();
   private getConfigFn: () => AppConfig = () => createDefaultConfig("");
-  private readonly fallbackSource: DataSource | null;
-  private readonly extraSources: DataSource[];
+  private readonly fallbackSource: CapabilityRouteSource | null;
+  private readonly extraSources: CapabilityRouteSource[];
 
   constructor(
-    fallbackSource: DataSource | DataProvider | null = null,
-    extraSources: Array<DataSource | DataProvider> = [],
+    fallbackSource: CapabilityRouteSource | DataProvider | null = null,
+    extraSources: Array<CapabilityRouteSource | DataProvider> = [],
     private readonly resources?: ResourceStore,
   ) {
-    this.fallbackSource = fallbackSource ? normalizeDataSource(fallbackSource) : null;
-    this.extraSources = extraSources.map(normalizeDataSource);
+    this.fallbackSource = fallbackSource ? normalizeRouteSource(fallbackSource) : null;
+    this.extraSources = extraSources.map(normalizeRouteSource);
   }
 
   attachRegistry(registry: PluginRegistry): void {
@@ -1017,17 +1040,23 @@ export class SourceRouter implements DataProvider {
     }));
   }
 
-  private sortedSources(): DataSource[] {
+  private sortedSources(): CapabilityRouteSource[] {
     const sources = [...this.extraSources];
     if (this.registry) {
-      const registrySources = typeof this.registry.getEnabledDataSources === "function"
-        ? this.registry.getEnabledDataSources()
-        : [...this.registry.dataSources.values()];
-      sources.push(...registrySources);
+      const capabilitySources = new Map<string, CapabilityRouteSource>();
+      for (const capability of this.registry.getEnabledCapabilities("asset-data") as AssetDataCapability[]) {
+        const sourceId = capabilityRouteSourceId(capability);
+        capabilitySources.set(sourceId, mergeCapabilityRouteSource(capabilitySources.get(sourceId), capability));
+      }
+      for (const capability of this.registry.getEnabledCapabilities("news") as NewsCapability[]) {
+        const sourceId = capabilityRouteSourceId(capability);
+        capabilitySources.set(sourceId, mergeCapabilityRouteSource(capabilitySources.get(sourceId), capability));
+      }
+      sources.push(...capabilitySources.values());
     }
     return sources
       .filter((source) => source.id !== this.id && source.id !== this.fallbackSource?.id)
-      .sort((a, b) => sourcePriority(a) - sourcePriority(b));
+      .sort((a, b) => routeSourcePriority(a) - routeSourcePriority(b));
   }
 
   private sortedProviders(): DataProvider[] {
@@ -1045,7 +1074,7 @@ export class SourceRouter implements DataProvider {
     return providers;
   }
 
-  private newsSourcesInPriorityOrder(): DataSource[] {
+  private newsSourcesInPriorityOrder(): CapabilityRouteSource[] {
     const sources = this.sortedSources().filter((source) => !!source.news);
     if (this.fallbackSource?.news && !sources.some((source) => source.id === this.fallbackSource?.id)) {
       sources.push(this.fallbackSource);

@@ -1,7 +1,7 @@
 import type { AppConfig } from "../types/config";
 import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
-import { SourceRouter } from "../sources/provider-router";
+import { AssetDataRouter } from "../sources/provider-router";
 
 export type ConfigContext = {
   config: AppConfig;
@@ -11,5 +11,5 @@ export type ConfigContext = {
 };
 
 export type MarketContext = ConfigContext & {
-  dataProvider: SourceRouter;
+  dataProvider: AssetDataRouter;
 };

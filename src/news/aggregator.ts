@@ -1,6 +1,5 @@
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
-import type { DataSource } from "../types/data-source";
-import { sourcePriority } from "../types/data-source";
+import type { NewsCapability } from "../capabilities";
 import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
 
 export interface NewsServiceOptions {
@@ -160,8 +159,16 @@ interface SourceFetchResult {
   sourceIds: string[];
 }
 
+function newsCapabilityPriority(source: NewsCapability): number {
+  return source.priority ?? 1000;
+}
+
+function newsCapabilitySourceId(source: NewsCapability): string {
+  return source.sourceId ?? source.id;
+}
+
 export class NewsService {
-  private readonly sources = new Map<string, DataSource>();
+  private readonly sources = new Map<string, NewsCapability>();
   private readonly listeners = new Set<() => void>();
   private readonly queryStates = new Map<string, NewsQueryState>();
   private readonly queryByKey = new Map<string, NewsQuery>();
@@ -176,7 +183,7 @@ export class NewsService {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   }
 
-  register(source: DataSource): () => void {
+  register(source: NewsCapability): () => void {
     this.sources.set(source.id, source);
     this.seedCachedSource(source);
     if (this.pollTimer !== null) {
@@ -328,12 +335,11 @@ export class NewsService {
     return promise;
   }
 
-  private enabledSources(query: NewsQuery): DataSource[] {
+  private enabledSources(query: NewsQuery): NewsCapability[] {
     return [...this.sources.values()]
       .filter((source) => source.isEnabled?.() !== false)
-      .filter((source) => !!source.news)
-      .filter((source) => source.news?.supports?.(query) ?? true)
-      .sort((a, b) => sourcePriority(a) - sourcePriority(b));
+      .filter((source) => source.provider.supports?.(query) ?? true)
+      .sort((a, b) => newsCapabilityPriority(a) - newsCapabilityPriority(b));
   }
 
   private async fetchFromSources(query: NewsQuery): Promise<SourceFetchResult> {
@@ -344,12 +350,12 @@ export class NewsService {
     return this.fetchMergedNews(query, sources);
   }
 
-  private async fetchTickerNews(query: NewsQuery, sources: DataSource[]): Promise<SourceFetchResult> {
+  private async fetchTickerNews(query: NewsQuery, sources: NewsCapability[]): Promise<SourceFetchResult> {
     let firstEmpty: SourceFetchResult | null = null;
     for (const source of sources) {
       try {
-        const articles = await source.news!.fetchNews(query);
-        const result = { articles, sourceIds: [source.id] };
+        const articles = await source.provider.fetchNews(query);
+        const result = { articles, sourceIds: [newsCapabilitySourceId(source)] };
         if (articles.length > 0) return result;
         firstEmpty ??= result;
       } catch {
@@ -359,11 +365,11 @@ export class NewsService {
     return firstEmpty ?? { articles: [], sourceIds: [] };
   }
 
-  private async fetchMergedNews(query: NewsQuery, sources: DataSource[]): Promise<SourceFetchResult> {
+  private async fetchMergedNews(query: NewsQuery, sources: NewsCapability[]): Promise<SourceFetchResult> {
     const settled = await Promise.allSettled(
       sources.map(async (source) => ({
         source,
-        articles: await source.news!.fetchNews(query),
+        articles: await source.provider.fetchNews(query),
       })),
     );
     const articles: NewsArticle[] = [];
@@ -371,14 +377,13 @@ export class NewsService {
     for (const result of settled) {
       if (result.status !== "fulfilled") continue;
       articles.push(...result.value.articles);
-      sourceIds.push(result.value.source.id);
+      sourceIds.push(newsCapabilitySourceId(result.value.source));
     }
     return { articles, sourceIds };
   }
 
-  private seedCachedSource(source: DataSource): void {
-    const news = source.news;
-    if (!news) return;
+  private seedCachedSource(source: NewsCapability): void {
+    const news = source.provider;
     const queries = [...this.queryByKey.values()];
     if (queries.length === 0) queries.push(DEFAULT_GLOBAL_QUERY);
 
@@ -394,7 +399,7 @@ export class NewsService {
         articles: filterArticlesForQuery(dedupeArticles([...current.articles, ...cached]), query),
         error: null,
         updatedAt: Date.now(),
-        sourceIds: [...new Set([...current.sourceIds, source.id])],
+        sourceIds: [...new Set([...current.sourceIds, newsCapabilitySourceId(source)])],
       });
       changed = true;
     }

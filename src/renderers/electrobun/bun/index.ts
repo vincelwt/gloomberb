@@ -82,7 +82,7 @@ const readyWindowRpcs = new Set<string>();
 const rpcWindowKeys = new Map<DesktopRpc, string>();
 const contextMenuRequestRpcs = new Map<string, DesktopRpc>();
 
-const dataQuoteSubscriptions = new Map<string, () => void>();
+const capabilitySubscriptions = new Map<string, () => void>();
 const ibkrSnapshotSubscriptions = new Map<string, () => void>();
 const ibkrQuoteSubscriptions = new Map<string, () => void>();
 const aiRuns = new Map<string, AiRunController>();
@@ -612,14 +612,14 @@ function disposeScopedAiRuns(windowKey: string): void {
 }
 
 function disposeWindowScopedResources(windowKey: string): void {
-  disposeScopedSubscriptionMap(dataQuoteSubscriptions, windowKey);
+  disposeScopedSubscriptionMap(capabilitySubscriptions, windowKey);
   disposeScopedSubscriptionMap(ibkrSnapshotSubscriptions, windowKey);
   disposeScopedSubscriptionMap(ibkrQuoteSubscriptions, windowKey);
   disposeScopedAiRuns(windowKey);
 }
 
 function teardownServices(): void {
-  disposeSubscriptionMap(dataQuoteSubscriptions);
+  disposeSubscriptionMap(capabilitySubscriptions);
   disposeSubscriptionMap(ibkrSnapshotSubscriptions);
   disposeSubscriptionMap(ibkrQuoteSubscriptions);
   disposeAiRuns();
@@ -852,6 +852,7 @@ async function initialize(
       sessionSnapshot: getSessionSnapshot(),
       desktopSnapshot: getDesktopSnapshot(),
       pluginState: loadPluginState(),
+      capabilityManifests: requireServices().pluginRegistry.capabilities.manifests({ rendererOnly: true }),
       windowKind: windowTarget.kind,
       paneId: windowTarget.paneId,
     };
@@ -887,94 +888,10 @@ async function initialize(
     sessionSnapshot: getSessionSnapshot(),
     desktopSnapshot: getDesktopSnapshot(),
     pluginState: loadPluginState(),
+    capabilityManifests: requireServices().pluginRegistry.capabilities.manifests({ rendererOnly: true }),
     windowKind: windowTarget.kind,
     paneId: windowTarget.paneId,
   };
-}
-
-async function handleDataProvider(
-  rpc: DesktopRpc,
-  method: string,
-  payload: Record<string, unknown>,
-) {
-  const provider = requireServices().dataProvider;
-  switch (method) {
-    case "data.getTickerFinancials":
-      return provider.getTickerFinancials(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
-    case "data.getQuote":
-      return provider.getQuote(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
-    case "data.getExchangeRate":
-      return provider.getExchangeRate(payload.fromCurrency as string);
-    case "data.search":
-      return provider.search(payload.query as string, payload.context as never);
-    case "data.getNews":
-      return (provider as typeof provider & { getNews?: (query: never) => unknown }).getNews?.(payload.query as never) ?? [];
-    case "data.getSecFilings":
-      return provider.getSecFilings?.(payload.ticker as string, payload.count as number | undefined, payload.exchange as string | undefined, payload.context as never) ?? [];
-    case "data.getHolders":
-      if (!provider.getHolders) throw new Error("Holder data source unavailable");
-      return provider.getHolders(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
-    case "data.getAnalystResearch":
-      if (!provider.getAnalystResearch) throw new Error("Analyst data source unavailable");
-      return provider.getAnalystResearch(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
-    case "data.getCorporateActions":
-      if (!provider.getCorporateActions) throw new Error("Corporate actions source unavailable");
-      return provider.getCorporateActions(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
-    case "data.getSecFilingContent":
-      return provider.getSecFilingContent?.(payload.filing as never) ?? null;
-    case "data.getEarningsCalendar":
-      return provider.getEarningsCalendar?.(payload.symbols as string[], payload.context as never) ?? [];
-    case "data.getArticleSummary":
-      return provider.getArticleSummary(payload.url as string);
-    case "data.getPriceHistory":
-      return provider.getPriceHistory(payload.ticker as string, payload.exchange as string, payload.range as never, payload.context as never);
-    case "data.getPriceHistoryForResolution":
-      return provider.getPriceHistoryForResolution?.(
-        payload.ticker as string,
-        payload.exchange as string,
-        payload.bufferRange as never,
-        payload.resolution as never,
-        payload.context as never,
-      ) ?? [];
-    case "data.getDetailedPriceHistory":
-      return provider.getDetailedPriceHistory?.(
-        payload.ticker as string,
-        payload.exchange as string,
-        payload.startDate as Date,
-        payload.endDate as Date,
-        payload.barSize as string,
-        payload.context as never,
-      ) ?? [];
-    case "data.getChartResolutionSupport":
-      return provider.getChartResolutionSupport?.(payload.ticker as string, payload.exchange as string | undefined, payload.context as never) ?? [];
-    case "data.getOptionsChain":
-      return provider.getOptionsChain?.(payload.ticker as string, payload.exchange as string | undefined, payload.expirationDate as number | undefined, payload.context as never) ?? null;
-    case "data.subscribeQuotes": {
-      const subscriptionId = payload.subscriptionId as string;
-      const scopedSubscriptionId = scopeClientId(rpc, subscriptionId);
-      dataQuoteSubscriptions.get(scopedSubscriptionId)?.();
-      const unsubscribe = provider.subscribeQuotes(
-        payload.targets as QuoteSubscriptionTarget[],
-        (target, quote) => {
-          rpc.send["quote.update"]({
-            subscriptionId,
-            target: encodeRpcValue(target),
-            quote: encodeRpcValue(quote),
-          });
-        },
-      );
-      dataQuoteSubscriptions.set(scopedSubscriptionId, unsubscribe);
-      return null;
-    }
-    case "data.unsubscribeQuotes": {
-      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
-      dataQuoteSubscriptions.get(scopedSubscriptionId)?.();
-      dataQuoteSubscriptions.delete(scopedSubscriptionId);
-      return null;
-    }
-    default:
-      throw new Error(`Unknown data method: ${method}`);
-  }
 }
 
 async function handleIbkr(
@@ -1285,6 +1202,50 @@ async function handleDesktop(
   }
 }
 
+async function handleCapability(
+  rpc: DesktopRpc,
+  method: string,
+  payload: Record<string, unknown>,
+) {
+  const registry = requireServices().pluginRegistry.capabilities;
+  switch (method) {
+    case "capability.invoke":
+      return registry.invoke(
+        payload.capabilityId as string,
+        payload.operationId as string,
+        payload.payload,
+        { renderer: true },
+      );
+    case "capability.subscribe": {
+      const clientSubscriptionId = payload.subscriptionId as string;
+      const scopedSubscriptionId = scopeClientId(rpc, clientSubscriptionId);
+      capabilitySubscriptions.get(scopedSubscriptionId)?.();
+      await registry.subscribe(
+        payload.capabilityId as string,
+        payload.operationId as string,
+        payload.payload,
+        (event) => {
+          rpc.send["capability.event"]({
+            subscriptionId: clientSubscriptionId,
+            event: encodeRpcValue(event),
+          });
+        },
+        { renderer: true, subscriptionId: scopedSubscriptionId },
+      );
+      capabilitySubscriptions.set(scopedSubscriptionId, () => registry.unsubscribe(scopedSubscriptionId));
+      return null;
+    }
+    case "capability.unsubscribe": {
+      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
+      capabilitySubscriptions.get(scopedSubscriptionId)?.();
+      capabilitySubscriptions.delete(scopedSubscriptionId);
+      return null;
+    }
+    default:
+      throw new Error(`Unknown capability method: ${method}`);
+  }
+}
+
 async function handleBackendRequest(
   rpc: DesktopRpc,
   method: string,
@@ -1294,7 +1255,7 @@ async function handleBackendRequest(
 
   if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
-  if (method.startsWith("data.")) return handleDataProvider(rpc, method, payload);
+  if (method.startsWith("capability.")) return handleCapability(rpc, method, payload);
   if (method.startsWith("ibkr.")) return handleIbkr(rpc, method, payload);
   if (method.startsWith("ai.")) return handleAi(rpc, method, payload);
   if (method.startsWith("notes.")) return handleNotes(method, payload);

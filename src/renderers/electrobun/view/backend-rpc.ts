@@ -4,6 +4,7 @@ import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   type ApplicationMenuSelectMessage,
   type AiChunkMessage,
+  type CapabilityEventMessage,
   type ContextMenuSelectMessage,
   type DesktopDockPreviewMessage,
   type DesktopStateMessage,
@@ -25,9 +26,9 @@ type ApplicationMenuSelectListener = (message: ApplicationMenuSelectMessage) => 
 type DesktopStateListener = (message: DesktopStateMessage) => void;
 type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
 type UpdateProgressListener = (message: UpdateProgressMessage) => void;
+type CapabilityEventListener = (message: CapabilityEventMessage) => void;
 
 let initSnapshot: ElectrobunBackendInit | null = null;
-const quoteListeners = new Map<string, Set<QuoteListener>>();
 const ibkrQuoteListeners = new Map<string, Set<QuoteListener>>();
 const ibkrSnapshotListeners = new Map<string, Set<IbkrSnapshotListener>>();
 const ibkrResolvedListeners = new Set<IbkrResolvedListener>();
@@ -37,6 +38,7 @@ const applicationMenuSelectListeners = new Set<ApplicationMenuSelectListener>();
 const desktopStateListeners = new Set<DesktopStateListener>();
 const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
 const updateProgressListeners = new Set<UpdateProgressListener>();
+const capabilityEventListeners = new Map<string, Set<CapabilityEventListener>>();
 
 function dispatch<T>(
   listeners: Map<string, Set<(value: T) => void>>,
@@ -72,13 +74,6 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
   handlers: {
     requests: {},
     messages: {
-      "quote.update": (message) => {
-        dispatch(quoteListeners, message.subscriptionId, {
-          ...message,
-          target: decodeRpcValue(message.target),
-          quote: decodeRpcValue(message.quote),
-        });
-      },
       "ibkr.quote.update": (message) => {
         dispatch(ibkrQuoteListeners, message.subscriptionId, {
           ...message,
@@ -130,6 +125,12 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
           listener(decoded);
         }
       },
+      "capability.event": (message) => {
+        dispatch(capabilityEventListeners, message.subscriptionId, {
+          subscriptionId: message.subscriptionId,
+          event: decodeRpcValue(message.event),
+        });
+      },
     },
   },
 });
@@ -167,11 +168,11 @@ export function getElectrobunBackendInitSnapshot(): ElectrobunBackendInit | null
   return initSnapshot;
 }
 
-export function onQuoteSubscription(
+export function onCapabilityEvent(
   subscriptionId: string,
-  listener: (message: QuoteUpdateMessage) => void,
+  listener: (message: CapabilityEventMessage) => void,
 ): () => void {
-  return subscribe(quoteListeners, subscriptionId, listener);
+  return subscribe(capabilityEventListeners, subscriptionId, listener);
 }
 
 export function onIbkrQuoteSubscription(

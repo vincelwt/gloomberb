@@ -17,11 +17,13 @@ import {
   type PaneRuntimeState,
 } from "../state/app-context";
 import type { BrokerAdapter } from "../types/broker";
+import type { PluginCapability } from "../capabilities";
 import type { DataProvider } from "../types/data-provider";
 import type { AppNotificationRequest, BrokerInstanceUpdateOptions } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
   getMarketData(): DataProvider | null;
+  getCapability(capabilityId: string): PluginCapability | null;
   getBrokerAdapter(brokerType: string): BrokerAdapter | null;
   connectBrokerInstance(instanceId: string): Promise<void>;
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;
@@ -137,6 +139,19 @@ export function usePluginAppActions() {
 export function useMarketData(): DataProvider | null {
   const { runtime } = usePluginRenderContext();
   return runtime.getMarketData();
+}
+
+export function useAssetData(): DataProvider | null {
+  return useMarketData();
+}
+
+export function useCapability(capabilityId: string): PluginCapability | null {
+  const { runtime } = usePluginRenderContext();
+  return runtime.getCapability(capabilityId);
+}
+
+export function useNewsData(): PluginCapability | null {
+  return useCapability("news.core");
 }
 
 export function usePluginBrokerActions() {

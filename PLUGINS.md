@@ -87,7 +87,7 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerPane(pane)` | Add a full pane (left/right/bottom) |
 | `ctx.registerPaneTemplate(template)` | Add a reusable pane template (see [Pane templates](#pane-templates)) |
 | `ctx.registerBroker(broker)` | Add a broker integration |
-| `ctx.registerDataSource(source)` | Add a data source |
+| `ctx.registerCapability(capability)` | Add an asset-data, news, or plugin-service capability |
 | `ctx.registerShortcut(shortcut)` | Add a global keyboard shortcut |
 | `ctx.registerTickerAction(action)` | Add a per-ticker action (shown via `a` key) |
 | `ctx.registerContextMenuProvider(provider)` | Add renderer-neutral context menu items |
@@ -181,7 +181,7 @@ Available CLI context helpers:
 | Field | What it does |
 |------|---------------|
 | `ctx.initConfigData()` | Load config, persistence, and ticker storage |
-| `ctx.initMarketData()` | Load config plus the plugin-aware provider router |
+| `ctx.initMarketData()` | Load config plus the plugin-aware asset-data router |
 | `ctx.fail(...)` | Print an error and exit |
 | `ctx.closeAndFail(...)` | Close persistence, then print an error and exit |
 | `ctx.output.*` | CLI formatting helpers (`cliStyles`, `renderSection`, `renderTable`, `renderStat`, `colorBySign`) |
@@ -207,34 +207,46 @@ return {
 | `ctx.getData(ticker)` | Cached financials for a ticker |
 | `ctx.getTicker(ticker)` | Ticker metadata record |
 | `ctx.getConfig()` | Current app config |
-| `ctx.marketData` | The active market data router |
+| `ctx.marketData` | The active asset-data client |
 | `ctx.tickerRepository` | The ticker metadata persistence store |
 | `ctx.log` | Scoped logger for debug output |
 
-### Data sources
+### Capabilities
 
-Plugins may contribute data through `dataSources` or `ctx.registerDataSource(source)`. A data source can expose `market`, `news`, or both. Plugins remain feature modules; the source is the provider identity used for routing, cache policy, and provenance.
+Plugins contribute data and services through capabilities. A capability declares its domain, operation names, cache policy, renderer safety, and handlers. The built-in domains in this pass are:
+
+- `asset-data` for quotes, financials, search, FX, price history, options, filings, holders, analyst research, corporate actions, earnings calendars, article summaries, and quote streams.
+- `news` for ticker and global news feeds.
+- `plugin-service` for narrow renderer-safe service escape hatches.
 
 ```typescript
+import { assetDataProvider, newsProvider } from "gloomberb/capabilities";
 import type { GloomPlugin } from "gloomberb/types/plugin";
-import type { DataSource } from "gloomberb/types/data-source";
-
-const source: DataSource = {
-  id: "my-source",
-  name: "My Source",
-  priority: 100,
-  market: myMarketProvider,
-  news: {
-    supports: (query) => query.feed === "ticker",
-    fetchNews: async (query) => [],
-  },
-};
 
 export const myPlugin: GloomPlugin = {
   id: "my-plugin",
   name: "My Plugin",
   version: "1.0.0",
-  dataSources: [source],
+  capabilities: [
+    assetDataProvider(myMarketProvider),
+    newsProvider({
+      id: "my-source",
+      name: "My Source",
+      priority: 100,
+      provider: {
+        supports: (query) => query.feed === "ticker",
+        fetchNews: async (query) => [],
+      },
+    }),
+  ],
+
+  setup(ctx) {
+    ctx.registerCapability(newsProvider({
+      id: "my-live-news",
+      name: "My Live News",
+      provider: { fetchNews: async (query) => [] },
+    }));
+  },
 };
 ```
 
@@ -623,10 +635,11 @@ Do not register basic navigation hints. Pane hints must omit `Esc`, `Enter`, arr
 
 ### Plugin runtime hooks
 
-These hooks are available inside pane and tab components rendered by a plugin. They provide app actions, market data access, and reactive access to the plugin's storage layers:
+These hooks are available inside pane and tab components rendered by a plugin. They provide app actions, asset data access, and reactive access to the plugin's storage layers:
 
 ```typescript
 import {
+  useAssetData,
   useMarketData,
   usePluginPaneState,
   usePluginState,
@@ -636,6 +649,7 @@ import {
 } from "gloomberb/plugins/plugin-runtime";
 
 const marketData = useMarketData();
+const assetData = useAssetData();
 const { navigateTicker, pinTicker } = usePluginTickerActions();
 const { openCommandBar, showWidget, hideWidget, notify } = usePluginAppActions();
 

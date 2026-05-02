@@ -3,6 +3,7 @@ import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../
 import type { DesktopApplicationMenuCommand } from "../../../types/desktop-menu";
 import type { AppConfig } from "../../../types/config";
 import type { UpdateProgress } from "../../../updater";
+import type { CapabilityManifest } from "../../../capabilities";
 
 export const ELECTROBUN_CONTEXT_MENU_ACTION = "gloom.context-menu.select";
 
@@ -11,6 +12,7 @@ export interface ElectrobunBackendInit {
   sessionSnapshot: AppSessionSnapshot | null;
   desktopSnapshot: DesktopSharedStateSnapshot | null;
   pluginState: Record<string, Record<string, unknown>>;
+  capabilityManifests: CapabilityManifest[];
   windowKind: "main" | "detached";
   paneId?: string;
 }
@@ -64,6 +66,11 @@ export interface UpdateProgressMessage {
   progress: UpdateProgress;
 }
 
+export interface CapabilityEventMessage {
+  subscriptionId: string;
+  event: unknown;
+}
+
 export interface ElectrobunDesktopRpcSchema {
   bun: {
     requests: {
@@ -77,7 +84,6 @@ export interface ElectrobunDesktopRpcSchema {
   webview: {
     requests: {};
     messages: {
-      "quote.update": QuoteUpdateMessage;
       "ibkr.snapshot": IbkrSnapshotMessage;
       "ibkr.resolved": IbkrResolvedMessage;
       "ibkr.quote.update": QuoteUpdateMessage;
@@ -87,6 +93,7 @@ export interface ElectrobunDesktopRpcSchema {
       "desktop.state": DesktopStateMessage;
       "desktop.dockPreview": DesktopDockPreviewMessage;
       "update.progress": UpdateProgressMessage;
+      "capability.event": CapabilityEventMessage;
     };
   };
 }

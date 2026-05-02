@@ -2,9 +2,13 @@ import { Fragment, createElement, type ReactNode } from "react";
 import type { AppPersistence } from "../data/app-persistence";
 import type { TickerRepository } from "../data/ticker-repository";
 import type { BrokerAdapter } from "../types/broker";
+import {
+  CapabilityRegistry,
+  type NewsCapability,
+  type PluginCapability,
+} from "../capabilities";
 import type { BrokerInstanceConfig, LayoutConfig, PaneInstanceConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
-import type { DataSource } from "../types/data-source";
 import type { TickerFinancials } from "../types/financials";
 import type {
   AppNotificationRequest,
@@ -54,6 +58,10 @@ interface ContextMenuProviderEntry {
   provider: ContextMenuProviderDef;
 }
 
+interface PluginRegistryOptions {
+  enableCapabilityHandlers?: boolean;
+}
+
 export function getSharedMarketData(): DataProvider | undefined { return sharedMarketData; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
 export function setSharedMarketDataForTests(provider: DataProvider | undefined): void {
@@ -69,13 +77,13 @@ interface PluginItems {
   commands: string[];
   columns: string[];
   brokers: string[];
-  dataSources: string[];
+  capabilities: string[];
   detailTabs: string[];
   shortcuts: string[];
   tickerActions: string[];
   contextMenuProviders: string[];
   eventDisposers: Array<() => void>;
-  dataSourceDisposers: Array<() => void>;
+  capabilityDisposers: Array<() => void>;
   newsQueryWatchDisposers: Array<() => void>;
 }
 
@@ -88,7 +96,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private paneOwners = new Map<string, string>();
   private paneTemplateOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
-  private dataSourceOwners = new Map<string, string>();
+  private capabilityOwners = new Map<string, string>();
   private pluginResumeListeners = new Map<string, Set<() => void>>();
 
   private panesMap = new Map<string, PaneDef>();
@@ -96,16 +104,17 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private commandsMap = new Map<string, CommandDef>();
   private columnsMap = new Map<string, CustomColumnDef>();
   private brokersMap = new Map<string, BrokerAdapter>();
-  private dataSourcesMap = new Map<string, DataSource>();
   private detailTabsMap = new Map<string, DetailTabDef>();
   private shortcutsMap = new Map<string, KeyboardShortcut>();
   private tickerActionsMap = new Map<string, TickerAction>();
   private contextMenuProvidersMap = new Map<string, ContextMenuProviderEntry>();
 
   readonly events: EventBus;
+  readonly capabilities: CapabilityRegistry;
   readonly marketData: DataProvider;
   readonly tickerRepository: TickerRepository;
   readonly persistence: AppPersistence;
+  private readonly enableCapabilityHandlers: boolean;
 
   getTickerFn: ((symbol: string) => TickerRecord | null) = () => null;
   getDataFn: ((symbol: string) => TickerFinancials | null) = () => null;
@@ -132,6 +141,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
   navigateTickerFn: ((symbol: string) => void) = () => {};
   getMarketData = () => this.marketData;
+  getCapability = (capabilityId: string) => this.capabilities.get(capabilityId)?.capability ?? null;
   getBrokerAdapter = (brokerType: string) => this.brokersMap.get(brokerType) ?? null;
   connectBrokerInstance = (instanceId: string) => this.connectBrokerInstanceFn(instanceId);
   updateBrokerInstance = (instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions) => (
@@ -165,7 +175,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
 
-  registerDataSourceFn: ((source: DataSource) => () => void) = () => () => {};
+  registerNewsCapabilityFn: ((capability: NewsCapability) => () => void) = () => () => {};
   watchNewsQueryFn: ((
     query: import("../types/news-source").NewsQuery,
     listener: (state: import("../types/news-source").NewsQueryState) => void,
@@ -184,15 +194,28 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
   readonly Slot;
 
-  constructor(marketData: DataProvider, tickerRepository: TickerRepository, persistence: AppPersistence) {
+  constructor(
+    marketData: DataProvider,
+    tickerRepository: TickerRepository,
+    persistence: AppPersistence,
+    options: PluginRegistryOptions = {},
+  ) {
     this.marketData = marketData;
     this.tickerRepository = tickerRepository;
     this.persistence = persistence;
+    this.enableCapabilityHandlers = options.enableCapabilityHandlers ?? true;
     this.events = new EventBus();
 
     sharedMarketData = marketData;
     sharedRegistry = this;
     (globalThis as any).__gloomRegistry = this;
+    this.capabilities = new CapabilityRegistry({
+      isPluginEnabled: (pluginId) => !this.getConfigFn().disabledPlugins.includes(pluginId),
+      isCapabilityEnabled: (capability, pluginId) => {
+        const disabledSources = this.getConfigFn().disabledSources ?? [];
+        return !disabledSources.includes(capability.sourceId ?? capability.id) && !this.getConfigFn().disabledPlugins.includes(pluginId);
+      },
+    });
     this.Slot = ({ name, ...props }: { name: keyof GloomSlots } & Record<string, unknown>) => (
       this.renderSlot(name, props as any)
     );
@@ -203,7 +226,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
   get commands(): ReadonlyMap<string, CommandDef> { return this.commandsMap; }
   get columns(): ReadonlyMap<string, CustomColumnDef> { return this.columnsMap; }
   get brokers(): ReadonlyMap<string, BrokerAdapter> { return this.brokersMap; }
-  get dataSources(): ReadonlyMap<string, DataSource> { return this.dataSourcesMap; }
   get detailTabs(): ReadonlyMap<string, DetailTabDef> { return this.detailTabsMap; }
   get shortcuts(): ReadonlyMap<string, KeyboardShortcut> { return this.shortcutsMap; }
   get tickerActions(): ReadonlyMap<string, TickerAction> { return this.tickerActionsMap; }
@@ -237,23 +259,12 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return items;
   }
 
-  getDataSourcePluginId(sourceId: string): string | undefined {
-    return this.dataSourceOwners.get(sourceId);
+  getCapabilityPluginId(capabilityId: string): string | undefined {
+    return this.capabilityOwners.get(capabilityId);
   }
 
-  getEnabledDataSources(): DataSource[] {
-    const disabledPlugins = new Set(this.getConfigFn().disabledPlugins ?? []);
-    const disabledSources = new Set(this.getConfigFn().disabledSources ?? []);
-    return [...this.dataSourcesMap.values()].filter((source) => {
-      const ownerId = this.dataSourceOwners.get(source.id);
-      return !disabledSources.has(source.id) && (!ownerId || !disabledPlugins.has(ownerId));
-    });
-  }
-
-  getActiveSource(): DataSource | undefined {
-    let active: DataSource | undefined;
-    for (const source of this.dataSourcesMap.values()) active = source;
-    return active;
+  getEnabledCapabilities(kind?: string): PluginCapability[] {
+    return this.capabilities.list(kind).map((entry) => entry.capability);
   }
 
   getPluginPaneIds(pluginId: string): string[] {
@@ -292,17 +303,38 @@ export class PluginRegistry implements PluginRuntimeAccess {
       commands: [],
       columns: [],
       brokers: [],
-      dataSources: [],
+      capabilities: [],
       detailTabs: [],
       shortcuts: [],
       tickerActions: [],
       contextMenuProviders: [],
       eventDisposers: [],
-      dataSourceDisposers: [],
+      capabilityDisposers: [],
       newsQueryWatchDisposers: [],
     };
     this.pluginItems.set(pluginId, items);
     return items;
+  }
+
+  private registerCapabilityForPlugin(pluginId: string, capability: PluginCapability, items: PluginItems): void {
+    const ownedCapability: PluginCapability = {
+      ...capability,
+      isEnabled: () => {
+        const config = this.getConfigFn();
+        const disabledPlugin = config.disabledPlugins.includes(pluginId);
+        const disabledSource = config.disabledSources?.includes(capability.sourceId ?? capability.id) ?? false;
+        return !disabledPlugin && !disabledSource && (capability.isEnabled?.() ?? true);
+      },
+    };
+    const disposeCapability = this.capabilities.register(pluginId, ownedCapability);
+    this.capabilityOwners.set(capability.id, pluginId);
+    items.capabilities.push(capability.id);
+    items.capabilityDisposers.push(disposeCapability);
+
+    if (ownedCapability.kind === "news") {
+      const dispose = this.registerNewsCapabilityFn(ownedCapability as NewsCapability);
+      items.capabilityDisposers.push(dispose);
+    }
   }
 
   private wrapPaneDef(pluginId: string, pane: PaneDef): PaneDef {
@@ -604,21 +636,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
       },
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
       registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
-      registerDataSource: (source) => {
-        const ownedSource: DataSource = {
-          ...source,
-          isEnabled: () => {
-            const config = this.getConfigFn();
-            const disabledPlugin = config.disabledPlugins.includes(pluginId);
-            const disabledSource = config.disabledSources?.includes(source.id) ?? false;
-            return !disabledPlugin && !disabledSource && (source.isEnabled?.() ?? true);
-          },
-        };
-        this.dataSourcesMap.set(source.id, ownedSource);
-        this.dataSourceOwners.set(source.id, pluginId);
-        items.dataSources.push(source.id);
-        const dispose = this.registerDataSourceFn(ownedSource);
-        items.dataSourceDisposers.push(dispose);
+      registerCapability: (capability) => {
+        if (this.enableCapabilityHandlers) {
+          this.registerCapabilityForPlugin(pluginId, capability, items);
+        }
       },
       registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, this.wrapDetailTabDef(pluginId, tab)); items.detailTabs.push(tab.id); },
       registerShortcut: (shortcut) => {
@@ -712,22 +733,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
       items.brokers.push(plugin.broker.id);
     }
 
-    if (plugin.dataSources) {
-      for (const source of plugin.dataSources) {
-        const ownedSource: DataSource = {
-          ...source,
-          isEnabled: () => {
-            const config = this.getConfigFn();
-            const disabledPlugin = config.disabledPlugins.includes(plugin.id);
-            const disabledSource = config.disabledSources?.includes(source.id) ?? false;
-            return !disabledPlugin && !disabledSource && (source.isEnabled?.() ?? true);
-          },
-        };
-        this.dataSourcesMap.set(source.id, ownedSource);
-        this.dataSourceOwners.set(source.id, plugin.id);
-        items.dataSources.push(source.id);
-        const dispose = this.registerDataSourceFn(ownedSource);
-        items.dataSourceDisposers.push(dispose);
+    if (this.enableCapabilityHandlers && plugin.capabilities) {
+      for (const capability of plugin.capabilities) {
+        this.registerCapabilityForPlugin(plugin.id, capability, items);
       }
     }
 
@@ -803,9 +811,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
       }
       for (const columnId of items.columns) this.columnsMap.delete(columnId);
       for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
-      for (const sourceId of items.dataSources) {
-        this.dataSourcesMap.delete(sourceId);
-        this.dataSourceOwners.delete(sourceId);
+      for (const capabilityId of items.capabilities) {
+        this.capabilityOwners.delete(capabilityId);
       }
       for (const tabId of items.detailTabs) this.detailTabsMap.delete(tabId);
       for (const shortcutId of items.shortcuts) {
@@ -815,7 +822,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
       for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
       for (const dispose of items.eventDisposers) dispose();
-      for (const dispose of items.dataSourceDisposers) dispose();
+      for (const dispose of items.capabilityDisposers) dispose();
       for (const dispose of items.newsQueryWatchDisposers) dispose();
       this.pluginItems.delete(pluginId);
     }
@@ -835,6 +842,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
         });
       }
     }
+    this.capabilities.destroy();
+    this.capabilityOwners.clear();
     this.pluginResumeListeners.clear();
     if (sharedRegistry === this) {
       sharedRegistry = undefined;

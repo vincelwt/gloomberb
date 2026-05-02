@@ -13,7 +13,7 @@ import { formatTimeAgo } from "../../utils/format";
 import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { chatController, type ChatController } from "./chat-controller";
-import { createGloomberbCloudProvider, createGloomberbCloudSource } from "../../sources/gloomberb-cloud";
+import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 import { registerEconCalendarFeature } from "./econ";
 import { registerYieldCurveFeature } from "./yield-curve";
 
@@ -1001,7 +1001,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
   description: "Free market, macro, and chat services. Chat requires signup.",
   toggleable: true,
   order: 10,
-  dataSources: [createGloomberbCloudSource(createGloomberbCloudProvider())],
+  capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
   paneTemplates: [
     {
       id: "new-chat-pane",

@@ -1,5 +1,5 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
-import type { DataSource } from "../../../types/data-source";
+import { newsProvider, type NewsCapability } from "../../../capabilities";
 import type { NewsQuery, MarketNewsItem } from "../../../types/news-source";
 import type { PluginPersistence } from "../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./rss-parser";
@@ -29,7 +29,7 @@ const rssClient = createThrottledFetch({
   },
 });
 
-export interface RssDataSourceOptions {
+export interface RssNewsCapabilityOptions {
   knownTickers?: Set<string>;
   persistence?: PluginPersistence;
   fetchText?: (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>;
@@ -125,10 +125,10 @@ function writeFeedCache(
   });
 }
 
-export function createRssDataSource(
+export function createRssNewsCapability(
   feedsOrGetter: RssFeedConfig[] | (() => RssFeedConfig[]),
-  options: RssDataSourceOptions = {},
-): DataSource {
+  options: RssNewsCapabilityOptions = {},
+): NewsCapability {
   const fetchText = options.fetchText ?? ((url: string) => rssClient.fetch(url));
   const getFeeds = () => Array.isArray(feedsOrGetter) ? feedsOrGetter : feedsOrGetter();
 
@@ -149,11 +149,11 @@ export function createRssDataSource(
     }
   }
 
-  return {
+  return newsProvider({
     id: "rss",
     name: "RSS Feeds",
     priority: 2000,
-    news: {
+    provider: {
       supports: supportsQuery,
       getCachedNews(query: NewsQuery): MarketNewsItem[] {
         if (!supportsQuery(query)) return [];
@@ -177,5 +177,5 @@ export function createRssDataSource(
         return allItems;
       },
     },
-  };
+  });
 }
