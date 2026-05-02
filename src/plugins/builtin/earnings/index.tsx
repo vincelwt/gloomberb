@@ -6,7 +6,7 @@ import type { EarningsEvent } from "../../../types/data-provider";
 import { colors } from "../../../theme/colors";
 import { useAppSelector, getFocusedCollectionId } from "../../../state/app-context";
 import { getCollectionTickers } from "../../../state/selectors";
-import { formatCompact } from "../../../utils/format";
+import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
 import {
   attachEarningsCalendarPersistence,
@@ -18,7 +18,21 @@ type DisplayRow =
   | { kind: "separator"; key: string; label: string }
   | { kind: "event"; key: string; event: EarningsEvent; eventIdx: number };
 
-type EarningsColumnId = "date" | "symbol" | "name" | "epsEstimate" | "revenueEstimate";
+type EarningsColumnId =
+  | "date"
+  | "when"
+  | "status"
+  | "symbol"
+  | "name"
+  | "epsEstimate"
+  | "epsRange"
+  | "epsGrowth"
+  | "epsTrend"
+  | "epsRevisions"
+  | "revenueEstimate"
+  | "revenueRange"
+  | "revenueGrowth"
+  | "analysts";
 type EarningsColumn = DataTableColumn & { id: EarningsColumnId };
 
 function groupByRelativeDate(events: EarningsEvent[]): DisplayRow[] {
@@ -81,21 +95,80 @@ function formatDate(date: Date): string {
   return `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
 }
 
+function formatTime(date: Date | null | undefined): string {
+  if (!date) return "—";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatMaybeNumber(value: number | null | undefined, decimals = 2): string {
+  return value == null ? "—" : formatNumber(value, decimals);
+}
+
+function formatRange(
+  low: number | null | undefined,
+  high: number | null | undefined,
+  formatter: (value: number) => string,
+): string {
+  if (low == null && high == null) return "—";
+  return `${low == null ? "—" : formatter(low)}-${high == null ? "—" : formatter(high)}`;
+}
+
+function formatRevisionSummary(event: EarningsEvent): string {
+  const up = event.epsRevisionUp30d ?? event.epsRevisionUp7d;
+  const down = event.epsRevisionDown30d ?? event.epsRevisionDown7d;
+  if (up == null && down == null) return "—";
+  return `${up ?? 0}/${down ?? 0}`;
+}
+
+function formatAnalystSummary(event: EarningsEvent): string {
+  const eps = event.epsAnalysts;
+  const revenue = event.revenueAnalysts;
+  if (eps == null && revenue == null) return "—";
+  if (eps === revenue || revenue == null) return String(eps);
+  if (eps == null) return String(revenue);
+  return `${eps}/${revenue}`;
+}
+
+function estimateColor(value: number | null | undefined, selectedColor: string | undefined): string | undefined {
+  if (selectedColor) return selectedColor;
+  if (value == null) return colors.textDim;
+  return value >= 0 ? colors.positive : colors.negative;
+}
+
 function buildColumns(width: number): EarningsColumn[] {
   const dateWidth = 8;
+  const whenWidth = 8;
+  const statusWidth = 4;
   const symbolWidth = 8;
-  const epsWidth = 10;
-  const revenueWidth = 10;
-  const columnCount = 5;
-  const fixedWidth = dateWidth + symbolWidth + epsWidth + revenueWidth;
-  const nameWidth = Math.max(12, width - 2 - columnCount - fixedWidth);
+  const epsWidth = 8;
+  const epsRangeWidth = 11;
+  const growthWidth = 8;
+  const trendWidth = 8;
+  const revisionsWidth = 7;
+  const revenueWidth = 9;
+  const revenueRangeWidth = 13;
+  const analystsWidth = 7;
+  const columnCount = 14;
+  const fixedWidth = dateWidth + whenWidth + statusWidth + symbolWidth + epsWidth
+    + epsRangeWidth + growthWidth + trendWidth + revisionsWidth + revenueWidth
+    + revenueRangeWidth + growthWidth + analystsWidth;
+  const nameWidth = Math.max(14, width - 2 - columnCount - fixedWidth);
 
   return [
     { id: "date", label: "DATE", width: dateWidth, align: "left" },
+    { id: "when", label: "WHEN", width: whenWidth, align: "left" },
+    { id: "status", label: "ST", width: statusWidth, align: "left" },
     { id: "symbol", label: "TICKER", width: symbolWidth, align: "left" },
     { id: "name", label: "NAME", width: nameWidth, align: "left" },
-    { id: "epsEstimate", label: "EPS EST", width: epsWidth, align: "right" },
-    { id: "revenueEstimate", label: "REV EST", width: revenueWidth, align: "right" },
+    { id: "epsEstimate", label: "EPS", width: epsWidth, align: "right" },
+    { id: "epsRange", label: "EPS RNG", width: epsRangeWidth, align: "right" },
+    { id: "epsGrowth", label: "EPS YOY", width: growthWidth, align: "right" },
+    { id: "epsTrend", label: "EPS 30D", width: trendWidth, align: "right" },
+    { id: "epsRevisions", label: "REV", width: revisionsWidth, align: "right" },
+    { id: "revenueEstimate", label: "SALES", width: revenueWidth, align: "right" },
+    { id: "revenueRange", label: "SALES RNG", width: revenueRangeWidth, align: "right" },
+    { id: "revenueGrowth", label: "SALES YOY", width: growthWidth, align: "right" },
+    { id: "analysts", label: "ANL", width: analystsWidth, align: "right" },
   ];
 }
 
@@ -201,6 +274,22 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     switch (column.id) {
       case "date":
         return { text: formatDate(row.event.earningsDate), color: selectedColor ?? colors.textDim };
+      case "when":
+        return {
+          text: row.event.timing || formatTime(row.event.earningsCallDate),
+          color: selectedColor ?? colors.textDim,
+        };
+      case "status":
+        if (row.event.isDateEstimate == null) {
+          return {
+            text: "—",
+            color: selectedColor ?? colors.textDim,
+          };
+        }
+        return {
+          text: row.event.isDateEstimate === true ? "est" : "firm",
+          color: selectedColor ?? (row.event.isDateEstimate === true ? colors.warning : colors.textDim),
+        };
       case "symbol":
         return {
           text: row.event.symbol,
@@ -211,12 +300,54 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
         return { text: row.event.name, color: selectedColor ?? colors.text };
       case "epsEstimate":
         return {
-          text: row.event.epsEstimate != null ? row.event.epsEstimate.toFixed(2) : "—",
+          text: formatMaybeNumber(row.event.epsEstimate),
           color: selectedColor ?? colors.textDim,
         };
+      case "epsRange":
+        return {
+          text: formatRange(row.event.epsLow, row.event.epsHigh, (value) => formatNumber(value, 2)),
+          color: selectedColor ?? colors.textDim,
+        };
+      case "epsGrowth":
+        return {
+          text: row.event.epsGrowth != null ? formatPercent(row.event.epsGrowth) : "—",
+          color: estimateColor(row.event.epsGrowth, selectedColor),
+        };
+      case "epsTrend": {
+        const current = row.event.epsEstimate;
+        const prior = row.event.epsTrend30dAgo ?? row.event.epsTrend7dAgo;
+        const change = current != null && prior != null ? current - prior : null;
+        return {
+          text: change != null ? formatNumber(change, 2) : "—",
+          color: estimateColor(change, selectedColor),
+        };
+      }
+      case "epsRevisions": {
+        const net = (row.event.epsRevisionUp30d ?? row.event.epsRevisionUp7d ?? 0)
+          - (row.event.epsRevisionDown30d ?? row.event.epsRevisionDown7d ?? 0);
+        return {
+          text: formatRevisionSummary(row.event),
+          color: selectedColor ?? (net > 0 ? colors.positive : net < 0 ? colors.negative : colors.textDim),
+        };
+      }
       case "revenueEstimate":
         return {
           text: row.event.revenueEstimate != null ? formatCompact(row.event.revenueEstimate) : "—",
+          color: selectedColor ?? colors.textDim,
+        };
+      case "revenueRange":
+        return {
+          text: formatRange(row.event.revenueLow, row.event.revenueHigh, formatCompact),
+          color: selectedColor ?? colors.textDim,
+        };
+      case "revenueGrowth":
+        return {
+          text: row.event.revenueGrowth != null ? formatPercent(row.event.revenueGrowth) : "—",
+          color: estimateColor(row.event.revenueGrowth, selectedColor),
+        };
+      case "analysts":
+        return {
+          text: formatAnalystSummary(row.event),
           color: selectedColor ?? colors.textDim,
         };
     }
@@ -255,7 +386,6 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       renderSectionHeader={renderSectionHeader}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading earnings..." : "No upcoming earnings found"}
-      showHorizontalScrollbar={false}
     />
   );
 }

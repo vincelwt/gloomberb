@@ -66,6 +66,11 @@ export interface DataTableProps<
     item: T,
     index: number,
   ) => DataTableSectionHeader | null;
+  getRowBackgroundColor?: (
+    item: T,
+    index: number,
+    rowState: { selected: boolean; hovered: boolean },
+  ) => string | undefined;
   emptyContent?: ReactNode;
   emptyStateTitle: string;
   emptyStateHint?: string;
@@ -131,6 +136,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   onActivate,
   renderCell,
   renderSectionHeader,
+  getRowBackgroundColor,
   emptyContent,
   emptyStateTitle,
   emptyStateHint,
@@ -402,11 +408,17 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
 
                 const selected = isSelected(item, index);
                 const hovered = hoveredIdx === index && !selected;
+                const rowState = { selected, hovered };
+                const rowBackgroundColor = getRowBackgroundColor?.(
+                  item,
+                  index,
+                  rowState,
+                );
                 const rowBg = selected
                   ? colors.selected
                   : hovered
                     ? hoverBg()
-                    : colors.bg;
+                    : rowBackgroundColor ?? colors.bg;
 
                 return (
                   <Box
@@ -429,10 +441,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     }}
                   >
                     {columns.map((column) => {
-                      const cell = renderCell(item, column, index, {
-                        selected,
-                        hovered,
-                      });
+                      const cell = renderCell(item, column, index, rowState);
                       return (
                         <Box
                           key={column.id}

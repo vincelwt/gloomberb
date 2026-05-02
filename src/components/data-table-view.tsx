@@ -108,8 +108,19 @@ export function DataTableView<
   const effectiveHoveredIdx =
     hoveredIdx !== undefined ? hoveredIdx : internalHoveredIdx;
   const effectiveSetHoveredIdx = setHoveredIdx ?? setInternalHoveredIdx;
+  const [fallbackSelectedIndex, setFallbackSelectedIndex] = useState<
+    number | null
+  >(null);
+  const selectedIndexFromPredicate = useMemo(
+    () => tableProps.items.findIndex(tableProps.isSelected),
+    [tableProps.items, tableProps.isSelected],
+  );
+  const usesFallbackSelection =
+    selectedIndex == null && selectedIndexFromPredicate < 0;
   const effectiveSelectedIndex = selectedIndex
-    ?? tableProps.items.findIndex(tableProps.isSelected);
+    ?? (selectedIndexFromPredicate >= 0
+      ? selectedIndexFromPredicate
+      : fallbackSelectedIndex ?? -1);
 
   const navigableIndices = useMemo(() => {
     if (!isNavigable) {
@@ -120,6 +131,22 @@ export function DataTableView<
       return indices;
     }, []);
   }, [isNavigable, tableProps.items]);
+
+  useEffect(() => {
+    if (!usesFallbackSelection) {
+      if (fallbackSelectedIndex !== null) setFallbackSelectedIndex(null);
+      return;
+    }
+    if (fallbackSelectedIndex == null) return;
+    if (navigableIndices.includes(fallbackSelectedIndex)) return;
+
+    const nextIndex = navigableIndices.find(
+      (index) => index >= fallbackSelectedIndex,
+    )
+      ?? navigableIndices.at(-1)
+      ?? null;
+    setFallbackSelectedIndex(nextIndex);
+  }, [fallbackSelectedIndex, navigableIndices, usesFallbackSelection]);
 
   const defaultSyncHeaderScroll = useCallback(() => {
     const body = effectiveScrollRef.current;
@@ -156,12 +183,15 @@ export function DataTableView<
     if (index < 0 || index >= tableProps.items.length) return;
     const item = tableProps.items[index]!;
     if (isNavigable && !isNavigable(item, index)) return;
+    if (usesFallbackSelection) {
+      setFallbackSelectedIndex(index);
+    }
     if (onSelectIndex) {
       onSelectIndex(index, item);
       return;
     }
     tableProps.onSelect(item, index);
-  }, [isNavigable, onSelectIndex, tableProps]);
+  }, [isNavigable, onSelectIndex, tableProps, usesFallbackSelection]);
 
   const activateIndex = useCallback((index: number) => {
     if (index < 0 || index >= tableProps.items.length) return;
@@ -232,7 +262,16 @@ export function DataTableView<
         onBodyScrollActivity={handleBodyScrollActivity}
         hoveredIdx={effectiveHoveredIdx}
         setHoveredIdx={effectiveSetHoveredIdx}
-        scrollToIndex={scrollToIndex ?? (effectiveSelectedIndex >= 0 ? effectiveSelectedIndex : null)}
+        scrollToIndex={scrollToIndex ?? (
+          effectiveSelectedIndex >= 0 ? effectiveSelectedIndex : null
+        )}
+        isSelected={(item, index) => (
+          tableProps.isSelected(item, index)
+          || (
+            index === effectiveSelectedIndex
+            && (!isNavigable || isNavigable(item, index))
+          )
+        )}
       />
       {rootAfter}
     </Box>

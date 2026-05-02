@@ -82,6 +82,47 @@ function Harness() {
   );
 }
 
+function UncontrolledHarness() {
+  const [activatedTitle, setActivatedTitle] = useState("");
+  const state = createInitialState(
+    createDefaultConfig("/tmp/gloomberb-data-table-view-uncontrolled-test"),
+  );
+
+  return (
+    <AppContext value={{ state, dispatch: () => {} }}>
+      <PaneInstanceProvider paneId="data-table-view-uncontrolled-test">
+        <DataTableView<Row, Column>
+          focused
+          isNavigable={(row) => row.type === "row"}
+          columns={columns}
+          items={rows}
+          sortColumnId={null}
+          sortDirection="asc"
+          onHeaderClick={() => {}}
+          getItemKey={(row) => row.id}
+          isSelected={() => false}
+          onSelect={() => {}}
+          onActivate={(row) => {
+            if (row.type === "row") setActivatedTitle(row.title);
+          }}
+          renderSectionHeader={(row) => row.type === "section"
+            ? { text: row.title }
+            : null}
+          renderCell={(row): DataTableCell => ({
+            text: row.type === "row" ? row.title : "",
+          })}
+          emptyStateTitle="No rows"
+          rootAfter={
+            <Box height={1}>
+              <Text>{`activated=${activatedTitle}`}</Text>
+            </Box>
+          }
+        />
+      </PaneInstanceProvider>
+    </AppContext>
+  );
+}
+
 async function renderSettled() {
   await act(async () => {
     await testSetup!.renderOnce();
@@ -122,6 +163,24 @@ describe("DataTableView", () => {
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("selected=First row");
 
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("activated=First row");
+  });
+
+  test("keeps keyboard navigation usable without external row selection", async () => {
+    testSetup = await testRender(<UncontrolledHarness />, { width: 60, height: 12 });
+
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("activated=");
+
+    await emitKeypress({ name: "down", sequence: "\x1B[B" });
+    await emitKeypress({ name: "down", sequence: "\x1B[B" });
+    await emitKeypress({ name: "enter", sequence: "\r" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("activated=Second row");
+
+    await emitKeypress({ name: "up", sequence: "\x1B[A" });
     await emitKeypress({ name: "enter", sequence: "\r" });
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("activated=First row");
