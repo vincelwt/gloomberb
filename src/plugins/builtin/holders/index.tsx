@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
   Tabs,
@@ -10,9 +10,9 @@ import {
   type DataTableKeyEvent,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
-import { colors, priceColor } from "../../../theme/colors";
+import { blendHex, colors, priceColor } from "../../../theme/colors";
 import type { HolderData, HolderRecord } from "../../../types/financials";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
 import { normalizeTickerInput } from "../../../utils/ticker-search";
 import { useMarketData, usePluginPaneState } from "../../plugin-runtime";
@@ -32,6 +32,32 @@ interface HolderRow extends HolderRecord {
 }
 
 interface TileLayout {
+  row: HolderRow;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface WeightedTreemapItem {
+  row: HolderRow;
+  weight: number;
+  area: number;
+}
+
+interface TreemapGroup {
+  items: WeightedTreemapItem[];
+  weight: number;
+}
+
+interface FloatRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface FloatTileLayout {
   row: HolderRow;
   x: number;
   y: number;
@@ -162,41 +188,227 @@ function nextSortPreference(current: SortPreference, columnId: string): SortPref
   };
 }
 
-function buildTreemap(rows: HolderRow[], width: number, height: number): TileLayout[] {
+function worstAspectRatio(items: WeightedTreemapItem[], sideLength: number): number {
+  if (items.length === 0 || sideLength <= 0) return Number.POSITIVE_INFINITY;
+  const areaSum = items.reduce((sum, item) => sum + item.area, 0);
+  const minArea = Math.min(...items.map((item) => item.area));
+  const maxArea = Math.max(...items.map((item) => item.area));
+  if (areaSum <= 0 || minArea <= 0) return Number.POSITIVE_INFINITY;
+
+  const sideSquared = sideLength * sideLength;
+  return Math.max(
+    (sideSquared * maxArea) / (areaSum * areaSum),
+    (areaSum * areaSum) / (sideSquared * minArea),
+  );
+}
+
+function layoutFloatGroup(items: WeightedTreemapItem[], rect: FloatRect): FloatRect {
+  const areaSum = items.reduce((sum, item) => sum + item.area, 0);
+  if (areaSum <= 0 || rect.width <= 0 || rect.height <= 0) return rect;
+
+  if (rect.width >= rect.height) {
+    const columnWidth = Math.min(rect.width, areaSum / rect.height);
+    return {
+      x: rect.x + columnWidth,
+      y: rect.y,
+      width: Math.max(0, rect.width - columnWidth),
+      height: rect.height,
+    };
+  }
+
+  const rowHeight = Math.min(rect.height, areaSum / rect.width);
+  return {
+    x: rect.x,
+    y: rect.y + rowHeight,
+    width: rect.width,
+    height: Math.max(0, rect.height - rowHeight),
+  };
+}
+
+function buildSquarifiedGroups(items: WeightedTreemapItem[], width: number, height: number): TreemapGroup[] {
+  const groups: TreemapGroup[] = [];
+  let rect: FloatRect = { x: 0, y: 0, width, height };
+  let index = 0;
+
+  while (index < items.length && rect.width > 0 && rect.height > 0) {
+    const group: WeightedTreemapItem[] = [];
+    let currentWorst = Number.POSITIVE_INFINITY;
+    const sideLength = Math.min(rect.width, rect.height);
+
+    while (index < items.length) {
+      const candidate = items[index]!;
+      const nextGroup = [...group, candidate];
+      const nextWorst = worstAspectRatio(nextGroup, sideLength);
+      if (group.length > 0 && nextWorst > currentWorst) break;
+      group.push(candidate);
+      currentWorst = nextWorst;
+      index += 1;
+    }
+
+    groups.push({
+      items: group,
+      weight: group.reduce((sum, item) => sum + item.weight, 0),
+    });
+    rect = layoutFloatGroup(group, rect);
+  }
+
+  return groups;
+}
+
+function layoutFloatTiles(groups: TreemapGroup[], width: number, height: number, cellAspect: number): FloatTileLayout[] {
+  const tiles: FloatTileLayout[] = [];
+  let rect: FloatRect = { x: 0, y: 0, width, height };
+
+  for (const group of groups) {
+    const areaSum = group.items.reduce((sum, item) => sum + item.area, 0);
+    if (areaSum <= 0 || rect.width <= 0 || rect.height <= 0) break;
+
+    if (rect.width >= rect.height) {
+      const columnWidth = Math.min(rect.width, areaSum / rect.height);
+      let itemY = rect.y;
+      for (const item of group.items) {
+        const itemHeight = Math.min(rect.y + rect.height - itemY, item.area / columnWidth);
+        tiles.push({
+          row: item.row,
+          x: rect.x,
+          y: itemY / cellAspect,
+          width: columnWidth,
+          height: itemHeight / cellAspect,
+        });
+        itemY += itemHeight;
+      }
+      rect = {
+        x: rect.x + columnWidth,
+        y: rect.y,
+        width: Math.max(0, rect.width - columnWidth),
+        height: rect.height,
+      };
+    } else {
+      const rowHeight = Math.min(rect.height, areaSum / rect.width);
+      let itemX = rect.x;
+      for (const item of group.items) {
+        const itemWidth = Math.min(rect.x + rect.width - itemX, item.area / rowHeight);
+        tiles.push({
+          row: item.row,
+          x: itemX,
+          y: rect.y / cellAspect,
+          width: itemWidth,
+          height: rowHeight / cellAspect,
+        });
+        itemX += itemWidth;
+      }
+      rect = {
+        x: rect.x,
+        y: rect.y + rowHeight,
+        width: rect.width,
+        height: Math.max(0, rect.height - rowHeight),
+      };
+    }
+  }
+
+  return tiles.filter((tile) => tile.width > 0 && tile.height > 0);
+}
+
+export function buildTreemapRects(rows: HolderRow[], width: number, height: number, cellAspect = 1): FloatTileLayout[] {
   if (width <= 0 || height <= 0) return [];
   const weightedRows = rows
-    .filter((row) => rowWeight(row) > 0)
+    .map((row) => ({ row, weight: rowWeight(row) }))
+    .filter((item) => item.weight > 0)
     .slice(0, Math.max(1, Math.min(80, width * height)));
-  const total = weightedRows.reduce((sum, row) => sum + rowWeight(row), 0);
-  if (total <= 0) return [];
+  const totalWeight = weightedRows.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0) return [];
+
+  const normalizedCellAspect = Math.max(0.25, cellAspect);
+  const normalizedHeight = height * normalizedCellAspect;
+  const totalArea = width * normalizedHeight;
+  const weightedItems: WeightedTreemapItem[] = weightedRows.map((item) => ({
+    ...item,
+    area: item.weight / totalWeight * totalArea,
+  }));
+  const groups = buildSquarifiedGroups(weightedItems, width, normalizedHeight);
+  return layoutFloatTiles(groups, width, normalizedHeight, normalizedCellAspect);
+}
+
+function allocateLengths(totalLength: number, weights: number[]): number[] {
+  if (weights.length === 0 || totalLength <= 0) return [];
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  let remainingLength = totalLength;
+  let remainingWeight = totalWeight;
+
+  return weights.map((weight, index) => {
+    const remainingItems = weights.length - index;
+    if (remainingItems === 1) return remainingLength;
+    const ideal = remainingWeight > 0 ? Math.round(remainingLength * weight / remainingWeight) : 1;
+    const length = Math.max(1, Math.min(remainingLength - (remainingItems - 1), ideal));
+    remainingLength -= length;
+    remainingWeight -= weight;
+    return length;
+  });
+}
+
+export function buildTreemap(rows: HolderRow[], width: number, height: number, cellAspect = 1): TileLayout[] {
+  if (width <= 0 || height <= 0) return [];
+  const weightedRows = rows
+    .map((row) => ({ row, weight: rowWeight(row) }))
+    .filter((item) => item.weight > 0)
+    .slice(0, Math.max(1, Math.min(80, width * height)));
+  const totalWeight = weightedRows.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight <= 0) return [];
+
+  const normalizedCellAspect = Math.max(0.25, cellAspect);
+  const normalizedHeight = height * normalizedCellAspect;
+  const totalArea = width * normalizedHeight;
+  const weightedItems: WeightedTreemapItem[] = weightedRows.map((item) => ({
+    ...item,
+    area: item.weight / totalWeight * totalArea,
+  }));
+  const groups = buildSquarifiedGroups(weightedItems, width, normalizedHeight);
+  const tiles: TileLayout[] = [];
 
   let x = 0;
   let y = 0;
   let remainingWidth = width;
   let remainingHeight = height;
-  let remainingWeight = total;
-  const tiles: TileLayout[] = [];
+  let remainingWeight = groups.reduce((sum, group) => sum + group.weight, 0);
 
-  weightedRows.forEach((row, index) => {
-    const last = index === weightedRows.length - 1;
+  groups.forEach((group, groupIndex) => {
     if (remainingWidth <= 0 || remainingHeight <= 0) return;
+    const isLastGroup = groupIndex === groups.length - 1;
+    const remainingNormalizedHeight = remainingHeight * normalizedCellAspect;
 
-    if (remainingWidth >= remainingHeight) {
-      const sliceWidth = last
+    if (remainingWidth >= remainingNormalizedHeight) {
+      const columnWidth = isLastGroup
         ? remainingWidth
-        : Math.max(1, Math.min(remainingWidth - 1, Math.round(remainingWidth * rowWeight(row) / remainingWeight)));
-      tiles.push({ row, x, y, width: sliceWidth, height: remainingHeight });
-      x += sliceWidth;
-      remainingWidth -= sliceWidth;
+        : Math.max(1, Math.min(remainingWidth - 1, Math.round(remainingWidth * group.weight / remainingWeight)));
+      const heights = allocateLengths(remainingHeight, group.items.map((item) => item.weight));
+      let tileY = y;
+      group.items.forEach((item, itemIndex) => {
+        const tileHeight = heights[itemIndex] ?? 0;
+        if (tileHeight > 0) {
+          tiles.push({ row: item.row, x, y: tileY, width: columnWidth, height: tileHeight });
+        }
+        tileY += tileHeight;
+      });
+      x += columnWidth;
+      remainingWidth -= columnWidth;
     } else {
-      const sliceHeight = last
+      const rowHeight = isLastGroup
         ? remainingHeight
-        : Math.max(1, Math.min(remainingHeight - 1, Math.round(remainingHeight * rowWeight(row) / remainingWeight)));
-      tiles.push({ row, x, y, width: remainingWidth, height: sliceHeight });
-      y += sliceHeight;
-      remainingHeight -= sliceHeight;
+        : Math.max(1, Math.min(remainingHeight - 1, Math.round(remainingHeight * group.weight / remainingWeight)));
+      const widths = allocateLengths(remainingWidth, group.items.map((item) => item.weight));
+      let tileX = x;
+      group.items.forEach((item, itemIndex) => {
+        const tileWidth = widths[itemIndex] ?? 0;
+        if (tileWidth > 0) {
+          tiles.push({ row: item.row, x: tileX, y, width: tileWidth, height: rowHeight });
+        }
+        tileX += tileWidth;
+      });
+      y += rowHeight;
+      remainingHeight -= rowHeight;
     }
-    remainingWeight -= rowWeight(row);
+
+    remainingWeight -= group.weight;
   });
 
   return tiles.filter((tile) => tile.width > 0 && tile.height > 0);
@@ -207,13 +419,23 @@ function tileColor(row: HolderRow): string {
   return priceColor(row.changePercent);
 }
 
+function desktopTileColor(row: HolderRow): string {
+  if (row.changePercent == null || row.changePercent === 0) {
+    return colors.neutral;
+  }
+  const intensity = Math.max(0.38, Math.min(0.88, Math.log1p(Math.abs(row.changePercent)) / Math.log1p(30)));
+  return blendHex(colors.panel, row.changePercent > 0 ? colors.positive : colors.negative, intensity);
+}
+
 function Tile({ tile, selected, currency, onSelect }: {
   tile: TileLayout;
   selected: boolean;
   currency: string;
   onSelect: () => void;
 }) {
-  const innerWidth = Math.max(1, tile.width - 1);
+  const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
+  const renderHeight = Math.max(1, tile.height - (tile.height > 2 ? 1 : 0));
+  const innerWidth = Math.max(1, renderWidth - 1);
   const textColor = "#ffffff";
   const attributes = selected ? TextAttributes.BOLD : TextAttributes.NONE;
   const label = tile.row.name;
@@ -227,8 +449,8 @@ function Tile({ tile, selected, currency, onSelect }: {
       position="absolute"
       left={tile.x}
       top={tile.y}
-      width={tile.width}
-      height={tile.height}
+      width={renderWidth}
+      height={renderHeight}
       backgroundColor={selected ? colors.selected : tileColor(tile.row)}
       onMouseDown={(event) => {
         event.preventDefault();
@@ -236,12 +458,173 @@ function Tile({ tile, selected, currency, onSelect }: {
       }}
     >
       <Text fg={textColor} attributes={attributes}>{padTo(label, innerWidth)}</Text>
-      {tile.height >= 2 && (
+      {renderHeight >= 2 && (
         <Text fg={textColor} attributes={attributes}>{padTo(amount, innerWidth)}</Text>
       )}
-      {tile.height >= 3 && (
+      {renderHeight >= 3 && (
         <Text fg={textColor} attributes={attributes}>{padTo(change, innerWidth)}</Text>
       )}
+    </Box>
+  );
+}
+
+function pct(value: number, total: number): string {
+  return `${total > 0 ? value / total * 100 : 0}%`;
+}
+
+function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currency, onSelect, onHover }: {
+  tile: FloatTileLayout;
+  chartWidth: number;
+  chartHeight: number;
+  selected: boolean;
+  hovered: boolean;
+  currency: string;
+  onSelect: () => void;
+  onHover: (hovered: boolean) => void;
+}) {
+  const amount = tile.row.value != null
+    ? formatMoneyCompact(tile.row.value, currency)
+    : formatCompact(tile.row.shares);
+  const change = tile.row.changePercent != null ? formatMaybePercent(tile.row.changePercent) : "No change";
+  const canShowDetails = tile.width >= 7 && tile.height >= 3;
+  const canShowLabel = tile.width >= 4 && tile.height >= 1.4;
+  const isTiny = tile.width < 5 || tile.height < 2;
+  const backgroundColor = desktopTileColor(tile.row);
+  const style: CSSProperties = {
+    position: "absolute",
+    left: `calc(${pct(tile.x, chartWidth)} + 1px)`,
+    top: `calc(${pct(tile.y, chartHeight)} + 1px)`,
+    width: `max(1px, calc(${pct(tile.width, chartWidth)} - 2px))`,
+    height: `max(1px, calc(${pct(tile.height, chartHeight)} - 2px))`,
+    minWidth: 1,
+    minHeight: 1,
+    padding: isTiny ? "3px 4px" : "7px 8px",
+    overflow: "hidden",
+    borderRadius: 5,
+    border: selected
+      ? `1px solid ${colors.textBright}`
+      : hovered
+        ? `1px solid ${blendHex(colors.textBright, backgroundColor, 0.55)}`
+        : "1px solid rgba(255,255,255,0.11)",
+    boxShadow: selected
+      ? "inset 0 0 0 1px rgba(255,255,255,0.55)"
+      : hovered
+        ? "inset 0 0 0 1px rgba(255,255,255,0.18)"
+        : "none",
+    backgroundColor,
+    color: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    justifyContent: "flex-start",
+    gap: 2,
+    cursor: "pointer",
+    transition: "border-color 120ms ease, box-shadow 120ms ease, filter 120ms ease",
+    filter: hovered ? "brightness(1.08)" : undefined,
+  };
+  const textStyle: CSSProperties = {
+    display: "block",
+    minWidth: 0,
+    width: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    lineHeight: 1.1,
+    letterSpacing: 0,
+    textShadow: "0 1px 1px rgba(0,0,0,0.35)",
+  };
+
+  return (
+    <Box
+      data-gloom-role="holders-desktop-tile"
+      style={style}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onSelect();
+      }}
+      onMouseMove={() => onHover(true)}
+      onMouseOut={() => onHover(false)}
+    >
+      {canShowLabel && (
+        <Text
+          fg="#ffffff"
+          attributes={selected ? TextAttributes.BOLD : TextAttributes.NONE}
+          style={{
+            ...textStyle,
+            fontSize: isTiny ? 11 : 13,
+            fontWeight: 700,
+          }}
+        >
+          {tile.row.name}
+        </Text>
+      )}
+      {canShowDetails && (
+        <>
+          <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{amount}</Text>
+          <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{change}</Text>
+        </>
+      )}
+    </Box>
+  );
+}
+
+function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, currency, cellAspect }: {
+  rows: HolderRow[];
+  width: number;
+  height: number;
+  selectedId: string | null;
+  onSelect: (row: HolderRow) => void;
+  currency: string;
+  cellAspect: number;
+}) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const chartWidth = Math.max(1, width - 2);
+  const tiles = useMemo(() => buildTreemapRects(rows, chartWidth, height, cellAspect), [cellAspect, chartWidth, height, rows]);
+
+  if (tiles.length === 0) {
+    return (
+      <Box width={width} height={height} paddingX={1} paddingY={1}>
+        <Text fg={colors.textDim}>No chartable holder values</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      width={width}
+      height={height}
+      paddingX={1}
+      style={{
+        backgroundColor: colors.bg,
+        overflow: "hidden",
+      }}
+    >
+      <Box
+        data-gloom-role="holders-desktop-treemap"
+        width={chartWidth}
+        height={height}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+          backgroundColor: colors.bg,
+          overflow: "hidden",
+        }}
+      >
+        {tiles.map((tile) => (
+          <DesktopTile
+            key={tile.row.id}
+            tile={tile}
+            chartWidth={chartWidth}
+            chartHeight={height}
+            selected={tile.row.id === selectedId}
+            hovered={tile.row.id === hoveredId}
+            currency={currency}
+            onSelect={() => onSelect(tile.row)}
+            onHover={(isHovered) => setHoveredId((current) => (isHovered ? tile.row.id : current === tile.row.id ? null : current))}
+          />
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -254,8 +637,24 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
   onSelect: (row: HolderRow) => void;
   currency: string;
 }) {
+  const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   const chartWidth = Math.max(1, width - 2);
-  const tiles = useMemo(() => buildTreemap(rows, chartWidth, height), [chartWidth, height, rows]);
+  const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
+  const tiles = useMemo(() => buildTreemap(rows, chartWidth, height, cellAspect), [cellAspect, chartWidth, height, rows]);
+
+  if (nativePaneChrome) {
+    return (
+      <DesktopHoldersTreemap
+        rows={rows}
+        width={width}
+        height={height}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        currency={currency}
+        cellAspect={cellAspect}
+      />
+    );
+  }
 
   if (tiles.length === 0) {
     return (
@@ -282,7 +681,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
   );
 }
 
-export function HoldersPane({ focused, width, height }: PaneProps) {
+export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused" | "width" | "height">) {
   const { symbol, ticker } = usePaneTicker();
   const dataProvider = useMarketData();
   const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "table");
@@ -502,12 +901,30 @@ export function HoldersPane({ focused, width, height }: PaneProps) {
   );
 }
 
+export function HoldersPane({ focused, width, height }: PaneProps) {
+  return <HoldersView focused={focused} width={width} height={height} />;
+}
+
+export function HoldersDetailTab({ focused, width, height }: DetailTabProps) {
+  return <HoldersView focused={focused} width={width} height={height} />;
+}
+
 export const holdersPlugin: GloomPlugin = {
   id: "holders",
   name: "Holders",
   version: "1.0.0",
   description: "Institutional holders by value and position change",
   toggleable: true,
+
+  setup(ctx) {
+    ctx.registerDetailTab({
+      id: "holders",
+      name: "Holders",
+      order: 42,
+      component: HoldersDetailTab,
+      isVisible: ({ ticker }) => !!ticker,
+    });
+  },
 
   panes: [
     {

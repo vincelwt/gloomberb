@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
 import { dirname, join } from "path";
+import { Buffer } from "node:buffer";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu, type UpdateStatusEntry } from "electrobun/bun";
 import { getAiProviderDefinitions } from "../../../plugins/builtin/ai/providers";
 import { runAiPrompt, type AiRunController } from "../../../plugins/builtin/ai/runner";
@@ -910,6 +911,9 @@ async function handleDataProvider(
       return (provider as typeof provider & { getNews?: (query: never) => unknown }).getNews?.(payload.query as never) ?? [];
     case "data.getSecFilings":
       return provider.getSecFilings?.(payload.ticker as string, payload.count as number | undefined, payload.exchange as string | undefined, payload.context as never) ?? [];
+    case "data.getHolders":
+      if (!provider.getHolders) throw new Error("Holder data source unavailable");
+      return provider.getHolders(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
     case "data.getAnalystResearch":
       if (!provider.getAnalystResearch) throw new Error("Analyst data source unavailable");
       return provider.getAnalystResearch(payload.ticker as string, payload.exchange as string | undefined, payload.context as never);
@@ -1385,6 +1389,12 @@ async function handleBackendRequest(
     case "host.copyText":
       Utils.clipboardWriteText(normalizeText(payload.text) ?? "");
       return null;
+    case "host.copyPngImage": {
+      const pngBase64 = normalizeText(payload.pngBase64);
+      if (!pngBase64) throw new Error("host.copyPngImage requires PNG data.");
+      Utils.clipboardWriteImage(new Uint8Array(Buffer.from(pngBase64, "base64")));
+      return null;
+    }
     case "host.readText":
       return Utils.clipboardReadText() ?? "";
     case "host.notify":

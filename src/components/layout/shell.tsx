@@ -1,6 +1,6 @@
 import { AsciiText, Box, Text, useContextMenu } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNativeRenderer, useUiCapabilities } from "../../ui";
+import { useNativeRenderer, useRendererHost, useUiCapabilities } from "../../ui";
 import { useShortcut, useViewport, type KeyEventLike } from "../../react/input";
 import { useDialogState } from "../../ui/dialog";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
@@ -54,6 +54,7 @@ import { hasPaneFooterContent, PaneFooterProvider } from "./pane-footer";
 import { getPaneBodyHeight, getPaneBodyWidth, shouldReservePaneFooter } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
+import { capturePaneScreenshotPngBase64 } from "../../utils/dom-screenshot";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
@@ -178,6 +179,7 @@ const PANE_MANAGEMENT_ACCELERATORS = {
   settings: "CmdOrCtrl+,",
   toggleFloating: "CmdOrCtrl+Shift+D",
   popOut: "CmdOrCtrl+Shift+O",
+  copyScreenshot: "CmdOrCtrl+Shift+C",
   close: "CmdOrCtrl+W",
   layoutActions: "CmdOrCtrl+Shift+L",
   gridlockAll: "CmdOrCtrl+Shift+G",
@@ -187,6 +189,7 @@ type PaneManagementShortcut =
   | "settings"
   | "toggle-floating"
   | "pop-out"
+  | "copy-screenshot"
   | "close"
   | "layout-actions"
   | "gridlock-all";
@@ -199,6 +202,7 @@ export function resolvePaneManagementShortcut(
   if (name === "w") return "close";
   if (!event.shift && name === ",") return "settings";
   if (!event.shift || event.alt) return null;
+  if (name === "c") return "copy-screenshot";
   if (name === "d") return "toggle-floating";
   if (name === "o") return "pop-out";
   if (name === "l") return "layout-actions";
@@ -601,6 +605,7 @@ function menuForPane(
   focusPane: (paneId: string) => void,
   openPaneSettings: (paneId: string) => void,
   desktopWindowBridge?: DesktopWindowBridge,
+  copyPaneScreenshot?: (paneId: string) => void | Promise<void>,
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -609,6 +614,14 @@ function menuForPane(
       label: "Settings",
       accelerator: PANE_MANAGEMENT_ACCELERATORS.settings,
       onSelect: () => openPaneSettings(pane.instance.instanceId),
+    });
+  }
+  if (copyPaneScreenshot) {
+    baseActions.push({
+      id: "copy-screenshot",
+      label: "Copy Screenshot",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.copyScreenshot,
+      onSelect: () => copyPaneScreenshot(pane.instance.instanceId),
     });
   }
 
@@ -734,6 +747,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const renderer = useNativeRenderer();
+  const rendererHost = useRendererHost();
   const { nativePaneChrome, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
@@ -836,6 +850,22 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     setMenuState(null);
   }, [pluginRegistry]);
 
+  const copyPaneScreenshot = useCallback(async (paneId: string) => {
+    setMenuState(null);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!rendererHost.copyPngImage) {
+        throw new Error("Image clipboard is unavailable.");
+      }
+      const screenshot = await capturePaneScreenshotPngBase64(paneId);
+      await rendererHost.copyPngImage(screenshot.pngBase64);
+      pluginRegistry.notify({ body: "Pane screenshot copied", type: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not copy pane screenshot.";
+      pluginRegistry.notify({ body: message, type: "error" });
+    }
+  }, [pluginRegistry, rendererHost]);
+
   const bounds = useMemo<LayoutBounds>(() => ({ x: 0, y: 0, width, height: contentHeight }), [contentHeight, width]);
   const dockedPanes = useMemo(
     () => resolveDocked(visibleLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
@@ -853,6 +883,13 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     [contentHeight, floatingPanes, width],
   );
   const paneMap = useMemo(() => new Map([...dockedPanes, ...floatingPanes].map((pane) => [pane.instance.instanceId, pane])), [dockedPanes, floatingPanes]);
+
+  const copyFocusedPaneScreenshot = useCallback(() => {
+    if (!focusedPaneId || !nativePaneChrome || !rendererHost.copyPngImage) return false;
+    if (!paneMap.has(focusedPaneId)) return false;
+    void copyPaneScreenshot(focusedPaneId);
+    return true;
+  }, [copyPaneScreenshot, focusedPaneId, nativePaneChrome, paneMap, rendererHost.copyPngImage]);
 
   const openFocusedPaneSettings = useCallback(() => {
     if (!focusedPaneId || !pluginRegistry.hasPaneSettings(focusedPaneId)) return false;
@@ -907,6 +944,9 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         break;
       case "pop-out":
         handled = popOutFocusedPane();
+        break;
+      case "copy-screenshot":
+        handled = copyFocusedPaneScreenshot();
         break;
       case "layout-actions":
         openLayoutMenu();
@@ -1017,6 +1057,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
       focusPane,
       openPaneSettings,
       desktopWindowBridge,
+      nativePaneChrome && rendererHost.copyPngImage ? copyPaneScreenshot : undefined,
     );
     void showContextMenu({
       kind: "pane",
@@ -1037,7 +1078,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         items: fallbackItems,
       });
     });
-  }, [contentHeight, desktopWindowBridge, focusPane, getPaneTitle, openPaneSettings, paneMap, persistLayout, pluginRegistry, showContextMenu, visibleLayout, width]);
+  }, [contentHeight, copyPaneScreenshot, desktopWindowBridge, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, persistLayout, pluginRegistry, rendererHost.copyPngImage, showContextMenu, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
     persistLayout(removePane(visibleLayout, paneId));
@@ -1504,6 +1545,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
                 const bodyHeight = getPaneBodyHeight(leaf.rect.height, reserveFooter);
                 return (
                   <PaneWrapper
+                    paneId={leaf.instanceId}
                     title={getPaneTitle(pane)}
                     focused={focused}
                     width={leaf.rect.width}
@@ -1548,6 +1590,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
               const bodyHeight = getPaneBodyHeight(preview.height, reserveFooter);
               return (
                 <FloatingPaneWrapper
+                  paneId={pane.instance.instanceId}
                   title={getPaneTitle(pane)}
                   x={preview.x}
                   y={preview.y}

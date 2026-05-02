@@ -6,6 +6,7 @@ import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./
 import { getPaneBodyHeight, shouldReservePaneFooter } from "./pane-sizing";
 
 interface FloatingPaneWrapperProps {
+  paneId?: string;
   title: string;
   x: number;
   y: number;
@@ -31,6 +32,7 @@ interface FloatingPaneWrapperProps {
 
 /** Pure visual wrapper; Shell owns the interaction state and supplies handlers. */
 export function FloatingPaneWrapper({
+  paneId,
   title,
   x,
   y,
@@ -72,6 +74,7 @@ export function FloatingPaneWrapper({
       overflow="hidden"
       {...(nativePaneChrome ? {
         "data-gloom-role": "pane-window",
+        "data-gloom-pane-id": paneId,
         "data-floating": "true",
         "data-focused": focused ? "true" : "false",
         style: { "--pane-border-color": focused ? colors.borderFocused : colors.border },
