@@ -7,7 +7,7 @@ import type { NewsQueryPhase } from "../../../news/types";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import { Spinner, Tabs } from "../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
-import { getSelectedNewsArticle, NewsArticleStackView, type NewsSortPreference } from "./news-table";
+import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
 import { useNewsArticleFooter } from "./news-footer";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
@@ -64,11 +64,6 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     setSelectedArticleId(null);
   }, [category, setSelectedArticleId]);
 
-  const selectedArticle = useMemo(() => {
-    if (detailArticle) return detailArticle;
-    return getSelectedNewsArticle(articles, selectedArticleId, sortPreference);
-  }, [articles, detailArticle, selectedArticleId, sortPreference]);
-
   const handleRootKeyDown = (event: {
     name?: string;
     preventDefault?: () => void;
@@ -87,7 +82,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   useNewsArticleFooter({
     registrationId: "news-wire:industry",
     focused,
-    article: selectedArticle,
+    article: detailArticle,
   });
 
   const rootBefore = (

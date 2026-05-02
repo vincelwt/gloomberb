@@ -75,6 +75,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
     liveNews,
   );
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
   const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
 
@@ -84,6 +85,9 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   }, [ticker?.metadata.ticker]);
 
   const selected = news[selectedIdx];
+  const openArticle = openItemId
+    ? news.find((article) => article.id === openItemId) ?? null
+    : null;
   const cachedSelectedSummary = selected ? summaryCache.get(selected.url) : undefined;
   const articleSummaryEntry = useArticleSummary(
     selected && !selected.summary && !cachedSelectedSummary ? selected.url : null,
@@ -117,7 +121,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   useNewsArticleFooter({
     registrationId: "news",
     focused,
-    article: selected,
+    article: openArticle,
     info: footerInfo,
   });
 
@@ -138,6 +142,7 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
       onSelect={setSelectedIdx}
       isItemRead={(item) => readArticleIds.has(item.id)}
       onOpenItem={(item) => markArticleRead(item.id)}
+      onOpenItemIdChange={setOpenItemId}
       sourceLabel="Source"
       titleLabel="Headline"
       emptyStateTitle="No news."

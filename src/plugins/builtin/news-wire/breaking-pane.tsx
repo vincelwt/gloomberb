@@ -9,7 +9,7 @@ import { detectProviders, getAiProvider, resolveDefaultAiProviderId } from "../a
 import { runAiPrompt } from "../ai/runner";
 import { getDigest, setDigest, isDigestInFlight, markDigestInFlight, clearDigestInFlight } from "./digest-store";
 import { NewsDetailView, useNewsArticleDetail } from "./news-detail-view";
-import { getSelectedNewsArticle, NewsArticleStackView, type NewsSortPreference } from "./news-table";
+import { NewsArticleStackView, type NewsSortPreference } from "./news-table";
 import { useNewsArticleFooter } from "./news-footer";
 import { NEWS_QUERY_PRESETS } from "./news-query-presets";
 import { usePersistedNewsArticles } from "./persisted-articles";
@@ -104,10 +104,6 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     getDigest(article.id) ?? article.title
   ), [digestVersion]);
 
-  const selectedArticle = useMemo(() => {
-    if (detailArticle) return detailArticle;
-    return getSelectedNewsArticle(articles, selectedArticleId, sortPreference);
-  }, [articles, detailArticle, selectedArticleId, sortPreference]);
   const footerInfo = useMemo(() => [
     ...(aiRunning ? [{ id: "running", parts: [{ text: BRAILLE_FRAMES[spinFrame] ?? "running", tone: "positive" as const }] }] : []),
     ...(aiError ? [{ id: "paused", parts: [{ text: "AI paused", tone: "warning" as const }] }] : []),
@@ -116,7 +112,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   useNewsArticleFooter({
     registrationId: "news-wire:breaking",
     focused,
-    article: selectedArticle,
+    article: detailArticle,
     info: footerInfo,
   });
 
