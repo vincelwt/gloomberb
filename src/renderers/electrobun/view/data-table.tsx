@@ -237,6 +237,7 @@ function WebDataTableRowInner<
   item,
   itemKey,
   minWidthPx,
+  getRowBackgroundColor,
   renderCell,
   renderSectionHeader,
   rowSize,
@@ -253,6 +254,7 @@ function WebDataTableRowInner<
   item: T;
   itemKey: string;
   minWidthPx: number;
+  getRowBackgroundColor?: DataTableProps<T, C>["getRowBackgroundColor"];
   renderCell: DataTableProps<T, C>["renderCell"];
   renderSectionHeader?: DataTableProps<T, C>["renderSectionHeader"];
   rowSize: number;
@@ -303,7 +305,13 @@ function WebDataTableRowInner<
     );
   }
 
-  const rowBg = selected ? colors.selected : hovered ? hoverBg() : colors.bg;
+  const rowState = { selected, hovered };
+  const rowBackgroundColor = getRowBackgroundColor?.(item, index, rowState);
+  const rowBg = selected
+    ? colors.selected
+    : hovered
+      ? hoverBg()
+      : rowBackgroundColor ?? colors.bg;
 
   return (
     <div
@@ -330,10 +338,7 @@ function WebDataTableRowInner<
       }}
     >
       {columns.map((column) => {
-        const cell: DataTableCell = renderCell(item, column, index, {
-          selected,
-          hovered,
-        });
+        const cell: DataTableCell = renderCell(item, column, index, rowState);
         return (
           <div
             key={column.id}
@@ -403,6 +408,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   onActivate,
   renderCell,
   renderSectionHeader,
+  getRowBackgroundColor,
   emptyContent,
   emptyStateTitle,
   emptyStateHint,
@@ -679,6 +685,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     onSelectRow={selectRow}
                     hovered={hovered}
                     minWidthPx={minWidthPx}
+                    getRowBackgroundColor={getRowBackgroundColor}
                     renderCell={renderCell}
                     renderSectionHeader={renderSectionHeader}
                     selected={selected}

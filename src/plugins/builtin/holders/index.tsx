@@ -684,7 +684,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
 export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused" | "width" | "height">) {
   const { symbol, ticker } = usePaneTicker();
   const dataProvider = useAssetData();
-  const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "table");
+  const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "chart");
   const [sortPreference, setSortPreference] = usePluginPaneState<SortPreference>("sortPreference", DEFAULT_SORT);
   const [data, setData] = useState<HolderData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -839,16 +839,14 @@ export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused
 
   usePaneFooter("holders", () => ({
     info: [
-      { id: "source", parts: [{ text: data?.providerId ?? "holders", tone: "label" }] },
       ...(data?.asOf ? [{ id: "as-of", parts: [{ text: data.asOf, tone: "value" as const }] }] : []),
-      { id: "count", parts: [{ text: `${rows.length} rows`, tone: rows.length > 0 ? "value" : "muted" }] },
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       { id: "view", key: "s", label: "witch", onPress: toggleView },
     ],
-  }), [data?.asOf, data?.providerId, loading, refresh, rows.length, toggleView]);
+  }), [data?.asOf, loading, refresh, toggleView]);
 
   const emptyTitle = !symbol
     ? "No ticker selected"

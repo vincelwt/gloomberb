@@ -4,7 +4,7 @@ import type { PluginPersistence } from "../../../types/plugin";
 
 const CACHE_KIND = "calendar";
 const CACHE_SOURCE = "earnings";
-const CACHE_SCHEMA_VERSION = 1;
+const CACHE_SCHEMA_VERSION = 2;
 
 export const EARNINGS_CALENDAR_CACHE_POLICY = {
   staleMs: 30 * 60 * 1000,
@@ -16,8 +16,9 @@ interface MemoryCacheEntry {
   fetchedAt: number;
 }
 
-type PersistedEarningsEvent = Omit<EarningsEvent, "earningsDate"> & {
+type PersistedEarningsEvent = Omit<EarningsEvent, "earningsDate" | "earningsCallDate"> & {
   earningsDate: string;
+  earningsCallDate?: string | null;
 };
 
 let earningsPersistence: PluginPersistence | null = null;
@@ -53,6 +54,7 @@ function serializeEvents(events: EarningsEvent[]): PersistedEarningsEvent[] {
   return events.map((event) => ({
     ...event,
     earningsDate: event.earningsDate.toISOString(),
+    earningsCallDate: event.earningsCallDate?.toISOString() ?? null,
   }));
 }
 
@@ -61,8 +63,15 @@ function deserializeEvents(events: PersistedEarningsEvent[]): EarningsEvent[] {
     .map((event) => ({
       ...event,
       earningsDate: new Date(event.earningsDate),
+      earningsCallDate: event.earningsCallDate ? new Date(event.earningsCallDate) : null,
     }))
-    .filter((event) => !Number.isNaN(event.earningsDate.getTime()));
+    .filter((event) => (
+      !Number.isNaN(event.earningsDate.getTime())
+      && (
+        !event.earningsCallDate
+        || !Number.isNaN(event.earningsCallDate.getTime())
+      )
+    ));
 }
 
 function readPersistedCache(
