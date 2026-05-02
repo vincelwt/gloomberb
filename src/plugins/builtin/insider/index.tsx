@@ -169,6 +169,7 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   const tickerKey = ticker?.metadata.ticker ?? "none";
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(`insider:selectedIdx:${tickerKey}`, 0);
   const [nameFilter, setNameFilter] = usePluginPaneState<string | null>(`insider:nameFilter:${tickerKey}`, null);
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
   const eligibleTicker = isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
 
@@ -238,7 +239,9 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   const summary = useMemo(() => buildSummary(allParsed), [allParsed]);
   const pendingCount = form4Filings.filter((f) => !contentMap.has(f.accessionNumber)).length;
   const selectedTransaction = parsed[selectedIdx]?.transaction ?? null;
-  const selectedFiling = parsed[selectedIdx]?.filing ?? null;
+  const openFiling = openItemId
+    ? parsed.find(({ filing }) => filing.accessionNumber === openItemId)?.filing ?? null
+    : null;
 
   const toggleNameFilter = useCallback((reportedName: string) => {
     setNameFilter((current) => current === reportedName ? null : reportedName);
@@ -285,8 +288,8 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   useExternalLinkFooter({
     registrationId: "insider",
     focused,
-    url: error ? null : selectedFiling?.filingUrl,
-    source: selectedFiling?.form ? formatFilingForm(selectedFiling.form) : null,
+    url: error ? null : openFiling?.filingUrl,
+    source: openFiling?.form ? formatFilingForm(openFiling.form) : null,
     info: footerInfo,
     hints: footerHints,
     label: "filing",
@@ -308,6 +311,7 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
       items={feedItems}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
+      onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Insider"
       titleLabel="Transaction"

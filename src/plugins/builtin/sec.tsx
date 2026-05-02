@@ -230,6 +230,7 @@ function SecTab({ width, height, focused }: DetailTabProps) {
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
   const [contentCache, setContentCache] = useState<Map<string, string | null>>(new Map());
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
   const contentFetchRef = useRef(0);
   const eligibleTicker = isUsEquityTicker(ticker);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
@@ -248,6 +249,9 @@ function SecTab({ width, height, focused }: DetailTabProps) {
   }, [eligibleTicker, ticker?.metadata.exchange, ticker?.metadata.ticker]);
 
   const selected = filings[selectedIdx];
+  const openFiling = openItemId
+    ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
+    : null;
   const cachedSelectedContent = selected ? contentCache.get(selected.accessionNumber) : undefined;
   const filingContentEntry = useSecFilingContent(
     selected && cachedSelectedContent === undefined ? selected : null,
@@ -311,8 +315,8 @@ function SecTab({ width, height, focused }: DetailTabProps) {
   useExternalLinkFooter({
     registrationId: "sec",
     focused,
-    url: error ? null : selected?.filingUrl,
-    source: selected?.form,
+    url: error ? null : openFiling?.filingUrl,
+    source: openFiling?.form,
     info: footerInfo,
     label: "filing",
   });
@@ -331,6 +335,7 @@ function SecTab({ width, height, focused }: DetailTabProps) {
       items={toFeedItems(filings, selected?.accessionNumber, contentCache, loadingContent)}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
+      onOpenItemIdChange={setOpenItemId}
       sourceLabel="Form"
       titleLabel="Filing"
       emptyStateTitle="No SEC filings."

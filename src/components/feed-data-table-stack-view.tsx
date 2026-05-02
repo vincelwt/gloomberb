@@ -52,6 +52,7 @@ interface FeedDataTableStackViewProps {
   emptyStateHint?: string;
   isItemRead?: (item: FeedDataTableItem) => boolean;
   onOpenItem?: (item: FeedDataTableItem, index: number) => void;
+  onOpenItemIdChange?: (itemId: string | null) => void;
 }
 
 function truncateWithEllipsis(text: string, width: number): string {
@@ -218,6 +219,7 @@ export function FeedDataTableStackView({
   emptyStateHint,
   isItemRead,
   onOpenItem,
+  onOpenItemIdChange,
 }: FeedDataTableStackViewProps) {
   const [sortPreference, setSortPreference] = useState<SortPreference>({
     columnId: "time",
@@ -251,6 +253,7 @@ export function FeedDataTableStackView({
         : null,
     [items, openItemId],
   );
+  const activeOpenItemId = openItem ? openItem.id : null;
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -276,6 +279,10 @@ export function FeedDataTableStackView({
       setOpenItemId(null);
     }
   }, [openItem, openItemId]);
+
+  useEffect(() => {
+    onOpenItemIdChange?.(activeOpenItemId);
+  }, [activeOpenItemId, onOpenItemIdChange]);
 
   useEffect(() => {
     if (!openItemId) return;
