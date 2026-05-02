@@ -261,6 +261,7 @@ export interface RendererHost {
   startWindowDrag?(): Promise<void> | void;
   openExternal(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
+  copyPngImage?(pngBase64: string): Promise<void>;
   readText(): Promise<string>;
   supportsNativeDesktopNotifications?: boolean;
   notify(notification: AppNotificationRequest): void;

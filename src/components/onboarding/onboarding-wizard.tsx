@@ -12,6 +12,7 @@ import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField }
 import { buildBrokerProfileConfig, validateBrokerProfileValues } from "../../brokers/profile-form";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation";
+import { detectShortcutPlatform, formatPrimaryShortcut } from "../../utils/shortcut-labels";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
 import { debugLog } from "../../utils/debug-log";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
@@ -1199,11 +1200,13 @@ function ShortcutsStep({
   pluginRegistry: PluginRegistry;
   disabledPlugins: string[];
 }) {
+  const shortcutPlatform = detectShortcutPlatform();
+  const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform);
   const keyboardShortcuts = [
     { key: "Ctrl+P / `", desc: "Open the command bar" },
     { key: "Tab", desc: "Switch between panels" },
-    { key: "Cmd/Ctrl+W", desc: "Close the focused pane" },
-    { key: "Cmd/Ctrl+Shift+D", desc: "Dock or float the focused pane" },
+    { key: platformShortcut("W"), desc: "Close the focused pane" },
+    { key: platformShortcut(["Shift", "D"]), desc: "Dock or float the focused pane" },
     { key: "q", desc: "Quit" },
   ];
 

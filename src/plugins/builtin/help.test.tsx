@@ -111,6 +111,8 @@ describe("HelpPane", () => {
     expect(frame).toContain("Add Alert (Alerts)");
     expect(frame).toContain("Shift+C");
     expect(frame).toContain("Toggle chat (Gloomberb Cloud)");
+    expect(frame).not.toContain("Cmd/Ctrl");
+    expect(frame).not.toContain("CmdOrCtrl");
   });
 
   test("opens the debug log from the mouse action", async () => {

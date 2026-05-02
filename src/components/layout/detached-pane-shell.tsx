@@ -125,6 +125,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
             height={height}
             backgroundColor={background}
             data-gloom-role="detached-pane-window"
+            data-gloom-pane-id={desktopWindowBridge.paneId}
             data-focused={focused ? "true" : "false"}
             onMouseDown={focusPane}
           >
