@@ -170,6 +170,17 @@ export interface CloudNewsTickerLinkPayload {
   sentiment?: "positive" | "neutral" | "negative" | null;
 }
 
+export interface CloudNewsStoryItemPayload {
+  id: string;
+  sourceKey: string;
+  sourceName: string;
+  title: string;
+  summary?: string;
+  url: string;
+  publishedAt: string;
+  hasArticleText?: boolean;
+}
+
 export interface CloudNewsPayload {
   id: string;
   headline: string;
@@ -203,6 +214,7 @@ export interface CloudNewsPayload {
   sources: string[];
   entities: CloudNewsEntityPayload[];
   tickerLinks: CloudNewsTickerLinkPayload[];
+  items?: CloudNewsStoryItemPayload[];
 }
 
 export interface CloudNewsListResponse {

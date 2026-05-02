@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginConfigState } from "../../../types/plugin";
-import { DEFAULT_FEEDS } from "./default-feeds";
 import {
   addUserNewsFeed,
   createUserFeed,
@@ -32,7 +31,7 @@ class MemoryConfigState implements PluginConfigState {
 }
 
 describe("news feed config", () => {
-  test("normalizes legacy JSON feed storage and disabled default feed names", () => {
+  test("normalizes legacy JSON feed storage and ignores removed default feed names", () => {
     const config = new MemoryConfigState();
     config.values.set("feeds", JSON.stringify([
       { url: "https://example.com/rss.xml", name: "Example", authority: 120 },
@@ -45,7 +44,7 @@ describe("news feed config", () => {
     expect(settings.userFeeds).toHaveLength(1);
     expect(settings.userFeeds[0]!.id).toMatch(/^user-/);
     expect(settings.userFeeds[0]!.authority).toBe(100);
-    expect(settings.disabledDefaultFeedIds).toEqual(["cnbc-top"]);
+    expect(settings.disabledDefaultFeedIds).toEqual([]);
   });
 
   test("adds, updates, and removes user feeds through typed helpers", async () => {
@@ -70,17 +69,18 @@ describe("news feed config", () => {
     expect(loadNewsFeedSettings(config).userFeeds).toHaveLength(0);
   });
 
-  test("enables and disables default feeds by stable id", async () => {
+  test("returns only user feeds when the default feed catalog is empty", async () => {
     const config = new MemoryConfigState();
-    const defaultFeed = DEFAULT_FEEDS[0]!;
 
-    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config)).some((feed) => feed.id === defaultFeed.id)).toBe(true);
+    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config))).toEqual([]);
 
-    await setDefaultNewsFeedEnabled(config, defaultFeed.id, false);
-    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config)).some((feed) => feed.id === defaultFeed.id)).toBe(false);
+    const added = await addUserNewsFeed(config, {
+      url: "https://example.com/feed",
+      name: "Example",
+    });
 
-    await setDefaultNewsFeedEnabled(config, defaultFeed.id, true);
-    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config)).some((feed) => feed.id === defaultFeed.id)).toBe(true);
+    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config)).map((feed) => feed.id)).toEqual([added.id]);
+    expect(await setDefaultNewsFeedEnabled(config, "missing-default-feed", false)).toBe(false);
   });
 
   test("rejects invalid user feed input", () => {

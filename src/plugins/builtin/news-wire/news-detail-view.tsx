@@ -2,10 +2,10 @@ import { Box, ScrollBox, Text } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MarketNewsItem } from "../../../types/news-source";
+import type { MarketNewsItem, NewsStoryItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 import { TickerBadge } from "../../../components/ticker-badge";
-import { ExternalLink } from "../../../components/ui";
+import { ExternalLink, ExternalLinkText } from "../../../components/ui";
 import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 
@@ -59,6 +59,75 @@ export function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
+function storyItemDate(value: Date | string): Date {
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? new Date(0) : date;
+}
+
+function formatDetailDate(date: Date): string {
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function sortStoryItems(items: readonly NewsStoryItem[] | undefined): NewsStoryItem[] {
+  return [...(items ?? [])].sort((a, b) => (
+    storyItemDate(a.publishedAt).getTime() - storyItemDate(b.publishedAt).getTime()
+  ));
+}
+
+function truncateText(text: string, maxWidth: number): string {
+  if (text.length <= maxWidth) return text;
+  if (maxWidth <= 3) return text.slice(0, Math.max(0, maxWidth));
+  return `${text.slice(0, maxWidth - 3)}...`;
+}
+
+function NewsStoryTimelineItemView({
+  item,
+  index,
+  total,
+  width,
+}: {
+  item: NewsStoryItem;
+  index: number;
+  total: number;
+  width: number;
+}) {
+  const marker = total <= 1 ? "*" : index === 0 || index === total - 1 ? "+" : "|";
+  const time = formatDetailDate(storyItemDate(item.publishedAt));
+  const sourceLabel = truncateText(item.sourceName || item.sourceKey, Math.max(4, width - time.length - 4));
+  const titleLines = wrapText(item.title, Math.max(10, width - 2));
+  const summary = item.summary && item.summary.trim() !== item.title.trim() ? item.summary : "";
+  const summaryLines = summary ? wrapText(summary, Math.max(10, width - 2)) : [];
+
+  return (
+    <Box flexDirection="column" width={width}>
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.textDim}>{marker} </Text>
+        <Text fg={colors.textDim}>{time}</Text>
+        <Text fg={colors.textDim}>  </Text>
+        <ExternalLinkText url={item.url} label={sourceLabel} color={colors.textBright} />
+      </Box>
+      <Box flexDirection="column" paddingLeft={2}>
+        {titleLines.map((line, lineIndex) => (
+          <Box key={`title-${lineIndex}`} height={1}>
+            <Text fg={colors.text}>{line}</Text>
+          </Box>
+        ))}
+        {summaryLines.map((line, lineIndex) => (
+          <Box key={`summary-${lineIndex}`} height={1}>
+            <Text fg={colors.textDim}>{line}</Text>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 export function NewsDetailView({ item, focused, width, showTitle = true }: {
   item: MarketNewsItem;
   focused: boolean;
@@ -77,9 +146,8 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const tickerTexts = useMemo(() => tickers.map((ticker) => `$${ticker}`), [tickers]);
   const { catalog, openTicker } = useInlineTickers(tickerTexts);
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
-  const dateStr = item.publishedAt.toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
-  });
+  const dateStr = formatDetailDate(item.publishedAt);
+  const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
 
   const scrollBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;
@@ -174,6 +242,19 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               <Text fg={colors.textMuted}>
                 {item.categories.join(" · ")}
               </Text>
+            </Box>
+          )}
+          {timelineItems.length > 0 && (
+            <Box flexDirection="column" gap={1} width={innerW}>
+              {timelineItems.map((timelineItem, index) => (
+                <NewsStoryTimelineItemView
+                  key={timelineItem.id}
+                  item={timelineItem}
+                  index={index}
+                  total={timelineItems.length}
+                  width={innerW}
+                />
+              ))}
             </Box>
           )}
           {/* URL */}

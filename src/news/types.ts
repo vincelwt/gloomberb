@@ -10,6 +10,17 @@ export interface NewsScores {
   confidence: number;
 }
 
+export interface NewsStoryItem {
+  id: string;
+  sourceKey: string;
+  sourceName: string;
+  title: string;
+  summary?: string;
+  url: string;
+  publishedAt: Date;
+  hasArticleText?: boolean;
+}
+
 export interface NewsArticle {
   id: string;
   title: string;
@@ -27,6 +38,7 @@ export interface NewsArticle {
   scores: NewsScores;
   isBreaking: boolean;
   isDeveloping: boolean;
+  items?: NewsStoryItem[];
 
   // Compatibility aliases for RSS/Yahoo panes and existing table columns.
   importance: number;
