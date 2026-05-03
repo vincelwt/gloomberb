@@ -478,6 +478,15 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
       case "a":
         openAddBroker();
         break;
+      case "enter":
+      case "return":
+        if (!detailOpen && hasSelectedRow) {
+          event.stopPropagation();
+          event.preventDefault?.();
+          setEditDraft(null);
+          setDetailOpen(true);
+        }
+        break;
       case "e":
         if (canUseSelectedBroker) startEdit();
         break;
