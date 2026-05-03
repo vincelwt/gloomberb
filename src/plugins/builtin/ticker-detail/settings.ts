@@ -1,6 +1,7 @@
 import type { PaneSettingsDef, DetailTabDef } from "../../../types/plugin";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
+import type { AppConfig } from "../../../types/config";
 import type { ChartAxisMode, TimeRange } from "../../../components/chart/chart-types";
 import {
   DEFAULT_TICKER_CHART_RANGE_PRESET,
@@ -122,7 +123,7 @@ export function buildVisibleDetailTabs(
   ticker: TickerRecord | null,
   financials: TickerFinancials | null | undefined,
   options: {
-    hasIbkrGatewayTrading: boolean;
+    config: AppConfig;
     hasOptionsChain: boolean;
   },
 ): DetailTabSummary[] {
@@ -134,13 +135,11 @@ export function buildVisibleDetailTabs(
 
   for (const tab of pluginTabs) {
     if (tab.isVisible && !tab.isVisible({
+      config: options.config,
       ticker,
       financials,
-      hasIbkrGatewayTrading: options.hasIbkrGatewayTrading,
       hasOptionsChain: options.hasOptionsChain,
     })) continue;
-    if (tab.id === "ibkr-trade" && !options.hasIbkrGatewayTrading) continue;
-    if (tab.id === "options" && !options.hasOptionsChain) continue;
     tabs.push({ id: tab.id, name: tab.name, order: tab.order });
   }
 

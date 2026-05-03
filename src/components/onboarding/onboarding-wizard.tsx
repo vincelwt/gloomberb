@@ -280,7 +280,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         brokers: pluginRegistry.brokers,
         tickerRepository: pluginRegistry.tickerRepository,
         resources: pluginRegistry.persistence.resources,
-        persistResolvedIbkrConnection: true,
+        persistResolvedBrokerConfig: true,
       });
       if (brokerSyncAttemptRef.current !== attemptId) {
         return;

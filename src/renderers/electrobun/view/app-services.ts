@@ -1,4 +1,5 @@
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { createRemoteBrokerAdapter } from "../../../brokers/remote-broker-adapter";
 import { NewsService } from "../../../news/aggregator";
 import { setSharedNewsService } from "../../../news/hooks";
 import { PluginRegistry } from "../../../plugins/registry";
@@ -296,6 +297,7 @@ export function createAppServices({ config }: { config: AppConfig }): AppService
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository as never, persistence as never, {
     enableCapabilityHandlers: false,
+    wrapBrokerAdapter: (broker) => createRemoteBrokerAdapter(broker),
   });
   const newsService = new NewsService();
 

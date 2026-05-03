@@ -140,8 +140,14 @@ function makeRegistry(): PluginRegistry {
     <text>stub</text>
   );
   const detailTabs = new Map<string, DetailTabDef>([
-    ["ibkr-trade", { id: "ibkr-trade", name: "Trade", order: 25, component: stubTab }],
-    ["options", { id: "options", name: "Options", order: 35, component: stubTab }],
+    ["ibkr-trade", {
+      id: "ibkr-trade",
+      name: "Trade",
+      order: 25,
+      component: stubTab,
+      isVisible: ({ config }) => config.brokerInstances.some((instance) => instance.brokerType === "ibkr" && instance.connectionMode === "gateway"),
+    }],
+    ["options", { id: "options", name: "Options", order: 35, component: stubTab, isVisible: ({ hasOptionsChain }) => hasOptionsChain }],
     ["sec", { id: "sec", name: "SEC", order: 45, component: stubTab, isVisible: ({ ticker }) => isUsEquityTicker(ticker) }],
     ["ai-chat", { id: "ai-chat", name: "Ask AI", order: 60, component: stubTab }],
   ]);

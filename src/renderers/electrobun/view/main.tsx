@@ -8,9 +8,13 @@ import { measurePerfAsync } from "../../../utils/perf-marks";
 import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
 import { initElectrobunBackend } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
+import { installElectrobunBrokerRemoteClient } from "./broker-remote-client";
 import { installElectrobunConfigStoreHost } from "./config-host";
 import { WebDialogHostProvider } from "./dialog-host";
-import { installElectrobunCloudApiFetchTransport, installElectrobunPredictionMarketsFetchTransport } from "./http-fetch";
+import {
+  installElectrobunCloudApiFetchTransport,
+  installElectrobunHttpFetchTransport,
+} from "./http-fetch";
 import { installElectrobunUpdateHost } from "./update-host";
 import { WebInputHostProvider } from "./input-host";
 import { webNativeRenderer } from "./native-renderer";
@@ -51,11 +55,12 @@ async function boot() {
   void backendInitPromise.catch(() => {});
 
   installElectrobunConfigStoreHost();
-  installElectrobunPredictionMarketsFetchTransport();
+  installElectrobunBrokerRemoteClient();
+  installElectrobunHttpFetchTransport();
   installElectrobunCloudApiFetchTransport();
   installElectrobunUpdateHost();
-  await installElectrobunAiHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
+  await installElectrobunAiHost();
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot
     ? prepareDetachedSnapshot(init.desktopSnapshot, init.paneId)
     : init.desktopSnapshot;

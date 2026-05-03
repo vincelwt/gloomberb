@@ -1,12 +1,11 @@
 import type { PluginPersistence } from "../../../types/plugin";
+import { httpFetch } from "../../../utils/http-transport";
 import { measurePerf } from "../../../utils/perf-marks";
 import {
   createThrottledFetch,
-  type ThrottledFetchTransport,
 } from "../../../utils/throttled-fetch";
 
 const DEFAULT_SOURCE_KEY = "remote";
-let predictionMarketsFetchTransport: ThrottledFetchTransport | null = null;
 const PREDICTION_FETCH = createThrottledFetch({
   requestsPerMinute: 120,
   maxRetries: 2,
@@ -17,10 +16,7 @@ const PREDICTION_FETCH = createThrottledFetch({
     Accept: "application/json",
     "User-Agent": "gloomberb-prediction-markets",
   },
-  transport: (url, init) =>
-    predictionMarketsFetchTransport
-      ? predictionMarketsFetchTransport(url, init)
-      : globalThis.fetch(url, init),
+  transport: httpFetch,
 });
 
 export const PREDICTION_CACHE_POLICIES = {
@@ -46,12 +42,6 @@ export function resetPredictionMarketsPersistence(): void {
 
 export function getPredictionMarketsPersistence(): PluginPersistence | null {
   return predictionMarketsPersistence;
-}
-
-export function setPredictionMarketsFetchTransport(
-  transport: ThrottledFetchTransport | null,
-): void {
-  predictionMarketsFetchTransport = transport;
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {

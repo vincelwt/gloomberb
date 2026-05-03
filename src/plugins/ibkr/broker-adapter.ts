@@ -9,6 +9,7 @@ import {
   normalizeIbkrConfig,
   type FlexQueryConfig,
 } from "./config";
+import { getIbkrAccountCachePolicy, getIbkrAccountCacheSourceKey } from "./account-cache";
 import { loadFlexStatement, parseFlexAccounts, parseFlexPositions } from "./flex";
 import { ibkrGatewayManager } from "./gateway-service";
 import { refreshGatewayData } from "./gateway-helpers";
@@ -64,6 +65,27 @@ export const ibkrBroker: BrokerAdapter = {
 
   subscribeStatus(instance, listener) {
     return ibkrGatewayManager.subscribe(instance.id, listener);
+  },
+
+  getPersistedConfigUpdate(instance) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    if (normalized.connectionMode !== "gateway") return null;
+    const resolved = ibkrGatewayManager.getService(instance.id).getResolvedConnection();
+    return resolved ? buildPersistedIbkrGatewayConfig(instance.config, resolved) : null;
+  },
+
+  getAccountCacheSourceKey: getIbkrAccountCacheSourceKey,
+  getAccountCachePolicy: getIbkrAccountCachePolicy,
+
+  getProfileActions(instance) {
+    const normalized = normalizeIbkrConfig(instance.config);
+    return [{
+      id: "ibkr-console",
+      label: "IBKR Console",
+      widgetId: "ibkr-trading",
+      disabled: normalized.connectionMode !== "gateway",
+      disabledReason: "IBKR Console is available for Gateway / TWS profiles.",
+    }];
   },
 
   toConfigValues(instance) {

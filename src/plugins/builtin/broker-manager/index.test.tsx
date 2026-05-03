@@ -12,9 +12,11 @@ import { BrokersPane } from "./index";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
-afterEach(() => {
+afterEach(async () => {
   if (testSetup) {
-    testSetup.renderer.destroy();
+    await act(async () => {
+      testSetup!.renderer.destroy();
+    });
     testSetup = undefined;
   }
 });
@@ -96,7 +98,9 @@ describe("BrokersPane", () => {
   test("shows empty state and opens add broker flow", async () => {
     const calls: string[] = [];
     testSetup = await testRender(<Harness calls={calls} />, { width: 92, height: 24 });
-    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("No broker profiles.");
@@ -126,10 +130,23 @@ describe("BrokersPane", () => {
   test("renders IBKR details and invokes broker actions", async () => {
     const calls: string[] = [];
     testSetup = await testRender(<Harness calls={calls} instance={createGatewayInstance()} />, { width: 92, height: 24 });
-    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
 
     let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("PROFILE");
+    expect(frame).toContain("STATUS");
+    expect(frame).toContain("ACCOUNTS");
     expect(frame).toContain("IBKR Paper");
+    expect(frame).not.toContain("DU12345");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
     expect(frame).toContain("DU12345");
     expect(frame).toContain("$125,000.00");
 
@@ -158,7 +175,9 @@ describe("BrokersPane", () => {
   test("edits and saves an IBKR profile", async () => {
     const calls: string[] = [];
     testSetup = await testRender(<Harness calls={calls} instance={createGatewayInstance()} />, { width: 92, height: 24 });
-    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
 
     await act(async () => {
       testSetup!.mockInput.pressKey("e");

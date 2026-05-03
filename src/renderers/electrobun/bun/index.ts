@@ -1,10 +1,7 @@
 import { existsSync, mkdirSync } from "fs";
-import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
-import { dirname, join } from "path";
+import { join } from "path";
 import { Buffer } from "node:buffer";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu, type UpdateStatusEntry } from "electrobun/bun";
-import { getAiProviderDefinitions } from "../../../plugins/builtin/ai/providers";
-import { runAiPrompt, type AiRunController } from "../../../plugins/builtin/ai/runner";
 import {
   APP_SESSION_ID,
   APP_SESSION_SCHEMA_VERSION,
@@ -13,18 +10,10 @@ import {
 import { createAppServices, type AppServices } from "../../../core/app-services";
 import { getDataDir, initDataDir, saveConfig, resetAllData, exportConfig, importConfig, setConfigStoreHost } from "../../../data/config-store";
 import * as nodeConfigStoreHost from "../../../data/config-store-node";
-import {
-  ibkrGatewayManager,
-  setResolvedIbkrGatewayListener,
-  type IbkrGatewayConfig,
-} from "../../../plugins/ibkr/gateway-service";
-import { type BrokerContractRef } from "../../../types/instrument";
 import { cloneLayout, findPaneInstance, type AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
 import type { PaneRuntimeState } from "../../../core/state/app-state";
-import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
-import type { BrokerOrderRequest } from "../../../types/trading";
 import type { ReleaseInfo, UpdateCheckResult, UpdateProgress } from "../../../updater";
 import { buildSoundCommand } from "../../../notifications/app-notifier";
 import { isPaneDetached } from "../../../plugins/pane-manager";
@@ -36,6 +25,7 @@ import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-me
 import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
 import { buildApplicationMenu } from "./application-menu";
 import { applicationMenuCommand } from "./application-menu-click";
+import { registerElectrobunCoreCapabilities } from "./core-capabilities";
 import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
 import {
   DEFAULT_WINDOW_FRAME,
@@ -47,7 +37,6 @@ import {
   type WindowMinimumSize,
 } from "./window-frame";
 
-const NOTES_INDEX_FILE = "__quick-notes-index__.json";
 const MAIN_WINDOW_RPC_KEY = "main";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
@@ -83,9 +72,6 @@ const rpcWindowKeys = new Map<DesktopRpc, string>();
 const contextMenuRequestRpcs = new Map<string, DesktopRpc>();
 
 const capabilitySubscriptions = new Map<string, () => void>();
-const ibkrSnapshotSubscriptions = new Map<string, () => void>();
-const ibkrQuoteSubscriptions = new Map<string, () => void>();
-const aiRuns = new Map<string, AiRunController>();
 
 function summarizeError(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error);
@@ -99,6 +85,13 @@ function requireServices(): AppServices {
 function requireConfig(): AppConfig {
   if (!currentConfig) throw new Error("Backend config has not been initialized.");
   return currentConfig;
+}
+
+function registerCoreCapabilities(): void {
+  registerElectrobunCoreCapabilities({
+    getConfig: requireConfig,
+    getServices: requireServices,
+  });
 }
 
 function requireDesktopWorkspace(): DesktopWorkspace {
@@ -432,35 +425,6 @@ function syncBackendCloudAuthState(pluginId: string, key: string, value: unknown
   apiClient.restoreCachedUser(token ? session?.user ?? null : null);
 }
 
-function notePath(dataDir: string, symbol: string): string {
-  return join(dataDir, `${symbol}.md`);
-}
-
-function notesIndexPath(dataDir: string): string {
-  return join(dataDir, NOTES_INDEX_FILE);
-}
-
-async function readTextOrEmpty(path: string): Promise<string> {
-  try {
-    return await readFile(path, "utf-8");
-  } catch {
-    return "";
-  }
-}
-
-async function writeTextEnsuringParent(path: string, value: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, value, "utf-8");
-}
-
-async function deleteFileIfPresent(path: string): Promise<void> {
-  try {
-    await unlink(path);
-  } catch {
-    // ignore missing files
-  }
-}
-
 async function handleHttpFetch(payload: Record<string, unknown>) {
   if (typeof payload.url !== "string") {
     throw new Error("http.fetch requires a URL.");
@@ -512,6 +476,34 @@ function syncConfigAccessors() {
   if (!services || !currentConfig) return;
   services.pluginRegistry.getConfigFn = () => currentConfig!;
   services.pluginRegistry.getLayoutFn = () => currentConfig!.layout;
+  services.pluginRegistry.updateBrokerInstanceFn = async (instanceId, values, options = {}) => {
+    const config = requireConfig();
+    let found = false;
+    const brokerInstances = config.brokerInstances.map((instance) => {
+      if (instance.id !== instanceId) return instance;
+      found = true;
+      const nextValues = options.replaceConfig ? values : { ...instance.config, ...values };
+      return {
+        ...instance,
+        label: options.label ?? instance.label,
+        enabled: options.enabled ?? instance.enabled,
+        connectionMode: typeof nextValues.connectionMode === "string" ? nextValues.connectionMode : instance.connectionMode,
+        config: nextValues,
+      };
+    });
+    if (!found) return;
+
+    const nextConfig = {
+      ...config,
+      brokerInstances,
+    };
+    if (desktopWorkspace) {
+      await commitDesktopSnapshot(desktopWorkspace.replaceConfig(nextConfig, { layoutChanged: false }));
+      return;
+    }
+    setCurrentConfig(nextConfig);
+    await saveConfig(requireConfig());
+  };
   const configurableProvider = services.providerRouter as {
     setConfigAccessor?: (accessor: () => AppConfig) => void;
   };
@@ -595,36 +587,12 @@ function disposeScopedSubscriptionMap(map: Map<string, () => void>, windowKey: s
   }
 }
 
-function disposeAiRuns(): void {
-  for (const controller of aiRuns.values()) {
-    controller.cancel();
-  }
-  aiRuns.clear();
-}
-
-function disposeScopedAiRuns(windowKey: string): void {
-  const scopedPrefix = `${windowKey}:`;
-  for (const [id, controller] of aiRuns) {
-    if (!id.startsWith(scopedPrefix)) continue;
-    controller.cancel();
-    aiRuns.delete(id);
-  }
-}
-
 function disposeWindowScopedResources(windowKey: string): void {
   disposeScopedSubscriptionMap(capabilitySubscriptions, windowKey);
-  disposeScopedSubscriptionMap(ibkrSnapshotSubscriptions, windowKey);
-  disposeScopedSubscriptionMap(ibkrQuoteSubscriptions, windowKey);
-  disposeScopedAiRuns(windowKey);
 }
 
 function teardownServices(): void {
   disposeSubscriptionMap(capabilitySubscriptions);
-  disposeSubscriptionMap(ibkrSnapshotSubscriptions);
-  disposeSubscriptionMap(ibkrQuoteSubscriptions);
-  disposeAiRuns();
-  void ibkrGatewayManager.destroyAll().catch(() => {});
-  setResolvedIbkrGatewayListener(null);
   services?.destroy();
   services = null;
 }
@@ -869,17 +837,8 @@ async function initialize(
   setCurrentConfig(await initDataDir(dataDir));
   services = createAppServices({ config: requireConfig(), externalPlugins: [] });
   syncConfigAccessors();
+  registerCoreCapabilities();
   desktopWorkspace = createDesktopWorkspace(requireConfig(), getSessionSnapshot());
-
-  setResolvedIbkrGatewayListener((instanceId, connection) => {
-    const encodedConnection = encodeRpcValue(connection);
-    forEachReadyWindowRpc((currentRpc) => {
-      currentRpc.send["ibkr.resolved"]({
-        instanceId,
-        connection: encodedConnection,
-      });
-    });
-  });
 
   reconcileDetachedWindows();
 
@@ -892,251 +851,6 @@ async function initialize(
     windowKind: windowTarget.kind,
     paneId: windowTarget.paneId,
   };
-}
-
-async function handleIbkr(
-  rpc: DesktopRpc,
-  method: string,
-  payload: Record<string, unknown>,
-) {
-  const instanceId = payload.instanceId as string | undefined;
-  const service = instanceId ? ibkrGatewayManager.getService(instanceId) : null;
-  const config = payload.config as IbkrGatewayConfig | undefined;
-
-  switch (method) {
-    case "ibkr.subscribeSnapshot": {
-      const subscriptionId = payload.subscriptionId as string;
-      const scopedSubscriptionId = scopeClientId(rpc, subscriptionId);
-      if (!instanceId || !service) return null;
-      ibkrSnapshotSubscriptions.get(scopedSubscriptionId)?.();
-      const pushSnapshot = () => {
-        rpc.send["ibkr.snapshot"]({
-          subscriptionId,
-          instanceId,
-          snapshot: encodeRpcValue(service.getSnapshot()),
-          resolvedConnection: encodeRpcValue(service.getResolvedConnection()),
-        });
-      };
-      const unsubscribe = service.subscribe(pushSnapshot);
-      ibkrSnapshotSubscriptions.set(scopedSubscriptionId, unsubscribe);
-      pushSnapshot();
-      return null;
-    }
-    case "ibkr.unsubscribeSnapshot": {
-      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
-      ibkrSnapshotSubscriptions.get(scopedSubscriptionId)?.();
-      ibkrSnapshotSubscriptions.delete(scopedSubscriptionId);
-      return null;
-    }
-    case "ibkr.connect":
-      if (!service || !config) throw new Error("ibkr.connect requires an instance and config.");
-      return service.connect(config);
-    case "ibkr.disconnect":
-      if (!service) throw new Error("ibkr.disconnect requires an instance.");
-      return service.disconnect();
-    case "ibkr.getAccounts":
-      if (!service || !config) throw new Error("ibkr.getAccounts requires an instance and config.");
-      return service.getAccounts(config);
-    case "ibkr.getPositions":
-      if (!service || !config) throw new Error("ibkr.getPositions requires an instance and config.");
-      return service.getPositions(config);
-    case "ibkr.listOpenOrders":
-      if (!service || !config) throw new Error("ibkr.listOpenOrders requires an instance and config.");
-      return service.listOpenOrders(config);
-    case "ibkr.listExecutions":
-      if (!service || !config) throw new Error("ibkr.listExecutions requires an instance and config.");
-      return service.listExecutions(config);
-    case "ibkr.searchInstruments":
-      if (!service || !config) throw new Error("ibkr.searchInstruments requires an instance and config.");
-      return service.searchInstruments(payload.query as string, config);
-    case "ibkr.getTickerFinancials":
-      if (!service || !config) throw new Error("ibkr.getTickerFinancials requires an instance and config.");
-      return service.getTickerFinancials(
-        payload.ticker as string,
-        config,
-        payload.exchange as string | undefined,
-        payload.instrument as BrokerContractRef | null | undefined,
-      );
-    case "ibkr.getQuote":
-      if (!service || !config) throw new Error("ibkr.getQuote requires an instance and config.");
-      return service.getQuote(
-        payload.ticker as string,
-        config,
-        payload.exchange as string | undefined,
-        payload.instrument as BrokerContractRef | null | undefined,
-      );
-    case "ibkr.getPriceHistory":
-      if (!service || !config) throw new Error("ibkr.getPriceHistory requires an instance and config.");
-      return service.getPriceHistory(
-        payload.ticker as string,
-        config,
-        payload.exchange as string,
-        payload.range as never,
-        payload.instrument as BrokerContractRef | null | undefined,
-      );
-    case "ibkr.getChartResolutionSupport":
-      if (!service || !config) throw new Error("ibkr.getChartResolutionSupport requires an instance and config.");
-      return service.getChartResolutionSupport(
-        payload.ticker as string,
-        config,
-        payload.exchange as string | undefined,
-        payload.instrument as BrokerContractRef | null | undefined,
-      );
-    case "ibkr.getPriceHistoryForResolution":
-      if (!service || !config) throw new Error("ibkr.getPriceHistoryForResolution requires an instance and config.");
-      return service.getPriceHistoryForResolution(
-        payload.ticker as string,
-        config,
-        payload.exchange as string,
-        payload.bufferRange as never,
-        payload.resolution as never,
-        payload.instrument as BrokerContractRef | null | undefined,
-      );
-    case "ibkr.getDetailedPriceHistory":
-      if (!service || !config) throw new Error("ibkr.getDetailedPriceHistory requires an instance and config.");
-      return service.getDetailedPriceHistory(
-        payload.ticker as string,
-        config,
-        payload.exchange as string,
-        payload.startDate as Date,
-        payload.endDate as Date,
-        payload.barSize as string,
-        payload.instrument as BrokerContractRef | null | undefined,
-      );
-    case "ibkr.subscribeQuotes": {
-      if (!service || !config) throw new Error("ibkr.subscribeQuotes requires an instance and config.");
-      const subscriptionId = payload.subscriptionId as string;
-      const scopedSubscriptionId = scopeClientId(rpc, subscriptionId);
-      ibkrQuoteSubscriptions.get(scopedSubscriptionId)?.();
-      const unsubscribe = service.subscribeQuotes(
-        config,
-        payload.targets as QuoteSubscriptionTarget[],
-        (target, quote) => {
-          rpc.send["ibkr.quote.update"]({
-            subscriptionId,
-            target: encodeRpcValue(target),
-            quote: encodeRpcValue(quote),
-          });
-        },
-      );
-      ibkrQuoteSubscriptions.set(scopedSubscriptionId, unsubscribe);
-      return null;
-    }
-    case "ibkr.unsubscribeQuotes": {
-      const scopedSubscriptionId = scopeClientId(rpc, payload.subscriptionId as string);
-      ibkrQuoteSubscriptions.get(scopedSubscriptionId)?.();
-      ibkrQuoteSubscriptions.delete(scopedSubscriptionId);
-      return null;
-    }
-    case "ibkr.previewOrder":
-      if (!service || !config) throw new Error("ibkr.previewOrder requires an instance and config.");
-      return service.previewOrder(config, payload.request as BrokerOrderRequest);
-    case "ibkr.placeOrder":
-      if (!service || !config) throw new Error("ibkr.placeOrder requires an instance and config.");
-      return service.placeOrder(config, payload.request as BrokerOrderRequest);
-    case "ibkr.modifyOrder":
-      if (!service || !config) throw new Error("ibkr.modifyOrder requires an instance and config.");
-      return service.modifyOrder(config, payload.orderId as number, payload.request as BrokerOrderRequest);
-    case "ibkr.cancelOrder":
-      if (!service || !config) throw new Error("ibkr.cancelOrder requires an instance and config.");
-      return service.cancelOrder(config, payload.orderId as number);
-    case "ibkr.removeInstance":
-      if (!instanceId) throw new Error("ibkr.removeInstance requires an instance.");
-      return ibkrGatewayManager.removeInstance(instanceId);
-    case "ibkr.destroyAll":
-      return ibkrGatewayManager.destroyAll();
-    default:
-      throw new Error(`Unknown IBKR method: ${method}`);
-  }
-}
-
-function getAiProviderAvailability(): Record<string, boolean> {
-  const availability: Record<string, boolean> = {};
-  for (const definition of getAiProviderDefinitions()) {
-    availability[definition.id] = typeof Bun.which === "function" ? !!Bun.which(definition.command) : false;
-  }
-  return availability;
-}
-
-async function handleAi(
-  rpc: DesktopRpc,
-  method: string,
-  payload: Record<string, unknown>,
-) {
-  switch (method) {
-    case "ai.getProviderAvailability":
-      return getAiProviderAvailability();
-    case "ai.run": {
-      const runId = payload.runId as string;
-      const scopedRunId = scopeClientId(rpc, runId);
-      const providerId = payload.providerId as string;
-      const prompt = payload.prompt as string;
-      const providerDefinition = getAiProviderDefinitions().find((entry) => entry.id === providerId);
-      if (!providerDefinition) {
-        throw new Error(`Unknown AI provider: ${providerId}`);
-      }
-      if (typeof Bun.which !== "function" || !Bun.which(providerDefinition.command)) {
-        throw new Error(`${providerDefinition.name} is not installed on this system.`);
-      }
-
-      aiRuns.get(scopedRunId)?.cancel();
-      const controller = runAiPrompt({
-        provider: {
-          ...providerDefinition,
-          available: true,
-        },
-        prompt,
-        cwd: typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : requireConfig().dataDir,
-        onChunk: (output) => {
-          rpc.send["ai.chunk"]({ runId, output });
-        },
-      });
-      aiRuns.set(scopedRunId, controller);
-      return controller.done.finally(() => {
-        aiRuns.delete(scopedRunId);
-      });
-    }
-    case "ai.cancel": {
-      const scopedRunId = scopeClientId(rpc, payload.runId as string);
-      aiRuns.get(scopedRunId)?.cancel();
-      aiRuns.delete(scopedRunId);
-      return null;
-    }
-    default:
-      throw new Error(`Unknown AI method: ${method}`);
-  }
-}
-
-async function handleNotes(method: string, payload: Record<string, unknown>) {
-  const dataDir = payload.dataDir as string;
-  if (!dataDir) {
-    throw new Error(`${method} requires a dataDir.`);
-  }
-
-  switch (method) {
-    case "notes.load":
-      return readTextOrEmpty(notePath(dataDir, payload.symbol as string));
-    case "notes.save":
-      await writeTextEnsuringParent(notePath(dataDir, payload.symbol as string), normalizeText(payload.notes) ?? "");
-      return null;
-    case "notes.delete":
-      await deleteFileIfPresent(notePath(dataDir, payload.symbol as string));
-      return null;
-    case "notes.loadQuickNotesIndex": {
-      const raw = await readTextOrEmpty(notesIndexPath(dataDir));
-      if (!raw.trim()) return [];
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return [];
-      }
-    }
-    case "notes.saveQuickNotesIndex":
-      await writeTextEnsuringParent(notesIndexPath(dataDir), JSON.stringify(payload.entries ?? []));
-      return null;
-    default:
-      throw new Error(`Unknown notes method: ${method}`);
-  }
 }
 
 async function handleDesktop(
@@ -1256,9 +970,6 @@ async function handleBackendRequest(
   if (method === "init") return initialize(rpc, payload);
   if (method === "http.fetch") return handleHttpFetch(payload);
   if (method.startsWith("capability.")) return handleCapability(rpc, method, payload);
-  if (method.startsWith("ibkr.")) return handleIbkr(rpc, method, payload);
-  if (method.startsWith("ai.")) return handleAi(rpc, method, payload);
-  if (method.startsWith("notes.")) return handleNotes(method, payload);
   if (method.startsWith("desktop.")) return handleDesktop(rpc, method, payload);
 
   switch (method) {
@@ -1304,16 +1015,8 @@ async function handleBackendRequest(
       setCurrentConfig(await importConfig(payload.dataDir as string, payload.srcPath as string));
       services = createAppServices({ config: requireConfig(), externalPlugins: [] });
       syncConfigAccessors();
+      registerCoreCapabilities();
       desktopWorkspace = createDesktopWorkspace(requireConfig(), getSessionSnapshot());
-      setResolvedIbkrGatewayListener((instanceId, connection) => {
-        const encodedConnection = encodeRpcValue(connection);
-        forEachReadyWindowRpc((currentRpc) => {
-          currentRpc.send["ibkr.resolved"]({
-            instanceId,
-            connection: encodedConnection,
-          });
-        });
-      });
       reconcileDetachedWindows();
       sendDesktopState(requireDesktopWorkspace().getSnapshot());
       return requireConfig();

@@ -80,7 +80,7 @@ function resolvePositionCostMultiplier(
   const withoutMultiplierError = Math.abs((position.marketValue - costWithoutMultiplier) - position.unrealizedPnl);
   const withMultiplierError = Math.abs((position.marketValue - costWithMultiplier) - position.unrealizedPnl);
 
-  // IBKR gateway derivatives can report avgCost already scaled to the contract.
+  // Some broker derivative feeds report avgCost already scaled to the contract.
   return withoutMultiplierError < withMultiplierError ? 1 : priceMultiplier;
 }
 

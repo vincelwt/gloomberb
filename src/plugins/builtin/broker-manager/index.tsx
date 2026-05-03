@@ -1,6 +1,16 @@
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, EmptyState, NumberField, SegmentedControl, TextField, usePaneFooter, type PaneHint } from "../../../components";
+import {
+  Button,
+  DataTableStackView,
+  NumberField,
+  SegmentedControl,
+  TextField,
+  usePaneFooter,
+  type DataTableCell,
+  type DataTableColumn,
+  type PaneHint,
+} from "../../../components";
 import {
   buildBrokerProfileConfig,
   createBrokerProfileDraft,
@@ -14,8 +24,8 @@ import {
   useAppDispatch,
   useAppSelector,
 } from "../../../state/app-context";
-import { colors, hoverBg } from "../../../theme/colors";
-import type { BrokerAdapter, BrokerConfigField } from "../../../types/broker";
+import { colors } from "../../../theme/colors";
+import type { BrokerAdapter, BrokerConfigField, BrokerProfileAction } from "../../../types/broker";
 import type { BrokerInstanceConfig } from "../../../types/config";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { BrokerAccount } from "../../../types/trading";
@@ -31,6 +41,8 @@ import {
 } from "./model";
 
 type BrokerEditKey = "label" | "enabled" | string;
+type BrokerColumnId = "profile" | "status" | "broker" | "mode" | "accounts" | "updated";
+type BrokerColumn = DataTableColumn & { id: BrokerColumnId };
 
 function stateColor(state: BrokerDisplayState): string {
   switch (state) {
@@ -57,6 +69,11 @@ function stateGlyph(state: BrokerDisplayState): string {
 function truncate(value: string, width: number): string {
   if (width <= 0) return "";
   return value.length > width ? `${value.slice(0, Math.max(0, width - 1))}…` : value;
+}
+
+function isBrokerErrorMessage(message: string | null | undefined): boolean {
+  const normalized = message?.toLowerCase() ?? "";
+  return normalized.includes("failed") || normalized.includes("required");
 }
 
 function ConfirmRemoveBrokerDialog({
@@ -157,6 +174,29 @@ function accountDetail(account: BrokerAccount): string {
   return parts.filter(Boolean).join(" · ");
 }
 
+function buildBrokerColumns(width: number): BrokerColumn[] {
+  const usableWidth = Math.max(48, width - 4);
+  const statusWidth = 13;
+  const modeWidth = 11;
+  const accountWidth = 14;
+  const updatedWidth = 9;
+  const brokerWidth = usableWidth >= 84 ? 22 : 18;
+  const separators = 6;
+  const profileWidth = Math.max(
+    16,
+    usableWidth - statusWidth - modeWidth - accountWidth - updatedWidth - brokerWidth - separators,
+  );
+
+  return [
+    { id: "profile", label: "PROFILE", width: profileWidth, align: "left" },
+    { id: "status", label: "STATUS", width: statusWidth, align: "left" },
+    { id: "broker", label: "BROKER", width: brokerWidth, align: "left" },
+    { id: "mode", label: "MODE", width: modeWidth, align: "left" },
+    { id: "accounts", label: "ACCOUNTS", width: accountWidth, align: "right" },
+    { id: "updated", label: "UPDATED", width: updatedWidth, align: "right" },
+  ];
+}
+
 export function BrokersPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -171,12 +211,12 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     removeBrokerInstance,
   } = usePluginBrokerActions();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<BrokerProfileDraft | null>(null);
   const [activeEditKey, setActiveEditKey] = useState<BrokerEditKey>("label");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [statusVersion, setStatusVersion] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const adapters = useMemo(() => {
     const next = new Map<string, BrokerAdapter | null>();
@@ -216,6 +256,12 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   }, [rows.length]);
 
   useEffect(() => {
+    if (rows.length === 0) {
+      setDetailOpen(false);
+    }
+  }, [rows.length]);
+
+  useEffect(() => {
     if (!editDraft) return;
     if (!editKeys.includes(activeEditKey)) setActiveEditKey(editKeys[0] ?? "label");
   }, [activeEditKey, editDraft, editKeys]);
@@ -244,6 +290,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     setEditDraft(draft);
     setActiveEditKey("label");
     setMessage(null);
+    setDetailOpen(true);
   }, [selectedRow]);
 
   const saveEdit = useCallback(async () => {
@@ -304,13 +351,20 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     }
   }, [selectedRow, syncBrokerInstance]);
 
-  const openConsole = useCallback(() => {
-    if (!selectedRow || selectedRow.brokerType !== "ibkr" || selectedRow.mode.toLowerCase() !== "gateway") {
-      setMessage("IBKR Console is available for Gateway / TWS profiles.");
+  const selectedProfileActions = useMemo(
+    () => selectedRow?.adapter?.getProfileActions?.(selectedRow.instance) ?? [],
+    [selectedRow],
+  );
+  const primaryProfileAction = selectedProfileActions[0] ?? null;
+
+  const openProfileAction = useCallback((action: BrokerProfileAction | null = primaryProfileAction) => {
+    if (!action) return;
+    if (action.disabled) {
+      setMessage(action.disabledReason ?? `${action.label} is unavailable for this profile.`);
       return;
     }
-    showWidget("ibkr-trading");
-  }, [selectedRow, showWidget]);
+    if (action.widgetId) showWidget(action.widgetId);
+  }, [primaryProfileAction, showWidget]);
 
   const removeSelected = useCallback(async () => {
     if (!selectedRow) return;
@@ -326,6 +380,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
       setBusy("Disconnecting…");
       await removeBrokerInstance(selectedRow.id);
       setEditDraft(null);
+      setDetailOpen(false);
       setMessage(`Removed ${selectedRow.label}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : `Failed to remove ${selectedRow.label}.`);
@@ -337,9 +392,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   const hasSelectedRow = selectedRow !== null;
   const selectedHasAdapter = !!selectedRow?.adapter;
   const canUseSelectedBroker = selectedHasAdapter && !busy;
-  const canOpenSelectedConsole = hasSelectedRow
-    && selectedRow.brokerType === "ibkr"
-    && selectedRow.mode.toLowerCase() === "gateway";
+  const canOpenSelectedAction = selectedProfileActions.some((action) => !action.disabled && action.widgetId);
   const canRemoveSelected = hasSelectedRow && !busy;
 
   const footerActionsRef = useRef({
@@ -347,7 +400,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     startEdit,
     connectSelected,
     syncSelected,
-    openConsole,
+    openProfileAction,
     removeSelected,
     saveEdit,
   });
@@ -356,7 +409,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     startEdit,
     connectSelected,
     syncSelected,
-    openConsole,
+    openProfileAction,
     removeSelected,
     saveEdit,
   };
@@ -379,14 +432,14 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         { id: "sync", key: "s", label: "ync", onPress: () => footerActionsRef.current.syncSelected().catch(() => {}) },
       );
     }
-    if (canOpenSelectedConsole) {
-      hints.push({ id: "open", key: "o", label: "pen", onPress: () => footerActionsRef.current.openConsole() });
+    if (canOpenSelectedAction) {
+      hints.push({ id: "open", key: "o", label: "pen", onPress: () => footerActionsRef.current.openProfileAction() });
     }
     if (canRemoveSelected) {
       hints.push({ id: "disconnect", key: "d", label: "isconnect", onPress: () => footerActionsRef.current.removeSelected().catch(() => {}) });
     }
     return hints;
-  }, [canOpenSelectedConsole, canRemoveSelected, canUseSelectedBroker, editDraft]);
+  }, [canOpenSelectedAction, canRemoveSelected, canUseSelectedBroker, editDraft]);
 
   usePaneFooter("broker-manager", () => ({
     hints: footerHints,
@@ -421,16 +474,6 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    if (event.name === "j" || event.name === "down") {
-      event.stopPropagation();
-      setSelectedIndex((index) => Math.min(index + 1, Math.max(0, rows.length - 1)));
-      return;
-    }
-    if (event.name === "k" || event.name === "up") {
-      event.stopPropagation();
-      setSelectedIndex((index) => Math.max(0, index - 1));
-      return;
-    }
     switch (event.name) {
       case "a":
         openAddBroker();
@@ -445,7 +488,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         if (canUseSelectedBroker) syncSelected().catch(() => {});
         break;
       case "o":
-        if (canOpenSelectedConsole) openConsole();
+        if (canOpenSelectedAction) openProfileAction();
         break;
       case "d":
         if (canRemoveSelected) removeSelected().catch(() => {});
@@ -455,15 +498,160 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
 
   const connectedCount = rows.filter((row) => row.state === "connected").length;
   const errorCount = rows.filter((row) => row.state === "error" || row.state === "unavailable").length;
-  const listWidth = Math.max(34, Math.floor(width * 0.42));
-  const detailWidth = Math.max(34, width - listWidth - 2);
   const bodyHeight = Math.max(5, height - 4);
+  const tableWidth = Math.max(24, width - 2);
+  const columns = useMemo(() => buildBrokerColumns(tableWidth), [tableWidth]);
+
+  const renderCell = useCallback((
+    row: BrokerProfileRow,
+    column: BrokerColumn,
+  ): DataTableCell => {
+    switch (column.id) {
+      case "profile":
+        return {
+          text: row.label,
+          color: colors.text,
+          attributes: TextAttributes.BOLD,
+        };
+      case "status":
+        return {
+          text: `${stateGlyph(row.state)} ${row.stateLabel}`,
+          color: stateColor(row.state),
+        };
+      case "broker":
+        return { text: row.brokerName, color: colors.textDim };
+      case "mode":
+        return { text: row.mode, color: colors.textDim };
+      case "accounts":
+        return { text: row.accountSummary, color: row.accountCount > 0 ? colors.text : colors.textMuted };
+      case "updated":
+        return { text: formatBrokerUpdatedAt(row.updatedAt), color: colors.textMuted };
+    }
+    return { text: "" };
+  }, []);
+
+  const openSelectedDetail = useCallback((index: number, _row: BrokerProfileRow) => {
+    setSelectedIndex(index);
+    setEditDraft(null);
+    setDetailOpen(true);
+  }, []);
+
+  const selectBrokerRow = useCallback((index: number, row: BrokerProfileRow) => {
+    setSelectedIndex(index);
+    if (selectedRow?.id !== row.id) {
+      setEditDraft(null);
+    }
+  }, [selectedRow?.id]);
 
   const updateDraftValue = (key: string, value: string) => {
     setEditDraft((current) => current
       ? { ...current, values: { ...current.values, [key]: value } }
       : current);
   };
+
+  const detailContentWidth = Math.max(24, tableWidth - 2);
+  const detailStatusMessage = selectedRow
+    ? isBrokerErrorMessage(message) ? message : selectedRow.message || "No status message."
+    : null;
+  const detailContent = selectedRow ? (
+    <ScrollBox flexGrow={1} scrollY>
+      <Box flexDirection="column">
+        <Text fg={stateColor(selectedRow.state)} attributes={TextAttributes.BOLD}>
+          {truncate(`${selectedRow.label} · ${selectedRow.stateLabel}`, detailContentWidth)}
+        </Text>
+        <Text fg={colors.textDim}>
+          {truncate(`${selectedRow.brokerName} · ${selectedRow.mode} · ${selectedRow.id}`, detailContentWidth)}
+        </Text>
+        <Text
+          fg={isBrokerErrorMessage(detailStatusMessage) ? colors.negative : colors.textDim}
+          width={detailContentWidth}
+          wrapText
+        >
+          {detailStatusMessage}
+        </Text>
+        <Text fg={colors.textMuted}>{`Updated ${formatBrokerUpdatedAt(selectedRow.updatedAt)}`}</Text>
+        <Box height={1} />
+
+        {editDraft && selectedRow.adapter ? (
+          <Box flexDirection="column" gap={1}>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Edit Profile</Text>
+            <Box onMouseDown={() => setActiveEditKey("label")}>
+              <TextField
+                label={activeEditKey === "label" ? "> Profile Label" : "  Profile Label"}
+                value={editDraft.label}
+                focused={activeEditKey === "label"}
+                width={34}
+                onChange={(label) => setEditDraft((current) => current ? { ...current, label } : current)}
+                onSubmit={() => saveEdit().catch(() => {})}
+              />
+            </Box>
+            <Box flexDirection="column" onMouseDown={() => setActiveEditKey("enabled")}>
+              <Text fg={activeEditKey === "enabled" ? colors.textBright : colors.textDim} attributes={activeEditKey === "enabled" ? TextAttributes.BOLD : 0}>
+                {activeEditKey === "enabled" ? "> Enabled" : "  Enabled"}
+              </Text>
+              <SegmentedControl
+                value={editDraft.enabled ? "yes" : "no"}
+                options={[
+                  { label: "Enabled", value: "yes" },
+                  { label: "Disabled", value: "no" },
+                ]}
+                onChange={(value) => setEditDraft((current) => current ? { ...current, enabled: value === "yes" } : current)}
+              />
+            </Box>
+            {editFields.map((field) => (
+              <BrokerConfigFieldEditor
+                key={field.key}
+                field={field}
+                draft={editDraft}
+                previous={selectedRow.instance}
+                adapter={selectedRow.adapter}
+                focused={activeEditKey === field.key}
+                onFocus={() => setActiveEditKey(field.key)}
+                onChange={updateDraftValue}
+                onSubmit={() => saveEdit().catch(() => {})}
+              />
+            ))}
+            <Box flexDirection="row" gap={1}>
+              <Button label="Save" variant="primary" onPress={() => saveEdit().catch(() => {})} disabled={!!busy} />
+              <Button label="Cancel" variant="secondary" onPress={() => setEditDraft(null)} disabled={!!busy} />
+            </Box>
+          </Box>
+        ) : (
+          <Box flexDirection="column">
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Accounts</Text>
+            {selectedAccounts.length === 0 ? (
+              <Text fg={colors.textDim}>No accounts loaded. Test/connect or sync this profile.</Text>
+            ) : selectedAccounts.map((account) => (
+              <Text key={account.accountId} fg={colors.textDim}>
+                {truncate(accountDetail(account), detailContentWidth)}
+              </Text>
+            ))}
+            <Box height={1} />
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Actions</Text>
+            <Box flexDirection="row" gap={1}>
+              <Button label="Edit" onPress={startEdit} disabled={!selectedRow.adapter || !!busy} />
+              <Button label="Test" onPress={() => connectSelected().catch(() => {})} disabled={!selectedRow.adapter || !!busy} />
+              <Button label="Sync" onPress={() => syncSelected().catch(() => {})} disabled={!selectedRow.adapter || !!busy} />
+            </Box>
+            <Box height={1} />
+            <Box flexDirection="row" gap={1}>
+              {selectedProfileActions.map((action) => (
+                <Button
+                  key={action.id}
+                  label={action.label}
+                  onPress={() => openProfileAction(action)}
+                  disabled={!!busy || !!action.disabled}
+                />
+              ))}
+              <Button label="Disconnect" variant="danger" onPress={() => removeSelected().catch(() => {})} disabled={!!busy} />
+            </Box>
+          </Box>
+        )}
+      </Box>
+    </ScrollBox>
+  ) : (
+    <Box flexGrow={1} />
+  );
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -477,7 +665,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         {busy && <Text fg={colors.textDim}>{busy}</Text>}
       </Box>
       <Box height={1}>
-        <Text fg={message?.toLowerCase().includes("failed") || message?.toLowerCase().includes("required") ? colors.negative : colors.textDim}>
+        <Text fg={isBrokerErrorMessage(message) ? colors.negative : colors.textDim}>
           {message || "Manage broker profiles, connection tests, and position syncs."}
         </Text>
       </Box>
@@ -485,131 +673,36 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         <Text fg={colors.border}>{"─".repeat(Math.max(1, width - 2))}</Text>
       </Box>
 
-      {rows.length === 0 ? (
-        <Box flexDirection="column" flexGrow={1}>
-          <EmptyState title="No broker profiles." message="Add a broker profile to test connections and sync positions." />
-        </Box>
-      ) : (
-        <Box flexDirection="row" height={bodyHeight}>
-          <Box width={listWidth} flexDirection="column">
-            <ScrollBox flexGrow={1} scrollY>
-              {rows.map((row, index) => {
-                const selected = index === selectedIndex;
-                const hovered = index === hoveredIndex && !selected;
-                const bg = selected ? colors.selected : hovered ? hoverBg() : colors.bg;
-                return (
-                  <Box
-                    key={row.id}
-                    height={3}
-                    flexDirection="column"
-                    backgroundColor={bg}
-                    onMouseMove={() => setHoveredIndex(index)}
-                    onMouseDown={() => {
-                      setSelectedIndex(index);
-                      setEditDraft(null);
-                    }}
-                  >
-                    <Box height={1}>
-                      <Text fg={stateColor(row.state)}>{`${stateGlyph(row.state)} `}</Text>
-                      <Text fg={selected ? colors.selectedText : colors.text} attributes={selected ? TextAttributes.BOLD : 0}>
-                        {truncate(row.label, Math.max(8, listWidth - 18))}
-                      </Text>
-                      <Text fg={colors.textDim}>{` ${row.stateLabel}`}</Text>
-                    </Box>
-                    <Text fg={colors.textDim}>{`  ${row.brokerName} · ${row.mode}`}</Text>
-                    <Text fg={colors.textMuted}>{`  ${row.accountSummary} · ${formatBrokerUpdatedAt(row.updatedAt)}`}</Text>
-                  </Box>
-                );
-              })}
-            </ScrollBox>
-          </Box>
-          <Box width={1}>
-            <Text fg={colors.border}>│</Text>
-          </Box>
-          <Box width={detailWidth} flexDirection="column" paddingLeft={1}>
-            {selectedRow && (
-              <ScrollBox flexGrow={1} scrollY>
-                <Box flexDirection="column">
-                  <Text fg={stateColor(selectedRow.state)} attributes={TextAttributes.BOLD}>
-                    {`${selectedRow.label} · ${selectedRow.stateLabel}`}
-                  </Text>
-                  <Text fg={colors.textDim}>{`${selectedRow.brokerName} · ${selectedRow.mode} · ${selectedRow.id}`}</Text>
-                  <Text fg={selectedRow.message ? colors.textDim : colors.textMuted}>{selectedRow.message || "No status message."}</Text>
-                  <Text fg={colors.textMuted}>{`Updated ${formatBrokerUpdatedAt(selectedRow.updatedAt)}`}</Text>
-                  <Box height={1} />
-
-                  {editDraft && selectedRow.adapter ? (
-                    <Box flexDirection="column" gap={1}>
-                      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Edit Profile</Text>
-                      <Box onMouseDown={() => setActiveEditKey("label")}>
-                        <TextField
-                          label={activeEditKey === "label" ? "> Profile Label" : "  Profile Label"}
-                          value={editDraft.label}
-                          focused={activeEditKey === "label"}
-                          width={34}
-                          onChange={(label) => setEditDraft((current) => current ? { ...current, label } : current)}
-                          onSubmit={() => saveEdit().catch(() => {})}
-                        />
-                      </Box>
-                      <Box flexDirection="column" onMouseDown={() => setActiveEditKey("enabled")}>
-                        <Text fg={activeEditKey === "enabled" ? colors.textBright : colors.textDim} attributes={activeEditKey === "enabled" ? TextAttributes.BOLD : 0}>
-                          {activeEditKey === "enabled" ? "> Enabled" : "  Enabled"}
-                        </Text>
-                        <SegmentedControl
-                          value={editDraft.enabled ? "yes" : "no"}
-                          options={[
-                            { label: "Enabled", value: "yes" },
-                            { label: "Disabled", value: "no" },
-                          ]}
-                          onChange={(value) => setEditDraft((current) => current ? { ...current, enabled: value === "yes" } : current)}
-                        />
-                      </Box>
-                      {editFields.map((field) => (
-                        <BrokerConfigFieldEditor
-                          key={field.key}
-                          field={field}
-                          draft={editDraft}
-                          previous={selectedRow.instance}
-                          adapter={selectedRow.adapter}
-                          focused={activeEditKey === field.key}
-                          onFocus={() => setActiveEditKey(field.key)}
-                          onChange={updateDraftValue}
-                          onSubmit={() => saveEdit().catch(() => {})}
-                        />
-                      ))}
-                      <Box flexDirection="row" gap={1}>
-                        <Button label="Save" variant="primary" onPress={() => saveEdit().catch(() => {})} disabled={!!busy} />
-                        <Button label="Cancel" variant="secondary" onPress={() => setEditDraft(null)} disabled={!!busy} />
-                      </Box>
-                    </Box>
-                  ) : (
-                    <Box flexDirection="column">
-                      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Accounts</Text>
-                      {selectedAccounts.length === 0 ? (
-                        <Text fg={colors.textDim}>No accounts loaded. Test/connect or sync this profile.</Text>
-                      ) : selectedAccounts.map((account) => (
-                        <Text key={account.accountId} fg={colors.textDim}>{accountDetail(account)}</Text>
-                      ))}
-                      <Box height={1} />
-                      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Actions</Text>
-                      <Box flexDirection="row" gap={1}>
-                        <Button label="Edit" onPress={startEdit} disabled={!selectedRow.adapter || !!busy} />
-                        <Button label="Test" onPress={() => connectSelected().catch(() => {})} disabled={!selectedRow.adapter || !!busy} />
-                        <Button label="Sync" onPress={() => syncSelected().catch(() => {})} disabled={!selectedRow.adapter || !!busy} />
-                      </Box>
-                      <Box height={1} />
-                      <Box flexDirection="row" gap={1}>
-                        <Button label="IBKR Console" onPress={openConsole} disabled={selectedRow.brokerType !== "ibkr" || selectedRow.mode.toLowerCase() !== "gateway"} />
-                        <Button label="Disconnect" variant="danger" onPress={() => removeSelected().catch(() => {})} disabled={!!busy} />
-                      </Box>
-                    </Box>
-                  )}
-                </Box>
-              </ScrollBox>
-            )}
-          </Box>
-        </Box>
-      )}
+      <Box height={bodyHeight} overflow="hidden">
+        <DataTableStackView<BrokerProfileRow, BrokerColumn>
+          focused={focused}
+          detailOpen={detailOpen && !!selectedRow}
+          onBack={() => {
+            setEditDraft(null);
+            setDetailOpen(false);
+          }}
+          detailContent={detailContent}
+          detailTitle={selectedRow?.label}
+          rootWidth={tableWidth}
+          rootHeight={bodyHeight}
+          selectedIndex={Math.min(selectedIndex, Math.max(0, rows.length - 1))}
+          onSelectIndex={selectBrokerRow}
+          onActivateIndex={openSelectedDetail}
+          columns={columns}
+          items={rows}
+          sortColumnId={null}
+          sortDirection="asc"
+          onHeaderClick={() => {}}
+          getItemKey={(row) => row.id}
+          isSelected={(row) => selectedRow?.id === row.id}
+          onSelect={(row, index) => selectBrokerRow(index, row)}
+          onActivate={(row, index) => openSelectedDetail(index, row)}
+          renderCell={renderCell}
+          emptyStateTitle="No broker profiles."
+          emptyStateHint="Add a broker profile to test connections and sync positions."
+          showHorizontalScrollbar={false}
+        />
+      </Box>
     </Box>
   );
 }
@@ -636,7 +729,7 @@ export const brokerManagerPlugin: GloomPlugin = {
       paneId: "brokers",
       label: "Brokers",
       description: "Open broker profiles and connection status",
-      keywords: ["broker", "brokers", "ibkr", "connection", "status"],
+      keywords: ["broker", "brokers", "connection", "status"],
       shortcut: { prefix: "BR" },
       createInstance: () => ({ placement: "floating" }),
     },
@@ -647,7 +740,7 @@ export const brokerManagerPlugin: GloomPlugin = {
       id: "open-brokers",
       label: "Open Brokers",
       description: "Manage broker profiles and connection status",
-      keywords: ["broker", "brokers", "ibkr", "connection", "accounts", "sync"],
+      keywords: ["broker", "brokers", "connection", "accounts", "sync"],
       category: "navigation",
       execute: () => {
         ctx.showWidget("brokers");

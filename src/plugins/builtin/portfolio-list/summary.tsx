@@ -2,11 +2,11 @@ import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
 import type { AppState } from "../../../state/app-context";
+import type { BrokerConnectionStatus } from "../../../types/broker";
 import type { Portfolio } from "../../../types/ticker";
 import type { BrokerAccount, BrokerCashBalance } from "../../../types/trading";
 import { formatCompact, formatPercentRaw } from "../../../utils/format";
 import { getBrokerInstance } from "../../../utils/broker-instances";
-import type { IbkrSnapshot } from "../../ibkr/gateway-service";
 import type { PortfolioSummaryTotals } from "./metrics";
 
 export interface PortfolioSummarySegment {
@@ -28,6 +28,11 @@ export interface PortfolioSummaryAccountState {
 export interface ResolvedPortfolioAccountState extends PortfolioSummaryAccountState {
   sourceKind: "live" | "cached" | "flex";
   visibleCashBalances: BrokerCashBalance[];
+}
+
+export interface LiveBrokerAccountSnapshot {
+  status: BrokerConnectionStatus | null;
+  accounts: BrokerAccount[];
 }
 
 function createSummarySegment(
@@ -102,7 +107,7 @@ function findPortfolioAccount(
 export function resolvePortfolioAccountState(
   portfolio: Portfolio | null,
   state: Pick<AppState, "config" | "brokerAccounts">,
-  liveSnapshot: IbkrSnapshot,
+  liveSnapshot: LiveBrokerAccountSnapshot,
 ): ResolvedPortfolioAccountState | null {
   if (!portfolio?.brokerInstanceId) return null;
 
@@ -110,9 +115,8 @@ export function resolvePortfolioAccountState(
   const cachedAccounts = state.brokerAccounts[portfolio.brokerInstanceId] ?? [];
   const cachedAccount = findPortfolioAccount(cachedAccounts, portfolio);
 
-  const liveAccount = brokerInstance?.brokerType === "ibkr"
-    && brokerInstance.connectionMode === "gateway"
-    && liveSnapshot.status.state === "connected"
+  const liveAccount = brokerInstance
+    && liveSnapshot.status?.state === "connected"
     ? findPortfolioAccount(liveSnapshot.accounts, portfolio)
     : undefined;
 

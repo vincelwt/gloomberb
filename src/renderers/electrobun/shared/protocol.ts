@@ -22,29 +22,6 @@ export interface BackendRequestPayload {
   payload?: unknown;
 }
 
-export interface QuoteUpdateMessage {
-  subscriptionId: string;
-  target: unknown;
-  quote: unknown;
-}
-
-export interface IbkrSnapshotMessage {
-  subscriptionId: string;
-  instanceId?: string;
-  snapshot: unknown;
-  resolvedConnection?: unknown;
-}
-
-export interface IbkrResolvedMessage {
-  instanceId?: string;
-  connection: unknown;
-}
-
-export interface AiChunkMessage {
-  runId: string;
-  output: string;
-}
-
 export interface ContextMenuSelectMessage {
   requestId: string;
   itemId: string;
@@ -84,10 +61,6 @@ export interface ElectrobunDesktopRpcSchema {
   webview: {
     requests: {};
     messages: {
-      "ibkr.snapshot": IbkrSnapshotMessage;
-      "ibkr.resolved": IbkrResolvedMessage;
-      "ibkr.quote.update": QuoteUpdateMessage;
-      "ai.chunk": AiChunkMessage;
       "context-menu.select": ContextMenuSelectMessage;
       "application-menu.select": ApplicationMenuSelectMessage;
       "desktop.state": DesktopStateMessage;

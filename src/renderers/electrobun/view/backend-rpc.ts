@@ -3,24 +3,16 @@ import { Electroview } from "electrobun/view";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   type ApplicationMenuSelectMessage,
-  type AiChunkMessage,
   type CapabilityEventMessage,
   type ContextMenuSelectMessage,
   type DesktopDockPreviewMessage,
   type DesktopStateMessage,
   type ElectrobunBackendInit,
   type ElectrobunDesktopRpcSchema,
-  type IbkrResolvedMessage,
-  type IbkrSnapshotMessage,
-  type QuoteUpdateMessage,
   type UpdateProgressMessage,
 } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "./rpc-codec";
 
-type QuoteListener = (message: QuoteUpdateMessage) => void;
-type IbkrSnapshotListener = (message: IbkrSnapshotMessage) => void;
-type IbkrResolvedListener = (message: IbkrResolvedMessage) => void;
-type AiChunkListener = (message: AiChunkMessage) => void;
 type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
 type ApplicationMenuSelectListener = (message: ApplicationMenuSelectMessage) => void;
 type DesktopStateListener = (message: DesktopStateMessage) => void;
@@ -29,10 +21,6 @@ type UpdateProgressListener = (message: UpdateProgressMessage) => void;
 type CapabilityEventListener = (message: CapabilityEventMessage) => void;
 
 let initSnapshot: ElectrobunBackendInit | null = null;
-const ibkrQuoteListeners = new Map<string, Set<QuoteListener>>();
-const ibkrSnapshotListeners = new Map<string, Set<IbkrSnapshotListener>>();
-const ibkrResolvedListeners = new Set<IbkrResolvedListener>();
-const aiChunkListeners = new Map<string, Set<AiChunkListener>>();
 const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener>>();
 const applicationMenuSelectListeners = new Set<ApplicationMenuSelectListener>();
 const desktopStateListeners = new Set<DesktopStateListener>();
@@ -74,32 +62,6 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
   handlers: {
     requests: {},
     messages: {
-      "ibkr.quote.update": (message) => {
-        dispatch(ibkrQuoteListeners, message.subscriptionId, {
-          ...message,
-          target: decodeRpcValue(message.target),
-          quote: decodeRpcValue(message.quote),
-        });
-      },
-      "ibkr.snapshot": (message) => {
-        dispatch(ibkrSnapshotListeners, message.subscriptionId, {
-          ...message,
-          snapshot: decodeRpcValue(message.snapshot),
-          resolvedConnection: decodeRpcValue(message.resolvedConnection),
-        });
-      },
-      "ibkr.resolved": (message) => {
-        const decoded = {
-          ...message,
-          connection: decodeRpcValue(message.connection),
-        };
-        for (const listener of ibkrResolvedListeners) {
-          listener(decoded);
-        }
-      },
-      "ai.chunk": (message) => {
-        dispatch(aiChunkListeners, message.runId, message);
-      },
       "context-menu.select": (message) => {
         dispatch(contextMenuSelectListeners, message.requestId, message);
       },
@@ -173,34 +135,6 @@ export function onCapabilityEvent(
   listener: (message: CapabilityEventMessage) => void,
 ): () => void {
   return subscribe(capabilityEventListeners, subscriptionId, listener);
-}
-
-export function onIbkrQuoteSubscription(
-  subscriptionId: string,
-  listener: (message: QuoteUpdateMessage) => void,
-): () => void {
-  return subscribe(ibkrQuoteListeners, subscriptionId, listener);
-}
-
-export function onIbkrSnapshotSubscription(
-  subscriptionId: string,
-  listener: (message: IbkrSnapshotMessage) => void,
-): () => void {
-  return subscribe(ibkrSnapshotListeners, subscriptionId, listener);
-}
-
-export function onIbkrResolved(listener: (message: IbkrResolvedMessage) => void): () => void {
-  ibkrResolvedListeners.add(listener);
-  return () => {
-    ibkrResolvedListeners.delete(listener);
-  };
-}
-
-export function onAiChunk(
-  runId: string,
-  listener: (message: AiChunkMessage) => void,
-): () => void {
-  return subscribe(aiChunkListeners, runId, listener);
 }
 
 export function onContextMenuSelect(

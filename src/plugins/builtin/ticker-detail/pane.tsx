@@ -15,7 +15,6 @@ import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
 import { EmptyState, Tabs } from "../../../components";
-import { getConfiguredIbkrGatewayInstances } from "../../ibkr/instance-selection";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { ChartTab } from "./chart-tab";
 import { ResolvedFinancialsTab } from "./financials-tab";
@@ -51,12 +50,8 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       ? [...registry.detailTabs.values()].filter((tab) => !disabledPlugins.includes(tab.id))
       : []
   ), [disabledPlugins, registry]);
-  const hasIbkrGatewayTrading = useMemo(
-    () => getConfiguredIbkrGatewayInstances(config).length > 0,
-    [config],
-  );
   const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {
-    hasIbkrGatewayTrading,
+    config,
     hasOptionsChain,
   });
   const resolvedTabId = paneSettings.hideTabs

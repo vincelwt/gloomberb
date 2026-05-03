@@ -31,9 +31,7 @@ const result = await Bun.build({
       name: "electrobun-renderer-native-bridges",
       setup(build) {
         build.onResolve({ filter: /.*/ }, (args) => (
-          aliasImport(args, "ibkr/gateway-service", "native-stubs/ibkr-gateway-service.ts")
-          ?? aliasImport(args, "gateway-service", "native-stubs/ibkr-gateway-service.ts")
-          ?? aliasImport(args, "plugins/builtin/notes-files", "notes-files.ts")
+          aliasImport(args, "plugins/builtin/notes-files", "notes-files.ts")
           ?? aliasImport(args, "notes-files", "notes-files.ts")
           ?? aliasImport(args, "core/app-services", "app-services.ts")
           ?? aliasImport(args, "native/kitty-support", "native-stubs/chart-kitty-support.ts")
