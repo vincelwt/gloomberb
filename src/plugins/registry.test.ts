@@ -202,6 +202,25 @@ describe("PluginRegistry capabilities", () => {
   });
 });
 
+describe("PluginRegistry detail tabs", () => {
+  test("tracks the owning plugin for registered detail tabs", async () => {
+    const registry = createRegistry();
+    await registry.register(plugin("company-research", (ctx) => {
+      ctx.registerDetailTab({
+        id: "sec",
+        name: "SEC",
+        order: 45,
+        component: () => null,
+      });
+    }));
+
+    expect(registry.getDetailTabPluginId("sec")).toBe("company-research");
+
+    registry.unregister("company-research");
+    expect(registry.getDetailTabPluginId("sec")).toBeUndefined();
+  });
+});
+
 describe("PluginRegistry pane settings", () => {
   test("resolves plugin-scoped pane setting values from plugin config", async () => {
     const registry = createRegistry();

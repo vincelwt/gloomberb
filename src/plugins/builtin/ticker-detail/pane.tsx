@@ -47,7 +47,10 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const pluginTabs = useMemo<DetailTabDef[]>(() => (
     registry
-      ? [...registry.detailTabs.values()].filter((tab) => !disabledPlugins.includes(tab.id))
+      ? [...registry.detailTabs.values()].filter((tab) => {
+        const ownerId = registry.getDetailTabPluginId?.(tab.id);
+        return !ownerId || !disabledPlugins.includes(ownerId);
+      })
       : []
   ), [disabledPlugins, registry]);
   const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {

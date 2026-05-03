@@ -266,6 +266,42 @@ describe("loadConfig", () => {
     expect(config.disabledPlugins).toEqual(["chat", "news"]);
   });
 
+  test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: CURRENT_CONFIG_VERSION - 1,
+      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "options"],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["company-research", "market-overview", "macro"]);
+  });
+
+  test("migrates grouped built-in plugin config keys", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: CURRENT_CONFIG_VERSION - 1,
+      pluginConfig: {
+        options: {
+          selectedExpiration: "2026-06-19",
+        },
+        "company-research": {
+          preferredTab: "analyst-research",
+        },
+      },
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.pluginConfig).toEqual({
+      "company-research": {
+        selectedExpiration: "2026-06-19",
+        preferredTab: "analyst-research",
+      },
+    });
+  });
+
   test("enables Gloomberb Cloud when migrating older default configs", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({

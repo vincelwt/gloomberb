@@ -77,7 +77,7 @@ class MemoryPluginPersistence implements PluginPersistence {
     kind: string,
     key: string,
     value: T,
-    options: { sourceKey?: string; stale?: boolean; expired?: boolean } = {},
+    options: { sourceKey?: string; stale?: boolean; expired?: boolean; schemaVersion?: number } = {},
   ): void {
     const now = Date.now();
     const record: PersistedResourceValue<T> = {
@@ -86,7 +86,7 @@ class MemoryPluginPersistence implements PluginPersistence {
       staleAt: options.stale ? now - 1 : now + EARNINGS_CALENDAR_CACHE_POLICY.staleMs,
       expiresAt: options.expired ? now - 1 : now + EARNINGS_CALENDAR_CACHE_POLICY.expireMs,
       sourceKey: options.sourceKey ?? "",
-      schemaVersion: 1,
+      schemaVersion: options.schemaVersion ?? 2,
       stale: !!options.stale,
       expired: !!options.expired,
     };

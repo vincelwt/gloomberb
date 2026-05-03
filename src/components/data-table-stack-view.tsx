@@ -85,6 +85,7 @@ export function DataTableStackView<
   onActivate,
   renderCell,
   renderSectionHeader,
+  getRowBackgroundColor,
   emptyContent,
   emptyStateTitle,
   emptyStateHint,
@@ -128,6 +129,7 @@ export function DataTableStackView<
       onActivate={onActivate}
       renderCell={renderCell}
       renderSectionHeader={renderSectionHeader}
+      getRowBackgroundColor={getRowBackgroundColor}
       emptyContent={emptyContent}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}

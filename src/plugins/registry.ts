@@ -98,6 +98,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private paneTemplateOwners = new Map<string, string>();
   private shortcutOwners = new Map<string, string>();
   private capabilityOwners = new Map<string, string>();
+  private detailTabOwners = new Map<string, string>();
   private pluginResumeListeners = new Map<string, Set<() => void>>();
 
   private panesMap = new Map<string, PaneDef>();
@@ -514,6 +515,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return this.shortcutOwners.get(shortcutId);
   }
 
+  getDetailTabPluginId(tabId: string): string | undefined {
+    return this.detailTabOwners.get(tabId);
+  }
+
   isPaneFloating(paneId: string): boolean {
     try {
       const target = this.resolvePaneTarget(paneId);
@@ -647,7 +652,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
           this.registerCapabilityForPlugin(pluginId, capability, items);
         }
       },
-      registerDetailTab: (tab) => { this.detailTabsMap.set(tab.id, this.wrapDetailTabDef(pluginId, tab)); items.detailTabs.push(tab.id); },
+      registerDetailTab: (tab) => {
+        this.detailTabsMap.set(tab.id, this.wrapDetailTabDef(pluginId, tab));
+        this.detailTabOwners.set(tab.id, pluginId);
+        items.detailTabs.push(tab.id);
+      },
       registerShortcut: (shortcut) => {
         this.shortcutsMap.set(shortcut.id, shortcut);
         this.shortcutOwners.set(shortcut.id, pluginId);
@@ -820,7 +829,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
       for (const capabilityId of items.capabilities) {
         this.capabilityOwners.delete(capabilityId);
       }
-      for (const tabId of items.detailTabs) this.detailTabsMap.delete(tabId);
+      for (const tabId of items.detailTabs) {
+        this.detailTabsMap.delete(tabId);
+        this.detailTabOwners.delete(tabId);
+      }
       for (const shortcutId of items.shortcuts) {
         this.shortcutsMap.delete(shortcutId);
         this.shortcutOwners.delete(shortcutId);
