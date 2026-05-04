@@ -1,6 +1,6 @@
 import { Text } from "../../ui";
 import { useRef, useEffect, useMemo, useState } from "react";
-import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
+import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import type { NewsArticle } from "../../types/news-source";
@@ -13,6 +13,7 @@ import { registerNewsWireFeatures } from "./news-wire";
 import { useNewsArticleFooter } from "./news-wire/news-footer";
 import { usePersistedNewsArticles } from "./news-wire/persisted-articles";
 import { useNewsReadState } from "./news-wire/read-state";
+import { createTickerSurfacePaneTemplate } from "./ticker-surface";
 
 const ARTICLE_SUMMARY_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
@@ -55,7 +56,7 @@ function getFeedItems(
   });
 }
 
-function NewsTab({ width, height, focused }: DetailTabProps) {
+export function TickerNewsView({ width, height, focused }: Pick<DetailTabProps, "width" | "height" | "focused">) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
@@ -150,12 +151,43 @@ function NewsTab({ width, height, focused }: DetailTabProps) {
   );
 }
 
+function NewsTab(props: DetailTabProps) {
+  return <TickerNewsView {...props} />;
+}
+
+function TickerNewsPane({ focused, width, height }: PaneProps) {
+  return <TickerNewsView focused={focused} width={width} height={height} />;
+}
+
 export const newsPlugin: GloomPlugin = {
   id: "news",
   name: "News",
   version: "1.0.0",
   description: "View latest news for each ticker",
   toggleable: true,
+
+  panes: [
+    {
+      id: "ticker-news",
+      name: "Ticker News",
+      icon: "C",
+      component: TickerNewsPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 32 },
+    },
+  ],
+
+  paneTemplates: [
+    createTickerSurfacePaneTemplate({
+      id: "ticker-news-pane",
+      paneId: "ticker-news",
+      label: "Ticker News",
+      description: "Company news for the selected ticker.",
+      keywords: ["company", "ticker", "news", "headlines", "cn"],
+      shortcut: "CN",
+    }),
+  ],
 
   setup(ctx) {
     ctx.registerDetailTab({

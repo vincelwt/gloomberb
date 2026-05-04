@@ -13,8 +13,8 @@ import { usePaneInstance, usePaneTicker } from "../../../state/app-context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { parseTickerListInput, formatTickerListInput } from "../../../utils/ticker-list";
-import { normalizeTickerInput } from "../../../utils/ticker-search";
 import { useAssetData, usePluginTickerActions } from "../../plugin-runtime";
+import { createTickerSurfacePaneTemplate } from "../ticker-surface";
 
 type LoadState<T> = {
   data: T | null;
@@ -625,17 +625,6 @@ function EventsTab({ focused, width, height }: DetailTabProps) {
   return <CorporateActionsView focused={focused} width={width} height={height} />;
 }
 
-function createTickerBoundPane(contextTicker: string | null, arg: string | undefined, titlePrefix: string) {
-  const ticker = normalizeTickerInput(contextTicker, arg);
-  return ticker
-    ? {
-        title: `${titlePrefix} ${ticker}`,
-        binding: { kind: "fixed" as const, symbol: ticker },
-        placement: "floating" as const,
-      }
-    : null;
-}
-
 export const researchPlugin: GloomPlugin = {
   id: "research",
   name: "Research",
@@ -691,26 +680,22 @@ export const researchPlugin: GloomPlugin = {
   ],
 
   paneTemplates: [
-    {
+    createTickerSurfacePaneTemplate({
       id: "analyst-research-pane",
       paneId: "analyst-research",
       label: "Analyst Research",
       description: "Price targets, recommendations, and recent analyst actions.",
       keywords: ["analyst", "research", "ratings", "target", "anr"],
-      shortcut: { prefix: "ANR", argPlaceholder: "ticker", argKind: "ticker" },
-      canCreate: (context, options) => (options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg)) !== null,
-      createInstance: (context, options) => createTickerBoundPane(options?.symbol ?? context.activeTicker, options?.arg, "Analyst"),
-    },
-    {
+      shortcut: "ANR",
+    }),
+    createTickerSurfacePaneTemplate({
       id: "corporate-actions-pane",
       paneId: "corporate-actions",
       label: "Corporate Actions",
       description: "Dividends, splits, and recent earnings.",
       keywords: ["events", "corporate", "actions", "dividend", "split", "earnings", "evt"],
-      shortcut: { prefix: "EVT", argPlaceholder: "ticker", argKind: "ticker" },
-      canCreate: (context, options) => (options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg)) !== null,
-      createInstance: (context, options) => createTickerBoundPane(options?.symbol ?? context.activeTicker, options?.arg, "Events"),
-    },
+      shortcut: "EVT",
+    }),
     {
       id: "relative-valuation-pane",
       paneId: "relative-valuation",

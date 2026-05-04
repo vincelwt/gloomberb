@@ -1,6 +1,6 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { GloomPlugin, DetailTabProps } from "../../../types/plugin";
+import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { SecFilingItem } from "../../../types/data-provider";
 import {
   useResolvedEntryValue,
@@ -15,6 +15,7 @@ import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { parseForm4Xml, transactionTypeLabel, type InsiderTransaction } from "./insider-data";
+import { createTickerSurfacePaneTemplate } from "../ticker-surface";
 
 const FORM4_LIMIT = 20;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -164,7 +165,7 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
   });
 }
 
-function InsiderTab({ width, height, focused }: DetailTabProps) {
+export function InsiderView({ width, height, focused }: Pick<DetailTabProps, "width" | "height" | "focused">) {
   const { ticker } = usePaneTicker();
   const tickerKey = ticker?.metadata.ticker ?? "none";
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(`insider:selectedIdx:${tickerKey}`, 0);
@@ -320,11 +321,43 @@ function InsiderTab({ width, height, focused }: DetailTabProps) {
   );
 }
 
+function InsiderTab(props: DetailTabProps) {
+  return <InsiderView {...props} />;
+}
+
+function InsiderPane({ focused, width, height }: PaneProps) {
+  return <InsiderView focused={focused} width={width} height={height} />;
+}
+
 export const insiderPlugin: GloomPlugin = {
   id: "insider",
   name: "Insider Trading",
   version: "1.0.0",
   description: "SEC Form 4 insider transaction activity",
+
+  panes: [
+    {
+      id: "insider",
+      name: "Insider",
+      icon: "I",
+      component: InsiderPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 30 },
+    },
+  ],
+
+  paneTemplates: [
+    createTickerSurfacePaneTemplate({
+      id: "insider-pane",
+      paneId: "insider",
+      label: "Insider",
+      description: "Insider transaction activity for the selected ticker.",
+      keywords: ["insider", "form 4", "ownership", "transactions", "ins"],
+      shortcut: "INS",
+      canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
+    }),
+  ],
 
   setup(ctx) {
     ctx.registerDetailTab({
