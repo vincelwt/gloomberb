@@ -469,6 +469,7 @@ export const optionsPlugin: GloomPlugin = {
       name: "Options",
       order: 35, // after Chart (30), before News (40)
       component: OptionsTab,
+      isVisible: ({ hasOptionsChain }) => hasOptionsChain,
     });
   },
 };

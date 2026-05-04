@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
-import { setPredictionMarketsFetchTransport } from "../../../plugins/prediction-markets/services/fetch";
 import { setCloudApiFetchTransport } from "../../../utils/api-client";
+import { setHttpFetchTransport } from "../../../utils/http-transport";
 import { backendRequest } from "./backend-rpc";
 
 interface ElectrobunHttpFetchResponse {
@@ -104,8 +104,8 @@ async function electrobunCloudApiFetch(url: string, init?: RequestInit): Promise
   } as Response;
 }
 
-export function installElectrobunPredictionMarketsFetchTransport(): void {
-  setPredictionMarketsFetchTransport(electrobunHttpFetch);
+export function installElectrobunHttpFetchTransport(): void {
+  setHttpFetchTransport(electrobunHttpFetch);
 }
 
 export function installElectrobunCloudApiFetchTransport(): void {

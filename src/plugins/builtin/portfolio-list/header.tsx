@@ -1,14 +1,17 @@
 import { Box, ScrollBox, Text } from "../../../ui";
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import type { AppState } from "../../../state/app-context";
 import { colors, priceColor } from "../../../theme/colors";
+import type { BrokerConnectionStatus } from "../../../types/broker";
 import type { TickerFinancials } from "../../../types/financials";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
+import type { BrokerAccount } from "../../../types/trading";
 import { formatCompact, formatPercentRaw, padTo } from "../../../utils/format";
 import { formatMarketQuantity } from "../../../utils/market-format";
 import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
-import { ibkrGatewayManager } from "../../ibkr/gateway-service";
+import { getBrokerInstance } from "../../../utils/broker-instances";
+import { usePluginBrokerActions } from "../../plugin-runtime";
 import { calculatePortfolioSummaryTotals } from "./metrics";
 import {
   buildDrawerMetricSegments,
@@ -27,9 +30,40 @@ export function usePortfolioAccountState(
   state: Pick<AppState, "config" | "brokerAccounts">,
 ): ResolvedPortfolioAccountState | null {
   const instanceId = portfolio?.brokerInstanceId;
-  const snapshot = useSyncExternalStore(
-    (listener) => ibkrGatewayManager.subscribe(instanceId, listener),
-    () => ibkrGatewayManager.getSnapshot(instanceId),
+  const brokerInstance = useMemo(
+    () => instanceId ? getBrokerInstance(state.config.brokerInstances, instanceId) : null,
+    [instanceId, state.config.brokerInstances],
+  );
+  const { getBrokerAdapter } = usePluginBrokerActions();
+  const broker = brokerInstance ? getBrokerAdapter(brokerInstance.brokerType) : null;
+  const [liveStatus, setLiveStatus] = useState<BrokerConnectionStatus | null>(null);
+  useEffect(() => {
+    const readStatus = () => brokerInstance && broker?.getStatus ? broker.getStatus(brokerInstance) : null;
+    setLiveStatus(readStatus());
+    if (!brokerInstance || !broker?.subscribeStatus) return;
+    return broker.subscribeStatus(brokerInstance, () => {
+      setLiveStatus(readStatus());
+    });
+  }, [broker, brokerInstance]);
+  const [liveAccounts, setLiveAccounts] = useState<BrokerAccount[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setLiveAccounts([]);
+    if (!brokerInstance || !broker?.listAccounts || liveStatus?.state !== "connected") return;
+    broker.listAccounts(brokerInstance)
+      .then((accounts) => {
+        if (!cancelled) setLiveAccounts(accounts);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [broker, brokerInstance, liveStatus?.state, liveStatus?.updatedAt]);
+  const snapshot = useMemo(
+    () => ({ status: liveStatus, accounts: liveAccounts }),
+    [liveAccounts, liveStatus],
   );
   return useMemo(
     () => resolvePortfolioAccountState(portfolio, state, snapshot),

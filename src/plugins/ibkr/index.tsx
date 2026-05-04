@@ -86,6 +86,7 @@ export const ibkrPlugin: GloomPlugin = {
       name: "Trade",
       order: 25,
       component: TradeTab,
+      isVisible: ({ config }) => getConfiguredIbkrGatewayInstances(config).length > 0,
     });
 
     ctx.registerTickerAction({

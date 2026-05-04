@@ -1,5 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { parseFlexAccounts, parseFlexPositions } from "./flex";
+import { afterEach, describe, expect, test } from "bun:test";
+import { setHttpFetchTransport } from "../../utils/http-transport";
+import { parseFlexAccounts, parseFlexPositions, requestFlexStatement } from "./flex";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  setHttpFetchTransport(null);
+  globalThis.fetch = originalFetch;
+});
 
 describe("parseFlexPositions", () => {
   test("parses option positions with broker contract metadata", () => {
@@ -103,5 +111,52 @@ describe("parseFlexAccounts", () => {
         cashBalances: undefined,
       },
     ]);
+  });
+});
+
+describe("requestFlexStatement", () => {
+  test("uses the configured HTTP transport for statement requests", async () => {
+    const requests: string[] = [];
+    setHttpFetchTransport(async (url) => {
+      requests.push(url);
+      return new Response(
+        "<FlexStatementResponse><ReferenceCode>987654</ReferenceCode></FlexStatementResponse>",
+        { status: 200 },
+      );
+    });
+
+    await expect(requestFlexStatement({
+      token: "secret-flex-token",
+      queryId: "12345",
+      endpoint: "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest",
+    })).resolves.toBe("987654");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain("q=12345");
+  });
+
+  test("adds request context to vague IBKR Flex errors without exposing the token", async () => {
+    globalThis.fetch = (async () => new Response(
+      "<FlexStatementResponse><ErrorMessage>Load failed</ErrorMessage></FlexStatementResponse>",
+      { status: 200 },
+    )) as typeof fetch;
+
+    let message = "";
+    try {
+      await requestFlexStatement({
+        token: "secret-flex-token",
+        queryId: "12345",
+        endpoint: "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest",
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("IBKR Flex request failed while requesting the statement: Load failed.");
+    expect(message).toContain("Endpoint FlexStatementService.SendRequest");
+    expect(message).toContain("query ID 12345");
+    expect(message).toContain("token configured");
+    expect(message).toContain("Flex Web Service is enabled");
+    expect(message).not.toContain("secret-flex-token");
   });
 });

@@ -3,7 +3,7 @@ import { act } from "react";
 import { Box } from "../../../ui";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
 import { testRender } from "../../../renderers/opentui/test-utils";
-import { AppContext, createInitialState } from "../../../state/app-context";
+import { AppContext, PaneInstanceProvider, createInitialState } from "../../../state/app-context";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig, type BrokerInstanceConfig } from "../../../types/config";
 import { PluginRenderProvider } from "../../plugin-runtime";
@@ -12,9 +12,11 @@ import { BrokersPane } from "./index";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
-afterEach(() => {
+afterEach(async () => {
   if (testSetup) {
-    testSetup.renderer.destroy();
+    await act(async () => {
+      testSetup!.renderer.destroy();
+    });
     testSetup = undefined;
   }
 });
@@ -38,9 +40,11 @@ function createGatewayInstance(): BrokerInstanceConfig {
 function Harness({
   instance,
   calls,
+  paneHeight = 24,
 }: {
   instance?: BrokerInstanceConfig;
   calls: string[];
+  paneHeight?: number;
 }) {
   const config = {
     ...createDefaultConfig("/tmp/gloomberb-broker-manager-pane"),
@@ -70,21 +74,27 @@ function Harness({
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PluginRenderProvider pluginId="broker-manager" runtime={runtime}>
-        <BrokersPane focused width={92} height={24} />
+        <PaneInstanceProvider paneId="brokers:test">
+          <BrokersPane focused width={92} height={paneHeight} />
+        </PaneInstanceProvider>
       </PluginRenderProvider>
     </AppContext>
   );
 }
 
-function FooterHarness(props: {
+function FooterHarness({
+  height = 25,
+  ...props
+}: {
   instance?: BrokerInstanceConfig;
   calls: string[];
+  height?: number;
 }) {
   return (
     <PaneFooterProvider>
       {(footer) => (
-        <Box width={92} height={25} flexDirection="column">
-          <Harness {...props} />
+        <Box width={92} height={height} flexDirection="column">
+          <Harness {...props} paneHeight={height - 1} />
           <PaneFooterBar footer={footer} focused width={92} />
         </Box>
       )}
@@ -92,11 +102,27 @@ function FooterHarness(props: {
   );
 }
 
+async function clickText(text: string) {
+  const lines = testSetup!.captureCharFrame().split("\n");
+  const row = lines.findIndex((line) => line.includes(text));
+  const col = lines[row]?.indexOf(text) ?? -1;
+  expect(row).toBeGreaterThanOrEqual(0);
+  expect(col).toBeGreaterThanOrEqual(0);
+  await act(async () => {
+    await testSetup!.mockMouse.click(col + 1, row);
+    await Promise.resolve();
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
+}
+
 describe("BrokersPane", () => {
   test("shows empty state and opens add broker flow", async () => {
     const calls: string[] = [];
     testSetup = await testRender(<Harness calls={calls} />, { width: 92, height: 24 });
-    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("No broker profiles.");
@@ -125,55 +151,32 @@ describe("BrokersPane", () => {
 
   test("renders IBKR details and invokes broker actions", async () => {
     const calls: string[] = [];
-    testSetup = await testRender(<Harness calls={calls} instance={createGatewayInstance()} />, { width: 92, height: 24 });
-    await testSetup.renderOnce();
+    testSetup = await testRender(<FooterHarness calls={calls} instance={createGatewayInstance()} height={35} />, { width: 92, height: 35 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
 
     let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("PROFILE");
+    expect(frame).toContain("STATUS");
+    expect(frame).toContain("ACCOUNTS");
     expect(frame).toContain("IBKR Paper");
+    expect(frame).not.toContain("DU12345");
+
+    await clickText("[e]dit");
+    await clickText("Save");
+    expect(calls).toEqual(["update:ibkr-paper"]);
+    calls.length = 0;
+
+    frame = testSetup.captureCharFrame();
     expect(frame).toContain("DU12345");
     expect(frame).toContain("$125,000.00");
 
-    const lines = frame.split("\n");
-    const testRow = lines.findIndex((line) => line.includes("Test"));
-    const testCol = lines[testRow]?.indexOf("Test") ?? -1;
-    expect(testRow).toBeGreaterThanOrEqual(0);
-    expect(testCol).toBeGreaterThanOrEqual(0);
-
-    await act(async () => {
-      await testSetup!.mockMouse.click(testCol + 1, testRow);
-      await testSetup!.renderOnce();
-    });
-    await act(async () => {
-      testSetup!.mockInput.pressKey("s");
-      await testSetup!.renderOnce();
-    });
-    await act(async () => {
-      testSetup!.mockInput.pressKey("o");
-      await testSetup!.renderOnce();
-    });
+    await clickText("Test");
+    await clickText("Sync");
+    await clickText("IBKR Console");
 
     expect(calls).toEqual(["connect:ibkr-paper", "sync:ibkr-paper", "widget:ibkr-trading"]);
-  });
-
-  test("edits and saves an IBKR profile", async () => {
-    const calls: string[] = [];
-    testSetup = await testRender(<Harness calls={calls} instance={createGatewayInstance()} />, { width: 92, height: 24 });
-    await testSetup.renderOnce();
-
-    await act(async () => {
-      testSetup!.mockInput.pressKey("e");
-      await testSetup!.renderOnce();
-    });
-
-    let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Edit Profile");
-    await act(async () => {
-      testSetup!.mockInput.pressEnter();
-      await testSetup!.renderOnce();
-    });
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Saved IBKR Paper.");
-    expect(calls).toEqual(["update:ibkr-paper"]);
   });
 });

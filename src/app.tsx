@@ -50,12 +50,11 @@ import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopWindow
 import type { DesktopApplicationMenuBridge } from "./types/desktop-menu";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
 
-// Built-in plugins
 import {
-  clearPersistedIbkrAccounts,
-  loadPersistedIbkrAccountMap,
-} from "./plugins/ibkr/account-cache";
-import { getIbkrConfigIdentity } from "./plugins/ibkr/config";
+  clearPersistedBrokerAccounts,
+  getBrokerAccountCacheSourceKey,
+  loadPersistedBrokerAccountMap,
+} from "./brokers/account-cache";
 import { chatController } from "./plugins/builtin/chat-controller";
 import { setLayoutManagerDispatch } from "./plugins/builtin/layout-manager";
 import { canSelfUpdate, checkForUpdateDetailed, performUpdate, type ReleaseInfo } from "./updater";
@@ -100,7 +99,12 @@ import { getPaneTemplateDisplayLabel } from "./components/command-bar/pane-templ
 import { debugLog } from "./utils/debug-log";
 import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
-import { syncBrokerInstance } from "./brokers/sync-broker-instance";
+import {
+  restoreBrokerPortfoliosFromTickerPositions,
+  syncBrokerInstance,
+  syncBrokerInstances,
+  type SyncBrokerInstanceResult,
+} from "./brokers/sync-broker-instance";
 import { createAppNotifier } from "./notifications/app-notifier";
 import { createAppServices } from "./core/app-services";
 import {
@@ -541,24 +545,15 @@ function AppInner({
     marketData.primeCachedFinancials(primeEntries);
   }, [marketData]);
 
-  // Import positions from a single broker instance
-  const importBrokerPositions = useCallback(async (
+  const applyBrokerImportResult = useCallback(async (
     instanceId: string,
-    tickerMap?: Map<string, TickerRecord>,
+    result: SyncBrokerInstanceResult,
+    baseConfig: AppConfig,
     options?: { refreshImportedTickers?: boolean },
   ) => {
-    const result = await syncBrokerInstance({
-      config: state.config,
-      instanceId,
-      brokers: pluginRegistry.brokers,
-      tickerRepository,
-      existingTickers: tickerMap ?? new Map(state.tickers),
-      resources: pluginRegistry.persistence.resources,
-    });
-
     dispatch({ type: "SET_BROKER_ACCOUNTS", instanceId, accounts: result.brokerAccounts });
 
-    if (result.config !== state.config) {
+    if (result.config !== baseConfig) {
       dispatch({ type: "SET_CONFIG", config: result.config });
       await saveConfigImmediately(result.config);
       pluginRegistry.events.emit("config:changed", { config: result.config });
@@ -572,31 +567,57 @@ function AppInner({
     }
 
     for (const position of result.positions) {
-      // Skip Yahoo Finance for options — IBKR symbols aren't resolvable there.
+      // Skip Yahoo Finance for broker option symbols; position marks are already available.
       // Position data (markPrice, marketValue, unrealizedPnl) is used directly.
       if (options?.refreshImportedTickers !== false && position.assetCategory !== "OPT") {
         refreshQuote(position.ticker, position.exchange, undefined, 1);
       }
     }
+  }, [dispatch, pluginRegistry.events, refreshQuote]);
+
+  // Import positions from a single broker instance
+  const importBrokerPositions = useCallback(async (
+    instanceId: string,
+    tickerMap?: Map<string, TickerRecord>,
+    options?: { refreshImportedTickers?: boolean; config?: AppConfig },
+  ) => {
+    const baseConfig = options?.config ?? stateRef.current.config;
+    const result = await syncBrokerInstance({
+      config: baseConfig,
+      instanceId,
+      brokers: pluginRegistry.brokers,
+      tickerRepository,
+      existingTickers: tickerMap ?? new Map(stateRef.current.tickers),
+      resources: pluginRegistry.persistence.resources,
+    });
+
+    await applyBrokerImportResult(instanceId, result, baseConfig, options);
 
     return result;
-  }, [dispatch, pluginRegistry.brokers, pluginRegistry.events, pluginRegistry.persistence.resources, refreshQuote, state.config, state.tickers, tickerRepository]);
+  }, [applyBrokerImportResult, pluginRegistry.brokers, pluginRegistry.persistence.resources, stateRef, tickerRepository]);
 
   // Auto-import positions from all configured broker instances
   const autoImportBrokerPositions = useCallback(async (tickerMap: Map<string, TickerRecord>) => {
-    let nextTickerMap = tickerMap;
-    for (const instance of state.config.brokerInstances) {
-      if (instance.enabled === false) continue;
-      try {
-        const result = await importBrokerPositions(instance.id, nextTickerMap, { refreshImportedTickers: false });
-        if (result) {
-          nextTickerMap = result.tickers;
-        }
-      } catch {
-        // Silently fail — broker import is best-effort on startup
-      }
+    const restoredConfig = restoreBrokerPortfoliosFromTickerPositions(stateRef.current.config, tickerMap.values());
+    if (restoredConfig !== stateRef.current.config) {
+      dispatch({ type: "SET_CONFIG", config: restoredConfig });
+      await saveConfigImmediately(restoredConfig);
+      pluginRegistry.events.emit("config:changed", { config: restoredConfig });
     }
-  }, [state.config.brokerInstances, importBrokerPositions]);
+
+    await syncBrokerInstances({
+      config: restoredConfig,
+      brokers: pluginRegistry.brokers,
+      tickerRepository,
+      existingTickers: tickerMap,
+      resources: pluginRegistry.persistence.resources,
+      onResult: async (result, instance, previousConfig) => {
+        await applyBrokerImportResult(instance.id, result, previousConfig, {
+          refreshImportedTickers: false,
+        });
+      },
+    });
+  }, [applyBrokerImportResult, dispatch, pluginRegistry.brokers, pluginRegistry.events, pluginRegistry.persistence.resources, stateRef, tickerRepository]);
 
   const startUpdate = useCallback((release: ReleaseInfo) => {
     dispatch({ type: "SET_UPDATE_PROGRESS", progress: { phase: "downloading", percent: 0 } });
@@ -710,9 +731,10 @@ function AppInner({
       try {
         let persistedBrokerAccounts: Record<string, BrokerAccount[]> = {};
         try {
-          persistedBrokerAccounts = loadPersistedIbkrAccountMap(
+          persistedBrokerAccounts = loadPersistedBrokerAccountMap(
             pluginRegistry.persistence.resources,
             state.config.brokerInstances,
+            pluginRegistry.brokers,
           );
         } catch {}
         await measurePerfAsync("startup.app.initialize-state", () => initializeAppState({
@@ -869,11 +891,13 @@ function AppInner({
         : instance,
     );
     const nextInstance = nextInstances.find((instance) => instance.id === instanceId);
-    const shouldClearIbkrAccounts = currentInstance?.brokerType === "ibkr"
-      && nextInstance?.brokerType === "ibkr"
-      && getIbkrConfigIdentity(currentInstance.config) !== getIbkrConfigIdentity(nextInstance.config);
-    if (shouldClearIbkrAccounts) {
-      clearPersistedIbkrAccounts(pluginRegistry.persistence.resources, instanceId);
+    const broker = currentInstance ? pluginRegistry.brokers.get(currentInstance.brokerType) : null;
+    const shouldClearBrokerAccounts = currentInstance
+      && nextInstance
+      && currentInstance.brokerType === nextInstance.brokerType
+      && getBrokerAccountCacheSourceKey(currentInstance, broker) !== getBrokerAccountCacheSourceKey(nextInstance, broker);
+    if (shouldClearBrokerAccounts) {
+      clearPersistedBrokerAccounts(pluginRegistry.persistence.resources, currentInstance);
     }
     const nextConfig = {
       ...state.config,
@@ -890,7 +914,7 @@ function AppInner({
     const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
     if (!instance) return;
 
-    clearPersistedIbkrAccounts(pluginRegistry.persistence.resources, instanceId);
+    clearPersistedBrokerAccounts(pluginRegistry.persistence.resources, instance);
 
     const broker = pluginRegistry.brokers.get(instance.brokerType);
     await broker?.disconnect?.(instance).catch(() => {});

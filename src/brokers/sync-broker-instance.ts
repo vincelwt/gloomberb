@@ -1,14 +1,12 @@
 import type { ResourceStore } from "../data/resource-store";
 import type { TickerRepository } from "../data/ticker-repository";
-import { persistIbkrAccounts } from "../plugins/ibkr/account-cache";
-import { buildPersistedIbkrGatewayConfig } from "../plugins/ibkr/config";
-import { ibkrGatewayManager } from "../plugins/ibkr/gateway-service";
+import { persistBrokerAccounts } from "./account-cache";
 import type { BrokerAdapter, BrokerPosition } from "../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../types/config";
 import type { BrokerContractRef } from "../types/instrument";
 import type { BrokerAccount } from "../types/trading";
 import type { TickerMetadata, TickerPosition, TickerRecord } from "../types/ticker";
-import { buildBrokerPortfolioId, getBrokerInstance } from "../utils/broker-instances";
+import { buildBrokerPortfolioId, getBrokerInstance, isBrokerPortfolioId } from "../utils/broker-instances";
 
 export interface SyncBrokerInstanceArgs {
   config: AppConfig;
@@ -17,7 +15,7 @@ export interface SyncBrokerInstanceArgs {
   tickerRepository: TickerRepository;
   existingTickers?: Map<string, TickerRecord>;
   resources?: ResourceStore;
-  persistResolvedIbkrConnection?: boolean;
+  persistResolvedBrokerConfig?: boolean;
 }
 
 export interface SyncBrokerInstanceResult {
@@ -28,6 +26,23 @@ export interface SyncBrokerInstanceResult {
   portfolioIds: string[];
   addedTickers: TickerRecord[];
   updatedTickers: TickerRecord[];
+}
+
+export interface SyncBrokerInstancesArgs {
+  config: AppConfig;
+  brokers: ReadonlyMap<string, BrokerAdapter>;
+  tickerRepository: TickerRepository;
+  existingTickers: Map<string, TickerRecord>;
+  resources?: ResourceStore;
+  persistResolvedBrokerConfig?: boolean;
+  onResult?: (result: SyncBrokerInstanceResult, instance: BrokerInstanceConfig, previousConfig: AppConfig) => void | Promise<void>;
+}
+
+export interface SyncBrokerInstancesResult {
+  config: AppConfig;
+  tickers: Map<string, TickerRecord>;
+  results: SyncBrokerInstanceResult[];
+  errors: Array<{ instanceId: string; error: unknown }>;
 }
 
 function mergeBrokerContracts(existing: BrokerContractRef[], next: BrokerContractRef[]): BrokerContractRef[] {
@@ -67,21 +82,56 @@ function ensureBrokerPortfolio(
   };
 }
 
-function maybePersistResolvedIbkrConnection(
+function inferBrokerAccountId(position: TickerPosition, portfolioId: string, instanceId: string): string | undefined {
+  if (position.brokerAccountId) return position.brokerAccountId;
+  const prefix = `broker:${instanceId}:`;
+  if (!portfolioId.startsWith(prefix)) return undefined;
+  const accountId = portfolioId.slice(prefix.length).trim();
+  return accountId && accountId !== "default" ? accountId : undefined;
+}
+
+export function restoreBrokerPortfoliosFromTickerPositions(
+  config: AppConfig,
+  tickers: Iterable<TickerRecord>,
+): AppConfig {
+  let nextConfig = config;
+  const knownPortfolioIds = new Set(config.portfolios.map((portfolio) => portfolio.id));
+
+  for (const ticker of tickers) {
+    for (const position of ticker.metadata.positions) {
+      if (!position.brokerInstanceId || !isBrokerPortfolioId(position.portfolio)) continue;
+      if (knownPortfolioIds.has(position.portfolio)) continue;
+
+      const instance = getBrokerInstance(config.brokerInstances, position.brokerInstanceId);
+      if (!instance) continue;
+
+      const brokerAccountId = inferBrokerAccountId(position, position.portfolio, instance.id);
+      nextConfig = ensureBrokerPortfolio(
+        nextConfig,
+        instance,
+        position.portfolio,
+        brokerAccountId || instance.label || instance.brokerType,
+        position.currency || config.baseCurrency,
+        brokerAccountId,
+      );
+      knownPortfolioIds.add(position.portfolio);
+    }
+  }
+
+  return nextConfig;
+}
+
+async function maybePersistResolvedBrokerConfig(
   config: AppConfig,
   instance: BrokerInstanceConfig,
-  persistResolvedIbkrConnection: boolean,
-): AppConfig {
-  if (!persistResolvedIbkrConnection || instance.brokerType !== "ibkr") {
+  broker: BrokerAdapter,
+  persistResolvedBrokerConfig: boolean,
+): Promise<AppConfig> {
+  if (!persistResolvedBrokerConfig || !broker.getPersistedConfigUpdate) {
     return config;
   }
 
-  const resolved = ibkrGatewayManager.getService(instance.id).getResolvedConnection();
-  if (!resolved) {
-    return config;
-  }
-
-  const nextConfig = buildPersistedIbkrGatewayConfig(instance.config, resolved);
+  const nextConfig = await broker.getPersistedConfigUpdate(instance);
   if (!nextConfig) {
     return config;
   }
@@ -200,7 +250,7 @@ export async function syncBrokerInstance({
   tickerRepository,
   existingTickers,
   resources,
-  persistResolvedIbkrConnection = false,
+  persistResolvedBrokerConfig = false,
 }: SyncBrokerInstanceArgs): Promise<SyncBrokerInstanceResult> {
   const instance = getBrokerInstance(config.brokerInstances, instanceId);
   if (!instance) {
@@ -226,9 +276,9 @@ export async function syncBrokerInstance({
   if (broker.listAccounts) {
     try {
       brokerAccounts = await broker.listAccounts(instance);
-      if (instance.brokerType === "ibkr" && resources) {
+      if (resources) {
         try {
-          persistIbkrAccounts(resources, instance, brokerAccounts);
+          persistBrokerAccounts(resources, instance, broker, brokerAccounts);
         } catch {}
       }
     } catch {
@@ -291,7 +341,7 @@ export async function syncBrokerInstance({
     portfolioIds.push(portfolioId);
   }
 
-  nextConfig = maybePersistResolvedIbkrConnection(nextConfig, instance, persistResolvedIbkrConnection);
+  nextConfig = await maybePersistResolvedBrokerConfig(nextConfig, instance, broker, persistResolvedBrokerConfig);
 
   const addedTickers = new Map<string, TickerRecord>();
   const updatedTickers = new Map<string, TickerRecord>();
@@ -337,5 +387,51 @@ export async function syncBrokerInstance({
     portfolioIds,
     addedTickers: [...addedTickers.values()],
     updatedTickers: [...updatedTickers.values()],
+  };
+}
+
+export async function syncBrokerInstances({
+  config,
+  brokers,
+  tickerRepository,
+  existingTickers,
+  resources,
+  persistResolvedBrokerConfig = false,
+  onResult,
+}: SyncBrokerInstancesArgs): Promise<SyncBrokerInstancesResult> {
+  let nextConfig = config;
+  let nextTickers = new Map(existingTickers);
+  const results: SyncBrokerInstanceResult[] = [];
+  const errors: SyncBrokerInstancesResult["errors"] = [];
+
+  for (const instance of config.brokerInstances) {
+    if (instance.enabled === false) continue;
+
+    const previousConfig = nextConfig;
+    try {
+      const result = await syncBrokerInstance({
+        config: previousConfig,
+        instanceId: instance.id,
+        brokers,
+        tickerRepository,
+        existingTickers: nextTickers,
+        resources,
+        persistResolvedBrokerConfig,
+      });
+
+      nextConfig = result.config;
+      nextTickers = result.tickers;
+      results.push(result);
+      await onResult?.(result, instance, previousConfig);
+    } catch (error) {
+      errors.push({ instanceId: instance.id, error });
+    }
+  }
+
+  return {
+    config: nextConfig,
+    tickers: nextTickers,
+    results,
+    errors,
   };
 }

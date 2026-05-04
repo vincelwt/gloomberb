@@ -2,15 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import {
+  clearPersistedBrokerAccounts,
+  loadPersistedBrokerAccountMap,
+  loadPersistedBrokerAccounts,
+  persistBrokerAccounts,
+} from "../../brokers/account-cache";
 import { AppPersistence } from "../../data/app-persistence";
 import type { BrokerInstanceConfig } from "../../types/config";
 import type { BrokerAccount } from "../../types/trading";
-import {
-  clearPersistedIbkrAccounts,
-  loadPersistedIbkrAccountMap,
-  loadPersistedIbkrAccounts,
-  persistIbkrAccounts,
-} from "./account-cache";
+import { ibkrBroker } from "./broker-adapter";
 
 const tempPaths: string[] = [];
 
@@ -55,10 +56,10 @@ describe("IBKR account cache", () => {
     const persistence = new AppPersistence(createTempDbPath("ibkr-account-cache"));
     const instance = createIbkrInstance("flex", { id: "ibkr-personal" });
 
-    persistIbkrAccounts(persistence.resources, instance, TEST_ACCOUNTS);
+    persistBrokerAccounts(persistence.resources, instance, ibkrBroker, TEST_ACCOUNTS);
 
-    expect(loadPersistedIbkrAccounts(persistence.resources, instance)).toEqual(TEST_ACCOUNTS);
-    expect(loadPersistedIbkrAccountMap(persistence.resources, [instance])).toEqual({
+    expect(loadPersistedBrokerAccounts(persistence.resources, instance, ibkrBroker)).toEqual(TEST_ACCOUNTS);
+    expect(loadPersistedBrokerAccountMap(persistence.resources, [instance], new Map([["ibkr", ibkrBroker]]))).toEqual({
       "ibkr-personal": TEST_ACCOUNTS,
     });
 
@@ -73,9 +74,9 @@ describe("IBKR account cache", () => {
       config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4003, clientId: 1 } },
     });
 
-    persistIbkrAccounts(persistence.resources, original, TEST_ACCOUNTS);
+    persistBrokerAccounts(persistence.resources, original, ibkrBroker, TEST_ACCOUNTS);
 
-    expect(loadPersistedIbkrAccounts(persistence.resources, updated)).toBeNull();
+    expect(loadPersistedBrokerAccounts(persistence.resources, updated, ibkrBroker)).toBeNull();
     expect(persistence.resources.list({
       namespace: "plugin:ibkr",
       kind: "account-snapshot",
@@ -92,10 +93,10 @@ describe("IBKR account cache", () => {
     const persistence = new AppPersistence(createTempDbPath("ibkr-account-cache-clear"));
     const instance = createIbkrInstance("gateway", { id: "ibkr-live" });
 
-    persistIbkrAccounts(persistence.resources, instance, TEST_ACCOUNTS);
-    clearPersistedIbkrAccounts(persistence.resources, instance.id);
+    persistBrokerAccounts(persistence.resources, instance, ibkrBroker, TEST_ACCOUNTS);
+    clearPersistedBrokerAccounts(persistence.resources, instance);
 
-    expect(loadPersistedIbkrAccounts(persistence.resources, instance)).toBeNull();
+    expect(loadPersistedBrokerAccounts(persistence.resources, instance, ibkrBroker)).toBeNull();
     persistence.close();
   });
 });

@@ -5,7 +5,7 @@ import type { BrokerInstanceConfig } from "./config";
 import type { QuoteSubscriptionTarget } from "./data-provider";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
 import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "./trading";
-import type { CachePolicyMap } from "./persistence";
+import type { CachePolicy, CachePolicyMap } from "./persistence";
 
 export interface BrokerPosition {
   ticker: string;
@@ -64,6 +64,14 @@ export interface BrokerConnectionStatus {
   updatedAt: number;
 }
 
+export interface BrokerProfileAction {
+  id: string;
+  label: string;
+  widgetId?: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
 export interface BrokerAdapter {
   readonly id: string;
   readonly name: string;
@@ -75,6 +83,10 @@ export interface BrokerAdapter {
   disconnect?(instance: BrokerInstanceConfig): Promise<void>;
   getStatus?(instance: BrokerInstanceConfig): BrokerConnectionStatus;
   subscribeStatus?(instance: BrokerInstanceConfig, listener: () => void): () => void;
+  getPersistedConfigUpdate?(instance: BrokerInstanceConfig): Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
+  getAccountCacheSourceKey?(instance: BrokerInstanceConfig): string;
+  getAccountCachePolicy?(instance: BrokerInstanceConfig): CachePolicy;
+  getProfileActions?(instance: BrokerInstanceConfig): BrokerProfileAction[];
   toConfigValues?(instance: BrokerInstanceConfig): Record<string, unknown>;
   fromConfigValues?(values: Record<string, unknown>, previous?: BrokerInstanceConfig): Record<string, unknown>;
   listAccounts?(instance: BrokerInstanceConfig): Promise<BrokerAccount[]>;

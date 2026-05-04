@@ -10,7 +10,7 @@ import {
   parseIbkrHistoricalBarTime,
   resolveGatewayConnection,
   summarizeBrokerAccount,
-} from "./gateway-service";
+} from "./gateway-service-native";
 
 function makeTags(input: Record<string, Record<string, string>>) {
   return new Map(

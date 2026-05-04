@@ -60,6 +60,7 @@ interface ContextMenuProviderEntry {
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
+  wrapBrokerAdapter?: (broker: BrokerAdapter, pluginId: string) => BrokerAdapter;
 }
 
 export function getSharedMarketData(): DataProvider | undefined { return sharedMarketData; }
@@ -116,6 +117,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   readonly tickerRepository: TickerRepository;
   readonly persistence: AppPersistence;
   private readonly enableCapabilityHandlers: boolean;
+  private readonly wrapBrokerAdapter?: (broker: BrokerAdapter, pluginId: string) => BrokerAdapter;
 
   getTickerFn: ((symbol: string) => TickerRecord | null) = () => null;
   getDataFn: ((symbol: string) => TickerFinancials | null) = () => null;
@@ -205,6 +207,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     this.tickerRepository = tickerRepository;
     this.persistence = persistence;
     this.enableCapabilityHandlers = options.enableCapabilityHandlers ?? true;
+    this.wrapBrokerAdapter = options.wrapBrokerAdapter;
     this.events = new EventBus();
 
     sharedMarketData = marketData;
@@ -640,7 +643,10 @@ export class PluginRegistry implements PluginRuntimeAccess {
         items.commands.push(command.id);
       },
       registerColumn: (column) => { this.columnsMap.set(column.id, column); items.columns.push(column.id); },
-      registerBroker: (broker) => { this.brokersMap.set(broker.id, broker); items.brokers.push(broker.id); },
+      registerBroker: (broker) => {
+        this.brokersMap.set(broker.id, this.wrapBrokerAdapter?.(broker, pluginId) ?? broker);
+        items.brokers.push(broker.id);
+      },
       registerCapability: (capability) => {
         if (this.enableCapabilityHandlers) {
           this.registerCapabilityForPlugin(pluginId, capability, items);
@@ -738,7 +744,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     }
 
     if (plugin.broker) {
-      this.brokersMap.set(plugin.broker.id, plugin.broker);
+      this.brokersMap.set(plugin.broker.id, this.wrapBrokerAdapter?.(plugin.broker, plugin.id) ?? plugin.broker);
       items.brokers.push(plugin.broker.id);
     }
 

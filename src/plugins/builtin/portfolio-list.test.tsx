@@ -14,7 +14,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
-import { ibkrGatewayManager } from "../ibkr/gateway-service";
+import type { BrokerAdapter } from "../../types/broker";
 import { portfolioListPlugin } from "./portfolio-list";
 
 const TEST_PANE_ID = "portfolio-list:test";
@@ -250,7 +250,6 @@ afterEach(async () => {
   sharedCoordinator = null;
   setSharedMarketDataCoordinator(null);
   harnessState = null;
-  await ibkrGatewayManager.removeInstance("ibkr-live");
   for (const path of tempPaths.splice(0)) {
     if (existsSync(path)) rmSync(path, { force: true });
   }
@@ -523,34 +522,45 @@ describe("PortfolioListPane cash and margin UI", () => {
 
   test("shows a live gateway badge in the header and drawer preview", async () => {
     const config = createPortfolioConfig("broker:ibkr-live:DU12345", [createBrokerInstance("gateway", "ibkr-live")]);
-    const service = ibkrGatewayManager.getService("ibkr-live") as any;
-    service.updateSnapshot({
-      status: { state: "connected", updatedAt: Date.now(), mode: "gateway" },
-      accounts: [{
-        accountId: "DU12345",
-        name: "DU12345",
-        currency: "USD",
-        source: "gateway",
-        updatedAt: Date.now(),
-        totalCashValue: -75000,
-        settledCash: -70000,
-        availableFunds: 15000,
-        excessLiquidity: 12000,
-        buyingPower: 30000,
-        netLiquidation: 200000,
-        cashBalances: [
-          { currency: "USD", quantity: -75000, baseValue: -75000, baseCurrency: "USD" },
-          { currency: "EUR", quantity: -10000, baseValue: undefined, baseCurrency: "USD" },
-        ],
-      }],
-      openOrders: [],
-      executions: [],
+    const liveAccount = {
+      accountId: "DU12345",
+      name: "DU12345",
+      currency: "USD",
+      source: "gateway" as const,
+      updatedAt: Date.now(),
+      totalCashValue: -75000,
+      settledCash: -70000,
+      availableFunds: 15000,
+      excessLiquidity: 12000,
+      buyingPower: 30000,
+      netLiquidation: 200000,
+      cashBalances: [
+        { currency: "USD", quantity: -75000, baseValue: -75000, baseCurrency: "USD" },
+        { currency: "EUR", quantity: -10000, baseValue: undefined, baseCurrency: "USD" },
+      ],
+    };
+    const liveBroker: BrokerAdapter = {
+      id: "ibkr",
+      name: "Interactive Brokers",
+      configSchema: [],
+      validate: async () => true,
+      importPositions: async () => [],
+      getStatus: () => ({ state: "connected", updatedAt: Date.now(), mode: "gateway" }),
+      subscribeStatus: (_instance, listener) => {
+        listener();
+        return () => {};
+      },
+      listAccounts: async () => [liveAccount],
+    };
+    const runtime = createTestPluginRuntime({
+      getBrokerAdapter: (brokerType) => brokerType === "ibkr" ? liveBroker : null,
     });
 
     testSetup = await testRender(
       <PortfolioHarness
         config={config}
         collectionId="broker:ibkr-live:DU12345"
+        runtime={runtime}
         brokerAccounts={{
           "ibkr-live": [{
             accountId: "DU12345",

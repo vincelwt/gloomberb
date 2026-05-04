@@ -296,9 +296,9 @@ export interface DetailTabProps {
 }
 
 export interface DetailTabVisibilityContext {
+  config: AppConfig;
   ticker: TickerRecord | null;
   financials: TickerFinancials | null | undefined;
-  hasIbkrGatewayTrading: boolean;
   hasOptionsChain: boolean;
 }
 
