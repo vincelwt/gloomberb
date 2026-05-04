@@ -76,12 +76,6 @@ export interface RegisteredCapability {
   capability: PluginCapability;
 }
 
-export const unknownSchema: CapabilitySchema<unknown> = {
-  parse(value) {
-    return value;
-  },
-};
-
 export const recordSchema: CapabilitySchema<Record<string, unknown>> = {
   parse(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { SecFilingItem } from "../types/data-provider";
-import type { NewsArticle } from "../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
-import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "./request-types";
+import type { ChartRequest, InstrumentRef, OptionsRequest, SecFilingsRequest } from "./request-types";
 import { instrumentFromTicker } from "./request-types";
 import {
   getSharedMarketDataCoordinator,
@@ -14,7 +13,6 @@ import {
   buildArticleSummaryKey,
   buildChartKey,
   buildFxKey,
-  buildNewsKey,
   buildOptionsKey,
   buildQuoteKey,
   buildSecContentKey,
@@ -23,15 +21,6 @@ import {
 } from "./selectors";
 
 const TICKER_FINANCIALS_LOAD_DELAY_MS = 250;
-
-function useCoordinatorVersion(): number {
-  const coordinator = getSharedMarketDataCoordinator();
-  return useSyncExternalStore(
-    coordinator?.subscribe.bind(coordinator) ?? (() => () => {}),
-    () => coordinator?.getVersion() ?? 0,
-    () => 0,
-  );
-}
 
 function useCoordinatorKeysVersion(keys: readonly string[]): number {
   const coordinator = getSharedMarketDataCoordinator();
@@ -55,12 +44,6 @@ function useCoordinatorKeysVersion(keys: readonly string[]): number {
     return coordinator.getVersion();
   }, [coordinator, stableKeys]);
   return useSyncExternalStore(subscribe, getSnapshot, () => 0);
-}
-
-function useCoordinatorSelector<T>(selector: (coordinator: NonNullable<ReturnType<typeof getSharedMarketDataCoordinator>>) => T, fallback: T): T {
-  const coordinator = getSharedMarketDataCoordinator();
-  useCoordinatorVersion();
-  return coordinator ? selector(coordinator) : fallback;
 }
 
 function stableCurrencyList(currencies: Array<string | null | undefined>): string[] {
@@ -222,21 +205,6 @@ export function useChartQueries(
   return useMemo(() => new Map(entries), [entries]);
 }
 
-export function useNewsQuery(request: NewsRequest | null | undefined): QueryEntry<NewsArticle[]> | null {
-  const requestKey = request ? buildNewsKey(request) : null;
-  useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
-  const coordinator = getSharedMarketDataCoordinator();
-  const entry = coordinator && request ? coordinator.getNewsEntry(request) : null;
-
-  useEffect(() => {
-    const coordinator = getSharedMarketDataCoordinator();
-    if (!coordinator || !request) return;
-    void coordinator.loadNews(request);
-  }, [requestKey]);
-
-  return entry;
-}
-
 export function useOptionsQuery(request: OptionsRequest | null | undefined): QueryEntry<OptionsChain> | null {
   const requestKey = request ? buildOptionsKey(request) : null;
   useCoordinatorKeysVersion(requestKey ? [requestKey] : []);
@@ -293,21 +261,6 @@ export function useArticleSummary(url: string | null | undefined): QueryEntry<st
     if (!coordinator || !url) return;
     void coordinator.loadArticleSummary(url);
   }, [url]);
-
-  return entry;
-}
-
-export function useFxRate(currency: string | null | undefined): QueryEntry<number> | null {
-  const key = currency ? buildFxKey(currency) : null;
-  useCoordinatorKeysVersion(key ? [key] : []);
-  const coordinator = getSharedMarketDataCoordinator();
-  const entry = coordinator && currency ? coordinator.getFxEntry(currency) : null;
-
-  useEffect(() => {
-    const coordinator = getSharedMarketDataCoordinator();
-    if (!coordinator || !currency) return;
-    void coordinator.loadFxRate(currency);
-  }, [currency]);
 
   return entry;
 }

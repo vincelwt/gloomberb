@@ -29,14 +29,6 @@ export interface ThrottledFetchOptions {
   transport?: ThrottledFetchTransport;
 }
 
-interface QueueEntry {
-  resolve: (value: Response) => void;
-  reject: (reason: unknown) => void;
-  url: string;
-  init: RequestInit | undefined;
-  retries: number;
-}
-
 export interface ThrottledFetchClient {
   fetch(url: string, init?: RequestInit): Promise<Response>;
   fetchJson<T = unknown>(url: string, init?: RequestInit): Promise<T>;

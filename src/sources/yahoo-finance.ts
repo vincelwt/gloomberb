@@ -329,10 +329,7 @@ function extractExtendedHoursPrices(
 
 // Cache TTLs
 const QUOTE_TTL = 5 * 60_000; // 5 min
-const FUNDAMENTALS_TTL = 60 * 60_000; // 1 hour
 const HISTORY_TTL = 24 * 60 * 60_000; // 24 hours
-const NEWS_TTL = 15 * 60_000; // 15 min
-const OPTIONS_TTL = 5 * 60_000; // 5 min
 const INTRADAY_HISTORY_TTL = 5 * 60_000; // 5 min for intraday ranges
 
 // Maps TimeRange → Yahoo API { range, interval } for optimal granularity

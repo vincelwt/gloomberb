@@ -183,16 +183,6 @@ export function matchesPredictionCategory(
   return keywords.some((keyword) => haystack.includes(keyword));
 }
 
-export function getAvailablePredictionCategories(
-  markets: PredictionMarketSummary[],
-): PredictionCategoryOption[] {
-  return PREDICTION_CATEGORY_OPTIONS.filter(
-    (category) =>
-      category.id === "all" ||
-      markets.some((market) => matchesPredictionCategory(market, category.id)),
-  );
-}
-
 export function getPolymarketCategoryTagSlugs(
   categoryId: PredictionCategoryId,
 ): string[] {

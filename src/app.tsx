@@ -6,8 +6,6 @@ import {
   AppProvider,
   getFocusedCollectionId,
   getFocusedTickerSymbol,
-  resolveCollectionForPane,
-  resolveTickerForPane,
   useAppDispatch,
   useAppSelector,
   useAppStateRef,
@@ -127,17 +125,6 @@ function isTickerContextPaneInstance(instance: PaneInstanceConfig): boolean {
   return instance.paneId === "portfolio-list" || isTickerPaneId(instance.paneId);
 }
 
-function summarizeError(error: unknown): Record<string, string> {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack || "",
-    };
-  }
-  return { message: String(error) };
-}
-
 interface AppInnerProps {
   pluginRegistry: PluginRegistry;
   tickerRepository: TickerRepository;
@@ -204,7 +191,6 @@ function AppInner({
   const detachedPaneId = isDetachedWindow ? desktopWindowBridge.paneId ?? null : null;
   const [desktopDockPreview, setDesktopDockPreview] = useState<DesktopDockPreviewState | null>(null);
   appActiveRef.current = appActive;
-  const focusedCollectionId = getFocusedCollectionId(state);
   const appNotifier = useMemo(() => createAppNotifier({
     isAppActive: () => appActiveRef.current,
     renderToast: (notification) => {
@@ -245,18 +231,6 @@ function AppInner({
   const resolvePaneTarget = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): string | null => {
     return resolvePaneInstance(layout, paneId)?.instanceId ?? null;
   }, [state.config.layout]);
-
-  const getPreferredPortfolio = useCallback((ticker: TickerRecord | null) => {
-    const focusedPortfolio = state.config.portfolios.find((portfolio) => portfolio.id === focusedCollectionId);
-    if (focusedPortfolio) return focusedPortfolio;
-    if (ticker) {
-      for (const portfolioId of ticker.metadata.portfolios) {
-        const portfolio = state.config.portfolios.find((entry) => entry.id === portfolioId);
-        if (portfolio) return portfolio;
-      }
-    }
-    return state.config.portfolios[0] ?? null;
-  }, [focusedCollectionId, state.config.portfolios]);
 
   const runPaneTemplateWizard = useCallback(async (steps: WizardStep[]): Promise<Record<string, string> | null> => {
     const values: Record<string, string> = {};
