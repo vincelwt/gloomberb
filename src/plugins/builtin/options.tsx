@@ -1,7 +1,7 @@
 import { Box, Text } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "../../ui";
-import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
+import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
 import { blendHex, colors } from "../../theme/colors";
@@ -10,6 +10,7 @@ import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
 import { DataTableView, Spinner, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../components";
+import { createTickerSurfacePaneTemplate } from "./ticker-surface";
 
 type OptionColumnId =
   | "callLast"
@@ -35,6 +36,10 @@ interface OptionTableRow {
   isPositionStrike: boolean;
 }
 
+type OptionsViewProps = Pick<DetailTabProps, "width" | "height" | "focused"> & {
+  onCapture?: DetailTabProps["onCapture"];
+};
+
 const OPTION_CALL_COLOR = "#5ed69a";
 const OPTION_PUT_COLOR = "#ff9c7a";
 const OPTION_PRICE_COLOR = "#dfc05b";
@@ -58,7 +63,7 @@ const OPTION_COLUMNS: OptionColumn[] = [
   { id: "putOpenInterest", label: "P OI", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
 ];
 
-export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps) {
+export function OptionsView({ width, height, focused, onCapture = () => {} }: OptionsViewProps) {
   const { ticker, financials } = usePaneTicker();
   const [expIdx, setExpIdx] = useState(0);
   const [strikeIdx, setStrikeIdx] = useState(0);
@@ -322,6 +327,14 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
   );
 }
 
+export function OptionsTab(props: DetailTabProps) {
+  return <OptionsView {...props} />;
+}
+
+export function OptionsPane({ focused, width, height }: PaneProps) {
+  return <OptionsView focused={focused} width={width} height={height} />;
+}
+
 function buildStrikeList(chain: OptionsChain): number[] {
   const set = new Set<number>();
   for (const c of chain.calls) set.add(c.strike);
@@ -456,6 +469,29 @@ export const optionsPlugin: GloomPlugin = {
   version: "1.0.0",
   description: "View options chain for tickers",
   toggleable: true,
+
+  panes: [
+    {
+      id: "options",
+      name: "Options",
+      icon: "O",
+      component: OptionsPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 112, height: 28 },
+    },
+  ],
+
+  paneTemplates: [
+    createTickerSurfacePaneTemplate({
+      id: "options-pane",
+      paneId: "options",
+      label: "Options",
+      description: "Options chain for the selected ticker.",
+      keywords: ["options", "chain", "calls", "puts", "omon"],
+      shortcut: "OMON",
+    }),
+  ],
 
   setup(ctx) {
     ctx.registerDetailTab({

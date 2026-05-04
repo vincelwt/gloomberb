@@ -14,8 +14,8 @@ import { blendHex, colors, priceColor } from "../../../theme/colors";
 import type { HolderData, HolderRecord } from "../../../types/financials";
 import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
-import { normalizeTickerInput } from "../../../utils/ticker-search";
 import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
+import { createTickerSurfacePaneTemplate } from "../ticker-surface";
 
 type ViewMode = "table" | "chart";
 type HolderColumnId = "holder" | "value" | "shares" | "changeShares" | "changePercent" | "percentHeld" | "reportDate";
@@ -937,24 +937,13 @@ export const holdersPlugin: GloomPlugin = {
   ],
 
   paneTemplates: [
-    {
+    createTickerSurfacePaneTemplate({
       id: "holders-pane",
       paneId: "holders",
       label: "Holders",
       description: "Institutional holders for the selected ticker.",
       keywords: ["holders", "ownership", "institutional", "owners", "hds"],
-      shortcut: { prefix: "HDS", argPlaceholder: "ticker", argKind: "ticker" },
-      canCreate: (context, options) => (options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg)) !== null,
-      createInstance: (context, options) => {
-        const ticker = options?.symbol ?? normalizeTickerInput(context.activeTicker, options?.arg);
-        return ticker
-          ? {
-            title: ticker,
-            binding: { kind: "fixed", symbol: ticker },
-            placement: "floating",
-          }
-          : null;
-      },
-    },
+      shortcut: "HDS",
+    }),
   ],
 };
