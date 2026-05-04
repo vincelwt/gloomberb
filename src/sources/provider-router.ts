@@ -813,10 +813,6 @@ export class AssetDataRouter implements DataProvider {
     return this.providersInPriorityOrder().map((provider) => this.providerSourceKey(provider));
   }
 
-  private firstAvailableProvider(): DataProvider | null {
-    return this.providersInPriorityOrder()[0] ?? null;
-  }
-
   private resolvePolicy(overrides: CachePolicyMap | undefined, key: keyof typeof DEFAULT_CACHE_POLICIES): CachePolicy {
     return overrides?.[key] ?? DEFAULT_CACHE_POLICIES[key]!;
   }
@@ -1700,21 +1696,6 @@ export class AssetDataRouter implements DataProvider {
     return null;
   }
 
-  private async revalidateFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
-    const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
-    const needsProvider = !brokerResult || !hasMeaningfulFundamentals(brokerResult.value) || !hasMeaningfulProfile(brokerResult.value);
-    if (needsProvider) {
-      await this.fetchProviderFinancials(ticker, exchange, context);
-    }
-  }
-
-  private async revalidateQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<void> {
-    const brokerQuote = await withBrokerTimeout(this.fetchBrokerQuote(ticker, exchange, context));
-    if (!brokerQuote) {
-      await this.fetchProviderQuote(ticker, exchange, context);
-    }
-  }
-
   private async revalidateExchangeRate(fromCurrency: string): Promise<void> {
     const result = await this.firstProvider(async (provider) => {
       const rate = await provider.getExchangeRate(fromCurrency);
@@ -1750,27 +1731,6 @@ export class AssetDataRouter implements DataProvider {
     const provider = this.resolveProviderBySourceKey(result.sourceKey);
     if (provider) {
       this.cacheResource("article-summary", compactUrl(url), "", result.sourceKey, result.value, this.resolveProviderPolicy("articleSummary", provider));
-    }
-  }
-
-  private async revalidatePriceHistory(ticker: string, exchange: string, range: TimeRange, context?: MarketDataRequestContext): Promise<void> {
-    const brokerHistory = await withBrokerTimeout(this.fetchBrokerPriceHistory(ticker, exchange, range, context));
-    if (!brokerHistory || brokerHistory.value.length === 0) {
-      await this.fetchProviderPriceHistory(ticker, exchange, range, context);
-    }
-  }
-
-  private async revalidateDetailedPriceHistory(
-    ticker: string,
-    exchange: string,
-    startDate: Date,
-    endDate: Date,
-    barSize: string,
-    context?: MarketDataRequestContext,
-  ): Promise<void> {
-    const brokerHistory = await withBrokerTimeout(this.fetchBrokerDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
-    if (!brokerHistory || brokerHistory.value.length === 0) {
-      await this.fetchProviderDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context);
     }
   }
 

@@ -9,7 +9,6 @@ import { formatCompact, formatNumber } from "../../utils/format";
 import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
-import { setOptionsAvailability } from "./options-availability";
 import { DataTableView, Spinner, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../components";
 
 type OptionColumnId =
@@ -124,11 +123,6 @@ export function OptionsTab({ width, height, focused, onCapture }: DetailTabProps
     setExpIdx(0);
     setStrikeIdx(0);
   }, [effectiveTicker]);
-
-  useEffect(() => {
-    if (!target) return;
-    setOptionsAvailability(target, !!chain && chain.expirationDates.length > 0);
-  }, [chain, target]);
 
   useEffect(() => {
     if (!parsed || !initialChain || initialChain.expirationDates.length === 0) return;

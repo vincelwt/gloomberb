@@ -4,7 +4,6 @@ import type {
   AssetDataCapability,
   CapabilityOperation,
   NewsCapability,
-  PluginCapability,
 } from "./types";
 
 function op(handler: CapabilityOperation["handler"], kind: CapabilityOperation["kind"] = "read"): CapabilityOperation {
@@ -97,18 +96,5 @@ export function newsProvider(options: {
       getCachedNews: op((input: any) => options.provider.getCachedNews?.(input.query) ?? [], "query"),
       fetchNews: op((input: any) => options.provider.fetchNews(input.query), "query"),
     },
-  };
-}
-
-export function pluginServiceProvider(capability: PluginCapability): PluginCapability {
-  return {
-    ...capability,
-    kind: "plugin-service",
-    operations: Object.fromEntries(
-      Object.entries(capability.operations).map(([key, operation]) => [
-        key,
-        { ...operation, rendererSafe: operation.rendererSafe === true },
-      ]),
-    ),
   };
 }

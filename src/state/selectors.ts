@@ -1,63 +1,29 @@
 import type { AppState } from "./app-context";
-import { resolveCollectionForPane } from "./app-context";
 import type { TickerRecord } from "../types/ticker";
 
-/** Get tickers belonging to a specific portfolio */
-export function getPortfolioTickers(state: AppState, portfolioId: string): TickerRecord[] {
-  const result: TickerRecord[] = [];
-  for (const ticker of state.tickers.values()) {
-    if (ticker.metadata.portfolios.includes(portfolioId)) {
-      result.push(ticker);
-    }
-  }
-  return result.sort((a, b) => a.metadata.ticker.localeCompare(b.metadata.ticker));
-}
-
-/** Get tickers belonging to a specific watchlist */
-export function getWatchlistTickers(state: AppState, watchlistId: string): TickerRecord[] {
-  const result: TickerRecord[] = [];
-  for (const ticker of state.tickers.values()) {
-    if (ticker.metadata.watchlists.includes(watchlistId)) {
-      result.push(ticker);
-    }
-  }
-  return result.sort((a, b) => a.metadata.ticker.localeCompare(b.metadata.ticker));
+function getCollectionMembershipKey(state: AppState, collectionId: string | null): "portfolios" | "watchlists" | null {
+  if (!collectionId) return null;
+  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) return "portfolios";
+  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) return "watchlists";
+  return null;
 }
 
 export function getCollectionTickers(state: AppState, collectionId: string | null): TickerRecord[] {
-  if (!collectionId) return [];
-  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) {
-    return getPortfolioTickers(state, collectionId);
-  }
-  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) {
-    return getWatchlistTickers(state, collectionId);
-  }
-  return [];
+  const membershipKey = getCollectionMembershipKey(state, collectionId);
+  if (!collectionId || !membershipKey) return [];
+  return [...state.tickers.values()]
+    .filter((ticker) => ticker.metadata[membershipKey].includes(collectionId))
+    .sort((a, b) => a.metadata.ticker.localeCompare(b.metadata.ticker));
 }
 
 export function getCollectionTickerCount(state: AppState, collectionId: string | null): number {
-  if (!collectionId) return 0;
-
+  const membershipKey = getCollectionMembershipKey(state, collectionId);
+  if (!collectionId || !membershipKey) return 0;
   let count = 0;
-  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) {
-    for (const ticker of state.tickers.values()) {
-      if (ticker.metadata.portfolios.includes(collectionId)) {
-        count += 1;
-      }
-    }
-    return count;
+  for (const ticker of state.tickers.values()) {
+    if (ticker.metadata[membershipKey].includes(collectionId)) count += 1;
   }
-
-  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) {
-    for (const ticker of state.tickers.values()) {
-      if (ticker.metadata.watchlists.includes(collectionId)) {
-        count += 1;
-      }
-    }
-    return count;
-  }
-
-  return 0;
+  return count;
 }
 
 export function getCollectionName(state: AppState, collectionId: string | null): string {
@@ -67,26 +33,4 @@ export function getCollectionName(state: AppState, collectionId: string | null):
   const watchlist = state.config.watchlists.find((entry) => entry.id === collectionId);
   if (watchlist) return watchlist.name;
   return collectionId;
-}
-
-export function getCollectionType(state: AppState, collectionId: string | null): "portfolio" | "watchlist" | null {
-  if (!collectionId) return null;
-  if (state.config.portfolios.some((portfolio) => portfolio.id === collectionId)) return "portfolio";
-  if (state.config.watchlists.some((watchlist) => watchlist.id === collectionId)) return "watchlist";
-  return null;
-}
-
-export function getPaneCollectionTickers(state: AppState, paneId: string): TickerRecord[] {
-  return getCollectionTickers(state, resolveCollectionForPane(state, paneId));
-}
-
-export function getAllCollections(state: AppState): Array<{ id: string; name: string; type: "portfolio" | "watchlist" }> {
-  const collections: Array<{ id: string; name: string; type: "portfolio" | "watchlist" }> = [];
-  for (const portfolio of state.config.portfolios) {
-    collections.push({ id: portfolio.id, name: portfolio.name, type: "portfolio" });
-  }
-  for (const watchlist of state.config.watchlists) {
-    collections.push({ id: watchlist.id, name: watchlist.name, type: "watchlist" });
-  }
-  return collections;
 }

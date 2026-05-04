@@ -122,11 +122,3 @@ export function parseFloatSafe(value: unknown): number | null {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
-
-export function parseIntegerSafe(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value))
-    return Math.trunc(value);
-  if (typeof value !== "string" || value.trim().length === 0) return null;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : null;
-}

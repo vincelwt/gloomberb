@@ -25,7 +25,6 @@ import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../registry";
 import { setSharedRegistryForTests } from "../registry";
 import { PluginRenderProvider } from "../plugin-runtime";
-import { resetOptionsAvailabilityCache } from "./options-availability";
 import { FinancialsTab, tickerDetailPlugin } from "./ticker-detail";
 import { isUsEquityTicker } from "../../utils/sec";
 
@@ -260,7 +259,6 @@ afterEach(() => {
     testSetup = undefined;
   }
   harnessDispatch = null;
-  resetOptionsAvailabilityCache();
   setSharedRegistryForTests(undefined);
   setOptionsProvider(undefined);
 });
