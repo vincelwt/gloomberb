@@ -17,7 +17,6 @@ import { TextAttributes, type ScrollBoxRenderable } from "../../../ui/host";
 import { colors, hoverBg } from "../../../theme/colors";
 import { useAppDispatch, usePaneInstance } from "../../../state/app-context";
 import { useRafCallback } from "../../../react/use-raf-callback";
-import { padTo } from "../../../utils/format";
 import { measurePerf } from "../../../utils/perf-marks";
 import type {
   DataTableCell,
@@ -25,6 +24,7 @@ import type {
   DataTableProps,
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
+import { expandTableColumns, getTableWidth } from "../../../components/ui/table-layout";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { useScrollbarActivity } from "./scrollbar-activity";
 
@@ -66,6 +66,22 @@ function cellTextStyle(
     whiteSpace: "pre",
     overflow: "visible",
     textOverflow: "clip",
+  };
+}
+
+function clippedCellTextStyle<C extends DataTableColumn>(
+  column: C,
+  color: string,
+  attributes: number | undefined,
+): CSSProperties {
+  return {
+    ...cellTextStyle(color, attributes),
+    display: "block",
+    width: px(column.width),
+    maxWidth: px(column.width),
+    overflow: "hidden",
+    whiteSpace: "pre",
+    textAlign: column.align,
   };
 }
 
@@ -220,7 +236,7 @@ function renderHeaderLabel<C extends DataTableColumn>(
   const indicator = isSorted ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
   return {
     isSorted,
-    text: padTo(column.label + indicator, column.width, column.align),
+    text: column.label + indicator,
   };
 }
 
@@ -374,12 +390,13 @@ function WebDataTableRowInner<
             }}
           >
             <span
-              style={cellTextStyle(
+              style={clippedCellTextStyle(
+                column,
                 cell.color ?? (selected ? colors.selectedText : colors.text),
                 cell.attributes ?? TextAttributes.NONE,
               )}
             >
-              {padTo(cell.text, column.width, column.align)}
+              {cell.text}
             </span>
           </div>
         );
@@ -427,11 +444,21 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const bodyHorizontal = useScrollbarState(showHorizontalScrollbar);
   const bodyVertical = useScrollbarState(true);
   const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
-  const tableWidth = useMemo(
-    () => columns.reduce((sum, column) => sum + column.width + 1, 2),
-    [columns],
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const measureViewportWidth = useCallback(() => {
+    const nextWidth = Math.max(
+      0,
+      Math.floor((bodyElementRef.current?.clientWidth ?? 0) / WEB_CELL_WIDTH),
+    );
+    setViewportWidth((current) => current === nextWidth ? current : nextWidth);
+  }, []);
+  const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
+  const displayColumns = useMemo(
+    () => expandTableColumns(columns, Math.max(tableWidth, viewportWidth)),
+    [columns, tableWidth, viewportWidth],
   );
-  const minWidthPx = px(tableWidth);
+  const displayTableWidth = useMemo(() => getTableWidth(displayColumns), [displayColumns]);
+  const minWidthPx = px(displayTableWidth);
   const selectRow = useCallback((item: T, index: number) => {
     onSelect(item, index);
   }, [onSelect]);
@@ -533,6 +560,22 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     }
   }, [bodyHorizontal.bar, headerHorizontal.bar, showHorizontalScrollbar]);
 
+  useEffect(() => {
+    measureViewportWidth();
+    const element = bodyElementRef.current;
+    if (!element) return;
+
+    const ResizeObserverCtor = globalThis.ResizeObserver;
+    if (ResizeObserverCtor) {
+      const observer = new ResizeObserverCtor(measureViewportWidth);
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", measureViewportWidth);
+    return () => window.removeEventListener("resize", measureViewportWidth);
+  }, [measureViewportWidth]);
+
   const rootStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -606,7 +649,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
               backgroundColor: colors.panel,
             }}
           >
-            {columns.map((column) => {
+            {displayColumns.map((column) => {
               const { isSorted, text } = renderHeaderLabel(
                 column,
                 sortColumnId,
@@ -631,7 +674,8 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                   }}
                 >
                   <span
-                    style={cellTextStyle(
+                    style={clippedCellTextStyle(
+                      column,
                       isSorted ? colors.text : column.headerColor ?? colors.textDim,
                       TextAttributes.BOLD,
                     )}
@@ -679,7 +723,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     index={row.index}
                     item={item}
                     itemKey={itemKey}
-                    columns={columns}
+                    columns={displayColumns}
                     focusPane={focusPane}
                     onActivateRow={onActivate ? activateRow : undefined}
                     onSelectRow={selectRow}
@@ -694,7 +738,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                 );
               }),
             {
-              columnCount: columns.length,
+              columnCount: displayColumns.length,
               itemCount: items.length,
               paneId: paneInstanceId,
               renderedCount: virtualRows.length,
