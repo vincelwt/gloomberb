@@ -143,6 +143,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `MOST` | Market Movers |
 | `TOP` | Top News |
 | `N` | News Feed |
+| `CN <ticker>` | Ticker News |
 | `NI` | Industry News |
 | `FIRST` | Breaking News |
 | `ALRT` | Alerts |
@@ -150,8 +151,12 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `GC` | Yield Curve |
 | `BI` | Sector Performance |
 | `ERN` | Earnings Calendar |
+| `OMON <ticker>` | Options |
+| `HDS <ticker>` | Holders |
 | `ANR <ticker>` | Analyst Research |
 | `EVT <ticker>` | Corporate Actions |
+| `SEC <ticker>` | SEC Filings |
+| `INS <ticker>` | Insider Activity |
 | `RV <tickers>` | Relative Valuation |
 
 | Shortcut | Command |

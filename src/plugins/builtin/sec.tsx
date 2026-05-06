@@ -1,6 +1,6 @@
 import { Box, Text } from "../../ui";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GloomPlugin, DetailTabProps } from "../../types/plugin";
+import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
 import type { SecFilingItem } from "../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingContent, useSecFilingsQuery } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
@@ -12,6 +12,7 @@ import { isUsEquityTicker } from "../../utils/sec";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { parseForm4Xml, transactionTypeLabel } from "./insider/insider-data";
 import { formatCompact, formatCurrency } from "../../utils/format";
+import { createTickerSurfacePaneTemplate } from "./ticker-surface";
 
 const SEC_FILING_LIMIT = 50;
 const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
@@ -225,7 +226,7 @@ function toFeedItems(
   });
 }
 
-function SecTab({ width, height, focused }: DetailTabProps) {
+export function SecView({ width, height, focused }: Pick<DetailTabProps, "width" | "height" | "focused">) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
@@ -343,12 +344,44 @@ function SecTab({ width, height, focused }: DetailTabProps) {
   );
 }
 
+function SecTab(props: DetailTabProps) {
+  return <SecView {...props} />;
+}
+
+function SecPane({ focused, width, height }: PaneProps) {
+  return <SecView focused={focused} width={width} height={height} />;
+}
+
 export const secPlugin: GloomPlugin = {
   id: "sec",
   name: "SEC",
   version: "1.0.0",
   description: "Recent SEC filings for US equities",
   toggleable: true,
+
+  panes: [
+    {
+      id: "sec",
+      name: "SEC",
+      icon: "S",
+      component: SecPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 32 },
+    },
+  ],
+
+  paneTemplates: [
+    createTickerSurfacePaneTemplate({
+      id: "sec-pane",
+      paneId: "sec",
+      label: "SEC",
+      description: "Recent SEC filings for the selected ticker.",
+      keywords: ["sec", "filings", "10-k", "10-q", "8-k"],
+      shortcut: "SEC",
+      canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
+    }),
+  ],
 
   setup(ctx) {
     ctx.registerDetailTab({
