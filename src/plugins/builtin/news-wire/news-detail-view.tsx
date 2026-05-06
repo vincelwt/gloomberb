@@ -65,18 +65,21 @@ function storyItemDate(value: Date | string): Date {
 }
 
 function formatDetailDate(date: Date): string {
-  return date.toLocaleString("en-US", {
+  const datePart = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
   });
+  return `${datePart} at ${timePart}`;
 }
 
 function sortStoryItems(items: readonly NewsStoryItem[] | undefined): NewsStoryItem[] {
   return [...(items ?? [])].sort((a, b) => (
-    storyItemDate(a.publishedAt).getTime() - storyItemDate(b.publishedAt).getTime()
+    storyItemDate(b.publishedAt).getTime() - storyItemDate(a.publishedAt).getTime()
   ));
 }
 
@@ -146,8 +149,9 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const tickerTexts = useMemo(() => tickers.map((ticker) => `$${ticker}`), [tickers]);
   const { catalog, openTicker } = useInlineTickers(tickerTexts);
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
-  const dateStr = formatDetailDate(item.publishedAt);
   const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
+  const lastUpdatedAt = timelineItems[0]?.publishedAt ?? item.publishedAt;
+  const lastUpdatedStr = formatDetailDate(storyItemDate(lastUpdatedAt));
 
   const scrollBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;
@@ -189,10 +193,9 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               ))}
             </Box>
           )}
-          {/* Source + time */}
+          {/* Last updated */}
           <Box height={1} flexDirection="row">
-            <Text fg={colors.text}>{item.source}</Text>
-            <Text fg={colors.textDim}>  {dateStr}</Text>
+            <Text fg={colors.textDim}>Last updated at {lastUpdatedStr}</Text>
           </Box>
           {/* Summary */}
           {summaryLines.length > 0 && (
