@@ -222,6 +222,50 @@ export interface CloudNewsListResponse {
   nextCursor: string | null;
 }
 
+export interface CloudTweetUserPayload {
+  id: string;
+  userName: string;
+  name: string;
+}
+
+export interface CloudTweetMetricsPayload {
+  retweets: number | null;
+  replies: number | null;
+  likes: number | null;
+  quotes: number | null;
+  views: number | null;
+  bookmarks: number | null;
+}
+
+export interface CloudTweetPayload {
+  id: string;
+  url: string;
+  text: string;
+  createdAt: string;
+  lang: string;
+  isReply: boolean;
+  author: CloudTweetUserPayload;
+  metrics: CloudTweetMetricsPayload;
+}
+
+export type CloudTweetQueryType = "Latest" | "Top";
+
+export interface CloudTweetSearchResponse {
+  ticker?: string;
+  cashtag?: string;
+  query: string;
+  queryType: CloudTweetQueryType;
+  since: string;
+  until: string;
+  limit: number;
+  hours: number;
+  includeReplies?: boolean;
+  cached: boolean;
+  cacheTtlMs: number;
+  asOf: string;
+  tweets: CloudTweetPayload[];
+}
+
 export type CloudMarketStatus =
   | "success"
   | "partial"
@@ -275,6 +319,23 @@ function normalizeChatMessage(message: ChatMessage): ChatMessage {
 
 function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => normalizeChatMessage(message));
+}
+
+function normalizeTweet(tweet: CloudTweetPayload): CloudTweetPayload {
+  return {
+    ...tweet,
+    createdAt: normalizeTimestamp(tweet.createdAt),
+  };
+}
+
+function normalizeTweetSearchResponse(response: CloudTweetSearchResponse): CloudTweetSearchResponse {
+  return {
+    ...response,
+    since: normalizeTimestamp(response.since),
+    until: normalizeTimestamp(response.until),
+    asOf: normalizeTimestamp(response.asOf),
+    tweets: response.tweets.map(normalizeTweet),
+  };
 }
 
 type ChannelListener = (message: ChatMessage) => void;
@@ -1017,6 +1078,34 @@ class GloomApiClient {
     if (params.cursor) search.set("cursor", params.cursor);
     const query = search.toString();
     return this.request<CloudNewsListResponse>(`/news${query ? `?${query}` : ""}`);
+  }
+
+  async getCloudTickerTweets(params: {
+    ticker: string;
+    limit?: number;
+    hours?: number;
+    includeReplies?: boolean;
+  }): Promise<CloudTweetSearchResponse> {
+    const search = new URLSearchParams({ ticker: params.ticker });
+    if (params.limit != null) search.set("limit", String(params.limit));
+    if (params.hours != null) search.set("hours", String(params.hours));
+    if (params.includeReplies != null) search.set("includeReplies", String(params.includeReplies));
+    const response = await this.request<CloudTweetSearchResponse>(`/news/tweets?${search.toString()}`);
+    return normalizeTweetSearchResponse(response);
+  }
+
+  async searchCloudTweets(params: {
+    query: string;
+    queryType?: CloudTweetQueryType;
+    limit?: number;
+    hours?: number;
+  }): Promise<CloudTweetSearchResponse> {
+    const search = new URLSearchParams({ query: params.query });
+    if (params.queryType) search.set("queryType", params.queryType);
+    if (params.limit != null) search.set("limit", String(params.limit));
+    if (params.hours != null) search.set("hours", String(params.hours));
+    const response = await this.request<CloudTweetSearchResponse>(`/news/tweets/search?${search.toString()}`);
+    return normalizeTweetSearchResponse(response);
   }
 }
 
