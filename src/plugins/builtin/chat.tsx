@@ -14,6 +14,8 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
+import { InlineAuthActions } from "./cloud-auth-actions";
+import { TwitterFeedPane, TwitterTickerTab } from "./cloud-tweets";
 
 interface ChatContentProps {
   width: number;
@@ -142,16 +144,6 @@ export function getSelectedMessageScrollTop({
   return scrollTop;
 }
 
-function openAuthCommand(
-  openCommandBar: (query?: string) => void,
-  query: string,
-  event?: { preventDefault?: () => void; stopPropagation?: () => void },
-) {
-  event?.preventDefault?.();
-  event?.stopPropagation?.();
-  openCommandBar(query);
-}
-
 function CloudStatusIcon() {
   const { nativePaneChrome } = useUiCapabilities();
   if (!nativePaneChrome) {
@@ -181,37 +173,6 @@ function CloudStatusIcon() {
         />
       </svg>
     </Span>
-  );
-}
-
-function InlineAuthActions({ showSignup = true }: { showSignup?: boolean }) {
-  const { openCommandBar } = usePluginAppActions();
-  const [hoveredAction, setHoveredAction] = useState<"login" | "signup" | null>(null);
-
-  return (
-    <Box flexDirection="row">
-      <Box
-        backgroundColor={hoveredAction === "login" ? hoverBg() : undefined}
-        onMouseMove={() => setHoveredAction((current) => (current === "login" ? current : "login"))}
-        onMouseOut={() => setHoveredAction((current) => (current === "login" ? null : current))}
-        onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Log In", event)}
-      >
-        <Text fg={hoveredAction === "login" ? colors.text : colors.textDim}> Log In </Text>
-      </Box>
-      {showSignup && (
-        <>
-          <Text fg={colors.textDim}>/</Text>
-          <Box
-            backgroundColor={hoveredAction === "signup" ? hoverBg() : undefined}
-            onMouseMove={() => setHoveredAction((current) => (current === "signup" ? current : "signup"))}
-            onMouseOut={() => setHoveredAction((current) => (current === "signup" ? null : current))}
-            onMouseDown={(event: any) => openAuthCommand(openCommandBar, "Sign Up", event)}
-          >
-            <Text fg={hoveredAction === "signup" ? colors.text : colors.textDim}> Sign Up </Text>
-          </Box>
-        </>
-      )}
-    </Box>
   );
 }
 
@@ -1028,6 +989,63 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+    });
+
+    ctx.registerDetailTab({
+      id: "ticker-tweets",
+      name: "Tweets",
+      order: 38,
+      component: TwitterTickerTab,
+      isVisible: ({ ticker }) => !!ticker,
+    });
+
+    ctx.registerPane({
+      id: "twitter-feed",
+      name: "X Feed",
+      icon: "X",
+      component: TwitterFeedPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 94, height: 28 },
+    });
+
+    ctx.registerPaneTemplate({
+      id: "twitter-feed-pane",
+      paneId: "twitter-feed",
+      label: "X Feed",
+      description: "Create a reusable X advanced-search feed.",
+      keywords: ["twitter", "x", "tweet", "tweets", "feed", "social"],
+      shortcut: { prefix: "TWIT", argPlaceholder: "query", argKind: "text" },
+      wizard: [
+        {
+          key: "query",
+          label: "Search Query",
+          type: "textarea",
+          placeholder: "$AAPL -filter:replies",
+        },
+        {
+          key: "queryType",
+          label: "Mode",
+          type: "select",
+          defaultValue: "Latest",
+          options: [
+            { label: "Latest", value: "Latest" },
+            { label: "Top", value: "Top" },
+          ],
+        },
+      ],
+      createInstance: (_context, options) => {
+        const query = options?.values?.query?.trim() || options?.arg?.trim() || "";
+        if (!query) return null;
+        return {
+          title: "X Feed",
+          placement: "floating",
+          params: {
+            query,
+            queryType: options?.values?.queryType === "Top" ? "Top" : "Latest",
+          },
+        };
+      },
     });
 
     ctx.registerShortcut({
