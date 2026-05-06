@@ -127,6 +127,7 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
     label: labels[id],
     width: id === "title" ? titleWidth : fixedWidths[id],
     align: id === "rank" || id === "importance" ? "right" : "left",
+    flexGrow: id === "title" ? 1 : undefined,
   }));
 }
 
@@ -248,7 +249,6 @@ export function NewsArticleStackView({
       onSelectIndex={selectIndex}
       onActivateIndex={openIndex}
       rootBefore={rootBefore}
-      rootWidth={width}
       rootHeight={rootHeight}
       onRootKeyDown={onRootKeyDown}
       columns={columns}

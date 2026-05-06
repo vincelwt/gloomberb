@@ -10,7 +10,12 @@ import { useRafCallback } from "../../react/use-raf-callback";
 import { measurePerf } from "../../utils/perf-marks";
 import { useDoubleClickActivation } from "../use-double-click-activation";
 import { EmptyState } from "./status";
-import { tableContentWidthProps, useMeasuredTableContentWidth } from "./table-layout";
+import {
+  expandTableColumns,
+  getTableWidth,
+  tableContentWidthProps,
+  useMeasuredTableContentWidth,
+} from "./table-layout";
 
 export type DataTableColumn = Pick<
   ColumnConfig,
@@ -18,6 +23,7 @@ export type DataTableColumn = Pick<
 > & {
   headerColor?: string;
   headerBackgroundColor?: string;
+  flexGrow?: number;
 };
 
 export interface DataTableCell {
@@ -191,11 +197,12 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
       virtualize,
     ],
   );
-  const tableWidth = useMemo(
-    () => columns.reduce((sum, column) => sum + column.width + 1, 2),
-    [columns],
-  );
+  const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
   const { contentWidth, measureContentWidth } = useMeasuredTableContentWidth(tableWidth, headerScrollRef, scrollRef);
+  const displayColumns = useMemo(
+    () => expandTableColumns(columns, contentWidth),
+    [columns, contentWidth],
+  );
   const handleRowMouseDown =
     useDoubleClickActivation<DataTableRowPointerTarget<T>>({
       onSelect: ({ item, index }) => {
@@ -314,7 +321,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
           paddingX={1}
           backgroundColor={colors.panel}
         >
-          {columns.map((column) => {
+          {displayColumns.map((column) => {
             const isSorted = sortColumnId === column.id;
             const indicator = isSorted
               ? sortDirection === "asc"
@@ -440,7 +447,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                       }, event);
                     }}
                   >
-                    {columns.map((column) => {
+                    {displayColumns.map((column) => {
                       const cell = renderCell(item, column, index, rowState);
                       return (
                         <Box
@@ -477,7 +484,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                 );
               }),
               {
-                columnCount: columns.length,
+                columnCount: displayColumns.length,
                 endIndex,
                 itemCount: items.length,
                 measuredViewportHeight,
