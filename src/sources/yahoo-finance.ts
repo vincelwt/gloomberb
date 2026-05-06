@@ -1,4 +1,4 @@
-import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile, HolderData, HolderRecord } from "../types/financials";
+import type { Quote, Fundamentals, FinancialStatement, PricePoint, TickerFinancials, MarketState, OptionContract, OptionsChain, CompanyProfile, HolderData, HolderRecord, AnalystResearchData, AnalystEstimateRecord } from "../types/financials";
 import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../components/chart/chart-types";
 import {
@@ -153,6 +153,56 @@ type QuoteSummaryResponse = {
         longName?: string;
         exchangeName?: string;
       };
+      financialData?: {
+        currentPrice?: { raw?: number } | number | null;
+        targetHighPrice?: { raw?: number } | number | null;
+        targetLowPrice?: { raw?: number } | number | null;
+        targetMeanPrice?: { raw?: number } | number | null;
+        targetMedianPrice?: { raw?: number } | number | null;
+        recommendationMean?: { raw?: number } | number | null;
+      };
+      recommendationTrend?: {
+        trend?: Array<{
+          period?: string;
+          strongBuy?: number;
+          buy?: number;
+          hold?: number;
+          sell?: number;
+          strongSell?: number;
+        }>;
+      };
+      upgradeDowngradeHistory?: {
+        history?: Array<{
+          epochGradeDate?: number;
+          firm?: string;
+          action?: string;
+          priceTargetAction?: string;
+          toGrade?: string;
+          fromGrade?: string;
+        }>;
+      };
+      earningsTrend?: {
+        trend?: Array<{
+          period?: string;
+          endDate?: string;
+          earningsEstimate?: {
+            avg?: { raw?: number } | number | null;
+            low?: { raw?: number } | number | null;
+            high?: { raw?: number } | number | null;
+            yearAgoEps?: { raw?: number } | number | null;
+            numberOfAnalysts?: { raw?: number } | number | null;
+            growth?: { raw?: number } | number | null;
+          };
+          revenueEstimate?: {
+            avg?: { raw?: number } | number | null;
+            low?: { raw?: number } | number | null;
+            high?: { raw?: number } | number | null;
+            yearAgoRevenue?: { raw?: number } | number | null;
+            numberOfAnalysts?: { raw?: number } | number | null;
+            growth?: { raw?: number } | number | null;
+          };
+        }>;
+      };
       assetProfile?: {
         longBusinessSummary?: string;
         sector?: string;
@@ -188,6 +238,8 @@ type QuoteSummaryResponse = {
     error?: { description?: string } | null;
   };
 };
+type YahooQuoteSummaryResult = NonNullable<NonNullable<QuoteSummaryResponse["quoteSummary"]>["result"]>[number];
+type YahooEarningsTrend = NonNullable<NonNullable<YahooQuoteSummaryResult["earningsTrend"]>["trend"]>[number];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -220,6 +272,164 @@ function financeRawNumber(value: unknown): number | undefined {
 
 function financeRawNumberOrNull(value: unknown): number | null {
   return financeRawNumber(value) ?? null;
+}
+
+function hasAnalystResearchValue(data: AnalystResearchData): boolean {
+  return !!data.priceTarget
+    || data.recommendations.length > 0
+    || data.ratings.length > 0
+    || data.earningsEstimates.length > 0
+    || data.revenueEstimates.length > 0;
+}
+
+function normalizeYahooRecommendationPeriod(period?: string): string {
+  switch (period) {
+    case "0m":
+      return "current month";
+    case "-1m":
+      return "previous month";
+    case "-2m":
+      return "previous 2 months";
+    case "-3m":
+      return "previous 3 months";
+    case "0q":
+      return "current quarter";
+    case "+1q":
+      return "next quarter";
+    case "0y":
+      return "current year";
+    case "+1y":
+      return "next year";
+    default:
+      return period ?? "";
+  }
+}
+
+function normalizeYahooRatingAction(action?: string, priceTargetAction?: string): string | undefined {
+  const targetAction = priceTargetAction?.trim();
+  switch ((action ?? "").toLowerCase()) {
+    case "up":
+      return "Upgrade";
+    case "down":
+      return "Downgrade";
+    case "init":
+      return "Initiated";
+    case "reit":
+      return targetAction || "Reiterated";
+    case "main":
+      return targetAction || "Maintained";
+    default:
+      return action?.trim() || undefined;
+  }
+}
+
+function yahooRecommendationMeanToRating(value: number | undefined): number | undefined {
+  if (value == null) return undefined;
+  return Math.max(0, Math.min(10, ((5 - value) / 4) * 10));
+}
+
+function mapYahooEstimate(
+  trend: YahooEarningsTrend,
+  estimate: unknown,
+  yearAgoKey: "yearAgoEps" | "yearAgoRevenue",
+): AnalystEstimateRecord | null {
+  if (!estimate || typeof estimate !== "object") return null;
+  const record = estimate as Record<string, unknown>;
+  const average = financeRawNumber(record.avg);
+  const low = financeRawNumber(record.low);
+  const high = financeRawNumber(record.high);
+  const analysts = financeRawNumber(record.numberOfAnalysts);
+  const yearAgo = financeRawNumber(record[yearAgoKey]);
+  const growth = financeRawNumber(record.growth);
+  if (
+    average == null
+    && low == null
+    && high == null
+    && analysts == null
+    && yearAgo == null
+    && growth == null
+  ) {
+    return null;
+  }
+  return {
+    date: trend.endDate ?? "",
+    period: normalizeYahooRecommendationPeriod(trend.period),
+    analysts,
+    average,
+    low,
+    high,
+    yearAgo,
+    growth,
+  };
+}
+
+function mapYahooAnalystResearchResponse(
+  result: YahooQuoteSummaryResult,
+  fallbackSymbol: string,
+): AnalystResearchData {
+  const financialData = result.financialData;
+  const targetHigh = financeRawNumber(financialData?.targetHighPrice);
+  const targetLow = financeRawNumber(financialData?.targetLowPrice);
+  const targetMean = financeRawNumber(financialData?.targetMeanPrice);
+  const targetMedian = financeRawNumber(financialData?.targetMedianPrice);
+  const currentPrice = financeRawNumber(financialData?.currentPrice);
+  const trend = result.earningsTrend?.trend ?? [];
+
+  return {
+    providerId: "yahoo",
+    symbol: result.price?.symbol ?? fallbackSymbol,
+    name: result.price?.shortName ?? result.price?.longName,
+    currency: result.price?.currency,
+    exchange: result.price?.exchangeName,
+    priceTarget: targetHigh != null || targetLow != null || targetMean != null || targetMedian != null
+      ? {
+          high: targetHigh,
+          median: targetMedian,
+          low: targetLow,
+          average: targetMean,
+          current: currentPrice,
+          currency: result.price?.currency,
+        }
+      : undefined,
+    recommendationRating: yahooRecommendationMeanToRating(financeRawNumber(financialData?.recommendationMean)),
+    recommendations: (result.recommendationTrend?.trend ?? [])
+      .filter((row) => row.period)
+      .map((row) => ({
+        period: normalizeYahooRecommendationPeriod(row.period),
+        strongBuy: row.strongBuy,
+        buy: row.buy,
+        hold: row.hold,
+        sell: row.sell,
+        strongSell: row.strongSell,
+      })),
+    ratings: (result.upgradeDowngradeHistory?.history ?? [])
+      .map((rating): AnalystResearchData["ratings"][number] | null => {
+        const firm = rating.firm?.trim();
+        const date = rating.epochGradeDate
+          ? new Date(rating.epochGradeDate * 1000).toISOString().slice(0, 10)
+          : "";
+        if (!firm || !date) return null;
+        const action = normalizeYahooRatingAction(rating.action, rating.priceTargetAction);
+        const current = rating.toGrade?.trim();
+        const prior = rating.fromGrade?.trim();
+        return {
+          date,
+          firm,
+          ...(action ? { action } : {}),
+          ...(current ? { current } : {}),
+          ...(prior ? { prior } : {}),
+        };
+      })
+      .filter((rating): rating is AnalystResearchData["ratings"][number] => rating !== null)
+      .sort((left, right) => right.date.localeCompare(left.date))
+      .slice(0, 100),
+    earningsEstimates: trend
+      .map((row) => mapYahooEstimate(row, row.earningsEstimate, "yearAgoEps"))
+      .filter((estimate): estimate is AnalystEstimateRecord => estimate !== null),
+    revenueEstimates: trend
+      .map((row) => mapYahooEstimate(row, row.revenueEstimate, "yearAgoRevenue"))
+      .filter((estimate): estimate is AnalystEstimateRecord => estimate !== null),
+  };
 }
 
 function normalizePositiveMarketValue(value: number | undefined, divisor = 1): number | undefined {
@@ -1027,6 +1237,33 @@ export class YahooFinanceClient implements DataProvider {
     }
 
     throw lastError || new Error(`No holder data for ${ticker}`);
+  }
+
+  async getAnalystResearch(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<AnalystResearchData> {
+    const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
+    let firstEmpty: AnalystResearchData | null = null;
+    let lastError: any;
+
+    for (const symbol of symbolsToTry) {
+      try {
+        const params = new URLSearchParams({
+          modules: "price,financialData,recommendationTrend,upgradeDowngradeHistory,earningsTrend",
+        });
+        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
+        const data = await this.fetchJsonWithCrumb<QuoteSummaryResponse>(`analyst research ${symbol}`, url);
+        const result = data.quoteSummary?.result?.[0];
+        if (!result) throw new Error(`No analyst data for ${symbol}`);
+
+        const research = mapYahooAnalystResearchResponse(result, symbol);
+        if (hasAnalystResearchValue(research)) return research;
+        firstEmpty ??= research;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    if (firstEmpty) return firstEmpty;
+    throw lastError || new Error(`No analyst data for ${ticker}`);
   }
 
   async getSecFilings(ticker: string, count = 10, _exchange = "", _context?: MarketDataRequestContext): Promise<SecFilingItem[]> {
