@@ -26,6 +26,7 @@ import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspa
 import { buildApplicationMenu } from "./application-menu";
 import { applicationMenuCommand } from "./application-menu-click";
 import { registerElectrobunCoreCapabilities } from "./core-capabilities";
+import { setNativeIbkrGatewayModuleLoader } from "../../../plugins/ibkr/gateway-service";
 import { apiClient, type PersistedAuthUser } from "../../../utils/api-client";
 import {
   DEFAULT_WINDOW_FRAME,
@@ -53,6 +54,7 @@ console.warn = (...args) => console.error(...args);
 
 startMainThreadMonitor("electrobun.bun", { mirrorToConsole: true });
 setConfigStoreHost(nodeConfigStoreHost);
+setNativeIbkrGatewayModuleLoader(() => import("../../../plugins/ibkr/gateway-service-native"));
 
 let currentConfig: AppConfig | null = null;
 let services: AppServices | null = null;

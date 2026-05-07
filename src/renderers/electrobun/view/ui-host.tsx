@@ -647,6 +647,74 @@ function useEditableValue(props: Record<string, unknown>) {
   return { value, valueRef, setValue };
 }
 
+type WebVisualCursor = TextareaRenderable["visualCursor"];
+
+function textareaColumnCount(props: Record<string, unknown>, element: HTMLTextAreaElement | null): number {
+  if (typeof props.width === "number") return Math.max(1, Math.floor(props.width));
+  const width = element?.clientWidth ?? 0;
+  return Math.max(1, Math.floor(width / WEB_CELL_WIDTH));
+}
+
+function wrappedLineCount(line: string, columns: number, wrap: boolean): number {
+  if (!wrap) return 1;
+  return Math.max(1, Math.ceil(line.length / columns));
+}
+
+function textareaMetrics(
+  text: string,
+  offset: number,
+  columns: number,
+  wrap: boolean,
+): { virtualLineCount: number; visualCursor: WebVisualCursor } {
+  const lines = text.split("\n");
+  const clampedOffset = Math.max(0, Math.min(offset, text.length));
+  let consumed = 0;
+  let virtualLineCount = 0;
+  let visualCursor: WebVisualCursor = {
+    visualRow: 0,
+    visualCol: 0,
+    logicalRow: 0,
+    logicalCol: 0,
+    offset: clampedOffset,
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const lineStart = consumed;
+    const lineEnd = lineStart + line.length;
+    const lineVirtualRows = wrappedLineCount(line, columns, wrap);
+    const cursorIsOnLine = clampedOffset <= lineEnd || index === lines.length - 1;
+
+    if (cursorIsOnLine) {
+      const logicalCol = Math.max(0, Math.min(clampedOffset - lineStart, line.length));
+      const visualRowInLine = wrap
+        ? Math.min(Math.floor(logicalCol / columns), lineVirtualRows - 1)
+        : 0;
+      visualCursor = {
+        visualRow: virtualLineCount + visualRowInLine,
+        visualCol: wrap ? logicalCol % columns : logicalCol,
+        logicalRow: index,
+        logicalCol,
+        offset: clampedOffset,
+      };
+    }
+
+    virtualLineCount += lineVirtualRows;
+    consumed = lineEnd + 1;
+    if (cursorIsOnLine) {
+      for (let remaining = index + 1; remaining < lines.length; remaining += 1) {
+        virtualLineCount += wrappedLineCount(lines[remaining] ?? "", columns, wrap);
+      }
+      break;
+    }
+  }
+
+  return {
+    virtualLineCount: Math.max(1, virtualLineCount),
+    visualCursor,
+  };
+}
+
 const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(function WebInput(props, ref) {
   const elementRef = useRef<HTMLInputElement | null>(null);
   const { value, valueRef, setValue } = useEditableValue(props);
@@ -731,12 +799,33 @@ const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown>>(func
     get cursorOffset() {
       return cursorOffset;
     },
+    get virtualLineCount() {
+      const metrics = textareaMetrics(
+        valueRef.current,
+        elementRef.current?.selectionStart ?? cursorOffset,
+        textareaColumnCount(props, elementRef.current),
+        props.wrapText === true || props.wrapMode === "word" || props.wrapMode === "char",
+      );
+      return metrics.virtualLineCount;
+    },
+    get visualCursor() {
+      return textareaMetrics(
+        valueRef.current,
+        elementRef.current?.selectionStart ?? cursorOffset,
+        textareaColumnCount(props, elementRef.current),
+        props.wrapText === true || props.wrapMode === "word" || props.wrapMode === "char",
+      ).visualCursor;
+    },
     focus: () => elementRef.current?.focus(),
     setText: (nextText: string) => setValue(nextText),
+    hasSelection: () => {
+      const element = elementRef.current;
+      return !!element && element.selectionStart !== element.selectionEnd;
+    },
     syntaxStyle: null,
     addHighlight: () => {},
     clearLineHighlights: () => {},
-  }), [cursorOffset, setValue, valueRef]);
+  }), [cursorOffset, props, setValue, valueRef]);
 
   const handleValueChange = (nextValue: string) => {
     setValue(nextValue);

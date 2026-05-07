@@ -111,7 +111,16 @@ export interface InputRenderable {
 }
 
 export interface TextareaRenderable extends InputRenderable {
+  virtualLineCount: number;
+  visualCursor: {
+    visualRow: number;
+    visualCol: number;
+    logicalRow: number;
+    logicalCol: number;
+    offset: number;
+  };
   setText(text: string): void;
+  hasSelection(): boolean;
   syntaxStyle?: SyntaxStyleLike | null;
   onContentChange?: (() => void) | undefined;
   addHighlight?(lineIdx: number, highlight: Highlight): void;
