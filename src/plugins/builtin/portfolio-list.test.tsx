@@ -259,10 +259,13 @@ describe("PortfolioListPane cash and margin UI", () => {
   test("opens the selected ticker on a second row click", async () => {
     const portfolioId = "broker:ibkr-flex:DU12345";
     const config = createPortfolioConfig(portfolioId, [createBrokerInstance("flex")]);
-    const navigated: string[] = [];
+    const pinned: Array<{ symbol: string; options: { floating?: boolean; paneType?: string } | undefined }> = [];
     const runtime = createTestPluginRuntime({
-      navigateTicker: (symbol: string) => {
-        navigated.push(symbol);
+      navigateTicker: () => {
+        throw new Error("portfolio rows should open fixed floating panes directly");
+      },
+      pinTicker: (symbol, options) => {
+        pinned.push({ symbol, options });
       },
     });
 
@@ -279,13 +282,13 @@ describe("PortfolioListPane cash and margin UI", () => {
       await testSetup!.mockMouse.click(2, rowY);
       await testSetup!.renderOnce();
     });
-    expect(navigated).toEqual([]);
+    expect(pinned).toEqual([]);
 
     await act(async () => {
       await testSetup!.mockMouse.click(2, rowY);
       await testSetup!.renderOnce();
     });
-    expect(navigated).toEqual(["AAPL"]);
+    expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: "ticker-detail" } }]);
   });
 
   test("keeps non-broker portfolios unchanged", async () => {
@@ -680,6 +683,30 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     expect(tabsRow).toBeGreaterThanOrEqual(0);
     expect(tableHeaderRow).toBe(tabsRow + 1);
+  });
+
+  test("hides collection tabs when there is only one visible collection", async () => {
+    const config = createPortfolioConfig("main");
+    config.portfolios = [{ id: "main", name: "Main Portfolio", currency: "USD" }];
+    config.watchlists = [];
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="main"
+        ticker={makeTicker({ portfolios: ["main"], positions: [] })}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const tabsRow = lines.findIndex((line) => line.includes("Main Portfolio"));
+    const tableHeaderRow = lines.findIndex((line) => line.includes("TICKER"));
+
+    expect(tabsRow).toBe(-1);
+    expect(tableHeaderRow).toBe(0);
   });
 
   test("renders bid ask and spread when those columns are enabled", async () => {

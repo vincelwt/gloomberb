@@ -185,8 +185,6 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
         columnIds: [...DEFAULT_PORTFOLIO_COLUMN_IDS],
         collectionScope: "all",
         visibleCollectionIds: [],
-        hideTabs: false,
-        lockedCollectionId: "main",
       },
       binding: { kind: "none" },
     },

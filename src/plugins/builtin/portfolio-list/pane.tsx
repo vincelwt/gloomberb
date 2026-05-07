@@ -190,7 +190,7 @@ function sortTickers(
 }
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
-  const { navigateTicker, pinTicker } = usePluginTickerActions();
+  const { pinTicker } = usePluginTickerActions();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
   const config = useAppSelector((state) => state.config);
@@ -233,7 +233,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     () => resolveScopedCollectionEntries(collectionEntries, paneSettings),
     [collectionEntries, paneSettings],
   );
-  const activeCollectionId = resolveActiveCollectionId(currentCollectionId, visibleCollections, paneSettings);
+  const activeCollectionId = resolveActiveCollectionId(currentCollectionId, visibleCollections);
   const isPortfolioTab = getCollectionTypeFromConfig(config, activeCollectionId) === "portfolio";
   const currentPortfolio = useMemo(() => (
     isPortfolioTab
@@ -290,7 +290,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const requestedDrawerHeight = showCashDrawer
     ? (cashDrawerExpanded ? Math.min(6, Math.max(3, 2 + accountState.visibleCashBalances.length)) : 1)
     : 0;
-  const headerHeight = paneSettings.hideTabs ? 0 : 1;
+  const showCollectionTabs = visibleCollections.length > 1;
+  const headerHeight = showCollectionTabs ? 1 : 0;
   const drawerHeight = showCashDrawer
     ? Math.min(requestedDrawerHeight, Math.max(1, height - (headerHeight + 2)))
     : 0;
@@ -326,10 +327,14 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setSortPreference({ columnId, direction: "asc" });
   }, [activeSort.columnId, activeSort.direction, setSortPreference]);
 
+  const openTickerFloating = useCallback((symbol: string) => {
+    pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+  }, [pinTicker]);
+
   const handleRowActivate = useCallback((ticker: TickerRecord) => {
     flushCursorSymbol(ticker.metadata.ticker);
-    navigateTicker(ticker.metadata.ticker);
-  }, [flushCursorSymbol, navigateTicker]);
+    openTickerFloating(ticker.metadata.ticker);
+  }, [flushCursorSymbol, openTickerFloating]);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
@@ -342,7 +347,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       event.stopPropagation?.();
       const ticker = sortedTickers[safeSelectedIdx];
       if (ticker) {
-        pinTicker(ticker.metadata.ticker, { floating: true, paneType: "ticker-detail" });
+        openTickerFloating(ticker.metadata.ticker);
       }
       return true;
     }
@@ -354,7 +359,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
-    if (!paneSettings.hideTabs && (key === "h" || key === "left")) {
+    if (showCollectionTabs && (key === "h" || key === "left")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       const previousCollection = visibleCollections[Math.max(currentTabIdx - 1, 0)];
@@ -362,7 +367,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
-    if (!paneSettings.hideTabs && (key === "l" || key === "right")) {
+    if (showCollectionTabs && (key === "l" || key === "right")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       const nextCollection = visibleCollections[Math.min(currentTabIdx + 1, visibleCollections.length - 1)];
@@ -375,12 +380,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     cashDrawerExpanded,
     currentTabIdx,
     focused,
-    paneSettings.hideTabs,
-    pinTicker,
+    openTickerFloating,
     safeSelectedIdx,
     setCashDrawerExpanded,
     handleCollectionSelect,
     showCashDrawer,
+    showCollectionTabs,
     sortedTickers,
     visibleCollections,
   ]);
@@ -577,7 +582,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box flexDirection="column" height={headerHeight}>
-        {!paneSettings.hideTabs && (
+        {showCollectionTabs && (
           <Box flexDirection="row" height={1}>
             <Box flexShrink={1} overflow="hidden">
               <Tabs

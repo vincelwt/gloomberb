@@ -88,7 +88,6 @@ function focusPortfolioListCollection(config: AppConfig, collectionId: string): 
       },
       settings: {
         ...instance.settings,
-        lockedCollectionId: collectionId,
         visibleCollectionIds: [collectionId, ...visibleCollectionIds.filter((value) => value !== collectionId)],
       },
     };

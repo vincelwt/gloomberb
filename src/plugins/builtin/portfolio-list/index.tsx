@@ -1,15 +1,35 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { GloomPlugin, PaneTemplateContext, PaneTemplateInstanceConfig } from "../../../types/plugin";
 import { PortfolioListPane } from "./pane";
 import { shouldToggleCashMarginDrawer } from "./header";
 import {
   buildPortfolioPaneSettingsDef,
-  createPortfolioPaneSettings,
   getPortfolioPaneSettings,
   resolveCollectionPaneId,
 } from "./settings";
 import { portfolioCliCommand, watchlistCliCommand } from "./cli/commands";
 
 export { shouldToggleCashMarginDrawer };
+
+function resolveCollectionIdForKind(context: PaneTemplateContext, kind: "portfolio" | "watchlist"): string | null {
+  if (context.activeCollectionId) {
+    const matchesKind = kind === "portfolio"
+      ? context.config.portfolios.some((portfolio) => portfolio.id === context.activeCollectionId)
+      : context.config.watchlists.some((watchlist) => watchlist.id === context.activeCollectionId);
+    if (matchesKind) return context.activeCollectionId;
+  }
+
+  return kind === "portfolio"
+    ? (context.config.portfolios[0]?.id ?? null)
+    : (context.config.watchlists[0]?.id ?? null);
+}
+
+function createCollectionPaneInstance(
+  context: PaneTemplateContext,
+  kind?: "portfolio" | "watchlist",
+): PaneTemplateInstanceConfig | null {
+  const collectionId = kind ? resolveCollectionIdForKind(context, kind) : resolveCollectionPaneId(context);
+  return collectionId ? { params: { collectionId } } : null;
+}
 
 export const portfolioListPlugin: GloomPlugin = {
   id: "portfolio-list",
@@ -43,20 +63,7 @@ export const portfolioListPlugin: GloomPlugin = {
       keywords: ["portfolio", "watchlist", "collection", "pane", "list"],
       shortcut: { prefix: "PF" },
       canCreate: (context) => resolveCollectionPaneId(context) !== null,
-      createInstance: (context) => {
-        const collectionId = resolveCollectionPaneId(context);
-        return collectionId
-          ? {
-            params: { collectionId },
-            settings: createPortfolioPaneSettings({
-              collectionScope: "custom",
-              visibleCollectionIds: [collectionId],
-              hideTabs: true,
-              lockedCollectionId: collectionId,
-            }) as unknown as Record<string, unknown>,
-          }
-          : null;
-      },
+      createInstance: (context) => createCollectionPaneInstance(context),
     },
     {
       id: "new-portfolio-pane",
@@ -65,19 +72,7 @@ export const portfolioListPlugin: GloomPlugin = {
       description: "Open another portfolio list pane",
       keywords: ["new", "portfolio", "pane", "list"],
       canCreate: (context) => context.config.portfolios.length > 0,
-      createInstance: (context) => {
-        const collectionId = context.activeCollectionId && context.config.portfolios.some((portfolio) => portfolio.id === context.activeCollectionId)
-          ? context.activeCollectionId
-          : (context.config.portfolios[0]?.id ?? null);
-        if (!collectionId) return null;
-        return {
-          params: { collectionId },
-          settings: createPortfolioPaneSettings({
-            collectionScope: "portfolios",
-            lockedCollectionId: collectionId,
-          }) as unknown as Record<string, unknown>,
-        };
-      },
+      createInstance: (context) => createCollectionPaneInstance(context, "portfolio"),
     },
     {
       id: "new-watchlist-pane",
@@ -86,19 +81,7 @@ export const portfolioListPlugin: GloomPlugin = {
       description: "Open another watchlist pane",
       keywords: ["new", "watchlist", "pane", "list"],
       canCreate: (context) => context.config.watchlists.length > 0,
-      createInstance: (context) => {
-        const collectionId = context.activeCollectionId && context.config.watchlists.some((watchlist) => watchlist.id === context.activeCollectionId)
-          ? context.activeCollectionId
-          : (context.config.watchlists[0]?.id ?? null);
-        if (!collectionId) return null;
-        return {
-          params: { collectionId },
-          settings: createPortfolioPaneSettings({
-            collectionScope: "watchlists",
-            lockedCollectionId: collectionId,
-          }) as unknown as Record<string, unknown>,
-        };
-      },
+      createInstance: (context) => createCollectionPaneInstance(context, "watchlist"),
     },
   ],
 };

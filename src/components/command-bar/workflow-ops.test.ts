@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createDefaultConfig } from "../../types/config";
+import { cloneLayout, createDefaultConfig, findPaneInstance, type LayoutConfig } from "../../types/config";
 import { createInitialState } from "../../state/app-context";
 import { createTestDataProvider } from "../../test-support/data-provider";
-import { createPaneTemplateOrThrow } from "./workflow-ops";
+import { applyPaneSettingFieldValue, createPaneTemplateOrThrow } from "./workflow-ops";
 
 function makeDataProvider() {
   return createTestDataProvider({ id: "test" });
@@ -66,5 +66,79 @@ describe("createPaneTemplateOrThrow", () => {
 
     expect(buildCalls).toHaveLength(0);
     expect(placeCalls).toHaveLength(0);
+  });
+});
+
+describe("applyPaneSettingFieldValue", () => {
+  test("keeps portfolio panes on their displayed collection when switching back to all collections", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    const portfolioPane = findPaneInstance(layout, "portfolio-list:main");
+    if (!portfolioPane) throw new Error("missing portfolio pane");
+    portfolioPane.settings = {
+      ...(portfolioPane.settings ?? {}),
+      collectionScope: "watchlists",
+      visibleCollectionIds: ["watchlist"],
+      hideTabs: true,
+      lockedCollectionId: "watchlist",
+    };
+
+    const state = createInitialState({ ...config, layout });
+    state.paneState["portfolio-list:main"] = {
+      collectionId: "main",
+      cursorSymbol: null,
+    };
+
+    const persisted: LayoutConfig[] = [];
+    const actions: unknown[] = [];
+
+    await applyPaneSettingFieldValue("portfolio-list:main", {
+      key: "collectionScope",
+      label: "Collections",
+      type: "select",
+      options: [],
+    }, "all", {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: (action) => { actions.push(action); },
+      getState: () => state,
+      persistLayout: (nextLayout) => { persisted.push(nextLayout); },
+      pluginRegistry: {
+        resolvePaneSettings: () => ({
+          paneId: "portfolio-list:main",
+          pane: portfolioPane,
+          paneDef: {
+            id: "portfolio-list",
+            name: "Portfolio",
+            component: () => null,
+            defaultPosition: "left",
+          },
+          settingsDef: { title: "Portfolio Pane Settings", fields: [] },
+          context: {
+            config: state.config,
+            layout: state.config.layout,
+            paneId: "portfolio-list:main",
+            paneType: "portfolio-list",
+            pane: portfolioPane,
+            settings: portfolioPane.settings ?? {},
+            paneState: state.paneState["portfolio-list:main"] ?? {},
+            activeTicker: null,
+            activeCollectionId: "main",
+          },
+        }),
+      } as any,
+    });
+
+    const nextPane = findPaneInstance(persisted[0]!, "portfolio-list:main");
+    expect(nextPane?.settings).toMatchObject({ collectionScope: "all" });
+    expect("visibleCollectionIds" in (nextPane?.settings ?? {})).toBe(false);
+    expect("hideTabs" in (nextPane?.settings ?? {})).toBe(false);
+    expect("lockedCollectionId" in (nextPane?.settings ?? {})).toBe(false);
+    expect(nextPane?.params?.collectionId).toBe("watchlist");
+    expect(actions).toContainEqual({
+      type: "UPDATE_PANE_STATE",
+      paneId: "portfolio-list:main",
+      patch: { collectionId: "watchlist" },
+    });
   });
 });
