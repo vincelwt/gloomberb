@@ -4,6 +4,7 @@ import { TickerBadge } from "./ticker-badge";
 import { ExternalLinkText, openUrl } from "./ui";
 import { tokenizeInlineContent } from "../utils/inline-content-tokenizer";
 import type { InlineTickerCatalogEntry } from "../state/use-inline-tickers";
+import { displayWidth } from "../utils/format";
 
 export interface TickerBadgeTextProps {
   text: string;
@@ -12,6 +13,30 @@ export interface TickerBadgeTextProps {
   textColor: string;
   openTicker: (symbol: string) => void;
   openLink?: (url: string) => void;
+}
+
+function splitLongTextSegment(value: string, lineWidth: number): string[] {
+  if (displayWidth(value) <= lineWidth) return [value];
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const char of Array.from(value)) {
+    const next = `${current}${char}`;
+    if (current && displayWidth(next) > lineWidth) {
+      chunks.push(current);
+      current = char;
+      continue;
+    }
+    current = next;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitTextForWrap(value: string, lineWidth: number): string[] {
+  const width = Math.max(1, lineWidth);
+  const segments = value.match(/\S+\s*|\s+/g) ?? [value];
+  return segments.flatMap((segment) => splitLongTextSegment(segment, width));
 }
 
 export function TickerBadgeText({
@@ -34,7 +59,9 @@ export function TickerBadgeText({
       {tokens.map((token, index) => {
         if (token.kind === "text") {
           if (!token.value) return null;
-          return <Text key={`text:${index}`} fg={textColor}>{token.value}</Text>;
+          return splitTextForWrap(token.value, lineWidth).map((part, partIndex) => (
+            <Text key={`text:${index}:${partIndex}`} fg={textColor}>{part}</Text>
+          ));
         }
 
         if (token.kind === "link") {

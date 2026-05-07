@@ -224,6 +224,7 @@ export function convertCurrency(
 /** Format a date/timestamp as relative time (e.g., "5m ago", "2h ago") */
 export function formatTimeAgo(date: Date | string): string {
   const ts = toTimestampMillis(date);
+  if (Number.isNaN(ts)) return "unknown";
   const seconds = Math.floor((Date.now() - ts) / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);

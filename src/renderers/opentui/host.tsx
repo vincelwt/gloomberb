@@ -56,7 +56,12 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
   const rendererHost: RendererHost = {
     requestExit: () => renderer.destroy(),
     async openExternal(url) {
-      const proc = Bun.spawn(["open", url], {
+      const command = process.platform === "darwin"
+        ? ["open", url]
+        : process.platform === "win32"
+          ? ["cmd", "/c", "start", "", url]
+          : ["xdg-open", url];
+      const proc = Bun.spawn(command, {
         stdout: "ignore",
         stderr: "ignore",
       });

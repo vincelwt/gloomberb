@@ -115,6 +115,26 @@ describe("TickerBadgeText", () => {
     expect(frame).toContain("TSLA -5%");
   });
 
+  test("wraps long text chunks at word boundaries", async () => {
+    testSetup = await testRender(
+      <TickerBadgeText
+        text="Demand/supply unit economics move with ASML orders"
+        lineWidth={18}
+        catalog={{}}
+        textColor="#ffffff"
+        openTicker={() => {}}
+      />,
+      { width: 20, height: 5 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Demand/supply");
+    expect(frame).toContain("economics");
+    expect(frame.split("\n").filter((line) => line.trim()).length).toBeGreaterThan(1);
+  });
+
   test("opens detected links without trailing punctuation when clicked", async () => {
     const opened: string[] = [];
     testSetup = await testRender(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Box, ScrollBox, Text, TextAttributes, Textarea, type TextareaRenderable } from "../../ui";
+import { Box, ScrollBox, Text, TextAttributes, Textarea, useRendererHost, type TextareaRenderable } from "../../ui";
 import { useShortcut } from "../../react/input";
 import {
   Button,
@@ -16,11 +16,14 @@ import type { DetailTabProps, PaneProps } from "../../types/plugin";
 import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
 import { usePluginPaneState, usePluginState } from "../plugin-runtime";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
-import { ExternalLinkText, openUrl } from "../../components/ui";
+import { ExternalLinkText, RemoteImage } from "../../components/ui";
 import { useInlineTickers } from "../../state/use-inline-tickers";
 import { apiClient, type CloudTweetPayload, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../utils/api-client";
 import { collectUniqueTickerSymbols } from "../../utils/ticker-tokenizer";
 import { formatCompact, formatTimeAgo } from "../../utils/format";
+import { decodeHtmlEntities } from "../../utils/html-entities";
+import { toTimestampMillis } from "../../utils/timestamp";
+import { normalizedHttpUrl } from "../../utils/url";
 import { colors } from "../../theme/colors";
 import { CloudAuthNotice } from "./cloud-auth-actions";
 
@@ -30,6 +33,8 @@ const TWEET_SEARCH_SCHEMA_VERSION = 1;
 
 type TweetColumnId = "time" | "author" | "text" | "tickers" | "likes" | "views";
 type TweetColumn = DataTableColumn & { id: TweetColumnId };
+type TweetSortColumnId = "time" | "likes" | "views";
+type TweetSortDirection = "asc" | "desc";
 
 interface TweetLoadState {
   data: CloudTweetSearchResponse | null;
@@ -132,8 +137,108 @@ function formatMetric(value: number | null | undefined): string {
   return String(value);
 }
 
+function normalizeTweetDisplayText(value: string): string {
+  return decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
+}
+
 function tweetTickers(tweet: CloudTweetPayload): string[] {
-  return collectUniqueTickerSymbols([tweet.text]);
+  return collectUniqueTickerSymbols([normalizeTweetDisplayText(tweet.text)]);
+}
+
+function tweetCreatedAtMs(tweet: CloudTweetPayload): number {
+  const ms = toTimestampMillis(tweet.createdAt);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function compareNullableNumber(
+  left: number | null | undefined,
+  right: number | null | undefined,
+  sortDirection: TweetSortDirection,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  const comparison = left - right;
+  return sortDirection === "asc" ? comparison : -comparison;
+}
+
+function isTweetSortColumnId(columnId: string): columnId is TweetSortColumnId {
+  return columnId === "time" || columnId === "likes" || columnId === "views";
+}
+
+function compareTweets(
+  left: CloudTweetPayload,
+  right: CloudTweetPayload,
+  sortColumnId: TweetSortColumnId,
+  sortDirection: TweetSortDirection,
+): number {
+  let comparison = 0;
+  switch (sortColumnId) {
+    case "time":
+      comparison = tweetCreatedAtMs(left) - tweetCreatedAtMs(right);
+      if (comparison !== 0) {
+        return sortDirection === "asc" ? comparison : -comparison;
+      }
+      break;
+    case "likes":
+      comparison = compareNullableNumber(left.metrics.likes, right.metrics.likes, sortDirection);
+      break;
+    case "views":
+      comparison = compareNullableNumber(left.metrics.views, right.metrics.views, sortDirection);
+      break;
+  }
+
+  if (comparison !== 0) return comparison;
+
+  return tweetCreatedAtMs(right) - tweetCreatedAtMs(left);
+}
+
+function sortedTweets(
+  tweets: CloudTweetPayload[],
+  sortColumnId: TweetSortColumnId,
+  sortDirection: TweetSortDirection,
+): CloudTweetPayload[] {
+  return [...tweets].sort((left, right) => compareTweets(left, right, sortColumnId, sortDirection));
+}
+
+function mediaImageUrl(value: unknown): string | null {
+  const directUrl = normalizedHttpUrl(value);
+  if (directUrl) return directUrl;
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  return normalizedHttpUrl(record.mediaUrl)
+    ?? normalizedHttpUrl(record.media_url_https)
+    ?? normalizedHttpUrl(record.media_url)
+    ?? normalizedHttpUrl(record.previewImageUrl)
+    ?? normalizedHttpUrl(record.preview_image_url)
+    ?? normalizedHttpUrl(record.url);
+}
+
+function nestedMedia(record: Record<string, unknown>, key: string): unknown {
+  const value = record[key];
+  return value && typeof value === "object" ? (value as Record<string, unknown>).media : undefined;
+}
+
+function tweetImageUrls(tweet: CloudTweetPayload): string[] {
+  const record = tweet as unknown as Record<string, unknown>;
+  const candidates = [
+    record.media,
+    record.photos,
+    record.images,
+    nestedMedia(record, "entities"),
+    nestedMedia(record, "extendedEntities"),
+    nestedMedia(record, "extended_entities"),
+  ];
+  const urls = new Set<string>();
+  for (const candidate of candidates) {
+    const entries = Array.isArray(candidate) ? candidate : candidate == null ? [] : [candidate];
+    for (const entry of entries) {
+      const url = mediaImageUrl(entry);
+      if (url) urls.add(url);
+    }
+  }
+  return [...urls];
 }
 
 function buildTweetColumns(width: number): TweetColumn[] {
@@ -190,7 +295,11 @@ function TweetDetail({
   width: number;
 }) {
   const lineWidth = Math.max(1, width - 2);
-  const { catalog, openTicker } = useInlineTickers([tweet.text]);
+  const tweetText = normalizeTweetDisplayText(tweet.text);
+  const imageUrls = tweetImageUrls(tweet);
+  const imageWidth = Math.min(lineWidth, 72);
+  const imageHeight = Math.max(6, Math.min(14, Math.floor(imageWidth * 0.35)));
+  const { catalog, openTicker } = useInlineTickers([tweetText]);
   const author = tweet.author.userName ? `@${tweet.author.userName}` : tweet.author.name;
 
   return (
@@ -201,12 +310,26 @@ function TweetDetail({
           <Text fg={colors.textDim}> - {formatTimeAgo(tweet.createdAt)}</Text>
         </Box>
         <TickerBadgeText
-          text={tweet.text}
+          text={tweetText}
           lineWidth={lineWidth}
           catalog={catalog}
           textColor={colors.text}
           openTicker={openTicker}
         />
+        {imageUrls.length > 0 ? (
+          <Box flexDirection="column" gap={1}>
+            {imageUrls.slice(0, 4).map((url, index) => (
+              <RemoteImage
+                key={url}
+                src={url}
+                alt={`Tweet image ${index + 1}`}
+                width={imageWidth}
+                height={imageHeight}
+                label={imageUrls.length > 1 ? `image ${index + 1}` : "image"}
+              />
+            ))}
+          </Box>
+        ) : null}
         <Box flexDirection="row" height={1}>
           <Text fg={colors.textDim}>
             {`likes ${formatMetric(tweet.metrics.likes)}  reposts ${formatMetric(tweet.metrics.retweets)}  replies ${formatMetric(tweet.metrics.replies)}  views ${formatMetric(tweet.metrics.views)}`}
@@ -283,12 +406,15 @@ function TweetSearchTable({
   onResult?: (result: CloudTweetSearchResponse) => void;
   onError?: (message: string) => void;
 }) {
+  const rendererHost = useRendererHost();
   const { data, loading, error, reload } = useTweetSearchData(requestKey, load, onResult, onError);
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const rows = useMemo(() => (
-    [...(data?.tweets ?? [])].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
-  ), [data?.tweets]);
+  const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>({
+    columnId: "views",
+    direction: "desc",
+  });
+  const rows = useMemo(() => sortedTweets(data?.tweets ?? [], sort.columnId, sort.direction), [data?.tweets, sort]);
   const columns = useMemo(() => buildTweetColumns(width), [width]);
   const selectedIndex = rows.findIndex((tweet) => tweet.id === selectedTweetId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
@@ -306,8 +432,17 @@ function TweetSearchTable({
   }, [rows, selectedIndex, selectedTweetId]);
 
   const openSelectedTweet = useCallback(() => {
-    if (selectedTweet?.url) openUrl(selectedTweet.url);
-  }, [selectedTweet]);
+    if (selectedTweet?.url) void rendererHost.openExternal(selectedTweet.url);
+  }, [rendererHost, selectedTweet]);
+
+  const handleHeaderClick = useCallback((columnId: string) => {
+    if (!isTweetSortColumnId(columnId)) return;
+    setSort((current) => (
+      current.columnId === columnId
+        ? { columnId, direction: current.direction === "desc" ? "asc" : "desc" }
+        : { columnId, direction: "desc" }
+    ));
+  }, []);
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name !== "r") return false;
@@ -329,13 +464,12 @@ function TweetSearchTable({
     info: [
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-      ...(data ? [{ id: "count", parts: [{ text: `${rows.length} tweets`, tone: "value" as const }] }] : []),
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: reload },
-      ...(detailOpen ? [{ id: "open", key: "o", label: "open tweet", onPress: openSelectedTweet, disabled: !selectedTweet?.url }] : []),
+      ...(detailOpen ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedTweet, disabled: !selectedTweet?.url }] : []),
     ],
-  }), [data, detailOpen, error, footerId, loading, openSelectedTweet, reload, rows.length, selectedTweet?.url]);
+  }), [detailOpen, error, footerId, loading, openSelectedTweet, reload, selectedTweet?.url]);
 
   const renderCell = useCallback((
     tweet: CloudTweetPayload,
@@ -354,7 +488,7 @@ function TweetSearchTable({
           attributes: TextAttributes.BOLD,
         };
       case "text":
-        return { text: tweet.text.replace(/\s+/g, " "), color: selectedColor ?? colors.text };
+        return { text: normalizeTweetDisplayText(tweet.text), color: selectedColor ?? colors.text };
       case "tickers":
         return { text: tweetTickers(tweet).map((ticker) => `$${ticker}`).join(" "), color: selectedColor ?? colors.positive };
       case "likes":
@@ -390,9 +524,9 @@ function TweetSearchTable({
       rootBefore={<TweetSearchHeader data={data} loading={loading} width={width} />}
       columns={columns}
       items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      sortColumnId={sort.columnId}
+      sortDirection={sort.direction}
+      onHeaderClick={handleHeaderClick}
       getItemKey={(tweet) => tweet.id}
       isSelected={(tweet) => tweet.id === selectedTweetId}
       onSelect={(tweet) => setSelectedTweetId(tweet.id)}
