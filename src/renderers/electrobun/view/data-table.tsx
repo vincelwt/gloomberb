@@ -24,7 +24,6 @@ import type {
   DataTableProps,
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
-import { expandTableColumns, getTableWidth } from "../../../components/ui/table-layout";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { useScrollbarActivity } from "./scrollbar-activity";
 
@@ -35,9 +34,7 @@ interface VirtualRow {
   start: number;
 }
 
-function px(cells: number): number {
-  return cells * WEB_CELL_WIDTH;
-}
+const TABLE_INLINE_PADDING_PX = 8;
 
 function hasAttribute(attributes: unknown, flag: number): boolean {
   return typeof attributes === "number" && (attributes & flag) !== 0;
@@ -63,26 +60,53 @@ function cellTextStyle(
     ]
       .filter(Boolean)
       .join(" ") || undefined,
-    whiteSpace: "pre",
+    whiteSpace: "nowrap",
     overflow: "visible",
     textOverflow: "clip",
   };
 }
 
-function clippedCellTextStyle<C extends DataTableColumn>(
-  column: C,
+function clippedCellTextStyle(
+  column: DataTableColumn,
   color: string,
   attributes: number | undefined,
 ): CSSProperties {
   return {
     ...cellTextStyle(color, attributes),
     display: "block",
-    width: px(column.width),
-    maxWidth: px(column.width),
+    width: "100%",
+    maxWidth: "100%",
     overflow: "hidden",
-    whiteSpace: "pre",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
     textAlign: column.align,
   };
+}
+
+function columnMinCh(column: DataTableColumn): number {
+  const width = Math.max(1, Math.floor(column.width));
+  if ((column.flexGrow ?? 0) > 0) {
+    return Math.max(8, Math.min(18, Math.floor(width * 0.35)));
+  }
+  if (column.align === "right") {
+    return Math.max(3, Math.min(width, 8));
+  }
+  if (width >= 16) {
+    return Math.max(8, Math.min(16, Math.floor(width * 0.35)));
+  }
+  return Math.max(1, Math.min(width, 8));
+}
+
+function columnFlexWeight(column: DataTableColumn): number {
+  const flexGrow = column.flexGrow ?? 0;
+  const baseWeight = Math.max(1, Math.floor(column.width));
+  return flexGrow > 0 ? baseWeight * Math.max(1, flexGrow) : baseWeight;
+}
+
+function buildGridTemplateColumns(columns: readonly DataTableColumn[]): string {
+  return columns
+    .map((column) => `minmax(${columnMinCh(column)}ch, ${columnFlexWeight(column)}fr)`)
+    .join(" ");
 }
 
 function toCellY(pixels: number): number {
@@ -252,7 +276,7 @@ function WebDataTableRowInner<
   index,
   item,
   itemKey,
-  minWidthPx,
+  gridTemplateColumns,
   getRowBackgroundColor,
   renderCell,
   renderSectionHeader,
@@ -269,7 +293,7 @@ function WebDataTableRowInner<
   index: number;
   item: T;
   itemKey: string;
-  minWidthPx: number;
+  gridTemplateColumns: string;
   getRowBackgroundColor?: DataTableProps<T, C>["getRowBackgroundColor"];
   renderCell: DataTableProps<T, C>["renderCell"];
   renderSectionHeader?: DataTableProps<T, C>["renderSectionHeader"];
@@ -285,13 +309,16 @@ function WebDataTableRowInner<
     top: 0,
     left: 0,
     transform: `translateY(${rowStart}px)`,
-    display: "flex",
-    flexDirection: "row",
+    display: "grid",
+    gridTemplateColumns,
+    columnGap: "1ch",
+    alignItems: "center",
     width: "100%",
-    minWidth: minWidthPx,
+    minWidth: 0,
     height: rowSize,
-    paddingLeft: WEB_CELL_WIDTH,
-    paddingRight: WEB_CELL_WIDTH,
+    paddingLeft: TABLE_INLINE_PADDING_PX,
+    paddingRight: TABLE_INLINE_PADDING_PX,
+    boxSizing: "border-box",
     lineHeight: "var(--cell-h)",
   };
 
@@ -310,10 +337,16 @@ function WebDataTableRowInner<
         }}
       >
         <span
-          style={cellTextStyle(
-            sectionHeader.color ?? colors.textBright,
-            sectionHeader.attributes ?? TextAttributes.BOLD,
-          )}
+          title={sectionHeader.text}
+          style={{
+            ...cellTextStyle(
+              sectionHeader.color ?? colors.textBright,
+              sectionHeader.attributes ?? TextAttributes.BOLD,
+            ),
+            gridColumn: "1 / -1",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           {sectionHeader.text}
         </span>
@@ -360,11 +393,9 @@ function WebDataTableRowInner<
             key={column.id}
             data-gloom-role="data-table-cell"
             style={{
-              width: px(column.width + 1),
-              minWidth: px(column.width + 1),
+              minWidth: 0,
               height: WEB_CELL_HEIGHT,
-              flex: "0 0 auto",
-              overflow: "visible",
+              overflow: "hidden",
               backgroundColor: cell.backgroundColor ?? rowBg,
             }}
             onMouseDown={(event) => {
@@ -390,6 +421,7 @@ function WebDataTableRowInner<
             }}
           >
             <span
+              title={cell.text}
               style={clippedCellTextStyle(
                 column,
                 cell.color ?? (selected ? colors.selectedText : colors.text),
@@ -444,21 +476,10 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const bodyHorizontal = useScrollbarState(showHorizontalScrollbar);
   const bodyVertical = useScrollbarState(true);
   const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
-  const [viewportWidth, setViewportWidth] = useState(0);
-  const measureViewportWidth = useCallback(() => {
-    const nextWidth = Math.max(
-      0,
-      Math.floor((bodyElementRef.current?.clientWidth ?? 0) / WEB_CELL_WIDTH),
-    );
-    setViewportWidth((current) => current === nextWidth ? current : nextWidth);
-  }, []);
-  const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
-  const displayColumns = useMemo(
-    () => expandTableColumns(columns, Math.max(tableWidth, viewportWidth)),
-    [columns, tableWidth, viewportWidth],
+  const gridTemplateColumns = useMemo(
+    () => buildGridTemplateColumns(columns),
+    [columns],
   );
-  const displayTableWidth = useMemo(() => getTableWidth(displayColumns), [displayColumns]);
-  const minWidthPx = px(displayTableWidth);
   const selectRow = useCallback((item: T, index: number) => {
     onSelect(item, index);
   }, [onSelect]);
@@ -560,22 +581,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     }
   }, [bodyHorizontal.bar, headerHorizontal.bar, showHorizontalScrollbar]);
 
-  useEffect(() => {
-    measureViewportWidth();
-    const element = bodyElementRef.current;
-    if (!element) return;
-
-    const ResizeObserverCtor = globalThis.ResizeObserver;
-    if (ResizeObserverCtor) {
-      const observer = new ResizeObserverCtor(measureViewportWidth);
-      observer.observe(element);
-      return () => observer.disconnect();
-    }
-
-    window.addEventListener("resize", measureViewportWidth);
-    return () => window.removeEventListener("resize", measureViewportWidth);
-  }, [measureViewportWidth]);
-
   const rootStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -628,7 +633,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
           style={{
             position: "relative",
             width: "100%",
-            minWidth: minWidthPx,
             height: items.length > 0 ? totalHeight : "100%",
             minHeight: WEB_CELL_HEIGHT,
           }}
@@ -639,17 +643,20 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
               position: "sticky",
               top: 0,
               zIndex: 2,
-              display: "flex",
-              flexDirection: "row",
+              display: "grid",
+              gridTemplateColumns,
+              columnGap: "1ch",
+              alignItems: "center",
               width: "100%",
-              minWidth: minWidthPx,
+              minWidth: 0,
               height: WEB_CELL_HEIGHT,
-              paddingLeft: WEB_CELL_WIDTH,
-              paddingRight: WEB_CELL_WIDTH,
+              paddingLeft: TABLE_INLINE_PADDING_PX,
+              paddingRight: TABLE_INLINE_PADDING_PX,
+              boxSizing: "border-box",
               backgroundColor: colors.panel,
             }}
           >
-            {displayColumns.map((column) => {
+            {columns.map((column) => {
               const { isSorted, text } = renderHeaderLabel(
                 column,
                 sortColumnId,
@@ -661,10 +668,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                   data-gloom-role="data-table-header-cell"
                   data-gloom-interactive="true"
                   style={{
-                    width: px(column.width + 1),
-                    minWidth: px(column.width + 1),
+                    minWidth: 0,
                     height: WEB_CELL_HEIGHT,
-                    flex: "0 0 auto",
+                    overflow: "hidden",
                     backgroundColor: column.headerBackgroundColor ?? colors.panel,
                   }}
                   onMouseDown={(event) => {
@@ -674,6 +680,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                   }}
                 >
                   <span
+                    title={text}
                     style={clippedCellTextStyle(
                       column,
                       isSorted ? colors.text : column.headerColor ?? colors.textDim,
@@ -723,12 +730,12 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     index={row.index}
                     item={item}
                     itemKey={itemKey}
-                    columns={displayColumns}
+                    columns={columns}
                     focusPane={focusPane}
+                    gridTemplateColumns={gridTemplateColumns}
                     onActivateRow={onActivate ? activateRow : undefined}
                     onSelectRow={selectRow}
                     hovered={hovered}
-                    minWidthPx={minWidthPx}
                     getRowBackgroundColor={getRowBackgroundColor}
                     renderCell={renderCell}
                     renderSectionHeader={renderSectionHeader}
@@ -738,7 +745,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                 );
               }),
             {
-              columnCount: displayColumns.length,
+              columnCount: columns.length,
               itemCount: items.length,
               paneId: paneInstanceId,
               renderedCount: virtualRows.length,

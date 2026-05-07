@@ -8,6 +8,7 @@ import { TickerBadge } from "../../../components/ticker-badge";
 import { ExternalLink, ExternalLinkText } from "../../../components/ui";
 import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
+import { wrapTextLines } from "../../../utils/text-wrap";
 
 export function useNewsArticleDetail(articles: MarketNewsItem[]) {
   const [detailArticleId, setDetailArticleId] = useState<string | null>(null);
@@ -42,21 +43,7 @@ export function useNewsArticleDetail(articles: MarketNewsItem[]) {
 }
 
 export function wrapText(text: string, width: number): string[] {
-  if (!text) return [];
-  const words = text.trim().split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (!current) { current = word; continue; }
-    if (current.length + 1 + word.length <= width) {
-      current = `${current} ${word}`;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
+  return text ? wrapTextLines(text, width) : [];
 }
 
 function storyItemDate(value: Date | string): Date {

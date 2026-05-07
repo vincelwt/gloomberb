@@ -189,18 +189,21 @@ export function PredictionMarketDetailPane({
   const headerHeight = detailSubtitle.length > 0 ? 3 : 2;
   const detailLoading = detailLoadCount > 0 && !detail;
   const titleColor = focused ? colors.textBright : colors.text;
+  const detailTextWidth = Math.max(detailWidth, 12);
 
   return (
     <>
       <Box flexDirection="column" height={headerHeight} paddingBottom={1}>
         <Box flexDirection="row" height={1}>
           <Text fg={titleColor} attributes={TextAttributes.BOLD}>
-            {detailTitle}
+            {truncatePredictionText(detailTitle, detailTextWidth)}
           </Text>
         </Box>
         {detailSubtitle.length > 0 && (
           <Box flexDirection="row" height={1}>
-            <Text fg={colors.textDim}>{detailSubtitle}</Text>
+            <Text fg={colors.textDim}>
+              {truncatePredictionText(detailSubtitle, detailTextWidth)}
+            </Text>
           </Box>
         )}
       </Box>
@@ -245,7 +248,14 @@ export function PredictionMarketDetailPane({
 
       {detailError && !detail && (
         <Box paddingBottom={1}>
-          <Text fg={colors.negative}>{detailError}</Text>
+          <Text
+            fg={colors.negative}
+            width={detailTextWidth}
+            wrapMode="word"
+            wrapText
+          >
+            {detailError}
+          </Text>
         </Box>
       )}
 
@@ -280,7 +290,10 @@ export function PredictionMarketDetailPane({
         )}
 
         {detailTab === "rules" && (
-          <PredictionMarketRulesView rules={detail?.rules ?? []} />
+          <PredictionMarketRulesView
+            detailWidth={detailTextWidth}
+            rules={detail?.rules ?? []}
+          />
         )}
       </ScrollBox>
     </>

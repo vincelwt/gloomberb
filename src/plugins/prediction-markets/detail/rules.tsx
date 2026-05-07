@@ -1,12 +1,26 @@
 import { Box, Text } from "../../../ui";
 import { colors } from "../../../theme/colors";
 
-export function PredictionMarketRulesView({ rules }: { rules: string[] }) {
+export function PredictionMarketRulesView({
+  rules,
+  detailWidth,
+}: {
+  rules: string[];
+  detailWidth: number;
+}) {
+  const textWidth = Math.max(detailWidth, 12);
+
   return (
     <Box flexDirection="column" gap={1}>
       {rules.map((rule, index) => (
-        <Box key={`${index}:${rule.slice(0, 24)}`} flexDirection="column">
-          <Text fg={colors.text}>{rule}</Text>
+        <Box
+          key={`${index}:${rule.slice(0, 24)}`}
+          flexDirection="column"
+          width={textWidth}
+        >
+          <Text fg={colors.text} width={textWidth} wrapMode="word" wrapText>
+            {rule}
+          </Text>
         </Box>
       ))}
       {rules.length === 0 && (
