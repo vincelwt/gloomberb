@@ -2,6 +2,14 @@ import type { MarketState, Quote } from "../types/financials";
 import { canonicalExchange, EXCHANGE_TIME_ZONES } from "./exchanges";
 
 const US_EXTENDED_HOURS_EXCHANGES = new Set(["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"]);
+const exchangeLocalDateFormatters = new Map<string, Intl.DateTimeFormat>();
+const usSessionFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 type UsSessionState = Exclude<MarketState, never>;
 
@@ -9,16 +17,25 @@ function isUsExtendedHoursExchange(exchange?: string): boolean {
   return US_EXTENDED_HOURS_EXCHANGES.has(canonicalExchange(exchange));
 }
 
+function getExchangeLocalDateFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = exchangeLocalDateFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    exchangeLocalDateFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 function exchangeLocalDate(exchange: string, timestampMs: number): string | null {
   const timeZone = EXCHANGE_TIME_ZONES[canonicalExchange(exchange)];
   if (!timeZone) return null;
 
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(timestampMs));
+  const parts = getExchangeLocalDateFormatter(timeZone).formatToParts(new Date(timestampMs));
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;
   const day = parts.find((part) => part.type === "day")?.value;
@@ -27,13 +44,7 @@ function exchangeLocalDate(exchange: string, timestampMs: number): string | null
 }
 
 function usSessionState(timestampMs: number): UsSessionState {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestampMs));
+  const parts = usSessionFormatter.formatToParts(new Date(timestampMs));
 
   const weekday = parts.find((part) => part.type === "weekday")?.value ?? "";
   if (weekday === "Sat" || weekday === "Sun") return "CLOSED";

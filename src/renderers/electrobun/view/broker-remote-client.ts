@@ -12,7 +12,16 @@ import type { BrokerConnectionStatus } from "../../../types/broker";
 import { backendRequest, onCapabilityEvent } from "./backend-rpc";
 
 const statuses = new Map<string, BrokerConnectionStatus>();
+const statusSubscriptions = new Map<string, StatusSubscription>();
+const STATUS_SUBSCRIPTION_TEARDOWN_DELAY_MS = 250;
 let nextSubscriptionId = 1;
+
+type StatusSubscription = {
+  subscriptionId: string;
+  listeners: Set<() => void>;
+  disposeEvents: () => void;
+  teardownTimer: ReturnType<typeof setTimeout> | null;
+};
 
 function isBrokerStatusEvent(event: BrokerRemoteEvent): event is BrokerStatusEvent {
   return event.kind === "status";
@@ -43,6 +52,43 @@ function subscribeBrokerCapability(
   });
 }
 
+function disposeStatusSubscription(instanceId: string, entry: StatusSubscription): void {
+  if (statusSubscriptions.get(instanceId) !== entry) return;
+  entry.disposeEvents();
+  if (entry.teardownTimer) clearTimeout(entry.teardownTimer);
+  statusSubscriptions.delete(instanceId);
+  void backendRequest("capability.unsubscribe", { subscriptionId: entry.subscriptionId }).catch(() => {});
+}
+
+function getStatusSubscription(instanceId: string): StatusSubscription {
+  const current = statusSubscriptions.get(instanceId);
+  if (current) return current;
+
+  const subscriptionId = `broker-status:${instanceId}:${nextSubscriptionId++}`;
+  const entry: StatusSubscription = {
+    subscriptionId,
+    listeners: new Set(),
+    disposeEvents: () => {},
+    teardownTimer: null,
+  };
+  entry.disposeEvents = onCapabilityEvent(subscriptionId, (message) => {
+    const event = message.event as BrokerRemoteEvent;
+    if (!isBrokerStatusEvent(event)) return;
+    statuses.set(event.instanceId, event.status);
+    for (const listener of entry.listeners) {
+      listener();
+    }
+  });
+  statusSubscriptions.set(instanceId, entry);
+
+  void subscribeBrokerCapability(subscriptionId, "status", { instanceId }).catch((error) => {
+    disposeStatusSubscription(instanceId, entry);
+    console.error("Failed to subscribe to broker status", error);
+  });
+
+  return entry;
+}
+
 const client: BrokerRemoteClient = {
   invoke(operationInstanceId, operation, args = []) {
     return invokeBrokerCapability("invoke", {
@@ -57,20 +103,21 @@ const client: BrokerRemoteClient = {
   },
 
   subscribeStatus(instanceId, listener) {
-    const subscriptionId = `broker-status:${instanceId}:${nextSubscriptionId++}`;
-    const disposeEvents = onCapabilityEvent(subscriptionId, (message) => {
-      const event = message.event as BrokerRemoteEvent;
-      if (!isBrokerStatusEvent(event)) return;
-      statuses.set(event.instanceId, event.status);
-      listener();
-    });
-    void subscribeBrokerCapability(subscriptionId, "status", { instanceId }).catch((error) => {
-      disposeEvents();
-      console.error("Failed to subscribe to broker status", error);
-    });
+    const entry = getStatusSubscription(instanceId);
+    if (entry.teardownTimer) {
+      clearTimeout(entry.teardownTimer);
+      entry.teardownTimer = null;
+    }
+    entry.listeners.add(listener);
     return () => {
-      disposeEvents();
-      void backendRequest("capability.unsubscribe", { subscriptionId }).catch(() => {});
+      entry.listeners.delete(listener);
+      if (entry.listeners.size > 0 || entry.teardownTimer) return;
+      entry.teardownTimer = setTimeout(() => {
+        entry.teardownTimer = null;
+        if (entry.listeners.size === 0) {
+          disposeStatusSubscription(instanceId, entry);
+        }
+      }, STATUS_SUBSCRIPTION_TEARDOWN_DELAY_MS);
     };
   },
 

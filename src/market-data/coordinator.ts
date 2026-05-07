@@ -151,6 +151,57 @@ function readyQuoteEntry(
   return readyEntry(current, quote, source, attempts, { keepLastGoodOnEmpty: true });
 }
 
+const STREAM_QUOTE_FIELDS: Array<keyof Quote> = [
+  "symbol",
+  "providerId",
+  "price",
+  "currency",
+  "change",
+  "changePercent",
+  "previousClose",
+  "high52w",
+  "low52w",
+  "marketCap",
+  "volume",
+  "name",
+  "exchangeName",
+  "fullExchangeName",
+  "listingExchangeName",
+  "listingExchangeFullName",
+  "routingExchangeName",
+  "routingExchangeFullName",
+  "marketState",
+  "sessionConfidence",
+  "preMarketPrice",
+  "preMarketChange",
+  "preMarketChangePercent",
+  "postMarketPrice",
+  "postMarketChange",
+  "postMarketChangePercent",
+  "bid",
+  "ask",
+  "bidSize",
+  "askSize",
+  "open",
+  "high",
+  "low",
+  "mark",
+  "dataSource",
+];
+
+function quoteTimestampMinute(quote: Quote): number | null {
+  return Number.isFinite(quote.lastUpdated) ? Math.floor(quote.lastUpdated / 60_000) : null;
+}
+
+function areStreamQuotesEquivalent(current: Quote | null | undefined, next: Quote): boolean {
+  if (!current) return false;
+  for (const field of STREAM_QUOTE_FIELDS) {
+    if (current[field] !== next[field]) return false;
+  }
+  return quoteTimestampMinute(current) === quoteTimestampMinute(next)
+    && JSON.stringify(current.provenance ?? null) === JSON.stringify(next.provenance ?? null);
+}
+
 function errorEntry<T>(current: QueryEntry<T>, attempt: ProviderAttempt): QueryEntry<T> {
   return {
     ...current,
@@ -764,6 +815,7 @@ export class MarketDataCoordinator {
       };
       const key = buildQuoteKey(instrument);
       const current = this.quoteStore.get(key);
+      if (areStreamQuotesEquivalent(current.data ?? current.lastGoodData, quote)) return;
       const attempts = [createAttempt(quote.providerId ?? this.dataProvider.id, Date.now(), "success")];
       this.quoteStore.set(key, readyQuoteEntry(current, quote, quote.providerId ?? this.dataProvider.id, attempts));
     });
