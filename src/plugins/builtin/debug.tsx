@@ -7,6 +7,7 @@ import { usePaneFooter } from "../../components";
 import { usePluginAppActions } from "../plugin-runtime";
 import { colors, hoverBg } from "../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../utils/debug-log";
+import { wrapTextLines } from "../../utils/text-wrap";
 import { writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
@@ -203,6 +204,21 @@ function DebugPane({ focused, width, height }: PaneProps) {
   const visibleEntries = entries.slice(viewStart, viewStart + visibleCount);
 
   const selectedEntry = selectedIdx >= 0 && selectedIdx < entries.length ? entries[selectedIdx] : null;
+  const detailTextWidth = Math.max(1, contentWidth - 2);
+  const detailMessageLines = selectedEntry
+    ? wrapTextLines(
+        selectedEntry.message,
+        detailTextWidth,
+        selectedEntry.data === undefined ? 3 : 2,
+      )
+    : [];
+  const detailDataLines = selectedEntry?.data === undefined
+    ? []
+    : wrapTextLines(
+        JSON.stringify(selectedEntry.data, null, 2),
+        detailTextWidth,
+        Math.max(1, 3 - detailMessageLines.length),
+      );
 
   usePaneFooter("debug-log", () => ({
     info: [
@@ -284,12 +300,16 @@ function DebugPane({ focused, width, height }: PaneProps) {
             <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
           </Box>
           <Box paddingLeft={1} flexDirection="column">
-            <Text fg={colors.text}>{selectedEntry.message}</Text>
-            {selectedEntry.data !== undefined && (
-              <Text fg={colors.textDim}>
-                {JSON.stringify(selectedEntry.data, null, 2).slice(0, contentWidth * 2)}
-              </Text>
-            )}
+            {detailMessageLines.map((line, index) => (
+              <Box key={`message:${index}`} height={1}>
+                <Text fg={colors.text}>{line || " "}</Text>
+              </Box>
+            ))}
+            {detailDataLines.map((line, index) => (
+              <Box key={`data:${index}`} height={1}>
+                <Text fg={colors.textDim}>{line || " "}</Text>
+              </Box>
+            ))}
           </Box>
         </Box>
       )}

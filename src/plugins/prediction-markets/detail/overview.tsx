@@ -31,6 +31,8 @@ export function PredictionMarketOverviewView({
   selectedRow: PredictionListRow | null;
   summary: PredictionMarketSummary;
 }) {
+  const textWidth = Math.max(detailWidth, 12);
+
   return (
     <Box flexDirection="column" gap={1}>
       {selectedRow?.kind === "group" && (
@@ -53,11 +55,13 @@ export function PredictionMarketOverviewView({
         maxLength={Math.max(detailWidth - 8, 12)}
       />
       {summary.description && (
-        <Box flexDirection="column">
+        <Box flexDirection="column" width={textWidth}>
           <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
             Description
           </Text>
-          <Text fg={colors.text}>{summary.description}</Text>
+          <Text fg={colors.text} width={textWidth} wrapMode="word" wrapText>
+            {summary.description}
+          </Text>
         </Box>
       )}
       <Box height={1}>
