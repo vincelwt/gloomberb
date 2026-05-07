@@ -20,6 +20,7 @@ export { EmptyState } from "./status";
 export { DialogFrame } from "./frame";
 
 export { ExternalLink, ExternalLinkText, openUrl } from "./external-link";
+export { RemoteImage } from "./remote-image";
 export { PageStackView } from "./page-stack-view";
 
 export { Spinner } from "./loading";

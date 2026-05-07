@@ -167,7 +167,11 @@ export interface ChartSurfaceProps extends BoxProps {
   bitmaps?: readonly BitmapSurface[] | null;
   crosshair?: ChartCrosshairOverlay | null;
 }
-export interface ImageSurfaceProps extends BoxProps {}
+export interface ImageSurfaceProps extends BoxProps {
+  src?: string;
+  alt?: string;
+  objectFit?: "contain" | "cover";
+}
 export interface SpinnerMarkProps extends BoxProps {
   name?: string;
   color?: string;

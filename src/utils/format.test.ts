@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { displayWidth, formatTimeAgo, padTo } from "./format";
+import { normalizeTimestamp } from "./timestamp";
 
 describe("formatTimeAgo", () => {
   test("handles UTC ISO timestamps with explicit offsets", () => {
@@ -10,6 +11,12 @@ describe("formatTimeAgo", () => {
   test("treats space-separated chat timestamps without a timezone as UTC", () => {
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString().replace("T", " ").replace("Z", "");
     expect(formatTimeAgo(fiveMinutesAgo)).toBe("5m ago");
+  });
+});
+
+describe("normalizeTimestamp", () => {
+  test("parses Twitter API timestamps", () => {
+    expect(normalizeTimestamp("Wed Apr 29 03:20:20 +0000 2026")).toBe("2026-04-29T03:20:20.000Z");
   });
 });
 

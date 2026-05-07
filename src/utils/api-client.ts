@@ -237,6 +237,16 @@ export interface CloudTweetMetricsPayload {
   bookmarks: number | null;
 }
 
+export interface CloudTweetMediaPayload {
+  type?: string;
+  url?: string;
+  mediaUrl?: string;
+  media_url?: string;
+  media_url_https?: string;
+  previewImageUrl?: string;
+  preview_image_url?: string;
+}
+
 export interface CloudTweetPayload {
   id: string;
   url: string;
@@ -246,6 +256,9 @@ export interface CloudTweetPayload {
   isReply: boolean;
   author: CloudTweetUserPayload;
   metrics: CloudTweetMetricsPayload;
+  media?: CloudTweetMediaPayload[];
+  photos?: CloudTweetMediaPayload[];
+  images?: CloudTweetMediaPayload[];
 }
 
 export type CloudTweetQueryType = "Latest" | "Top";

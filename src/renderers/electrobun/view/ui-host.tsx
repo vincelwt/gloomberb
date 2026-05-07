@@ -1283,11 +1283,37 @@ export const webUiHost: UiHost = {
       );
     },
   ),
-  ImageSurface: ({ children, ...props }) => (
-    <div {...cleanDomProps(props)} style={{ ...commonStyle(props), ...(props.style as CSSProperties | undefined) }}>
-      {children as ReactNode}
-    </div>
-  ),
+  ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
+    const imageSrc = typeof src === "string" ? src.trim() : "";
+    const [failed, setFailed] = useState(false);
+    useEffect(() => setFailed(false), [imageSrc]);
+    const baseStyle = commonStyle(props);
+    return (
+      <div
+        {...cleanDomProps(props)}
+        style={{
+          ...baseStyle,
+          overflow: baseStyle.overflow ?? "hidden",
+          ...(props.style as CSSProperties | undefined),
+        }}
+      >
+        {imageSrc && !failed ? (
+          <img
+            src={imageSrc}
+            alt={alt}
+            draggable={false}
+            onError={() => setFailed(true)}
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "block",
+              objectFit,
+            }}
+          />
+        ) : children as ReactNode}
+      </div>
+    );
+  },
   SpinnerMark: ({ color, ...props }) => (
     <span
       {...cleanDomProps(props)}

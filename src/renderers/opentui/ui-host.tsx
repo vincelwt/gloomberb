@@ -66,7 +66,7 @@ export const openTuiUiHost: UiHost = {
   Input: ({ children, ...props }) => createElement("input" as any, props, children),
   Textarea: ({ children, ...props }) => createElement("textarea" as any, props, children),
   ChartSurface: ({ children, bitmap: _bitmap, bitmaps: _bitmaps, crosshair: _crosshair, ...props }) => <box {...props}>{children}</box>,
-  ImageSurface: ({ children, ...props }) => <box {...props}>{children}</box>,
+  ImageSurface: ({ children, src: _src, alt: _alt, objectFit: _objectFit, ...props }) => <box {...props}>{children}</box>,
   SpinnerMark: ({ children, ...props }) => createElement("spinner" as any, props, children),
   AsciiText: ({ text, font = "tiny", color, fg, bg, backgroundColor, selectable = false, ...props }) => {
     const resolvedColor = color ?? fg;
