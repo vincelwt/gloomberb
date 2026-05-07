@@ -23,11 +23,11 @@ const SECTOR_TABS = ["all", ...SECTOR_NEWS_SECTORS] as const;
 const DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
 
 function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNewsItem[]; allArticles: MarketNewsItem[]; phase: NewsQueryPhase } {
-  const allState = useNewsArticles(NEWS_QUERY_PRESETS.feed);
+  const allState = useNewsArticles(NEWS_QUERY_PRESETS.sectorAll);
   const sectorState = useNewsArticles(
     sector === "all" ? null : NEWS_QUERY_PRESETS.sector(sector),
   );
-  const allArticles = usePersistedNewsArticles("industry:all:articles", allState.articles);
+  const allArticles = usePersistedNewsArticles("industry:sector:all:articles", allState.articles);
   const sectorArticles = usePersistedNewsArticles(`industry:sector:${sector}:articles`, sectorState.articles);
   const phase = sector === "all" ? allState.phase : sectorState.phase;
   return {
