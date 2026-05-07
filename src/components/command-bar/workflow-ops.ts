@@ -10,6 +10,7 @@ import { resolveTickerSearch, upsertTickerFromSearchResult } from "../../utils/t
 import { formatTickerListInput, parseTickerListInput } from "../../utils/ticker-list";
 import { updatePaneInstance, setPaneSettings } from "../../pane-settings";
 import { isManualPortfolio } from "../../plugins/builtin/portfolio-list/mutations";
+import { cleanPortfolioPaneSettings, resolvePortfolioPaneCollectionId } from "../../plugins/builtin/portfolio-list/settings";
 import {
   buildComparisonChartPaneTitle,
   COMPARISON_CHART_PANE_ID,
@@ -427,18 +428,13 @@ export async function applyPaneSettingFieldValue(
     return;
   }
 
-  const nextSettings = {
+  let nextSettings: Record<string, unknown> = {
     ...descriptor.context.settings,
     [field.key]: value,
   };
 
-  if (descriptor.pane.paneId === "portfolio-list" && field.key === "hideTabs" && value === true) {
-    const lockedCollectionId = typeof descriptor.context.paneState.collectionId === "string"
-      ? descriptor.context.paneState.collectionId
-      : descriptor.context.activeCollectionId;
-    if (lockedCollectionId) {
-      nextSettings.lockedCollectionId = lockedCollectionId;
-    }
+  if (descriptor.pane.paneId === "portfolio-list") {
+    nextSettings = cleanPortfolioPaneSettings(nextSettings);
   }
 
   if (descriptor.pane.paneId === "ticker-detail" && field.key === "hideTabs" && value === true) {
@@ -448,6 +444,33 @@ export async function applyPaneSettingFieldValue(
     nextSettings.lockedTabId = lockedTabId;
   }
 
-  const nextLayout = setPaneSettings(state.config.layout, targetId, nextSettings);
+  let nextLayout = setPaneSettings(state.config.layout, targetId, nextSettings);
+
+  if (descriptor.pane.paneId === "portfolio-list") {
+    const currentCollectionId = typeof descriptor.context.paneState.collectionId === "string"
+      ? descriptor.context.paneState.collectionId
+      : (descriptor.context.activeCollectionId ?? "");
+    const displayedCollectionId = resolvePortfolioPaneCollectionId(
+      state.config,
+      descriptor.context.settings,
+      currentCollectionId,
+    );
+    const nextCollectionId = resolvePortfolioPaneCollectionId(
+      state.config,
+      nextSettings,
+      displayedCollectionId || currentCollectionId,
+    );
+    if (nextCollectionId) {
+      nextLayout = updatePaneInstance(nextLayout, targetId, (instance) => ({
+        ...instance,
+        params: {
+          ...(instance.params ?? {}),
+          collectionId: nextCollectionId,
+        },
+      }));
+      deps.dispatch({ type: "UPDATE_PANE_STATE", paneId: targetId, patch: { collectionId: nextCollectionId } });
+    }
+  }
+
   deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
 }

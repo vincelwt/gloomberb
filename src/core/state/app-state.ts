@@ -145,10 +145,6 @@ function shouldPreserveUnknownCollectionId(collectionId: string | undefined): bo
 function getConfiguredCollectionId(config: AppConfig, instance: PaneInstanceConfig): string {
   const candidates = [
     instance.params?.collectionId,
-    typeof instance.settings?.lockedCollectionId === "string" ? instance.settings.lockedCollectionId : undefined,
-    ...(Array.isArray(instance.settings?.visibleCollectionIds)
-      ? instance.settings.visibleCollectionIds.filter((value): value is string => typeof value === "string")
-      : []),
   ];
 
   for (const candidate of candidates) {

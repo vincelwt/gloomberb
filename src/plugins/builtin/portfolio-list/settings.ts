@@ -7,10 +7,8 @@ export interface PortfolioPaneSettings {
   columnIds: string[];
   collectionScope: CollectionScope;
   visibleCollectionIds: string[];
-  hideTabs: boolean;
   hideHeader: boolean;
   hideCash: boolean;
-  lockedCollectionId: string;
   showSparklines?: boolean;
 }
 
@@ -95,13 +93,6 @@ function resolveCollectionOptions(entries: CollectionEntry[]): PaneSettingOption
   }));
 }
 
-function resolveLockedCollectionId(settings: PortfolioPaneSettings, visibleCollections: CollectionEntry[]): string {
-  if (visibleCollections.some((entry) => entry.id === settings.lockedCollectionId)) {
-    return settings.lockedCollectionId;
-  }
-  return visibleCollections[0]?.id ?? "";
-}
-
 export function getPortfolioPaneSettings(settings: Record<string, unknown> | undefined): PortfolioPaneSettings {
   const columnIds = Array.isArray(settings?.columnIds)
     ? settings.columnIds.filter((value): value is string => typeof value === "string")
@@ -114,25 +105,20 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     columnIds: columnIds.length > 0 ? columnIds : DEFAULT_PORTFOLIO_COLUMN_IDS,
     collectionScope: isCollectionScope(settings?.collectionScope) ? settings.collectionScope : "all",
     visibleCollectionIds,
-    hideTabs: settings?.hideTabs === true,
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
-    lockedCollectionId: typeof settings?.lockedCollectionId === "string" ? settings.lockedCollectionId : "",
     showSparklines: settings?.showSparklines === true,
   };
 }
 
-export function createPortfolioPaneSettings(overrides: Partial<PortfolioPaneSettings> = {}): PortfolioPaneSettings {
-  return {
-    columnIds: [...(overrides.columnIds ?? DEFAULT_PORTFOLIO_COLUMN_IDS)],
-    collectionScope: overrides.collectionScope ?? "all",
-    visibleCollectionIds: [...(overrides.visibleCollectionIds ?? [])],
-    hideTabs: overrides.hideTabs ?? false,
-    hideHeader: overrides.hideHeader ?? false,
-    hideCash: overrides.hideCash ?? false,
-    lockedCollectionId: overrides.lockedCollectionId ?? "",
-    showSparklines: overrides.showSparklines ?? false,
-  };
+export function cleanPortfolioPaneSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const nextSettings = { ...settings };
+  delete nextSettings.hideTabs;
+  delete nextSettings.lockedCollectionId;
+  if (nextSettings.collectionScope !== "custom") {
+    delete nextSettings.visibleCollectionIds;
+  }
+  return nextSettings;
 }
 
 export function getCollectionEntries(config: AppConfig): CollectionEntry[] {
@@ -161,16 +147,22 @@ export function resolveScopedCollectionEntries(entries: CollectionEntry[], setti
 export function resolveActiveCollectionId(
   currentCollectionId: string,
   visibleCollections: CollectionEntry[],
-  settings: PortfolioPaneSettings,
 ): string {
   if (visibleCollections.length === 0) return "";
-  if (settings.hideTabs) {
-    return resolveLockedCollectionId(settings, visibleCollections);
-  }
   if (visibleCollections.some((entry) => entry.id === currentCollectionId)) {
     return currentCollectionId;
   }
-  return resolveLockedCollectionId(settings, visibleCollections);
+  return visibleCollections[0]?.id ?? "";
+}
+
+export function resolvePortfolioPaneCollectionId(
+  config: AppConfig,
+  rawSettings: Record<string, unknown> | undefined,
+  currentCollectionId: string,
+): string {
+  const settings = getPortfolioPaneSettings(rawSettings);
+  const visibleCollections = resolveScopedCollectionEntries(getCollectionEntries(config), settings);
+  return resolveActiveCollectionId(currentCollectionId, visibleCollections);
 }
 
 export function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boolean): ColumnConfig[] {
@@ -188,9 +180,7 @@ export function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boole
 
 export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: PortfolioPaneSettings): PaneSettingsDef {
   const collectionEntries = getCollectionEntries(config);
-  const scopedEntries = resolveScopedCollectionEntries(collectionEntries, settings);
   const allCollectionOptions = resolveCollectionOptions(collectionEntries);
-  const lockedCollectionOptions = resolveCollectionOptions(scopedEntries.length > 0 ? scopedEntries : collectionEntries);
 
   const fields: PaneSettingsDef["fields"] = [
     {
@@ -223,12 +213,6 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
   }
 
   fields.push({
-    key: "hideTabs",
-    label: "Hide Tabs",
-    description: "Hide the collection tab bar and lock this pane to one collection.",
-    type: "toggle",
-  });
-  fields.push({
     key: "hideHeader",
     label: "Hide Header Bar",
     type: "toggle",
@@ -243,15 +227,6 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     label: "Sparklines",
     type: "toggle",
   });
-
-  if (settings.hideTabs && lockedCollectionOptions.length > 0) {
-    fields.push({
-      key: "lockedCollectionId",
-      label: "Locked Collection",
-      type: "select",
-      options: lockedCollectionOptions,
-    });
-  }
 
   return {
     title: "Portfolio Pane Settings",

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { createDefaultConfig } from "../../types/config";
 import type { BrokerAccount } from "../../types/trading";
 import type { TickerRecord } from "../../types/ticker";
 import type { PortfolioSummaryTotals } from "./portfolio-list/metrics";
 import { buildPortfolioSummarySegments } from "./portfolio-list/summary";
-import { shouldToggleCashMarginDrawer } from "./portfolio-list";
+import { portfolioListPlugin, shouldToggleCashMarginDrawer } from "./portfolio-list";
 import { selectStreamTickers } from "./portfolio-list/pane";
 
 function ticker(symbol: string): TickerRecord {
@@ -105,5 +106,28 @@ describe("selectStreamTickers", () => {
   test("includes selected ticker outside the visible streaming window", () => {
     const tickers = Array.from({ length: 20 }, (_, index) => ticker(`T${index}`));
     expect(selectStreamTickers(tickers, { start: 3, end: 7 }, "T19").map((entry) => entry.metadata.ticker)).toContain("T19");
+  });
+});
+
+describe("portfolio list pane templates", () => {
+  test("create panes with default all-collection settings", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-portfolio-list-template");
+    const context = {
+      config,
+      layout: config.layout,
+      focusedPaneId: "portfolio-list:main",
+      activeTicker: null,
+      activeCollectionId: "watchlist",
+    };
+
+    for (const templateId of ["new-collection-pane", "new-watchlist-pane"]) {
+      const template = portfolioListPlugin.paneTemplates?.find((entry) => entry.id === templateId);
+      const instance = await template?.createInstance?.(context);
+      expect(instance).toEqual({ params: { collectionId: "watchlist" } });
+    }
+
+    const portfolioTemplate = portfolioListPlugin.paneTemplates?.find((entry) => entry.id === "new-portfolio-pane");
+    const portfolioInstance = await portfolioTemplate?.createInstance?.(context);
+    expect(portfolioInstance).toEqual({ params: { collectionId: "main" } });
   });
 });

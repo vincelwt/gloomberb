@@ -10,8 +10,6 @@ describe("pane settings helpers", () => {
 
     expect(portfolioPane?.settings).toMatchObject({
       collectionScope: "all",
-      hideTabs: false,
-      lockedCollectionId: "main",
     });
     expect(portfolioPane?.settings?.columnIds).toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
     expect(detailPane?.settings).toEqual({
