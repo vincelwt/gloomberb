@@ -44,8 +44,10 @@ const DEFAULT_SNAPSHOT: IbkrSnapshot = {
 };
 
 let resolvedGatewayListener: ResolvedGatewayListener | null = null;
+let loadedNativeGatewayModule: NativeGatewayModule | null = null;
 let nativeGatewayModulePromise: Promise<NativeGatewayModule> | null = null;
 let nativeGatewayManager: NativeGatewayManager | null = null;
+let nativeGatewayModuleLoader: () => Promise<NativeGatewayModule>;
 const importNativeGatewayModule = new Function("specifier", "return import(specifier)") as (
   specifier: string,
 ) => Promise<NativeGatewayModule>;
@@ -58,17 +60,45 @@ function getSnapshotEntry(instanceId?: string): IbkrSnapshot {
   return snapshots.get(instanceId) ?? DEFAULT_SNAPSHOT;
 }
 
-function updateSnapshot(instanceId: string, patch: Partial<IbkrSnapshot>): void {
+function defaultNativeGatewayModuleLoader(): Promise<NativeGatewayModule> {
+  return importNativeGatewayModule("./gateway-service-native");
+}
+
+nativeGatewayModuleLoader = defaultNativeGatewayModuleLoader;
+
+export function setNativeIbkrGatewayModuleLoader(loader: (() => Promise<NativeGatewayModule>) | null): void {
+  nativeGatewayModuleLoader = loader ?? defaultNativeGatewayModuleLoader;
+}
+
+function applySnapshot(instanceId: string, patch: Partial<IbkrSnapshot>, shouldNotify: boolean): IbkrSnapshot {
   const current = getSnapshotEntry(instanceId);
-  snapshots.set(instanceId, {
+  const next = {
     ...current,
     ...patch,
     status: patch.status ?? current.status,
     accounts: patch.accounts ?? current.accounts,
     openOrders: patch.openOrders ?? current.openOrders,
     executions: patch.executions ?? current.executions,
-  });
-  notify(instanceId);
+  };
+  if (
+    next.status === current.status
+    && next.accounts === current.accounts
+    && next.openOrders === current.openOrders
+    && next.executions === current.executions
+  ) {
+    return current;
+  }
+  snapshots.set(instanceId, next);
+  if (shouldNotify) notify(instanceId);
+  return next;
+}
+
+function updateSnapshot(instanceId: string, patch: Partial<IbkrSnapshot>): void {
+  applySnapshot(instanceId, patch, true);
+}
+
+function cacheSnapshot(instanceId: string, patch: Partial<IbkrSnapshot>): IbkrSnapshot {
+  return applySnapshot(instanceId, patch, false);
 }
 
 function notify(instanceId: string): void {
@@ -79,10 +109,13 @@ function notify(instanceId: string): void {
 
 async function loadNativeGatewayModule(): Promise<NativeGatewayModule> {
   if (!nativeGatewayModulePromise) {
-    const modulePath = `./gateway-service-${"native"}`;
-    nativeGatewayModulePromise = importNativeGatewayModule(modulePath);
+    nativeGatewayModulePromise = nativeGatewayModuleLoader().catch((error) => {
+      nativeGatewayModulePromise = null;
+      throw error;
+    });
   }
   const module = await nativeGatewayModulePromise;
+  loadedNativeGatewayModule = module;
   nativeGatewayManager = module.ibkrGatewayManager;
   module.setResolvedIbkrGatewayListener(resolvedGatewayListener);
   return module;
@@ -96,7 +129,14 @@ async function getNativeService(instanceId: string): Promise<NativeGatewayServic
 export function setResolvedIbkrGatewayListener(listener: ResolvedGatewayListener | null): void {
   resolvedGatewayListener = listener;
   if (getBrokerRemoteClient()) return;
-  void loadNativeGatewayModule().then((module) => {
+  if (loadedNativeGatewayModule) {
+    loadedNativeGatewayModule.setResolvedIbkrGatewayListener(listener);
+    return;
+  }
+  if (!nativeGatewayModulePromise) {
+    return;
+  }
+  void nativeGatewayModulePromise.then((module) => {
     module.setResolvedIbkrGatewayListener(listener);
   }).catch(() => {});
 }
@@ -107,8 +147,7 @@ class IbkrGatewayServiceFacade {
   getSnapshot(): IbkrSnapshot {
     const remoteStatus = getBrokerRemoteClient()?.getStatus(this.instanceId);
     if (remoteStatus) {
-      updateSnapshot(this.instanceId, { status: remoteStatus });
-      return getSnapshotEntry(this.instanceId);
+      return cacheSnapshot(this.instanceId, { status: remoteStatus });
     }
     if (nativeGatewayManager) {
       return nativeGatewayManager.getService(this.instanceId).getSnapshot();
@@ -129,8 +168,11 @@ class IbkrGatewayServiceFacade {
 
     const remoteDispose = getBrokerRemoteClient()?.subscribeStatus(this.instanceId, () => {
       const status = getBrokerRemoteClient()?.getStatus(this.instanceId);
-      if (status) updateSnapshot(this.instanceId, { status });
-      listener();
+      if (status) {
+        updateSnapshot(this.instanceId, { status });
+      } else {
+        listener();
+      }
     });
 
     if (remoteDispose) {
@@ -141,15 +183,15 @@ class IbkrGatewayServiceFacade {
     }
 
     let nativeDispose: (() => void) | null = null;
-    let disposed = false;
-    void getNativeService(this.instanceId).then((service) => {
-      if (disposed) return;
-      nativeDispose = service.subscribe(listener);
-      listener();
-    }).catch(() => {});
+    if (nativeGatewayManager) {
+      const service = nativeGatewayManager.getService(this.instanceId);
+      nativeDispose = service.subscribe(() => {
+        updateSnapshot(this.instanceId, service.getSnapshot());
+      });
+    }
+    listener();
 
     return () => {
-      disposed = true;
       nativeDispose?.();
       listeners.get(this.instanceId)?.delete(listener);
     };
@@ -161,13 +203,17 @@ class IbkrGatewayServiceFacade {
       await remote.invoke<void>(this.instanceId, "connect");
       return;
     }
-    return (await getNativeService(this.instanceId)).connect(config);
+    const service = await getNativeService(this.instanceId);
+    await service.connect(config);
+    updateSnapshot(this.instanceId, service.getSnapshot());
   }
 
   async disconnect(): Promise<void> {
     const remote = getBrokerRemoteClient();
     if (remote) return remote.invoke<void>(this.instanceId, "disconnect");
-    return (await getNativeService(this.instanceId)).disconnect();
+    const service = await getNativeService(this.instanceId);
+    await service.disconnect();
+    updateSnapshot(this.instanceId, service.getSnapshot());
   }
 
   async getAccounts(config: IbkrGatewayConfig): Promise<BrokerAccount[]> {
@@ -364,8 +410,8 @@ export class IbkrGatewayServiceManager {
     const remote = getBrokerRemoteClient();
     if (remote) {
       await remote.removeInstance(instanceId);
-    } else {
-      await (await loadNativeGatewayModule()).ibkrGatewayManager.removeInstance(instanceId);
+    } else if (nativeGatewayManager) {
+      await nativeGatewayManager.removeInstance(instanceId);
     }
     this.services.delete(instanceId);
     snapshots.delete(instanceId);
@@ -376,8 +422,8 @@ export class IbkrGatewayServiceManager {
     const remote = getBrokerRemoteClient();
     if (remote) {
       await remote.destroyAll();
-    } else {
-      await (await loadNativeGatewayModule()).ibkrGatewayManager.destroyAll();
+    } else if (nativeGatewayManager) {
+      await nativeGatewayManager.destroyAll();
     }
     this.services.clear();
     snapshots.clear();

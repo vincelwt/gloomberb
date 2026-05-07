@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { BarSizeSetting, ConnectionState, SecType, type ContractDetails, type TickByTickAllLast } from "@stoqey/ib";
 import { Subject, of } from "rxjs";
 import {
+  setBrokerRemoteClient,
+  type BrokerRemoteClient,
+} from "../../brokers/remote-broker-adapter";
+import type { BrokerConnectionStatus } from "../../types/broker";
+import {
+  ibkrGatewayManager,
+  setNativeIbkrGatewayModuleLoader,
+} from "./gateway-service";
+import {
   applyTickByTickAllLastToQuote,
   applyTickByTickBidAskToQuote,
   diagnoseLocalIbkrPortIssue,
@@ -160,6 +169,43 @@ describe("summarizeBrokerAccount", () => {
       cashBalances: undefined,
     });
   });
+});
+
+test("remote gateway snapshots are side-effect-free", async () => {
+  const instanceId = "ibkr-gateway-snapshot-test";
+  const status: BrokerConnectionStatus = {
+    state: "connected",
+    updatedAt: 123,
+  };
+  const client: BrokerRemoteClient = {
+    invoke: async <T,>() => null as T,
+    getStatus: () => status,
+    subscribeStatus: () => () => {},
+    subscribeQuotes: () => () => {},
+    removeInstance: async () => {},
+    destroyAll: async () => {},
+  };
+
+  setBrokerRemoteClient(client);
+  let unsubscribe: (() => void) | null = null;
+  try {
+    let notifications = 0;
+    unsubscribe = ibkrGatewayManager.subscribe(instanceId, () => {
+      notifications += 1;
+    });
+
+    const first = ibkrGatewayManager.getSnapshot(instanceId);
+    const second = ibkrGatewayManager.getSnapshot(instanceId);
+
+    expect(first).toBe(second);
+    expect(first.status).toBe(status);
+    expect(notifications).toBe(0);
+  } finally {
+    unsubscribe?.();
+    setBrokerRemoteClient(null);
+    setNativeIbkrGatewayModuleLoader(null);
+    await ibkrGatewayManager.removeInstance(instanceId);
+  }
 });
 
 describe("tick-by-tick quote updates", () => {
