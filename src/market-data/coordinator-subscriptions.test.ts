@@ -26,7 +26,7 @@ function createProvider(): {
   };
 }
 
-function quote(symbol: string, price: number): Quote {
+function quote(symbol: string, price: number, overrides: Partial<Quote> = {}): Quote {
   return {
     symbol,
     price,
@@ -34,6 +34,7 @@ function quote(symbol: string, price: number): Quote {
     change: 0,
     changePercent: 0,
     lastUpdated: Date.now(),
+    ...overrides,
   };
 }
 
@@ -94,5 +95,31 @@ describe("MarketDataCoordinator key subscriptions", () => {
 
     expect(calls).toBe(1);
     expect(coordinator.getVersion()).toBe(1);
+  });
+
+  test("ignores repeated stream quotes that only refresh timestamp noise", async () => {
+    const { provider, emitQuote } = createProvider();
+    const coordinator = new MarketDataCoordinator(provider);
+    const aapl = { symbol: "AAPL", exchange: "NASDAQ" };
+    let calls = 0;
+
+    coordinator.subscribeKeys([buildQuoteKey(aapl)], () => { calls += 1; });
+    coordinator.subscribeQuotes([{ instrument: aapl }]);
+
+    const firstTimestamp = 1_700_000_000_000;
+    emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 100, { lastUpdated: firstTimestamp }));
+    await flushCoordinator();
+
+    emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 100, { lastUpdated: firstTimestamp + 10_000 }));
+    await flushCoordinator();
+
+    expect(calls).toBe(1);
+    expect(coordinator.getQuoteEntry(aapl).data?.lastUpdated).toBe(firstTimestamp);
+
+    emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 101, { lastUpdated: firstTimestamp + 20_000 }));
+    await flushCoordinator();
+
+    expect(calls).toBe(2);
+    expect(coordinator.getQuoteEntry(aapl).data?.price).toBe(101);
   });
 });

@@ -1,13 +1,18 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { BrokerInstanceConfig } from "../../types/config";
 import { getGatewayConfig } from "./config";
 import { ibkrGatewayManager } from "./gateway-service";
 
 export function useGatewaySnapshot(instanceId?: string) {
-  return useSyncExternalStore(
-    (listener) => ibkrGatewayManager.subscribe(instanceId, listener),
-    () => ibkrGatewayManager.getSnapshot(instanceId),
+  const subscribe = useCallback(
+    (listener: () => void) => ibkrGatewayManager.subscribe(instanceId, listener),
+    [instanceId],
   );
+  const getSnapshot = useCallback(
+    () => ibkrGatewayManager.getSnapshot(instanceId),
+    [instanceId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 export function getGatewayRequiredMessage(instanceCount: number) {
