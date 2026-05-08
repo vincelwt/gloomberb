@@ -86,6 +86,9 @@ describe("appReducer command bar state", () => {
 
   test("tracks layout undo and redo history", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const defaultRatio = initial.config.layout.dockRoot && initial.config.layout.dockRoot.kind === "split"
+      ? initial.config.layout.dockRoot.ratio
+      : null;
     const changedLayout = cloneLayout(initial.config.layout);
     if (!changedLayout.dockRoot || changedLayout.dockRoot.kind !== "split") {
       throw new Error("expected split dock root");
@@ -103,7 +106,7 @@ describe("appReducer command bar state", () => {
     const undone = appReducer(changed, { type: "UNDO_LAYOUT" });
     expect(undone.config.layout.dockRoot && undone.config.layout.dockRoot.kind === "split"
       ? undone.config.layout.dockRoot.ratio
-      : null).toBe(0.4);
+      : null).toBe(defaultRatio);
     expect(undone.layoutHistory[0]?.future).toHaveLength(1);
 
     const redone = appReducer(undone, { type: "REDO_LAYOUT" });
@@ -115,6 +118,10 @@ describe("appReducer command bar state", () => {
 
   test("keeps layout history isolated per saved layout", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const defaultRatio = initial.config.layout.dockRoot && initial.config.layout.dockRoot.kind === "split"
+      ? initial.config.layout.dockRoot.ratio
+      : null;
+    const newLayoutIndex = initial.config.layouts.length;
 
     const firstLayout = cloneLayout(initial.config.layout);
     if (!firstLayout.dockRoot || firstLayout.dockRoot.kind !== "split") {
@@ -126,10 +133,10 @@ describe("appReducer command bar state", () => {
     state = appReducer(state, { type: "NEW_LAYOUT", name: "Research" });
 
     const noUndoOnFreshLayout = appReducer(state, { type: "UNDO_LAYOUT" });
-    expect(noUndoOnFreshLayout.config.activeLayoutIndex).toBe(1);
+    expect(noUndoOnFreshLayout.config.activeLayoutIndex).toBe(newLayoutIndex);
     expect(noUndoOnFreshLayout.config.layout.dockRoot && noUndoOnFreshLayout.config.layout.dockRoot.kind === "split"
       ? noUndoOnFreshLayout.config.layout.dockRoot.ratio
-      : null).toBe(0.4);
+      : null).toBe(defaultRatio);
 
     const secondLayout = cloneLayout(noUndoOnFreshLayout.config.layout);
     if (!secondLayout.dockRoot || secondLayout.dockRoot.kind !== "split") {
@@ -144,14 +151,14 @@ describe("appReducer command bar state", () => {
     expect(firstUndone.config.activeLayoutIndex).toBe(0);
     expect(firstUndone.config.layout.dockRoot && firstUndone.config.layout.dockRoot.kind === "split"
       ? firstUndone.config.layout.dockRoot.ratio
-      : null).toBe(0.4);
+      : null).toBe(defaultRatio);
 
-    const backToSecond = appReducer(firstUndone, { type: "SWITCH_LAYOUT", index: 1 });
+    const backToSecond = appReducer(firstUndone, { type: "SWITCH_LAYOUT", index: newLayoutIndex });
     const secondUndone = appReducer(backToSecond, { type: "UNDO_LAYOUT" });
-    expect(secondUndone.config.activeLayoutIndex).toBe(1);
+    expect(secondUndone.config.activeLayoutIndex).toBe(newLayoutIndex);
     expect(secondUndone.config.layout.dockRoot && secondUndone.config.layout.dockRoot.kind === "split"
       ? secondUndone.config.layout.dockRoot.ratio
-      : null).toBe(0.4);
+      : null).toBe(defaultRatio);
   });
 
   test("tracks manual update-check feedback", () => {

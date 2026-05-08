@@ -20,7 +20,7 @@ describe("desktop workspace", () => {
     expect(snapshot.config.layouts[snapshot.config.activeLayoutIndex]?.layout.detached).toEqual([
       { instanceId: "chat:main", x: 100, y: 120, width: 800, height: 540 },
     ]);
-    expect(snapshot.config.layout.floating).toHaveLength(0);
+    expect(snapshot.config.layout.floating.some((entry) => entry.instanceId === "chat:main")).toBe(false);
   });
 
   test("docking a detached pane onto a frame edge clears detached placement", () => {

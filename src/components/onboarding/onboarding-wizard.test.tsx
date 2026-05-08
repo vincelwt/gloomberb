@@ -166,10 +166,14 @@ describe("OnboardingWizard", () => {
     } as unknown as PluginRegistry;
 
     let completedConfig: AppConfig | null = null;
+    const config = {
+      ...createDefaultConfig(tempDataDir),
+      disabledPlugins: ["demo-plugin"],
+    };
 
     testSetup = await testRender(
       <OnboardingWizard
-        config={createDefaultConfig(tempDataDir)}
+        config={config}
         pluginRegistry={pluginRegistry}
         onComplete={(nextConfig) => {
           completedConfig = nextConfig;
@@ -216,7 +220,7 @@ describe("OnboardingWizard", () => {
     }
 
     frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Select plugins to enable");
+    expect(frame).toContain("After launch shortcuts");
 
     for (let index = 0; index < 3 && !frame.includes("Imported 1 position"); index += 1) {
       await emitKeypress(testSetup, { name: "return", sequence: "\r" });
@@ -241,6 +245,7 @@ describe("OnboardingWizard", () => {
       throw new Error("Onboarding did not complete.");
     }
     const finalConfig: AppConfig = completedConfig;
+    expect(finalConfig.disabledPlugins).toEqual([]);
     expect(finalConfig.portfolios.some((portfolio) => portfolio.id === "broker:demo-demo-broker:ACC-1")).toBe(true);
     expect(finalConfig.layout.instances.find((instance) => instance.paneId === "portfolio-list")?.params?.collectionId)
       .toBe("broker:demo-demo-broker:ACC-1");
