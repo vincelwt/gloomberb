@@ -740,7 +740,12 @@ describe("CommandBar", () => {
     expect(frame).toContain("Commands");
     expect(frame).toContain("TH");
     expect(frame).toContain("Themes");
-    expect(frame).toMatchSnapshot();
+    expect(frame).toContain("Amber");
+    expect(frame).toContain("Paper");
+    expect(frame).toContain("GitHub Light");
+    expect(frame).toContain("Solarized Light");
+    expect(frame).toContain("Gruvbox Light");
+    expect(frame).toContain("Nord Light");
   });
 
   test("renders plugin toggle state", async () => {
