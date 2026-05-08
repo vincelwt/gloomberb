@@ -8,6 +8,7 @@ import {
   PaneFooterProvider,
   usePaneFooter,
 } from "./pane-footer";
+import { useExternalLinkFooter } from "../use-external-link-footer";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -45,6 +46,16 @@ function Registration({
   return null;
 }
 
+function ExternalLinkRegistration() {
+  useExternalLinkFooter({
+    registrationId: "external-link",
+    focused: true,
+    url: "https://example.com/story?utm=raw",
+    source: "Reuters",
+  });
+  return null;
+}
+
 function FooterHarness({
   focused = false,
   visible = true,
@@ -60,6 +71,19 @@ function FooterHarness({
         <Box width={64} height={1}>
           <Registration visible={visible} onRefresh={onRefresh} />
           <PaneFooterBar footer={footer} focused={focused} width={64} />
+        </Box>
+      )}
+    </PaneFooterProvider>
+  );
+}
+
+function ExternalLinkFooterHarness() {
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box width={80} height={1}>
+          <ExternalLinkRegistration />
+          <PaneFooterBar footer={footer} focused width={80} />
         </Box>
       )}
     </PaneFooterProvider>
@@ -86,6 +110,19 @@ describe("PaneFooterBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Rows 12");
     expect(frame).toContain("[r]efresh");
+  });
+
+  test("keeps raw external URLs out of footer text", async () => {
+    testSetup = await testRender(<ExternalLinkFooterHarness />, { width: 80, height: 1 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("source Reuters");
+    expect(frame).toContain("[o]pen");
+    expect(frame).not.toContain("https://example.com");
   });
 
   test("calls hint onPress from mouse interaction", async () => {

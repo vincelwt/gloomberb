@@ -864,9 +864,9 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       : [
           { id: "new", key: "t", label: "new", onPress: addTab },
           { id: "close", key: "w", label: "close tab", onPress: activeTab ? () => removeTab(activeTab.id) : undefined, disabled: !activeTab },
-          { id: "refresh", key: "r", label: "refresh", onPress: refreshActiveTab, disabled: !activeTab || isRunningActiveTab },
+          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab, disabled: !activeTab || isRunningActiveTab },
           { id: "force-refresh", key: "Shift+R", label: "force refresh", onPress: forceRefreshActiveTab, disabled: !activeTab || isRunningActiveTab },
-          { id: "edit", key: "e", label: "edit", onPress: editActiveTab, disabled: !activeTab },
+          { id: "edit", key: "e", label: "dit", onPress: editActiveTab, disabled: !activeTab },
         ],
   }), [
     activeProvider?.available,
