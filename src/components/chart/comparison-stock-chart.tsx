@@ -54,12 +54,10 @@ import {
   normalizeChartResolutionSupport,
   sortChartResolutions,
   type ChartResolutionSupport,
-  type ManualChartResolution,
 } from "./chart-resolution";
 import { RIGHT_EDGE_ANCHOR_RATIO, resolveAnchoredChartZoom } from "./chart-viewport";
 import {
   buildComparisonChartScene,
-  formatComparisonAxisValue,
   formatComparisonCursorAxisValue,
   renderComparisonChart,
 } from "./comparison-chart-renderer";
@@ -908,11 +906,10 @@ function ComparisonStockChartView({
       }
       return {
         ...current,
-        panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
+        panOffset: clamp(pendingExpansion.targetPanOffset, 0, getMaxComparisonPanOffset(series, current.zoomLevel)),
       };
     });
   }, [
-    chartWidth,
     series,
     seriesDates,
     viewState.activePreset,
@@ -982,8 +979,8 @@ function ComparisonStockChartView({
   }), [viewState.panOffset, viewState.renderMode, viewState.zoomLevel]);
 
   const visibleWindow = useMemo(() => (
-    getVisibleComparisonWindow(series, projectionViewState, chartWidth)
-  ), [chartWidth, projectionViewState, series]);
+    getVisibleComparisonWindow(series, projectionViewState)
+  ), [projectionViewState, series]);
 
   const projection = useMemo(() => (
     projectComparisonChartData(series, chartWidth, projectionViewState, axisMode)
@@ -1385,7 +1382,7 @@ function ComparisonStockChartView({
         return;
       case "a": {
         const panStep = getKeyboardPanCellCount(chartWidth);
-        if (viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+        if (viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.zoomLevel) && expandBufferRange({
           kind: "pan-left",
           targetPanOffset: viewState.panOffset + panStep,
         })) {
@@ -1393,7 +1390,7 @@ function ComparisonStockChartView({
         }
         setViewState((current) => ({
           ...clearActivePreset(current),
-          panOffset: clamp(current.panOffset + panStep, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
+          panOffset: clamp(current.panOffset + panStep, 0, getMaxComparisonPanOffset(series, current.zoomLevel)),
         }));
         return;
       }
@@ -1401,7 +1398,7 @@ function ComparisonStockChartView({
         const panStep = getKeyboardPanCellCount(chartWidth);
         setViewState((current) => ({
           ...clearActivePreset(current),
-          panOffset: clamp(current.panOffset - panStep, 0, getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth)),
+          panOffset: clamp(current.panOffset - panStep, 0, getMaxComparisonPanOffset(series, current.zoomLevel)),
         }));
         return;
       }
@@ -1592,7 +1589,7 @@ function ComparisonStockChartView({
     if (scrollPanCells === 0) return;
 
     const targetPanOffset = viewState.panOffset + scrollPanCells;
-    if (scrollPanCells > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.presetRange, viewState.zoomLevel, chartWidth) && expandBufferRange({
+    if (scrollPanCells > 0 && viewState.panOffset >= getMaxComparisonPanOffset(series, viewState.zoomLevel) && expandBufferRange({
       kind: "pan-left",
       targetPanOffset,
     })) {
@@ -1603,7 +1600,7 @@ function ComparisonStockChartView({
       panOffset: clamp(
         current.panOffset + scrollPanCells,
         0,
-        getMaxComparisonPanOffset(series, current.presetRange, current.zoomLevel, chartWidth),
+        getMaxComparisonPanOffset(series, current.zoomLevel),
       ),
     }));
   };

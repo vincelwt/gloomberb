@@ -1,7 +1,7 @@
 import type { TimeRange } from "../../components/chart/chart-types";
 import type { ChartResolutionSupport, ManualChartResolution } from "../../components/chart/chart-resolution";
 import { getBrokerRemoteClient } from "../../brokers/remote-broker-adapter";
-import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
+import type { BrokerPosition } from "../../types/broker";
 import type { QuoteSubscriptionTarget } from "../../types/data-provider";
 import type { Quote, PricePoint, TickerFinancials } from "../../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";

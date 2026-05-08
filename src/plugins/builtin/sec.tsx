@@ -142,15 +142,6 @@ function buildForm4Detail(content: string | null, filing: SecFilingItem): string
   return lines.join("\n");
 }
 
-function getFormCategory(form: string): "annual" | "quarterly" | "current" | "ownership" | "other" {
-  const f = form.trim().toUpperCase();
-  if (f === "10-K" || f === "10-K/A" || f === "20-F") return "annual";
-  if (f === "10-Q" || f === "10-Q/A") return "quarterly";
-  if (f.startsWith("8-K")) return "current";
-  if (OWNERSHIP_FORMS.has(f) || f === "SC 13G" || f === "SC 13D" || f === "SC 13G/A" || f === "SC 13D/A") return "ownership";
-  return "other";
-}
-
 function getFormDescription(form: string): string {
   const f = form.trim().toUpperCase();
   switch (f) {

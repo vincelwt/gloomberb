@@ -151,24 +151,6 @@ export function sortChartResolutions<T extends ChartResolution>(resolutions: rea
   ));
 }
 
-function normalizeManualChartResolutions(resolutions: readonly string[]): ManualChartResolution[] {
-  const seen = new Set<ManualChartResolution>();
-  for (const resolution of resolutions) {
-    if (isManualChartResolution(resolution)) {
-      seen.add(resolution);
-    }
-  }
-  return sortChartResolutions([...seen]);
-}
-
-export function intersectChartResolutions(resolutionSets: Array<readonly string[]>): ManualChartResolution[] {
-  if (resolutionSets.length === 0) return [];
-  const [first = new Set<ManualChartResolution>(), ...rest] = resolutionSets.map((set) => new Set(normalizeManualChartResolutions(set)));
-  return sortChartResolutions(
-    [...first].filter((resolution) => rest.every((set) => set.has(resolution))),
-  );
-}
-
 function sortChartResolutionSupport(support: readonly ChartResolutionSupport[]): ChartResolutionSupport[] {
   return [...support].sort((left, right) => (
     CHART_RESOLUTION_ORDER.indexOf(left.resolution) - CHART_RESOLUTION_ORDER.indexOf(right.resolution)
@@ -322,15 +304,6 @@ export function getBestSupportedResolutionForPreset(
   if (coarserResolution) return coarserResolution;
 
   return supportedResolutions[supportedResolutions.length - 1] ?? null;
-}
-
-export function getBestSupportedResolutionForDateWindow(
-  window: { start: Date | null; end: Date | null } | null,
-  support: readonly ChartResolutionSupport[] | ReadonlyMap<ManualChartResolution, TimeRange>,
-): ManualChartResolution | null {
-  if (!window?.start || !window.end) return null;
-  const range = getTimeRangeForDateWindow(window);
-  return getBestSupportedResolutionForPreset(range, support);
 }
 
 export function getTimeRangeForDateWindow(

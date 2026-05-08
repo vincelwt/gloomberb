@@ -9,7 +9,6 @@ import {
   resolveAdjacentSelectionCursorX,
   resolveChartKeyboardKey,
   resolveIndicatorBufferRange,
-  resolveVisibleChartDateWindow,
   resolveSelectionDisplayCursorState,
 } from "./stock-chart";
 import { getPointTerminalColumn } from "./chart-renderer";
@@ -213,21 +212,6 @@ describe("stock chart auto helpers", () => {
     });
     expect(nextState.resolution).toBe("1d");
     expect(nextState.window).toEqual(renderedAutoView.window);
-  });
-
-  test("derives the visible label window from the actual visible chart points", () => {
-    const visibleWindow = resolveVisibleChartDateWindow([
-      { date: new Date("2026-01-03T00:00:00Z") },
-      { date: new Date("2026-01-06T00:00:00Z") },
-    ], {
-      start: new Date("2026-01-01T00:00:00Z"),
-      end: new Date("2026-01-08T00:00:00Z"),
-    });
-
-    expect(visibleWindow).toEqual({
-      start: new Date("2026-01-03T00:00:00Z"),
-      end: new Date("2026-01-06T00:00:00Z"),
-    });
   });
 
   test("zooms in by at least one visible point on every auto step when more detail is available", () => {

@@ -83,9 +83,7 @@ function getUniqueSortedDates(series: ComparisonChartSeries[]): Date[] {
 
 export function getMaxComparisonPanOffset(
   series: ComparisonChartSeries[],
-  _timeRange: TimeRange,
   zoomLevel: number,
-  chartWidth: number,
 ): number {
   const dates = getUniqueSortedDates(series);
   const visibleCount = getVisiblePointCount(dates.length, zoomLevel);
@@ -95,7 +93,6 @@ export function getMaxComparisonPanOffset(
 export function getVisibleComparisonWindow(
   series: ComparisonChartSeries[],
   viewState: Pick<ComparisonChartViewState, "panOffset" | "zoomLevel">,
-  chartWidth: number,
 ): ComparisonVisibleWindow {
   const dates = getUniqueSortedDates(series);
 
@@ -214,7 +211,7 @@ export function projectComparisonChartData(
   requestedAxisMode: ChartAxisMode,
 ): ComparisonChartProjection {
   const normalizedSeries = series.map((entry) => ({ ...entry, points: normalizeSeriesPoints(entry.points) }));
-  const window = getVisibleComparisonWindow(normalizedSeries, viewState, chartWidth);
+  const window = getVisibleComparisonWindow(normalizedSeries, viewState);
   const axisResolution = resolveComparisonAxisMode(requestedAxisMode, normalizedSeries, window.dates);
   const requestedMode = normalizeComparisonMode(viewState.renderMode);
   if (window.dates.length === 0) {

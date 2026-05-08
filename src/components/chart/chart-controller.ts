@@ -13,7 +13,6 @@ import {
   isDateWindowWithinTimeRange,
   isTimeRangeAtOrBelow,
   subtractTimeRange,
-  type ChartResolutionSupport,
   type ManualChartResolution,
 } from "./chart-resolution";
 

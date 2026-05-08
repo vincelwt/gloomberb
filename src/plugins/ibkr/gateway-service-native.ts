@@ -32,7 +32,7 @@ import {
 } from "../../components/chart/chart-resolution";
 import type { BrokerConnectionStatus, BrokerPosition } from "../../types/broker";
 import type { QuoteSubscriptionTarget } from "../../types/data-provider";
-import type { Fundamentals, FinancialStatement, Quote, PricePoint, TickerFinancials } from "../../types/financials";
+import type { Quote, PricePoint, TickerFinancials } from "../../types/financials";
 import type { BrokerContractRef, InstrumentSearchResult } from "../../types/instrument";
 import type {
   BrokerAccount,
@@ -656,10 +656,6 @@ function buildConnectionNote(
     notes.push(`Using client ID ${actualClientId} because ${requestedClientId} is already in use.`);
   }
   return notes.length > 0 ? notes.join(" ") : undefined;
-}
-
-function isRetryableErrorCode(code: number): boolean {
-  return ![200, 201, 202, 321, 354].includes(code);
 }
 
 function isLoopbackHost(host: string): boolean {

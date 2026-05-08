@@ -96,19 +96,6 @@ function clampRatio(ratio: number): number {
   return Math.max(0.1, Math.min(0.9, ratio));
 }
 
-function cloneDockNode(node: DockLayoutNode): DockLayoutNode {
-  if (node.kind === "pane") {
-    return { kind: "pane", instanceId: node.instanceId };
-  }
-  return {
-    kind: "split",
-    axis: node.axis,
-    ratio: node.ratio,
-    first: cloneDockNode(node.first),
-    second: cloneDockNode(node.second),
-  };
-}
-
 function ensurePaneInstance(layout: LayoutConfig, instance: PaneInstanceConfig): LayoutConfig {
   if (layout.instances.some((entry) => entry.instanceId === instance.instanceId)) return layout;
   return { ...layout, instances: [...layout.instances, instance] };

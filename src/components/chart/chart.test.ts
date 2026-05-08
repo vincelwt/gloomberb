@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   bucketOhlcSeries,
-  getVisibleWindow,
   projectChartData,
   resolveRenderMode,
   resolveStableOhlcProjectionOptions,
@@ -9,7 +8,7 @@ import {
 import { stepCursorTowards } from "./cursor-motion";
 import { buildChartScene, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
-import type { ChartRenderMode, ChartViewState } from "./chart-types";
+import type { ChartRenderMode } from "./chart-types";
 
 const aggregationFixture: PricePoint[] = [
   { date: new Date("2024-01-02"), close: 10, volume: 100 },
@@ -222,48 +221,6 @@ describe("resolveRenderMode", () => {
     expect(narrowed.map((point) => point.date.toISOString())).toEqual(wide.map((point) => point.date.toISOString()));
     expect(narrowed.map((point) => point.open)).toEqual(wide.map((point) => point.open));
     expect(narrowed.map((point) => point.close)).toEqual(wide.map((point) => point.close));
-  });
-});
-
-describe("getVisibleWindow", () => {
-  test("shows the full selected range at default zoom and lets the renderer downsample it", () => {
-    const history = buildDenseHistory(252);
-    const viewState: ChartViewState = {
-      presetRange: "1Y",
-      bufferRange: "1Y",
-      activePreset: "1Y",
-      resolution: "auto",
-      panOffset: 0,
-      zoomLevel: 1,
-      cursorX: null,
-      cursorY: null,
-    };
-
-    const window = getVisibleWindow(history, viewState, 80);
-
-    expect(window.points).toHaveLength(history.length);
-    expect(window.points[0]?.date.toISOString()).toBe(history[0]!.date.toISOString());
-    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)!.date.toISOString());
-  });
-
-  test("zooms into the selected range instead of pinning the default view to chart width", () => {
-    const history = buildDenseHistory(252);
-    const viewState: ChartViewState = {
-      presetRange: "1Y",
-      bufferRange: "1Y",
-      activePreset: "1Y",
-      resolution: "auto",
-      panOffset: 0,
-      zoomLevel: 2,
-      cursorX: null,
-      cursorY: null,
-    };
-
-    const window = getVisibleWindow(history, viewState, 80);
-
-    expect(window.points).toHaveLength(126);
-    expect(window.points[0]?.date.toISOString()).toBe(history[126]!.date.toISOString());
-    expect(window.points.at(-1)?.date.toISOString()).toBe(history.at(-1)!.date.toISOString());
   });
 });
 

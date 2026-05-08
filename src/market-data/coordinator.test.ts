@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { MarketDataCoordinator } from "./coordinator";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
 import type { InstrumentSearchResult } from "../types/instrument";
-import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
+import type { PricePoint, Quote, TickerFinancials } from "../types/financials";
 import { createTestDataProvider } from "../test-support/data-provider";
 
 function createProvider(overrides: Partial<DataProvider> = {}): DataProvider {

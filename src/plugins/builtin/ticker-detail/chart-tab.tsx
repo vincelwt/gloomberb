@@ -90,7 +90,6 @@ export function ChartTab({
           interactive={interactive}
           onActivate={onActivate}
           axisMode={axisMode}
-          symbol={symbol}
           ticker={ticker}
           financials={financials}
           indicatorConfig={hasStoredIndicatorSelection ? selectedIndicatorConfig : undefined}

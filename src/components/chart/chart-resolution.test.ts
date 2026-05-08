@@ -3,10 +3,8 @@ import {
   CHART_RESOLUTION_STEP_MS,
   clampTimeRangeForResolution,
   getActiveRangePreset,
-  getBestSupportedResolutionForDateWindow,
   getBestSupportedResolutionForVisibleWindow,
   getPresetResolution,
-  intersectChartResolutions,
   isRangePresetSupported,
   normalizeChartResolution,
   sortChartResolutions,
@@ -30,14 +28,6 @@ describe("chart-resolution", () => {
     expect(getActiveRangePreset("1Y", "1d", 1, 2)).toBeNull();
   });
 
-  test("intersects and sorts provider capabilities", () => {
-    expect(intersectChartResolutions([
-      ["1d", "5m", "1wk", "nope"],
-      ["1wk", "1d", "1mo"],
-      ["1d", "1wk"],
-    ])).toEqual(["1d", "1wk"]);
-  });
-
   test("checks whether a range preset is supported by the visible capability set", () => {
     expect(isRangePresetSupported("1Y", ["1d", "1wk"])).toBe(true);
     expect(isRangePresetSupported("ALL", ["1d", "1wk"])).toBe(false);
@@ -55,32 +45,6 @@ describe("chart-resolution", () => {
     expect(normalizeChartResolution("1h")).toBe("1h");
     expect(normalizeChartResolution("bogus", "1d")).toBe("1d");
     expect(sortChartResolutions(["1wk", "auto", "15m", "1d"])).toEqual(["auto", "15m", "1d", "1wk"]);
-  });
-
-  test("picks the best supported resolution for the current visible date window", () => {
-    const support = [
-      { resolution: "1m", maxRange: "1D" },
-      { resolution: "5m", maxRange: "1W" },
-      { resolution: "15m", maxRange: "1M" },
-      { resolution: "1h", maxRange: "3M" },
-      { resolution: "1d", maxRange: "5Y" },
-      { resolution: "1wk", maxRange: "ALL" },
-    ] as const;
-
-    expect(getBestSupportedResolutionForDateWindow({
-      start: new Date("2026-01-08T10:00:00Z"),
-      end: new Date("2026-01-08T16:00:00Z"),
-    }, support)).toBe("1m");
-
-    expect(getBestSupportedResolutionForDateWindow({
-      start: new Date("2026-01-01T00:00:00Z"),
-      end: new Date("2026-01-08T00:00:00Z"),
-    }, support)).toBe("5m");
-
-    expect(getBestSupportedResolutionForDateWindow({
-      start: new Date("2021-01-01T00:00:00Z"),
-      end: new Date("2026-01-01T00:00:00Z"),
-    }, support)).toBe("1wk");
   });
 
   test("picks a denser supported resolution as the visible window narrows", () => {

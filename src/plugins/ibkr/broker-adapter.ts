@@ -1,8 +1,6 @@
 import type { BrokerAdapter, BrokerPosition } from "../../types/broker";
-import type { BrokerInstanceConfig } from "../../types/config";
 import {
   buildIbkrConfigFromValues,
-  getGatewayConfig,
   IBKR_CONFIG_FIELDS,
   isFlexConfigured,
   isGatewayConfigured,

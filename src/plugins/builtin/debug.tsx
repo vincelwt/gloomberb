@@ -62,7 +62,6 @@ function DebugPane({ focused, width, height }: PaneProps) {
   const [filterLevel, setFilterLevel] = useState<LogLevel | null>(null);
   const [filterSource, setFilterSource] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [scrollOffset, setScrollOffset] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -77,7 +76,6 @@ function DebugPane({ focused, width, height }: PaneProps) {
       );
       setEntries(filtered);
       sourcesRef.current = debugLog.getSources();
-      if (autoScroll) setScrollOffset(0);
     });
     return unsub;
   }, [filterLevel, filterSource, autoScroll]);

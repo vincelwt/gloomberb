@@ -560,7 +560,6 @@ export function OverviewTab({
             height={10}
             focused={false}
             compact
-            symbol={symbol}
             ticker={ticker}
             financials={financials}
           />

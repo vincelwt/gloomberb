@@ -6,7 +6,7 @@ import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { colors, blendHex } from "../../../theme/colors";
 import { useAssetData } from "../../plugin-runtime";
-import { MAJOR_CURRENCIES, CURRENCY_FLAGS, formatRate, type MajorCurrency } from "./pairs";
+import { MAJOR_CURRENCIES, formatRate, type MajorCurrency } from "./pairs";
 
 const REFRESH_INTERVAL_MS = 60_000;
 

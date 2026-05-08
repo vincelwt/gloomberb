@@ -1,6 +1,5 @@
 import type { PricePoint } from "../../types/financials";
-import type { ChartRenderMode, ChartViewState, VisibleWindow } from "./chart-types";
-import { getVisiblePointCount } from "./chart-viewport";
+import type { ChartRenderMode } from "./chart-types";
 
 export interface ProjectedChartPoint {
   date: Date;
@@ -73,34 +72,6 @@ export function resolveRenderMode(
     requestedMode,
     effectiveMode,
     fallbackMode: effectiveMode === requestedMode ? null : effectiveMode,
-  };
-}
-
-/**
- * Apply zoom and pan to get the visible data window.
- */
-export function getVisibleWindow(
-  history: PricePoint[],
-  viewState: ChartViewState,
-  chartWidth: number,
-): VisibleWindow {
-  if (history.length === 0) {
-    return { points: [], startIdx: 0, endIdx: 0 };
-  }
-
-  const visibleCount = getVisiblePointCount(history.length, viewState.zoomLevel);
-
-  // Clamp pan offset
-  const maxPan = Math.max(history.length - visibleCount, 0);
-  const pan = Math.min(Math.max(viewState.panOffset, 0), maxPan);
-
-  const endIdx = history.length - pan;
-  const startIdx = Math.max(endIdx - visibleCount, 0);
-
-  return {
-    points: history.slice(startIdx, endIdx),
-    startIdx,
-    endIdx,
   };
 }
 
@@ -334,7 +305,6 @@ export function bucketOhlcSeries(
   return result;
 }
 
-const MS_HOUR = 3600_000;
 const MS_DAY = 86400_000;
 
 /**

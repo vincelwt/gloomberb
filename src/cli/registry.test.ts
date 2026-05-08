@@ -4,7 +4,6 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { createDefaultConfig } from "../types/config";
 import type { GloomPlugin } from "../types/plugin";
-import type { LoadedExternalPlugin } from "../plugins/loader";
 import {
   buildCliCommandRegistry,
   createCliCommandContext,

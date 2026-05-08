@@ -37,8 +37,6 @@ import type {
   PredictionVenueScope,
 } from "./types";
 
-const KEYBOARD_DETAIL_LOAD_DELAY_MS = 140;
-
 function formatPredictionVenueLabel(venue: PredictionVenue): string {
   return venue === "polymarket" ? "Polymarket" : "Kalshi";
 }

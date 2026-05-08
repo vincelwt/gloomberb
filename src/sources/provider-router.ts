@@ -134,10 +134,6 @@ function isIntradayRange(range: TimeRange): boolean {
   return range === "1D" || range === "1W" || range === "1M" || range === "3M";
 }
 
-function hasMeaningfulFundamentals(data: TickerFinancials | null | undefined): boolean {
-  return !!data && Object.keys(data.fundamentals ?? {}).length > 0;
-}
-
 function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolean {
   return !!data && !!(
     data.profile?.description

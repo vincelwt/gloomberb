@@ -27,7 +27,7 @@ import {
   getKeyboardPanCellCount,
   resolveDragPanOffset,
 } from "./chart-scroll";
-import { getVisibleWindow, projectChartData, resolveBarSize, resolveStableOhlcProjectionOptions, type ProjectedChartPoint } from "./chart-data";
+import { projectChartData, resolveBarSize, resolveStableOhlcProjectionOptions, type ProjectedChartPoint } from "./chart-data";
 import {
   buildPresetDateWindow,
   buildVisibleDateWindow,
@@ -173,7 +173,6 @@ interface StockChartProps {
 }
 
 interface ResolvedStockChartProps extends StockChartProps {
-  symbol: string | null;
   ticker: TickerRecord | null;
   financials: TickerFinancials | null;
 }
@@ -726,14 +725,6 @@ function isSeriesAcceptedForRequest(
   return windowPoints.length >= minimumPointCount;
 }
 
-function canRenderAutoViewForWindow(
-  render: AutoRenderedView | null,
-  requestedWindow: DateWindowRange | null | undefined,
-): render is AutoRenderedView {
-  if (!render || !requestedWindow?.start || !requestedWindow.end) return false;
-  return getWindowPoints(render.data, requestedWindow).length > 0;
-}
-
 export function resolveAutoDisplayState(options: {
   shouldUseRenderedAutoView: boolean;
   renderedAutoView: AutoRenderedView | null;
@@ -770,13 +761,6 @@ export function resolveAutoDisplayState(options: {
     resolution: plannedResolvedManualResolution,
     window: plannedDateWindow,
   };
-}
-
-export function resolveVisibleChartDateWindow(
-  points: readonly Pick<PricePoint, "date">[],
-  preferredWindow: DateWindowRange | null | undefined,
-): DateWindowRange | null {
-  return getDateWindowBounds(getPointDates(points)) ?? preferredWindow ?? null;
 }
 
 function buildDateWindowFromIndices(dates: readonly Date[], startIdx: number, endIdx: number): DateWindowRange | null {
@@ -1430,8 +1414,8 @@ function buildIndicatorProjectionKey(options: {
 }
 
 export function StockChart(props: StockChartProps) {
-  const { symbol, ticker, financials } = usePaneTicker();
-  return <ResolvedStockChart {...props} symbol={symbol} ticker={ticker} financials={financials} />;
+  const { ticker, financials } = usePaneTicker();
+  return <ResolvedStockChart {...props} ticker={ticker} financials={financials} />;
 }
 
 export const ResolvedStockChart = memo(function ResolvedStockChart({
@@ -1448,7 +1432,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   showVolume: showVolumeOverride,
   footerControls,
   footerHints,
-  symbol,
   ticker,
   financials,
 }: ResolvedStockChartProps) {

@@ -15,10 +15,6 @@ import { usePersistedNewsArticles } from "./news-wire/persisted-articles";
 import { useNewsReadState } from "./news-wire/read-state";
 import { createTickerSurfacePaneTemplate } from "./ticker-surface";
 
-const ARTICLE_SUMMARY_CACHE_POLICY = {
-  staleMs: 30 * 24 * 60 * 60_000,
-  expireMs: 90 * 24 * 60 * 60_000,
-};
 const NEWS_ITEM_LIMIT = 50;
 let disposeNewsWireFeatures: (() => void) | null = null;
 

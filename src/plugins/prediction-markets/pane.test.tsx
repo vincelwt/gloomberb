@@ -14,7 +14,6 @@ import {
 } from "./test-helpers";
 import { attachPredictionMarketsPersistence } from "./services/fetch";
 import {
-  loadKalshiCatalog,
   normalizeKalshiMarket,
 } from "./services/kalshi-adapter";
 import { normalizePolymarketMarket } from "./services/polymarket-adapter";

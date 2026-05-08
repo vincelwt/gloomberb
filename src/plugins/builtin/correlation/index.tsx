@@ -34,11 +34,6 @@ const MIN_CORRELATION_OBSERVATIONS = 5;
 
 type SeriesStatus = "loading" | "ready" | "insufficient" | "empty" | "error";
 
-interface CorrelationInstrument {
-  symbol: string;
-  exchange: string;
-}
-
 interface CorrelationSeries {
   symbol: string;
   returns: DatedReturn[];

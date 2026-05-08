@@ -303,7 +303,6 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
     return { date: obs.date, display: obs.value.toLocaleString("en-US", { maximumFractionDigits: 1 }) };
   });
   const units = info?.units ?? "";
-  const source = info?.source || "";
   const title = info?.title ?? event.event;
 
   // Value color for table rows

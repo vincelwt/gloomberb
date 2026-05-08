@@ -1,4 +1,3 @@
-import { Input } from "../../ui";
 import type { CliCommandDef } from "../../types/plugin";
 import { createPredictionLaunchRequest, parsePredictionCommandArgs } from "./launch";
 

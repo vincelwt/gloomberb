@@ -4,7 +4,6 @@ import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types
 import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "./request-types";
 import { QueryStore } from "./query-store";
 import type { ProviderAttempt, ProviderReasonCode, QueryEntry } from "./result-types";
-import { createIdleEntry } from "./result-types";
 import {
   buildArticleSummaryKey,
   buildChartKey,

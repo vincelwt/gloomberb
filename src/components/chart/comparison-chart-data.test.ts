@@ -25,10 +25,9 @@ describe("projectComparisonChartData", () => {
     const window = getVisibleComparisonWindow([
       makeSeries("AAPL", "USD", closes),
     ], {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
-    }, 40);
+    });
 
     expect(window.dates).toHaveLength(120);
     expect(window.dates[0]?.toISOString()).toBe("2024-01-01T00:00:00.000Z");
@@ -48,7 +47,6 @@ describe("projectComparisonChartData", () => {
         ["2024-01-05", 22],
       ]),
     ], 8, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",
@@ -72,7 +70,6 @@ describe("projectComparisonChartData", () => {
         ["2024-01-04", 60],
       ]),
     ], 8, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",
@@ -94,7 +91,6 @@ describe("projectComparisonChartData", () => {
         ["2024-01-03", 2100],
       ]),
     ], 8, {
-      timeRange: "ALL",
       panOffset: 0,
       zoomLevel: 1,
       renderMode: "line",

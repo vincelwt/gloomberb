@@ -1,4 +1,4 @@
-import { AsciiText, Box, Input, Span, Strong, Text, Underline, useUiHost } from "../../ui";
+import { AsciiText, Box, Span, Strong, Text, Underline, useUiHost } from "../../ui";
 import { useState, useCallback, useEffect, useRef, useMemo, type RefObject } from "react";
 import { useShortcut, useViewport } from "../../react/input";
 import { TextAttributes } from "../../ui";
@@ -963,7 +963,6 @@ function PortfolioStep({
 
   // broker-fields: dynamically render fields from the broker's configSchema
   if (!selectedBrokerId) return null;
-  const currentField = brokerFields[brokerFieldIdx];
   const values = brokerValues[selectedBrokerId] ?? {};
 
   return (

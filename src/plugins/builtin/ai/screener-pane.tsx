@@ -461,8 +461,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const selectedResult = activeTab?.results.find((result) => result.symbol === cursorSymbol)
     ?? activeTab?.results[0]
     ?? null;
-  const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
-  const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
   const isRunningActiveTab = runState?.tabId === activeTab?.id;
   const forceRunArmed = !!activeTab && forceConfirmTabId === activeTab.id;
 
@@ -753,7 +751,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    const key = event.name;
     if (event.name === "t") {
       addTab();
       return;

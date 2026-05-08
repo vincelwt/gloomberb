@@ -1,7 +1,6 @@
 import type { GloomPlugin } from "../../../types/plugin";
 import { normalizeTickerInput } from "../../../utils/ticker-search";
 import { TickerDetailPane } from "./pane";
-import { FinancialsTab } from "./financials-tab";
 import { QuoteMonitorPane } from "./quote-monitor";
 import {
   buildQuoteMonitorSettingsDef,

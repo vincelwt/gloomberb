@@ -200,6 +200,15 @@ type CommandBarListRow =
   | { kind: "spinner"; id: string; label: string }
   | { kind: "filler"; id: string };
 
+const LAYOUT_MOVE_ACTIONS = [
+  { id: "layout-move-left", label: "Move Left", direction: "left", unavailableDetail: "No column to the left" },
+  { id: "layout-move-right", label: "Move Right", direction: "right", unavailableDetail: "No column to the right" },
+  { id: "layout-move-up", label: "Move Up", direction: "above", unavailableDetail: "No pane above" },
+  { id: "layout-move-down", label: "Move Down", direction: "below", unavailableDetail: "No pane below" },
+] as const;
+
+type LayoutMoveDirection = (typeof LAYOUT_MOVE_ACTIONS)[number]["direction"];
+
 const commandBarLog = debugLog.createLogger("command-bar");
 const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
 const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
@@ -1219,6 +1228,344 @@ export function CommandBar({
       successBehavior: options.successBehavior || "close",
     });
   }, [openConfirmRoute]);
+
+  const buildThemeItems = useCallback((
+    query: string,
+    currentThemeId: string | null | undefined,
+    options?: { onSelectTheme?: (themeId: string) => void },
+  ): { items: ResultItem[]; selectedIdx: number } => {
+    let selectedIdx = 0;
+    const filtered = query
+      ? getThemeOptions().filter((theme) => (
+        theme.name.toLowerCase().includes(query.toLowerCase())
+        || theme.id.includes(query.toLowerCase())
+      ))
+      : getThemeOptions();
+    const items = filtered.map((theme, index): ResultItem => {
+      const current = theme.id === currentThemeId;
+      if (current) selectedIdx = index;
+      return {
+        id: `theme:${theme.id}`,
+        label: theme.name,
+        detail: theme.description,
+        category: "Themes",
+        kind: "theme",
+        current,
+        themeId: theme.id,
+        action: () => {
+          options?.onSelectTheme?.(theme.id);
+          const nextConfig = {
+            ...state.config,
+            theme: theme.id,
+          };
+          dispatch({ type: "SET_THEME", theme: theme.id });
+          void saveConfig(nextConfig);
+          closeAll({ revertThemePreview: false });
+        },
+      };
+    });
+    return { items, selectedIdx };
+  }, [closeAll, dispatch, state.config]);
+
+  const buildPluginItems = useCallback((query: string): ResultItem[] => {
+    const disabledPlugins = state.config.disabledPlugins || [];
+    const toggleable = [...pluginRegistry.allPlugins.values()].filter((plugin) => plugin.toggleable);
+    const filtered = query
+      ? toggleable.filter((plugin) => (
+        plugin.name.toLowerCase().includes(query.toLowerCase())
+        || plugin.id.includes(query.toLowerCase())
+      ))
+      : toggleable;
+    return filtered.map((plugin): ResultItem => {
+      const enabled = !disabledPlugins.includes(plugin.id);
+      const toggleAction = () => {
+        dispatch({ type: "TOGGLE_PLUGIN", pluginId: plugin.id });
+        const nextDisabled = enabled
+          ? [...disabledPlugins, plugin.id]
+          : disabledPlugins.filter((entry) => entry !== plugin.id);
+        if (enabled) {
+          for (const paneId of pluginRegistry.getPluginPaneIds(plugin.id)) {
+            pluginRegistry.hideWidget(paneId);
+          }
+        }
+        void saveConfig({ ...state.config, disabledPlugins: nextDisabled });
+      };
+      return {
+        id: `plugin:${plugin.id}`,
+        label: plugin.name,
+        detail: plugin.description || "",
+        category: "Plugins",
+        kind: "plugin",
+        checked: enabled,
+        pluginToggle: toggleAction,
+        action: toggleAction,
+      };
+    });
+  }, [dispatch, pluginRegistry, state.config]);
+
+  const buildLayoutItems = useCallback((
+    query: string,
+    options?: { confirmDangerousActions?: boolean },
+  ): ResultItem[] => {
+    const currentLayout = state.config.layout;
+    const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
+    const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
+    const dockedPaneIds = getDockedPaneIds(currentLayout);
+    const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
+    const layoutSnapshot = JSON.stringify(currentLayout);
+    const canMove = (direction: LayoutMoveDirection) => (
+      !!focusedPane && JSON.stringify(movePaneRelative(currentLayout, focusedPane.instanceId, direction)) !== layoutSnapshot
+    );
+    const layoutItems: ResultItem[] = [];
+
+    if (focusedPane && focusedPaneDef) {
+      const focusedFloating = currentLayout.floating.find((entry) => entry.instanceId === focusedPane.instanceId);
+      layoutItems.push({
+        id: "layout-toggle-mode",
+        label: focusedFloating ? "Dock Pane" : "Float Pane",
+        detail: focusedFloating ? "Return the focused window to the layout" : "Detach the focused pane into a floating window",
+        category: "Focused Pane",
+        kind: "action",
+        action: () => {
+          const { width, height } = pluginRegistry.getTermSizeFn();
+          const nextLayout = focusedFloating
+            ? dockPane(currentLayout, focusedPane.instanceId)
+            : floatPane(currentLayout, focusedPane.instanceId, width, height, focusedPaneDef);
+          persistLayoutChange(nextLayout);
+          closeAll({ revertThemePreview: false });
+        },
+      });
+
+      LAYOUT_MOVE_ACTIONS.forEach((entry) => {
+        const available = canMove(entry.direction);
+        layoutItems.push({
+          id: entry.id,
+          label: entry.label,
+          detail: available ? "Reposition the focused pane" : entry.unavailableDetail,
+          category: "Focused Pane",
+          kind: available ? "action" : "info",
+          disabled: !available,
+          action: available
+            ? () => {
+              persistLayoutChange(movePaneRelative(currentLayout, focusedPane.instanceId, entry.direction));
+              closeAll({ revertThemePreview: false });
+            }
+            : () => {},
+        });
+      });
+
+      layoutItems.push({
+        id: "layout-swap",
+        label: "Swap With…",
+        detail: dockedPaneIds.length + currentLayout.floating.length > 1
+          ? "Choose another pane to swap positions"
+          : "Need at least two panes",
+        category: "Focused Pane",
+        kind: "action",
+        disabled: dockedPaneIds.length + currentLayout.floating.length <= 1,
+        action: () => {
+          const pickerOptions = [
+            ...dockedPaneIds,
+            ...currentLayout.floating.map((entry) => entry.instanceId),
+          ]
+            .filter((paneId) => paneId !== focusedPane.instanceId)
+            .map((paneId) => {
+              const instance = findPaneInstance(currentLayout, paneId)!;
+              const isFloating = currentLayout.floating.some((entry) => entry.instanceId === paneId);
+              return {
+                id: paneId,
+                label: instance.title || pluginRegistry.panes.get(instance.paneId)?.name || instance.paneId,
+                detail: isFloating ? "Floating window" : "Docked pane",
+                description: isFloating ? "Floating window" : "Docked pane",
+              };
+            });
+          if (pickerOptions.length === 0) return;
+          openPickerRoute({
+            kind: "picker",
+            pickerId: "layout-swap",
+            title: "Swap With…",
+            query: "",
+            selectedIdx: 0,
+            hoveredIdx: null,
+            options: pickerOptions,
+            payload: { sourcePaneId: focusedPane.instanceId },
+          });
+        },
+      });
+
+      layoutItems.push({
+        id: "layout-duplicate",
+        label: "Duplicate Pane",
+        detail: "Create another instance next to the focused pane",
+        category: "Focused Pane",
+        kind: "action",
+        action: () => {
+          duplicatePane(focusedPane.instanceId);
+          closeAll({ revertThemePreview: false });
+        },
+      });
+
+      layoutItems.push({
+        id: "layout-close-pane",
+        label: "Close Pane",
+        detail: "Remove the focused pane from the layout",
+        category: "Focused Pane",
+        kind: "action",
+        action: options?.confirmDangerousActions
+          ? () => {
+            openInlineConfirm({
+              confirmId: "layout-close-pane",
+              title: "Close Pane",
+              body: [`Close "${focusedPane.title || focusedPaneDef.name || focusedPane.instanceId}"?`],
+              confirmLabel: "Close Pane",
+              cancelLabel: "Back",
+              tone: "danger",
+              onConfirm: () => {
+                persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
+              },
+            });
+          }
+          : () => {
+            persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
+            closeAll({ revertThemePreview: false });
+          },
+      });
+    } else {
+      layoutItems.push({
+        id: "layout-no-focused-pane",
+        label: "No focused pane",
+        detail: "Focus a pane to show pane-specific layout actions",
+        category: "Focused Pane",
+        kind: "info",
+        action: () => {},
+      });
+    }
+
+    layoutItems.push({
+      id: "layout-undo",
+      label: "Undo Layout Change",
+      detail: (layoutHistory?.past.length ?? 0) > 0 ? "Restore the previous layout state" : "No previous layout state",
+      category: "Current Layout",
+      kind: "action",
+      disabled: (layoutHistory?.past.length ?? 0) === 0,
+      action: () => {
+        if ((layoutHistory?.past.length ?? 0) === 0) return;
+        dispatch({ type: "UNDO_LAYOUT" });
+        closeAll({ revertThemePreview: false });
+      },
+    });
+    layoutItems.push({
+      id: "layout-redo",
+      label: "Redo Layout Change",
+      detail: (layoutHistory?.future.length ?? 0) > 0 ? "Reapply the next layout state" : "No later layout state",
+      category: "Current Layout",
+      kind: "action",
+      disabled: (layoutHistory?.future.length ?? 0) === 0,
+      action: () => {
+        if ((layoutHistory?.future.length ?? 0) === 0) return;
+        dispatch({ type: "REDO_LAYOUT" });
+        closeAll({ revertThemePreview: false });
+      },
+    });
+    layoutItems.push({
+      id: "layout-reset",
+      label: "Reset Current Layout",
+      detail: "Restore the default two-pane layout",
+      category: "Current Layout",
+      kind: "action",
+      action: options?.confirmDangerousActions
+        ? () => {
+          openInlineConfirm({
+            confirmId: "layout-reset",
+            title: "Reset Current Layout",
+            body: ["Reset the current layout to the default two-pane arrangement?"],
+            confirmLabel: "Reset Layout",
+            cancelLabel: "Back",
+            tone: "danger",
+            onConfirm: () => {
+              persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
+            },
+          });
+        }
+        : () => {
+          persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
+          closeAll({ revertThemePreview: false });
+        },
+    });
+    layoutItems.push({
+      id: "layout-gridlock",
+      label: "Gridlock All Windows",
+      detail: currentLayout.floating.length > 0
+        ? "Infer a tiled layout from the current window positions"
+        : "Retile all panes from their current arrangement",
+      category: "Current Layout",
+      kind: "action",
+      action: () => {
+        const { width, height } = pluginRegistry.getTermSizeFn();
+        persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
+        notifyGridlockRevert();
+        closeAll({ revertThemePreview: false });
+      },
+    });
+    layoutItems.push({
+      id: "layout-rename",
+      label: "Rename Layout",
+      detail: "Change the current saved layout name",
+      category: "Current Layout",
+      kind: "action",
+      action: () => openBuiltInWorkflow("rename-layout"),
+    });
+    layoutItems.push({
+      id: "layout-duplicate-layout",
+      label: "Duplicate Layout",
+      detail: "Create a copy of the current layout",
+      category: "Current Layout",
+      kind: "action",
+      action: () => {
+        dispatch({ type: "DUPLICATE_LAYOUT", index: state.config.activeLayoutIndex });
+        closeAll({ revertThemePreview: false });
+      },
+    });
+    layoutItems.push({
+      id: "layout-new",
+      label: "New Layout",
+      detail: "Create a fresh saved layout",
+      category: "Current Layout",
+      kind: "action",
+      action: () => openBuiltInWorkflow("new-layout"),
+    });
+
+    state.config.layouts.forEach((savedLayout, index) => {
+      layoutItems.push({
+        id: `layout-switch:${index}`,
+        label: savedLayout.name,
+        detail: index === state.config.activeLayoutIndex ? "Current layout" : "Switch to this saved layout",
+        right: getLayoutPreview(savedLayout.layout),
+        category: "Saved Layouts",
+        kind: "action",
+        current: index === state.config.activeLayoutIndex,
+        action: () => {
+          dispatch({ type: "SWITCH_LAYOUT", index });
+          closeAll({ revertThemePreview: false });
+        },
+      });
+    });
+
+    return query
+      ? fuzzyFilter(layoutItems, query, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
+      : layoutItems;
+  }, [
+    closeAll,
+    dispatch,
+    duplicatePane,
+    notifyGridlockRevert,
+    openBuiltInWorkflow,
+    openInlineConfirm,
+    openPickerRoute,
+    persistLayoutChange,
+    pluginRegistry,
+    state,
+  ]);
 
   const resolvePluginCommandConfirm = useCallback((command: CommandDef) => {
     const context = {
@@ -2959,321 +3306,18 @@ export function CommandBar({
     ) {
       items.push(shortcutItem);
     } else if (match && match.command.id === "plugins") {
-      const disabledPlugins = state.config.disabledPlugins || [];
-      const toggleable = [...pluginRegistry.allPlugins.values()].filter((plugin) => plugin.toggleable);
-      const filtered = match.arg
-        ? toggleable.filter((plugin) => (
-          plugin.name.toLowerCase().includes(match.arg.toLowerCase())
-          || plugin.id.includes(match.arg.toLowerCase())
-        ))
-        : toggleable;
-      for (const plugin of filtered) {
-        const enabled = !disabledPlugins.includes(plugin.id);
-        const toggleAction = () => {
-          dispatch({ type: "TOGGLE_PLUGIN", pluginId: plugin.id });
-          const nextDisabled = enabled
-            ? [...disabledPlugins, plugin.id]
-            : disabledPlugins.filter((entry) => entry !== plugin.id);
-          if (enabled) {
-            for (const paneId of pluginRegistry.getPluginPaneIds(plugin.id)) {
-              pluginRegistry.hideWidget(paneId);
-            }
-          }
-          void saveConfig({ ...state.config, disabledPlugins: nextDisabled });
-        };
-        items.push({
-          id: `plugin:${plugin.id}`,
-          label: plugin.name,
-          detail: plugin.description || "",
-          category: "Plugins",
-          kind: "plugin",
-          checked: enabled,
-          pluginToggle: toggleAction,
-          action: toggleAction,
-        });
-      }
+      items.push(...buildPluginItems(match.arg));
     } else if (match && match.command.id === "layout") {
-      const currentLayout = state.config.layout;
-      const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
-      const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
-      const dockedPaneIds = getDockedPaneIds(currentLayout);
-      const focusedFloating = focusedPane ? currentLayout.floating.find((entry) => entry.instanceId === focusedPane.instanceId) : null;
-      const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
-      const layoutSnapshot = JSON.stringify(currentLayout);
-      const canMove = (direction: "left" | "right" | "above" | "below") => (
-        !!focusedPane && JSON.stringify(movePaneRelative(currentLayout, focusedPane.instanceId, direction)) !== layoutSnapshot
-      );
-      const layoutItems: ResultItem[] = [];
-
-      if (focusedPane && focusedPaneDef) {
-        layoutItems.push({
-          id: "layout-toggle-mode",
-          label: focusedFloating ? "Dock Pane" : "Float Pane",
-          detail: focusedFloating ? "Return the focused window to the layout" : "Detach the focused pane into a floating window",
-          category: "Focused Pane",
-          kind: "action",
-          action: () => {
-            const { width, height } = pluginRegistry.getTermSizeFn();
-            const nextLayout = focusedFloating
-              ? dockPane(currentLayout, focusedPane.instanceId)
-              : floatPane(currentLayout, focusedPane.instanceId, width, height, focusedPaneDef);
-            persistLayoutChange(nextLayout);
-            closeAll({ revertThemePreview: false });
-          },
-        });
-
-        const moveActions: Array<{
-          id: string;
-          label: string;
-          direction: "left" | "right" | "above" | "below";
-          available: boolean;
-          unavailableDetail: string;
-        }> = [
-          { id: "layout-move-left", label: "Move Left", direction: "left", available: canMove("left"), unavailableDetail: "No column to the left" },
-          { id: "layout-move-right", label: "Move Right", direction: "right", available: canMove("right"), unavailableDetail: "No column to the right" },
-          { id: "layout-move-up", label: "Move Up", direction: "above", available: canMove("above"), unavailableDetail: "No pane above" },
-          { id: "layout-move-down", label: "Move Down", direction: "below", available: canMove("below"), unavailableDetail: "No pane below" },
-        ];
-
-        moveActions.forEach((entry) => {
-          layoutItems.push({
-            id: entry.id,
-            label: entry.label,
-            detail: entry.available ? "Reposition the focused pane" : entry.unavailableDetail,
-            category: "Focused Pane",
-            kind: entry.available ? "action" : "info",
-            disabled: !entry.available,
-            action: entry.available
-              ? () => {
-                persistLayoutChange(movePaneRelative(currentLayout, focusedPane.instanceId, entry.direction));
-                closeAll({ revertThemePreview: false });
-              }
-              : () => {},
-          });
-        });
-
-        layoutItems.push({
-          id: "layout-swap",
-          label: "Swap With…",
-          detail: dockedPaneIds.length + currentLayout.floating.length > 1
-            ? "Choose another pane to swap positions"
-            : "Need at least two panes",
-          category: "Focused Pane",
-          kind: "action",
-          disabled: dockedPaneIds.length + currentLayout.floating.length <= 1,
-          action: () => {
-            const options = [
-              ...dockedPaneIds,
-              ...currentLayout.floating.map((entry) => entry.instanceId),
-            ]
-              .filter((paneId) => paneId !== focusedPane.instanceId)
-              .map((paneId) => {
-                const instance = findPaneInstance(currentLayout, paneId)!;
-                const isFloating = currentLayout.floating.some((entry) => entry.instanceId === paneId);
-                return {
-                  id: paneId,
-                  label: instance.title || pluginRegistry.panes.get(instance.paneId)?.name || instance.paneId,
-                  detail: isFloating ? "Floating window" : "Docked pane",
-                  description: isFloating ? "Floating window" : "Docked pane",
-                };
-              });
-            if (options.length === 0) return;
-            openPickerRoute({
-              kind: "picker",
-              pickerId: "layout-swap",
-              title: "Swap With…",
-              query: "",
-              selectedIdx: 0,
-              hoveredIdx: null,
-              options,
-              payload: { sourcePaneId: focusedPane.instanceId },
-            });
-          },
-        });
-
-        layoutItems.push({
-          id: "layout-duplicate",
-          label: "Duplicate Pane",
-          detail: "Create another instance next to the focused pane",
-          category: "Focused Pane",
-          kind: "action",
-          action: () => {
-            duplicatePane(focusedPane.instanceId);
-            closeAll({ revertThemePreview: false });
-          },
-        });
-
-        layoutItems.push({
-          id: "layout-close-pane",
-          label: "Close Pane",
-          detail: "Remove the focused pane from the layout",
-          category: "Focused Pane",
-          kind: "action",
-          action: () => {
-            openInlineConfirm({
-              confirmId: "layout-close-pane",
-              title: "Close Pane",
-              body: [`Close "${focusedPane.title || focusedPaneDef.name || focusedPane.instanceId}"?`],
-              confirmLabel: "Close Pane",
-              cancelLabel: "Back",
-              tone: "danger",
-              onConfirm: () => {
-                persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
-              },
-            });
-          },
-        });
-      } else {
-        layoutItems.push({
-          id: "layout-no-focused-pane",
-          label: "No focused pane",
-          detail: "Focus a pane to show pane-specific layout actions",
-          category: "Focused Pane",
-          kind: "info",
-          action: () => {},
-        });
-      }
-
-      layoutItems.push({
-        id: "layout-undo",
-        label: "Undo Layout Change",
-        detail: (layoutHistory?.past.length ?? 0) > 0 ? "Restore the previous layout state" : "No previous layout state",
-        category: "Current Layout",
-        kind: "action",
-        disabled: (layoutHistory?.past.length ?? 0) === 0,
-        action: () => {
-          if ((layoutHistory?.past.length ?? 0) === 0) return;
-          dispatch({ type: "UNDO_LAYOUT" });
-          closeAll({ revertThemePreview: false });
-        },
-      });
-      layoutItems.push({
-        id: "layout-redo",
-        label: "Redo Layout Change",
-        detail: (layoutHistory?.future.length ?? 0) > 0 ? "Reapply the next layout state" : "No later layout state",
-        category: "Current Layout",
-        kind: "action",
-        disabled: (layoutHistory?.future.length ?? 0) === 0,
-        action: () => {
-          if ((layoutHistory?.future.length ?? 0) === 0) return;
-          dispatch({ type: "REDO_LAYOUT" });
-          closeAll({ revertThemePreview: false });
-        },
-      });
-      layoutItems.push({
-        id: "layout-reset",
-        label: "Reset Current Layout",
-        detail: "Restore the default two-pane layout",
-        category: "Current Layout",
-        kind: "action",
-        action: () => {
-          openInlineConfirm({
-            confirmId: "layout-reset",
-            title: "Reset Current Layout",
-            body: ["Reset the current layout to the default two-pane arrangement?"],
-            confirmLabel: "Reset Layout",
-            cancelLabel: "Back",
-            tone: "danger",
-            onConfirm: () => {
-              persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
-            },
-          });
-        },
-      });
-      layoutItems.push({
-        id: "layout-gridlock",
-        label: "Gridlock All Windows",
-        detail: currentLayout.floating.length > 0
-          ? "Infer a tiled layout from the current window positions"
-          : "Retile all panes from their current arrangement",
-        category: "Current Layout",
-        kind: "action",
-        action: () => {
-          const { width, height } = pluginRegistry.getTermSizeFn();
-          persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
-          notifyGridlockRevert();
-          closeAll({ revertThemePreview: false });
-        },
-      });
-      layoutItems.push({
-        id: "layout-rename",
-        label: "Rename Layout",
-        detail: "Change the current saved layout name",
-        category: "Current Layout",
-        kind: "action",
-        action: () => openBuiltInWorkflow("rename-layout"),
-      });
-      layoutItems.push({
-        id: "layout-duplicate-layout",
-        label: "Duplicate Layout",
-        detail: "Create a copy of the current layout",
-        category: "Current Layout",
-        kind: "action",
-        action: () => {
-          dispatch({ type: "DUPLICATE_LAYOUT", index: state.config.activeLayoutIndex });
-          closeAll({ revertThemePreview: false });
-        },
-      });
-      layoutItems.push({
-        id: "layout-new",
-        label: "New Layout",
-        detail: "Create a fresh saved layout",
-        category: "Current Layout",
-        kind: "action",
-        action: () => openBuiltInWorkflow("new-layout"),
-      });
-
-      state.config.layouts.forEach((savedLayout, index) => {
-        layoutItems.push({
-          id: `layout-switch:${index}`,
-          label: savedLayout.name,
-          detail: index === state.config.activeLayoutIndex ? "Current layout" : "Switch to this saved layout",
-          right: getLayoutPreview(savedLayout.layout),
-          category: "Saved Layouts",
-          kind: "action",
-          current: index === state.config.activeLayoutIndex,
-          action: () => {
-            dispatch({ type: "SWITCH_LAYOUT", index });
-            closeAll({ revertThemePreview: false });
-          },
-        });
-      });
-
-      items.push(...(match.arg
-        ? fuzzyFilter(layoutItems, match.arg, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
-        : layoutItems));
+      items.push(...buildLayoutItems(match.arg, { confirmDangerousActions: true }));
     } else if (match && match.command.id === "theme") {
       const savedThemeId = rootThemeBaseIdRef.current ?? state.config.theme;
-      const themeOptions = getThemeOptions();
-      const filtered = match.arg
-        ? themeOptions.filter((theme) => (
-          theme.name.toLowerCase().includes(match.arg.toLowerCase())
-          || theme.id.includes(match.arg.toLowerCase())
-        ))
-        : themeOptions;
-      filtered.forEach((theme, index) => {
-        const isSaved = theme.id === savedThemeId;
-        if (isSaved) initialIdx = index;
-        items.push({
-          id: `theme:${theme.id}`,
-          label: theme.name,
-          detail: theme.description,
-          category: "Themes",
-          kind: "theme",
-          current: isSaved,
-          themeId: theme.id,
-          action: () => {
-            rootThemeBaseIdRef.current = theme.id;
-            const nextConfig = {
-              ...state.config,
-              theme: theme.id,
-            };
-            dispatch({ type: "SET_THEME", theme: theme.id });
-            void saveConfig(nextConfig);
-            closeAll({ revertThemePreview: false });
-          },
-        });
+      const themeResult = buildThemeItems(match.arg, savedThemeId, {
+        onSelectTheme: (themeId) => {
+          rootThemeBaseIdRef.current = themeId;
+        },
       });
+      initialIdx = themeResult.selectedIdx;
+      items.push(...themeResult.items);
     } else if (match && match.command.id === "security-description") {
       if (shortcutItem) {
         items.push(shortcutItem);
@@ -3341,19 +3385,15 @@ export function CommandBar({
     activeTickerData,
     activeTickerSymbol,
     availableCommands,
-    closeAll,
+    buildLayoutItems,
+    buildPluginItems,
+    buildThemeItems,
     createPluginCommandItem,
     currentRoute,
-    dispatch,
-    duplicatePane,
     executeCollectionCommand,
     localTickerSearchResultItems,
     nonShortcutPaneTemplateItems,
-    notifyGridlockRevert,
-    openBuiltInWorkflow,
-    openPickerRoute,
     paneShortcutItems,
-    persistLayoutChange,
     pluginCommandItems,
     pluginRegistry,
     rootModeInfo.kind,
@@ -3787,31 +3827,7 @@ export function CommandBar({
     if (currentRoute.kind === "mode") {
       switch (currentRoute.screen) {
         case "themes": {
-          const themeOptions = getThemeOptions();
-          const filtered = currentRoute.query
-            ? themeOptions.filter((theme) => (
-              theme.name.toLowerCase().includes(currentRoute.query.toLowerCase())
-              || theme.id.includes(currentRoute.query.toLowerCase())
-            ))
-            : themeOptions;
-          const results = filtered.map((theme) => ({
-            id: `theme:${theme.id}`,
-            label: theme.name,
-            detail: theme.description,
-            category: "Themes",
-            kind: "theme" as const,
-            current: theme.id === currentRoute.themeBaseId,
-            themeId: theme.id,
-            action: () => {
-              const nextConfig = {
-                ...state.config,
-                theme: theme.id,
-              };
-              dispatch({ type: "SET_THEME", theme: theme.id });
-              void saveConfig(nextConfig);
-              closeAll({ revertThemePreview: false });
-            },
-          }));
+          const results = buildThemeItems(currentRoute.query, currentRoute.themeBaseId).items;
           return {
             kind: "mode",
             title: "Change Theme",
@@ -3828,39 +3844,7 @@ export function CommandBar({
           };
         }
         case "plugins": {
-          const disabledPlugins = state.config.disabledPlugins || [];
-          const toggleable = [...pluginRegistry.allPlugins.values()].filter((plugin) => plugin.toggleable);
-          const filtered = currentRoute.query
-            ? toggleable.filter((plugin) => (
-              plugin.name.toLowerCase().includes(currentRoute.query.toLowerCase())
-              || plugin.id.includes(currentRoute.query.toLowerCase())
-            ))
-            : toggleable;
-          const results = filtered.map((plugin) => {
-            const enabled = !disabledPlugins.includes(plugin.id);
-            const toggleAction = () => {
-              dispatch({ type: "TOGGLE_PLUGIN", pluginId: plugin.id });
-              const nextDisabled = enabled
-                ? [...disabledPlugins, plugin.id]
-                : disabledPlugins.filter((entry) => entry !== plugin.id);
-              if (enabled) {
-                for (const paneId of pluginRegistry.getPluginPaneIds(plugin.id)) {
-                  pluginRegistry.hideWidget(paneId);
-                }
-              }
-              void saveConfig({ ...state.config, disabledPlugins: nextDisabled });
-            };
-            return {
-              id: `plugin:${plugin.id}`,
-              label: plugin.name,
-              detail: plugin.description || "",
-              category: "Plugins",
-              kind: "plugin" as const,
-              checked: enabled,
-              pluginToggle: toggleAction,
-              action: toggleAction,
-            };
-          });
+          const results = buildPluginItems(currentRoute.query);
           return {
             kind: "mode",
             title: "Manage Plugins",
@@ -3877,237 +3861,7 @@ export function CommandBar({
           };
         }
         case "layout": {
-          const currentLayout = state.config.layout;
-          const focusedPane = state.focusedPaneId ? findPaneInstance(currentLayout, state.focusedPaneId) : null;
-          const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
-          const dockedPaneIds = getDockedPaneIds(currentLayout);
-          const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
-          const layoutSnapshot = JSON.stringify(currentLayout);
-          const canMove = (direction: "left" | "right" | "above" | "below") => (
-            !!focusedPane && JSON.stringify(movePaneRelative(currentLayout, focusedPane.instanceId, direction)) !== layoutSnapshot
-          );
-
-          const layoutItems: ResultItem[] = [];
-          if (focusedPane && focusedPaneDef) {
-            const focusedFloating = currentLayout.floating.find((entry) => entry.instanceId === focusedPane.instanceId);
-            layoutItems.push({
-              id: "layout-toggle-mode",
-              label: focusedFloating ? "Dock Pane" : "Float Pane",
-              detail: focusedFloating ? "Return the focused window to the layout" : "Detach the focused pane into a floating window",
-              category: "Focused Pane",
-              kind: "action",
-              action: () => {
-                const { width, height } = pluginRegistry.getTermSizeFn();
-                const nextLayout = focusedFloating
-                  ? dockPane(currentLayout, focusedPane.instanceId)
-                  : floatPane(currentLayout, focusedPane.instanceId, width, height, focusedPaneDef);
-                persistLayoutChange(nextLayout);
-                closeAll({ revertThemePreview: false });
-              },
-            });
-
-            const moveActions: Array<{
-              id: string;
-              label: string;
-              direction: "left" | "right" | "above" | "below";
-              available: boolean;
-              unavailableDetail: string;
-            }> = [
-              { id: "layout-move-left", label: "Move Left", direction: "left", available: canMove("left"), unavailableDetail: "No column to the left" },
-              { id: "layout-move-right", label: "Move Right", direction: "right", available: canMove("right"), unavailableDetail: "No column to the right" },
-              { id: "layout-move-up", label: "Move Up", direction: "above", available: canMove("above"), unavailableDetail: "No pane above" },
-              { id: "layout-move-down", label: "Move Down", direction: "below", available: canMove("below"), unavailableDetail: "No pane below" },
-            ];
-
-            moveActions.forEach((entry) => {
-              layoutItems.push({
-                id: entry.id,
-                label: entry.label,
-                detail: entry.available ? "Reposition the focused pane" : entry.unavailableDetail,
-                category: "Focused Pane",
-                kind: entry.available ? "action" : "info",
-                disabled: !entry.available,
-                action: entry.available
-                  ? () => {
-                    persistLayoutChange(movePaneRelative(currentLayout, focusedPane.instanceId, entry.direction));
-                    closeAll({ revertThemePreview: false });
-                  }
-                  : () => {},
-              });
-            });
-
-            layoutItems.push({
-              id: "layout-swap",
-              label: "Swap With…",
-              detail: dockedPaneIds.length + currentLayout.floating.length > 1
-                ? "Choose another pane to swap positions"
-                : "Need at least two panes",
-              category: "Focused Pane",
-              kind: "action",
-              disabled: dockedPaneIds.length + currentLayout.floating.length <= 1,
-              action: () => {
-                const options = [
-                  ...dockedPaneIds,
-                  ...currentLayout.floating.map((entry) => entry.instanceId),
-                ]
-                  .filter((paneId) => paneId !== focusedPane.instanceId)
-                  .map((paneId) => {
-                    const instance = findPaneInstance(currentLayout, paneId)!;
-                    return {
-                      id: paneId,
-                      label: instance.title || pluginRegistry.panes.get(instance.paneId)?.name || instance.paneId,
-                      detail: currentLayout.floating.some((entry) => entry.instanceId === paneId) ? "Floating window" : "Docked pane",
-                      description: currentLayout.floating.some((entry) => entry.instanceId === paneId) ? "Floating window" : "Docked pane",
-                    };
-                  });
-                if (options.length === 0) return;
-                openPickerRoute({
-                  kind: "picker",
-                  pickerId: "layout-swap",
-                  title: "Swap With…",
-                  query: "",
-                  selectedIdx: 0,
-                  hoveredIdx: null,
-                  options,
-                  payload: { sourcePaneId: focusedPane.instanceId },
-                });
-              },
-            });
-
-            layoutItems.push({
-              id: "layout-duplicate",
-              label: "Duplicate Pane",
-              detail: "Create another instance next to the focused pane",
-              category: "Focused Pane",
-              kind: "action",
-              action: () => {
-                duplicatePane(focusedPane.instanceId);
-                closeAll({ revertThemePreview: false });
-              },
-            });
-
-            layoutItems.push({
-              id: "layout-close-pane",
-              label: "Close Pane",
-              detail: "Remove the focused pane from the layout",
-              category: "Focused Pane",
-              kind: "action",
-              action: () => {
-                persistLayoutChange(removePane(currentLayout, focusedPane.instanceId));
-                closeAll({ revertThemePreview: false });
-              },
-            });
-          } else {
-            layoutItems.push({
-              id: "layout-no-focused-pane",
-              label: "No focused pane",
-              detail: "Focus a pane to show pane-specific layout actions",
-              category: "Focused Pane",
-              kind: "info",
-              action: () => {},
-            });
-          }
-
-          layoutItems.push({
-            id: "layout-undo",
-            label: "Undo Layout Change",
-            detail: (layoutHistory?.past.length ?? 0) > 0 ? "Restore the previous layout state" : "No previous layout state",
-            category: "Current Layout",
-            kind: "action",
-            disabled: (layoutHistory?.past.length ?? 0) === 0,
-            action: () => {
-              if ((layoutHistory?.past.length ?? 0) === 0) return;
-              dispatch({ type: "UNDO_LAYOUT" });
-              closeAll({ revertThemePreview: false });
-            },
-          });
-          layoutItems.push({
-            id: "layout-redo",
-            label: "Redo Layout Change",
-            detail: (layoutHistory?.future.length ?? 0) > 0 ? "Reapply the next layout state" : "No later layout state",
-            category: "Current Layout",
-            kind: "action",
-            disabled: (layoutHistory?.future.length ?? 0) === 0,
-            action: () => {
-              if ((layoutHistory?.future.length ?? 0) === 0) return;
-              dispatch({ type: "REDO_LAYOUT" });
-              closeAll({ revertThemePreview: false });
-            },
-          });
-          layoutItems.push({
-            id: "layout-reset",
-            label: "Reset Current Layout",
-            detail: "Restore the default two-pane layout",
-            category: "Current Layout",
-            kind: "action",
-            action: () => {
-              persistLayoutChange(cloneLayout(DEFAULT_LAYOUT));
-              closeAll({ revertThemePreview: false });
-            },
-          });
-          layoutItems.push({
-            id: "layout-gridlock",
-            label: "Gridlock All Windows",
-            detail: currentLayout.floating.length > 0
-              ? "Infer a tiled layout from the current window positions"
-              : "Retile all panes from their current arrangement",
-            category: "Current Layout",
-            kind: "action",
-            action: () => {
-              const { width, height } = pluginRegistry.getTermSizeFn();
-              persistLayoutChange(gridlockAllPanes(currentLayout, { x: 0, y: 0, width, height }));
-              notifyGridlockRevert();
-              closeAll({ revertThemePreview: false });
-            },
-          });
-          layoutItems.push({
-            id: "layout-rename",
-            label: "Rename Layout",
-            detail: "Change the current saved layout name",
-            category: "Current Layout",
-            kind: "action",
-            action: () => openBuiltInWorkflow("rename-layout"),
-          });
-          layoutItems.push({
-            id: "layout-duplicate-layout",
-            label: "Duplicate Layout",
-            detail: "Create a copy of the current layout",
-            category: "Current Layout",
-            kind: "action",
-            action: () => {
-              dispatch({ type: "DUPLICATE_LAYOUT", index: state.config.activeLayoutIndex });
-              closeAll({ revertThemePreview: false });
-            },
-          });
-          layoutItems.push({
-            id: "layout-new",
-            label: "New Layout",
-            detail: "Create a fresh saved layout",
-            category: "Current Layout",
-            kind: "action",
-            action: () => openBuiltInWorkflow("new-layout"),
-          });
-
-          state.config.layouts.forEach((savedLayout, index) => {
-            layoutItems.push({
-              id: `layout-switch:${index}`,
-              label: savedLayout.name,
-              detail: index === state.config.activeLayoutIndex ? "Current layout" : "Switch to this saved layout",
-              right: getLayoutPreview(savedLayout.layout),
-              category: "Saved Layouts",
-              kind: "action",
-              current: index === state.config.activeLayoutIndex,
-              action: () => {
-                dispatch({ type: "SWITCH_LAYOUT", index });
-                closeAll({ revertThemePreview: false });
-              },
-            });
-          });
-
-          const results = currentRoute.query
-            ? fuzzyFilter(layoutItems, currentRoute.query, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
-            : layoutItems;
-
+          const results = buildLayoutItems(currentRoute.query);
           return {
             kind: "mode",
             title: "Layout Actions",
@@ -4218,6 +3972,9 @@ export function CommandBar({
     activeMatch,
     activeTickerData,
     activeTickerSymbol,
+    buildLayoutItems,
+    buildPluginItems,
+    buildThemeItems,
     closeAll,
     createPaneTemplateItem,
     currentRoute,

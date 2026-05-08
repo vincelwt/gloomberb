@@ -2,7 +2,6 @@ import type {
   AnalystResearchData,
   CorporateActionsData,
   Quote,
-  Fundamentals,
   TickerFinancials,
   PricePoint,
   OptionsChain,
