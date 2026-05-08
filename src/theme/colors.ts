@@ -74,7 +74,7 @@ export function commandBarOverlayBg(): string {
 export function commandBarSelectedBg(): string {
   const base = commandBarBg();
   const accent = higherContrast(colors.selectedText, colors.textBright, colors.selected);
-  return blendForContrast(colors.selected, base, accent, 1.6);
+  return blendForContrast(colors.selected, base, accent, 1.45);
 }
 
 export function commandBarHoverBg(): string {
@@ -89,7 +89,12 @@ export function commandBarText(): string {
 
 export function commandBarHeadingText(): string {
   const base = commandBarBg();
-  return blendForContrast("#8f959e", base, "#b7bec8", 3.6);
+  const fallback = higherContrast(
+    higherContrast(colors.textDim, colors.text, base),
+    higherContrast(colors.textBright, colors.selectedText, base),
+    base,
+  );
+  return blendForContrast(colors.textMuted, base, fallback, 3.6);
 }
 
 export function commandBarSubtleText(): string {
@@ -101,7 +106,11 @@ export function commandBarSubtleText(): string {
 export function commandBarSelectedText(): string {
   const base = commandBarSelectedBg();
   const preferred = higherContrast(colors.selectedText, colors.text, base);
-  const fallback = higherContrast(colors.textBright, "#f2f2f2", base);
+  const fallback = higherContrast(
+    higherContrast(colors.textBright, colors.text, base),
+    higherContrast("#ffffff", "#000000", base),
+    base,
+  );
   return blendForContrast(preferred, base, fallback, 4.5);
 }
 

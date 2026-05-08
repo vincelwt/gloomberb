@@ -7,9 +7,28 @@ import { createTestDataProvider } from "../../test-support/data-provider";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { OptionContract, OptionsChain, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
-import { OptionsTab } from "./options";
+import { applyTheme, colors, hoverBg } from "../../theme/colors";
+import { blendHex, contrastRatio } from "../../theme/color-utils";
+import { DEFAULT_THEME, themes } from "../../theme/themes";
+import { OptionsTab, optionColumnColor, optionMutedColor, type OptionColumnId } from "./options";
 
 const TEST_PANE_ID = "ticker-detail:options-test";
+const OPTION_TEST_COLUMN_IDS: OptionColumnId[] = [
+  "callOpenInterest",
+  "callVolume",
+  "callLast",
+  "callIv",
+  "callBid",
+  "callAsk",
+  "strike",
+  "putBid",
+  "putAsk",
+  "putIv",
+  "putLast",
+  "putVolume",
+  "putOpenInterest",
+];
+const OPTION_TEXT_MIN_CONTRAST = 4.5;
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -120,7 +139,44 @@ afterEach(async () => {
     });
     testSetup = undefined;
   }
+  applyTheme(DEFAULT_THEME);
   setSharedMarketDataCoordinator(null);
+});
+
+test("keeps option role colors readable on themed table surfaces", () => {
+  for (const themeId of Object.keys(themes)) {
+    applyTheme(themeId);
+    const surfaces = [
+      colors.bg,
+      colors.panel,
+      hoverBg(),
+      blendHex(colors.bg, colors.positive, 0.13),
+      blendHex(colors.bg, colors.negative, 0.13),
+      blendHex(colors.bg, colors.neutral, 0.055),
+      blendHex(colors.bg, colors.header, 0.1),
+      blendHex(colors.bg, colors.borderFocused, 0.18),
+    ];
+
+    for (const columnId of OPTION_TEST_COLUMN_IDS) {
+      for (const surface of surfaces) {
+        const color = optionColumnColor(columnId, surface);
+        const ratio = contrastRatio(color, surface);
+        expect(
+          ratio,
+          `${themeId} ${columnId} ${color} on ${surface}`,
+        ).toBeGreaterThanOrEqual(OPTION_TEXT_MIN_CONTRAST);
+      }
+    }
+
+    for (const surface of surfaces) {
+      const color = optionMutedColor(surface);
+      const ratio = contrastRatio(color, surface);
+      expect(
+        ratio,
+        `${themeId} muted ${color} on ${surface}`,
+      ).toBeGreaterThanOrEqual(OPTION_TEXT_MIN_CONTRAST);
+    }
+  }
 });
 
 test("renders the options chain with the shared table columns", async () => {

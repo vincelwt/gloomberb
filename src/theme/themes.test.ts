@@ -1,5 +1,17 @@
 import { afterEach, describe, test } from "bun:test";
-import { applyTheme, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "./colors";
+import {
+  applyTheme,
+  commandBarBg,
+  commandBarHeadingText,
+  commandBarPanelBg,
+  commandBarSelectedBg,
+  commandBarSelectedText,
+  commandBarSubtleText,
+  commandBarText,
+  floatingPaneTitleBg,
+  paneTitleBg,
+  paneTitleText,
+} from "./colors";
 import { contrastRatio } from "./color-utils";
 import { DEFAULT_THEME, themes } from "./themes";
 
@@ -42,6 +54,16 @@ describe("theme contrast", () => {
       applyTheme(id);
       assertMinContrast(id, "paneTitleText/unfocused", paneTitleText(false), paneTitleBg(false), CHROME_TEXT_MIN);
       assertMinContrast(id, "floatingPaneTitleText/unfocused", paneTitleText(false, true), floatingPaneTitleBg(false), CHROME_TEXT_MIN);
+    }
+  });
+
+  test("keeps command bar text readable", () => {
+    for (const id of Object.keys(themes)) {
+      applyTheme(id);
+      assertMinContrast(id, "commandBarText/bg", commandBarText(), commandBarBg(), BODY_TEXT_MIN);
+      assertMinContrast(id, "commandBarHeadingText/bg", commandBarHeadingText(), commandBarBg(), SUBTLE_TEXT_MIN);
+      assertMinContrast(id, "commandBarSubtleText/panel", commandBarSubtleText(), commandBarPanelBg(), SUBTLE_TEXT_MIN);
+      assertMinContrast(id, "commandBarSelectedText/selected", commandBarSelectedText(), commandBarSelectedBg(), BODY_TEXT_MIN);
     }
   });
 });
