@@ -48,52 +48,64 @@ export function TickerBadgeText({
   openLink = openUrl,
 }: TickerBadgeTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
-  const tokens = tokenizeInlineContent(text);
+  const lines = text.split("\n");
 
   return (
     <Box
-      flexDirection="row"
-      flexWrap="wrap"
+      flexDirection="column"
       width={lineWidth}
     >
-      {tokens.map((token, index) => {
-        if (token.kind === "text") {
-          if (!token.value) return null;
-          return splitTextForWrap(token.value, lineWidth).map((part, partIndex) => (
-            <Text key={`text:${index}:${partIndex}`} fg={textColor}>{part}</Text>
-          ));
-        }
-
-        if (token.kind === "link") {
-          return (
-            <ExternalLinkText
-              key={`link:${index}`}
-              url={token.url}
-              label={token.value}
-              color={textColor}
-              onOpen={openLink}
-            />
-          );
-        }
-
-        const entry = catalog[token.symbol];
-        if (!entry || entry.status === "missing") {
-          return <Text key={`raw:${index}`} fg={textColor}>{token.value}</Text>;
-        }
+      {lines.map((line, lineIndex) => {
+        if (!line) return <Box key={`line:${lineIndex}`} height={1} />;
 
         return (
-          <TickerBadge
-            key={`badge:${index}:${token.symbol}`}
-            symbol={token.symbol}
-            status={entry.status}
-            quote={entry.quote}
-            hovered={hoveredSymbol === token.symbol}
-            onHoverStart={() => setHoveredSymbol(token.symbol)}
-            onHoverEnd={() => {
-              setHoveredSymbol((current) => (current === token.symbol ? null : current));
-            }}
-            onOpen={openTicker}
-          />
+          <Box
+            key={`line:${lineIndex}`}
+            flexDirection="row"
+            flexWrap="wrap"
+            width={lineWidth}
+          >
+            {tokenizeInlineContent(line).map((token, index) => {
+              if (token.kind === "text") {
+                if (!token.value) return null;
+                return splitTextForWrap(token.value, lineWidth).map((part, partIndex) => (
+                  <Text key={`text:${lineIndex}:${index}:${partIndex}`} fg={textColor}>{part}</Text>
+                ));
+              }
+
+              if (token.kind === "link") {
+                return (
+                  <ExternalLinkText
+                    key={`link:${lineIndex}:${index}`}
+                    url={token.url}
+                    label={token.value}
+                    color={textColor}
+                    onOpen={openLink}
+                  />
+                );
+              }
+
+              const entry = catalog[token.symbol];
+              if (!entry || entry.status === "missing") {
+                return <Text key={`raw:${lineIndex}:${index}`} fg={textColor}>{token.value}</Text>;
+              }
+
+              return (
+                <TickerBadge
+                  key={`badge:${lineIndex}:${index}:${token.symbol}`}
+                  symbol={token.symbol}
+                  status={entry.status}
+                  quote={entry.quote}
+                  hovered={hoveredSymbol === token.symbol}
+                  onHoverStart={() => setHoveredSymbol(token.symbol)}
+                  onHoverEnd={() => {
+                    setHoveredSymbol((current) => (current === token.symbol ? null : current));
+                  }}
+                  onOpen={openTicker}
+                />
+              );
+            })}
+          </Box>
         );
       })}
     </Box>

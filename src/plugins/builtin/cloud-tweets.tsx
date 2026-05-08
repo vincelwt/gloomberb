@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { Box, ScrollBox, Text, TextAttributes, Textarea, useRendererHost, type TextareaRenderable } from "../../ui";
 import { useShortcut } from "../../react/input";
 import {
-  Button,
   DataTableStackView,
   EmptyState,
   SegmentedControl,
@@ -22,7 +21,7 @@ import { useInlineTickers } from "../../state/use-inline-tickers";
 import { apiClient, type CloudTweetPayload, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../utils/api-client";
 import { collectUniqueTickerSymbols } from "../../utils/ticker-tokenizer";
 import { formatCompact, formatTimeAgo } from "../../utils/format";
-import { decodeHtmlEntities } from "../../utils/html-entities";
+import { normalizeTweetText } from "../../utils/tweet-text";
 import { toTimestampMillis } from "../../utils/timestamp";
 import { normalizedHttpUrl } from "../../utils/url";
 import { colors } from "../../theme/colors";
@@ -139,7 +138,11 @@ function formatMetric(value: number | null | undefined): string {
 }
 
 function normalizeTweetDisplayText(value: string): string {
-  return decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
+  return normalizeTweetText(value, { preserveLineBreaks: true });
+}
+
+function normalizeTweetCellText(value: string): string {
+  return normalizeTweetText(value);
 }
 
 function tweetTickers(tweet: CloudTweetPayload): string[] {
@@ -480,7 +483,7 @@ function TweetSearchTable({
           attributes: TextAttributes.BOLD,
         };
       case "text":
-        return { text: normalizeTweetDisplayText(tweet.text), color: selectedColor ?? colors.text };
+        return { text: normalizeTweetCellText(tweet.text), color: selectedColor ?? colors.text };
       case "tickers": {
         const tickers = tweetTickers(tweet);
         return {
@@ -762,7 +765,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    if (event.name === "t" || event.name === "n") {
+    if (event.name === "n") {
       event.preventDefault?.();
       event.stopPropagation?.();
       openCreateEditor();
@@ -774,7 +777,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       openEditEditor(activeFeed);
       return;
     }
-    if (event.name === "w" && activeFeed) {
+    if (event.name === "d" && activeFeed) {
       event.preventDefault?.();
       event.stopPropagation?.();
       removeFeed(activeFeed.id);
@@ -831,13 +834,16 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       ]
       : [],
     hints: editorState
-      ? [{ id: "save", key: "Ctrl+S", label: "save", onPress: saveEditor }]
+      ? [
+        { id: "save", key: "Ctrl+S", label: "save", onPress: saveEditor },
+        { id: "cancel", key: "Esc", label: "cancel", onPress: closeEditor },
+      ]
       : [
-        { id: "new", key: "t", label: "new", onPress: openCreateEditor },
+        { id: "new", key: "n", label: "ew", onPress: openCreateEditor },
         { id: "edit", key: "e", label: "dit", onPress: () => openEditEditor(activeFeed), disabled: !activeFeed },
-        { id: "delete", key: "w", label: "delete", onPress: activeFeed ? () => removeFeed(activeFeed.id) : undefined, disabled: !activeFeed },
+        { id: "delete", key: "d", label: "elete", onPress: activeFeed ? () => removeFeed(activeFeed.id) : undefined, disabled: !activeFeed },
       ],
-  }), [activeFeed, editorState, openCreateEditor, openEditEditor, removeFeed, saveEditor]);
+  }), [activeFeed, closeEditor, editorState, openCreateEditor, openEditEditor, removeFeed, saveEditor]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -861,21 +867,6 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
         />
       </Box>
 
-      <Box height={1} flexDirection="row" gap={1}>
-        {editorState ? (
-          <>
-            <Button label="Save" variant="primary" onPress={saveEditor} />
-            <Button label="Cancel" variant="ghost" onPress={closeEditor} />
-          </>
-        ) : (
-          <>
-            <Button label="New Feed" variant="primary" onPress={openCreateEditor} />
-            <Button label="Edit" variant="secondary" onPress={() => openEditEditor(activeFeed)} disabled={!activeFeed} />
-            <Button label="Delete" variant="ghost" onPress={() => activeFeed && removeFeed(activeFeed.id)} disabled={!activeFeed} />
-          </>
-        )}
-      </Box>
-
       {editorState ? (
         <TwitterFeedEditor
           editor={editorState}
@@ -892,7 +883,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
         <TweetSearchTable
           focused={focused}
           width={width}
-          height={Math.max(1, height - 2)}
+          height={Math.max(1, height - 1)}
           requestKey={`feed:${activeFeed.id}:${activeFeed.query}:${activeFeed.queryType}`}
           footerId="twitter-feed-search"
           load={loadActiveFeed}
