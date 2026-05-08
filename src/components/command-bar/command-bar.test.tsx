@@ -537,6 +537,70 @@ describe("CommandBar", () => {
     expect(workflowFrame).toContain("AMD");
   });
 
+  test("prefills alert command targets from the resolved quote", async () => {
+    const quoteProvider = createTestDataProvider({
+      id: "test",
+      search: async () => [],
+      getQuote: async (symbol: string) => ({
+        symbol,
+        price: 201.5,
+        currency: "USD",
+        change: 1,
+        changePercent: 0.5,
+        name: "Advanced Micro Devices",
+        exchangeName: "NASDAQ",
+        lastUpdated: Date.now(),
+        dataSource: "live",
+      }),
+    });
+
+    testSetup = await testRender(<CommandBarHarness
+      query="SA AMD"
+      dataProvider={quoteProvider}
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.commands as Map<string, any>).set("set-alert", {
+          id: "set-alert",
+          label: "Add Alert",
+          description: "Create a price alert from a symbol, condition, and target price",
+          keywords: ["add", "set", "alert", "price", "trigger"],
+          shortcut: "SA",
+          shortcutArg: {
+            placeholder: "symbol condition price",
+            kind: "ticker",
+            parse: (arg: string) => ({ symbol: arg.trim().toUpperCase() }),
+          },
+          category: "data",
+          wizardLayout: "form",
+          wizard: [
+            { key: "symbol", label: "Symbol", type: "text" },
+            {
+              key: "condition",
+              label: "Condition",
+              type: "select",
+              options: [{ label: "Above", value: "above" }],
+            },
+            { key: "price", label: "Target Price", type: "number" },
+          ],
+          execute: async () => {},
+        });
+      }}
+    />, {
+      width: 90,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    const workflowFrame = await waitForFrameToContain("Advanced Micro Devices");
+    expect(workflowFrame).toContain("201.5");
+  });
+
   test("updates workflow select fields from the option picker", async () => {
     testSetup = await testRender(<CommandBarHarness
       query="SA AMD"
@@ -611,6 +675,8 @@ describe("CommandBar", () => {
   test("opens plugin command workflows from a launch request", async () => {
     testSetup = await testRender(<CommandBarHarness
       query=""
+      selectedTicker="AMD"
+      extraTickers={[makeTicker("AMD", "Advanced Micro Devices")]}
       configureState={(state) => ({
         ...state,
         commandBarLaunchRequest: {
@@ -625,6 +691,13 @@ describe("CommandBar", () => {
           label: "Set Alert",
           keywords: ["alert", "price", "trigger"],
           shortcut: "SA",
+          shortcutArg: {
+            placeholder: "symbol condition price",
+            kind: "ticker",
+            parse: (_arg: string, context?: { activeTicker: string | null }) => (
+              context?.activeTicker ? { symbol: context.activeTicker } : {}
+            ),
+          },
           category: "data",
           wizardLayout: "form",
           wizard: [
@@ -652,6 +725,7 @@ describe("CommandBar", () => {
     expect(frame).toContain("Set Alert");
     expect(frame).toContain("Symbol");
     expect(frame).toContain("Condition");
+    expect(frame).toContain("AMD");
   });
 
   test("renders theme prefix results in the root query", async () => {

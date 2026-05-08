@@ -39,6 +39,8 @@ function makeAlert(
     status,
     triggeredAt: status === "triggered" ? Date.now() - 30_000 : undefined,
     lastCheckedPrice: status === "triggered" ? targetPrice + 1 : undefined,
+    lastCheckedAt: status === "triggered" ? Date.now() - 30_000 : undefined,
+    lastQuoteUpdatedAt: status === "triggered" ? Date.now() - 30_000 : undefined,
   };
 }
 
@@ -169,9 +171,10 @@ describe("AlertsPane", () => {
     await renderSettled();
     const frame = testSetup.captureCharFrame();
 
-    expect(frame).toContain("Status");
+    expect(frame).toContain("State");
     expect(frame).toContain("Symbol");
-    expect(frame).toContain("Condition");
+    expect(frame).toContain("Current");
+    expect(frame).toContain("Away");
     expect(frame).toContain("AAPL");
     expect(frame).toContain("MSFT");
     expect(frame).toContain("[a]dd alert");
@@ -188,24 +191,24 @@ describe("AlertsPane", () => {
   test("keeps alert targets visible at the default floating pane width", async () => {
     testSetup = await testRender(
       <AlertsHarness
-        width={65}
+        width={82}
         height={8}
         alerts={[makeAlert("alert-aapl", "AAPL", "above", 200)]}
       />,
-      { width: 65, height: 8 },
+      { width: 82, height: 8 },
     );
 
     await renderSettled();
     const frame = testSetup.captureCharFrame();
 
-    expect(frame).toContain("Status");
-    expect(frame).toContain("Condition");
+    expect(frame).toContain("State");
+    expect(frame).toContain("Current");
     expect(frame).toContain("Target");
     expect(frame).toContain("200");
     expect(frame).toContain("[a]dd alert");
   });
 
-  test("opens the command-bar alert workflow from keyboard and mouse", async () => {
+  test("opens the shared alert workflow from keyboard and mouse", async () => {
     const workflowCalls: string[] = [];
     const runtime = makeRuntime({
       openPluginCommandWorkflow(commandId: string) {
@@ -223,6 +226,14 @@ describe("AlertsPane", () => {
       await testSetup!.mockInput.typeText("a");
       await testSetup!.renderOnce();
     });
+    expect(workflowCalls).toEqual(["set-alert"]);
+
+    testSetup.renderer.destroy();
+    testSetup = await testRender(<AlertsHarness alerts={[]} runtime={runtime} />, {
+      width: 110,
+      height: 12,
+    });
+    await renderSettled();
     await clickFrameText("[a]");
 
     expect(workflowCalls).toEqual(["set-alert", "set-alert"]);
@@ -270,7 +281,15 @@ describe("alertsPlugin command", () => {
         },
       },
       marketData: {
-        getQuote: async () => null,
+        getQuote: async (symbol: string) => ({
+          symbol,
+          price: 201.5,
+          currency: "USD",
+          change: 1,
+          changePercent: 0.5,
+          lastUpdated: Date.now(),
+          dataSource: "live",
+        }),
       },
       notify(notification: any) {
         notifications.push(notification);
@@ -291,6 +310,7 @@ describe("alertsPlugin command", () => {
       expect(command?.shortcut).toBe("SA");
       expect(command?.shortcutArg?.placeholder).toBe("symbol condition price");
       expect(command?.shortcutArg?.parse("AMD")).toEqual({ symbol: "AMD" });
+      expect(command?.shortcutArg?.parse("", { activeTicker: "MSFT" })).toEqual({ symbol: "MSFT" });
       expect(command?.shortcutArg?.parse("AMD above 200")).toEqual({
         symbol: "AMD",
         condition: "above",
@@ -305,6 +325,7 @@ describe("alertsPlugin command", () => {
         symbol: "AAPL",
         condition: "above",
         targetPrice: 200,
+        lastCheckedPrice: 201.5,
         status: "active",
       });
       expect(notifications[0]?.body).toContain("AAPL");

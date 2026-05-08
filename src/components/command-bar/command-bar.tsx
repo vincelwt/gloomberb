@@ -35,6 +35,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { TickerRecord } from "../../types/ticker";
+import type { Quote } from "../../types/financials";
 import type {
   CommandDef,
   PaneSettingField,
@@ -231,6 +232,44 @@ function getWorkflowFieldDescription(field: CommandBarWorkflowField, active: boo
   return field.type === "textarea" && active ? `${description} Ctrl+S submits.` : description;
 }
 
+function isSetAlertWorkflow(route: CommandBarRoute | null): route is CommandBarWorkflowRoute {
+  return route?.kind === "workflow"
+    && route.payload.kind === "plugin-command"
+    && route.payload.actionId === "set-alert";
+}
+
+function normalizeAlertWorkflowSymbol(value: CommandBarFieldValue | undefined): string {
+  return coerceFieldString(value).trim().toUpperCase();
+}
+
+function formatAlertWorkflowPrice(value: number): string {
+  return Number.isFinite(value) ? String(value) : "";
+}
+
+function formatAlertWorkflowQuote(quote: Quote): string {
+  const price = formatAlertWorkflowPrice(quote.price);
+  const exchange = quote.fullExchangeName || quote.exchangeName || quote.listingExchangeName || "";
+  const name = quote.name || quote.symbol;
+  const source = quote.dataSource === "delayed" ? "delayed" : quote.dataSource || "";
+  return [quote.symbol, name, exchange, price, source].filter(Boolean).join("  ");
+}
+
+function summarizeAlertWorkflowQuoteError(symbol: string, error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return `No quote found for "${symbol}".`;
+}
+
+function updateAlertWorkflowFieldDescriptions(
+  fields: CommandBarWorkflowField[],
+  descriptions: Partial<Record<"symbol" | "price", string | undefined>>,
+): CommandBarWorkflowField[] {
+  return fields.map((field) => {
+    if (field.id !== "symbol" && field.id !== "price") return field;
+    const description = descriptions[field.id];
+    return field.description === description ? field : { ...field, description };
+  });
+}
+
 function estimateWorkflowBodyRows(route: CommandBarWorkflowRoute): number {
   const visibleFields = getVisibleWorkflowFields(route.fields, route.values);
   const introRows = (route.subtitle ? 1 : 0)
@@ -400,6 +439,7 @@ export function CommandBar({
   const rootSearchRequestIdRef = useRef(0);
   const rootLastSearchedQueryRef = useRef<string | null>(null);
   const tickerSearchCacheRef = useRef<Map<string, TickerSearchCandidate[]>>(new Map());
+  const alertWorkflowQuoteRequestRef = useRef(0);
   const skipTickerSearchDebounceRef = useRef(false);
   const lastMainBrowseRef = useRef<CommandBarMainSnapshot>({ query: "", selectedIdx: 0 });
   const previousRootSelectionContextRef = useRef<{ query: string; mode: string } | null>(null);
@@ -1814,9 +1854,18 @@ export function CommandBar({
     if (launch.kind === "plugin-command") {
       const command = pluginRegistry.commands.get(launch.commandId);
       if (!command?.wizard || command.wizard.length === 0) return;
-      openPluginCommandWorkflow(command);
+      let values: Record<string, string> | undefined;
+      try {
+        values = command.shortcutArg?.parse?.("", {
+          activeTicker: activeTickerSymbol,
+        });
+      } catch {
+        values = undefined;
+      }
+      openPluginCommandWorkflow(command, values ? { values } : undefined);
     }
   }, [
+    activeTickerSymbol,
     openPluginCommandWorkflow,
     pluginRegistry,
     state.commandBarLaunchRequest,
@@ -2256,10 +2305,9 @@ export function CommandBar({
     command: CommandDef,
     shortcutArg: string,
   ): Record<string, string> => {
-    if (!shortcutArg.trim()) return {};
     return command.shortcutArg?.parse?.(shortcutArg, {
       activeTicker: activeTickerSymbol,
-    }) ?? { shortcut: shortcutArg };
+    }) ?? (shortcutArg.trim() ? { shortcut: shortcutArg } : {});
   }, [activeTickerSymbol]);
 
   const createPluginCommandItem = useCallback((
@@ -2304,7 +2352,8 @@ export function CommandBar({
           return;
         }
         if (command.wizard && command.wizard.length > 0) {
-          openPluginCommandWorkflow(command);
+          const values = parsePluginCommandShortcutArg(command, "");
+          openPluginCommandWorkflow(command, { values });
           return;
         }
         const confirm = resolvePluginCommandConfirm(command);
@@ -4330,6 +4379,111 @@ export function CommandBar({
       return next;
     });
   }, []);
+
+  const alertWorkflowActive = isSetAlertWorkflow(currentRoute);
+  const alertWorkflowSymbol = alertWorkflowActive
+    ? normalizeAlertWorkflowSymbol(currentRoute.values.symbol)
+    : "";
+
+  useEffect(() => {
+    if (!alertWorkflowActive) return;
+
+    const requestId = alertWorkflowQuoteRequestRef.current + 1;
+    alertWorkflowQuoteRequestRef.current = requestId;
+
+    if (!alertWorkflowSymbol) {
+      updateTopRoute((route) => {
+        if (!isSetAlertWorkflow(route)) return route;
+        return {
+          ...route,
+          fields: updateAlertWorkflowFieldDescriptions(route.fields, {
+            symbol: "Enter a symbol to validate it.",
+            price: "Target fills from the current price after the symbol resolves.",
+          }),
+          payloadMeta: {
+            ...(route.payloadMeta ?? {}),
+            alertQuoteSymbol: "",
+            alertQuoteStatus: "idle",
+          },
+        };
+      });
+      return;
+    }
+
+    updateTopRoute((route) => {
+      if (!isSetAlertWorkflow(route)) return route;
+      if (normalizeAlertWorkflowSymbol(route.values.symbol) !== alertWorkflowSymbol) return route;
+      return {
+        ...route,
+        fields: updateAlertWorkflowFieldDescriptions(route.fields, {
+          symbol: `Checking ${alertWorkflowSymbol}...`,
+          price: "Target fills from the current price after the symbol resolves.",
+        }),
+        payloadMeta: {
+          ...(route.payloadMeta ?? {}),
+          alertQuoteSymbol: alertWorkflowSymbol,
+          alertQuoteStatus: "checking",
+        },
+      };
+    });
+
+    void dataProvider.getQuote(alertWorkflowSymbol, "")
+      .then((quote) => {
+        if (alertWorkflowQuoteRequestRef.current !== requestId) return;
+        if (!quote || typeof quote.price !== "number" || !Number.isFinite(quote.price)) {
+          throw new Error(`No quote found for "${alertWorkflowSymbol}".`);
+        }
+
+        const quotePrice = formatAlertWorkflowPrice(quote.price);
+        updateTopRoute((route) => {
+          if (!isSetAlertWorkflow(route)) return route;
+          if (normalizeAlertWorkflowSymbol(route.values.symbol) !== alertWorkflowSymbol) return route;
+
+          const currentPrice = coerceFieldString(route.values.price).trim();
+          const previousAutoPrice = String(route.payloadMeta?.alertAutoPrice ?? "");
+          const shouldPrefill = currentPrice.length === 0 || currentPrice === previousAutoPrice;
+          const nextValues = shouldPrefill
+            ? { ...route.values, price: quotePrice }
+            : route.values;
+
+          return {
+            ...route,
+            values: nextValues,
+            fields: updateAlertWorkflowFieldDescriptions(route.fields, {
+              symbol: formatAlertWorkflowQuote(quote),
+              price: `Current price ${quotePrice}; edit to set the target.`,
+            }),
+            payloadMeta: {
+              ...(route.payloadMeta ?? {}),
+              alertQuoteSymbol: alertWorkflowSymbol,
+              alertQuoteStatus: "valid",
+              alertAutoPrice: quotePrice,
+            },
+          };
+        });
+      })
+      .catch((error) => {
+        if (alertWorkflowQuoteRequestRef.current !== requestId) return;
+        const message = summarizeAlertWorkflowQuoteError(alertWorkflowSymbol, error);
+        updateTopRoute((route) => {
+          if (!isSetAlertWorkflow(route)) return route;
+          if (normalizeAlertWorkflowSymbol(route.values.symbol) !== alertWorkflowSymbol) return route;
+          return {
+            ...route,
+            fields: updateAlertWorkflowFieldDescriptions(route.fields, {
+              symbol: message,
+              price: undefined,
+            }),
+            payloadMeta: {
+              ...(route.payloadMeta ?? {}),
+              alertQuoteSymbol: alertWorkflowSymbol,
+              alertQuoteStatus: "invalid",
+              alertQuoteError: message,
+            },
+          };
+        });
+      });
+  }, [alertWorkflowActive, alertWorkflowSymbol, dataProvider, updateTopRoute]);
 
   const moveWorkflowFocus = useCallback((delta: number) => {
     if (currentRoute?.kind !== "workflow") return;
