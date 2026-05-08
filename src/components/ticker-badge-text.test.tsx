@@ -135,6 +135,29 @@ describe("TickerBadgeText", () => {
     expect(frame.split("\n").filter((line) => line.trim()).length).toBeGreaterThan(1);
   });
 
+  test("renders hard line breaks as separate rows", async () => {
+    testSetup = await testRender(
+      <TickerBadgeText
+        text={"First $TSLA line\nSecond line"}
+        lineWidth={60}
+        catalog={{ TSLA: makeCatalogEntry() }}
+        textColor="#ffffff"
+        openTicker={() => {}}
+      />,
+      { width: 60, height: 5 },
+    );
+
+    await testSetup.renderOnce();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const firstRow = lines.findIndex((line) => line.includes("First"));
+    const secondRow = lines.findIndex((line) => line.includes("Second line"));
+
+    expect(firstRow).toBeGreaterThanOrEqual(0);
+    expect(secondRow).toBeGreaterThan(firstRow);
+    expect(lines[firstRow]).toContain("TSLA -5%");
+  });
+
   test("opens detected links without trailing punctuation when clicked", async () => {
     const opened: string[] = [];
     testSetup = await testRender(
