@@ -960,6 +960,15 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
           height: toCellY(element?.clientHeight ?? 0),
         };
       },
+      getBoundingClientRect() {
+        const rect = getElement()?.getBoundingClientRect();
+        return {
+          x: rect?.x ?? 0,
+          y: rect?.y ?? 0,
+          width: rect?.width ?? 0,
+          height: rect?.height ?? 0,
+        };
+      },
       horizontalScrollBar,
       verticalScrollBar,
       scrollTo(target: number | { x?: number; y?: number }, y?: number) {
@@ -1012,7 +1021,13 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         onMouseOut={(event) => callMouseHandler(props.onMouseOut, event, "out")}
         onScroll={scrollable ? handleScroll : undefined}
         onWheel={scrollable ? handleWheel : undefined}
-        style={{ ...commonStyle(props), overflowX, overflowY, ...(props.style as CSSProperties | undefined) }}
+        style={{
+          ...commonStyle(props),
+          overflowX,
+          overflowY,
+          ...(props.style as CSSProperties | undefined),
+          ...(props.visible === false ? { display: "none" } : undefined),
+        }}
       >
         {children as ReactNode}
       </div>

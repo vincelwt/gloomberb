@@ -99,6 +99,9 @@ export interface ScrollBoxRenderable {
   scrollLeft?: number;
   scrollHeight: number;
   viewport?: { width: number; height: number };
+  visible?: boolean;
+  parent?: unknown;
+  getBoundingClientRect?: () => { x: number; y: number; width: number; height: number };
   horizontalScrollBar?: { visible: boolean };
   verticalScrollBar?: { visible: boolean };
   scrollTo(target: number | { x?: number; y?: number }, y?: number): void;

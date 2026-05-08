@@ -1,5 +1,6 @@
 import { memo, useCallback } from "react";
 import { PaneInstanceProvider } from "../../state/app-context";
+import { PaneKeyboardScrollController } from "../../state/pane-scroll-registry";
 import type { PaneDef } from "../../types/plugin";
 
 interface PaneContentProps {
@@ -27,6 +28,7 @@ export const PaneContent = memo(function PaneContent({
 
   return (
     <PaneInstanceProvider paneId={paneId}>
+      <PaneKeyboardScrollController paneId={paneId} focused={focused} />
       <Component
         paneId={paneId}
         paneType={paneType}

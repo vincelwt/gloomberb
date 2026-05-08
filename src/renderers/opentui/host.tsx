@@ -38,6 +38,12 @@ export function toKeyEventLike(event: {
     alt: event.alt ?? false,
     meta: event.meta ?? event.super ?? false,
     super: event.super ?? event.meta ?? false,
+    get defaultPrevented() {
+      return event.defaultPrevented ?? false;
+    },
+    get propagationStopped() {
+      return event.propagationStopped ?? false;
+    },
     preventDefault: () => event.preventDefault?.(),
     stopPropagation: () => event.stopPropagation?.(),
   };
