@@ -16,6 +16,7 @@ const TRANSCRIPT_CACHE_POLICY = {
   staleMs: 30 * 24 * 60 * 60_000,
   expireMs: 90 * 24 * 60 * 60_000,
 };
+const DRAFT_SYNC_DEBOUNCE_MS = 250;
 const VERIFICATION_POLL_MS = 5_000;
 const ISO_TIMESTAMP_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const USERNAME_MENTION = /(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{2,29})(?![A-Za-z0-9_])/g;
@@ -125,6 +126,7 @@ export class ChatController {
   private wsConnection: ChatConnection | null = null;
   private wsConnected = false;
   private verificationPollTimer: ReturnType<typeof setInterval> | null = null;
+  private draftSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private openViewCount = 0;
   private pendingMessageSeq = 0;
   private notifyFn: (notification: AppNotificationRequest) => void = () => {};
@@ -309,8 +311,7 @@ export class ChatController {
   setDraft(draft: string): void {
     if (draft === this.draft) return;
     this.draft = draft;
-    this.persistChannelState();
-    this.emit();
+    this.scheduleDraftSync();
   }
 
   setReplyToId(replyToId: string | null): void {
@@ -326,6 +327,7 @@ export class ChatController {
     }
     return () => {
       this.openViewCount = Math.max(0, this.openViewCount - 1);
+      this.flushDraftSync();
     };
   }
 
@@ -381,6 +383,7 @@ export class ChatController {
       listeners: this.listeners.size,
       hasConnection: !!this.wsConnection,
     });
+    this.flushDraftSync();
     this.stopVerificationPolling();
     this.wsConnection?.close();
     this.wsConnection = null;
@@ -568,6 +571,11 @@ export class ChatController {
   }
 
   private persistChannelState(): void {
+    this.clearDraftSyncTimer();
+    this.writeChannelState();
+  }
+
+  private writeChannelState(): void {
     const value = {
       draft: this.draft,
       replyToId: this.replyToId,
@@ -580,6 +588,28 @@ export class ChatController {
     this.persistence?.setState(CHANNEL_STATE_KEY, value, {
       schemaVersion: CHANNEL_SCHEMA_VERSION,
     });
+  }
+
+  private scheduleDraftSync(): void {
+    this.clearDraftSyncTimer();
+    this.draftSyncTimer = setTimeout(() => {
+      this.draftSyncTimer = null;
+      this.writeChannelState();
+      this.emit();
+    }, DRAFT_SYNC_DEBOUNCE_MS);
+    this.draftSyncTimer.unref?.();
+  }
+
+  private clearDraftSyncTimer(): void {
+    if (!this.draftSyncTimer) return;
+    clearTimeout(this.draftSyncTimer);
+    this.draftSyncTimer = null;
+  }
+
+  private flushDraftSync(): void {
+    if (!this.draftSyncTimer) return;
+    this.clearDraftSyncTimer();
+    this.writeChannelState();
   }
 
   private persistTranscript(): void {

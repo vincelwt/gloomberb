@@ -222,6 +222,11 @@ export function ChatContent({
 }: ChatContentProps) {
   const dispatch = useAppDispatch();
   const initialSnapshot = controller.getSnapshot();
+  const { nativePaneChrome } = useUiCapabilities();
+  const contentWidth = Math.max(width - 2, 1);
+  const composerPrefixWidth = nativePaneChrome ? 0 : 3;
+  const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
+  const inputValueRef = useRef(initialSnapshot.draft);
   const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [user, setUser] = useState<{ id: string; username: string; emailVerified: boolean } | null>(initialSnapshot.user);
@@ -229,15 +234,13 @@ export function ChatContent({
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(initialSnapshot.loadingOlderMessages);
   const [hasOlderMessages, setHasOlderMessages] = useState(initialSnapshot.hasOlderMessages);
   const [inputFocused, setInputFocused] = useState(false);
-  const [inputValue, setInputValue] = useState(initialSnapshot.draft);
+  const [composerRows, setComposerRows] = useState(() => estimateComposerHeight(initialSnapshot.draft, composerTextWidth));
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [followMessages, setFollowMessages] = useState(true);
-  const contentWidth = Math.max(width - 2, 1);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => (
     initialSnapshot.replyToId ? initialSnapshot.messages.find((message) => message.id === initialSnapshot.replyToId) ?? null : null
   ));
-  const { nativePaneChrome } = useUiCapabilities();
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const applyingExternalDraftRef = useRef(false);
@@ -250,9 +253,6 @@ export function ChatContent({
   const canSend = !!user?.emailVerified;
   const nativeComposerTopGap = nativePaneChrome && canSend ? NATIVE_CHAT_COMPOSER_TOP_GAP_PX : 0;
   const messageBodyWidth = Math.max(contentWidth - 4, 1);
-  const composerPrefixWidth = nativePaneChrome ? 0 : 3;
-  const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
-  const composerRows = estimateComposerHeight(inputValue, composerTextWidth);
   const composerHeight = canSend
     ? nativePaneChrome
       ? Math.min(CHAT_COMPOSER_MAX_ROWS + 1, Math.max(2, composerRows + 1))
@@ -260,10 +260,18 @@ export function ChatContent({
     : 0;
   const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
   const stickyTranscript = followMessages && !selectionActive;
+  const updateComposerRows = useCallback((draft: string) => {
+    const nextRows = estimateComposerHeight(draft, composerTextWidth);
+    setComposerRows((current) => (current === nextRows ? current : nextRows));
+  }, [composerTextWidth]);
 
   useEffect(() => {
     return controller.attachView();
   }, [controller]);
+
+  useEffect(() => {
+    updateComposerRows(inputValueRef.current);
+  }, [updateComposerRows]);
 
   useEffect(() => {
     const unsubscribe = controller.subscribe((snapshot) => {
@@ -273,7 +281,10 @@ export function ChatContent({
       setLoading(snapshot.loading);
       setLoadingOlderMessages(snapshot.loadingOlderMessages);
       setHasOlderMessages(snapshot.hasOlderMessages);
-      setInputValue((current) => (current === snapshot.draft ? current : snapshot.draft));
+      if (inputValueRef.current !== snapshot.draft) {
+        inputValueRef.current = snapshot.draft;
+        updateComposerRows(snapshot.draft);
+      }
       const textarea = inputRef.current;
       if (textarea && textarea.editBuffer.getText() !== snapshot.draft) {
         applyingExternalDraftRef.current = true;
@@ -288,12 +299,10 @@ export function ChatContent({
     void controller.refreshSession().catch(() => {});
     void controller.refreshMessages().catch(() => {});
     return unsubscribe;
-  }, [controller]);
+  }, [controller, updateComposerRows]);
 
   const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
 
-  const inputValueRef = useRef(inputValue);
-  inputValueRef.current = inputValue;
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
 
@@ -423,9 +432,9 @@ export function ChatContent({
   const commitLocalDraft = useCallback((draft: string) => {
     if (applyingExternalDraftRef.current) return;
     inputValueRef.current = draft;
-    setInputValue((current) => (current === draft ? current : draft));
+    updateComposerRows(draft);
     controller.setDraft(draft);
-  }, [controller]);
+  }, [controller, updateComposerRows]);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -834,7 +843,7 @@ export function ChatContent({
 
           <MessageComposer
             inputRef={inputRef}
-            initialValue={inputValue}
+            initialValue={inputValueRef.current}
             focused={inputFocused && focused}
             placeholder={inputPlaceholder}
             terminalPrefix=" > "

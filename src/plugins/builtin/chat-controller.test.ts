@@ -83,6 +83,15 @@ class MemoryPersistence implements PluginPersistence {
   }
 }
 
+class TrackingPersistence extends MemoryPersistence {
+  stateWrites = 0;
+
+  setState(key: string, value: unknown, options?: { schemaVersion?: number }): void {
+    this.stateWrites += 1;
+    super.setState(key, value, options);
+  }
+}
+
 afterEach(() => {
   apiClient.dispose();
   apiClient.setSessionToken(null);
@@ -207,6 +216,34 @@ describe("ChatController", () => {
       sourceKey: TRANSCRIPT_SOURCE,
       schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
     })).toBeNull();
+  });
+
+  test("defers draft persistence and subscriber sync until the user pauses or leaves", () => {
+    const persistence = new TrackingPersistence();
+    const controller = new ChatController();
+    const draftSnapshots: string[] = [];
+
+    controller.attachPersistence(persistence);
+    const unsubscribe = controller.subscribe((snapshot) => {
+      draftSnapshots.push(snapshot.draft);
+    });
+    draftSnapshots.length = 0;
+    persistence.stateWrites = 0;
+
+    controller.setDraft("h");
+    controller.setDraft("he");
+
+    expect(controller.getSnapshot().draft).toBe("he");
+    expect(draftSnapshots).toEqual([]);
+    expect(persistence.stateWrites).toBe(0);
+    expect(persistence.getState("channel:everyone", { schemaVersion: 1 })).toBeNull();
+
+    unsubscribe();
+    controller.dispose();
+
+    expect(persistence.getState<{ draft: string }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
+      draft: "he",
+    });
   });
 
   test("pauses verification polling while the app is backgrounded", () => {
