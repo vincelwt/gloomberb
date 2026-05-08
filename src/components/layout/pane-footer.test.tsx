@@ -100,8 +100,8 @@ describe("PaneFooterBar", () => {
     })).toBe(true);
   });
 
-  test("renders info left and hints right", async () => {
-    testSetup = await testRender(<FooterHarness />, { width: 64, height: 1 });
+  test("renders focused info left and hints right", async () => {
+    testSetup = await testRender(<FooterHarness focused />, { width: 64, height: 1 });
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
@@ -110,6 +110,18 @@ describe("PaneFooterBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Rows 12");
     expect(frame).toContain("[r]efresh");
+  });
+
+  test("hides hints on inactive footers but keeps info visible", async () => {
+    testSetup = await testRender(<FooterHarness />, { width: 64, height: 1 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Rows 12");
+    expect(frame).not.toContain("[r]efresh");
   });
 
   test("keeps raw external URLs out of footer text", async () => {
@@ -127,7 +139,7 @@ describe("PaneFooterBar", () => {
 
   test("calls hint onPress from mouse interaction", async () => {
     let refreshCount = 0;
-    testSetup = await testRender(<FooterHarness onRefresh={() => { refreshCount += 1; }} />, { width: 64, height: 1 });
+    testSetup = await testRender(<FooterHarness focused onRefresh={() => { refreshCount += 1; }} />, { width: 64, height: 1 });
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
