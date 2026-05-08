@@ -162,11 +162,11 @@ export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
   "pnl_pct",
 ];
 
-export const DEFAULT_LAYOUT: LayoutConfig = {
+export const DEFAULT_HOME_LAYOUT: LayoutConfig = {
   dockRoot: {
     kind: "split",
     axis: "horizontal",
-    ratio: 0.4,
+    ratio: 0.34,
     first: {
       kind: "split",
       axis: "vertical",
@@ -174,7 +174,13 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       first: { kind: "pane", instanceId: "portfolio-list:main" },
       second: { kind: "pane", instanceId: "chat:main" },
     },
-    second: { kind: "pane", instanceId: "ticker-detail:main" },
+    second: {
+      kind: "split",
+      axis: "vertical",
+      ratio: 0.46,
+      first: { kind: "pane", instanceId: "ticker-detail:main" },
+      second: { kind: "pane", instanceId: "ticker-detail:nvda" },
+    },
   },
   instances: [
     {
@@ -200,6 +206,18 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
     },
     {
+      instanceId: "ticker-detail:nvda",
+      paneId: "ticker-detail",
+      title: "NVDA",
+      settings: {
+        hideTabs: false,
+        lockedTabId: "overview",
+        chartRangePreset: "5Y",
+        chartResolution: "auto",
+      },
+      binding: { kind: "fixed", symbol: "NVDA" },
+    },
+    {
       instanceId: "chat:main",
       paneId: "chat",
       settings: {
@@ -207,10 +225,65 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       },
       binding: { kind: "none" },
     },
+    {
+      instanceId: "help:main",
+      paneId: "help",
+      binding: { kind: "none" },
+    },
+  ],
+  floating: [
+    { instanceId: "help:main", x: 12, y: 4, width: 88, height: 32, zIndex: 90 },
+  ],
+  detached: [],
+};
+
+export const DEFAULT_MONITOR_LAYOUT: LayoutConfig = {
+  dockRoot: {
+    kind: "split",
+    axis: "vertical",
+    ratio: 0.48,
+    first: {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.42,
+      first: { kind: "pane", instanceId: "news-top:main" },
+      second: { kind: "pane", instanceId: "prediction-markets:main" },
+    },
+    second: {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.42,
+      first: { kind: "pane", instanceId: "world-indices:main" },
+      second: { kind: "pane", instanceId: "econ-calendar:main" },
+    },
+  },
+  instances: [
+    {
+      instanceId: "news-top:main",
+      paneId: "news-top",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "prediction-markets:main",
+      paneId: "prediction-markets",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "world-indices:main",
+      paneId: "world-indices",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "econ-calendar:main",
+      paneId: "econ-calendar",
+      binding: { kind: "none" },
+    },
   ],
   floating: [],
   detached: [],
 };
+
+export const DEFAULT_LAYOUT = DEFAULT_HOME_LAYOUT;
 
 let nextPaneInstanceSeq = 0;
 
@@ -502,7 +575,7 @@ export function findPaneInstance(layout: LayoutConfig, instanceId: string): Pane
 }
 
 export function createDefaultConfig(dataDir: string): AppConfig {
-  const layout = cloneLayout(DEFAULT_LAYOUT);
+  const layout = cloneLayout(DEFAULT_HOME_LAYOUT);
   return {
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
@@ -511,7 +584,10 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
     watchlists: [{ id: "watchlist", name: "Watchlist" }],
     layout,
-    layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+    layouts: [
+      { name: "Home", layout: cloneLayout(layout) },
+      { name: "Monitor", layout: cloneLayout(DEFAULT_MONITOR_LAYOUT) },
+    ],
     activeLayoutIndex: 0,
     brokerInstances: [],
     plugins: ["portfolio-list", "ticker-detail", "manual-entry", "ibkr"],

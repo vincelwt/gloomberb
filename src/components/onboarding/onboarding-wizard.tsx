@@ -15,7 +15,6 @@ import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation"
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
 import { debugLog } from "../../utils/debug-log";
-import { ToggleList, type ToggleListItem } from "../toggle-list";
 import { TextField, ExternalLink, ListView, type ListViewItem } from "../ui";
 
 interface OnboardingWizardProps {
@@ -24,8 +23,8 @@ interface OnboardingWizardProps {
   onComplete: (config: AppConfig) => void | Promise<void>;
 }
 
-type Step = "welcome" | "theme" | "portfolio" | "plugins" | "shortcuts" | "ready";
-const STEPS: Step[] = ["welcome", "theme", "portfolio", "plugins", "shortcuts", "ready"];
+type Step = "welcome" | "theme" | "portfolio" | "shortcuts" | "ready";
+const STEPS: Step[] = ["welcome", "theme", "portfolio", "shortcuts", "ready"];
 
 // Sub-steps within the portfolio step
 type PortfolioSub = "choose" | "manual-name" | "broker-setup" | "broker-fields" | "broker-sync";
@@ -44,23 +43,6 @@ const onboardingLog = debugLog.createLogger("onboarding");
 interface BrokerSyncSummary {
   portfolioId: string | null;
   positionsImported: number;
-}
-
-function getToggleablePlugins(pluginRegistry: PluginRegistry) {
-  const result: Array<{ id: string; name: string; description: string; order: number }> = [];
-  for (const [, plugin] of pluginRegistry.allPlugins) {
-    if (plugin.toggleable) {
-      result.push({
-        id: plugin.id,
-        name: plugin.name,
-        description: plugin.description ?? "",
-        order: plugin.order ?? Number.MAX_SAFE_INTEGER,
-      });
-    }
-  }
-  return result
-    .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name))
-    .map(({ order: _order, ...plugin }) => plugin);
 }
 
 function summarizeError(error: unknown): string {
@@ -123,13 +105,6 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   const [brokerSyncSummary, setBrokerSyncSummary] = useState<BrokerSyncSummary | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
-
-  // Plugin state
-  const toggleablePlugins = useMemo(() => getToggleablePlugins(pluginRegistry), [pluginRegistry]);
-  const [disabledPlugins, setDisabledPlugins] = useState<string[]>(() => (
-    config.disabledPlugins.filter((pluginId) => pluginId !== "gloomberb-cloud")
-  ));
-  const [pluginIdx, setPluginIdx] = useState(0);
 
   const inputRef = useRef<InputRenderable>(null);
   const brokerSyncAttemptRef = useRef(0);
@@ -346,7 +321,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         portfolios: isBroker
           ? (baseConfig ?? config).portfolios
           : [{ id: "main", name: portfolioName || "Main Portfolio", currency: "USD" }],
-        disabledPlugins,
+        disabledPlugins: [],
         onboardingComplete: true,
       };
 
@@ -359,7 +334,6 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   }, [
     brokerSyncedConfig,
     config,
-    disabledPlugins,
     isFinishing,
     onComplete,
     portfolioName,
@@ -575,22 +549,6 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
           setBrokerSelectIdx((index) => Math.min(optionCount - 1, index + 1));
         }
       }
-    } else if (step === "plugins") {
-      if (event.name === "up" || event.name === "k") {
-        setPluginIdx((i) => Math.max(0, i - 1));
-      } else if (event.name === "down" || event.name === "j") {
-        setPluginIdx((i) => Math.min(toggleablePlugins.length - 1, i + 1));
-      } else if (event.name === "space" || event.name === " ") {
-        event.stopPropagation?.();
-        const plugin = toggleablePlugins[pluginIdx];
-        if (plugin) {
-          setDisabledPlugins((prev) =>
-            prev.includes(plugin.id)
-              ? prev.filter((id) => id !== plugin.id)
-              : [...prev, plugin.id]
-          );
-        }
-      }
     }
   });
 
@@ -660,21 +618,8 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
             brokerSyncError={brokerSyncError}
           />
         )}
-        {step === "plugins" && (
-          <PluginsStep
-            plugins={toggleablePlugins}
-            disabledPlugins={disabledPlugins}
-            selectedIdx={pluginIdx}
-            onToggle={(id) => {
-              setDisabledPlugins((prev) =>
-                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-              );
-            }}
-            onSelect={setPluginIdx}
-          />
-        )}
         {step === "shortcuts" && (
-          <ShortcutsStep pluginRegistry={pluginRegistry} disabledPlugins={disabledPlugins} />
+          <ShortcutsStep pluginRegistry={pluginRegistry} />
         )}
         {step === "ready" && (
           <ReadyStep
@@ -1140,65 +1085,7 @@ function PortfolioStep({
   );
 }
 
-function PluginsStep({
-  plugins,
-  disabledPlugins,
-  selectedIdx,
-  onToggle,
-  onSelect,
-}: {
-  plugins: { id: string; name: string; description: string }[];
-  disabledPlugins: string[];
-  selectedIdx: number;
-  onToggle: (id: string) => void;
-  onSelect: (idx: number) => void;
-}) {
-  const items: ToggleListItem[] = plugins.map((p) => ({
-    id: p.id,
-    label: p.name,
-    enabled: !disabledPlugins.includes(p.id),
-    description: p.description,
-  }));
-
-  return (
-    <Box flexDirection="column" paddingX={2}>
-      <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Select plugins to enable"}</Text>
-      </Box>
-
-      <Box height={2} />
-
-      <ToggleList
-        items={items}
-        selectedIdx={selectedIdx}
-        onToggle={onToggle}
-        onSelect={onSelect}
-      />
-
-      <Box height={1} />
-      <Box height={1}>
-        <Text fg={colors.textMuted}>{"Use \u2191\u2193 to navigate \u00b7 space to toggle"}</Text>
-      </Box>
-      <Box height={1} />
-      <Box height={1}>
-        <Text fg={colors.textDim}>{"Toggle plugins anytime from the command bar"}</Text>
-      </Box>
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>{"with the "}</Text>
-        <Text fg={colors.text} attributes={TextAttributes.BOLD}>{"PL"}</Text>
-        <Text fg={colors.textDim}>{" prefix."}</Text>
-      </Box>
-    </Box>
-  );
-}
-
-function ShortcutsStep({
-  pluginRegistry,
-  disabledPlugins,
-}: {
-  pluginRegistry: PluginRegistry;
-  disabledPlugins: string[];
-}) {
+function ShortcutsStep({ pluginRegistry }: { pluginRegistry: PluginRegistry }) {
   const uiHost = useUiHost();
   const shortcutPlatform = detectShortcutPlatform();
   const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
@@ -1210,8 +1097,6 @@ function ShortcutsStep({
     { key: platformShortcut(["Shift", "D"]), desc: "Dock or float the focused pane" },
     { key: "q", desc: "Quit" },
   ];
-
-  const disabledSet = useMemo(() => new Set(disabledPlugins), [disabledPlugins]);
 
   const commandPrefixes = useMemo(() => {
     const builtIn = [
@@ -1227,8 +1112,6 @@ function ShortcutsStep({
 
     for (const [, template] of pluginRegistry.paneTemplates) {
       if (!template.shortcut) continue;
-      const pluginId = pluginRegistry.getPaneTemplatePluginId(template.id);
-      if (pluginId && disabledSet.has(pluginId)) continue;
       if (builtInKeys.has(template.shortcut.prefix)) continue;
       const label = template.shortcut.argPlaceholder
         ? `${template.shortcut.prefix} <${template.shortcut.argPlaceholder}>`
@@ -1238,7 +1121,7 @@ function ShortcutsStep({
 
     pluginPrefixes.sort((a, b) => a.key.localeCompare(b.key));
     return [...builtIn, ...pluginPrefixes];
-  }, [pluginRegistry, disabledSet]);
+  }, [pluginRegistry]);
 
   const COL = 20;
 
@@ -1318,7 +1201,7 @@ function ReadyStep({
       </Box>
       <Box height={1}>
         <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{"\u2713"}</Text>
-        <Text fg={colors.text}>{" Plugins selected"}</Text>
+        <Text fg={colors.text}>{" Plugins enabled"}</Text>
       </Box>
       <Box height={2} />
       {brokerName ? (

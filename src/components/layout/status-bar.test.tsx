@@ -19,6 +19,7 @@ afterEach(() => {
 describe("StatusBar", () => {
   test("opens the command bar from the shortcut hint", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.layouts = [{ name: "Home", layout: cloneLayout(config.layout) }];
     const state = {
       ...createInitialState(config),
       statusBarVisible: true,
