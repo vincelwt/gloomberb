@@ -276,12 +276,13 @@ function FooterContent({
   showBackground?: boolean;
 }) {
   const hasInfo = footer.info.length > 0;
-  const hasHints = footer.hints.length > 0;
+  const visibleHints = focused ? footer.hints : [];
+  const hasHints = visibleHints.length > 0;
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
   const availableWidth = width && width > 0 ? Math.floor(width) : null;
   const hintsWidth = hasHints
-    ? Math.min(availableWidth ?? totalHintsWidth(footer.hints), totalHintsWidth(footer.hints))
+    ? Math.min(availableWidth ?? totalHintsWidth(visibleHints), totalHintsWidth(visibleHints))
     : 0;
   const infoWidth = availableWidth !== null && hasInfo
     ? Math.max(0, availableWidth - hintsWidth)
@@ -324,11 +325,11 @@ function FooterContent({
             overflow="hidden"
             {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: 1 })}
           >
-          {footer.hints.map((hint, index) => (
-            <Box key={hint.id} flexDirection="row">
-              <HintView hint={hint} prefixSpace={index > 0} />
-            </Box>
-          ))}
+            {visibleHints.map((hint, index) => (
+              <Box key={hint.id} flexDirection="row">
+                <HintView hint={hint} prefixSpace={index > 0} />
+              </Box>
+            ))}
           </Box>
         </>
       )}
