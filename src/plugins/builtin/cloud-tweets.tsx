@@ -265,28 +265,6 @@ function isAuthError(error: string | null): boolean {
   return !!error && /unauthorized|verification/i.test(error);
 }
 
-function TweetSearchHeader({
-  data,
-  loading,
-  width,
-}: {
-  data: CloudTweetSearchResponse | null;
-  loading: boolean;
-  width: number;
-}) {
-  if (!data && !loading) return null;
-  const text = data
-    ? `${data.queryType} ${data.query}${data.cached ? " cached" : ""} - ${formatRelativeShort(data.asOf)}`
-    : "Loading tweets...";
-  return (
-    <Box height={1} paddingX={1} width={width}>
-      <Text fg={loading ? colors.textDim : colors.textMuted}>
-        {truncateWithEllipsis(text, Math.max(1, width - 2))}
-      </Text>
-    </Box>
-  );
-}
-
 function TweetDetail({
   tweet,
   width,
@@ -521,7 +499,6 @@ function TweetSearchTable({
       onDetailKeyDown={handleDetailKeyDown}
       rootWidth={width}
       rootHeight={height}
-      rootBefore={<TweetSearchHeader data={data} loading={loading} width={width} />}
       columns={columns}
       items={rows}
       sortColumnId={sort.columnId}
@@ -829,7 +806,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       ? [{ id: "save", key: "Ctrl+S", label: "save", onPress: saveEditor }]
       : [
         { id: "new", key: "t", label: "new", onPress: openCreateEditor },
-        { id: "edit", key: "e", label: "edit", onPress: () => openEditEditor(activeFeed), disabled: !activeFeed },
+        { id: "edit", key: "e", label: "dit", onPress: () => openEditEditor(activeFeed), disabled: !activeFeed },
         { id: "delete", key: "w", label: "delete", onPress: activeFeed ? () => removeFeed(activeFeed.id) : undefined, disabled: !activeFeed },
       ],
   }), [activeFeed, editorState, openCreateEditor, openEditEditor, removeFeed, saveEditor]);

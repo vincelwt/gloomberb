@@ -484,8 +484,8 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
       hints: editing || renaming
         ? []
         : [
-            { id: "new", key: "n", label: "new", onPress: addTab },
-            { id: "rename", key: "r", label: "rename", onPress: startRename, disabled: !activeTabId },
+            { id: "new", key: "n", label: "ew", onPress: addTab },
+            { id: "rename", key: "r", label: "ename", onPress: startRename, disabled: !activeTabId },
           ],
     }), [activeTab, activeTabId, addTab, editing, renaming, startRename]);
 

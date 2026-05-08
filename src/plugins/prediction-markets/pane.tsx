@@ -77,7 +77,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
-      { id: "watch", key: "w", label: "watch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
+      { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
       {
         id: "browse",
         key: "1-4",

@@ -52,17 +52,14 @@ export function useExternalLinkFooter({
   });
 
   const footer = useMemo(() => {
-    const linkInfo: PaneFooterSegment[] = url
+    const contextLabel = label.trim() || "link";
+    const linkInfo: PaneFooterSegment[] = url && sourceLabel
       ? [{
         id: "external-link",
         onPress: openUrl,
         parts: [
-          ...(sourceLabel ? [
-            { text: "source", tone: "label" as const },
-            { text: sourceLabel, tone: "value" as const },
-          ] : []),
-          { text: label, tone: "label" as const },
-          { text: url, tone: "muted" as const },
+          { text: contextLabel === "link" ? "source" : contextLabel, tone: "label" as const },
+          { text: sourceLabel, tone: "value" as const },
         ],
       }]
       : [];

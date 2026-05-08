@@ -673,7 +673,7 @@ export function EconCalendarPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "impact", key: "f", label: "impact", onPress: cycleImpactFilter },
-      { id: "country", key: "c", label: "country", onPress: cycleCountryFilter },
+      { id: "country", key: "c", label: "ountry", onPress: cycleCountryFilter },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
     ],
   }), [countryFilter, cycleCountryFilter, cycleImpactFilter, error, impactFilter, load, loading, nextCountdown, nextEvent?.event, staleness]);
