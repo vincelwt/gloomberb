@@ -17,6 +17,7 @@ import { chunkBase64Payload, encodeKittyTransmitRgba } from "./kitty-protocol";
 import { resolveChartRendererState } from "./renderer-selection";
 import { computeSurfaceVisibleFragments, NativeSurfaceManager } from "./surface-manager";
 import { syncCachedNativeSurface } from "./surface-sync";
+import { resolveNativeSurfaceVisibleRect, type NativeSurfaceRenderableNode } from "./surface-visibility";
 
 describe("resolveChartRendererState", () => {
   test("resolves auto and forced kitty correctly", () => {
@@ -95,6 +96,28 @@ describe("computeNativePlacement", () => {
       cropWidth: 40,
       cropHeight: 60,
     });
+  });
+});
+
+describe("resolveNativeSurfaceVisibleRect", () => {
+  test("treats hidden ancestors as invisible for native graphics", () => {
+    const hiddenParent: NativeSurfaceRenderableNode = {
+      x: 0,
+      y: 0,
+      width: 80,
+      height: 20,
+      visible: false,
+      parent: null,
+    };
+    const child: NativeSurfaceRenderableNode = {
+      x: 2,
+      y: 3,
+      width: 20,
+      height: 8,
+      parent: hiddenParent,
+    };
+
+    expect(resolveNativeSurfaceVisibleRect(child, 100, 30)).toBeNull();
   });
 });
 

@@ -7,11 +7,16 @@ import {
 } from "../../components/chart/native/chart-rasterizer";
 import { getCachedKittySupport, ensureKittySupport } from "../../components/chart/native/kitty-support";
 import { getNativeSurfaceManager } from "../../components/chart/native/surface-manager";
+import {
+  getRenderableCellRect,
+  resolveNativeSurfaceVisibleRect,
+  type NativeSurfaceRenderableNode,
+} from "../../components/chart/native/surface-visibility";
 import { useOptionalPaneInstanceId } from "../../state/app-context";
 import { useNativeRenderer, type BoxRenderable, type ImageSurfaceProps } from "../../ui";
 import { loadOpenTuiImageBitmap } from "./image-loader";
 
-interface NativeRenderableNode extends BoxRenderable {
+interface NativeRenderableNode extends BoxRenderable, NativeSurfaceRenderableNode {
   x: number;
   y: number;
   width: number;
@@ -83,40 +88,6 @@ function sameTarget(left: SurfaceTarget | null, right: SurfaceTarget | null): bo
     && sameRect(left.visibleRect, right.visibleRect);
 }
 
-function extractCellRect(renderable: Pick<NativeRenderableNode, "x" | "y" | "width" | "height">): CellRect {
-  return {
-    x: renderable.x,
-    y: renderable.y,
-    width: renderable.width,
-    height: renderable.height,
-  };
-}
-
-function resolveVisibleRect(
-  renderable: NativeRenderableNode | null,
-  terminalWidth: number,
-  terminalHeight: number,
-): CellRect | null {
-  if (!renderable) return null;
-
-  let visible: CellRect = {
-    x: 0,
-    y: 0,
-    width: terminalWidth,
-    height: terminalHeight,
-  };
-  let current: NativeRenderableNode | null = renderable;
-
-  while (current) {
-    const nextVisible = intersectCellRects(visible, extractCellRect(current));
-    if (!nextVisible) return null;
-    visible = nextVisible;
-    current = current.parent;
-  }
-
-  return visible;
-}
-
 function insetRect(rect: CellRect, insets: CellInsets): CellRect | null {
   const width = rect.width - insets.left - insets.right;
   const height = rect.height - insets.top - insets.bottom;
@@ -186,14 +157,14 @@ export const OpenTuiImageSurface = forwardRef<unknown, ImageSurfaceProps>(functi
     let mountTimer: Timer | null = null;
     const previousLifecyclePass = renderable.onLifecyclePass;
     const syncTarget = () => {
-      const outerRect = extractCellRect(renderable);
+      const outerRect = getRenderableCellRect(renderable);
       const rect = insetRect(outerRect, insets);
       if (!rect || !renderer.resolution || renderer.terminalWidth <= 0 || renderer.terminalHeight <= 0) {
         setTarget((current) => (current === null ? current : null));
         return;
       }
 
-      const outerVisibleRect = resolveVisibleRect(renderable, renderer.terminalWidth, renderer.terminalHeight);
+      const outerVisibleRect = resolveNativeSurfaceVisibleRect(renderable, renderer.terminalWidth, renderer.terminalHeight);
       const visibleRect = outerVisibleRect ? intersectCellRects(rect, outerVisibleRect) : null;
       const bitmapSize = computeBitmapSize(rect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
       const bitmapKey = `${imageSrc}\n${resolvedObjectFit}\n${bitmapSize.pixelWidth}x${bitmapSize.pixelHeight}`;

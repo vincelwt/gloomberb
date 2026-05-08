@@ -110,7 +110,6 @@ import {
 } from "./chart-types";
 import {
   computeBitmapSize,
-  intersectCellRects,
   renderNativeChartBase,
   renderNativeCrosshairOverlay,
   type CellRect,
@@ -121,6 +120,11 @@ import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-suppor
 import { resolveChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
 import { syncCachedNativeSurface } from "./native/surface-sync";
+import {
+  getRenderableCellRect,
+  resolveNativeSurfaceVisibleRect,
+  type NativeSurfaceRenderableNode,
+} from "./native/surface-visibility";
 import type { PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 
@@ -273,14 +277,6 @@ interface DisplayCursorState {
   cellY: number | null;
   pixelX: number | null;
   pixelY: number | null;
-}
-
-interface RenderableNode {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  parent: RenderableNode | null;
 }
 
 const EMPTY_DISPLAY_CURSOR: DisplayCursorState = {
@@ -520,41 +516,6 @@ function resolveCursorMotionKind(
   return event.pixelX !== undefined && event.pixelY !== undefined && getRendererCellMetrics(renderer)
     ? "pixel"
     : "cell";
-}
-
-function extractCellRect(renderable: RenderableNode): CellRect {
-  return {
-    x: renderable.x,
-    y: renderable.y,
-    width: renderable.width,
-    height: renderable.height,
-  };
-}
-
-function resolveVisibleRect(
-  renderable: RenderableNode | null,
-  terminalWidth: number,
-  terminalHeight: number,
-): CellRect | null {
-  if (!renderable) return null;
-
-  let visible: CellRect = {
-    x: 0,
-    y: 0,
-    width: terminalWidth,
-    height: terminalHeight,
-  };
-  let current: RenderableNode | null = renderable;
-
-  while (current) {
-    const currentRect = extractCellRect(current);
-    const nextVisible = intersectCellRects(visible, currentRect);
-    if (!nextVisible) return null;
-    visible = nextVisible;
-    current = current.parent;
-  }
-
-  return visible;
 }
 
 function buildBlankPlotLines(width: number, height: number): string[] {
@@ -3236,8 +3197,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
     const syncPlacement = () => {
       if (effectiveRenderer !== "kitty" || !rendererState.nativeReady || !plotRef.current) return;
-      const rect = extractCellRect(plotRef.current);
-      const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
+      const plot = plotRef.current as NativeSurfaceRenderableNode;
+      const rect = getRenderableCellRect(plot);
+      const visibleRect = resolveNativeSurfaceVisibleRect(plot, renderer.terminalWidth, renderer.terminalHeight);
       const previous = lastNativeGeometryRef.current;
       if (previous
         && previous.rect.x === rect.x
@@ -3292,8 +3254,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       return;
     }
 
-    const plotRect = extractCellRect(plotRef.current);
-    const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
+    const plot = plotRef.current as NativeSurfaceRenderableNode;
+    const plotRect = getRenderableCellRect(plot);
+    const visibleRect = resolveNativeSurfaceVisibleRect(plot, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapKey = buildNativeBitmapKey(
       projection.points.length,
@@ -3364,8 +3327,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       return;
     }
 
-    const plotRect = extractCellRect(plotRef.current);
-    const visibleRect = resolveVisibleRect(plotRef.current, renderer.terminalWidth, renderer.terminalHeight);
+    const plot = plotRef.current as NativeSurfaceRenderableNode;
+    const plotRect = getRenderableCellRect(plot);
+    const visibleRect = resolveNativeSurfaceVisibleRect(plot, renderer.terminalWidth, renderer.terminalHeight);
     const bitmapSize = computeBitmapSize(plotRect, renderer.resolution, renderer.terminalWidth, renderer.terminalHeight);
     const renderablePixelSize = getRenderablePixelSize(plotRef.current, renderer);
     const overlayPixelX = scaleLocalPixelCoordinate(

@@ -65,6 +65,15 @@ function makeFinancials(length: number): TickerFinancials {
   };
 }
 
+function makeFinancialsWithStatements(length: number): TickerFinancials {
+  const financials = makeFinancials(length);
+  financials.annualStatements = [
+    { date: "2023-12-31", totalRevenue: 90, netIncome: 10 },
+    { date: "2024-12-31", totalRevenue: 110, netIncome: 14 },
+  ];
+  return financials;
+}
+
 function makeDetailConfig(symbol: string): AppConfig {
   const config = createDefaultConfig("/tmp/gloomberb-test");
   config.chartPreferences.renderer = "kitty";
@@ -128,6 +137,13 @@ async function flushFrames(count = 3) {
       await testSetup!.renderOnce();
     });
   }
+}
+
+function getSurfaceVisibleRect(
+  manager: { surfaces: Map<string, { snapshot: { visibleRect: unknown } }> },
+  surfaceId: string,
+): unknown {
+  return manager.surfaces.get(surfaceId)?.snapshot.visibleRect ?? null;
 }
 
 afterEach(() => {
@@ -200,5 +216,55 @@ describe("Ticker detail chart tab switching", () => {
     const returnedOverview = testSetup.captureCharFrame();
     expect(returnedOverview).toContain("AAPL");
     expect(manager.surfaces.has("chart-surface:ticker-detail:test:compact:base")).toBe(true);
+  });
+
+  test("hides the full chart kitty surface when switching to financials", async () => {
+    const symbol = "AAPL";
+    const config = makeDetailConfig(symbol);
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 36 });
+    (testSetup.renderer as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+    (testSetup.renderer as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
+
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <DetailHarness
+          config={config}
+          ticker={makeTicker(symbol)}
+          financials={makeFinancialsWithStatements(48)}
+        />,
+      );
+    });
+
+    await flushFrames();
+    const manager = getNativeSurfaceManager(testSetup.renderer as never) as unknown as {
+      surfaces: Map<string, { snapshot: { visibleRect: unknown } }>;
+    };
+    const fullSurfaceId = "chart-surface:ticker-detail:test:full:base";
+
+    act(() => {
+      harnessDispatch!({
+        type: "UPDATE_PANE_STATE",
+        paneId: TEST_PANE_ID,
+        patch: { activeTabId: "chart" },
+      });
+    });
+
+    await flushFrames();
+    expect(getSurfaceVisibleRect(manager, fullSurfaceId)).not.toBeNull();
+
+    act(() => {
+      harnessDispatch!({
+        type: "UPDATE_PANE_STATE",
+        paneId: TEST_PANE_ID,
+        patch: { activeTabId: "financials" },
+      });
+    });
+
+    await flushFrames();
+    expect(testSetup.captureCharFrame()).toContain("Income");
+    expect(getSurfaceVisibleRect(manager, fullSurfaceId)).toBeNull();
   });
 });
