@@ -1,4 +1,4 @@
-import { AsciiText, Box, Text, useContextMenu } from "../../ui";
+import { AsciiText, Box, Text, compactContextMenuItems, useContextMenu, useUiHost } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativeRenderer, useRendererHost, useUiCapabilities } from "../../ui";
 import { useShortcut, useViewport, type KeyEventLike } from "../../react/input";
@@ -55,6 +55,11 @@ import { getPaneBodyHeight, getPaneBodyWidth, shouldReservePaneFooter } from "./
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 import { capturePaneScreenshotPngBase64 } from "../../utils/dom-screenshot";
+import {
+  formatPlatformShortcutLabel,
+  getShortcutDisplayMode,
+  type ShortcutDisplayMode,
+} from "../../utils/shortcut-labels";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
@@ -100,7 +105,8 @@ interface ActionMenuState {
   paneId: string;
   x: number;
   y: number;
-  items: Array<{ id: string; label: string; action: () => void }>;
+  width: number;
+  items: Array<{ id: string; label: string; accelerator?: string; action: () => void }>;
 }
 
 interface FloatingPreviewRect {
@@ -172,7 +178,9 @@ interface ShellMouseEvent {
 }
 
 const DEFAULT_HEADER_HEIGHT = 1;
-const MENU_WIDTH = 18;
+const MENU_MIN_WIDTH = 18;
+const MENU_MAX_WIDTH = 44;
+const MENU_Z_INDEX = 10_000;
 const PANE_DRAG_THRESHOLD = 2;
 const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
 const PANE_MANAGEMENT_ACCELERATORS = {
@@ -686,16 +694,40 @@ function menuForPane(
   return baseActions;
 }
 
-function menuItemsForFallback(items: ContextMenuItem[]): Array<{ id: string; label: string; action: () => void }> {
+function menuItemsForFallback(
+  items: ContextMenuItem[],
+  shortcutDisplayMode: ShortcutDisplayMode,
+): Array<{ id: string; label: string; accelerator?: string; action: () => void }> {
   return items.flatMap((item) => {
     if (item.type === "divider" || item.type === "role" || item.enabled === false || item.hidden === true) return [];
     if (!item.onSelect) return [];
     return [{
       id: item.id,
       label: item.label,
+      accelerator: item.accelerator
+        ? formatPlatformShortcutLabel(item.accelerator, undefined, shortcutDisplayMode)
+        : undefined,
       action: () => { void item.onSelect?.(); },
     }];
   });
+}
+
+function actionMenuWidth(
+  items: Array<{ label: string; accelerator?: string }>,
+  availableWidth: number,
+): number {
+  const requested = Math.max(
+    MENU_MIN_WIDTH,
+    ...items.map((item) => item.label.length + (item.accelerator ? item.accelerator.length + 3 : 0) + 2),
+  );
+  return Math.max(MENU_MIN_WIDTH, Math.min(MENU_MAX_WIDTH, availableWidth, requested));
+}
+
+function truncateMenuText(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width <= 3) return ".".repeat(width);
+  return `${text.slice(0, width - 3)}...`;
 }
 
 function resolveExternalDockPreview(
@@ -748,6 +780,8 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const renderer = useNativeRenderer();
   const rendererHost = useRendererHost();
+  const uiKind = useUiHost().kind;
+  const shortcutDisplayMode = getShortcutDisplayMode(uiKind);
   const { nativePaneChrome, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
@@ -764,6 +798,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     setHoveredPaneId((current) => (current === paneId ? current : paneId));
   }, []);
   const [menuState, setMenuState] = useState<ActionMenuState | null>(null);
+  const [hoveredMenuItemId, setHoveredMenuItemId] = useState<string | null>(null);
   const overlayOpen = commandBarOpen || dialogOpen || !!menuState;
 
   const dragRef = useRef<DragMode | null>(null);
@@ -848,10 +883,12 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const openPaneSettings = useCallback((paneId: string) => {
     pluginRegistry.openPaneSettingsFn(paneId);
     setMenuState(null);
+    setHoveredMenuItemId(null);
   }, [pluginRegistry]);
 
   const copyPaneScreenshot = useCallback(async (paneId: string) => {
     setMenuState(null);
+    setHoveredMenuItemId(null);
     try {
       await new Promise((resolve) => setTimeout(resolve, 0));
       if (!rendererHost.copyPngImage) {
@@ -1047,6 +1084,13 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     const pane = paneMap.get(paneId);
     if (!pane) return;
     focusPane(paneId);
+    const context = {
+      kind: "pane" as const,
+      paneId,
+      paneType: pane.instance.paneId,
+      title: getPaneTitle(pane),
+      floating: !!pane.floating,
+    };
     const items = menuForPane(
       pane,
       visibleLayout,
@@ -1059,26 +1103,29 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
       desktopWindowBridge,
       nativePaneChrome && rendererHost.copyPngImage ? copyPaneScreenshot : undefined,
     );
-    void showContextMenu({
-      kind: "pane",
-      paneId,
-      paneType: pane.instance.paneId,
-      title: getPaneTitle(pane),
-      floating: !!pane.floating,
-    }, items, event).then((shown) => {
+    void showContextMenu(context, items, event).then((shown) => {
       if (shown) return;
-      const fallbackItems = menuItemsForFallback(items);
+      const pluginItems = pluginRegistry.getContextMenuItems?.(context) ?? [];
+      const fallbackSourceItems = compactContextMenuItems([
+        ...items,
+        ...(items.length > 0 && pluginItems.length > 0 ? [contextMenuDivider(`${context.kind}:plugin-divider`)] : []),
+        ...pluginItems,
+      ]);
+      const fallbackItems = menuItemsForFallback(fallbackSourceItems, shortcutDisplayMode);
       if (fallbackItems.length === 0) return;
-      const menuX = Math.max(0, Math.min(width - MENU_WIDTH, rect.x + Math.max(0, rect.width - MENU_WIDTH)));
+      const menuWidth = actionMenuWidth(fallbackItems, width);
+      const menuX = Math.max(0, Math.min(width - menuWidth, rect.x + Math.max(0, rect.width - menuWidth)));
       const menuY = Math.max(0, Math.min(contentHeight - 1, rect.y + 1));
+      setHoveredMenuItemId(fallbackItems[0]?.id ?? null);
       setMenuState({
         paneId,
         x: menuX,
         y: menuY,
+        width: menuWidth,
         items: fallbackItems,
       });
     });
-  }, [contentHeight, copyPaneScreenshot, desktopWindowBridge, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, persistLayout, pluginRegistry, rendererHost.copyPngImage, showContextMenu, visibleLayout, width]);
+  }, [contentHeight, copyPaneScreenshot, desktopWindowBridge, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, persistLayout, pluginRegistry, rendererHost.copyPngImage, shortcutDisplayMode, showContextMenu, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
     persistLayout(removePane(visibleLayout, paneId));
@@ -1232,6 +1279,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     if (event.type === "down") {
       if (menuState) {
         setMenuState(null);
+        setHoveredMenuItemId(null);
       }
 
       for (const { pane, rect: visibleRect } of [...visibleFloatingPanes].sort((a, b) => (b.pane.floating?.zIndex ?? 50) - (a.pane.floating?.zIndex ?? 50))) {
@@ -1401,7 +1449,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   }), [appHeaderHeight]);
 
   const focusNativePane = useCallback((paneId: string) => {
-    if (menuState) setMenuState(null);
+    if (menuState) {
+      setMenuState(null);
+      setHoveredMenuItemId(null);
+    }
     focusPane(paneId);
   }, [focusPane, menuState]);
 
@@ -1460,7 +1511,10 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const startNativeDividerDrag = useCallback((divider: DockDividerLayout, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
     const pointer = getShellPointer(event);
-    if (menuState) setMenuState(null);
+    if (menuState) {
+      setMenuState(null);
+      setHoveredMenuItemId(null);
+    }
     dragRef.current = {
       type: "divider",
       path: divider.path,
@@ -1482,7 +1536,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     handleActiveDrag(event);
   }, [handleActiveDrag]);
 
-  const handleNativePaneAction = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+  const handlePaneAction = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
     if (event.button === 2) return;
     event.stopPropagation();
     event.preventDefault();
@@ -1493,7 +1547,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     openPaneMenu(paneId, rect, event);
   }, [openPaneMenu]);
 
-  const handleNativeFloatingClose = useCallback((paneId: string, event: ShellMouseEvent) => {
+  const handleFloatingCloseMouseDown = useCallback((paneId: string, event: ShellMouseEvent) => {
     event.stopPropagation();
     event.preventDefault();
     handleFloatingClose(paneId);
@@ -1558,7 +1612,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
                     onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
                     onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
                     onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, leaf.rect, event) : undefined}
-                    onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(leaf.instanceId, leaf.rect, event) : undefined}
+                    onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, leaf.rect, event)}
                   >
                     <PaneContent
                       component={pane.def.component}
@@ -1606,8 +1660,8 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
                   onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
                   onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
                   onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(pane.instance.instanceId, preview, event) : undefined}
-                  onActionMouseDown={nativePaneChrome ? (event) => handleNativePaneAction(pane.instance.instanceId, preview, event) : undefined}
-                  onCloseMouseDown={nativePaneChrome ? (event) => handleNativeFloatingClose(pane.instance.instanceId, event) : undefined}
+                  onActionMouseDown={(event) => handlePaneAction(pane.instance.instanceId, preview, event)}
+                  onCloseMouseDown={(event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
                   onResizeMouseDown={nativePaneChrome ? (event) => startNativeFloatResize(pane.instance.instanceId, preview, event) : undefined}
                   onResizeMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
                   onResizeMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
@@ -1759,30 +1813,46 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
           position="absolute"
           left={menuState.x}
           top={menuState.y}
-          width={MENU_WIDTH}
+          width={menuState.width}
           height={menuState.items.length + 2}
           backgroundColor={colors.panel}
           border
           borderStyle="single"
           borderColor={colors.borderFocused}
-          zIndex={99}
+          zIndex={MENU_Z_INDEX}
           flexDirection="column"
         >
-          {menuState.items.map((item) => (
-            <Box
-              key={item.id}
-              height={1}
-              paddingLeft={1}
-              onMouseDown={(mouseEvent: any) => {
-                mouseEvent.stopPropagation();
-                mouseEvent.preventDefault();
-                setMenuState(null);
-                item.action();
-              }}
-            >
-              <Text fg={colors.text}>{item.label}</Text>
-            </Box>
-          ))}
+          {menuState.items.map((item) => {
+            const hovered = hoveredMenuItemId === item.id;
+            const innerWidth = Math.max(1, menuState.width - 2);
+            const accelerator = item.accelerator ?? "";
+            const acceleratorWidth = accelerator.length;
+            const labelWidth = accelerator ? Math.max(1, innerWidth - acceleratorWidth - 1) : innerWidth;
+            const label = truncateMenuText(item.label, labelWidth);
+            const spacer = accelerator ? " ".repeat(Math.max(1, innerWidth - label.length - acceleratorWidth)) : "";
+            const line = truncateMenuText(`${label}${spacer}${accelerator}`, innerWidth).padEnd(innerWidth, " ");
+            return (
+              <Box
+                key={item.id}
+                height={1}
+                width={innerWidth}
+                backgroundColor={hovered ? colors.selected : colors.panel}
+                onMouseMove={() => setHoveredMenuItemId(item.id)}
+                onMouseDown={(mouseEvent: any) => {
+                  mouseEvent.stopPropagation();
+                  mouseEvent.preventDefault();
+                  setMenuState(null);
+                  setHoveredMenuItemId(null);
+                  item.action();
+                }}
+                data-gloom-interactive="true"
+              >
+                <Text fg={hovered ? colors.selectedText : colors.text}>
+                  {line}
+                </Text>
+              </Box>
+            );
+          })}
         </Box>
       )}
     </Box>

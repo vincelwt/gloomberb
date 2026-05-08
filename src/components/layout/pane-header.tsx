@@ -66,6 +66,31 @@ function DesktopPaneButton({
   );
 }
 
+function TerminalPaneButton({
+  text,
+  fg,
+  role,
+  onMouseDown,
+}: {
+  text: string;
+  fg: string;
+  role: string;
+  onMouseDown?: (event: any) => void;
+}) {
+  return (
+    <Box
+      height={1}
+      width={text.length}
+      flexDirection="row"
+      data-gloom-role={role}
+      data-gloom-interactive={onMouseDown ? "true" : undefined}
+      onMouseDown={onMouseDown}
+    >
+      <Text fg={fg} selectable={false}>{text}</Text>
+    </Box>
+  );
+}
+
 export function PaneHeader({
   title,
   width,
@@ -174,7 +199,20 @@ export function PaneHeader({
         <Text fg={bc} selectable={false}>{"┌─"}</Text>
         <Text fg={textColor} selectable={false}>{`${PANE_HEADER_GRIP}${clippedTitle}`}</Text>
         <Text fg={bc} selectable={false}>{fill}</Text>
-        <Text fg={textColor} selectable={false}>{`${actionText}${closeText}`}</Text>
+        <TerminalPaneButton
+          text={actionText}
+          fg={textColor}
+          role="pane-action"
+          onMouseDown={onActionMouseDown}
+        />
+        {floating && (
+          <TerminalPaneButton
+            text={closeText}
+            fg={textColor}
+            role="pane-close"
+            onMouseDown={onCloseMouseDown}
+          />
+        )}
         <Text fg={bc} selectable={false}>{"─┐"}</Text>
       </Box>
     );
@@ -187,8 +225,22 @@ export function PaneHeader({
   return (
     <Box height={PANE_HEADER_HEIGHT} width={width} backgroundColor={backgroundColor} flexDirection="row">
       <Text fg={textColor} selectable={false}>
-        {`${PANE_HEADER_GRIP}${clippedTitle}${padding}${actionText}${closeText}`}
+        {`${PANE_HEADER_GRIP}${clippedTitle}${padding}`}
       </Text>
+      <TerminalPaneButton
+        text={actionText}
+        fg={textColor}
+        role="pane-action"
+        onMouseDown={onActionMouseDown}
+      />
+      {floating && (
+        <TerminalPaneButton
+          text={closeText}
+          fg={textColor}
+          role="pane-close"
+          onMouseDown={onCloseMouseDown}
+        />
+      )}
     </Box>
   );
 }

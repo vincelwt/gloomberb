@@ -125,6 +125,21 @@ describe("HelpPane", () => {
     expect(frame).not.toContain("CmdOrCtrl");
   });
 
+  test("keeps shortcuts and descriptions on the same row when narrow", async () => {
+    await renderHelpPane(createTestPluginRuntime(), { width: 70, height: 80 });
+
+    const lines = testSetup!.captureCharFrame().split("\n").map(withoutScrollbar);
+    const closeCommandRow = lines.findIndex((line) => line.includes("Close the command bar."));
+    const securityDetailsRow = lines.findIndex((line) => line.includes("Open security details"));
+
+    expect(closeCommandRow).toBeGreaterThanOrEqual(0);
+    expect(lines[closeCommandRow]).toContain("Esc");
+    expect(lines[closeCommandRow]).toContain("`");
+    expect(securityDetailsRow).toBeGreaterThanOrEqual(0);
+    expect(lines[securityDetailsRow]).toContain("DES");
+    expect(lines[securityDetailsRow]).toContain("<ticker>");
+  });
+
   test("opens the debug log from the mouse action", async () => {
     const calls: string[] = [];
     const runtime = createTestPluginRuntime({

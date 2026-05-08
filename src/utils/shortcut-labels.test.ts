@@ -12,6 +12,7 @@ describe("shortcut labels", () => {
 
   test("renders terminal shortcuts with control even on macOS", () => {
     const mode = getShortcutDisplayMode("opentui");
+
     expect(formatPrimaryShortcut("W", "darwin", mode)).toBe("Ctrl+W");
     expect(formatPlatformShortcutLabel("CmdOrCtrl+,", "darwin", mode)).toBe("Ctrl+,");
     expect(getShortcutDisplayMode("desktop-web")).toBe("platform");

@@ -22,14 +22,12 @@ function ShortcutBadge({ label }: { label: string }) {
 function ShortcutRow({
   badges,
   description,
-  compact,
 }: {
   badges: string[];
   description: string;
-  compact: boolean;
 }) {
   return (
-    <Box flexDirection={compact ? "column" : "row"} gap={1}>
+    <Box flexDirection="row" gap={1}>
       <Box flexDirection="row" gap={1} flexShrink={0}>
         {badges.map((badge) => <ShortcutBadge key={badge} label={badge} />)}
       </Box>
@@ -214,7 +212,6 @@ function resolvePluginShortcuts(registry: ReturnType<typeof getSharedRegistry>):
 export function HelpPane({ width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const { openCommandBar, showWidget } = usePluginAppActions();
-  const compact = width < 78;
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
@@ -258,7 +255,7 @@ export function HelpPane({ width, height }: PaneProps) {
             </Box>
           </Box>
 
-          <Box flexDirection={compact ? "column" : "row"} gap={1}>
+          <Box flexDirection="row" gap={1}>
             <ActionButton
               id="debug"
               label="Open Debug Log"
@@ -286,32 +283,26 @@ export function HelpPane({ width, height }: PaneProps) {
             <ShortcutRow
               badges={commandBarBadges}
               description="Open or toggle the command bar from anywhere."
-              compact={compact}
             />
             <ShortcutRow
               badges={["<ticker>"]}
               description="Search for a ticker or open the best matching security."
-              compact={compact}
             />
             <ShortcutRow
               badges={["Up/Down", "Ctrl+P/N"]}
               description="Move through command bar results."
-              compact={compact}
             />
             <ShortcutRow
               badges={["Enter", "Shift+Enter"]}
               description="Run the selected result or its secondary action."
-              compact={compact}
             />
             <ShortcutRow
               badges={["Tab"]}
               description="Accept an inferred shortcut argument from the focused ticker."
-              compact={compact}
             />
             <ShortcutRow
               badges={["Esc", "`"]}
               description="Close the command bar."
-              compact={compact}
             />
           </HelpSection>
 
@@ -321,7 +312,6 @@ export function HelpPane({ width, height }: PaneProps) {
                 key={shortcut.id}
                 badges={shortcut.badges}
                 description={shortcut.description}
-                compact={compact}
               />
             ))}
           </HelpSection>
@@ -332,7 +322,6 @@ export function HelpPane({ width, height }: PaneProps) {
                 key={template.id}
                 badges={template.badges}
                 description={template.description}
-                compact={compact}
               />
             )) : (
               <Text fg={colors.textDim}>No shortcut window templates are currently registered.</Text>
@@ -346,7 +335,6 @@ export function HelpPane({ width, height }: PaneProps) {
                   key={shortcut.id}
                   badges={shortcut.badges}
                   description={shortcut.description}
-                  compact={compact}
                 />
               ))}
             </HelpSection>
@@ -356,42 +344,34 @@ export function HelpPane({ width, height }: PaneProps) {
             <ShortcutRow
               badges={["Tab", "Shift+Tab"]}
               description="Move focus between panes and floating windows."
-              compact={compact}
             />
             <ShortcutRow
               badges={["Ctrl+1-9"]}
               description="Switch saved layouts by number."
-              compact={compact}
             />
             <ShortcutRow
               badges={["r", "Shift+R"]}
               description="Refresh the focused ticker or refresh everything."
-              compact={compact}
             />
             <ShortcutRow
               badges={["a"]}
               description="Open ticker actions for the focused ticker."
-              compact={compact}
             />
             <ShortcutRow
               badges={["q"]}
               description="Quit the terminal app."
-              compact={compact}
             />
             <ShortcutRow
               badges={copyBadges}
               description="Copy the active terminal selection."
-              compact={compact}
             />
             <ShortcutRow
               badges={pasteBadges}
               description="Paste clipboard text into the active input."
-              compact={compact}
             />
             <ShortcutRow
               badges={["u"]}
               description="Install an available app update when one is shown."
-              compact={compact}
             />
           </HelpSection>
 
@@ -399,39 +379,32 @@ export function HelpPane({ width, height }: PaneProps) {
             <ShortcutRow
               badges={[platformShortcut("W")]}
               description="Close the focused pane, docked or floating."
-              compact={compact}
             />
             <ShortcutRow
               badges={[platformShortcut(",")]}
               description="Edit settings for the focused pane."
-              compact={compact}
             />
             <ShortcutRow
               badges={[platformShortcut(["Shift", "D"])]}
               description="Dock or float the focused pane."
-              compact={compact}
             />
             {isDesktopWeb && (
               <ShortcutRow
                 badges={[platformShortcut(["Shift", "O"])]}
                 description="Pop the focused pane out to a desktop window."
-                compact={compact}
               />
             )}
             <ShortcutRow
               badges={[platformShortcut(["Shift", "L"])]}
               description="Open layout actions."
-              compact={compact}
             />
             <ShortcutRow
               badges={[platformShortcut(["Shift", "G"])]}
               description="Gridlock all windows."
-              compact={compact}
             />
             <ShortcutRow
               badges={["Esc"]}
               description="Cancel an active pane drag."
-              compact={compact}
             />
           </HelpSection>
 

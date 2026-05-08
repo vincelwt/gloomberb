@@ -621,12 +621,17 @@ describe("Shell", () => {
     );
 
     await testSetup.renderOnce();
+    const actionCol = testSetup.captureCharFrame().split("\n")[0]?.indexOf("...");
+    expect(actionCol).toBeGreaterThanOrEqual(0);
     await act(async () => {
-      await testSetup!.mockMouse.click(37, 1);
+      await testSetup!.mockMouse.click(actionCol! + 1, 1);
     });
     await testSetup.renderOnce();
 
-    expect(testSetup.captureCharFrame()).toContain("Settings");
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Settings");
+    expect(frame).toContain("Ctrl+,");
+    expect(frame).not.toContain("CmdOrCtrl");
   });
 
   test("shows a Pop Out action in the pane menu when a desktop bridge is available", async () => {
@@ -666,12 +671,55 @@ describe("Shell", () => {
     );
 
     await testSetup.renderOnce();
+    const floatingActionCol = testSetup.captureCharFrame().split("\n")[0]?.indexOf("...");
+    expect(floatingActionCol).toBeGreaterThanOrEqual(0);
     await act(async () => {
-      await testSetup!.mockMouse.click(37, 1);
+      await testSetup!.mockMouse.click(floatingActionCol! + 1, 1);
     });
     await testSetup.renderOnce();
 
     expect(testSetup.captureCharFrame()).toContain("Pop Out");
+  });
+
+  test("shows the pane menu above a high z-index floating pane", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!detailPane) throw new Error("missing default detail pane");
+
+    const floatingOnlyLayout = {
+      dockRoot: null,
+      instances: [{ ...detailPane }],
+      floating: [{ instanceId: "ticker-detail:main", x: 0, y: 0, width: 40, height: 8, zIndex: 195 }],
+    };
+    const nextConfig = {
+      ...config,
+      layout: cloneLayout(floatingOnlyLayout),
+      layouts: [{ name: "Default", layout: cloneLayout(floatingOnlyLayout) }],
+    };
+    const state = {
+      ...createInitialState(nextConfig),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const pluginRegistry = createShellPluginRegistry();
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+          <Shell pluginRegistry={pluginRegistry} />
+        </DialogProvider>
+      </AppContext>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    const highZActionCol = testSetup.captureCharFrame().split("\n")[0]?.indexOf("...");
+    expect(highZActionCol).toBeGreaterThanOrEqual(0);
+    await act(async () => {
+      await testSetup!.mockMouse.click(highZActionCol! + 1, 1);
+    });
+    await testSetup.renderOnce();
+
+    expect(testSetup.captureCharFrame()).toContain("Dock Pane");
   });
 
   test("applies a chart resolution chip on the first click even when the chart pane is unfocused", async () => {
