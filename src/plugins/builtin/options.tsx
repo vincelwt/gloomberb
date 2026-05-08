@@ -4,7 +4,8 @@ import { TextAttributes } from "../../ui";
 import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
-import { blendHex, colors } from "../../theme/colors";
+import { blendHex, colors, hoverBg } from "../../theme/colors";
+import { blendForContrast, contrastRatio, higherContrast } from "../../theme/color-utils";
 import { formatCompact, formatNumber } from "../../utils/format";
 import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
@@ -12,7 +13,7 @@ import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks"
 import { DataTableView, Spinner, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../components";
 import { createTickerSurfacePaneTemplate } from "./ticker-surface";
 
-type OptionColumnId =
+export type OptionColumnId =
   | "callLast"
   | "callBid"
   | "callAsk"
@@ -40,27 +41,33 @@ type OptionsViewProps = Pick<DetailTabProps, "width" | "height" | "focused"> & {
   onCapture?: DetailTabProps["onCapture"];
 };
 
-const OPTION_CALL_COLOR = "#5ed69a";
-const OPTION_PUT_COLOR = "#ff9c7a";
-const OPTION_PRICE_COLOR = "#dfc05b";
-const OPTION_ACTIVITY_COLOR = "#35a7d6";
-const OPTION_IV_COLOR = "#8bd878";
-const OPTION_STRIKE_COLOR = "#8fb7ff";
+type OptionColorRole = "call" | "put" | "price" | "activity" | "iv" | "strike";
 
-const OPTION_COLUMNS: OptionColumn[] = [
-  { id: "callOpenInterest", label: "C OI", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
-  { id: "callVolume", label: "C VOL", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
-  { id: "callLast", label: "C LAST", width: 7, align: "right", headerColor: OPTION_CALL_COLOR },
-  { id: "callIv", label: "C IV", width: 6, align: "right", headerColor: OPTION_IV_COLOR },
-  { id: "callBid", label: "C BID", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
-  { id: "callAsk", label: "C ASK", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
-  { id: "strike", label: "STRIKE", width: 9, align: "right", headerColor: OPTION_STRIKE_COLOR },
-  { id: "putBid", label: "P BID", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
-  { id: "putAsk", label: "P ASK", width: 7, align: "right", headerColor: OPTION_PRICE_COLOR },
-  { id: "putIv", label: "P IV", width: 6, align: "right", headerColor: OPTION_IV_COLOR },
-  { id: "putLast", label: "P LAST", width: 7, align: "right", headerColor: OPTION_PUT_COLOR },
-  { id: "putVolume", label: "P VOL", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
-  { id: "putOpenInterest", label: "P OI", width: 6, align: "right", headerColor: OPTION_ACTIVITY_COLOR },
+const OPTION_TEXT_MIN_CONTRAST = 4.5;
+
+const OPTION_BASE_COLORS: Record<OptionColorRole, string> = {
+  call: "#5ed69a",
+  put: "#ff9c7a",
+  price: "#dfc05b",
+  activity: "#35a7d6",
+  iv: "#8bd878",
+  strike: "#8fb7ff",
+};
+
+const OPTION_COLUMNS: Array<Omit<OptionColumn, "headerColor">> = [
+  { id: "callOpenInterest", label: "C OI", width: 6, align: "right" },
+  { id: "callVolume", label: "C VOL", width: 6, align: "right" },
+  { id: "callLast", label: "C LAST", width: 7, align: "right" },
+  { id: "callIv", label: "C IV", width: 6, align: "right" },
+  { id: "callBid", label: "C BID", width: 7, align: "right" },
+  { id: "callAsk", label: "C ASK", width: 7, align: "right" },
+  { id: "strike", label: "STRIKE", width: 9, align: "right" },
+  { id: "putBid", label: "P BID", width: 7, align: "right" },
+  { id: "putAsk", label: "P ASK", width: 7, align: "right" },
+  { id: "putIv", label: "P IV", width: 6, align: "right" },
+  { id: "putLast", label: "P LAST", width: 7, align: "right" },
+  { id: "putVolume", label: "P VOL", width: 6, align: "right" },
+  { id: "putOpenInterest", label: "P OI", width: 6, align: "right" },
 ];
 
 export function OptionsView({ width, height, focused, onCapture = () => {} }: OptionsViewProps) {
@@ -161,6 +168,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   const selectedStrike = strikes[strikeIdx];
   const selectedCall = selectedStrike != null ? callsByStrike.get(selectedStrike) : undefined;
   const selectedPut = selectedStrike != null ? putsByStrike.get(selectedStrike) : undefined;
+  const optionColumns = OPTION_COLUMNS.map((column) => ({
+    ...column,
+    headerColor: optionColumnColor(column.id, colors.panel),
+  }));
 
   usePaneFooter("options", () => {
     const info = [
@@ -303,7 +314,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
         focused={focused}
         selectedIndex={strikeIdx}
         onRootKeyDown={handleTableKeyDown}
-        columns={OPTION_COLUMNS}
+        columns={optionColumns}
         items={rows}
         sortColumnId={null}
         sortDirection="asc"
@@ -378,12 +389,60 @@ function optionContractForColumn(row: OptionTableRow, columnId: OptionColumnId):
   return columnId.startsWith("call") ? row.call : row.put;
 }
 
-function optionColumnColor(columnId: OptionColumnId): string {
-  if (columnId === "strike") return OPTION_STRIKE_COLOR;
-  if (columnId.endsWith("Iv")) return OPTION_IV_COLOR;
-  if (columnId.endsWith("Volume") || columnId.endsWith("OpenInterest")) return OPTION_ACTIVITY_COLOR;
-  if (columnId.endsWith("Bid") || columnId.endsWith("Ask")) return OPTION_PRICE_COLOR;
-  return columnId.startsWith("call") ? OPTION_CALL_COLOR : OPTION_PUT_COLOR;
+export function optionColumnColor(columnId: OptionColumnId, surface = colors.bg): string {
+  return optionRoleColor(optionColumnRole(columnId), surface);
+}
+
+function optionColumnRole(columnId: OptionColumnId): OptionColorRole {
+  if (columnId === "strike") return "strike";
+  if (columnId.endsWith("Iv")) return "iv";
+  if (columnId.endsWith("Volume") || columnId.endsWith("OpenInterest")) return "activity";
+  if (columnId.endsWith("Bid") || columnId.endsWith("Ask")) return "price";
+  return columnId.startsWith("call") ? "call" : "put";
+}
+
+function optionRoleThemeColor(role: OptionColorRole): string {
+  switch (role) {
+    case "call":
+    case "iv":
+      return colors.positive;
+    case "put":
+      return colors.negative;
+    case "price":
+      return colors.warning;
+    case "activity":
+    case "strike":
+      return colors.borderFocused;
+  }
+}
+
+function mostReadableColor(surface: string, candidates: readonly string[]): string {
+  return candidates.reduce((best, candidate) =>
+    contrastRatio(candidate, surface) > contrastRatio(best, surface) ? candidate : best,
+  );
+}
+
+export function optionRoleColor(role: OptionColorRole, surface: string): string {
+  const preferred = OPTION_BASE_COLORS[role];
+  const themeColor = optionRoleThemeColor(role);
+  const fallback = mostReadableColor(surface, [
+    preferred,
+    themeColor,
+    colors.text,
+    colors.textBright,
+    higherContrast("#ffffff", "#000000", surface),
+  ]);
+  return blendForContrast(preferred, surface, fallback, OPTION_TEXT_MIN_CONTRAST);
+}
+
+export function optionMutedColor(surface: string): string {
+  const fallback = mostReadableColor(surface, [
+    colors.textDim,
+    colors.text,
+    colors.textBright,
+    higherContrast("#ffffff", "#000000", surface),
+  ]);
+  return blendForContrast(colors.textDim, surface, fallback, OPTION_TEXT_MIN_CONTRAST);
 }
 
 function optionMoneynessBackground(
@@ -443,23 +502,28 @@ function renderOptionCell(
   rowState: { selected: boolean; hovered: boolean },
 ): DataTableCell {
   const selectedColor = rowState.selected ? colors.selectedText : undefined;
+  const rowSurface = rowState.selected ? colors.selected : rowState.hovered ? hoverBg() : colors.bg;
 
   if (column.id === "strike") {
+    const backgroundColor = rowState.selected || rowState.hovered
+      ? undefined
+      : blendHex(colors.bg, row.isPositionStrike ? colors.borderFocused : colors.header, row.isPositionStrike ? 0.18 : 0.1);
+    const surface = backgroundColor ?? rowSurface;
     return {
       text: formatStrikeLabel(row.strike),
-      color: selectedColor ?? OPTION_STRIKE_COLOR,
-      backgroundColor: rowState.selected || rowState.hovered
-        ? undefined
-        : blendHex(colors.bg, row.isPositionStrike ? colors.borderFocused : colors.header, row.isPositionStrike ? 0.18 : 0.1),
+      color: selectedColor ?? optionRoleColor("strike", surface),
+      backgroundColor,
       attributes: rowState.selected || row.isPositionStrike ? TextAttributes.BOLD : TextAttributes.NONE,
     };
   }
 
   const contract = optionContractForColumn(row, column.id);
+  const backgroundColor = optionMoneynessBackground(row, contract, column.id, rowState);
+  const surface = backgroundColor ?? rowSurface;
   return {
     text: formatOptionContractCell(contract, column),
-    color: selectedColor ?? (contract ? optionColumnColor(column.id) : colors.textDim),
-    backgroundColor: optionMoneynessBackground(row, contract, column.id, rowState),
+    color: selectedColor ?? (contract ? optionRoleColor(optionColumnRole(column.id), surface) : optionMutedColor(surface)),
+    backgroundColor,
   };
 }
 
