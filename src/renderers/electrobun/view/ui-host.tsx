@@ -176,7 +176,7 @@ function cleanDomProps(props: Record<string, unknown>): Record<string, unknown> 
     "margin", "marginX", "marginY", "marginLeft", "marginRight", "marginTop", "marginBottom",
     "bold", "underline", "inverse", "dim", "italic", "strikethrough", "attributes", "content", "position", "left", "right", "top", "bottom",
     "zIndex", "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "gap",
-    "border", "borderStyle", "borderColor", "overflow", "selectable", "name", "color",
+    "border", "borderStyle", "borderColor", "overflow", "selectable", "visible", "name", "color",
     "focused", "focusedBackgroundColor", "textColor", "focusedTextColor", "placeholderColor",
     "cursorColor", "selectionBg", "selectionFg", "showCursor", "keyBindings", "wrapText", "wrapMode",
     "initialValue", "value", "onInput", "onChange", "onSubmit", "onCursorChange", "onMouse",
@@ -445,7 +445,11 @@ const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { children?:
         onMouseUp={(event) => callMouseHandler(propsRef.current.onMouseUp, event, "up")}
         onMouseOut={handleMouseOut}
         onWheel={typeof props.onMouseScroll === "function" ? handleWheel : undefined}
-        style={{ ...commonStyle(props), ...(props.style as CSSProperties | undefined) }}
+        style={{
+          ...commonStyle(props),
+          ...(props.style as CSSProperties | undefined),
+          ...(props.visible === false ? { display: "none" } : undefined),
+        }}
       >
         {children as ReactNode}
       </div>
