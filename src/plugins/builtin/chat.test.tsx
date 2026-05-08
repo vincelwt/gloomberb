@@ -1495,6 +1495,7 @@ describe("ChatContent", () => {
       },
       registerPane: () => {},
       registerPaneTemplate: () => {},
+      registerDetailTab: () => {},
       registerShortcut: () => {},
       registerCommand: (command: { id: string; wizardLayout?: string; wizard?: Array<{ key: string }> }) => {
         registeredCommands.push(command);

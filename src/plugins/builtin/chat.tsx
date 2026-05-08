@@ -873,7 +873,7 @@ export function ChatContent({
           ) : (
             <>
               <Text fg={colors.positive}>Verify your email to send messages.</Text>
-              <Text fg={colors.textDim}>Ctrl+P: Resend Verification Email</Text>
+              <Text fg={colors.textDim}>Ctrl+P, then Resend Verification Email</Text>
             </>
           )}
         </Box>

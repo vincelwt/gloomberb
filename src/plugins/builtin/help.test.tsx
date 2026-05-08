@@ -16,19 +16,22 @@ afterEach(() => {
   setSharedRegistryForTests(undefined);
 });
 
-async function renderHelpPane(runtime = createTestPluginRuntime()) {
+async function renderHelpPane(
+  runtime = createTestPluginRuntime(),
+  size = { width: 88, height: 36 },
+) {
   testSetup = await testRender(
     <PluginRenderProvider pluginId="help" runtime={runtime}>
       <HelpPane
         paneId="help:main"
         paneType="help"
         focused
-        width={88}
-        height={36}
+        width={size.width}
+        height={size.height}
         close={() => {}}
       />
     </PluginRenderProvider>,
-    { width: 88, height: 36 },
+    size,
   );
 
   await testSetup.renderOnce();
@@ -102,7 +105,7 @@ describe("HelpPane", () => {
       getShortcutPluginId: () => "gloomberb-cloud",
     } as any);
 
-    await renderHelpPane();
+    await renderHelpPane(createTestPluginRuntime(), { width: 88, height: 80 });
 
     const frame = testSetup!.captureCharFrame();
     expect(frame).toMatch(/AW\s+<ticker>/);
@@ -111,6 +114,13 @@ describe("HelpPane", () => {
     expect(frame).toContain("Add Alert (Alerts)");
     expect(frame).toContain("Shift+C");
     expect(frame).toContain("Toggle chat (Gloomberb Cloud)");
+    expect(frame).toContain("Ctrl+W");
+    expect(frame).toContain("Ctrl+,");
+    expect(frame).not.toContain("Ctrl+Shift+O");
+    expect(frame).not.toContain("Pop the focused pane");
+    expect(frame).not.toContain("Cmd+W");
+    expect(frame).not.toContain("Cmd+,");
+    expect(frame).not.toContain("Cmd+K");
     expect(frame).not.toContain("Cmd/Ctrl");
     expect(frame).not.toContain("CmdOrCtrl");
   });

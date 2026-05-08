@@ -169,17 +169,18 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | Key | Action |
 |-----|--------|
 | `Ctrl+P` or `` ` `` | Open command bar |
-| `Cmd/Ctrl+,` | Open focused pane settings |
-| `Cmd/Ctrl+W` | Close focused pane |
-| `Cmd/Ctrl+Shift+D` | Dock or float focused pane |
-| `Cmd/Ctrl+Shift+O` | Pop out focused pane |
-| `Cmd/Ctrl+Shift+L` | Layout actions |
-| `Cmd/Ctrl+Shift+G` | Gridlock all windows |
+| `Ctrl+,` | Open focused pane settings |
+| `Ctrl+W` | Close focused pane |
+| `Ctrl+Shift+D` | Dock or float focused pane |
+| `Ctrl+Shift+L` | Layout actions |
+| `Ctrl+Shift+G` | Gridlock all windows |
 | `Tab` | Switch between panels |
 | `j` / `k` | Navigate ticker list |
 | `h` / `l` | Switch tabs |
 | `m` | Cycle chart mode in the chart tab |
 | `q` | Quit |
+
+Desktop builds also accept the matching `Cmd` shortcuts on macOS, plus `Cmd/Ctrl+Shift+O` to pop out a pane.
 
 ## License
 

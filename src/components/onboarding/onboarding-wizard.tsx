@@ -1,4 +1,4 @@
-import { AsciiText, Box, Input, Span, Strong, Text, Underline } from "../../ui";
+import { AsciiText, Box, Input, Span, Strong, Text, Underline, useUiHost } from "../../ui";
 import { useState, useCallback, useEffect, useRef, useMemo, type RefObject } from "react";
 import { useShortcut, useViewport } from "../../react/input";
 import { TextAttributes } from "../../ui";
@@ -12,7 +12,7 @@ import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField }
 import { buildBrokerProfileConfig, validateBrokerProfileValues } from "../../brokers/profile-form";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation";
-import { detectShortcutPlatform, formatPrimaryShortcut } from "../../utils/shortcut-labels";
+import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
 import { debugLog } from "../../utils/debug-log";
 import { ToggleList, type ToggleListItem } from "../toggle-list";
@@ -1199,8 +1199,10 @@ function ShortcutsStep({
   pluginRegistry: PluginRegistry;
   disabledPlugins: string[];
 }) {
+  const uiHost = useUiHost();
   const shortcutPlatform = detectShortcutPlatform();
-  const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform);
+  const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
+  const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform, shortcutDisplayMode);
   const keyboardShortcuts = [
     { key: "Ctrl+P / `", desc: "Open the command bar" },
     { key: "Tab", desc: "Switch between panels" },
@@ -1243,7 +1245,7 @@ function ShortcutsStep({
   return (
     <Box flexDirection="column" paddingX={2}>
       <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"Useful shortcuts"}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{"After launch shortcuts"}</Text>
       </Box>
       <Box height={1} />
 

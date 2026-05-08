@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text } from "../../ui";
+import { Box, ScrollBox, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -7,7 +7,7 @@ import { colors, hoverBg } from "../../theme/colors";
 import { getSharedRegistry } from "../registry";
 import { usePluginAppActions } from "../plugin-runtime";
 import { commands as coreCommands } from "../../components/command-bar/command-registry";
-import { detectShortcutPlatform, formatPrimaryShortcut } from "../../utils/shortcut-labels";
+import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
 
 function ShortcutBadge({ label }: { label: string }) {
   return (
@@ -219,8 +219,20 @@ export function HelpPane({ width, height }: PaneProps) {
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
   const windowTemplates = resolveWindowTemplates(registry);
+  const uiHost = useUiHost();
+  const isDesktopWeb = uiHost.kind === "desktop-web";
   const shortcutPlatform = detectShortcutPlatform();
-  const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform);
+  const shortcutDisplayMode = getShortcutDisplayMode(uiHost.kind);
+  const platformShortcut = (keys: string | readonly string[]) => formatPrimaryShortcut(keys, shortcutPlatform, shortcutDisplayMode);
+  const commandBarBadges = shortcutDisplayMode === "terminal"
+    ? ["Ctrl+P", "`"]
+    : ["Ctrl+P", platformShortcut("K"), "`"];
+  const copyBadges = shortcutDisplayMode === "terminal"
+    ? ["Ctrl+Shift+C"]
+    : [platformShortcut("C")];
+  const pasteBadges = shortcutDisplayMode === "terminal"
+    ? ["Ctrl+Shift+V"]
+    : [platformShortcut("V")];
 
   const openDebugLog = () => {
     showWidget("debug");
@@ -272,7 +284,7 @@ export function HelpPane({ width, height }: PaneProps) {
 
           <HelpSection title="Command Bar">
             <ShortcutRow
-              badges={["Ctrl+P", "Cmd+K", "`"]}
+              badges={commandBarBadges}
               description="Open or toggle the command bar from anywhere."
               compact={compact}
             />
@@ -367,12 +379,12 @@ export function HelpPane({ width, height }: PaneProps) {
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd+C", "Ctrl+Shift+C"]}
+              badges={copyBadges}
               description="Copy the active terminal selection."
               compact={compact}
             />
             <ShortcutRow
-              badges={["Cmd+V", "Ctrl+Shift+V"]}
+              badges={pasteBadges}
               description="Paste clipboard text into the active input."
               compact={compact}
             />
@@ -399,11 +411,13 @@ export function HelpPane({ width, height }: PaneProps) {
               description="Dock or float the focused pane."
               compact={compact}
             />
-            <ShortcutRow
-              badges={[platformShortcut(["Shift", "O"])]}
-              description="Pop the focused pane out to a desktop window."
-              compact={compact}
-            />
+            {isDesktopWeb && (
+              <ShortcutRow
+                badges={[platformShortcut(["Shift", "O"])]}
+                description="Pop the focused pane out to a desktop window."
+                compact={compact}
+              />
+            )}
             <ShortcutRow
               badges={[platformShortcut(["Shift", "L"])]}
               description="Open layout actions."
