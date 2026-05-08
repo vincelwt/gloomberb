@@ -25,6 +25,14 @@ import {
   resolveLockedTabId,
 } from "./settings";
 
+function sameStringSet(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
+}
+
 export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -38,6 +46,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const [activeTabId, setActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
   const [chartInteractive, setChartInteractive] = useState(false);
   const [pluginCaptured, setPluginCaptured] = useState(false);
+  const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set());
   const paneSettings = getTickerDetailPaneSettings(paneInstance?.settings);
   const hasOptionsChain = !!resolveOptionsTarget(ticker)?.effectiveTicker;
   const collectionTickerCount = useAppSelector((state) => getCollectionTickerCount(state, collectionId));
@@ -60,9 +69,20 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const resolvedTabId = paneSettings.hideTabs
     ? resolveLockedTabId(paneSettings, allTabs)
     : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
-  const activePluginTab = pluginTabs.find((tab) => tab.id === resolvedTabId && allTabs.some((visibleTab) => visibleTab.id === tab.id)) ?? null;
   const tabBarHeight = paneSettings.hideTabs ? 0 : 1;
   const contentHeight = Math.max(1, height - tabBarHeight);
+  const visibleTabIdKey = allTabs.map((tab) => tab.id).join("\0");
+  const visibleTabIds = useMemo(() => new Set(allTabs.map((tab) => tab.id)), [visibleTabIdKey]);
+  const renderedTabIds = useMemo(() => {
+    const next = new Set<string>();
+    for (const tabId of mountedTabIds) {
+      if (visibleTabIds.has(tabId)) next.add(tabId);
+    }
+    if (visibleTabIds.has(resolvedTabId)) {
+      next.add(resolvedTabId);
+    }
+    return next;
+  }, [mountedTabIds, resolvedTabId, visibleTabIds]);
 
   const allTabsRef = useRef(allTabs);
   allTabsRef.current = allTabs;
@@ -96,6 +116,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     setPluginCaptured(capturing);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: capturing });
   }, [dispatch]);
+  const ignorePluginCapture = useCallback(() => {}, []);
 
   useEffect(() => {
     if (resolvedTabId !== "chart") {
@@ -104,6 +125,19 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [resolvedTabId, dispatch]);
+
+  useEffect(() => {
+    setMountedTabIds((current) => {
+      const next = new Set<string>();
+      for (const tabId of current) {
+        if (visibleTabIds.has(tabId)) next.add(tabId);
+      }
+      if (visibleTabIds.has(resolvedTabId)) {
+        next.add(resolvedTabId);
+      }
+      return sameStringSet(current, next) ? current : next;
+    });
+  }, [resolvedTabId, visibleTabIds]);
 
   useEffect(() => {
     if (resolvedTabId !== activeTabId) {
@@ -166,37 +200,87 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       )}
 
       <Box height={contentHeight} flexGrow={1} flexBasis={0} overflow="hidden">
-        {resolvedTabId === "overview" && (
-          <OverviewTab
-            width={width}
-            symbol={symbol}
-            ticker={ticker}
-            financials={financials}
-          />
-        )}
-        {resolvedTabId === "financials" && <ResolvedFinancialsTab focused={focused} financials={financials} />}
-        {resolvedTabId === "chart" && (
-          <ChartTab
-            width={width}
+        {renderedTabIds.has("overview") && (
+          <Box
+            key="overview"
+            visible={resolvedTabId === "overview"}
+            flexDirection="column"
+            flexGrow={1}
+            flexBasis={0}
             height={contentHeight}
-            focused={focused}
-            interactive={chartInteractive}
-            axisMode={paneSettings.chartAxisMode}
-            onActivate={() => setChartInteractiveEager(true)}
-            symbol={symbol}
-            ticker={ticker}
-            financials={financials}
-          />
+            overflow="hidden"
+          >
+            <OverviewTab
+              width={width}
+              symbol={symbol}
+              ticker={ticker}
+              financials={financials}
+            />
+          </Box>
+        )}
+        {renderedTabIds.has("financials") && (
+          <Box
+            key="financials"
+            visible={resolvedTabId === "financials"}
+            flexDirection="column"
+            flexGrow={1}
+            flexBasis={0}
+            height={contentHeight}
+            overflow="hidden"
+          >
+            <ResolvedFinancialsTab
+              focused={focused && resolvedTabId === "financials"}
+              financials={financials}
+            />
+          </Box>
+        )}
+        {renderedTabIds.has("chart") && (
+          <Box
+            key="chart"
+            visible={resolvedTabId === "chart"}
+            flexDirection="column"
+            flexGrow={1}
+            flexBasis={0}
+            height={contentHeight}
+            overflow="hidden"
+          >
+            <ChartTab
+              width={width}
+              height={contentHeight}
+              focused={focused && resolvedTabId === "chart"}
+              interactive={chartInteractive}
+              axisMode={paneSettings.chartAxisMode}
+              onActivate={() => setChartInteractiveEager(true)}
+              symbol={symbol}
+              ticker={ticker}
+              financials={financials}
+            />
+          </Box>
         )}
 
-        {activePluginTab && (
-          <activePluginTab.component
-            width={width}
-            height={contentHeight}
-            focused={focused}
-            onCapture={handlePluginCapture}
-          />
-        )}
+        {pluginTabs.map((tab) => {
+          if (!renderedTabIds.has(tab.id) || !visibleTabIds.has(tab.id)) return null;
+          const PluginTab = tab.component;
+          const isActive = resolvedTabId === tab.id;
+          return (
+            <Box
+              key={tab.id}
+              visible={isActive}
+              flexDirection="column"
+              flexGrow={1}
+              flexBasis={0}
+              height={contentHeight}
+              overflow="hidden"
+            >
+              <PluginTab
+                width={width}
+                height={contentHeight}
+                focused={focused && isActive}
+                onCapture={isActive ? handlePluginCapture : ignorePluginCapture}
+              />
+            </Box>
+          );
+        })}
       </Box>
     </Box>
   );
