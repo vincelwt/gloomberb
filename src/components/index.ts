@@ -10,7 +10,7 @@ export type { DataTableKeyEvent } from "./data-table-view";
 export { DataTableStackView } from "./data-table-stack-view";
 export { FeedDataTableStackView } from "./feed-data-table-stack-view";
 export type { FeedDataTableItem } from "./feed-data-table-stack-view";
-export { usePaneFooter } from "./layout/pane-footer";
+export { PaneFooterScope, usePaneFooter } from "./layout/pane-footer";
 export type { PaneFooterSegment, PaneHint } from "./layout/pane-footer";
 export { useExternalLinkFooter } from "./use-external-link-footer";
 export { Button } from "./ui/button";

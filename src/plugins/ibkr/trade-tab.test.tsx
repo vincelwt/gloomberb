@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { act } from "react";
+import { Box } from "../../ui";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import {
   AppContext,
   PaneInstanceProvider,
@@ -104,23 +106,37 @@ function TradeHarness({
   ticker,
   financials,
   brokerAccounts = {},
+  withFooter = false,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials;
   brokerAccounts?: Record<string, import("../../types/trading").BrokerAccount[]>;
+  withFooter?: boolean;
 }) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
   state.tickers = new Map([[ticker.metadata.ticker, ticker]]);
   state.financials = new Map([[ticker.metadata.ticker, financials]]);
   state.brokerAccounts = brokerAccounts;
+  const tradeTab = <TradeTab focused width={88} height={30} onCapture={() => {}} />;
 
   return (
     <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
       <AppContext value={{ state, dispatch: () => {} }}>
         <PaneInstanceProvider paneId={TEST_PANE_ID}>
-          <TradeTab focused width={88} height={30} onCapture={() => {}} />
+          {withFooter
+            ? (
+                <PaneFooterProvider>
+                  {(footer) => (
+                    <Box flexDirection="column" width={88} height={31}>
+                      {tradeTab}
+                      <PaneFooterBar footer={footer} focused width={88} />
+                    </Box>
+                  )}
+                </PaneFooterProvider>
+              )
+            : tradeTab}
         </PaneInstanceProvider>
       </AppContext>
     </DialogProvider>
@@ -222,4 +238,40 @@ test("prefills the only cached IBKR account when the live gateway snapshot is em
   const frame = testSetup.captureCharFrame();
   expect(frame).toContain("Account DU123456");
   expect(frame).toContain("Paper Gateway");
+});
+
+test("omits redundant and disabled trade footer hints", async () => {
+  const config = createTradeConfig("AMD");
+  const ticker = makeTicker("AMD", "Advanced Micro Devices, Inc.");
+  const financials = makeFinancials();
+
+  clearTradingDraft();
+  stubGatewayRefresh();
+  prefillTradeFromTicker(ticker, "BUY");
+
+  await act(async () => {
+    testSetup = await testRender(
+      <TradeHarness config={config} ticker={ticker} financials={financials} withFooter />,
+      { width: 88, height: 31 },
+    );
+  });
+
+  await act(async () => {
+    await testSetup!.renderOnce();
+  });
+  await act(async () => {
+    await testSetup!.renderOnce();
+  });
+
+  const frame = testSetup.captureCharFrame();
+  expect(frame).toContain("[r]efresh");
+  expect(frame).toContain("[i]profile");
+  expect(frame).toContain("[a]ccount");
+  expect(frame).toContain("[b/v]side");
+  expect(frame).toContain("[q]ty");
+  expect(frame).toContain("[t]ype");
+  expect(frame).toContain("[p]review");
+  expect(frame).not.toContain("[s]ymbol");
+  expect(frame).not.toContain("[l]imit");
+  expect(frame).not.toContain("[x]stop");
 });

@@ -158,6 +158,21 @@ export function PaneFooterProvider({
   );
 }
 
+export function PaneFooterScope({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  const context = useContext(PaneFooterContext);
+  return (
+    <PaneFooterContext.Provider value={active ? context : null}>
+      {children}
+    </PaneFooterContext.Provider>
+  );
+}
+
 export function usePaneFooter(
   registrationId: string,
   factory: () => PaneFooterRegistration | null | undefined,

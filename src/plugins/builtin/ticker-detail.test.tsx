@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, type ReactElement } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import type { ScrollBoxRenderable } from "@opentui/core";
+import { Box } from "../../ui";
 import {
   AppContext,
   appReducer,
@@ -22,6 +23,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { DetailTabDef } from "../../types/plugin";
 import type { TickerRecord } from "../../types/ticker";
+import { PaneFooterBar, PaneFooterProvider, usePaneFooter } from "../../components/layout/pane-footer";
 import type { PluginRegistry } from "../registry";
 import { setSharedRegistryForTests } from "../registry";
 import { PluginRenderProvider } from "../plugin-runtime";
@@ -153,6 +155,34 @@ function makeRegistry(): PluginRegistry {
   return { detailTabs } as unknown as PluginRegistry;
 }
 
+function createFooterProbeTab(tabId: string, label: string): DetailTabDef["component"] {
+  return function FooterProbeTab() {
+    usePaneFooter(`footer-probe:${tabId}`, () => ({
+      info: [{ id: `${tabId}:info`, parts: [{ text: `${tabId}-footer`, tone: "value" }] }],
+      hints: [{ id: `${tabId}:hint`, key: label[0]!.toLowerCase(), label: `${label.slice(1).toLowerCase()}-hint` }],
+    }), []);
+    return <text>{`${label} body`}</text>;
+  };
+}
+
+function makeFooterRegistry(): PluginRegistry {
+  const detailTabs = new Map<string, DetailTabDef>([
+    ["probe-alpha", {
+      id: "probe-alpha",
+      name: "Alpha",
+      order: 25,
+      component: createFooterProbeTab("alpha", "Alpha"),
+    }],
+    ["probe-beta", {
+      id: "probe-beta",
+      name: "Beta",
+      order: 30,
+      component: createFooterProbeTab("beta", "Beta"),
+    }],
+  ]);
+  return { detailTabs } as unknown as PluginRegistry;
+}
+
 function createGatewayInstance(id = "ibkr-paper"): BrokerInstanceConfig {
   return {
     id,
@@ -238,6 +268,40 @@ function DetailHarness({
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
+  );
+}
+
+function DetailFooterHarness({
+  config,
+  ticker,
+  financials,
+  activeTabId,
+  width = 90,
+  height = 18,
+}: {
+  config: AppConfig;
+  ticker: TickerRecord;
+  financials: TickerFinancials | null;
+  activeTabId: string;
+  width?: number;
+  height?: number;
+}) {
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box flexDirection="column" width={width} height={height}>
+          <DetailHarness
+            config={config}
+            ticker={ticker}
+            financials={financials}
+            activeTabId={activeTabId}
+            width={width}
+            height={height - 1}
+          />
+          <PaneFooterBar footer={footer} focused width={width} />
+        </Box>
+      )}
+    </PaneFooterProvider>
   );
 }
 
@@ -744,5 +808,43 @@ describe("TickerDetailPane", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("active:overview");
     expect(frame).not.toContain("Trade");
+  });
+
+  test("shows only active mounted tab pane hints", async () => {
+    setSharedRegistryForTests(makeFooterRegistry());
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailFooterHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+        activeTabId="probe-alpha"
+      />,
+      { width: 90, height: 18 },
+    );
+
+    await flushFrame();
+    await flushFrame();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("alpha-footer");
+    expect(frame).toContain("[a]lpha-hint");
+    expect(frame).not.toContain("beta-footer");
+    expect(frame).not.toContain("[b]eta-hint");
+
+    await act(async () => {
+      harnessDispatch!({ type: "UPDATE_PANE_STATE", paneId: TEST_PANE_ID, patch: { activeTabId: "probe-beta" } });
+      await Promise.resolve();
+    });
+    await flushFrame();
+    await flushFrame();
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Beta body");
+    expect(frame).toContain("beta-footer");
+    expect(frame).toContain("[b]eta-hint");
+    expect(frame).not.toContain("alpha-footer");
+    expect(frame).not.toContain("[a]lpha-hint");
   });
 });

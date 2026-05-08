@@ -14,7 +14,7 @@ import {
 import { useQuoteStreaming } from "../../../state/use-quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
-import { EmptyState, Tabs } from "../../../components";
+import { EmptyState, PaneFooterScope, Tabs } from "../../../components";
 import { resolveOptionsTarget } from "../../../utils/options";
 import { ChartTab } from "./chart-tab";
 import { ResolvedFinancialsTab } from "./financials-tab";
@@ -210,12 +210,14 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
             height={contentHeight}
             overflow="hidden"
           >
-            <OverviewTab
-              width={width}
-              symbol={symbol}
-              ticker={ticker}
-              financials={financials}
-            />
+            <PaneFooterScope active={resolvedTabId === "overview"}>
+              <OverviewTab
+                width={width}
+                symbol={symbol}
+                ticker={ticker}
+                financials={financials}
+              />
+            </PaneFooterScope>
           </Box>
         )}
         {renderedTabIds.has("financials") && (
@@ -228,10 +230,12 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
             height={contentHeight}
             overflow="hidden"
           >
-            <ResolvedFinancialsTab
-              focused={focused && resolvedTabId === "financials"}
-              financials={financials}
-            />
+            <PaneFooterScope active={resolvedTabId === "financials"}>
+              <ResolvedFinancialsTab
+                focused={focused && resolvedTabId === "financials"}
+                financials={financials}
+              />
+            </PaneFooterScope>
           </Box>
         )}
         {renderedTabIds.has("chart") && (
@@ -244,17 +248,19 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
             height={contentHeight}
             overflow="hidden"
           >
-            <ChartTab
-              width={width}
-              height={contentHeight}
-              focused={focused && resolvedTabId === "chart"}
-              interactive={chartInteractive}
-              axisMode={paneSettings.chartAxisMode}
-              onActivate={() => setChartInteractiveEager(true)}
-              symbol={symbol}
-              ticker={ticker}
-              financials={financials}
-            />
+            <PaneFooterScope active={resolvedTabId === "chart"}>
+              <ChartTab
+                width={width}
+                height={contentHeight}
+                focused={focused && resolvedTabId === "chart"}
+                interactive={chartInteractive}
+                axisMode={paneSettings.chartAxisMode}
+                onActivate={() => setChartInteractiveEager(true)}
+                symbol={symbol}
+                ticker={ticker}
+                financials={financials}
+              />
+            </PaneFooterScope>
           </Box>
         )}
 
@@ -272,12 +278,14 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
               height={contentHeight}
               overflow="hidden"
             >
-              <PluginTab
-                width={width}
-                height={contentHeight}
-                focused={focused && isActive}
-                onCapture={isActive ? handlePluginCapture : ignorePluginCapture}
-              />
+              <PaneFooterScope active={isActive}>
+                <PluginTab
+                  width={width}
+                  height={contentHeight}
+                  focused={focused && isActive}
+                  onCapture={isActive ? handlePluginCapture : ignorePluginCapture}
+                />
+              </PaneFooterScope>
             </Box>
           );
         })}
