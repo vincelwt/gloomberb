@@ -198,7 +198,8 @@ describe("NewsArticleStackView", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("NFLX PARA");
+    expect(frame).toContain("NFLX");
+    expect(frame).toContain("PARA");
     expect(frame).not.toContain("NFLX:XNAS");
     expect(frame).not.toContain("PARA:XNAS");
   });

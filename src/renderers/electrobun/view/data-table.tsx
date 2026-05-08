@@ -420,16 +420,30 @@ function WebDataTableRowInner<
               onActivateRow?.(item, index);
             }}
           >
-            <span
-              title={cell.text}
-              style={clippedCellTextStyle(
-                column,
-                cell.color ?? (selected ? colors.selectedText : colors.text),
-                cell.attributes ?? TextAttributes.NONE,
-              )}
-            >
-              {cell.text}
-            </span>
+            {cell.content !== undefined ? (
+              <div
+                title={cell.text}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  minWidth: 0,
+                  overflow: "hidden",
+                }}
+              >
+                {cell.content}
+              </div>
+            ) : (
+              <span
+                title={cell.text}
+                style={clippedCellTextStyle(
+                  column,
+                  cell.color ?? (selected ? colors.selectedText : colors.text),
+                  cell.attributes ?? TextAttributes.NONE,
+                )}
+              >
+                {cell.text}
+              </span>
+            )}
           </div>
         );
       })}

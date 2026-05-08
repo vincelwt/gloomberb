@@ -4,6 +4,7 @@ export { StaticChartSurface } from "./chart/static-chart-surface";
 export type { QuoteFlashDirection } from "./ticker-list-table";
 export { TickerListTableView } from "./ticker-list-table-view";
 export type { TickerListVisibleRange } from "./ticker-list-table-view";
+export { TickerBadgeList } from "./ticker-badge-list";
 export { DataTableView } from "./data-table-view";
 export type { DataTableKeyEvent } from "./data-table-view";
 export { DataTableStackView } from "./data-table-stack-view";

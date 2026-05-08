@@ -28,6 +28,7 @@ export type DataTableColumn = Pick<
 
 export interface DataTableCell {
   text: string;
+  content?: ReactNode;
   color?: string;
   backgroundColor?: string;
   attributes?: number;
@@ -468,15 +469,19 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                             }, event);
                           }}
                         >
-                          <Text
-                            attributes={cell.attributes ?? TextAttributes.NONE}
-                            fg={
-                              cell.color ??
-                              (selected ? colors.selectedText : colors.text)
-                            }
-                          >
-                            {padTo(cell.text, column.width, column.align)}
-                          </Text>
+                          {cell.content !== undefined ? (
+                            cell.content
+                          ) : (
+                            <Text
+                              attributes={cell.attributes ?? TextAttributes.NONE}
+                              fg={
+                                cell.color ??
+                                (selected ? colors.selectedText : colors.text)
+                              }
+                            >
+                              {padTo(cell.text, column.width, column.align)}
+                            </Text>
+                          )}
                         </Box>
                       );
                     })}

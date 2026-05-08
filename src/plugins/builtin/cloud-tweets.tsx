@@ -7,6 +7,7 @@ import {
   EmptyState,
   SegmentedControl,
   Tabs,
+  TickerBadgeList,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -244,7 +245,7 @@ function tweetImageUrls(tweet: CloudTweetPayload): string[] {
 function buildTweetColumns(width: number): TweetColumn[] {
   const timeWidth = 7;
   const authorWidth = 16;
-  const tickersWidth = 14;
+  const tickersWidth = 24;
   const likesWidth = 7;
   const viewsWidth = 8;
   const textWidth = Math.max(
@@ -394,6 +395,19 @@ function TweetSearchTable({
   });
   const rows = useMemo(() => sortedTweets(data?.tweets ?? [], sort.columnId, sort.direction), [data?.tweets, sort]);
   const columns = useMemo(() => buildTweetColumns(width), [width]);
+  const tableTickerTexts = useMemo(() => {
+    const seen = new Set<string>();
+    const texts: string[] = [];
+    for (const tweet of rows) {
+      for (const symbol of tweetTickers(tweet)) {
+        if (seen.has(symbol)) continue;
+        seen.add(symbol);
+        texts.push(`$${symbol}`);
+      }
+    }
+    return texts;
+  }, [rows]);
+  const { catalog: tickerCatalog, openTicker } = useInlineTickers(tableTickerTexts);
   const selectedIndex = rows.findIndex((tweet) => tweet.id === selectedTweetId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
   const selectedTweet = rows[activeIndex] ?? null;
@@ -467,14 +481,28 @@ function TweetSearchTable({
         };
       case "text":
         return { text: normalizeTweetDisplayText(tweet.text), color: selectedColor ?? colors.text };
-      case "tickers":
-        return { text: tweetTickers(tweet).map((ticker) => `$${ticker}`).join(" "), color: selectedColor ?? colors.positive };
+      case "tickers": {
+        const tickers = tweetTickers(tweet);
+        return {
+          text: tickers.map((ticker) => `$${ticker}`).join(" "),
+          content: (
+            <TickerBadgeList
+              symbols={tickers}
+              width={column.width}
+              catalog={tickerCatalog}
+              fallbackColor={selectedColor ?? colors.positive}
+              openTicker={openTicker}
+            />
+          ),
+          color: selectedColor ?? colors.positive,
+        };
+      }
       case "likes":
         return { text: formatMetric(tweet.metrics.likes), color: selectedColor ?? colors.textDim };
       case "views":
         return { text: formatMetric(tweet.metrics.views), color: selectedColor ?? colors.textDim };
     }
-  }, []);
+  }, [openTicker, tickerCatalog]);
 
   const emptyContent = error && isAuthError(error)
     ? <CloudAuthNotice message={error} showSignup />

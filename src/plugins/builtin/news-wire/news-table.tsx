@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
+  TickerBadgeList,
   type DataTableCell,
   type DataTableColumn,
 } from "../../../components";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
+import { useInlineTickers } from "../../../state/use-inline-tickers";
 
 export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
 
@@ -102,7 +104,7 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
     rank: 4,
     time: 4,
     source: 10,
-    tickers: 10,
+    tickers: 24,
     categories: 10,
     importance: 5,
   };
@@ -173,6 +175,19 @@ export function NewsArticleStackView({
     () => sortNewsArticles(articles, sortPreference),
     [articles, sortPreference],
   );
+  const tableTickerTexts = useMemo(() => {
+    const seen = new Set<string>();
+    const texts: string[] = [];
+    for (const article of sortedArticles) {
+      for (const symbol of collectNewsDisplayTickers(article.tickers)) {
+        if (seen.has(symbol)) continue;
+        seen.add(symbol);
+        texts.push(`$${symbol}`);
+      }
+    }
+    return texts;
+  }, [sortedArticles]);
+  const { catalog: tickerCatalog, openTicker } = useInlineTickers(tableTickerTexts);
   const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
   const activeIdx = selectedIdx >= 0 ? selectedIdx : sortedArticles.length > 0 ? 0 : -1;
@@ -223,11 +238,22 @@ export function NewsArticleStackView({
             ? TextAttributes.NONE
             : TextAttributes.BOLD,
         };
-      case "tickers":
+      case "tickers": {
+        const tickers = collectNewsDisplayTickers(item.tickers);
         return {
-          text: collectNewsDisplayTickers(item.tickers).join(" "),
+          text: tickers.join(" "),
+          content: (
+            <TickerBadgeList
+              symbols={tickers}
+              width={column.width}
+              catalog={tickerCatalog}
+              fallbackColor={selectedColor ?? colors.textBright}
+              openTicker={openTicker}
+            />
+          ),
           color: selectedColor ?? colors.textBright,
         };
+      }
       case "categories":
         return { text: item.categories[0] ?? "—", color: selectedColor ?? colors.textDim };
       case "importance":
@@ -236,7 +262,7 @@ export function NewsArticleStackView({
           color: selectedColor ?? (item.importance >= 80 ? colors.positive : colors.textDim),
         };
     }
-  }, [readArticleIds, titleForArticle]);
+  }, [openTicker, readArticleIds, tickerCatalog, titleForArticle]);
 
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>

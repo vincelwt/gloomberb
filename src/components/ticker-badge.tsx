@@ -73,7 +73,7 @@ export function TickerBadge({
   const interactive = status === "ready";
 
   return (
-    <Box paddingRight={1}>
+    <Box paddingRight={1} flexShrink={0}>
       <Box
         paddingX={1}
         backgroundColor={backgroundColor}
