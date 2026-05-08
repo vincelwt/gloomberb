@@ -1,4 +1,4 @@
-import { Box, ImageSurface, Text, useUiHost } from "../../ui";
+import { Box, ImageSurface, Text } from "../../ui";
 import { colors } from "../../theme/colors";
 import { ExternalLinkText } from "./external-link";
 import { normalizedHttpUrl } from "../../utils/url";
@@ -25,51 +25,26 @@ export function RemoteImage({
   height = 12,
   label = "image",
 }: RemoteImageProps) {
-  const ui = useUiHost();
   const resolvedWidth = Math.max(12, width);
   const imageUrl = normalizedHttpUrl(src);
   if (!imageUrl) return null;
 
-  if (ui.kind === "desktop-web") {
-    return (
-      <ImageSurface
-        src={imageUrl}
-        alt={alt}
-        width={resolvedWidth}
-        height={Math.max(4, height)}
-        border
-        borderColor={colors.border}
-        backgroundColor={colors.panel}
-        objectFit="contain"
-      >
-        <Box paddingX={1} paddingY={1} flexDirection="column" gap={1}>
-          <Text fg={colors.textDim}>{label}</Text>
-          <ExternalLinkText
-            url={imageUrl}
-            label={truncate(imageUrl, Math.max(1, resolvedWidth - 2))}
-            color={colors.textBright}
-          />
-        </Box>
-      </ImageSurface>
-    );
-  }
-
   return (
-    <Box
+    <ImageSurface
+      src={imageUrl}
+      alt={alt}
       width={resolvedWidth}
-      minHeight={2}
-      border
-      borderColor={colors.border}
-      backgroundColor={colors.panel}
-      paddingX={1}
-      flexDirection="column"
+      height={Math.max(4, height)}
+      objectFit="contain"
     >
-      <Text fg={colors.textDim}>{label}</Text>
-      <ExternalLinkText
-        url={imageUrl}
-        label={truncate(imageUrl, Math.max(1, resolvedWidth - 2))}
-        color={colors.textBright}
-      />
-    </Box>
+      <Box flexDirection="column" gap={1}>
+        <Text fg={colors.textDim}>{label}</Text>
+        <ExternalLinkText
+          url={imageUrl}
+          label={truncate(imageUrl, resolvedWidth)}
+          color={colors.textBright}
+        />
+      </Box>
+    </ImageSurface>
   );
 }

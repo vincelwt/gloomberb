@@ -3,6 +3,7 @@ import { createElement } from "react";
 import "opentui-spinner/react";
 import { TextAttributes, type UiHost, type TextProps } from "../../ui/host";
 import { renderAsciiText } from "../../ui/ascii-font";
+import { OpenTuiImageSurface } from "./image-surface";
 
 function mapTextAttributes(appAttributes: number | undefined, props?: TextProps): number | undefined {
   const flags = typeof appAttributes === "number" ? appAttributes : 0;
@@ -66,7 +67,7 @@ export const openTuiUiHost: UiHost = {
   Input: ({ children, ...props }) => createElement("input" as any, props, children),
   Textarea: ({ children, ...props }) => createElement("textarea" as any, props, children),
   ChartSurface: ({ children, bitmap: _bitmap, bitmaps: _bitmaps, crosshair: _crosshair, ...props }) => <box {...props}>{children}</box>,
-  ImageSurface: ({ children, src: _src, alt: _alt, objectFit: _objectFit, ...props }) => <box {...props}>{children}</box>,
+  ImageSurface: OpenTuiImageSurface,
   SpinnerMark: ({ children, ...props }) => createElement("spinner" as any, props, children),
   AsciiText: ({ text, font = "tiny", color, fg, bg, backgroundColor, selectable = false, ...props }) => {
     const resolvedColor = color ?? fg;

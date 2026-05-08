@@ -183,6 +183,10 @@ export function usePaneInstanceId(): string {
   return paneId;
 }
 
+export function useOptionalPaneInstanceId(): string | null {
+  return useContext(PaneContext);
+}
+
 export function usePaneInstance(): PaneInstanceConfig | null {
   const paneId = useContext(PaneContext);
   return useAppSelector((state) => (paneId ? findPaneInstance(state.config.layout, paneId) ?? null : null));
