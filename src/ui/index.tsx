@@ -1,4 +1,5 @@
 import { createElement, forwardRef } from "react";
+import { useForwardedScrollBoxRef, useRegisterPaneScrollBox } from "../state/pane-scroll-registry";
 import { useUiHost } from "./host";
 export {
   RGBA,
@@ -85,7 +86,14 @@ Underline.displayName = "Underline";
 
 export const ScrollBox = forwardRef<any, import("./host").ScrollBoxProps>((props, ref) => {
   const { ScrollBox: HostScrollBox } = useUiHost();
-  return createElement(HostScrollBox as any, { ...props, ref });
+  const localRef = useForwardedScrollBoxRef<any>(ref);
+  useRegisterPaneScrollBox(localRef, {
+    enabled: props.scrollY === true,
+    onScrollActivity: typeof props.onMouseScroll === "function"
+      ? props.onMouseScroll as (event: { scroll: { direction: "up" | "down"; delta: number } }) => void
+      : undefined,
+  });
+  return createElement(HostScrollBox as any, { ...props, ref: localRef });
 });
 ScrollBox.displayName = "ScrollBox";
 

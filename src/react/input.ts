@@ -9,14 +9,22 @@ export interface KeyEventLike {
   alt: boolean;
   meta: boolean;
   super?: boolean;
+  readonly defaultPrevented?: boolean;
+  readonly propagationStopped?: boolean;
   preventDefault(): void;
   stopPropagation(): void;
+}
+
+export interface ShortcutOptions {
+  enabled?: boolean;
+  scope?: string;
+  phase?: "normal" | "after";
 }
 
 export interface InputHost {
   useShortcut(
     handler: (event: KeyEventLike) => void,
-    options?: { enabled?: boolean; scope?: string },
+    options?: ShortcutOptions,
   ): void;
   useViewport(): { width: number; height: number };
 }
@@ -43,7 +51,7 @@ function useInputHost(): InputHost {
 
 export function useShortcut(
   handler: (event: KeyEventLike) => void,
-  options?: { enabled?: boolean; scope?: string },
+  options?: ShortcutOptions,
 ): void {
   useInputHost().useShortcut(handler, options);
 }
