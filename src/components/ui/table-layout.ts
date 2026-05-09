@@ -6,8 +6,14 @@ interface TableWidthColumn {
   flexGrow?: number;
 }
 
+const TRAILING_COLUMN_GUTTER_WIDTH = 1;
+
 export function getTableWidth(columns: readonly TableWidthColumn[]): number {
   return columns.reduce((sum, column) => sum + column.width + 1, 2);
+}
+
+export function hasMeaningfulTableHorizontalOverflow(tableWidth: number, viewportWidth: number): boolean {
+  return viewportWidth > 0 && tableWidth - viewportWidth > TRAILING_COLUMN_GUTTER_WIDTH;
 }
 
 export function expandTableColumns<C extends TableWidthColumn>(
@@ -34,9 +40,9 @@ export function useMeasuredTableContentWidth(
   const [viewportWidth, setViewportWidth] = useState(0);
 
   const measureContentWidth = useCallback(() => {
-    const nextWidth = scrollRef?.current?.viewport?.width
-      ?? headerScrollRef?.current?.viewport?.width
-      ?? 0;
+    const bodyWidth = scrollRef?.current?.viewport?.width || scrollRef?.current?.width || 0;
+    const headerWidth = headerScrollRef?.current?.viewport?.width || headerScrollRef?.current?.width || 0;
+    const nextWidth = bodyWidth || headerWidth;
     setViewportWidth((current) => current === nextWidth ? current : nextWidth);
   }, [headerScrollRef, scrollRef]);
   const scheduleContentWidthMeasure = useCallback(() => {
@@ -48,6 +54,7 @@ export function useMeasuredTableContentWidth(
 
   return {
     contentWidth: Math.max(tableWidth, viewportWidth),
+    viewportWidth,
     measureContentWidth: scheduleContentWidthMeasure,
   };
 }

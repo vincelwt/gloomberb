@@ -13,6 +13,7 @@ import { EmptyState } from "./status";
 import {
   expandTableColumns,
   getTableWidth,
+  hasMeaningfulTableHorizontalOverflow,
   tableContentWidthProps,
   useMeasuredTableContentWidth,
 } from "./table-layout";
@@ -199,10 +200,16 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
     ],
   );
   const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
-  const { contentWidth, measureContentWidth } = useMeasuredTableContentWidth(tableWidth, headerScrollRef, scrollRef);
+  const {
+    contentWidth: measuredContentWidth,
+    viewportWidth: measuredViewportWidth,
+    measureContentWidth,
+  } = useMeasuredTableContentWidth(tableWidth, headerScrollRef, scrollRef);
+  const horizontalScrollbarVisible = showHorizontalScrollbar
+    && hasMeaningfulTableHorizontalOverflow(tableWidth, measuredViewportWidth);
   const displayColumns = useMemo(
-    () => expandTableColumns(columns, contentWidth),
-    [columns, contentWidth],
+    () => expandTableColumns(columns, measuredContentWidth),
+    [columns, measuredContentWidth],
   );
   const handleRowMouseDown =
     useDoubleClickActivation<DataTableRowPointerTarget<T>>({
@@ -269,17 +276,18 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   useEffect(() => {
     if (headerScrollRef.current) {
       headerScrollRef.current.horizontalScrollBar.visible = false;
-      if (!showHorizontalScrollbar) {
+      if (!horizontalScrollbarVisible) {
         headerScrollRef.current.scrollLeft = 0;
       }
     }
     if (scrollRef.current) {
-      scrollRef.current.horizontalScrollBar.visible = showHorizontalScrollbar;
-      if (!showHorizontalScrollbar) {
+      scrollRef.current.horizontalScrollBar.visible = horizontalScrollbarVisible;
+      scrollRef.current.verticalScrollBar.visible = items.length > scrollRef.current.viewport.height;
+      if (!horizontalScrollbarVisible) {
         scrollRef.current.scrollLeft = 0;
       }
     }
-  }, [columns.length, headerScrollRef, items.length, scrollRef, showHorizontalScrollbar]);
+  }, [columns.length, headerScrollRef, horizontalScrollbarVisible, items.length, measuredViewportHeight, scrollRef]);
 
   useEffect(() => {
     if (applyScrollToIndex()) return;
@@ -318,7 +326,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
         <Box
           flexDirection="row"
           height={1}
-          {...tableContentWidthProps(contentWidth)}
+          {...tableContentWidthProps(measuredContentWidth)}
           paddingX={1}
           backgroundColor={colors.panel}
         >
@@ -396,7 +404,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                       key={getItemKey(item, index)}
                       flexDirection="row"
                       height={1}
-                      {...tableContentWidthProps(contentWidth)}
+                      {...tableContentWidthProps(measuredContentWidth)}
                       paddingX={1}
                       backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
                       onMouseDown={(event) => {
@@ -433,7 +441,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     key={getItemKey(item, index)}
                     flexDirection="row"
                     height={1}
-                    {...tableContentWidthProps(contentWidth)}
+                    {...tableContentWidthProps(measuredContentWidth)}
                     paddingX={1}
                     backgroundColor={rowBg}
                     onMouseMove={() => {

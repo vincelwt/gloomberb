@@ -24,6 +24,7 @@ import type {
   DataTableProps,
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
+import { getTableWidth, hasMeaningfulTableHorizontalOverflow } from "../../../components/ui/table-layout";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { useScrollbarActivity } from "./scrollbar-activity";
 
@@ -489,7 +490,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const headerVertical = useScrollbarState(false);
   const bodyHorizontal = useScrollbarState(showHorizontalScrollbar);
   const bodyVertical = useScrollbarState(true);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
+  const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
   const gridTemplateColumns = useMemo(
     () => buildGridTemplateColumns(columns),
     [columns],
@@ -538,6 +541,25 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const totalHeight = virtualize
     ? rowVirtualizer.getTotalSize()
     : WEB_CELL_HEIGHT + items.length * WEB_CELL_HEIGHT;
+  const horizontalScrollEnabled = showHorizontalScrollbar
+    && hasMeaningfulTableHorizontalOverflow(tableWidth, viewportWidth);
+  const scrollContentWidth = horizontalScrollEnabled
+    ? Math.max(1, tableWidth * WEB_CELL_WIDTH)
+    : "100%";
+  const measureViewportWidth = useCallback(() => {
+    const element = bodyElementRef.current;
+    const nextValue = element ? toCellX(element.clientWidth) : 0;
+    setViewportWidth((current) => current === nextValue ? current : nextValue);
+  }, []);
+
+  useEffect(() => {
+    measureViewportWidth();
+    const element = bodyElementRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureViewportWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [measureViewportWidth]);
 
   useEffect(() => {
     if (scrollToIndex == null || items.length === 0) return;
@@ -589,11 +611,11 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
 
   useEffect(() => {
     headerHorizontal.bar.visible = false;
-    bodyHorizontal.bar.visible = showHorizontalScrollbar;
-    if (!showHorizontalScrollbar) {
+    bodyHorizontal.bar.visible = horizontalScrollEnabled;
+    if (!horizontalScrollEnabled) {
       if (bodyElementRef.current) bodyElementRef.current.scrollLeft = 0;
     }
-  }, [bodyHorizontal.bar, headerHorizontal.bar, showHorizontalScrollbar]);
+  }, [bodyHorizontal.bar, headerHorizontal.bar, horizontalScrollEnabled]);
 
   const rootStyle: CSSProperties = {
     display: "flex",
@@ -610,7 +632,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     flex: "1 1 0px",
     minWidth: 0,
     minHeight: 0,
-    overflowX: showHorizontalScrollbar ? "auto" : "hidden",
+    overflowX: horizontalScrollEnabled ? "auto" : "hidden",
     overflowY: "auto",
     backgroundColor: colors.bg,
   };
@@ -621,7 +643,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
         ref={bodyElementRef}
         data-gloom-role="data-table-body-scroll"
         data-gloom-scrollbar-x={
-          showHorizontalScrollbar && bodyHorizontal.visible
+          horizontalScrollEnabled && bodyHorizontal.visible
             ? "visible"
             : "hidden"
         }
@@ -646,7 +668,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
           data-gloom-role="data-table-scroll-content"
           style={{
             position: "relative",
-            width: "100%",
+            width: scrollContentWidth,
             height: items.length > 0 ? totalHeight : "100%",
             minHeight: WEB_CELL_HEIGHT,
           }}

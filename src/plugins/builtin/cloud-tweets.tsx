@@ -546,7 +546,6 @@ function TweetSearchTable({
       emptyContent={emptyContent}
       emptyStateTitle={loading ? "Loading tweets..." : error ?? "No tweets"}
       emptyStateHint={data?.query}
-      showHorizontalScrollbar={false}
     />
   );
 }
