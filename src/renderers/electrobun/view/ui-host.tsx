@@ -886,13 +886,29 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
     );
     const horizontalScrollBarVisibleRef = useRef(horizontalScrollBarVisible);
     const verticalScrollBarVisibleRef = useRef(verticalScrollBarVisible);
+    const horizontalScrollChangeHandlersRef = useRef(new Set<() => void>());
+    const verticalScrollChangeHandlersRef = useRef(new Set<() => void>());
     const scrollFrameRef = useRef<number | null>(null);
     const lastWheelAtRef = useRef(0);
     const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
 
-    const getElement = () => elementRef.current;
+    const getElement = useCallback(() => elementRef.current, []);
     const toCellY = (pixels: number) => Math.max(0, Math.round(pixels / WEB_CELL_HEIGHT));
     const toCellX = (pixels: number) => Math.max(0, Math.round(pixels / WEB_CELL_WIDTH));
+    const emitHorizontalScrollChange = useCallback(() => {
+      for (const handler of horizontalScrollChangeHandlersRef.current) {
+        handler();
+      }
+    }, []);
+    const emitVerticalScrollChange = useCallback(() => {
+      for (const handler of verticalScrollChangeHandlersRef.current) {
+        handler();
+      }
+    }, []);
+    const emitScrollPositionChanges = useCallback(() => {
+      emitVerticalScrollChange();
+      emitHorizontalScrollChange();
+    }, [emitHorizontalScrollChange, emitVerticalScrollChange]);
     const horizontalScrollBar = useMemo(() => ({
       get visible() {
         return horizontalScrollBarVisibleRef.current;
@@ -901,6 +917,12 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         const normalized = nextVisible === true;
         horizontalScrollBarVisibleRef.current = normalized;
         setHorizontalScrollBarVisible(normalized);
+      },
+      on(event: "change", handler: () => void) {
+        if (event === "change") horizontalScrollChangeHandlersRef.current.add(handler);
+      },
+      off(event: "change", handler: () => void) {
+        if (event === "change") horizontalScrollChangeHandlersRef.current.delete(handler);
       },
     }), []);
     const verticalScrollBar = useMemo(() => ({
@@ -911,6 +933,12 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         const normalized = nextVisible === true;
         verticalScrollBarVisibleRef.current = normalized;
         setVerticalScrollBarVisible(normalized);
+      },
+      on(event: "change", handler: () => void) {
+        if (event === "change") verticalScrollChangeHandlersRef.current.add(handler);
+      },
+      off(event: "change", handler: () => void) {
+        if (event === "change") verticalScrollChangeHandlersRef.current.delete(handler);
       },
     }), []);
 
@@ -938,28 +966,40 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
       },
       set scrollTop(value: number) {
         const element = getElement();
-        if (element) element.scrollTop = Math.max(0, value) * WEB_CELL_HEIGHT;
+        if (element) {
+          element.scrollTop = Math.max(0, value) * WEB_CELL_HEIGHT;
+          emitVerticalScrollChange();
+        }
       },
       get scrollTopPx() {
         return Math.max(0, getElement()?.scrollTop ?? 0);
       },
       set scrollTopPx(value: number) {
         const element = getElement();
-        if (element) element.scrollTop = Math.max(0, value);
+        if (element) {
+          element.scrollTop = Math.max(0, value);
+          emitVerticalScrollChange();
+        }
       },
       get scrollLeft() {
         return toCellX(getElement()?.scrollLeft ?? 0);
       },
       set scrollLeft(value: number) {
         const element = getElement();
-        if (element) element.scrollLeft = Math.max(0, value) * WEB_CELL_WIDTH;
+        if (element) {
+          element.scrollLeft = Math.max(0, value) * WEB_CELL_WIDTH;
+          emitHorizontalScrollChange();
+        }
       },
       get scrollLeftPx() {
         return Math.max(0, getElement()?.scrollLeft ?? 0);
       },
       set scrollLeftPx(value: number) {
         const element = getElement();
-        if (element) element.scrollLeft = Math.max(0, value);
+        if (element) {
+          element.scrollLeft = Math.max(0, value);
+          emitHorizontalScrollChange();
+        }
       },
       get scrollHeight() {
         return toCellY(getElement()?.scrollHeight ?? 0);
@@ -1003,8 +1043,10 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         if (!element) return;
         if (typeof target === "number") {
           element.scrollTop = Math.max(0, target) * WEB_CELL_HEIGHT;
+          emitVerticalScrollChange();
           if (typeof y === "number") {
             element.scrollLeft = Math.max(0, y) * WEB_CELL_WIDTH;
+            emitHorizontalScrollChange();
           }
           return;
         }
@@ -1012,14 +1054,17 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
           left: Math.max(0, target.x ?? toCellX(element.scrollLeft)) * WEB_CELL_WIDTH,
           top: Math.max(0, target.y ?? toCellY(element.scrollTop)) * WEB_CELL_HEIGHT,
         });
+        emitScrollPositionChanges();
       },
       scrollToPixels(target: number | { x?: number; y?: number }, y?: number) {
         const element = getElement();
         if (!element) return;
         if (typeof target === "number") {
           element.scrollTop = Math.max(0, target);
+          emitVerticalScrollChange();
           if (typeof y === "number") {
             element.scrollLeft = Math.max(0, y);
+            emitHorizontalScrollChange();
           }
           return;
         }
@@ -1027,13 +1072,22 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
           left: Math.max(0, target.x ?? element.scrollLeft),
           top: Math.max(0, target.y ?? element.scrollTop),
         });
+        emitScrollPositionChanges();
       },
-    }), [horizontalScrollBar, verticalScrollBar]);
+    }), [
+      emitHorizontalScrollChange,
+      emitScrollPositionChanges,
+      emitVerticalScrollChange,
+      getElement,
+      horizontalScrollBar,
+      verticalScrollBar,
+    ]);
 
     const scrollable = props.scrollX === true || props.scrollY === true;
     const overflowX = props.scrollX === true ? "auto" : "hidden";
     const overflowY = props.scrollY === true ? "auto" : "hidden";
     const handleScroll = useCallback(() => {
+      emitScrollPositionChanges();
       markScrollbarActive();
       if (typeof props.onMouseScroll !== "function") return;
       if (Date.now() - lastWheelAtRef.current < 32) return;
@@ -1042,7 +1096,7 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         scrollFrameRef.current = null;
         (props.onMouseScroll as () => void)();
       });
-    }, [markScrollbarActive, props.onMouseScroll]);
+    }, [emitScrollPositionChanges, markScrollbarActive, props.onMouseScroll]);
     const handleWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
       markScrollbarActive();
       lastWheelAtRef.current = Date.now();

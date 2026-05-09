@@ -8,6 +8,22 @@ import {
 } from "react";
 import { Box, type ScrollBoxRenderable } from "../ui";
 
+function listenToScrollBarChange(
+  scrollBar: ScrollBoxRenderable["verticalScrollBar"],
+  handler: () => void,
+): (() => void) | null {
+  if (
+    !scrollBar
+    || typeof scrollBar.on !== "function"
+    || typeof scrollBar.off !== "function"
+  ) {
+    return null;
+  }
+
+  scrollBar.on("change", handler);
+  return () => scrollBar.off?.("change", handler);
+}
+
 export interface TableViewKeyEvent {
   name?: string;
   ctrl?: boolean;
@@ -172,13 +188,19 @@ export function useScrollBoxScrollActivity({
       });
     };
 
-    scrollBox.verticalScrollBar.on("change", handleVerticalChange);
-    scrollBox.horizontalScrollBar.on("change", handleHorizontalChange);
+    const removeVerticalListener = listenToScrollBarChange(
+      scrollBox.verticalScrollBar,
+      handleVerticalChange,
+    );
+    const removeHorizontalListener = listenToScrollBarChange(
+      scrollBox.horizontalScrollBar,
+      handleHorizontalChange,
+    );
 
     return () => {
       active = false;
-      scrollBox.verticalScrollBar.off("change", handleVerticalChange);
-      scrollBox.horizontalScrollBar.off("change", handleHorizontalChange);
+      removeVerticalListener?.();
+      removeHorizontalListener?.();
     };
   }, [scrollRef]);
 }
