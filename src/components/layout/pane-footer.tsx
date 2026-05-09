@@ -357,11 +357,13 @@ export function PaneFooterBar({
   focused,
   width = 0,
   reserveRight = 0,
+  showBorder = false,
 }: {
   footer?: CombinedPaneFooter | null;
   focused: boolean;
   width?: number;
   reserveRight?: number;
+  showBorder?: boolean;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
   const resolvedFooter = footer ?? EMPTY_FOOTER;
@@ -399,15 +401,15 @@ export function PaneFooterBar({
     );
   }
 
-  if (focused) {
+  if (focused || showBorder) {
     const contentWidth = Math.max(0, Math.floor(width) - 1 - reservedRight - (reservedRight > 0 ? 0 : 1));
     return (
-      <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused="true" data-empty={empty ? "true" : "false"}>
+      <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused={focused ? "true" : "false"} data-empty={empty ? "true" : "false"}>
         <Text fg={borderColor} selectable={false}>└</Text>
         <Box width={contentWidth} height={1} overflow="hidden">
           {empty
             ? <Text fg={borderColor} selectable={false}>{"─".repeat(contentWidth)}</Text>
-            : <FooterContent footer={resolvedFooter} focused width={contentWidth} />}
+            : <FooterContent footer={resolvedFooter} focused={focused} width={contentWidth} />}
         </Box>
         {reservedRight === 0 && <Text fg={borderColor} selectable={false}>┘</Text>}
       </Box>
