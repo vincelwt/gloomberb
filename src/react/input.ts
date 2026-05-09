@@ -9,6 +9,7 @@ export interface KeyEventLike {
   alt: boolean;
   meta: boolean;
   super?: boolean;
+  targetEditable?: boolean;
   readonly defaultPrevented?: boolean;
   readonly propagationStopped?: boolean;
   preventDefault(): void;

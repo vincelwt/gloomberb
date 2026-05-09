@@ -21,6 +21,7 @@ type ViewMode = "table" | "chart";
 type HolderColumnId = "holder" | "value" | "shares" | "changeShares" | "changePercent" | "percentHeld" | "reportDate";
 type HolderColumn = DataTableColumn & { id: HolderColumnId };
 type SortDirection = "asc" | "desc";
+type PreventableMouseEvent = { preventDefault(): void };
 
 interface SortPreference {
   columnId: HolderColumnId;
@@ -452,7 +453,7 @@ function Tile({ tile, selected, currency, onSelect }: {
       width={renderWidth}
       height={renderHeight}
       backgroundColor={selected ? colors.selected : tileColor(tile.row)}
-      onMouseDown={(event) => {
+      onMouseDown={(event: PreventableMouseEvent) => {
         event.preventDefault();
         onSelect();
       }}
@@ -538,7 +539,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
     <Box
       data-gloom-role="holders-desktop-tile"
       style={style}
-      onMouseDown={(event) => {
+      onMouseDown={(event: PreventableMouseEvent) => {
         event.preventDefault();
         onSelect();
       }}
@@ -682,6 +683,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
 }
 
 function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
+  const { nativePaneChrome } = useUiCapabilities();
   const { symbol, ticker } = usePaneTicker();
   const dataProvider = useAssetData();
   const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "chart");
@@ -853,6 +855,7 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
     : loading
       ? "Loading holders..."
       : error ?? "No holders available";
+  const chartHeight = Math.max(1, height - 1 - (nativePaneChrome ? 1 : 0));
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -889,7 +892,7 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
         <HoldersTreemap
           rows={sortedRows}
           width={width}
-          height={Math.max(1, height - 1)}
+          height={chartHeight}
           selectedId={selectedId}
           onSelect={(row) => setSelectedId(row.id)}
           currency={currency}

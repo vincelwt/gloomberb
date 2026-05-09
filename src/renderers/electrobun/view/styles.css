@@ -71,8 +71,8 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
   pointer-events: none;
   z-index: 100;
 }
-[data-gloom-role="pane-window"][data-focused="true"] {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pane-border-color, #54c99f) 30%, transparent), 0 18px 40px rgba(0, 0, 0, .5);
+[data-gloom-role="pane-window"][data-floating="true"][data-focused="true"] {
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .5);
 }
 [data-gloom-role="pane-window"][data-floating="false"] {
   border: 0;

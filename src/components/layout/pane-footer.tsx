@@ -368,6 +368,11 @@ export function PaneFooterBar({
   const empty = !hasPaneFooterContent(resolvedFooter);
   const borderColor = focused ? colors.borderFocused : colors.border;
   const topBorderColor = colors.border;
+  const nativeBackgroundColor = empty
+    ? "transparent"
+    : focused
+      ? blendHex(colors.bg, colors.borderFocused, 0.06)
+      : blendHex(colors.panel, colors.border, 0.12);
   const reservedRight = Math.max(0, reserveRight);
   const rightPadding = reservedRight > 0 ? reservedRight : 1;
 
@@ -385,7 +390,7 @@ export function PaneFooterBar({
         style={{
           "--pane-footer-border-color": empty ? "transparent" : topBorderColor,
           borderTop: `1px solid ${empty ? "transparent" : topBorderColor}`,
-          backgroundColor: empty ? "transparent" : focused ? "rgba(84, 201, 159, 0.05)" : "rgba(20, 25, 30, 0.55)",
+          backgroundColor: nativeBackgroundColor,
           boxShadow: empty ? "none" : "inset 0 1px 0 rgba(255,255,255,0.03)",
         }}
       >

@@ -2,7 +2,13 @@
 /** @jsxImportSource react */
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { InputHostProvider, type InputHost, type KeyEventLike, type ShortcutOptions } from "../../../react/input";
-import { hasWebCtrlModifier, normalizeWebKeyName, shouldConsumeWebAppKeyDown, webKeySequence } from "./key-event";
+import {
+  hasWebCtrlModifier,
+  isEditableKeyboardTarget,
+  normalizeWebKeyName,
+  shouldConsumeWebAppKeyDown,
+  webKeySequence,
+} from "./key-event";
 
 export const WEB_CELL_WIDTH = 8;
 export const WEB_CELL_HEIGHT = 18;
@@ -19,6 +25,7 @@ function toKeyEventLike(event: KeyboardEvent): KeyEventLike {
     alt: event.altKey,
     meta: event.metaKey,
     super: event.metaKey,
+    targetEditable: isEditableKeyboardTarget(event.target),
     get defaultPrevented() {
       return event.defaultPrevented;
     },

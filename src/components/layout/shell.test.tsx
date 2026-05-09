@@ -945,6 +945,7 @@ describe("Shell", () => {
       dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
       instances: [{ ...mainPane }, { ...detailPane }],
       floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8 }],
+      detached: [],
     };
     const state = {
       ...createInitialState({
@@ -988,6 +989,7 @@ describe("Shell", () => {
       dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
       instances: [{ ...mainPane }, { ...detailPane }],
       floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8 }],
+      detached: [],
     };
     const state = {
       ...createInitialState({
@@ -1011,6 +1013,49 @@ describe("Shell", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressKey("w", { meta: true });
+      await testSetup!.renderOnce();
+    });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.instances.map((instance: { instanceId: string }) => instance.instanceId)).toEqual(["portfolio-list:main"]);
+    expect(updateLayout?.layout.floating).toEqual([]);
+  });
+
+  test("closes the focused floating pane with Ctrl+W while plugin input is captured", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!mainPane || !detailPane) throw new Error("missing default panes");
+
+    const mixedLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }, { ...detailPane }],
+      floating: [{ instanceId: "ticker-detail:main", x: 4, y: 2, width: 30, height: 8 }],
+      detached: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: cloneLayout(mixedLayout),
+        layouts: [{ name: "Default", layout: cloneLayout(mixedLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+      inputCaptured: true,
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 40, height: 12 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressKey("w", { ctrl: true });
       await testSetup!.renderOnce();
     });
 

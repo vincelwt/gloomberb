@@ -216,6 +216,14 @@ export function resolvePaneManagementShortcut(
   return null;
 }
 
+function inputCaptureAllowsPaneManagementShortcut(
+  shortcut: PaneManagementShortcut,
+  event: Pick<KeyEventLike, "meta" | "super" | "targetEditable">,
+): boolean {
+  if (shortcut !== "close") return false;
+  return event.meta || event.super || event.targetEditable !== true;
+}
+
 export function resolveAppHeaderHeightCells(options: { titleBarOverlay?: boolean; cellHeightPx?: number }): number {
   if (!options.titleBarOverlay || !options.cellHeightPx || options.cellHeightPx <= 0) return DEFAULT_HEADER_HEIGHT;
   return TITLEBAR_OVERLAY_HEIGHT_PX / options.cellHeightPx;
@@ -964,7 +972,8 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     }
 
     const shortcut = resolvePaneManagementShortcut(event);
-    if (!shortcut || dragRef.current || overlayOpen || inputCaptured) return;
+    if (!shortcut || dragRef.current || overlayOpen) return;
+    if (inputCaptured && !inputCaptureAllowsPaneManagementShortcut(shortcut, event)) return;
 
     let handled = false;
     switch (shortcut) {
@@ -1699,7 +1708,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
               "data-active": active ? "true" : "false",
               style: { "--divider-color": active ? colors.borderFocused : colors.border } as any,
             } : {})}
-            onMouseDown={nativePaneChrome ? (event) => startNativeDividerDrag(divider, event) : undefined}
+            onMouseDown={nativePaneChrome ? (event: ShellMouseEvent) => startNativeDividerDrag(divider, event) : undefined}
             onMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
             onMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
           />

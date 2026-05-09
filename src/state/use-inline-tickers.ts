@@ -18,6 +18,7 @@ export interface InlineTickerCatalogEntry {
 const resolutionInFlight = new Map<string, Promise<void>>();
 const quoteInFlight = new Map<string, Promise<void>>();
 const missingSymbols = new Set<string>();
+const quoteMissingSymbols = new Set<string>();
 const initialQuoteRequested = new Set<string>();
 
 function normalizeSymbols(texts: readonly string[]): string[] {
@@ -54,6 +55,7 @@ export function useInlineTickers(texts: readonly string[]): {
 
       if (currentTicker && currentQuote) {
         missingSymbols.delete(symbol);
+        quoteMissingSymbols.delete(symbol);
         initialQuoteRequested.delete(symbol);
         continue;
       }
@@ -123,8 +125,12 @@ export function useInlineTickers(texts: readonly string[]): {
               }
               : undefined,
           );
+          quoteMissingSymbols.delete(symbol);
           current.dispatch({ type: "MERGE_QUOTE", symbol, quote });
         })()
+          .catch(() => {
+            quoteMissingSymbols.add(symbol);
+          })
           .finally(() => {
             quoteInFlight.delete(symbol);
           });
@@ -167,7 +173,7 @@ export function useInlineTickers(texts: readonly string[]): {
     const ticker = tickers.get(symbol) ?? null;
     const quote = financials.get(symbol)?.quote ?? null;
     const status: InlineTickerStatus = ticker
-      ? (quote ? "ready" : "loading")
+      ? (quote ? "ready" : quoteMissingSymbols.has(symbol) ? "missing" : "loading")
       : (missingSymbols.has(symbol) ? "missing" : "loading");
     catalog[symbol] = { status, ticker, quote };
   }

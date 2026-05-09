@@ -38,7 +38,7 @@ function targetHasClosest(target: KeyboardTargetLike, selector: string): boolean
   }
 }
 
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   const element = getKeyboardTarget(target);
   if (!element) return false;
 
