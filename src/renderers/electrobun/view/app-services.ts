@@ -6,7 +6,7 @@ import { PluginRegistry } from "../../../plugins/registry";
 import type { AppServices } from "../../../core/app-services";
 import type { AppConfig } from "../../../types/config";
 import type { DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
-import type { Quote } from "../../../types/financials";
+import type { Quote, TickerFinancials } from "../../../types/financials";
 import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { TickerRecord, TickerMetadata } from "../../../types/ticker";
 import { newsProvider, type CapabilityManifest } from "../../../capabilities";
@@ -21,7 +21,6 @@ import { debugLog } from "../../../utils/debug-log";
 import { measurePerf } from "../../../utils/perf-marks";
 import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 
-const REMOTE_DATA_REQUEST_CACHE_LIMIT = 150;
 const servicesLog = debugLog.createLogger("services");
 const ASSET_DATA_CAPABILITY_ID = "asset-data.asset-data-router";
 const NEWS_CAPABILITY_ID = "news.core";
@@ -58,6 +57,9 @@ type PayloadBuilder = (...args: any[]) => Record<string, unknown>;
 
 const assetDataPayloads: Record<string, PayloadBuilder> = {
   canProvide: (ticker, exchange, context) => ({ ticker, exchange, context }),
+  getCachedFinancialsForTargets: (targets, options) => ({ targets, options }),
+  getQuotesBatch: (targets, options) => ({ targets, options }),
+  getTickerFinancialsBatch: (targets, options) => ({ targets, options }),
   getTickerFinancials: (ticker, exchange, context) => ({ ticker, exchange, context }),
   getQuote: (ticker, exchange, context) => ({ ticker, exchange, context }),
   getExchangeRate: (fromCurrency) => ({ fromCurrency }),
@@ -96,21 +98,16 @@ function hasRendererOperation(operations: Set<string> | null, operationId: strin
 }
 
 function createCapabilityInvoker() {
-  const requestCache = new Map<string, Promise<unknown>>();
+  const inFlightRequests = new Map<string, Promise<unknown>>();
   return function invoke<T>(capabilityId: string, operationId: string, payload: unknown): Promise<T> {
     const requestPayload = { capabilityId, operationId, payload };
     const key = JSON.stringify(requestPayload);
-    const cached = requestCache.get(key);
-    if (cached) return cached as Promise<T>;
-    const promise = backendRequest<T>("capability.invoke", requestPayload).catch((error) => {
-      requestCache.delete(key);
-      throw error;
+    const inFlight = inFlightRequests.get(key);
+    if (inFlight) return inFlight as Promise<T>;
+    const promise = backendRequest<T>("capability.invoke", requestPayload).finally(() => {
+      inFlightRequests.delete(key);
     });
-    requestCache.set(key, promise);
-    if (requestCache.size > REMOTE_DATA_REQUEST_CACHE_LIMIT) {
-      const oldestKey = requestCache.keys().next().value;
-      if (oldestKey) requestCache.delete(oldestKey);
-    }
+    inFlightRequests.set(key, promise);
     return promise;
   };
 }
@@ -120,10 +117,69 @@ function createRemoteAssetDataClient(): RemoteAssetDataClient {
   const assetDataOperations = getRendererOperationIds(ASSET_DATA_CAPABILITY_ID);
   const newsOperations = getRendererOperationIds(NEWS_CAPABILITY_ID);
   let nextSubscriptionId = 1;
+  const quoteListeners = new Map<string, {
+    target: QuoteSubscriptionTarget;
+    listeners: Set<(target: QuoteSubscriptionTarget, quote: Quote) => void>;
+  }>();
+  let quoteBackendSubscriptionId: string | null = null;
+  let disposeQuoteBackendMessages: (() => void) | null = null;
+  let quoteBackendFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const quoteTargetKey = (target: QuoteSubscriptionTarget) =>
+    `${target.symbol}:${target.exchange ?? ""}:${target.context?.brokerId ?? ""}:${target.context?.brokerInstanceId ?? ""}:${target.context?.instrument?.conId ?? target.context?.instrument?.localSymbol ?? ""}`;
+
+  const scheduleQuoteBackendSubscriptionFlush = () => {
+    if (quoteBackendFlushTimer) return;
+    quoteBackendFlushTimer = setTimeout(() => {
+      quoteBackendFlushTimer = null;
+      flushQuoteBackendSubscription();
+    }, 25);
+  };
+
+  const flushQuoteBackendSubscription = () => {
+    if (!hasRendererOperation(assetDataOperations, "subscribeQuotes")) return;
+    const targets = [...quoteListeners.values()].map((entry) => entry.target);
+    const previousSubscriptionId = quoteBackendSubscriptionId;
+    if (previousSubscriptionId) {
+      quoteBackendSubscriptionId = null;
+      disposeQuoteBackendMessages?.();
+      disposeQuoteBackendMessages = null;
+      void backendRequest("capability.unsubscribe", { subscriptionId: previousSubscriptionId }).catch(() => {});
+    }
+    if (targets.length === 0) return;
+
+    const subscriptionId = `quote:${nextSubscriptionId++}`;
+    quoteBackendSubscriptionId = subscriptionId;
+    disposeQuoteBackendMessages = onCapabilityEvent(subscriptionId, (message) => {
+      const event = message.event as { target: QuoteSubscriptionTarget; quote: Quote };
+      const key = quoteTargetKey(event.target);
+      for (const listener of quoteListeners.get(key)?.listeners ?? []) {
+        listener(event.target, event.quote);
+      }
+    });
+    void backendRequest("capability.subscribe", {
+      subscriptionId,
+      capabilityId: ASSET_DATA_CAPABILITY_ID,
+      operationId: "subscribeQuotes",
+      payload: { targets },
+    }).catch((error) => {
+      if (quoteBackendSubscriptionId === subscriptionId) {
+        quoteBackendSubscriptionId = null;
+        disposeQuoteBackendMessages?.();
+        disposeQuoteBackendMessages = null;
+      }
+      console.error("Failed to subscribe to backend quotes", error);
+    });
+  };
+
   const base = {
     id: "desktop-backend",
     name: "Gloomberb Backend",
-    getCachedFinancialsForTargets: () => new Map(),
+    getCachedFinancialsForTargets: (targets, options) => (
+      hasRendererOperation(assetDataOperations, "getCachedFinancialsForTargets")
+        ? invoke<Map<string, TickerFinancials>>(ASSET_DATA_CAPABILITY_ID, "getCachedFinancialsForTargets", { targets, options })
+        : new Map()
+    ),
     getNews: (query: NewsQuery) => (
       hasRendererOperation(newsOperations, "fetchNews")
         ? invoke<NewsArticle[]>(NEWS_CAPABILITY_ID, "fetchNews", { query })
@@ -142,28 +198,29 @@ function createRemoteAssetDataClient(): RemoteAssetDataClient {
       ).values()];
       if (uniqueTargets.length === 0) return () => {};
 
-      const subscriptionId = `quote:${nextSubscriptionId++}`;
-      const disposeMessages = onCapabilityEvent(subscriptionId, (message) => {
-        const event = message.event as { target: QuoteSubscriptionTarget; quote: Quote };
-        onQuote(event.target, event.quote);
-      });
       let disposed = false;
-
-      void backendRequest("capability.subscribe", {
-        subscriptionId,
-        capabilityId: ASSET_DATA_CAPABILITY_ID,
-        operationId: "subscribeQuotes",
-        payload: { targets: uniqueTargets },
-      }).catch((error) => {
-        disposeMessages();
-        console.error("Failed to subscribe to backend quotes", error);
-      });
+      for (const target of uniqueTargets) {
+        const key = quoteTargetKey(target);
+        const entry = quoteListeners.get(key) ?? { target, listeners: new Set() };
+        entry.target = target;
+        entry.listeners.add(onQuote);
+        quoteListeners.set(key, entry);
+      }
+      scheduleQuoteBackendSubscriptionFlush();
 
       return () => {
         if (disposed) return;
         disposed = true;
-        disposeMessages();
-        void backendRequest("capability.unsubscribe", { subscriptionId }).catch(() => {});
+        for (const target of uniqueTargets) {
+          const key = quoteTargetKey(target);
+          const entry = quoteListeners.get(key);
+          if (!entry) continue;
+          entry.listeners.delete(onQuote);
+          if (entry.listeners.size === 0) {
+            quoteListeners.delete(key);
+          }
+        }
+        scheduleQuoteBackendSubscriptionFlush();
       };
     },
   };

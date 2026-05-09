@@ -1,4 +1,4 @@
-import type { DataProvider, SecFilingItem } from "../types/data-provider";
+import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget, SecFilingItem } from "../types/data-provider";
 import type { NewsArticle } from "../news/types";
 import type { OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { ChartRequest, InstrumentRef, NewsRequest, OptionsRequest, SecFilingsRequest } from "./request-types";
@@ -39,6 +39,7 @@ const SEC_FILINGS_CACHE_TTL_MS = 10 * 60_000;
 const SEC_CONTENT_CACHE_TTL_MS = 24 * 60 * 60_000;
 const ARTICLE_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60_000;
 const FX_CACHE_TTL_MS = 30 * 60_000;
+const QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS = 250;
 
 function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
   return {
@@ -223,6 +224,13 @@ export class MarketDataCoordinator {
   private readonly keyVersions = new Map<string, number>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly chartRequests = new Map<string, ChartRequest>();
+  private readonly quoteSubscriptions = new Map<string, {
+    target: QuoteSubscriptionTarget;
+    refCount: number;
+    unsubscribe: (() => void) | null;
+    removeTimer: ReturnType<typeof setTimeout> | null;
+  }>();
+  private pendingQuoteSubscriptionKeys = new Set<string>();
 
   private readonly quoteStore = new QueryStore<Quote>((key) => this.bump(key));
   private readonly snapshotStore = new QueryStore<TickerFinancials>((key) => this.bump(key));
@@ -427,6 +435,63 @@ export class MarketDataCoordinator {
     return promise;
   }
 
+  private cachedFinancialsTargetFromInstrument(instrument: InstrumentRef): CachedFinancialsTarget {
+    return {
+      symbol: instrument.symbol,
+      exchange: instrument.exchange,
+      brokerId: instrument.brokerId,
+      brokerInstanceId: instrument.brokerInstanceId,
+      instrument: instrument.instrument ?? null,
+    };
+  }
+
+  private quoteTargetFromInstrument(instrument: InstrumentRef): QuoteSubscriptionTarget {
+    return {
+      symbol: instrument.symbol,
+      exchange: instrument.exchange ?? "",
+      context: toMarketDataContext(instrument),
+    };
+  }
+
+  private storeSnapshotData(
+    instrument: InstrumentRef,
+    data: TickerFinancials,
+    source: string,
+    attempts: ProviderAttempt[],
+  ): QueryEntry<TickerFinancials> {
+    const normalized = normalizeTickerFinancialsPriceHistory(data);
+    const snapshotKey = buildSnapshotKey(instrument);
+    const entry = this.snapshotStore.update(snapshotKey, (current) =>
+      readyEntry(current, normalized, source, attempts, { keepLastGoodOnEmpty: true })
+    );
+    if (normalized.quote) {
+      this.quoteStore.set(buildQuoteKey(instrument), readyEntry(this.getQuoteEntry(instrument), normalized.quote, normalized.quote.providerId ?? source, attempts));
+    }
+    this.profileStore.set(buildProfileKey(instrument), readyEntry(this.profileStore.get(buildProfileKey(instrument)), normalized.profile ?? null, source, attempts, { keepLastGoodOnEmpty: true }));
+    this.fundamentalsStore.set(buildFundamentalsKey(instrument), readyEntry(this.fundamentalsStore.get(buildFundamentalsKey(instrument)), normalized.fundamentals ?? null, source, attempts, { keepLastGoodOnEmpty: true }));
+    this.statementsStore.set(
+      buildStatementsKey(instrument),
+      readyEntry(
+        this.statementsStore.get(buildStatementsKey(instrument)),
+        {
+          annualStatements: normalized.annualStatements ?? [],
+          quarterlyStatements: normalized.quarterlyStatements ?? [],
+        },
+        source,
+        attempts,
+        { keepLastGoodOnEmpty: true },
+      ),
+    );
+    if ((normalized.priceHistory ?? []).length > 0) {
+      const chartRequest = createBaselineChartRequest(instrument);
+      this.chartStore.set(
+        buildChartKey(chartRequest),
+        readyEntry(this.getChartEntry(chartRequest), normalized.priceHistory, source, attempts, { keepLastGoodOnEmpty: true }),
+      );
+    }
+    return entry;
+  }
+
   private findChartSeedEntry(
     key: string,
     request: ChartRequest,
@@ -485,42 +550,17 @@ export class MarketDataCoordinator {
       const startedAt = Date.now();
       traceMarketData("snapshot:start", { key, symbol: instrument.symbol, exchange: instrument.exchange ?? "" });
       try {
-        const data = normalizeTickerFinancialsPriceHistory(await this.dataProvider.getTickerFinancials(
+        const data = await this.dataProvider.getTickerFinancials(
           instrument.symbol,
           instrument.exchange ?? "",
           {
             ...toMarketDataContext(instrument),
             cacheMode: options.forceRefresh ? "refresh" : "default",
           },
-        ));
+        );
         const source = data.quote?.providerId ?? this.dataProvider.id;
         const attempts = [createAttempt(source, startedAt, data ? "success" : "empty")];
-        const entry = this.snapshotStore.update(key, (current) => readyEntry(current, data, source, attempts, { keepLastGoodOnEmpty: true }));
-        if (data.quote) {
-          this.quoteStore.set(buildQuoteKey(instrument), readyEntry(this.getQuoteEntry(instrument), data.quote, data.quote.providerId ?? source, attempts));
-        }
-        this.profileStore.set(buildProfileKey(instrument), readyEntry(this.profileStore.get(buildProfileKey(instrument)), data.profile ?? null, source, attempts, { keepLastGoodOnEmpty: true }));
-        this.fundamentalsStore.set(buildFundamentalsKey(instrument), readyEntry(this.fundamentalsStore.get(buildFundamentalsKey(instrument)), data.fundamentals ?? null, source, attempts, { keepLastGoodOnEmpty: true }));
-        this.statementsStore.set(
-          buildStatementsKey(instrument),
-          readyEntry(
-            this.statementsStore.get(buildStatementsKey(instrument)),
-            {
-              annualStatements: data.annualStatements ?? [],
-              quarterlyStatements: data.quarterlyStatements ?? [],
-            },
-            source,
-            attempts,
-            { keepLastGoodOnEmpty: true },
-          ),
-        );
-        if ((data.priceHistory ?? []).length > 0) {
-          const chartRequest = createBaselineChartRequest(instrument);
-          this.chartStore.set(
-            buildChartKey(chartRequest),
-            readyEntry(this.getChartEntry(chartRequest), data.priceHistory, source, attempts, { keepLastGoodOnEmpty: true }),
-          );
-        }
+        const entry = this.storeSnapshotData(instrument, data, source, attempts);
         traceMarketData("snapshot:ready", {
           key,
           symbol: instrument.symbol,
@@ -536,6 +576,49 @@ export class MarketDataCoordinator {
         return this.snapshotStore.update(key, (current) => errorEntry(current, attempt));
       }
     });
+  }
+
+  async loadSnapshotsBatch(
+    instruments: InstrumentRef[],
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QueryEntry<TickerFinancials>[]> {
+    const uniqueInstruments = [...new Map(instruments.map((instrument) => [buildSnapshotKey(instrument), instrument] as const)).values()];
+    const results = new Map<string, QueryEntry<TickerFinancials>>();
+    const misses: InstrumentRef[] = [];
+
+    for (const instrument of uniqueInstruments) {
+      const key = buildSnapshotKey(instrument);
+      const current = this.snapshotStore.get(key);
+      if (!options.forceRefresh && hasFreshEntryData(current, SNAPSHOT_CACHE_TTL_MS)) {
+        results.set(key, current);
+      } else {
+        misses.push(instrument);
+      }
+    }
+
+    if (misses.length > 0 && this.dataProvider.getTickerFinancialsBatch) {
+      const batchResults = await this.dataProvider.getTickerFinancialsBatch(
+        misses.map((instrument) => this.cachedFinancialsTargetFromInstrument(instrument)),
+        { forceRefresh: options.forceRefresh },
+      );
+      batchResults.forEach((item, index) => {
+        const instrument = misses[index];
+        if (!instrument) return;
+        const key = buildSnapshotKey(instrument);
+        if (!item.financials) return;
+        const source = item.financials.quote?.providerId ?? this.dataProvider.id;
+        const attempts = [createAttempt(source, Date.now(), "success")];
+        results.set(key, this.storeSnapshotData(instrument, item.financials, source, attempts));
+      });
+    }
+
+    await Promise.all(misses.map(async (instrument) => {
+      const key = buildSnapshotKey(instrument);
+      if (results.has(key)) return;
+      results.set(key, await this.loadSnapshot(instrument, options));
+    }));
+
+    return instruments.map((instrument) => results.get(buildSnapshotKey(instrument)) ?? this.getSnapshotEntry(instrument));
   }
 
   async loadQuote(
@@ -565,6 +648,48 @@ export class MarketDataCoordinator {
         return this.quoteStore.update(key, (current) => errorEntry(current, attempt));
       }
     });
+  }
+
+  async loadQuotesBatch(
+    instruments: InstrumentRef[],
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QueryEntry<Quote>[]> {
+    const uniqueInstruments = [...new Map(instruments.map((instrument) => [buildQuoteKey(instrument), instrument] as const)).values()];
+    const results = new Map<string, QueryEntry<Quote>>();
+    const misses: InstrumentRef[] = [];
+
+    for (const instrument of uniqueInstruments) {
+      const key = buildQuoteKey(instrument);
+      const current = this.quoteStore.get(key);
+      if (!options.forceRefresh && hasFreshEntryData(current, SNAPSHOT_CACHE_TTL_MS)) {
+        results.set(key, current);
+      } else {
+        misses.push(instrument);
+      }
+    }
+
+    if (misses.length > 0 && this.dataProvider.getQuotesBatch) {
+      const batchResults = await this.dataProvider.getQuotesBatch(
+        misses.map((instrument) => this.quoteTargetFromInstrument(instrument)),
+        { forceRefresh: options.forceRefresh },
+      );
+      batchResults.forEach((item, index) => {
+        const instrument = misses[index];
+        if (!instrument || !item.quote) return;
+        const key = buildQuoteKey(instrument);
+        const source = item.quote.providerId ?? this.dataProvider.id;
+        const attempts = [createAttempt(source, Date.now(), "success")];
+        results.set(key, this.quoteStore.update(key, (current) => readyQuoteEntry(current, item.quote!, source, attempts)));
+      });
+    }
+
+    await Promise.all(misses.map(async (instrument) => {
+      const key = buildQuoteKey(instrument);
+      if (results.has(key)) return;
+      results.set(key, await this.loadQuote(instrument, options));
+    }));
+
+    return instruments.map((instrument) => results.get(buildQuoteKey(instrument)) ?? this.getQuoteEntry(instrument));
   }
 
   async loadChart(
@@ -798,26 +923,71 @@ export class MarketDataCoordinator {
       return () => {};
     }
 
-    const normalizedTargets = targets.map(({ instrument }) => ({
-      symbol: instrument.symbol,
-      exchange: instrument.exchange ?? "",
-      context: toMarketDataContext(instrument),
-    }));
-
-    return this.dataProvider.subscribeQuotes(normalizedTargets, (target, quote) => {
-      const instrument: InstrumentRef = {
-        symbol: target.symbol,
-        exchange: target.exchange ?? "",
-        brokerId: target.context?.brokerId,
-        brokerInstanceId: target.context?.brokerInstanceId,
-        instrument: target.context?.instrument ?? null,
-      };
+    const subscribedKeys = new Set<string>();
+    for (const { instrument } of targets) {
       const key = buildQuoteKey(instrument);
-      const current = this.quoteStore.get(key);
-      if (areStreamQuotesEquivalent(current.data ?? current.lastGoodData, quote)) return;
-      const attempts = [createAttempt(quote.providerId ?? this.dataProvider.id, Date.now(), "success")];
-      this.quoteStore.set(key, readyQuoteEntry(current, quote, quote.providerId ?? this.dataProvider.id, attempts));
-    });
+      subscribedKeys.add(key);
+      const existing = this.quoteSubscriptions.get(key);
+      if (existing) {
+        existing.refCount += 1;
+        if (existing.removeTimer) {
+          clearTimeout(existing.removeTimer);
+          existing.removeTimer = null;
+        }
+        continue;
+      }
+      this.quoteSubscriptions.set(key, {
+        target: this.quoteTargetFromInstrument(instrument),
+        refCount: 1,
+        unsubscribe: null,
+        removeTimer: null,
+      });
+      this.pendingQuoteSubscriptionKeys.add(key);
+    }
+    this.flushQuoteSubscriptions();
+
+    return () => {
+      for (const key of subscribedKeys) {
+        const existing = this.quoteSubscriptions.get(key);
+        if (!existing) continue;
+        existing.refCount = Math.max(0, existing.refCount - 1);
+        if (existing.refCount > 0 || existing.removeTimer) continue;
+        existing.removeTimer = setTimeout(() => {
+          const current = this.quoteSubscriptions.get(key);
+          if (!current || current.refCount > 0) return;
+          current.unsubscribe?.();
+          this.quoteSubscriptions.delete(key);
+          this.pendingQuoteSubscriptionKeys.delete(key);
+        }, QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS);
+      }
+    };
+  }
+
+  private flushQuoteSubscriptions(): void {
+    const keys = this.pendingQuoteSubscriptionKeys;
+    this.pendingQuoteSubscriptionKeys = new Set();
+    for (const key of keys) {
+      const entry = this.quoteSubscriptions.get(key);
+      if (!entry || entry.refCount === 0 || entry.unsubscribe) continue;
+      entry.unsubscribe = this.dataProvider.subscribeQuotes?.([entry.target], (target, quote) => {
+        const instrument: InstrumentRef = {
+          symbol: target.symbol,
+          exchange: target.exchange ?? "",
+          brokerId: target.context?.brokerId,
+          brokerInstanceId: target.context?.brokerInstanceId,
+          instrument: target.context?.instrument ?? null,
+        };
+        this.applyStreamQuote(instrument, quote);
+      }) ?? null;
+    }
+  }
+
+  private applyStreamQuote(instrument: InstrumentRef, quote: Quote): void {
+    const key = buildQuoteKey(instrument);
+    const current = this.quoteStore.get(key);
+    if (areStreamQuotesEquivalent(current.data ?? current.lastGoodData, quote)) return;
+    const attempts = [createAttempt(quote.providerId ?? this.dataProvider.id, Date.now(), "success")];
+    this.quoteStore.set(key, readyQuoteEntry(current, quote, quote.providerId ?? this.dataProvider.id, attempts));
   }
 }
 

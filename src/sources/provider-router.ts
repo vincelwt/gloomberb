@@ -8,9 +8,11 @@ import type {
   CachedFinancialsTarget,
   DataProvider,
   MarketDataRequestContext,
+  QuoteBatchResult,
   QuoteSubscriptionTarget,
   SearchRequestContext,
   SecFilingItem,
+  TickerFinancialsBatchResult,
 } from "../types/data-provider";
 import type { CapabilityRouteSource } from "../types/capability-route-source";
 import { routeSourcePriority } from "../types/capability-route-source";
@@ -343,6 +345,135 @@ export class AssetDataRouter implements DataProvider {
       if (cached != null) results.set(currency, cached);
     }
     return results;
+  }
+
+  async getQuotesBatch(
+    targets: QuoteSubscriptionTarget[],
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QuoteBatchResult[]> {
+    const forceRefresh = options.forceRefresh === true;
+    const results = new Array<QuoteBatchResult | null>(targets.length).fill(null);
+    const misses: Array<{ index: number; target: QuoteSubscriptionTarget }> = [];
+
+    targets.forEach((target, index) => {
+      const context = target.context;
+      const entityKey = this.getEntityKey(target.symbol, target.exchange, context?.instrument);
+      const variantKeys = this.getTickerVariantCandidates(target.exchange);
+      const sourceKeys = [
+        ...this.getBrokerCandidatesForContext(context, false).map((candidate) => this.brokerSourceKey(candidate)),
+        ...this.getProviderSourceKeys(),
+      ];
+      const rawCached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
+      const cached = rawCached && !isQuoteStaleForCurrentSession(rawCached.value)
+        ? rawCached
+        : null;
+      if (cached && !forceRefresh && !cached.stale) {
+        results[index] = { target, quote: cached.value };
+        return;
+      }
+      misses.push({ index, target });
+    });
+
+    const batchProvider = this.providersInPriorityOrder().find((provider) => provider.getQuotesBatch);
+    const providerMisses = misses.filter(({ target }) => !this.hasBrokerContext(target.context));
+    const providerIndexes = new Map<string, Array<{ index: number; target: QuoteSubscriptionTarget }>>();
+    if (batchProvider && providerMisses.length > 0) {
+      for (const entry of providerMisses) {
+        const key = this.quoteBatchKey(entry.target);
+        const bucket = providerIndexes.get(key) ?? [];
+        bucket.push(entry);
+        providerIndexes.set(key, bucket);
+      }
+      const uniqueTargets = [...providerIndexes.values()].map((bucket) => bucket[0]!.target);
+      const batchResults = await batchProvider.getQuotesBatch!(uniqueTargets, options).catch(() => []);
+      for (const item of batchResults) {
+        if (!item.quote) continue;
+        const key = this.quoteBatchKey(item.target);
+        const sourceKey = this.providerSourceKey(batchProvider);
+        for (const entry of providerIndexes.get(key) ?? []) {
+          const entityKey = this.getEntityKey(entry.target.symbol, entry.target.exchange, entry.target.context?.instrument);
+          const variantKey = this.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
+          this.cacheResource("quote", entityKey, variantKey, sourceKey, item.quote, this.resolveProviderPolicy("quote", batchProvider));
+          results[entry.index] = { target: entry.target, quote: item.quote };
+        }
+      }
+    }
+
+    await Promise.all(misses.map(async ({ index, target }) => {
+      if (results[index]) return;
+      try {
+        const quote = await this.getQuote(target.symbol, target.exchange, {
+          ...target.context,
+          cacheMode: forceRefresh ? "refresh" : "default",
+        });
+        results[index] = { target, quote };
+      } catch (error) {
+        results[index] = { target, quote: null, error };
+      }
+    }));
+
+    return results.map((result, index) => result ?? { target: targets[index]!, quote: null });
+  }
+
+  async getTickerFinancialsBatch(
+    targets: CachedFinancialsTarget[],
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<TickerFinancialsBatchResult[]> {
+    const forceRefresh = options.forceRefresh === true;
+    const results = new Array<TickerFinancialsBatchResult | null>(targets.length).fill(null);
+    const misses: Array<{ index: number; target: CachedFinancialsTarget }> = [];
+
+    targets.forEach((target, index) => {
+      const context = this.contextFromCachedTarget(target);
+      const cached = this.readCachedMergedFinancialsSelection(target.symbol, target.exchange, context, true);
+      if (cached.value && !forceRefresh) {
+        results[index] = { target, financials: cached.value };
+        return;
+      }
+      misses.push({ index, target });
+    });
+
+    const batchProvider = this.providersInPriorityOrder().find((provider) => provider.getTickerFinancialsBatch);
+    const providerMisses = misses.filter(({ target }) => !this.hasCachedTargetBrokerContext(target));
+    const providerIndexes = new Map<string, Array<{ index: number; target: CachedFinancialsTarget }>>();
+    if (batchProvider && providerMisses.length > 0) {
+      for (const entry of providerMisses) {
+        const key = this.cachedFinancialsBatchKey(entry.target);
+        const bucket = providerIndexes.get(key) ?? [];
+        bucket.push(entry);
+        providerIndexes.set(key, bucket);
+      }
+      const uniqueTargets = [...providerIndexes.values()].map((bucket) => bucket[0]!.target);
+      const batchResults = await batchProvider.getTickerFinancialsBatch!(uniqueTargets, options).catch(() => []);
+      for (const item of batchResults) {
+        if (!item.financials) continue;
+        const key = this.cachedFinancialsBatchKey(item.target);
+        const value = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(item.financials));
+        if (!value) continue;
+        const sourceKey = this.providerSourceKey(batchProvider);
+        for (const entry of providerIndexes.get(key) ?? []) {
+          const entityKey = this.getEntityKey(entry.target.symbol, entry.target.exchange, entry.target.instrument ?? undefined);
+          const variantKey = this.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
+          this.cacheResource("financials", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("financials", batchProvider));
+          results[entry.index] = { target: entry.target, financials: value };
+        }
+      }
+    }
+
+    await Promise.all(misses.map(async ({ index, target }) => {
+      if (results[index]) return;
+      try {
+        const financials = await this.getTickerFinancials(target.symbol, target.exchange, {
+          ...this.contextFromCachedTarget(target),
+          cacheMode: forceRefresh ? "refresh" : "default",
+        });
+        results[index] = { target, financials };
+      } catch (error) {
+        results[index] = { target, financials: null, error };
+      }
+    }));
+
+    return results.map((result, index) => result ?? { target: targets[index]!, financials: null });
   }
 
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
@@ -1005,14 +1136,42 @@ export class AssetDataRouter implements DataProvider {
     );
   }
 
-  private getStreamingBrokerCandidate(target: QuoteSubscriptionTarget): BrokerCandidate | null {
-    const hasBrokerContext = !!(
-      target.context?.brokerId
-      || target.context?.brokerInstanceId
-      || target.context?.instrument?.brokerId
-      || target.context?.instrument?.brokerInstanceId
+  private hasBrokerContext(context?: MarketDataRequestContext): boolean {
+    return !!(
+      context?.brokerId ||
+      context?.brokerInstanceId ||
+      context?.instrument?.brokerId ||
+      context?.instrument?.brokerInstanceId
     );
-    if (!hasBrokerContext) return null;
+  }
+
+  private hasCachedTargetBrokerContext(target: CachedFinancialsTarget): boolean {
+    return !!(
+      target.brokerId ||
+      target.brokerInstanceId ||
+      target.instrument?.brokerId ||
+      target.instrument?.brokerInstanceId
+    );
+  }
+
+  private contextFromCachedTarget(target: CachedFinancialsTarget): MarketDataRequestContext {
+    return {
+      brokerId: target.brokerId,
+      brokerInstanceId: target.brokerInstanceId,
+      instrument: target.instrument ?? null,
+    };
+  }
+
+  private quoteBatchKey(target: QuoteSubscriptionTarget): string {
+    return `${target.symbol.trim().toUpperCase()}:${canonicalExchange(target.exchange ?? "")}`;
+  }
+
+  private cachedFinancialsBatchKey(target: CachedFinancialsTarget): string {
+    return `${target.symbol.trim().toUpperCase()}:${canonicalExchange(target.exchange ?? "")}`;
+  }
+
+  private getStreamingBrokerCandidate(target: QuoteSubscriptionTarget): BrokerCandidate | null {
+    if (!this.hasBrokerContext(target.context)) return null;
     return this.getBrokerCandidatesForContext(target.context, false)
       .find((candidate) => typeof candidate.broker.subscribeQuotes === "function") ?? null;
   }

@@ -471,32 +471,29 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     if (queue.length === 0) return;
 
     let cancelled = false;
-    const runNext = async (): Promise<void> => {
-      if (cancelled) return;
-      const nextTicker = queue.shift();
-      if (!nextTicker) return;
-
-      const key = `${nextTicker.metadata.ticker}:${nextTicker.metadata.exchange ?? ""}`;
-      const instrument = instrumentFromTicker(nextTicker, nextTicker.metadata.ticker);
-      warmupInFlightRef.current.add(key);
-      warmupAttemptRef.current.set(key, nowTimestamp);
+    const runBatch = async (): Promise<void> => {
+      const entries = queue.flatMap((ticker) => {
+        const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+        if (!instrument) return [];
+        const key = `${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
+        warmupInFlightRef.current.add(key);
+        warmupAttemptRef.current.set(key, nowTimestamp);
+        return [{ key, instrument }];
+      });
+      if (entries.length === 0) return;
       try {
-        if (instrument) {
-          await sharedCoordinator.loadSnapshot(instrument);
-        }
+        await sharedCoordinator.loadSnapshotsBatch(entries.map((entry) => entry.instrument));
       } catch {
         // Best-effort warmup for visible rows only.
       } finally {
-        warmupInFlightRef.current.delete(key);
-      }
-
-      if (mountedRef.current && !cancelled) {
-        await runNext();
+        for (const entry of entries) {
+          warmupInFlightRef.current.delete(entry.key);
+        }
       }
     };
 
     const timeoutId = setTimeout(() => {
-      void runNext();
+      if (!cancelled && mountedRef.current) void runBatch();
     }, VISIBLE_FINANCIAL_WARMUP_DELAY_MS);
 
     return () => {

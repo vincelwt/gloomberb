@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useState } from "react";
+import { act, useEffect, useRef, useState } from "react";
 import { testRender } from "../renderers/opentui/test-utils";
 import type { ColumnConfig } from "../types/config";
 import type { TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
+import type { ScrollBoxRenderable } from "../ui";
 import { TickerListTable, type TickerTableCell } from "./ticker-list-table";
+import { TickerListTableView } from "./ticker-list-table-view";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setHarnessCursorSymbol: ((symbol: string) => void) | null = null;
+let setHarnessTickers: ((tickers: TickerRecord[]) => void) | null = null;
+let tableScrollRef: ScrollBoxRenderable | null = null;
 let resolveCellCallCount = 0;
 
 const columns: ColumnConfig[] = [
@@ -75,6 +79,34 @@ function LargeTickerListTableHarness() {
   );
 }
 
+function ReorderingTickerListTableViewHarness() {
+  const [rows, setRows] = useState(manyTickers);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  setHarnessTickers = setRows;
+
+  useEffect(() => {
+    tableScrollRef = scrollRef.current;
+    return () => {
+      if (tableScrollRef === scrollRef.current) {
+        tableScrollRef = null;
+      }
+    };
+  });
+
+  return (
+    <TickerListTableView
+      focused
+      columns={columns}
+      tickers={rows}
+      cursorSymbol="T0"
+      setCursorSymbol={() => {}}
+      resolveCell={resolveCell}
+      financialsMap={financialsMap}
+      scrollRef={scrollRef}
+    />
+  );
+}
+
 afterEach(async () => {
   if (testSetup) {
     await act(async () => {
@@ -84,6 +116,8 @@ afterEach(async () => {
   }
   resolveCellCallCount = 0;
   setHarnessCursorSymbol = null;
+  setHarnessTickers = null;
+  tableScrollRef = null;
 });
 
 describe("TickerListTable", () => {
@@ -125,5 +159,29 @@ describe("TickerListTable", () => {
     expect(frame).toContain("T0");
     expect(frame).not.toContain("T999");
     expect(resolveCellCallCount).toBeLessThan(40);
+  });
+
+  test("preserves manual scroll when market data reorders rows around the same cursor", async () => {
+    testSetup = await testRender(
+      <ReorderingTickerListTableViewHarness />,
+      { width: 20, height: 8 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    tableScrollRef!.scrollTop = 20;
+    expect(tableScrollRef?.scrollTop).toBe(20);
+
+    await act(async () => {
+      setHarnessTickers?.([...manyTickers.slice(1), manyTickers[0]!]);
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(tableScrollRef?.scrollTop).toBe(20);
   });
 });

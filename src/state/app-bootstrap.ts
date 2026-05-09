@@ -54,6 +54,8 @@ export interface InitializeAppStateArgs {
   primeCachedFinancials?: (entries: Array<{ ticker: TickerRecord; financials: TickerFinancials }>) => void;
   refreshTicker: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
   refreshQuote: (symbol: string, exchange?: string, tickerOverride?: TickerRecord | null, priority?: number) => void;
+  refreshTickersBatch?: (entries: Array<{ ticker: TickerRecord; priority: number }>) => void;
+  refreshQuotesBatch?: (entries: Array<{ ticker: TickerRecord; priority: number }>) => void;
   autoImportBrokerPositions: (tickerMap: Map<string, TickerRecord>) => Promise<void>;
   persistedBrokerAccounts?: Record<string, BrokerAccount[]>;
 }
@@ -211,11 +213,11 @@ function buildCachedFinancialTarget(ticker: TickerRecord): CachedFinancialsTarge
   };
 }
 
-function resolveCachedFinancialPrimeEntries(
+async function resolveCachedFinancialPrimeEntries(
   refreshPlan: RefreshPlanEntry[],
   sessionSnapshot: AppSessionSnapshot | null | undefined,
   dataProvider: DataProvider,
-): Array<{ ticker: TickerRecord; financials: TickerFinancials }> {
+): Promise<Array<{ ticker: TickerRecord; financials: TickerFinancials }>> {
   if (!dataProvider.getCachedFinancialsForTargets) return [];
 
   const sessionTargetsBySymbol = new Map<string, CachedFinancialsTarget>();
@@ -226,7 +228,7 @@ function resolveCachedFinancialPrimeEntries(
   const financialEntries = refreshPlan.filter((entry) => entry.mode === "financials");
   if (financialEntries.length === 0) return [];
 
-  const cachedFinancials = dataProvider.getCachedFinancialsForTargets(
+  const cachedFinancials = await dataProvider.getCachedFinancialsForTargets(
     financialEntries.map(({ ticker }) => (
       sessionTargetsBySymbol.get(ticker.metadata.ticker.trim().toUpperCase()) ?? buildCachedFinancialTarget(ticker)
     )),
@@ -252,6 +254,8 @@ export async function initializeAppState({
   primeCachedFinancials,
   refreshTicker,
   refreshQuote,
+  refreshTickersBatch,
+  refreshQuotesBatch,
   autoImportBrokerPositions,
   persistedBrokerAccounts = {},
 }: InitializeAppStateArgs): Promise<void> {
@@ -341,7 +345,7 @@ export async function initializeAppState({
   });
 
   if (primeCachedFinancials) {
-    const cachedPrimeEntries = measurePerf(
+    const cachedPrimeEntries = await measurePerfAsync(
       "startup.resolve-cached-financial-prime",
       () => resolveCachedFinancialPrimeEntries(refreshPlan, sessionSnapshot, dataProvider),
       { financialRefreshCount: refreshPlan.filter((entry) => entry.mode === "financials").length },
@@ -362,10 +366,19 @@ export async function initializeAppState({
   });
 
   measurePerf("startup.enqueue-refresh-plan", () => {
-    for (const entry of refreshPlan) {
-      if (entry.mode === "financials") {
+    const financialEntries = refreshPlan.filter((entry) => entry.mode === "financials");
+    const quoteEntries = refreshPlan.filter((entry) => entry.mode === "quote");
+    if (refreshTickersBatch) {
+      refreshTickersBatch(financialEntries.map((entry) => ({ ticker: entry.ticker, priority: entry.priority })));
+    } else {
+      for (const entry of financialEntries) {
         refreshTicker(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
-      } else {
+      }
+    }
+    if (refreshQuotesBatch) {
+      refreshQuotesBatch(quoteEntries.map((entry) => ({ ticker: entry.ticker, priority: entry.priority })));
+    } else {
+      for (const entry of quoteEntries) {
         refreshQuote(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
       }
     }

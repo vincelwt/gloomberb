@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -93,6 +94,7 @@ export function TickerListTableView({
   const selectedIndex = tableProps.tickers.findIndex(
     (ticker) => ticker.metadata.ticker === tableProps.cursorSymbol,
   );
+  const lastScrollCursorSymbolRef = useRef<string | null | undefined>(undefined);
 
   const emitVisibleRange = useCallback(() => {
     if (!onVisibleRangeChange) return;
@@ -185,7 +187,19 @@ export function TickerListTableView({
 
   useEffect(() => {
     const scrollBox = effectiveScrollRef.current;
-    if (!scrollBox?.viewport || selectedIndex < 0) return;
+    if (!scrollBox?.viewport || selectedIndex < 0) {
+      queueMicrotask(emitVisibleRange);
+      return;
+    }
+
+    const shouldScrollToCursor =
+      lastScrollCursorSymbolRef.current !== tableProps.cursorSymbol;
+    lastScrollCursorSymbolRef.current = tableProps.cursorSymbol;
+
+    if (!shouldScrollToCursor) {
+      queueMicrotask(emitVisibleRange);
+      return;
+    }
 
     const viewportHeight = Math.max(scrollBox.viewport.height, 1);
     if (selectedIndex < scrollBox.scrollTop) {
@@ -194,7 +208,7 @@ export function TickerListTableView({
       scrollBox.scrollTo(selectedIndex - viewportHeight + 1);
     }
     queueMicrotask(emitVisibleRange);
-  }, [effectiveScrollRef, emitVisibleRange, selectedIndex]);
+  }, [effectiveScrollRef, emitVisibleRange, selectedIndex, tableProps.cursorSymbol]);
 
   return (
     <TableViewFrame
