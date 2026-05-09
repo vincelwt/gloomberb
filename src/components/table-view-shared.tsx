@@ -129,6 +129,60 @@ export function useTableBodyScrollActivity({
   }, [afterScroll, onBodyScrollActivity, syncHeaderScroll]);
 }
 
+export function useScrollBoxScrollActivity({
+  scrollRef,
+  onVerticalScroll,
+  onHorizontalScroll,
+}: {
+  scrollRef: RefObject<ScrollBoxRenderable | null>;
+  onVerticalScroll?: () => void;
+  onHorizontalScroll?: () => void;
+}) {
+  const onVerticalScrollRef = useRef(onVerticalScroll);
+  const onHorizontalScrollRef = useRef(onHorizontalScroll);
+  const verticalScrollScheduledRef = useRef(false);
+  const horizontalScrollScheduledRef = useRef(false);
+
+  useEffect(() => {
+    onVerticalScrollRef.current = onVerticalScroll;
+    onHorizontalScrollRef.current = onHorizontalScroll;
+  }, [onHorizontalScroll, onVerticalScroll]);
+
+  useEffect(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox) return;
+    let active = true;
+
+    const handleVerticalChange = () => {
+      if (verticalScrollScheduledRef.current) return;
+      verticalScrollScheduledRef.current = true;
+      queueMicrotask(() => {
+        verticalScrollScheduledRef.current = false;
+        if (!active) return;
+        onVerticalScrollRef.current?.();
+      });
+    };
+    const handleHorizontalChange = () => {
+      if (horizontalScrollScheduledRef.current) return;
+      horizontalScrollScheduledRef.current = true;
+      queueMicrotask(() => {
+        horizontalScrollScheduledRef.current = false;
+        if (!active) return;
+        onHorizontalScrollRef.current?.();
+      });
+    };
+
+    scrollBox.verticalScrollBar.on("change", handleVerticalChange);
+    scrollBox.horizontalScrollBar.on("change", handleHorizontalChange);
+
+    return () => {
+      active = false;
+      scrollBox.verticalScrollBar.off("change", handleVerticalChange);
+      scrollBox.horizontalScrollBar.off("change", handleHorizontalChange);
+    };
+  }, [scrollRef]);
+}
+
 export function useResetTableScroll({
   headerScrollRef,
   scrollRef,

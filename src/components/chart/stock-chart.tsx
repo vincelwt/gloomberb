@@ -9,6 +9,7 @@ import { ShortcutHint } from "../ui";
 import { saveConfig } from "../../data/config-store";
 import { getSharedMarketData } from "../../plugins/registry";
 import { colors } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import { formatCompact } from "../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../utils/market-format";
 import { useChartQueries, useChartQuery } from "../../market-data/hooks";
@@ -1436,6 +1437,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   ticker,
   financials,
 }: ResolvedStockChartProps) {
+  const themeColors = useThemeColors();
   const renderer = useNativeRenderer();
   const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
   const dispatch = useAppDispatch();
@@ -3013,15 +3015,24 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       : 0;
     const trend = rawChange < 0 ? "negative" : rawChange > 0 ? "positive" : "neutral";
     return resolveChartPalette({
-      bg: colors.bg,
-      border: colors.border,
-      borderFocused: colors.borderFocused,
-      text: colors.text,
-      textDim: colors.textDim,
-      positive: colors.positive,
-      negative: colors.negative,
+      bg: themeColors.bg,
+      border: themeColors.border,
+      borderFocused: themeColors.borderFocused,
+      text: themeColors.text,
+      textDim: themeColors.textDim,
+      positive: themeColors.positive,
+      negative: themeColors.negative,
     }, trend);
-  }, [chartWindow.points]);
+  }, [
+    chartWindow.points,
+    themeColors.bg,
+    themeColors.border,
+    themeColors.borderFocused,
+    themeColors.negative,
+    themeColors.positive,
+    themeColors.text,
+    themeColors.textDim,
+  ]);
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;

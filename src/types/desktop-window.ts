@@ -15,10 +15,15 @@ export interface DesktopDockPreviewState {
   edge: "left" | "right" | "top" | "bottom" | null;
 }
 
+export interface DesktopThemePreviewState {
+  theme: string | null;
+}
+
 export interface DesktopWindowBridge {
   kind: "main" | "detached";
   paneId?: string;
   syncMainState?(snapshot: DesktopSharedStateSnapshot): Promise<void>;
+  syncThemePreview?(preview: DesktopThemePreviewState): Promise<void>;
   replaceDetachedPaneState?(paneId: string, paneState: PaneRuntimeState): Promise<void>;
   popOutPane?(paneId: string): Promise<void>;
   dockDetachedPane?(paneId: string): Promise<void>;
@@ -26,4 +31,5 @@ export interface DesktopWindowBridge {
   focusDetachedPane?(paneId: string): Promise<void>;
   subscribeState(listener: (snapshot: DesktopSharedStateSnapshot) => void): () => void;
   subscribeDockPreview?(listener: (preview: DesktopDockPreviewState) => void): () => void;
+  subscribeThemePreview?(listener: (preview: DesktopThemePreviewState) => void): () => void;
 }

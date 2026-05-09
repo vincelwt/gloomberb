@@ -2,12 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer } from "react";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import { CommandBar } from "./command-bar";
-import { AppContext, type AppState, appReducer, createInitialState, getEffectiveThemeId } from "../../state/app-context";
+import { AppContext, type AppAction, type AppState, appReducer, createInitialState, getEffectiveThemeId } from "../../state/app-context";
 import { createTestDataProvider } from "../../test-support/data-provider";
+import { ThemeProvider, useThemeId } from "../../theme/theme-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
+import type { PaneTemplateCreateOptions } from "../../types/plugin";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -161,7 +163,7 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         paneId: "chat",
         label: "New Chat Pane",
         description: "Open another floating chat window",
-        shortcut: { prefix: "CHAT" },
+        shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text" },
       }],
       ["quote-monitor-pane", {
         id: "quote-monitor-pane",
@@ -230,6 +232,10 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
   } as unknown as PluginRegistry;
 }
 
+function ThemeProbe() {
+  return <text>{`theme:${useThemeId()}`}</text>;
+}
+
 function CommandBarHarness({
   query,
   disabledPlugins = [],
@@ -244,6 +250,7 @@ function CommandBarHarness({
   dataProvider = makeDataProvider(),
   hasPaneSettings,
   onCheckForUpdates,
+  onAction,
 }: {
   query: string;
   disabledPlugins?: string[];
@@ -258,6 +265,7 @@ function CommandBarHarness({
   dataProvider?: DataProvider;
   hasPaneSettings?: (paneId: string) => boolean;
   onCheckForUpdates?: () => void | Promise<void>;
+  onAction?: (action: AppAction) => void;
 }) {
   let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
@@ -300,24 +308,31 @@ function CommandBarHarness({
   configurePluginRegistry?.(pluginRegistry);
   const [liveState, dispatch] = useReducer(appReducer, state);
   const currentState = live ? liveState : state;
-  const currentDispatch = live ? dispatch : () => {};
+  const currentDispatch = live
+    ? (action: AppAction) => {
+      onAction?.(action);
+      dispatch(action);
+    }
+    : (_action: AppAction) => {};
 
   return (
-    <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
-      <TestDialogProvider>
-        {live && <text>{`theme:${getEffectiveThemeId(currentState)}`}</text>}
-        {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
-        {currentState.commandBarOpen && (
-          <CommandBar
-            dataProvider={dataProvider}
-            tickerRepository={tickerRepository as any}
-            pluginRegistry={pluginRegistry}
-            quitApp={() => {}}
-            onCheckForUpdates={onCheckForUpdates}
-          />
-        )}
-      </TestDialogProvider>
-    </AppContext>
+    <ThemeProvider themeId={getEffectiveThemeId(currentState)}>
+      <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
+        <TestDialogProvider>
+          {live && <ThemeProbe />}
+          {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
+          {currentState.commandBarOpen && (
+            <CommandBar
+              dataProvider={dataProvider}
+              tickerRepository={tickerRepository as any}
+              pluginRegistry={pluginRegistry}
+              quitApp={() => {}}
+              onCheckForUpdates={onCheckForUpdates}
+            />
+          )}
+        </TestDialogProvider>
+      </AppContext>
+    </ThemeProvider>
   );
 }
 
@@ -334,7 +349,7 @@ describe("CommandBar", () => {
   });
 
   test("runs check for updates from the command bar", async () => {
-    const calls = [];
+    const calls: number[] = [];
 
     testSetup = await testRender(<CommandBarHarness query="check for updates" live onCheckForUpdates={() => { calls.push(Date.now()); }} />, {
       width: 80,
@@ -739,7 +754,6 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Commands");
     expect(frame).toContain("TH");
-    expect(frame).toContain("Themes");
     expect(frame).toContain("Amber");
     expect(frame).toContain("Paper");
     expect(frame).toContain("GitHub Light");
@@ -798,12 +812,45 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressArrow("down");
+      await Bun.sleep(220);
       await testSetup!.renderOnce();
     });
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("theme:green");
+  });
+
+  test("debounces rapid keyboard theme previews", async () => {
+    const actions: AppAction[] = [];
+    testSetup = await testRender(
+      <CommandBarHarness query="TH " live onAction={(action) => actions.push(action)} />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      for (let index = 0; index < 6; index++) {
+        testSetup!.mockInput.pressArrow("down");
+      }
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.filter((action) => action.type === "PREVIEW_THEME")).toHaveLength(0);
+
+    await act(async () => {
+      await Bun.sleep(100);
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.filter((action) => action.type === "PREVIEW_THEME")).toHaveLength(0);
+
+    await act(async () => {
+      await Bun.sleep(150);
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.filter((action) => action.type === "PREVIEW_THEME")).toHaveLength(1);
   });
 
   test("does not preview a theme from mouse hover alone", async () => {
@@ -841,6 +888,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressArrow("down");
+      await Bun.sleep(220);
       await testSetup!.renderOnce();
     });
     await testSetup.renderOnce();
@@ -888,8 +936,10 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressArrow("down");
+      await Bun.sleep(220);
       await testSetup!.renderOnce();
     });
+    await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain("theme:green");
 
     await emitKeypress(testSetup, { name: "u", ctrl: true });
@@ -957,7 +1007,7 @@ describe("CommandBar", () => {
   });
 
   test("typing a shorthand and pressing enter executes the inferred quote monitor shortcut", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query=""
@@ -988,6 +1038,39 @@ describe("CommandBar", () => {
         arg: "AAPL",
         symbol: "AAPL",
         ticker: makeTicker("AAPL", "Apple Inc."),
+      },
+    }]);
+  });
+
+  test("typing a chat channel shortcut opens that channel directly", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query=""
+      live
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("CHAT help");
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{
+      templateId: "new-chat-pane",
+      options: {
+        arg: "help",
       },
     }]);
   });
@@ -1905,7 +1988,7 @@ describe("CommandBar", () => {
   });
 
   test("does not treat no-argument shortcut prefixes as typed pane names", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="Top News"
@@ -2091,7 +2174,7 @@ describe("CommandBar", () => {
   });
 
   test("QQ MSFT executes directly without opening a secondary workflow", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="QQ MSFT"
@@ -2124,7 +2207,7 @@ describe("CommandBar", () => {
   });
 
   test("CMP AAPL,MSFT creates the comparison chart directly", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="CMP AAPL,MSFT"
@@ -2203,7 +2286,7 @@ describe("CommandBar", () => {
   });
 
   test("CMP with one resolved ticker opens inline completion instead of creating a one-symbol chart", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="CMP AMD"
@@ -2247,7 +2330,7 @@ describe("CommandBar", () => {
   });
 
   test("AI <prompt> opens the inline workflow and prefills the textarea prompt", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="AI quality compounders"
@@ -2303,7 +2386,7 @@ describe("CommandBar", () => {
   });
 
   test("submits typed AI screener prompts from the textarea field", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="AI"
@@ -2750,7 +2833,7 @@ describe("CommandBar", () => {
         query="auth login"
         live
         configurePluginRegistry={(pluginRegistry) => {
-          pluginRegistry.commands.set("auth-login", {
+          (pluginRegistry.commands as Map<string, any>).set("auth-login", {
             id: "auth-login",
             label: "Auth Login",
             description: "Log in to your account",
@@ -2790,7 +2873,7 @@ describe("CommandBar", () => {
         query="workspace"
         live
         configurePluginRegistry={(pluginRegistry) => {
-          pluginRegistry.commands.set("new-workspace", {
+          (pluginRegistry.commands as Map<string, any>).set("new-workspace", {
             id: "new-workspace",
             label: "Workspace",
             description: "Create a workspace",
@@ -2800,7 +2883,7 @@ describe("CommandBar", () => {
             wizard: [
               { key: "name", label: "Name", type: "text", placeholder: "Research" },
             ],
-            execute: async (values) => {
+            execute: async (values?: Record<string, string>) => {
               submitted.push(values);
             },
           } as any);

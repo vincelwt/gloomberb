@@ -179,6 +179,15 @@ function DataTableVirtualizationHarness() {
     name: `Row ${index}`,
   }));
 
+  useEffect(() => {
+    tableScrollBoxForTest = scrollRef.current;
+    return () => {
+      if (tableScrollBoxForTest === scrollRef.current) {
+        tableScrollBoxForTest = null;
+      }
+    };
+  });
+
   return (
     <DataTable
       columns={[{ id: "name", label: "NAME", width: 12, align: "left" }]}
@@ -787,8 +796,9 @@ describe("shared UI kit", () => {
     expect(tableScrollBoxForTest?.verticalScrollBar.visible).toBe(true);
   });
 
-  test("virtualizes data table rows by default", async () => {
+  test("virtualizes data table rows and refreshes after wheel scrolling", async () => {
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    tableScrollBoxForTest = null;
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
         <PaneInstanceProvider paneId="portfolio-list:main">
@@ -805,5 +815,22 @@ describe("shared UI kit", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Row 0");
     expect(frame).not.toContain("Row 99");
+    expect(tableScrollBoxForTest?.scrollTop).toBe(0);
+
+    await act(async () => {
+      for (let index = 0; index < 12; index++) {
+        await testSetup!.mockMouse.scroll(2, 2, "down");
+      }
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await testSetup!.renderOnce();
+    });
+    await testSetup.renderOnce();
+
+    const scrollTop = tableScrollBoxForTest?.scrollTop ?? 0;
+    expect(scrollTop).toBeGreaterThan(0);
+
+    const scrolledFrame = testSetup.captureCharFrame();
+    expect(scrolledFrame).toContain(`Row ${scrollTop}`);
   });
 });

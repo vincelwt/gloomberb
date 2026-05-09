@@ -1,17 +1,21 @@
 import { Box, ScrollBox, Span, Text, useUiCapabilities } from "../../ui";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
-import { useAppDispatch, useAppSelector } from "../../state/app-context";
-import { useInlineTickers } from "../../state/use-inline-tickers";
-import { getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
+import { useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
+import { useInlineTickers, type InlineTickerCatalogEntry } from "../../state/use-inline-tickers";
+import { ExternalLinkText, getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
-import { colors, hoverBg } from "../../theme/colors";
-import { apiClient, type ChatMessage } from "../../utils/api-client";
+import { TickerBadge } from "../../components/ticker-badge";
+import { blendHex, colors, hoverBg } from "../../theme/colors";
+import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
+import { tokenizeInlineContent } from "../../utils/inline-content-tokenizer";
 import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
+import { setPaneSetting } from "../../pane-settings";
+import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 import { InlineAuthActions } from "./cloud-auth-actions";
@@ -22,16 +26,25 @@ interface ChatContentProps {
   height: number;
   focused: boolean;
   close?: () => void;
+  channelId?: string;
+  onChannelChange?: (channelId: string) => void;
   controller?: Pick<
     ChatController,
     | "attachView"
+    | "attachChannelView"
     | "getSnapshot"
+    | "refreshChannels"
     | "loadOlderMessages"
+    | "loadOlderChannelMessages"
     | "refreshMessages"
+    | "refreshChannelMessages"
     | "refreshSession"
     | "send"
+    | "sendToChannel"
     | "setDraft"
+    | "setChannelDraft"
     | "setReplyToId"
+    | "setChannelReplyToId"
     | "subscribe"
   >;
 }
@@ -42,10 +55,16 @@ interface ChatStatusWidgetProps {
 
 const MESSAGE_GROUP_THRESHOLD_MS = 5 * 60 * 1000;
 const CHAT_COMPOSER_MAX_ROWS = 5;
-const NATIVE_CHAT_COMPOSER_TOP_GAP_PX = 12;
 const MESSAGE_ACTION_WIDTH = 9;
 const COMPOSER_ACTION_WIDTH = 10;
 const MESSAGE_SELECTION_BOTTOM_INSET = 1;
+const DESKTOP_MESSAGE_RIGHT_PADDING = 2;
+const CHANNEL_SIDEBAR_MIN_WIDTH = 18;
+const CHANNEL_SIDEBAR_MAX_WIDTH = 24;
+const CHANNEL_SIDEBAR_BREAKPOINT = 72;
+const DEFAULT_CHAT_CHANNEL_ID = "everyone";
+const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
+const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   if (index === 0) return false;
@@ -117,9 +136,125 @@ function getMessageTopOffset(messages: ChatMessage[], index: number, width: numb
   return offset;
 }
 
-function scrollToBottom(scrollBox: ScrollBoxRenderable | null) {
+function hasPixelScrollMetrics(scrollBox: ScrollBoxRenderable | null) {
+  return !!scrollBox?.scrollToPixels && typeof scrollBox.scrollHeightPx === "number" && !!scrollBox.viewportPx;
+}
+
+function getScrollTop(scrollBox: ScrollBoxRenderable, preferPixels: boolean) {
+  return preferPixels && typeof scrollBox.scrollTopPx === "number" ? scrollBox.scrollTopPx : scrollBox.scrollTop;
+}
+
+function getScrollHeight(scrollBox: ScrollBoxRenderable, preferPixels: boolean) {
+  return preferPixels && typeof scrollBox.scrollHeightPx === "number" ? scrollBox.scrollHeightPx : scrollBox.scrollHeight;
+}
+
+function getViewportHeight(scrollBox: ScrollBoxRenderable, preferPixels: boolean) {
+  return preferPixels && scrollBox.viewportPx ? scrollBox.viewportPx.height : scrollBox.viewport?.height ?? 0;
+}
+
+function scrollToPosition(scrollBox: ScrollBoxRenderable, target: number, preferPixels: boolean) {
+  if (preferPixels && scrollBox.scrollToPixels) {
+    scrollBox.scrollToPixels(target);
+    return;
+  }
+  scrollBox.scrollTo(target);
+}
+
+function scrollToBottom(scrollBox: ScrollBoxRenderable | null, preferPixels = false) {
   if (!scrollBox) return;
-  scrollBox.scrollTo(Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height));
+  const exactPixels = preferPixels && hasPixelScrollMetrics(scrollBox);
+  scrollToPosition(
+    scrollBox,
+    Math.max(0, getScrollHeight(scrollBox, exactPixels) - getViewportHeight(scrollBox, exactPixels)),
+    exactPixels,
+  );
+}
+
+function runAfterLayout(callback: () => void) {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(callback);
+    return;
+  }
+  queueMicrotask(callback);
+}
+
+export function getScrollTopForElementIntoView({
+  scrollTop,
+  viewportHeight,
+  elementTop,
+  elementHeight,
+  bottomInset = 0,
+}: {
+  scrollTop: number;
+  viewportHeight: number;
+  elementTop: number;
+  elementHeight: number;
+  bottomInset?: number;
+}) {
+  const visibleHeight = Math.max(viewportHeight - bottomInset, 1);
+  const elementBottom = elementTop + elementHeight;
+  if (elementTop < scrollTop || elementHeight >= visibleHeight) return elementTop;
+  if (elementBottom > scrollTop + visibleHeight) return elementBottom - visibleHeight;
+  return scrollTop;
+}
+
+function scrollElementIntoScrollBoxView(scrollBox: ScrollBoxRenderable | null, node: unknown) {
+  const nodeRect = (node as { getBoundingClientRect?: () => { x?: number; y?: number; top?: number; width?: number; height?: number } } | null)
+    ?.getBoundingClientRect?.();
+  const scrollRect = scrollBox?.getBoundingClientRect?.() as { x?: number; y?: number; top?: number; width?: number; height?: number } | undefined;
+  if (
+    scrollBox &&
+    nodeRect &&
+    scrollRect &&
+    scrollBox.scrollToPixels &&
+    typeof scrollBox.scrollTopPx === "number" &&
+    scrollBox.viewportPx
+  ) {
+    const nodeY = nodeRect.y ?? nodeRect.top ?? 0;
+    const scrollY = scrollRect.y ?? scrollRect.top ?? 0;
+    const elementTop = scrollBox.scrollTopPx + nodeY - scrollY;
+    const nextScrollTop = getScrollTopForElementIntoView({
+      scrollTop: scrollBox.scrollTopPx,
+      viewportHeight: scrollBox.viewportPx.height,
+      elementTop,
+      elementHeight: Math.max(nodeRect.height ?? 0, 1),
+    });
+    if (nextScrollTop !== scrollBox.scrollTopPx) {
+      scrollBox.scrollToPixels(nextScrollTop);
+    }
+    return true;
+  }
+
+  const scrollIntoView = (node as { scrollIntoView?: (options?: unknown) => void } | null)?.scrollIntoView;
+  if (typeof scrollIntoView !== "function") return false;
+  scrollIntoView.call(node, { block: "nearest", inline: "nearest" });
+  return true;
+}
+
+function normalizeChannelId(channelId: string | null | undefined) {
+  const trimmed = channelId?.trim();
+  return trimmed || DEFAULT_CHAT_CHANNEL_ID;
+}
+
+function normalizeShortcutChannelId(channelId: string | null | undefined) {
+  const trimmed = channelId?.trim().replace(/^#+/, "");
+  return normalizeChannelId(trimmed?.toLowerCase());
+}
+
+function getLastVisitedChatChannelId(config: { pluginConfig: Record<string, Record<string, unknown>> }) {
+  return normalizeChannelId(config.pluginConfig["gloomberb-cloud"]?.[LAST_VISITED_CHAT_CHANNEL_KEY] as string | undefined);
+}
+
+function formatChannelLabel(channel: ChatChannel | undefined, fallbackId: string) {
+  return channel?.name?.trim() || fallbackId;
+}
+
+function truncateChannelLabel(label: string, width: number) {
+  if (width <= 0) return "";
+  if (label.length <= width) return label;
+  if (width <= 1) return label.slice(0, width);
+  if (width <= 3) return label.slice(0, width);
+  return `${label.slice(0, width - 3)}...`;
 }
 
 export function getSelectedMessageScrollTop({
@@ -213,17 +348,548 @@ function ChatActionChip({
   );
 }
 
+interface ChatMessageRenderState {
+  isSelected: boolean;
+  isHovered: boolean;
+  grouped: boolean;
+  showReplyAction: boolean;
+  bgColor: string | undefined;
+  selectedTextColor: string;
+  replyMetaColor: string;
+  replyAuthorColor: string;
+  headerStatus: string;
+  headerStatusColor: string;
+  authorColor: string;
+  authorAttributes: number;
+  bodyColor: string;
+}
+
+function getChatMessageRenderState({
+  msg,
+  index,
+  messages,
+  selectedIdx,
+  hoveredIdx,
+  canSend,
+}: {
+  msg: ChatMessage;
+  index: number;
+  messages: ChatMessage[];
+  selectedIdx: number;
+  hoveredIdx: number | null;
+  canSend: boolean;
+}): ChatMessageRenderState {
+  const isSelected = index === selectedIdx;
+  const isHovered = index === hoveredIdx && !isSelected;
+  const grouped = isGroupedWithPrevious(messages, index);
+  const isSending = msg.clientStatus === "sending";
+  const hasFailed = msg.clientStatus === "failed";
+  const selectedTextColor = hasFailed ? colors.negative : colors.selectedText;
+  const headerStatus = isSending ? "sending..." : hasFailed ? "failed" : formatTimeAgo(msg.createdAt);
+
+  return {
+    isSelected,
+    isHovered,
+    grouped,
+    showReplyAction: canSend && (isSelected || hoveredIdx === index),
+    bgColor: isSelected ? colors.selected : isHovered ? hoverBg() : undefined,
+    selectedTextColor,
+    replyMetaColor: isSelected ? selectedTextColor : colors.textMuted,
+    replyAuthorColor: isSelected ? selectedTextColor : colors.textDim,
+    headerStatus,
+    headerStatusColor: isSelected
+      ? selectedTextColor
+      : isSending
+        ? colors.textDim
+        : hasFailed
+          ? colors.negative
+          : colors.textMuted,
+    authorColor: isSelected ? selectedTextColor : hasFailed ? colors.negative : colors.positive,
+    authorAttributes: (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD,
+    bodyColor: isSelected ? selectedTextColor : hasFailed ? colors.negative : isSending ? colors.textDim : colors.text,
+  };
+}
+
+function ResponsiveTickerBadgeText({
+  text,
+  catalog,
+  textColor,
+  openTicker,
+}: {
+  text: string;
+  catalog: Record<string, InlineTickerCatalogEntry>;
+  textColor: string;
+  openTicker: (symbol: string) => void;
+}) {
+  const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
+  const tokens = useMemo(() => tokenizeInlineContent(text), [text]);
+
+  return (
+    <Box
+      flexDirection="row"
+      flexWrap="wrap"
+      flexGrow={1}
+      style={{ minWidth: 0, width: "100%" }}
+    >
+      {tokens.map((token, index) => {
+        if (token.kind === "text") {
+          if (!token.value) return null;
+          return (
+            <Text
+              key={`text:${index}`}
+              fg={textColor}
+              wrapText
+              style={{
+                minWidth: 0,
+                whiteSpace: "pre-wrap",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {token.value}
+            </Text>
+          );
+        }
+
+        if (token.kind === "link") {
+          return (
+            <ExternalLinkText
+              key={`link:${index}`}
+              url={token.url}
+              label={token.value}
+              color={textColor}
+            />
+          );
+        }
+
+        const entry = catalog[token.symbol];
+        if (!entry || entry.status === "missing") {
+          return <Text key={`raw:${index}`} fg={textColor}>{token.value}</Text>;
+        }
+
+        return (
+          <TickerBadge
+            key={`badge:${index}:${token.symbol}`}
+            symbol={token.symbol}
+            status={entry.status}
+            quote={entry.quote}
+            hovered={hoveredSymbol === token.symbol}
+            onHoverStart={() => setHoveredSymbol(token.symbol)}
+            onHoverEnd={() => {
+              setHoveredSymbol((current) => (current === token.symbol ? null : current));
+            }}
+            onOpen={openTicker}
+          />
+        );
+      })}
+    </Box>
+  );
+}
+
+interface ChatMessageBaseProps {
+  msg: ChatMessage;
+  index: number;
+  messages: ChatMessage[];
+  selectedIdx: number;
+  hoveredIdx: number | null;
+  canSend: boolean;
+  catalog: Record<string, InlineTickerCatalogEntry>;
+  openTicker: (symbol: string) => void;
+  beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
+  jumpToMessage: (messageId: string) => void;
+}
+
+interface TerminalChatMessageProps extends ChatMessageBaseProps {
+  contentWidth: number;
+  messageBodyWidth: number;
+  setHoveredIdx: (updater: (current: number | null) => number | null) => void;
+}
+
+function TerminalChatMessage({
+  msg,
+  index,
+  messages,
+  selectedIdx,
+  hoveredIdx,
+  canSend,
+  contentWidth,
+  messageBodyWidth,
+  catalog,
+  openTicker,
+  beginReplyTo,
+  jumpToMessage,
+  setHoveredIdx,
+}: TerminalChatMessageProps) {
+  const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
+  const bodyLines = getMessageBodyLines(msg, contentWidth);
+  const showInlineReplyAction = !state.grouped && state.showReplyAction;
+  const showGroupedReplyAction = state.grouped && state.showReplyAction;
+  const setHovered = () => setHoveredIdx((current) => (current === index ? current : index));
+  const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
+  const messageRowProps = {
+    width: contentWidth,
+    backgroundColor: state.bgColor,
+    onMouseMove: setHovered,
+    onMouseOut: clearHovered,
+  };
+
+  return (
+    <Box key={msg.id} width={contentWidth} flexDirection="column">
+      {msg.replyTo && (
+        <Box
+          {...messageRowProps}
+          flexDirection="row"
+          height={1}
+          paddingLeft={2}
+          onMouseDown={() => {
+            if (msg.replyToId) jumpToMessage(msg.replyToId);
+          }}
+        >
+          <Text fg={state.replyMetaColor}>reply </Text>
+          <Text fg={state.replyAuthorColor}>{msg.replyTo.user.username}: </Text>
+          <Text fg={state.replyMetaColor}>
+            {formatInlinePreview(
+              msg.replyTo.content,
+              Math.max(messageBodyWidth - `reply ${msg.replyTo.user.username}: `.length, 0),
+            )}
+          </Text>
+        </Box>
+      )}
+      {!state.grouped && (
+        <Box
+          {...messageRowProps}
+          flexDirection="row"
+          height={1}
+          paddingLeft={1}
+        >
+          <Text fg={state.authorColor} attributes={state.authorAttributes}>
+            {msg.user.username ?? "anon"}
+          </Text>
+          <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
+          {showInlineReplyAction && (
+            <>
+              <Text fg={state.headerStatusColor}> </Text>
+              <Box width={MESSAGE_ACTION_WIDTH} height={1}>
+                <ChatActionChip
+                  label="Reply"
+                  width={MESSAGE_ACTION_WIDTH}
+                  emphasized={state.isSelected}
+                  onPress={() => beginReplyTo(index)}
+                />
+              </Box>
+            </>
+          )}
+        </Box>
+      )}
+      {bodyLines.map((line, lineIndex) => (
+        <Box
+          key={`${msg.id}:body:${lineIndex}`}
+          {...messageRowProps}
+          paddingLeft={3}
+          height={1}
+          flexDirection="row"
+          position={state.grouped ? "relative" : undefined}
+        >
+          <Box width={messageBodyWidth} height={1}>
+            <TickerBadgeText
+              text={line}
+              lineWidth={messageBodyWidth}
+              catalog={catalog}
+              textColor={state.bodyColor}
+              openTicker={openTicker}
+            />
+          </Box>
+          {lineIndex === 0 && showGroupedReplyAction && (
+            <Box position="absolute" top={0} right={0} width={MESSAGE_ACTION_WIDTH} height={1}>
+              <ChatActionChip
+                label="Reply"
+                width={MESSAGE_ACTION_WIDTH}
+                emphasized={state.isSelected}
+                onPress={() => beginReplyTo(index)}
+              />
+            </Box>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+const DesktopChatMessage = memo(function DesktopChatMessage({
+  msg,
+  index,
+  messages,
+  selectedIdx,
+  hoveredIdx,
+  canSend,
+  catalog,
+  openTicker,
+  beginReplyTo,
+  jumpToMessage,
+  registerMessageElement,
+}: ChatMessageBaseProps & {
+  registerMessageElement: (messageId: string, node: unknown | null) => void;
+}) {
+  const state = getChatMessageRenderState({ msg, index, messages, selectedIdx, hoveredIdx, canSend });
+  const showInlineReplyAction = !state.grouped && canSend;
+  const showGroupedReplyAction = state.grouped && canSend;
+  const rowProps = {
+    width: "100%",
+    paddingRight: DESKTOP_MESSAGE_RIGHT_PADDING,
+    backgroundColor: state.bgColor,
+    "data-gloom-role": "chat-message-row",
+    "data-selected": state.isSelected ? "true" : "false",
+    style: { minWidth: 0 },
+  };
+
+  return (
+    <Box
+      key={msg.id}
+      ref={(node: unknown | null) => registerMessageElement(msg.id, node)}
+      width="100%"
+      flexDirection="column"
+      data-gloom-role="chat-message"
+      data-gloom-chat-message-id={msg.id}
+      data-selected={state.isSelected ? "true" : "false"}
+      style={{ "--chat-hover-bg": hoverBg(), minWidth: 0 }}
+    >
+      {msg.replyTo && (
+        <Box
+          {...rowProps}
+          flexDirection="row"
+          paddingLeft={2}
+          onMouseDown={() => {
+            if (msg.replyToId) jumpToMessage(msg.replyToId);
+          }}
+          style={{ minWidth: 0, alignItems: "flex-start", cursor: "pointer" }}
+        >
+          <Text
+            fg={state.replyMetaColor}
+            wrapText
+            style={{
+              minWidth: 0,
+              width: "100%",
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
+            }}
+          >
+            <Span fg={state.replyMetaColor}>reply </Span>
+            <Span fg={state.replyAuthorColor}>{msg.replyTo.user.username}: </Span>
+            <Span fg={state.replyMetaColor}>{normalizeInlinePreview(msg.replyTo.content)}</Span>
+          </Text>
+        </Box>
+      )}
+      {!state.grouped && (
+        <Box
+          {...rowProps}
+          flexDirection="row"
+          height={1}
+          paddingLeft={1}
+        >
+          <Text fg={state.authorColor} attributes={state.authorAttributes}>
+            {msg.user.username ?? "anon"}
+          </Text>
+          <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
+          {showInlineReplyAction && (
+            <>
+              <Text fg={state.headerStatusColor}> </Text>
+              <Box
+                width={MESSAGE_ACTION_WIDTH}
+                height={1}
+                data-gloom-role="chat-message-reply-action"
+              >
+                <ChatActionChip
+                  label="Reply"
+                  width={MESSAGE_ACTION_WIDTH}
+                  emphasized={state.isSelected}
+                  onPress={() => beginReplyTo(index)}
+                />
+              </Box>
+            </>
+          )}
+        </Box>
+      )}
+      <Box
+        {...rowProps}
+        paddingLeft={3}
+        flexDirection="row"
+        position={state.grouped ? "relative" : undefined}
+        style={{ minWidth: 0, alignItems: "flex-start" }}
+      >
+        <Box flexGrow={1} style={{ minWidth: 0 }}>
+          <ResponsiveTickerBadgeText
+            text={msg.content}
+            catalog={catalog}
+            textColor={state.bodyColor}
+            openTicker={openTicker}
+          />
+        </Box>
+        {showGroupedReplyAction && (
+          <Box
+            position="absolute"
+            top={0}
+            right={0}
+            width={MESSAGE_ACTION_WIDTH}
+            height={1}
+            data-gloom-role="chat-message-reply-action"
+          >
+            <ChatActionChip
+              label="Reply"
+              width={MESSAGE_ACTION_WIDTH}
+              emphasized={state.isSelected}
+              onPress={() => beginReplyTo(index)}
+            />
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+});
+
+function ChannelSidebar({
+  channels,
+  activeChannelId,
+  width,
+  height,
+  focused,
+  keyboardFocused,
+  loading,
+  onSelect,
+  onFocusRequest,
+}: {
+  channels: ChatChannel[];
+  activeChannelId: string;
+  width: number;
+  height: number;
+  focused: boolean;
+  keyboardFocused: boolean;
+  loading: boolean;
+  onSelect?: (channelId: string) => void;
+  onFocusRequest?: () => void;
+}) {
+  const { nativePaneChrome } = useUiCapabilities();
+  const borderWidth = nativePaneChrome ? 0 : width > 1 ? 1 : 0;
+  const listWidth = Math.max(width - borderWidth, 1);
+  const labelWidth = Math.max(listWidth - 3, 1);
+  const dividerColor = focused ? colors.borderFocused : colors.border;
+  const sidebarBg = keyboardFocused ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel;
+  const activeBg = keyboardFocused
+    ? blendHex(colors.selected, colors.borderFocused, 0.32)
+    : blendHex(colors.panel, colors.selected, 0.35);
+  const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null);
+  const sidebarBorder = borderWidth > 0
+    ? (
+      <Box width={1} height={height} flexDirection="column">
+        {Array.from({ length: height }, (_, index) => (
+          <Text key={index} fg={dividerColor} selectable={false}>│</Text>
+        ))}
+      </Box>
+    )
+    : null;
+
+  return (
+    <Box
+      width={width}
+      height={height}
+      flexDirection="row"
+      position="relative"
+    >
+      <Box
+        width={listWidth}
+        height={height}
+        flexDirection="column"
+        backgroundColor={sidebarBg}
+      >
+        {channels.map((channel) => {
+          const active = channel.id === activeChannelId;
+          const hovered = hoveredChannelId === channel.id && !active;
+          const fg = active ? colors.selectedText : keyboardFocused ? colors.text : colors.textDim;
+          const bg = active ? activeBg : hovered ? hoverBg() : sidebarBg;
+          const label = formatChannelLabel(channel, channel.id);
+          const selectChannel = (event: any) => {
+            if (event) {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              if (event[CHAT_CHANNEL_MOUSE_HANDLED]) return;
+              event[CHAT_CHANNEL_MOUSE_HANDLED] = true;
+            }
+            onFocusRequest?.();
+            onSelect?.(channel.id);
+          };
+          return (
+            <Box
+              key={channel.id}
+              height={1}
+              width={listWidth}
+              flexDirection="row"
+              backgroundColor={bg}
+              onMouseDown={selectChannel}
+              onMouseMove={() => setHoveredChannelId((current) => (current === channel.id ? current : channel.id))}
+              onMouseOut={() => setHoveredChannelId((current) => (current === channel.id ? null : current))}
+              style={{ cursor: "pointer" }}
+            >
+              <Text fg={fg} selectable={false} onMouseDown={selectChannel}> </Text>
+              <Text fg={fg} selectable={false} onMouseDown={selectChannel}>{active ? "#" : " "}</Text>
+              <Text fg={fg} selectable={false} onMouseDown={selectChannel}>{truncateChannelLabel(label, labelWidth)}</Text>
+              <Box flexGrow={1} onMouseDown={selectChannel} />
+            </Box>
+          );
+        })}
+        <Box flexGrow={1} />
+        {loading && focused && (
+          <Box height={1} width={listWidth} flexDirection="row">
+            <Text fg={colors.textDim}> syncing</Text>
+          </Box>
+        )}
+      </Box>
+      {sidebarBorder}
+      {nativePaneChrome && (
+        <Box
+          position="absolute"
+          top={0}
+          right={0}
+          width={1}
+          height={height}
+          style={{
+            width: 1,
+            height: "100%",
+            backgroundColor: dividerColor,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+    </Box>
+  );
+}
+
 export function ChatContent({
   width,
   height,
   focused,
   close,
+  channelId: rawChannelId,
+  onChannelChange,
   controller = chatController,
 }: ChatContentProps) {
   const dispatch = useAppDispatch();
-  const initialSnapshot = controller.getSnapshot();
+  const channelId = normalizeChannelId(rawChannelId);
+  const channelIdRef = useRef(channelId);
+  channelIdRef.current = channelId;
+  const initialSnapshot = controller.getSnapshot(channelId);
   const { nativePaneChrome } = useUiCapabilities();
-  const contentWidth = Math.max(width - 2, 1);
+  const [channels, setChannels] = useState<ChatChannel[]>(initialSnapshot.channels);
+  const [channelsLoading, setChannelsLoading] = useState(initialSnapshot.channelsLoading);
+  const showChannelSidebar = channels.length > 1 && width >= CHANNEL_SIDEBAR_BREAKPOINT && height >= 8;
+  const channelSidebarWidth = showChannelSidebar
+    ? Math.min(CHANNEL_SIDEBAR_MAX_WIDTH, Math.max(CHANNEL_SIDEBAR_MIN_WIDTH, Math.floor(width * 0.24)))
+    : 0;
+  const compactChannelHeaderHeight = nativePaneChrome && !showChannelSidebar && channels.length > 1 ? 1 : 0;
+  const chatWidth = Math.max(width - channelSidebarWidth, 1);
+  const contentWidth = Math.max(chatWidth - 2, 1);
   const composerPrefixWidth = nativePaneChrome ? 0 : 3;
   const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
   const inputValueRef = useRef(initialSnapshot.draft);
@@ -237,12 +903,19 @@ export function ChatContent({
   const [composerRows, setComposerRows] = useState(() => estimateComposerHeight(initialSnapshot.draft, composerTextWidth));
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [sidebarFocused, setSidebarFocusedState] = useState(false);
+  const sidebarFocusedRef = useRef(false);
+  const setSidebarFocused = useCallback((nextFocused: boolean) => {
+    sidebarFocusedRef.current = nextFocused;
+    setSidebarFocusedState((current) => (current === nextFocused ? current : nextFocused));
+  }, []);
   const [followMessages, setFollowMessages] = useState(true);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => (
     initialSnapshot.replyToId ? initialSnapshot.messages.find((message) => message.id === initialSnapshot.replyToId) ?? null : null
   ));
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const messageElementsRef = useRef(new Map<string, unknown>());
   const applyingExternalDraftRef = useRef(false);
   const prependAnchorRef = useRef<{
     oldestMessageId: string | null;
@@ -251,7 +924,7 @@ export function ChatContent({
     selectedMessageId: string | null;
   } | null>(null);
   const canSend = !!user?.emailVerified;
-  const nativeComposerTopGap = nativePaneChrome && canSend ? NATIVE_CHAT_COMPOSER_TOP_GAP_PX : 0;
+  const useDefaultControllerChannel = channelId === DEFAULT_CHAT_CHANNEL_ID && !onChannelChange;
   const messageBodyWidth = Math.max(contentWidth - 4, 1);
   const composerHeight = canSend
     ? nativePaneChrome
@@ -266,16 +939,51 @@ export function ChatContent({
   }, [composerTextWidth]);
 
   useEffect(() => {
-    return controller.attachView();
-  }, [controller]);
+    return useDefaultControllerChannel ? controller.attachView() : controller.attachChannelView(channelId);
+  }, [channelId, controller, useDefaultControllerChannel]);
 
   useEffect(() => {
     updateComposerRows(inputValueRef.current);
   }, [updateComposerRows]);
 
   useEffect(() => {
-    const unsubscribe = controller.subscribe((snapshot) => {
+    void controller.refreshChannels().catch(() => {});
+    void controller.refreshSession().catch(() => {});
+  }, [controller]);
+
+  useEffect(() => {
+    setSelectedIdx(-1);
+    setFollowMessages(true);
+    prependAnchorRef.current = null;
+    const snapshot = controller.getSnapshot(channelId);
+    setMessages(snapshot.messages);
+    setChannels(snapshot.channels);
+    setChannelsLoading(snapshot.channelsLoading);
+    setHasSavedSession(snapshot.hasSavedSession);
+    setUser(snapshot.user);
+    setLoading(snapshot.loading);
+    setLoadingOlderMessages(snapshot.loadingOlderMessages);
+    setHasOlderMessages(snapshot.hasOlderMessages);
+    inputValueRef.current = snapshot.draft;
+    updateComposerRows(snapshot.draft);
+    const textarea = inputRef.current;
+    if (textarea && textarea.editBuffer.getText() !== snapshot.draft) {
+      applyingExternalDraftRef.current = true;
+      textarea.setText(snapshot.draft);
+      applyingExternalDraftRef.current = false;
+    }
+    setReplyTo(snapshot.replyToId
+      ? snapshot.messages.find((message) => message.id === snapshot.replyToId) ?? null
+      : null);
+
+    const unsubscribe = useDefaultControllerChannel
+      ? controller.subscribe(handleSnapshot)
+      : controller.subscribe(channelId, handleSnapshot);
+
+    function handleSnapshot(snapshot: ReturnType<ChatController["getSnapshot"]>) {
       setMessages(snapshot.messages);
+      setChannels(snapshot.channels);
+      setChannelsLoading(snapshot.channelsLoading);
       setHasSavedSession(snapshot.hasSavedSession);
       setUser(snapshot.user);
       setLoading(snapshot.loading);
@@ -294,23 +1002,33 @@ export function ChatContent({
       setReplyTo(snapshot.replyToId
         ? snapshot.messages.find((message) => message.id === snapshot.replyToId) ?? null
         : null);
-    });
+    }
 
-    void controller.refreshSession().catch(() => {});
-    void controller.refreshMessages().catch(() => {});
+    void (useDefaultControllerChannel ? controller.refreshMessages() : controller.refreshChannelMessages(channelId)).catch(() => {});
     return unsubscribe;
-  }, [controller, updateComposerRows]);
+  }, [channelId, controller, updateComposerRows, useDefaultControllerChannel]);
 
-  const { catalog, openTicker } = useInlineTickers(messages.map((message) => message.content));
+  const messageContents = useMemo(() => messages.map((message) => message.content), [messages]);
+  const { catalog, openTicker } = useInlineTickers(messageContents);
 
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
+  const pendingJumpMessageIdRef = useRef<string | null>(null);
+
+  const registerMessageElement = useCallback((messageId: string, node: unknown | null) => {
+    if (node) {
+      messageElementsRef.current.set(messageId, node);
+    } else {
+      messageElementsRef.current.delete(messageId);
+    }
+  }, []);
 
   const focusInput = useCallback(() => {
+    setSidebarFocused(false);
     setInputFocused(true);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
-    inputRef.current?.focus();
-  }, [dispatch]);
+    inputRef.current?.focus?.();
+  }, [dispatch, setSidebarFocused]);
 
   const focusComposer = useCallback(() => {
     setSelectedIdx(-1);
@@ -325,8 +1043,12 @@ export function ChatContent({
 
   const clearReplyTarget = useCallback(() => {
     setReplyTo(null);
-    controller.setReplyToId(null);
-  }, [controller]);
+    if (useDefaultControllerChannel) {
+      controller.setReplyToId(null);
+    } else {
+      controller.setChannelReplyToId(channelId, null);
+    }
+  }, [channelId, controller, useDefaultControllerChannel]);
 
   const beginReplyTo = useCallback((index: number, options?: { deferFocus?: boolean }) => {
     if (!canSend || index < 0 || index >= messages.length) return;
@@ -335,13 +1057,17 @@ export function ChatContent({
     setSelectedIdx(index);
     setFollowMessages(index === messages.length - 1);
     setReplyTo(nextReplyTo);
-    controller.setReplyToId(nextReplyTo.id);
+    if (useDefaultControllerChannel) {
+      controller.setReplyToId(nextReplyTo.id);
+    } else {
+      controller.setChannelReplyToId(channelId, nextReplyTo.id);
+    }
     if (options?.deferFocus) {
       queueMicrotask(() => focusInput());
     } else {
       focusInput();
     }
-  }, [canSend, controller, focusInput, messages]);
+  }, [canSend, channelId, controller, focusInput, messages, useDefaultControllerChannel]);
 
   const returnToComposer = useCallback(() => {
     setSelectedIdx(-1);
@@ -384,32 +1110,144 @@ export function ChatContent({
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
-    controller.send(content, replyToRef.current?.id);
+    if (useDefaultControllerChannel) {
+      controller.send(content, replyToRef.current?.id);
+    } else {
+      controller.sendToChannel(channelId, content, replyToRef.current?.id);
+    }
     setSelectedIdx(-1);
     setFollowMessages(true);
-  }, [controller]);
+  }, [channelId, controller, useDefaultControllerChannel]);
 
   const requestOlderMessages = useCallback(() => {
     const scrollBox = scrollRef.current;
     if (!scrollBox || loadingOlderMessages || !hasOlderMessages || messages.length === 0) return;
+    const exactPixels = nativePaneChrome === true && hasPixelScrollMetrics(scrollBox);
 
     prependAnchorRef.current = {
       oldestMessageId: messages[0]?.id ?? null,
-      scrollHeight: scrollBox.scrollHeight,
-      scrollTop: scrollBox.scrollTop,
+      scrollHeight: getScrollHeight(scrollBox, exactPixels),
+      scrollTop: getScrollTop(scrollBox, exactPixels),
       selectedMessageId: selectedIdx >= 0 ? messages[selectedIdx]?.id ?? null : null,
     };
     setFollowMessages(false);
-    void controller.loadOlderMessages().catch(() => {
+    const request = useDefaultControllerChannel
+      ? controller.loadOlderMessages()
+      : controller.loadOlderChannelMessages(channelId);
+    void request.catch(() => {
       prependAnchorRef.current = null;
     });
-  }, [controller, hasOlderMessages, loadingOlderMessages, messages, selectedIdx]);
+  }, [channelId, controller, hasOlderMessages, loadingOlderMessages, messages, nativePaneChrome, selectedIdx, useDefaultControllerChannel]);
 
   const requestOlderMessagesIfNeeded = useCallback(() => {
     const scrollBox = scrollRef.current;
     if (!scrollBox || scrollBox.scrollTop > 1) return;
     requestOlderMessages();
   }, [requestOlderMessages]);
+
+  const scrollToLoadedMessage = useCallback((messageId: string) => {
+    const targetIndex = messages.findIndex((message) => message.id === messageId);
+    if (targetIndex < 0) return false;
+
+    setSelectedIdx(targetIndex);
+    setFollowMessages(false);
+    prependAnchorRef.current = null;
+    runAfterLayout(() => {
+      if (nativePaneChrome && scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(messageId))) return;
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) return;
+      scrollBox.scrollTo(getMessageTopOffset(messages, targetIndex, contentWidth));
+    });
+    return true;
+  }, [contentWidth, messages, nativePaneChrome]);
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    if (scrollToLoadedMessage(messageId)) return;
+    pendingJumpMessageIdRef.current = messageId;
+    if (hasOlderMessages && !loadingOlderMessages) {
+      requestOlderMessages();
+    } else {
+      pendingJumpMessageIdRef.current = null;
+    }
+  }, [hasOlderMessages, loadingOlderMessages, requestOlderMessages, scrollToLoadedMessage]);
+
+  useEffect(() => {
+    const pendingId = pendingJumpMessageIdRef.current;
+    if (!pendingId) return;
+    if (scrollToLoadedMessage(pendingId)) {
+      pendingJumpMessageIdRef.current = null;
+      prependAnchorRef.current = null;
+      return;
+    }
+    if (hasOlderMessages && !loadingOlderMessages) {
+      requestOlderMessages();
+    } else {
+      pendingJumpMessageIdRef.current = null;
+    }
+  }, [hasOlderMessages, loadingOlderMessages, messages, requestOlderMessages, scrollToLoadedMessage]);
+
+  const changeChannel = useCallback((nextChannelId: string) => {
+    const normalized = normalizeChannelId(nextChannelId);
+    if (normalized === channelIdRef.current) return;
+    channelIdRef.current = normalized;
+    setSelectedIdx(-1);
+    setFollowMessages(true);
+    onChannelChange?.(normalized);
+  }, [onChannelChange]);
+
+  useEffect(() => {
+    if (!onChannelChange || channelsLoading || channels.length === 0) return;
+    if (channels.some((channel) => channel.id === channelId)) return;
+    const fallbackChannelId = channels.find((channel) => channel.id === DEFAULT_CHAT_CHANNEL_ID)?.id
+      ?? channels[0]?.id;
+    if (fallbackChannelId) {
+      changeChannel(fallbackChannelId);
+    }
+  }, [changeChannel, channelId, channels, channelsLoading, onChannelChange]);
+
+  const cycleChannel = useCallback((direction: 1 | -1) => {
+    if (channels.length <= 1 || !onChannelChange) return false;
+    const currentIndex = Math.max(0, channels.findIndex((channel) => channel.id === channelIdRef.current));
+    const nextIndex = (currentIndex + direction + channels.length) % channels.length;
+    const nextChannel = channels[nextIndex];
+    if (!nextChannel) return false;
+    changeChannel(nextChannel.id);
+    return true;
+  }, [changeChannel, channels, onChannelChange]);
+
+  const focusChannelSidebar = useCallback(() => {
+    if (!showChannelSidebar || !onChannelChange) return false;
+    if (inputFocused) {
+      blurInput();
+    }
+    setSelectedIdx(-1);
+    setSidebarFocused(true);
+    return true;
+  }, [blurInput, inputFocused, onChannelChange, setSidebarFocused, showChannelSidebar]);
+
+  const focusChatContent = useCallback(() => {
+    if (!showChannelSidebar) return false;
+    setSidebarFocused(false);
+    return true;
+  }, [setSidebarFocused, showChannelSidebar]);
+
+  const moveSidebarChannelSelection = useCallback((direction: "up" | "down") => {
+    if (!showChannelSidebar || channels.length <= 1 || !onChannelChange) return false;
+    const currentIndex = channels.findIndex((channel) => channel.id === channelIdRef.current);
+    const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = direction === "down"
+      ? Math.min(baseIndex + 1, channels.length - 1)
+      : Math.max(baseIndex - 1, 0);
+    const nextChannel = channels[nextIndex];
+    if (!nextChannel || nextIndex === baseIndex) return true;
+    changeChannel(nextChannel.id);
+    return true;
+  }, [changeChannel, channels, onChannelChange, showChannelSidebar]);
+
+  useEffect(() => {
+    if (focused && showChannelSidebar) return;
+    setSidebarFocused(false);
+  }, [focused, setSidebarFocused, showChannelSidebar]);
 
   useEffect(() => {
     if (!canSend && inputFocused) {
@@ -425,7 +1263,7 @@ export function ChatContent({
 
   useEffect(() => {
     if (focused && inputFocused) {
-      inputRef.current?.focus();
+      inputRef.current?.focus?.();
     }
   }, [focused, inputFocused]);
 
@@ -433,8 +1271,12 @@ export function ChatContent({
     if (applyingExternalDraftRef.current) return;
     inputValueRef.current = draft;
     updateComposerRows(draft);
-    controller.setDraft(draft);
-  }, [controller, updateComposerRows]);
+    if (useDefaultControllerChannel) {
+      controller.setDraft(draft);
+    } else {
+      controller.setChannelDraft(channelId, draft);
+    }
+  }, [channelId, controller, updateComposerRows, useDefaultControllerChannel]);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -460,6 +1302,39 @@ export function ChatContent({
     if (!focused) return;
     const isEnterKey = event.name === "return" || event.name === "enter";
 
+    if (sidebarFocusedRef.current && showChannelSidebar) {
+      if (event.name === "left") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
+
+      if (event.name === "right") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        focusChatContent();
+        return;
+      }
+
+      if (event.name === "up" || event.name === "down") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        moveSidebarChannelSelection(event.name);
+        return;
+      }
+    }
+
+    if (
+      event.name === "left" &&
+      showChannelSidebar &&
+      (!inputFocused || inputValueRef.current.length === 0) &&
+      focusChannelSidebar()
+    ) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return;
+    }
+
     if (inputFocused) {
       if (event.name === "escape") {
         event.preventDefault?.();
@@ -482,6 +1357,17 @@ export function ChatContent({
         }
       }
 
+      return;
+    }
+
+    if ((event.name === "]" || event.sequence === "]") && cycleChannel(1)) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return;
+    }
+    if ((event.name === "[" || event.sequence === "[") && cycleChannel(-1)) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       return;
     }
 
@@ -551,28 +1437,10 @@ export function ChatContent({
       event.stopPropagation?.();
       setSelectedIdx(messages.length - 1);
       setFollowMessages(true);
-      queueMicrotask(() => scrollToBottom(scrollRef.current));
+      queueMicrotask(() => scrollToBottom(scrollRef.current, nativePaneChrome));
       return;
     }
-  }, [
-    beginReplyTo,
-    blurInput,
-    canSend,
-    clearReplyTarget,
-    focusComposer,
-    focused,
-    inputFocused,
-    hasOlderMessages,
-    loadingOlderMessages,
-    messages.length,
-    moveMessageSelection,
-    replyTo,
-    requestOlderMessages,
-    requestOlderMessagesIfNeeded,
-    returnToComposer,
-    selectedIdx,
-    shouldLeaveComposerForSelection,
-  ]);
+  });
 
   const inputMetaHeight = canSend && replyTo ? 1 : 0;
   const composerBlockHeight = canSend
@@ -581,8 +1449,8 @@ export function ChatContent({
   const inputAreaHeight = canSend ? composerBlockHeight + inputMetaHeight : 2;
   const topSeparatorHeight = nativePaneChrome ? 0 : 1;
   const footerSeparatorHeight = !nativePaneChrome && !canSend ? 1 : 0;
-  const messageAreaHeight = Math.max(1, height - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
-  const composerWidth = nativePaneChrome ? width : contentWidth;
+  const messageAreaHeight = Math.max(1, height - compactChannelHeaderHeight - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
+  const composerWidth = nativePaneChrome ? chatWidth : contentWidth;
 
   useEffect(() => {
     if (selectedIdx < messages.length) return;
@@ -591,8 +1459,8 @@ export function ChatContent({
 
   useEffect(() => {
     if (!stickyTranscript) return;
-    queueMicrotask(() => scrollToBottom(scrollRef.current));
-  }, [contentWidth, height, messages, messageAreaHeight, stickyTranscript]);
+    queueMicrotask(() => scrollToBottom(scrollRef.current, nativePaneChrome));
+  }, [contentWidth, height, messages, messageAreaHeight, nativePaneChrome, stickyTranscript]);
 
   useEffect(() => {
     const anchor = prependAnchorRef.current;
@@ -602,14 +1470,19 @@ export function ChatContent({
       const currentAnchor = prependAnchorRef.current;
       const scrollBox = scrollRef.current;
       if (!currentAnchor || !scrollBox) return;
+      if (pendingJumpMessageIdRef.current) {
+        prependAnchorRef.current = null;
+        return;
+      }
 
       const previousOldestIndex = currentAnchor.oldestMessageId
         ? messages.findIndex((message) => message.id === currentAnchor.oldestMessageId)
         : -1;
-      const addedRows = previousOldestIndex > 0
+      const exactPixels = nativePaneChrome === true && hasPixelScrollMetrics(scrollBox);
+      const addedRows = !exactPixels && previousOldestIndex > 0
         ? getMessageTopOffset(messages, previousOldestIndex, contentWidth)
-        : Math.max(0, scrollBox.scrollHeight - currentAnchor.scrollHeight);
-      scrollBox.scrollTo(currentAnchor.scrollTop + addedRows);
+        : Math.max(0, getScrollHeight(scrollBox, exactPixels) - currentAnchor.scrollHeight);
+      scrollToPosition(scrollBox, currentAnchor.scrollTop + addedRows, exactPixels);
       if (currentAnchor.selectedMessageId) {
         const selectedMessageIndex = messages.findIndex((message) => message.id === currentAnchor.selectedMessageId);
         if (selectedMessageIndex >= 0) {
@@ -618,29 +1491,34 @@ export function ChatContent({
       }
       prependAnchorRef.current = null;
     });
-  }, [contentWidth, loadingOlderMessages, messages]);
+  }, [contentWidth, loadingOlderMessages, messages, nativePaneChrome]);
 
   useEffect(() => {
     if (!focused || !stickyTranscript) return;
-    queueMicrotask(() => scrollToBottom(scrollRef.current));
-  }, [focused, stickyTranscript]);
+    queueMicrotask(() => scrollToBottom(scrollRef.current, nativePaneChrome));
+  }, [focused, nativePaneChrome, stickyTranscript]);
 
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
     if (!selectionActive) return;
+    if (nativePaneChrome) {
+      const selectedMessageId = messages[selectedIdx]?.id ?? "";
+      runAfterLayout(() => scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(selectedMessageId)));
+      return;
+    }
     const top = getMessageTopOffset(messages, selectedIdx, contentWidth);
     const rowHeight = estimateMessageHeight(messages[selectedIdx]!, contentWidth, isGroupedWithPrevious(messages, selectedIdx));
     const nextScrollTop = getSelectedMessageScrollTop({
       scrollTop: sb.scrollTop,
-      viewportHeight: sb.viewport.height,
+      viewportHeight: sb.viewport?.height ?? 0,
       top,
       rowHeight,
     });
     if (nextScrollTop !== sb.scrollTop) {
       sb.scrollTo(nextScrollTop);
     }
-  }, [contentWidth, messages, selectedIdx, selectionActive]);
+  }, [contentWidth, messages, nativePaneChrome, selectedIdx, selectionActive]);
 
   const replyPreview = replyTo
     ? formatInlinePreview(
@@ -649,17 +1527,44 @@ export function ChatContent({
     )
     : "";
   const inputPlaceholder = replyTo ? `Reply to @${replyTo.user.username}...` : "Type a message...";
-
-  if (loading && messages.length === 0) {
-    return (
-      <Box flexGrow={1} alignItems="center" justifyContent="center">
-        <Text fg={colors.textDim}>Loading...</Text>
-      </Box>
-    );
-  }
+  const activeChannel = channels.find((channel) => channel.id === channelId);
+  const activeChannelLabel = formatChannelLabel(activeChannel, channelId);
+  const chatContentBg = focused && showChannelSidebar && !sidebarFocused
+    ? blendHex(colors.bg, colors.borderFocused, 0.08)
+    : undefined;
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="row" width={width} height={height}>
+      {showChannelSidebar && (
+        <ChannelSidebar
+          channels={channels}
+          activeChannelId={channelId}
+          width={channelSidebarWidth}
+          height={height}
+          focused={focused}
+          keyboardFocused={sidebarFocused}
+          loading={channelsLoading}
+          onSelect={changeChannel}
+          onFocusRequest={() => setSidebarFocused(true)}
+        />
+      )}
+
+      <Box
+        flexDirection="column"
+        width={chatWidth}
+        height={height}
+        backgroundColor={chatContentBg}
+        onMouseDown={() => setSidebarFocused(false)}
+      >
+      {compactChannelHeaderHeight > 0 && (
+        <Box height={1} width={contentWidth} flexDirection="row">
+          <Text fg={colors.textDim}>#</Text>
+          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+            {truncateChannelLabel(activeChannelLabel, Math.max(contentWidth - 1, 1))}
+          </Text>
+        </Box>
+      )}
+
       {!nativePaneChrome && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
@@ -668,155 +1573,64 @@ export function ChatContent({
 
       <ScrollBox
         ref={scrollRef}
-        height={messageAreaHeight}
+        height={nativePaneChrome ? undefined : messageAreaHeight}
+        flexGrow={nativePaneChrome ? 1 : undefined}
         scrollY
         focusable={false}
         stickyScroll={stickyTranscript}
         stickyStart="bottom"
         onMouseScroll={() => queueMicrotask(requestOlderMessagesIfNeeded)}
-        style={nativeComposerTopGap > 0 ? { paddingBottom: nativeComposerTopGap } : undefined}
+        style={nativePaneChrome ? { minHeight: 0 } : undefined}
       >
         {loadingOlderMessages && (
           <Box alignItems="center" justifyContent="center" height={1} width={contentWidth}>
             <Text fg={colors.textDim}>Loading earlier messages...</Text>
           </Box>
         )}
-        {messages.length === 0 && (
+        {loading && messages.length === 0 ? (
+          <Box alignItems="center" justifyContent="center" flexGrow={1}>
+            <Text fg={colors.textDim}>Loading...</Text>
+          </Box>
+        ) : messages.length === 0 && (
           <Box alignItems="center" justifyContent="center" flexGrow={1}>
             <Text fg={colors.textDim}>No messages yet. Be the first to say something!</Text>
           </Box>
         )}
-        {messages.map((msg, index) => {
-          const isSelected = index === selectedIdx;
-          const isHovered = index === hoveredIdx && !isSelected;
-          const showReplyAction = canSend && (isSelected || hoveredIdx === index);
-          const bgColor = isSelected ? colors.selected : isHovered ? hoverBg() : undefined;
-          const grouped = isGroupedWithPrevious(messages, index);
-          const isSending = msg.clientStatus === "sending";
-          const hasFailed = msg.clientStatus === "failed";
-          const selectedTextColor = hasFailed ? colors.negative : colors.selectedText;
-          const replyMetaColor = isSelected ? selectedTextColor : colors.textMuted;
-          const replyAuthorColor = isSelected ? selectedTextColor : colors.textDim;
-          const headerStatus = isSending ? "sending..." : hasFailed ? "failed" : formatTimeAgo(msg.createdAt);
-          const headerStatusColor = isSelected
-            ? selectedTextColor
-            : isSending
-              ? colors.textDim
-              : hasFailed
-                ? colors.negative
-                : colors.textMuted;
-          const authorColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : colors.positive;
-          const authorAttributes = (isSending ? TextAttributes.DIM : 0) | TextAttributes.BOLD;
-          const bodyColor = isSelected ? selectedTextColor : hasFailed ? colors.negative : isSending ? colors.textDim : colors.text;
-          const bodyLines = getMessageBodyLines(msg, contentWidth);
-          const showInlineReplyAction = !grouped && (nativePaneChrome ? canSend : showReplyAction);
-          const showGroupedReplyAction = grouped && (nativePaneChrome ? canSend : showReplyAction);
-          const setHovered = () => setHoveredIdx((current) => (current === index ? current : index));
-          const clearHovered = () => setHoveredIdx((current) => (current === index ? null : current));
-          const messageRowProps = {
-            width: contentWidth,
-            backgroundColor: bgColor,
-            "data-gloom-role": nativePaneChrome ? "chat-message-row" : undefined,
-            "data-selected": nativePaneChrome ? (isSelected ? "true" : "false") : undefined,
-            onMouseMove: nativePaneChrome ? undefined : setHovered,
-            onMouseOut: nativePaneChrome ? undefined : clearHovered,
-          };
-          return (
-            <Box
+        {messages.map((msg, index) => (
+          nativePaneChrome ? (
+            <DesktopChatMessage
               key={msg.id}
-              width={contentWidth}
-              flexDirection="column"
-              data-gloom-role={nativePaneChrome ? "chat-message" : undefined}
-              data-selected={nativePaneChrome ? (isSelected ? "true" : "false") : undefined}
-              style={nativePaneChrome ? { "--chat-hover-bg": hoverBg() } : undefined}
-            >
-              {msg.replyTo && (
-                <Box
-                  {...messageRowProps}
-                  flexDirection="row"
-                  height={1}
-                  paddingLeft={2}
-                >
-                  <Text fg={replyMetaColor}>reply </Text>
-                  <Text fg={replyAuthorColor}>{msg.replyTo.user.username}: </Text>
-                  <Text fg={replyMetaColor}>
-                    {formatInlinePreview(
-                      msg.replyTo.content,
-                      Math.max(messageBodyWidth - `reply ${msg.replyTo.user.username}: `.length, 0),
-                    )}
-                  </Text>
-                </Box>
-              )}
-              {!grouped && (
-                <Box
-                  {...messageRowProps}
-                  flexDirection="row"
-                  height={1}
-                  paddingLeft={1}
-                >
-                  <Text fg={authorColor} attributes={authorAttributes}>
-                    {msg.user.username ?? "anon"}
-                  </Text>
-                  <Text fg={headerStatusColor}> {headerStatus}</Text>
-                  {showInlineReplyAction && (
-                    <>
-                      <Text fg={headerStatusColor}> </Text>
-                      <Box
-                        width={MESSAGE_ACTION_WIDTH}
-                        height={1}
-                        data-gloom-role={nativePaneChrome ? "chat-message-reply-action" : undefined}
-                      >
-                        <ChatActionChip
-                          label="Reply"
-                          width={MESSAGE_ACTION_WIDTH}
-                          emphasized={isSelected}
-                          onPress={() => beginReplyTo(index)}
-                        />
-                      </Box>
-                    </>
-                  )}
-                </Box>
-              )}
-              {bodyLines.map((line, lineIndex) => (
-                <Box
-                  key={`${msg.id}:body:${lineIndex}`}
-                  {...messageRowProps}
-                  paddingLeft={3}
-                  height={1}
-                  flexDirection="row"
-                  position={grouped ? "relative" : undefined}
-                >
-                  <Box width={messageBodyWidth} height={1}>
-                    <TickerBadgeText
-                      text={line}
-                      lineWidth={messageBodyWidth}
-                      catalog={catalog}
-                      textColor={bodyColor}
-                      openTicker={openTicker}
-                    />
-                  </Box>
-                  {lineIndex === 0 && showGroupedReplyAction && (
-                    <Box
-                      position="absolute"
-                      top={0}
-                      right={0}
-                      width={MESSAGE_ACTION_WIDTH}
-                      height={1}
-                      data-gloom-role={nativePaneChrome ? "chat-message-reply-action" : undefined}
-                    >
-                      <ChatActionChip
-                        label="Reply"
-                        width={MESSAGE_ACTION_WIDTH}
-                        emphasized={isSelected}
-                        onPress={() => beginReplyTo(index)}
-                      />
-                    </Box>
-                  )}
-                </Box>
-              ))}
-            </Box>
-          );
-        })}
+              msg={msg}
+              index={index}
+              messages={messages}
+              selectedIdx={selectedIdx}
+              hoveredIdx={hoveredIdx}
+              canSend={canSend}
+              catalog={catalog}
+              openTicker={openTicker}
+              beginReplyTo={beginReplyTo}
+              jumpToMessage={jumpToMessage}
+              registerMessageElement={registerMessageElement}
+            />
+          ) : (
+            <TerminalChatMessage
+              key={msg.id}
+              msg={msg}
+              index={index}
+              messages={messages}
+              selectedIdx={selectedIdx}
+              hoveredIdx={hoveredIdx}
+              canSend={canSend}
+              contentWidth={contentWidth}
+              messageBodyWidth={messageBodyWidth}
+              catalog={catalog}
+              openTicker={openTicker}
+              beginReplyTo={beginReplyTo}
+              jumpToMessage={jumpToMessage}
+              setHoveredIdx={setHoveredIdx}
+            />
+          )
+        ))}
       </ScrollBox>
 
       {!nativePaneChrome && !canSend && (
@@ -887,17 +1701,79 @@ export function ChatContent({
           )}
         </Box>
       )}
+      </Box>
     </Box>
   );
 }
 
 function ChatPane({ focused, width, height, close }: PaneProps) {
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
+  const paneId = usePaneInstanceId();
+  const pane = usePaneInstance();
+  const rawPaneChannelId = typeof pane?.settings?.channelId === "string" ? pane.settings.channelId : null;
+  const lastVisitedChannelId = useAppSelector((state) => (
+    (state.config.pluginConfig["gloomberb-cloud"]?.[LAST_VISITED_CHAT_CHANNEL_KEY] as string | undefined) ??
+    DEFAULT_CHAT_CHANNEL_ID
+  ));
+  const initialChannelIdRef = useRef(normalizeChannelId(rawPaneChannelId ?? lastVisitedChannelId));
+  const persistedChannelId = normalizeChannelId(rawPaneChannelId ?? initialChannelIdRef.current);
+  const persistChannelId = useCallback((nextChannelId: string) => {
+    const currentState = stateRef.current;
+    const layout = setPaneSetting(currentState.config.layout, paneId, "channelId", nextChannelId);
+    const layouts = currentState.config.layouts.map((savedLayout, index) => (
+      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
+    ));
+    const pluginConfig = {
+      ...currentState.config.pluginConfig,
+      "gloomberb-cloud": {
+        ...(currentState.config.pluginConfig["gloomberb-cloud"] ?? {}),
+        [LAST_VISITED_CHAT_CHANNEL_KEY]: nextChannelId,
+      },
+    };
+    const nextConfig = {
+      ...currentState.config,
+      layout,
+      layouts,
+      pluginConfig,
+    };
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    scheduleConfigSave(nextConfig);
+  }, [dispatch, paneId, stateRef]);
+  const [channelId, setLocalChannelId] = useState(initialChannelIdRef.current);
+  const pendingChannelIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (rawPaneChannelId) return;
+    persistChannelId(initialChannelIdRef.current);
+  }, [persistChannelId, rawPaneChannelId]);
+
+  useEffect(() => {
+    const normalizedPersisted = normalizeChannelId(persistedChannelId);
+    if (pendingChannelIdRef.current) {
+      if (pendingChannelIdRef.current === normalizedPersisted) {
+        pendingChannelIdRef.current = null;
+      }
+      return;
+    }
+    setLocalChannelId((current) => (current === normalizedPersisted ? current : normalizedPersisted));
+  }, [persistedChannelId]);
+
+  const setChannelId = useCallback((nextChannelId: string) => {
+    const normalized = normalizeChannelId(nextChannelId);
+    pendingChannelIdRef.current = normalized;
+    setLocalChannelId((current) => (current === normalized ? current : normalized));
+    persistChannelId(normalized);
+  }, [persistChannelId]);
+
   return (
     <ChatContent
       width={width}
       height={height}
       focused={focused}
       close={close}
+      channelId={channelId}
+      onChannelChange={setChannelId}
     />
   );
 }
@@ -977,8 +1853,16 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       label: "New Chat Pane",
       description: "Open another floating chat window",
       keywords: ["new", "chat", "pane", "message"],
-      shortcut: { prefix: "CHAT" },
-      createInstance: () => ({ placement: "floating" }),
+      shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text" },
+      createInstance: async (context, options) => {
+        const channelId = options?.arg
+          ? await chatController.resolveRequiredChannelId(normalizeShortcutChannelId(options.arg))
+          : await chatController.resolvePreferredChannelId(getLastVisitedChatChannelId(context.config));
+        return {
+          placement: "floating",
+          settings: { channelId },
+        };
+      },
     },
   ],
 

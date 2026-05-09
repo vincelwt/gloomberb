@@ -46,7 +46,7 @@ describe("command bar view model helpers", () => {
     expect(sections.map((section) => section.category)).toEqual(["Tickers", "Config", "Danger", "Debug"]);
   });
 
-  test("derives row presentation for toggles and current theme rows", () => {
+  test("derives row presentation for toggles and current rows", () => {
     expect(getRowPresentation({
       id: "plugin:news",
       label: "News",
@@ -61,11 +61,11 @@ describe("command bar view model helpers", () => {
     });
 
     expect(getRowPresentation({
-      id: "theme:amber",
+      id: "current:amber",
       label: "Amber",
       detail: "Warm terminal palette",
-      category: "Themes",
-      kind: "theme",
+      category: "Config",
+      kind: "command",
       right: "amber",
       current: true,
     }, false, true)).toMatchObject({

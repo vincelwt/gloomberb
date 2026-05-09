@@ -1,6 +1,7 @@
 import { Box, SpinnerMark, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { useEffect, type ReactNode } from "react";
 import { blendHex, colors, priceColor } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import { useAppActive } from "../../state/app-activity";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import {
@@ -121,6 +122,7 @@ function UpdateStatus() {
 }
 
 export function Header() {
+  useThemeColors();
   const baseCurrency = useAppSelector(selectBaseCurrency);
   const appActive = useAppActive();
   const { titleBarOverlay } = useUiCapabilities();

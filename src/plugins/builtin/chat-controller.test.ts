@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AppNotificationRequest, PluginPersistence } from "../../types/plugin";
 import type { PersistedResourceValue } from "../../types/persistence";
-import { apiClient, type ChatMessage } from "../../utils/api-client";
+import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
 import { ChatController } from "./chat-controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
@@ -11,6 +11,14 @@ const TRANSCRIPT_SCHEMA_VERSION = 2;
 const originalConnectChannel = apiClient.connectChannel.bind(apiClient);
 const originalGetSession = apiClient.getSession.bind(apiClient);
 const originalGetMessages = apiClient.getMessages.bind(apiClient);
+const originalGetChannels = apiClient.getChannels.bind(apiClient);
+
+const SERVER_CHAT_CHANNELS: ChatChannel[] = [
+  { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+  { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "options", name: "options", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "help", name: "help", created_at: "2026-05-09T00:00:00.000Z" },
+];
 
 async function flushMicrotasks() {
   await Promise.resolve();
@@ -98,6 +106,7 @@ afterEach(() => {
   apiClient.connectChannel = originalConnectChannel;
   apiClient.getSession = originalGetSession;
   apiClient.getMessages = originalGetMessages;
+  apiClient.getChannels = originalGetChannels;
 });
 
 describe("ChatController", () => {
@@ -139,6 +148,27 @@ describe("ChatController", () => {
     expect(snapshot.draft).toBe("cached draft");
     expect(snapshot.replyToId).toBe("m1");
     expect(snapshot.messages.map((entry) => entry.id)).toEqual(["m1"]);
+  });
+
+  test("starts without client-seeded channels and hydrates the server channel list", async () => {
+    const controller = new ChatController();
+    apiClient.getChannels = async () => SERVER_CHAT_CHANNELS;
+
+    expect(controller.getSnapshot().channels).toEqual([]);
+
+    await controller.refreshChannels();
+
+    expect(controller.getSnapshot().channels).toEqual(SERVER_CHAT_CHANNELS);
+  });
+
+  test("rejects unknown shortcut channels after the server list loads", async () => {
+    const controller = new ChatController();
+    apiClient.getChannels = async () => SERVER_CHAT_CHANNELS;
+
+    await expect(controller.resolveRequiredChannelId("help")).resolves.toBe("help");
+    await expect(controller.resolveRequiredChannelId("made-up")).rejects.toThrow(
+      'Unknown chat channel "#made-up".',
+    );
   });
 
   test("hydrates a cached verified user into the api client for offline use", async () => {
@@ -410,6 +440,58 @@ describe("ChatController", () => {
     })?.value).toEqual({
       messages: [message],
     });
+  });
+
+  test("keeps per-channel drafts and transcripts isolated", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const everyoneMessage: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "general",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u1", username: "vince", displayName: "Vince" },
+    };
+    const optionsMessage: ChatMessage = {
+      id: "m2",
+      channelId: "options",
+      content: "options note",
+      replyToId: null,
+      createdAt: "2026-03-28T00:01:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    persistence.setState("channel:everyone", {
+      draft: "general draft",
+      replyToId: null,
+      lastCursor: "m1",
+      lastViewedMessageId: "m1",
+    }, { schemaVersion: 1 });
+    persistence.setState("channel:options", {
+      draft: "options draft",
+      replyToId: null,
+      lastCursor: "m2",
+      lastViewedMessageId: "m2",
+    }, { schemaVersion: 1 });
+    persistence.setResource(TRANSCRIPT_KIND, "everyone", { messages: [everyoneMessage] }, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+      cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
+    });
+    persistence.setResource(TRANSCRIPT_KIND, "options", { messages: [optionsMessage] }, {
+      sourceKey: TRANSCRIPT_SOURCE,
+      schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+      cachePolicy: { staleMs: 1_000, expireMs: 2_000 },
+    });
+
+    controller.attachPersistence(persistence);
+    controller.setChannelDraft("options", "updated options");
+
+    expect(controller.getSnapshot().messages.map((entry) => entry.content)).toEqual(["general"]);
+    expect(controller.getSnapshot().draft).toBe("general draft");
+    expect(controller.getSnapshot("options").messages.map((entry) => entry.content)).toEqual(["options note"]);
+    expect(controller.getSnapshot("options").draft).toBe("updated options");
   });
 
   test("stores the latest message id as the incremental cursor", async () => {

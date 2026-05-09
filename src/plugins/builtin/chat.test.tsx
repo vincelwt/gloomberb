@@ -1,27 +1,42 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, useState } from "react";
+import { act, useCallback, useMemo, useRef, useState } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
-import { AppContext, createInitialState } from "../../state/app-context";
-import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
+import { AppContext, appReducer, createInitialState, PaneInstanceProvider } from "../../state/app-context";
+import { createConfigBackedTestPluginRuntime, createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { colors } from "../../theme/colors";
-import { createDefaultConfig } from "../../types/config";
+import { createDefaultConfig, findPaneInstance, type PaneInstanceConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
 import { Box } from "../../ui";
-import { apiClient, type ChatMessage } from "../../utils/api-client";
+import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
-import { ChatContent, ChatStatusWidget, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
-import { ChatController } from "./chat-controller";
+import { ChatContent, ChatStatusWidget, getScrollTopForElementIntoView, getSelectedMessageScrollTop, gloomberbCloudPlugin } from "./chat";
+import { chatController, ChatController } from "./chat-controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
 const TRANSCRIPT_KEY = "everyone";
 const TRANSCRIPT_SOURCE = "server";
 const TRANSCRIPT_SCHEMA_VERSION = 2;
 const originalConnectChannel = apiClient.connectChannel.bind(apiClient);
+const originalGetChannels = apiClient.getChannels.bind(apiClient);
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+
+const TEST_CHAT_CHANNELS: ChatChannel[] = [
+  { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+  { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "options", name: "options", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "macro", name: "macro", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "crypto", name: "crypto", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "energy", name: "energy", created_at: "2026-05-09T00:00:00.000Z" },
+  { id: "help", name: "help", created_at: "2026-05-09T00:00:00.000Z" },
+];
+
+function installServerChannels(controller: ChatController, channels = TEST_CHAT_CHANNELS): void {
+  (controller as any).channels = channels;
+}
 
 class MemoryPersistence implements PluginPersistence {
   private readonly state = new Map<string, { schemaVersion: number; value: unknown }>();
@@ -237,6 +252,7 @@ afterEach(async () => {
   setSharedRegistryForTests(undefined);
   setSharedMarketDataForTests(undefined);
   apiClient.connectChannel = originalConnectChannel;
+  apiClient.getChannels = originalGetChannels;
   apiClient.setSessionToken(null);
 
   if (testSetup) {
@@ -354,6 +370,341 @@ describe("ChatContent", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Type a message...");
     expect(frame).not.toContain("click a message");
+  });
+
+  test("shows the channel sidebar on wide panes and hides it on narrow panes", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    const renderChannelPane = (width: number) => (
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+          <ChatContent
+            controller={controller}
+            width={width}
+            height={12}
+            focused
+            channelId="options"
+            onChannelChange={() => {}}
+          />
+        </PluginRenderProvider>
+      </AppContext>
+    );
+
+    await act(async () => {
+      testSetup = await testRender(renderChannelPane(90), {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("options");
+
+    await act(async () => {
+      testSetup?.renderer.destroy();
+      testSetup = await testRender(renderChannelPane(60), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).not.toContain("options");
+  });
+
+  test("selects a sidebar channel from a single text click", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    function ChannelPane() {
+      const [channelId, setChannelId] = useState("equities");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={12}
+              focused
+              channelId={channelId}
+              onChannelChange={setChannelId}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<ChannelPane />, {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("#equities");
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("options"));
+    const col = lines[row]?.indexOf("options") ?? -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("#options");
+  });
+
+  test("uses arrows to move between channel sidebar and chat content", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    function ChannelPane() {
+      const [channelId, setChannelId] = useState("equities");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={12}
+              focused
+              channelId={channelId}
+              onChannelChange={setChannelId}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<ChannelPane />, {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("#equities");
+    const getActiveChannelBackgrounds = () => {
+      const activeLine = testSetup!.captureSpans().lines.find((line) => lineText(line).includes("#equities"));
+      expect(activeLine).toBeDefined();
+      return activeLine!.spans.map((span) => span.bg.toInts().join(","));
+    };
+    const getContentBackgrounds = () => {
+      const contentLine = testSetup!.captureSpans().lines.find((line) => lineText(line).includes("No messages yet"));
+      expect(contentLine).toBeDefined();
+      return contentLine!.spans.map((span) => span.bg.toInts().join(","));
+    };
+    const contentFocusedBackgrounds = getActiveChannelBackgrounds();
+    const rightFocusedBackgrounds = getContentBackgrounds();
+
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    expect(testSetup.captureCharFrame()).toContain("#equities");
+
+    await emitKeypress({ name: "left", sequence: "\u001b[D" });
+    await flushFrame();
+    expect(getActiveChannelBackgrounds()).not.toEqual(contentFocusedBackgrounds);
+    expect(getContentBackgrounds()).not.toEqual(rightFocusedBackgrounds);
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("#options");
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("#equities");
+
+    await emitKeypress({ name: "right", sequence: "\u001b[C" });
+    await flushFrame();
+    expect(getActiveChannelBackgrounds()).toEqual(contentFocusedBackgrounds);
+    expect(getContentBackgrounds()).toEqual(rightFocusedBackgrounds);
+    await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("#equities");
+  });
+
+  test("keeps the channel sidebar visible while a channel loads", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    const getSnapshot = controller.getSnapshot.bind(controller);
+    controller.getSnapshot = ((channelId?: string) => ({
+      ...getSnapshot(channelId),
+      loading: true,
+      messages: [],
+    })) as typeof controller.getSnapshot;
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={12}
+              focused
+              channelId="options"
+              onChannelChange={() => {}}
+            />
+          </PluginRenderProvider>
+        </AppContext>,
+        {
+          width: 90,
+          height: 12,
+        },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("#options");
+    expect(frame).toContain("Loading...");
+  });
+
+  test("persists a pane channel selection without the last-visited write reverting it", async () => {
+    const registeredPanes: Array<{ id: string; component: (props: any) => JSX.Element }> = [];
+    gloomberbCloudPlugin.setup({
+      persistence: new MemoryPersistence(),
+      resume: {
+        getState: () => null,
+        setState: () => {},
+        deleteState: () => {},
+      },
+      registerPane: (pane: { id: string; component: (props: any) => JSX.Element }) => {
+        registeredPanes.push(pane);
+      },
+      registerPaneTemplate: () => {},
+      registerDetailTab: () => {},
+      registerShortcut: () => {},
+      registerCommand: () => {},
+      showPane: () => {},
+      hidePane: () => {},
+      notify: () => {},
+    } as any);
+    const ChatPaneComponent = registeredPanes.find((pane) => pane.id === "chat")?.component;
+    expect(ChatPaneComponent).toBeDefined();
+    const ResolvedChatPaneComponent = ChatPaneComponent!;
+
+    const originalRefreshChannels = chatController.refreshChannels;
+    const originalRefreshSession = chatController.refreshSession;
+    const originalRefreshChannelMessages = chatController.refreshChannelMessages;
+    installServerChannels(chatController);
+    chatController.refreshChannels = async () => {};
+    chatController.refreshSession = async () => {};
+    chatController.refreshChannelMessages = async () => {};
+
+    const paneInstanceId = "chat:test";
+    const chatInstance: PaneInstanceConfig = {
+      instanceId: paneInstanceId,
+      paneId: "chat",
+      settings: { channelId: "equities" },
+    };
+    const layout = {
+      dockRoot: { kind: "pane" as const, instanceId: paneInstanceId },
+      floating: [],
+      detached: [],
+      instances: [chatInstance],
+    };
+    const initialState = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    initialState.focusedPaneId = paneInstanceId;
+    initialState.config = {
+      ...initialState.config,
+      layout,
+      layouts: [{ name: "Test", layout }],
+      pluginConfig: {
+        "gloomberb-cloud": {
+          lastChatChannelId: "equities",
+        },
+      },
+    };
+    let latestState = initialState;
+
+    function ChatPaneHarness() {
+      const [state, setState] = useState(initialState);
+      const stateRef = useRef(state);
+      stateRef.current = state;
+      latestState = state;
+      const dispatch = useCallback((action: any) => {
+        setState((current) => {
+          const next = appReducer(current, action);
+          latestState = next;
+          return next;
+        });
+      }, []);
+      const runtime = useMemo(() => createConfigBackedTestPluginRuntime({
+        getConfig: () => stateRef.current.config,
+        setConfig: (config) => dispatch({ type: "SET_CONFIG", config }),
+      }), [dispatch]);
+
+      return (
+        <AppContext value={{ state, dispatch }}>
+          <PaneInstanceProvider paneId={paneInstanceId}>
+            <PluginRenderProvider pluginId="gloomberb-cloud" runtime={runtime}>
+              <ResolvedChatPaneComponent
+                width={90}
+                height={12}
+                focused
+                close={() => {}}
+              />
+            </PluginRenderProvider>
+          </PaneInstanceProvider>
+        </AppContext>
+      );
+    }
+
+    try {
+      await act(async () => {
+        testSetup = await testRender(<ChatPaneHarness />, {
+          width: 90,
+          height: 12,
+        });
+      });
+
+      await flushFrame();
+      const lines = testSetup.captureCharFrame().split("\n");
+      const row = lines.findIndex((line) => line.includes("options"));
+      const col = lines[row]?.indexOf("options") ?? -1;
+
+      expect(row).toBeGreaterThanOrEqual(0);
+      expect(col).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await testSetup!.mockMouse.click(col + 1, row);
+        await testSetup!.renderOnce();
+        await testSetup!.renderOnce();
+      });
+      await flushFrame();
+
+      expect(findPaneInstance(latestState.config.layout, paneInstanceId)?.settings?.channelId).toBe("options");
+      expect(latestState.config.pluginConfig["gloomberb-cloud"]?.lastChatChannelId).toBe("options");
+      expect(testSetup.captureCharFrame()).toContain("#options");
+    } finally {
+      chatController.refreshChannels = originalRefreshChannels;
+      chatController.refreshSession = originalRefreshSession;
+      chatController.refreshChannelMessages = originalRefreshChannelMessages;
+      installServerChannels(chatController, []);
+      chatController.dispose();
+    }
   });
 
   test("uses the full message row width when the reply action is hidden", async () => {
@@ -635,6 +986,29 @@ describe("ChatContent", () => {
     });
 
     expect(nextScrollTop).toBe(13);
+  });
+
+  test("keeps a selected desktop message inside the scroll viewport", () => {
+    expect(getScrollTopForElementIntoView({
+      scrollTop: 120,
+      viewportHeight: 60,
+      elementTop: 170,
+      elementHeight: 24,
+    })).toBe(134);
+
+    expect(getScrollTopForElementIntoView({
+      scrollTop: 120,
+      viewportHeight: 60,
+      elementTop: 92,
+      elementHeight: 18,
+    })).toBe(92);
+
+    expect(getScrollTopForElementIntoView({
+      scrollTop: 120,
+      viewportHeight: 60,
+      elementTop: 132,
+      elementHeight: 18,
+    })).toBe(120);
   });
 
   test("up arrow still moves within a multi-line draft before handing off to message selection", async () => {
@@ -1517,5 +1891,49 @@ describe("ChatContent", () => {
       "confirmPassword",
       "_validate",
     ]);
+  });
+
+  test("new chat pane opens directly on the last visited channel", async () => {
+    const originalRefreshChannels = chatController.refreshChannels;
+    installServerChannels(chatController);
+    chatController.refreshChannels = async () => {};
+    const chatTemplate = gloomberbCloudPlugin.paneTemplates?.find((template) => template.id === "new-chat-pane");
+    try {
+      expect(chatTemplate?.wizard).toBeUndefined();
+      expect(chatTemplate?.shortcut).toMatchObject({
+        prefix: "CHAT",
+        argPlaceholder: "channel",
+        argKind: "text",
+      });
+      const created = await Promise.resolve(chatTemplate?.createInstance?.({
+        config: {
+          pluginConfig: {
+            "gloomberb-cloud": {
+              lastChatChannelId: "options",
+            },
+          },
+        },
+      }));
+      expect(created).toMatchObject({
+        settings: { channelId: "options" },
+        placement: "floating",
+      });
+      const createdFromShortcut = await Promise.resolve(chatTemplate?.createInstance?.({
+        config: {
+          pluginConfig: {
+            "gloomberb-cloud": {
+              lastChatChannelId: "options",
+            },
+          },
+        },
+      }, { arg: "#HELP" }));
+      expect(createdFromShortcut).toMatchObject({
+        settings: { channelId: "help" },
+        placement: "floating",
+      });
+    } finally {
+      chatController.refreshChannels = originalRefreshChannels;
+      installServerChannels(chatController, []);
+    }
   });
 });

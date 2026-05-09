@@ -5,10 +5,9 @@ export interface ResultItem {
   label: string;
   detail: string;
   category: string;
-  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "action" | "info";
+  kind: "command" | "ticker" | "search" | "plugin" | "action" | "info";
   right?: string;
   searchText?: string;
-  themeId?: string;
   pluginToggle?: () => void | Promise<void>;
   secondaryAction?: () => void | Promise<void>;
   checked?: boolean;

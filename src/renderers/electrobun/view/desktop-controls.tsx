@@ -4,6 +4,7 @@ import { Box, Input, ScrollBox, Text, Textarea, editableTextContextMenuItems, us
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { blendHex, colors, hoverBg } from "../../../theme/colors";
+import { useThemeColors } from "../../../theme/theme-context";
 import { isDetailBackNavigationKey } from "../../../utils/back-navigation";
 import type { ButtonProps } from "../../../components/ui/button";
 import type { TextFieldProps } from "../../../components/ui/fields";
@@ -97,6 +98,7 @@ export function WebButton({
   shortcut,
   width,
 }: ButtonProps) {
+  useThemeColors();
   const palette = buttonPalette({ variant, active, disabled });
 
   return (
@@ -156,6 +158,7 @@ export function WebTextField({
   placeholderColor = colors.textDim,
   onMouseDown,
 }: TextFieldProps) {
+  useThemeColors();
   const localInputRef = useRef<InputRenderable>(null);
   const resolvedInputRef = inputRef ?? localInputRef;
   const renderer = useRendererHost();
@@ -245,6 +248,7 @@ export function WebMessageComposer({
   keyBindings,
   wrapText = false,
 }: MessageComposerProps) {
+  useThemeColors();
   const borderColor = focused
     ? blendHex(colors.borderFocused, colors.textBright, 0.24)
     : colors.border;
@@ -361,6 +365,7 @@ export function WebListView({
   scrollable = false,
   autoScrollToIndex = true,
 }: ListViewProps) {
+  useThemeColors();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const baseBg = bgColor ?? colors.bg;
@@ -489,6 +494,7 @@ export function WebSegmentedControl({
   value,
   onChange,
 }: SegmentedControlProps) {
+  useThemeColors();
   return (
     <Box
       flexDirection="row"
@@ -538,6 +544,7 @@ export function WebDialogFrame({
   footer,
   showTitleDivider = true,
 }: DialogFrameProps) {
+  useThemeColors();
   return (
     <Box flexDirection="column" style={{ padding: 14 }}>
       <Box
@@ -583,6 +590,7 @@ export function WebPageStackView({
   backLabel = "Back",
   backHint,
 }: PageStackViewProps) {
+  useThemeColors();
   useShortcut((event) => {
     if (!focused || !detailOpen || !isDetailBackNavigationKey(event)) return;
     event.stopPropagation?.();

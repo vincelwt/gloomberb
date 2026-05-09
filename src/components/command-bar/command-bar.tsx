@@ -1,5 +1,5 @@
 import { Box, Input, ScrollBox, Text, Textarea, useUiCapabilities } from "../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import { useNativeRenderer } from "../../ui";
@@ -8,7 +8,8 @@ import { Button, NumberField, Spinner, TextField } from "../ui";
 import { NativeSelect, openNativeSelect, type NativeSelectElement } from "../ui/native-select";
 import { ToggleList } from "../toggle-list";
 import {
-  colors,
+  applyTheme,
+  clearTransientThemePreview,
   commandBarBg,
   commandBarHeadingText,
   commandBarHoverBg,
@@ -18,9 +19,10 @@ import {
   commandBarSelectedText,
   commandBarSubtleText,
   commandBarText,
+  getCurrentThemeId,
+  previewTheme,
 } from "../../theme/colors";
 import {
-  getEffectiveThemeId,
   getFocusedCollectionId,
   useAppDispatch,
   useAppSelector,
@@ -28,8 +30,9 @@ import {
   type AppState,
 } from "../../state/app-context";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
-import { commands, getThemeOptions, matchPrefix, type Command } from "./command-registry";
-import { applyTheme, getCurrentThemeId } from "../../theme/colors";
+import { commands, matchPrefix, type Command } from "./command-registry";
+import { useThemeColors } from "../../theme/theme-context";
+import { ThemePicker, type ThemePickerHandle } from "./theme-picker";
 import { exportConfig, importConfig, resetAllData, saveConfig } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
@@ -298,6 +301,309 @@ function getVisibleMultiSelectPickerOptions(
   });
 }
 
+type CommandBarListScrollEvent = {
+  stopPropagation: () => void;
+  preventDefault: () => void;
+  scroll?: { direction?: string; delta?: number };
+};
+
+interface CommandBarListHeaderProps {
+  kind: ListScreenState["kind"];
+  query: string;
+  queryDisplayWidth: number;
+  nativePaneChrome: boolean;
+  inputBg: string;
+  paletteBg: string;
+  paletteText: string;
+  paletteSubtleText: string;
+  cursorColor: string;
+  contentPadding: number;
+  rootGhostSuffix: string | null;
+  rootQueryLength: number;
+  rootShortcutFeedback: string | null;
+  onQueryChange: (query: string) => void;
+}
+
+const CommandBarListHeader = memo(function CommandBarListHeader({
+  kind,
+  query,
+  queryDisplayWidth,
+  nativePaneChrome,
+  inputBg,
+  paletteBg,
+  paletteText,
+  paletteSubtleText,
+  cursorColor,
+  contentPadding,
+  rootGhostSuffix,
+  rootQueryLength,
+  rootShortcutFeedback,
+  onQueryChange,
+}: CommandBarListHeaderProps) {
+  return (
+    <>
+      <Box height={1} paddingX={contentPadding}>
+        <Box
+          width={queryDisplayWidth}
+          height={1}
+          position="relative"
+          backgroundColor={nativePaneChrome ? undefined : inputBg}
+          style={nativePaneChrome ? undefined : {
+            overflow: "hidden",
+          }}
+        >
+          <Input
+            value={query}
+            onInput={onQueryChange}
+            onChange={onQueryChange}
+            placeholder={kind === "root" ? "Search" : "Filter"}
+            focused
+            width={nativePaneChrome ? "100%" : queryDisplayWidth}
+            backgroundColor={nativePaneChrome ? "transparent" : paletteBg}
+            focusedBackgroundColor={nativePaneChrome ? "transparent" : paletteBg}
+            textColor={paletteText}
+            focusedTextColor={paletteText}
+            placeholderColor={paletteSubtleText}
+            cursorColor={cursorColor}
+          />
+          {kind === "root" && rootGhostSuffix && (
+            <Box
+              position="absolute"
+              top={0}
+              left={Math.max(0, Math.min(rootQueryLength, queryDisplayWidth - 1))}
+              width={Math.max(0, queryDisplayWidth - Math.min(rootQueryLength, queryDisplayWidth - 1))}
+              height={1}
+            >
+              <Text fg={paletteSubtleText}>
+                {truncateText(
+                  rootGhostSuffix,
+                  Math.max(0, queryDisplayWidth - Math.min(rootQueryLength, queryDisplayWidth - 1)),
+                )}
+              </Text>
+            </Box>
+          )}
+        </Box>
+      </Box>
+      <Box height={1} paddingX={contentPadding}>
+        {kind === "root" && rootShortcutFeedback
+          ? (
+            <Text fg={paletteSubtleText}>
+              {truncateText(rootShortcutFeedback, queryDisplayWidth)}
+            </Text>
+          )
+          : null}
+      </Box>
+    </>
+  );
+});
+
+interface CommandBarListItemRowProps {
+  item: ResultItem;
+  globalIdx: number;
+  isSelected: boolean;
+  isHovered: boolean;
+  contentPadding: number;
+  labelWidth: number;
+  trailingWidth: number;
+  nativePaneChrome: boolean;
+  paletteBg: string;
+  paletteHoverBg: string;
+  paletteSelectedBg: string;
+  paletteSelectedText: string;
+  paletteSubtleText: string;
+  paletteText: string;
+  panelBg: string;
+  onHoverIndex: (index: number | null) => void;
+  onListScroll: (event: CommandBarListScrollEvent) => void;
+  onRowMouseDown: (event: any, item: ResultItem, globalIdx: number) => void;
+}
+
+const CommandBarListItemRow = memo(function CommandBarListItemRow({
+  item,
+  globalIdx,
+  isSelected,
+  isHovered,
+  contentPadding,
+  labelWidth,
+  trailingWidth,
+  nativePaneChrome,
+  paletteBg,
+  paletteHoverBg,
+  paletteSelectedBg,
+  paletteSelectedText,
+  paletteSubtleText,
+  paletteText,
+  panelBg,
+  onHoverIndex,
+  onListScroll,
+  onRowMouseDown,
+}: CommandBarListItemRowProps) {
+  const presentation = getRowPresentation(item, isSelected, trailingWidth > 0);
+  const label = truncateText(presentation.label, labelWidth);
+  const trailing = truncateText(presentation.trailing, trailingWidth);
+
+  return (
+    <Box
+      key={item.id}
+      flexDirection="row"
+      height={1}
+      paddingX={contentPadding}
+      backgroundColor={isSelected
+        ? paletteSelectedBg
+        : isHovered
+          ? paletteHoverBg
+          : (nativePaneChrome ? panelBg : paletteBg)}
+      onMouseMove={() => onHoverIndex(globalIdx)}
+      onMouseOut={() => onHoverIndex(null)}
+      {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
+      onMouseDown={(event: any) => onRowMouseDown(event, item, globalIdx)}
+      data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
+      style={nativePaneChrome ? { borderRadius: 6 } : undefined}
+    >
+      <Box width={labelWidth}>
+        <Text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
+          {label}
+        </Text>
+      </Box>
+      <Box width={trailingWidth}>
+        <Text fg={isSelected ? paletteSelectedText : paletteSubtleText}>{trailing}</Text>
+      </Box>
+    </Box>
+  );
+});
+
+interface CommandBarListBodyProps {
+  visibleListState: ListScreenState;
+  nativeListRows: CommandBarListRow[];
+  listBodyHeight: number;
+  contentPadding: number;
+  labelWidth: number;
+  nativePaneChrome: boolean;
+  nativeListScrollRef: RefObject<ScrollBoxRenderable | null>;
+  paletteBg: string;
+  paletteHeadingText: string;
+  paletteHoverBg: string;
+  paletteSelectedBg: string;
+  paletteSelectedText: string;
+  paletteSubtleText: string;
+  paletteText: string;
+  panelBg: string;
+  queryDisplayWidth: number;
+  trailingWidth: number;
+  onHoverIndex: (index: number | null) => void;
+  onListScroll: (event: CommandBarListScrollEvent) => void;
+  onRowMouseDown: (event: any, item: ResultItem, globalIdx: number) => void;
+}
+
+const CommandBarListBody = memo(function CommandBarListBody({
+  visibleListState,
+  nativeListRows,
+  listBodyHeight,
+  contentPadding,
+  labelWidth,
+  nativePaneChrome,
+  nativeListScrollRef,
+  paletteBg,
+  paletteHeadingText,
+  paletteHoverBg,
+  paletteSelectedBg,
+  paletteSelectedText,
+  paletteSubtleText,
+  paletteText,
+  panelBg,
+  queryDisplayWidth,
+  trailingWidth,
+  onHoverIndex,
+  onListScroll,
+  onRowMouseDown,
+}: CommandBarListBodyProps) {
+  const visibleRows = useMemo(() => {
+    const rows = nativeListRows;
+    if (nativePaneChrome) return rows;
+    const paddedRows = [...rows];
+    while (paddedRows.length < listBodyHeight) {
+      paddedRows.push({ kind: "filler", id: `filler:${paddedRows.length}` });
+    }
+    return paddedRows;
+  }, [
+    listBodyHeight,
+    nativeListRows,
+    nativePaneChrome,
+  ]);
+
+  const renderedRows = (
+    <>
+      {visibleRows.map((row) => {
+        if (row.kind === "filler" || row.kind === "spacer") {
+          return <Box key={row.id} height={1} />;
+        }
+        if (row.kind === "spinner") {
+          return (
+            <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
+              <Spinner label={row.label} />
+            </Box>
+          );
+        }
+        if (row.kind === "message") {
+          return (
+            <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
+              <Text fg={paletteText}>{truncateText(row.label, queryDisplayWidth)}</Text>
+            </Box>
+          );
+        }
+        if (row.kind === "heading") {
+          return (
+            <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}>
+              <Text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
+                {truncateText(row.label, queryDisplayWidth)}
+              </Text>
+            </Box>
+          );
+        }
+
+        const isSelected = row.globalIdx === visibleListState.selectedIdx;
+        const isHovered = row.globalIdx === visibleListState.hoveredIdx && !isSelected;
+        return (
+          <CommandBarListItemRow
+            key={row.item.id}
+            item={row.item}
+            globalIdx={row.globalIdx}
+            isSelected={isSelected}
+            isHovered={isHovered}
+            contentPadding={contentPadding}
+            labelWidth={labelWidth}
+            trailingWidth={trailingWidth}
+            nativePaneChrome={nativePaneChrome}
+            paletteBg={paletteBg}
+            paletteHoverBg={paletteHoverBg}
+            paletteSelectedBg={paletteSelectedBg}
+            paletteSelectedText={paletteSelectedText}
+            paletteSubtleText={paletteSubtleText}
+            paletteText={paletteText}
+            panelBg={panelBg}
+            onHoverIndex={onHoverIndex}
+            onListScroll={onListScroll}
+            onRowMouseDown={onRowMouseDown}
+          />
+        );
+      })}
+    </>
+  );
+
+  return (
+    <ScrollBox
+      ref={nativeListScrollRef}
+      flexDirection="column"
+      height={listBodyHeight}
+      scrollY
+      focusable={false}
+      {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
+    >
+      {renderedRows}
+    </ScrollBox>
+  );
+});
+
 export function CommandBar({
   dataProvider,
   tickerRepository,
@@ -306,6 +612,7 @@ export function CommandBar({
   onCheckForUpdates,
 }: CommandBarProps) {
   const dispatch = useAppDispatch();
+  const themeColors = useThemeColors();
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);
   const tickers = useAppSelector((state) => state.tickers);
@@ -367,6 +674,8 @@ export function CommandBar({
   const rootQueryRef = useRef(rootQuery);
   rootQueryRef.current = rootQuery;
   const rootModeInfo = resolveCommandBarMode(rootQuery, availableCommands);
+  const rootModeKindRef = useRef(rootModeInfo.kind);
+  rootModeKindRef.current = rootModeInfo.kind;
   const [rootSelectedIdx, setRootSelectedIdx] = useState(0);
   const [rootHoveredIdx, setRootHoveredIdx] = useState<number | null>(null);
   const [rootSearching, setRootSearching] = useState(false);
@@ -391,32 +700,50 @@ export function CommandBar({
   const workflowNativeSelectRefs = useRef(new Map<string, NativeSelectElement>());
   const workflowScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const nativeListScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const themePickerRef = useRef<ThemePickerHandle | null>(null);
   const visibleListStateRef = useRef<ListScreenState | null>(null);
   const processedLaunchSequenceRef = useRef<number | null>(null);
+  const currentThemePreviewRef = useRef<string | null>(null);
   const currentRoute = routeStack[routeStack.length - 1] ?? null;
   const currentRouteRef = useRef<CommandBarRoute | null>(currentRoute);
   currentRouteRef.current = currentRoute;
   const activeCollectionId = getFocusedCollectionId(state);
   const activePortfolio = state.config.portfolios.find((portfolio) => portfolio.id === activeCollectionId);
 
-  const clearThemePreview = useCallback((themeId: string | null | undefined) => {
-    if (!themeId) return;
-    if (getCurrentThemeId() !== themeId) {
-      applyTheme(themeId);
+  const applyThemePreview = useCallback((themeId: string | null) => {
+    const committedThemeId = stateRef.current.config.theme;
+    const preview = themeId && themeId !== committedThemeId ? themeId : null;
+    if (preview) {
+      previewTheme(preview);
+    } else {
+      clearTransientThemePreview();
+      if (getCurrentThemeId() !== committedThemeId) {
+        applyTheme(committedThemeId);
+      }
     }
-    dispatch({ type: "PREVIEW_THEME", theme: null });
+    if (currentThemePreviewRef.current !== preview) {
+      currentThemePreviewRef.current = preview;
+      dispatch({ type: "PREVIEW_THEME", theme: preview });
+    }
+  }, [dispatch]);
+
+  const clearThemePreview = useCallback((themeId: string | null | undefined) => {
+    themePickerRef.current?.cancelPreview();
+    const targetThemeId = themeId ?? stateRef.current.config.theme;
+    if (!targetThemeId) return;
+    clearTransientThemePreview();
+    if (getCurrentThemeId() !== targetThemeId) {
+      applyTheme(targetThemeId);
+    }
+    if (currentThemePreviewRef.current !== null) {
+      currentThemePreviewRef.current = null;
+      dispatch({ type: "PREVIEW_THEME", theme: null });
+    }
   }, [dispatch]);
 
   const restoreThemePreview = useCallback(() => {
-    const themeRoute = [...routeStack].reverse().find((route) => (
-      route.kind === "mode" && route.screen === "themes"
-    ));
-    if (themeRoute?.kind === "mode" && themeRoute.themeBaseId) {
-      clearThemePreview(themeRoute.themeBaseId);
-      return;
-    }
     clearThemePreview(rootThemeBaseIdRef.current);
-  }, [clearThemePreview, routeStack]);
+  }, [clearThemePreview]);
 
   const closeAll = useCallback((options?: { revertThemePreview?: boolean }) => {
     if (options?.revertThemePreview !== false) {
@@ -461,10 +788,6 @@ export function CommandBar({
     if (!currentRoute) {
       closeAll();
       return;
-    }
-
-    if (currentRoute.kind === "mode" && currentRoute.screen === "themes" && currentRoute.themeBaseId) {
-      clearThemePreview(currentRoute.themeBaseId);
     }
 
     if (routeStack.length === 1 && currentRoute.restoreMain) {
@@ -526,20 +849,22 @@ export function CommandBar({
     pluginRegistry.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
   }, [pluginRegistry]);
 
-  const previewThemeId = useCallback((themeId: string | undefined) => {
-    if (!themeId) return;
+  const commitTheme = useCallback((themeId: string) => {
+    themePickerRef.current?.cancelPreview();
+    clearTransientThemePreview();
     if (getCurrentThemeId() !== themeId) {
       applyTheme(themeId);
     }
-    const previewTheme = themeId === stateRef.current.config.theme ? null : themeId;
-    if (stateRef.current.themePreview !== previewTheme) {
-      dispatch({ type: "PREVIEW_THEME", theme: previewTheme });
-    }
+    currentThemePreviewRef.current = null;
+    dispatch({ type: "SET_THEME", theme: themeId });
   }, [dispatch]);
 
-  const previewThemeSelection = useCallback((listState: ListScreenState, selectedIdx: number) => {
-    previewThemeId(listState.results[selectedIdx]?.themeId);
-  }, [previewThemeId]);
+  useEffect(() => {
+    return () => {
+      themePickerRef.current?.cancelPreview();
+      clearTransientThemePreview();
+    };
+  }, []);
 
   const focusTicker = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
     const currentState = stateRef.current;
@@ -592,7 +917,7 @@ export function CommandBar({
   }, [dispatch, persistLayoutChange, pluginRegistry]);
 
   const openModeRoute = useCallback((
-    screen: "ticker-search" | "themes" | "plugins" | "layout",
+    screen: "ticker-search" | "plugins" | "layout",
     initialQuery = "",
     payload?: Record<string, unknown>,
   ) => {
@@ -605,7 +930,6 @@ export function CommandBar({
       query: initialQuery,
       selectedIdx: 0,
       hoveredIdx: null,
-      themeBaseId: screen === "themes" ? stateRef.current.config.theme : undefined,
       payload,
     });
   }, [pushRoute]);
@@ -1161,44 +1485,6 @@ export function CommandBar({
       successBehavior: options.successBehavior || "close",
     });
   }, [openConfirmRoute]);
-
-  const buildThemeItems = useCallback((
-    query: string,
-    currentThemeId: string | null | undefined,
-    options?: { onSelectTheme?: (themeId: string) => void },
-  ): { items: ResultItem[]; selectedIdx: number } => {
-    let selectedIdx = 0;
-    const filtered = query
-      ? getThemeOptions().filter((theme) => (
-        theme.name.toLowerCase().includes(query.toLowerCase())
-        || theme.id.includes(query.toLowerCase())
-      ))
-      : getThemeOptions();
-    const items = filtered.map((theme, index): ResultItem => {
-      const current = theme.id === currentThemeId;
-      if (current) selectedIdx = index;
-      return {
-        id: `theme:${theme.id}`,
-        label: theme.name,
-        detail: theme.description,
-        category: "Themes",
-        kind: "theme",
-        current,
-        themeId: theme.id,
-        action: () => {
-          options?.onSelectTheme?.(theme.id);
-          const nextConfig = {
-            ...state.config,
-            theme: theme.id,
-          };
-          dispatch({ type: "SET_THEME", theme: theme.id });
-          void saveConfig(nextConfig);
-          closeAll({ revertThemePreview: false });
-        },
-      };
-    });
-    return { items, selectedIdx };
-  }, [closeAll, dispatch, state.config]);
 
   const buildPluginItems = useCallback((query: string): ResultItem[] => {
     const disabledPlugins = state.config.disabledPlugins || [];
@@ -2817,6 +3103,8 @@ export function CommandBar({
         const importPath = getDefaultConfigBackupPath();
         void importConfig(state.config.dataDir, importPath)
           .then((imported) => {
+            themePickerRef.current?.cancelPreview();
+            clearTransientThemePreview();
             dispatch({ type: "SET_CONFIG", config: imported });
             applyTheme(imported.theme);
             dispatch({ type: "SET_THEME", theme: imported.theme });
@@ -2847,6 +3135,10 @@ export function CommandBar({
       case "check-for-updates":
         void onCheckForUpdates?.();
         closeAll({ revertThemePreview: false });
+        return;
+      case "theme":
+        rootThemeBaseIdRef.current = stateRef.current.config.theme;
+        setRootQuery(arg ? `TH ${arg}` : "TH ");
         return;
       case "security-description":
         void runSecurityDescriptionShortcut(arg);
@@ -2884,9 +3176,12 @@ export function CommandBar({
     quitApp,
     runSecurityDescriptionShortcut,
     executeCollectionCommand,
+    setRootQuery,
   ]);
 
   const activeMatch = matchPrefix(rootQuery, availableCommands);
+  const themePickerActive = !currentRoute && activeMatch?.command.id === "theme";
+  const themePickerFilter = themePickerActive ? activeMatch.arg : "";
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
@@ -2908,13 +3203,13 @@ export function CommandBar({
       rootThemeBaseIdRef.current = state.config.theme;
     } else if (rootModeInfo.kind !== "themes" && previousMode === "themes") {
       const rootThemeBaseId = rootThemeBaseIdRef.current;
-      if (rootThemeBaseId && getEffectiveThemeId(state) !== rootThemeBaseId) {
+      if (rootThemeBaseId) {
         clearThemePreview(rootThemeBaseId);
       }
       rootThemeBaseIdRef.current = null;
     }
     previousRootModeRef.current = rootModeInfo.kind;
-  }, [clearThemePreview, currentRoute, rootModeInfo.kind, state.config.theme, state.themePreview]);
+  }, [clearThemePreview, currentRoute, rootModeInfo.kind, state.config.theme]);
 
   const tickerSearchRouteQuery = currentRoute?.kind === "mode" && currentRoute.screen === "ticker-search"
     ? currentRoute.query
@@ -3253,14 +3548,7 @@ export function CommandBar({
     } else if (match && match.command.id === "layout") {
       items.push(...buildLayoutItems(match.arg, { confirmDangerousActions: true }));
     } else if (match && match.command.id === "theme") {
-      const savedThemeId = rootThemeBaseIdRef.current ?? state.config.theme;
-      const themeResult = buildThemeItems(match.arg, savedThemeId, {
-        onSelectTheme: (themeId) => {
-          rootThemeBaseIdRef.current = themeId;
-        },
-      });
-      initialIdx = themeResult.selectedIdx;
-      items.push(...themeResult.items);
+      initialIdx = 0;
     } else if (match && match.command.id === "security-description") {
       if (shortcutItem) {
         items.push(shortcutItem);
@@ -3338,7 +3626,6 @@ export function CommandBar({
     availableCommands,
     buildLayoutItems,
     buildPluginItems,
-    buildThemeItems,
     createQuickLookLocalTickerCandidates,
     createPluginCommandItem,
     currentRoute,
@@ -3477,6 +3764,7 @@ export function CommandBar({
     }
     return rootResultModel.items;
   }, [rootProviderResults, rootProviderResultsQuery, rootResultModel.items, rootSecurityDescriptionArg]);
+  const orderedRootResults = useMemo(() => orderListResults(rootResults), [rootResults]);
 
   const rootGhostCompletion = !currentRoute && rootShortcutIntent.kind === "inferred-complete"
     ? rootShortcutIntent.completionQuery
@@ -3682,12 +3970,15 @@ export function CommandBar({
 
     if (match.command.id === "theme") {
       return {
-        id: "theme-route",
+        id: "theme-picker",
         label: "Change Theme",
         detail: "Preview and apply themes",
         category: "Themes",
         kind: "command",
-        action: () => openModeRoute("themes", match.arg),
+        action: () => {
+          rootThemeBaseIdRef.current = stateRef.current.config.theme;
+          setRootQuery(match.arg ? `TH ${match.arg}` : "TH ");
+        },
       };
     }
 
@@ -3753,6 +4044,7 @@ export function CommandBar({
     openModeRoute,
     runDirectCommand,
     runSecurityDescriptionShortcut,
+    setRootQuery,
   ]);
 
   const routeListState = useMemo<ListScreenState | null>(() => {
@@ -3768,7 +4060,7 @@ export function CommandBar({
         query: rootQuery,
         selectedIdx: rootSelectedIdx,
         hoveredIdx: rootHoveredIdx,
-        results: orderListResults(rootResults),
+        results: orderedRootResults,
         searching: rootSearching,
         emptyLabel: emptyState.label,
         emptyDetail: emptyState.detail,
@@ -3779,23 +4071,6 @@ export function CommandBar({
 
     if (currentRoute.kind === "mode") {
       switch (currentRoute.screen) {
-        case "themes": {
-          const results = buildThemeItems(currentRoute.query, currentRoute.themeBaseId).items;
-          return {
-            kind: "mode",
-            title: "Change Theme",
-            subtitle: "Preview themes with the keyboard, then save.",
-            query: currentRoute.query,
-            selectedIdx: currentRoute.selectedIdx,
-            hoveredIdx: currentRoute.hoveredIdx,
-            results: orderListResults(results),
-            searching: false,
-            emptyLabel: getEmptyState("themes", currentRoute.query).label,
-            emptyDetail: getEmptyState("themes", currentRoute.query).detail,
-            footerLeft: getScreenFooterLeft(currentRoute),
-            footerRight: getScreenFooterRight(currentRoute),
-          };
-        }
         case "plugins": {
           const results = buildPluginItems(currentRoute.query);
           return {
@@ -3927,7 +4202,6 @@ export function CommandBar({
     activeTickerSymbol,
     buildLayoutItems,
     buildPluginItems,
-    buildThemeItems,
     closeAll,
     createPaneTemplateItem,
     currentRoute,
@@ -3951,7 +4225,7 @@ export function CommandBar({
     rootHoveredIdx,
     rootModeInfo.kind,
     rootQuery,
-    rootResults,
+    orderedRootResults,
     rootSearching,
     rootSelectedIdx,
     rootShortcutIntent,
@@ -3988,8 +4262,9 @@ export function CommandBar({
   }, [currentRoute, routeListState, updateTopRoute]);
 
   const setActiveListQuery = useCallback((nextQuery: string) => {
-    if (!currentRoute) {
-      if (rootModeInfo.kind === "themes" && resolveCommandBarMode(nextQuery, availableCommands).kind !== "themes") {
+    const route = currentRouteRef.current;
+    if (!route) {
+      if (rootModeKindRef.current === "themes" && resolveCommandBarMode(nextQuery, availableCommands).kind !== "themes") {
         clearThemePreview(rootThemeBaseIdRef.current ?? stateRef.current.config.theme);
         rootThemeBaseIdRef.current = null;
       }
@@ -3997,7 +4272,7 @@ export function CommandBar({
       return;
     }
 
-    if (currentRoute.kind === "mode" || currentRoute.kind === "picker" || currentRoute.kind === "pane-settings") {
+    if (route.kind === "mode" || route.kind === "picker" || route.kind === "pane-settings") {
       updateTopRoute((route) => {
         if (route.kind === "mode" || route.kind === "picker" || route.kind === "pane-settings") {
           return { ...route, query: nextQuery, selectedIdx: 0, hoveredIdx: null };
@@ -4005,19 +4280,21 @@ export function CommandBar({
         return route;
       });
     }
-  }, [availableCommands, clearThemePreview, currentRoute, rootModeInfo.kind, setRootQuery, updateTopRoute]);
+  }, [availableCommands, clearThemePreview, setRootQuery, updateTopRoute]);
 
-  const moveListSelection = useCallback((delta: number) => {
+  const applyListSelectionDelta = useCallback((delta: number) => {
     const listState = visibleListStateRef.current;
     if (!listState || listState.results.length === 0 || delta === 0) return;
     const nextIndex = clampListIndex(listState.selectedIdx + delta, listState.results.length);
+    const selectionChanged = nextIndex !== listState.selectedIdx;
+    const hoverChanged = listState.hoveredIdx !== null;
+    if (!selectionChanged && !hoverChanged) return;
     const nextListState = { ...listState, selectedIdx: nextIndex, hoveredIdx: null };
     visibleListStateRef.current = nextListState;
-    previewThemeSelection(nextListState, nextIndex);
 
     if (!currentRouteRef.current) {
-      setRootSelectedIdx(nextIndex);
-      setRootHoveredIdx(null);
+      setRootSelectedIdx((current) => (current === nextIndex ? current : nextIndex));
+      setRootHoveredIdx((current) => (current === null ? current : null));
       return;
     }
     setRouteStack((current) => {
@@ -4027,24 +4304,34 @@ export function CommandBar({
       if (!top || (top.kind !== "mode" && top.kind !== "picker" && top.kind !== "pane-settings")) {
         return current;
       }
+      if (top.selectedIdx === nextIndex && top.hoveredIdx === null) return current;
       next[next.length - 1] = { ...top, selectedIdx: nextIndex, hoveredIdx: null };
       return next;
     });
-  }, [previewThemeSelection]);
+  }, []);
+
+  const moveListSelection = useCallback((delta: number) => {
+    applyListSelectionDelta(delta);
+  }, [applyListSelectionDelta]);
 
   const setHoveredIndex = useCallback((index: number | null) => {
-    if (!currentRoute) {
+    if (!currentRouteRef.current) {
       setRootHoveredIdx((current) => (current === index ? current : index));
       return;
     }
-    updateTopRoute((route) => {
+    setRouteStack((current) => {
+      if (current.length === 0) return current;
+      const next = [...current];
+      const route = next[next.length - 1];
+      if (!route) return current;
       if (route.kind === "mode" || route.kind === "picker" || route.kind === "pane-settings") {
-        if (route.hoveredIdx === index) return route;
-        return { ...route, hoveredIdx: index };
+        if (route.hoveredIdx === index) return current;
+        next[next.length - 1] = { ...route, hoveredIdx: index };
+        return next;
       }
-      return route;
+      return current;
     });
-  }, [currentRoute, updateTopRoute]);
+  }, []);
 
   const handleListScroll = useCallback((event: {
     stopPropagation: () => void;
@@ -4418,6 +4705,29 @@ export function CommandBar({
     disconnectBrokerInstance,
     executeCollectionCommand,
   ]);
+  const activateListSelectionRef = useRef(activateListSelection);
+  activateListSelectionRef.current = activateListSelection;
+
+  const handleListRowMouseDown = useCallback((event: any, item: ResultItem, globalIdx: number) => {
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    if (!currentRouteRef.current) {
+      setRootSelectedIdx((current) => (current === globalIdx ? current : globalIdx));
+    } else {
+      setRouteStack((current) => {
+        if (current.length === 0) return current;
+        const next = [...current];
+        const route = next[next.length - 1];
+        if (!route || (route.kind !== "mode" && route.kind !== "picker" && route.kind !== "pane-settings")) {
+          return current;
+        }
+        if (route.selectedIdx === globalIdx && route.hoveredIdx === globalIdx) return current;
+        next[next.length - 1] = { ...route, selectedIdx: globalIdx, hoveredIdx: globalIdx };
+        return next;
+      });
+    }
+    activateListSelectionRef.current({ item });
+  }, []);
 
   const confirmCurrentRoute = useCallback(async () => {
     if (currentRoute?.kind !== "confirm") return;
@@ -4555,6 +4865,7 @@ export function CommandBar({
         preventDefault: () => void;
       }) => void) => void;
     };
+    if (!keyInput) return undefined;
     const handleKeyPress = (event: {
       name: string;
       sequence?: string;
@@ -4751,6 +5062,27 @@ export function CommandBar({
         return;
       }
 
+      if (themePickerActive) {
+        if (event.name === "up" || (event.ctrl && event.name === "p")) {
+          event.stopPropagation();
+          event.preventDefault();
+          themePickerRef.current?.move(-1);
+          return;
+        }
+        if (event.name === "down" || (event.ctrl && event.name === "n")) {
+          event.stopPropagation();
+          event.preventDefault();
+          themePickerRef.current?.move(1);
+          return;
+        }
+        if (event.name === "return" || event.name === "enter") {
+          event.stopPropagation();
+          event.preventDefault();
+          themePickerRef.current?.commit();
+          return;
+        }
+      }
+
       const activeListState = visibleListStateRef.current;
       if (!activeListState) return;
 
@@ -4818,13 +5150,13 @@ export function CommandBar({
     if (keyInput.onInternal) {
       keyInput.onInternal("keypress", handleKeyPress);
     } else {
-      renderer.keyInput.on("keypress", handleKeyPress);
+      keyInput.on("keypress", handleKeyPress);
     }
     return () => {
       if (keyInput.offInternal) {
         keyInput.offInternal("keypress", handleKeyPress);
       } else {
-        renderer.keyInput.off("keypress", handleKeyPress);
+        keyInput.off("keypress", handleKeyPress);
       }
     };
   }, [
@@ -4844,6 +5176,7 @@ export function CommandBar({
     renderer,
     rootModeInfo.kind,
     setActiveListQuery,
+    themePickerActive,
     updateWorkflowValue,
   ]);
 
@@ -4865,8 +5198,23 @@ export function CommandBar({
     ? routeListState
     : null;
   const showCustomMultiSelectPicker = currentRoute?.kind === "picker" && currentRoute.pickerId === "field-multi-select";
-  const listRows = visibleListState ? buildListRows(visibleListState) : [];
-  const nativeListRows = visibleListState ? buildNativeListRows(visibleListState, listRows) : [];
+  const listRows = useMemo(
+    () => (visibleListState ? buildListRows(visibleListState) : []),
+    [visibleListState?.results],
+  );
+  const nativeListRows = useMemo(
+    () => (visibleListState ? buildNativeListRows(visibleListState, listRows) : []),
+    [listRows, visibleListState?.emptyLabel, visibleListState?.searching],
+  );
+  const listRowIndexByGlobalIndex = useMemo(() => {
+    const indexByGlobalIndex = new Map<number, number>();
+    listRows.forEach((row, index) => {
+      if (row.kind === "item") {
+        indexByGlobalIndex.set(row.globalIdx, index);
+      }
+    });
+    return indexByGlobalIndex;
+  }, [listRows]);
   const workflowBodyHeight = currentRoute?.kind === "workflow"
     ? Math.min(
       Math.max(9, termHeight - (nativePaneChrome ? 7 : 9)),
@@ -4895,26 +5243,30 @@ export function CommandBar({
   const trailingWidth = Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
   const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
   const queryDisplayWidth = Math.max(8, resultsInnerWidth);
-  const nativeSelectedRowIndex = nativePaneChrome && visibleListState
-    ? nativeListRows.findIndex((row) => row.kind === "item" && row.globalIdx === visibleListState.selectedIdx)
+  const selectedListRowIndex = visibleListState
+    ? listRowIndexByGlobalIndex.get(visibleListState.selectedIdx) ?? -1
     : -1;
+  const selectedScrollRowIndex = selectedListRowIndex;
   const bodySlotKey = showCustomMultiSelectPicker
     ? "picker:field-multi-select"
-    : currentRoute?.kind === "picker"
-      ? `picker:${currentRoute.pickerId}`
-      : currentRoute?.kind ?? "root";
+    : themePickerActive
+      ? "theme-picker"
+      : currentRoute?.kind === "picker"
+        ? `picker:${currentRoute.pickerId}`
+        : currentRoute?.kind ?? "root";
 
-  useEffect(() => {
-    if (!nativePaneChrome || nativeSelectedRowIndex < 0) return;
+  useLayoutEffect(() => {
     const scrollBox = nativeListScrollRef.current;
     if (!scrollBox) return;
+    if (scrollBox.verticalScrollBar) scrollBox.verticalScrollBar.visible = false;
+    if (selectedScrollRowIndex < 0) return;
     const viewportHeight = Math.max(1, scrollBox.viewport?.height ?? listBodyHeight);
-    if (nativeSelectedRowIndex < scrollBox.scrollTop) {
-      scrollBox.scrollTo(nativeSelectedRowIndex);
-    } else if (nativeSelectedRowIndex >= scrollBox.scrollTop + viewportHeight) {
-      scrollBox.scrollTo(nativeSelectedRowIndex - viewportHeight + 1);
+    if (selectedScrollRowIndex < scrollBox.scrollTop) {
+      scrollBox.scrollTo(selectedScrollRowIndex);
+    } else if (selectedScrollRowIndex >= scrollBox.scrollTop + viewportHeight) {
+      scrollBox.scrollTo(selectedScrollRowIndex - viewportHeight + 1);
     }
-  }, [listBodyHeight, nativePaneChrome, nativeSelectedRowIndex, visibleListState?.kind, visibleListState?.query]);
+  }, [listBodyHeight, selectedScrollRowIndex, visibleListState?.kind, visibleListState?.query]);
 
   useEffect(() => {
     if (!nativePaneChrome || currentRoute?.kind !== "workflow") return;
@@ -4934,140 +5286,6 @@ export function CommandBar({
       scrollBox.scrollTo(fieldBottom - viewportHeight);
     }
   }, [bodyHeight, currentRoute, nativePaneChrome]);
-
-  const renderListBody = () => {
-    if (!visibleListState) return null;
-
-    const allRows = listRows;
-    let visibleRows: CommandBarListRow[];
-    if (nativePaneChrome) {
-      visibleRows = nativeListRows;
-    } else if (visibleListState.searching && allRows.length === 0) {
-      visibleRows = [{ kind: "spinner", id: "searching", label: "Searching…" }];
-    } else if (allRows.length === 0) {
-      visibleRows = [{ kind: "message", id: "empty", label: visibleListState.emptyLabel }];
-    } else {
-      const selectedRowIdx = allRows.findIndex((row) => row.kind === "item" && row.globalIdx === visibleListState.selectedIdx);
-      const halfWindow = Math.floor(listBodyHeight / 2);
-      let windowStart = Math.max(0, Math.min(selectedRowIdx - halfWindow, allRows.length - listBodyHeight));
-      if (windowStart < 0) windowStart = 0;
-      visibleRows = allRows.slice(windowStart, windowStart + listBodyHeight);
-      if (visibleListState.searching) {
-        if (visibleRows.length >= listBodyHeight) {
-          visibleRows = visibleRows.slice(0, listBodyHeight - 1);
-        }
-        visibleRows.push({ kind: "spinner", id: "searching", label: "Searching…" });
-      }
-    }
-
-    while (!nativePaneChrome && visibleRows.length < listBodyHeight) {
-      visibleRows.push({ kind: "filler", id: `filler:${visibleRows.length}` });
-    }
-
-    const renderedRows = (
-      <>
-        {visibleRows.map((row) => {
-          if (row.kind === "filler" || row.kind === "spacer") {
-            return <Box key={row.id} height={1} />;
-          }
-          if (row.kind === "spinner") {
-            return (
-              <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}>
-                <Spinner label={row.label} />
-              </Box>
-            );
-          }
-          if (row.kind === "message") {
-            return (
-              <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}>
-                <Text fg={paletteText}>{truncateText(row.label, queryDisplayWidth)}</Text>
-              </Box>
-            );
-          }
-          if (row.kind === "heading") {
-            return (
-              <Box key={row.id} height={1} paddingX={contentPadding} {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}>
-                <Text attributes={TextAttributes.BOLD} fg={paletteHeadingText}>
-                  {truncateText(row.label, queryDisplayWidth)}
-                </Text>
-              </Box>
-            );
-          }
-
-          const isSelected = row.globalIdx === visibleListState.selectedIdx;
-          const isHovered = row.globalIdx === visibleListState.hoveredIdx && !isSelected;
-          const presentation = getRowPresentation(row.item, isSelected, trailingWidth > 0);
-          const label = truncateText(presentation.label, labelWidth);
-          const trailing = truncateText(presentation.trailing, trailingWidth);
-          return (
-            <Box
-              key={row.item.id}
-              flexDirection="row"
-              height={1}
-              paddingX={contentPadding}
-              backgroundColor={isSelected
-                ? paletteSelectedBg
-                : isHovered
-                  ? paletteHoverBg
-                  : (nativePaneChrome ? panelBg : paletteBg)}
-              onMouseMove={() => setHoveredIndex(row.globalIdx)}
-              onMouseOut={() => setHoveredIndex(null)}
-              {...(!nativePaneChrome ? { onMouseScroll: handleListScroll } : {})}
-              onMouseDown={(event: any) => {
-                event.stopPropagation?.();
-                event.preventDefault?.();
-                if (!currentRoute) {
-                  setRootSelectedIdx(row.globalIdx);
-                } else {
-                  updateTopRoute((route) => {
-                    if (route.kind === "mode" || route.kind === "picker" || route.kind === "pane-settings") {
-                      return { ...route, selectedIdx: row.globalIdx, hoveredIdx: row.globalIdx };
-                    }
-                    return route;
-                  });
-                }
-                activateListSelection({ item: row.item });
-              }}
-              data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
-              style={nativePaneChrome ? { borderRadius: 6 } : undefined}
-            >
-              <Box width={labelWidth}>
-                <Text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
-                  {label}
-                </Text>
-              </Box>
-              <Box width={trailingWidth}>
-                <Text fg={isSelected ? paletteSelectedText : paletteSubtleText}>{trailing}</Text>
-              </Box>
-            </Box>
-          );
-        })}
-      </>
-    );
-
-    if (nativePaneChrome) {
-      return (
-        <ScrollBox
-          ref={nativeListScrollRef}
-          flexDirection="column"
-          height={listBodyHeight}
-          scrollY
-        >
-          {renderedRows}
-        </ScrollBox>
-      );
-    }
-
-    return (
-      <Box
-        flexDirection="column"
-        height={listBodyHeight}
-        onMouseScroll={handleListScroll}
-      >
-        {renderedRows}
-      </Box>
-    );
-  };
 
   const renderWorkflowBody = () => {
     if (currentRoute?.kind !== "workflow") return null;
@@ -5146,7 +5364,7 @@ export function CommandBar({
                     borderColor={active ? paletteSelectedBg : paletteBg}
                     backgroundColor={nativePaneChrome ? inputBg : fieldBg}
                     style={nativePaneChrome ? {
-                      border: `1px solid ${active ? colors.borderFocused : colors.border}`,
+                      border: `1px solid ${active ? themeColors.borderFocused : themeColors.border}`,
                       borderRadius: 6,
                       overflow: "hidden",
                     } : undefined}
@@ -5160,7 +5378,7 @@ export function CommandBar({
                         focused={!currentRoute.pending}
                         textColor={paletteText}
                         placeholderColor={paletteSubtleText}
-                        backgroundColor={nativePaneChrome ? inputBg : colors.panel}
+                        backgroundColor={nativePaneChrome ? inputBg : themeColors.panel}
                         flexGrow={1}
                         wrapText
                       />
@@ -5241,7 +5459,7 @@ export function CommandBar({
         })}
         {currentRoute.error && (
           <Box height={1}>
-            <Text fg={colors.negative}>{truncateText(currentRoute.error, queryDisplayWidth)}</Text>
+            <Text fg={themeColors.negative}>{truncateText(currentRoute.error, queryDisplayWidth)}</Text>
           </Box>
         )}
         {currentRoute.pendingLabel && currentRoute.pending && (
@@ -5382,10 +5600,9 @@ export function CommandBar({
             <Box flexGrow={1}>
               <Text fg={paletteText} attributes={TextAttributes.BOLD}>
                 {currentRoute?.kind === "mode"
-                  ? currentRoute.screen === "themes" ? "Change Theme"
-                    : currentRoute.screen === "plugins" ? "Manage Plugins"
-                      : currentRoute.screen === "layout" ? "Layout Actions"
-                        : "Security Description"
+                  ? currentRoute.screen === "plugins" ? "Manage Plugins"
+                    : currentRoute.screen === "layout" ? "Layout Actions"
+                      : "Security Description"
                   : currentRoute?.kind === "picker" ? currentRoute.title
                     : currentRoute?.kind === "pane-settings" ? "Pane Settings"
                       : currentRoute?.kind === "workflow" ? currentRoute.title
@@ -5414,61 +5631,80 @@ export function CommandBar({
           )}
           {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
             <>
-              <Box height={1} paddingX={contentPadding}>
-                <Box
-                  width={queryDisplayWidth}
-                  height={1}
-                  position="relative"
-                  backgroundColor={nativePaneChrome ? undefined : inputBg}
-                  style={nativePaneChrome ? undefined : {
-                    overflow: "hidden",
-                  }}
-                >
-                  <Input
-                    value={visibleListState.query}
-                    onInput={setActiveListQuery}
-                    onChange={setActiveListQuery}
-                    placeholder={visibleListState.kind === "root" ? "Search" : "Filter"}
-                    focused
-                    width={nativePaneChrome ? "100%" : queryDisplayWidth}
-                    backgroundColor={nativePaneChrome ? "transparent" : paletteBg}
-                    focusedBackgroundColor={nativePaneChrome ? "transparent" : paletteBg}
-                    textColor={paletteText}
-                    focusedTextColor={paletteText}
-                    placeholderColor={paletteSubtleText}
-                    cursorColor={colors.textBright}
-                  />
-                  {visibleListState.kind === "root" && rootGhostSuffix && (
-                    <Box
-                      position="absolute"
-                      top={0}
-                      left={Math.max(0, Math.min(rootQuery.length, queryDisplayWidth - 1))}
-                      width={Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1))}
-                      height={1}
-                    >
-                      <Text fg={paletteSubtleText}>
-                        {truncateText(
-                          rootGhostSuffix,
-                          Math.max(0, queryDisplayWidth - Math.min(rootQuery.length, queryDisplayWidth - 1)),
-                        )}
-                      </Text>
-                    </Box>
-                  )}
-                </Box>
-              </Box>
-              <Box height={1} paddingX={contentPadding}>
-                {visibleListState.kind === "root" && rootShortcutFeedback
-                  ? (
-                    <Text fg={paletteSubtleText}>
-                      {truncateText(rootShortcutFeedback, queryDisplayWidth)}
-                    </Text>
-                  )
-                  : null}
-              </Box>
+              <CommandBarListHeader
+                kind={visibleListState.kind}
+                query={visibleListState.query}
+                queryDisplayWidth={queryDisplayWidth}
+                nativePaneChrome={nativePaneChrome}
+                inputBg={inputBg}
+                paletteBg={paletteBg}
+                paletteText={paletteText}
+                paletteSubtleText={paletteSubtleText}
+                cursorColor={themeColors.textBright}
+                contentPadding={contentPadding}
+                rootGhostSuffix={rootGhostSuffix}
+                rootQueryLength={rootQuery.length}
+                rootShortcutFeedback={rootShortcutFeedback}
+                onQueryChange={setActiveListQuery}
+              />
             </>
           )}
 
-          {visibleListState && !showCustomMultiSelectPicker && renderListBody()}
+          {themePickerActive && (
+            <ThemePicker
+              ref={themePickerRef}
+              filter={themePickerFilter}
+              committedThemeId={state.config.theme}
+              height={listBodyHeight}
+              contentPadding={contentPadding}
+              labelWidth={labelWidth}
+              trailingWidth={trailingWidth}
+              queryDisplayWidth={queryDisplayWidth}
+              nativePaneChrome={nativePaneChrome}
+              paletteBg={paletteBg}
+              paletteHoverBg={paletteHoverBg}
+              paletteSelectedBg={paletteSelectedBg}
+              paletteSelectedText={paletteSelectedText}
+              paletteSubtleText={paletteSubtleText}
+              paletteText={paletteText}
+              panelBg={panelBg}
+              onPreview={applyThemePreview}
+              onCommit={(themeId) => {
+                const nextConfig = {
+                  ...stateRef.current.config,
+                  theme: themeId,
+                };
+                commitTheme(themeId);
+                void saveConfig(nextConfig);
+                closeAll({ revertThemePreview: false });
+              }}
+            />
+          )}
+
+          {visibleListState && !themePickerActive && !showCustomMultiSelectPicker && (
+            <CommandBarListBody
+              visibleListState={visibleListState}
+              nativeListRows={nativeListRows}
+              listBodyHeight={listBodyHeight}
+              contentPadding={contentPadding}
+              labelWidth={labelWidth}
+              nativePaneChrome={nativePaneChrome}
+              nativeListScrollRef={nativeListScrollRef}
+              paletteBg={paletteBg}
+              paletteHeadingText={paletteHeadingText}
+              paletteHoverBg={paletteHoverBg}
+              paletteSelectedBg={paletteSelectedBg}
+              paletteSelectedText={paletteSelectedText}
+              paletteSubtleText={paletteSubtleText}
+              paletteText={paletteText}
+              panelBg={panelBg}
+              queryDisplayWidth={queryDisplayWidth}
+              trailingWidth={trailingWidth}
+              onHoverIndex={setHoveredIndex}
+              onListScroll={handleListScroll}
+              onRowMouseDown={handleListRowMouseDown}
+            />
+          )}
           {currentRoute?.kind === "workflow" && renderWorkflowBody()}
           {currentRoute?.kind === "confirm" && renderConfirmBody()}
           {showCustomMultiSelectPicker && renderMultiSelectBody()}

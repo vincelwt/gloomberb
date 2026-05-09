@@ -8,6 +8,7 @@ import { buildChartKey } from "../../market-data/selectors";
 import { useAppSelector, usePaneSettingValue } from "../../state/app-context";
 import { usePaneFooter, type PaneHint } from "../layout/pane-footer";
 import { blendHex, colors, getComparisonSeriesColor, priceColor } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
 import { formatPercentRaw } from "../../utils/format";
@@ -517,6 +518,7 @@ function ComparisonStockChartView({
   onOpenSymbol,
   onEditTickers,
 }: ComparisonStockChartViewProps) {
+  useThemeColors();
   const renderer = useNativeRenderer();
   const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);

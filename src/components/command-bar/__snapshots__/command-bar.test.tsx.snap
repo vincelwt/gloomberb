@@ -28,34 +28,6 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
 "
 `;
 
-exports[`CommandBar renders theme prefix results in the root query 1`] = `
-"                                                                                
-                                                                                
-                Commands                                                        
-                TH                                                              
-                                                                                
-                Themes                                                          
-                Amber                                   current                 
-                Green Phosphor                                                  
-                Cyan                                                            
-                Red Phosphor                                                    
-                Blue Phosphor                                                   
-                Purple Phosphor                                                 
-                Hot Pink                                                        
-                White Phosphor                                                  
-                Tokyo Night                                                     
-                Solarized Dark                                                  
-                Dracula                                                         
-                Nord                                                            
-                Monokai                                                         
-                Catppuccin Mocha                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-"
-`;
-
 exports[`CommandBar renders plugin toggle state 1`] = `
 "                                                                                
                                                                                 

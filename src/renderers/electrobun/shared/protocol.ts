@@ -1,5 +1,5 @@
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
-import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
+import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState } from "../../../types/desktop-window";
 import type { DesktopApplicationMenuCommand } from "../../../types/desktop-menu";
 import type { AppConfig } from "../../../types/config";
 import type { UpdateProgress } from "../../../updater";
@@ -11,6 +11,7 @@ export interface ElectrobunBackendInit {
   config: AppConfig;
   sessionSnapshot: AppSessionSnapshot | null;
   desktopSnapshot: DesktopSharedStateSnapshot | null;
+  desktopThemePreview: DesktopThemePreviewState;
   pluginState: Record<string, Record<string, unknown>>;
   capabilityManifests: CapabilityManifest[];
   windowKind: "main" | "detached";
@@ -39,6 +40,10 @@ export interface DesktopDockPreviewMessage {
   preview: DesktopDockPreviewState;
 }
 
+export interface DesktopThemePreviewMessage {
+  preview: DesktopThemePreviewState;
+}
+
 export interface UpdateProgressMessage {
   progress: UpdateProgress;
 }
@@ -65,6 +70,7 @@ export interface ElectrobunDesktopRpcSchema {
       "application-menu.select": ApplicationMenuSelectMessage;
       "desktop.state": DesktopStateMessage;
       "desktop.dockPreview": DesktopDockPreviewMessage;
+      "desktop.themePreview": DesktopThemePreviewMessage;
       "update.progress": UpdateProgressMessage;
       "capability.event": CapabilityEventMessage;
     };

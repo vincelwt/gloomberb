@@ -940,6 +940,13 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         const element = getElement();
         if (element) element.scrollTop = Math.max(0, value) * WEB_CELL_HEIGHT;
       },
+      get scrollTopPx() {
+        return Math.max(0, getElement()?.scrollTop ?? 0);
+      },
+      set scrollTopPx(value: number) {
+        const element = getElement();
+        if (element) element.scrollTop = Math.max(0, value);
+      },
       get scrollLeft() {
         return toCellX(getElement()?.scrollLeft ?? 0);
       },
@@ -947,17 +954,37 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         const element = getElement();
         if (element) element.scrollLeft = Math.max(0, value) * WEB_CELL_WIDTH;
       },
+      get scrollLeftPx() {
+        return Math.max(0, getElement()?.scrollLeft ?? 0);
+      },
+      set scrollLeftPx(value: number) {
+        const element = getElement();
+        if (element) element.scrollLeft = Math.max(0, value);
+      },
       get scrollHeight() {
         return toCellY(getElement()?.scrollHeight ?? 0);
       },
       get scrollWidth() {
         return toCellX(getElement()?.scrollWidth ?? 0);
       },
+      get scrollHeightPx() {
+        return Math.max(0, getElement()?.scrollHeight ?? 0);
+      },
+      get scrollWidthPx() {
+        return Math.max(0, getElement()?.scrollWidth ?? 0);
+      },
       get viewport() {
         const element = getElement();
         return {
           width: toCellX(element?.clientWidth ?? 0),
           height: toCellY(element?.clientHeight ?? 0),
+        };
+      },
+      get viewportPx() {
+        const element = getElement();
+        return {
+          width: Math.max(0, element?.clientWidth ?? 0),
+          height: Math.max(0, element?.clientHeight ?? 0),
         };
       },
       getBoundingClientRect() {
@@ -984,6 +1011,21 @@ const WebScrollBox = forwardRef<ScrollBoxRenderable, Record<string, unknown> & {
         element.scrollTo({
           left: Math.max(0, target.x ?? toCellX(element.scrollLeft)) * WEB_CELL_WIDTH,
           top: Math.max(0, target.y ?? toCellY(element.scrollTop)) * WEB_CELL_HEIGHT,
+        });
+      },
+      scrollToPixels(target: number | { x?: number; y?: number }, y?: number) {
+        const element = getElement();
+        if (!element) return;
+        if (typeof target === "number") {
+          element.scrollTop = Math.max(0, target);
+          if (typeof y === "number") {
+            element.scrollLeft = Math.max(0, y);
+          }
+          return;
+        }
+        element.scrollTo({
+          left: Math.max(0, target.x ?? element.scrollLeft),
+          top: Math.max(0, target.y ?? element.scrollTop),
         });
       },
     }), [horizontalScrollBar, verticalScrollBar]);
