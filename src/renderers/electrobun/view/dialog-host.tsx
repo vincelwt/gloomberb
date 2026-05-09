@@ -2,6 +2,7 @@
 /** @jsxImportSource react */
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { DialogHostProvider, type DialogApi } from "../../../ui/dialog";
+import { blendHex, colors } from "../../../theme/colors";
 
 interface DialogState {
   id: string;
@@ -13,6 +14,8 @@ let nextDialogId = 1;
 
 export function WebDialogHostProvider({ children }: { children: ReactNode }) {
   const [dialogState, setDialogState] = useState<DialogState | null>(null);
+  const dialogBorder = blendHex(colors.border, colors.borderFocused, 0.18);
+  const dialogBg = blendHex(colors.panel, colors.bg, 0.12);
 
   const close = useCallback((value?: unknown) => {
     setDialogState((current) => {
@@ -46,7 +49,14 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
             if (event.target === event.currentTarget) close(undefined);
           }}
         >
-          <div className="gloom-dialog">
+          <div
+            className="gloom-dialog"
+            style={{
+              borderColor: dialogBorder,
+              background: dialogBg,
+              color: colors.text,
+            }}
+          >
             {typeof dialogState.content === "function"
               ? dialogState.content({
                 dialogId: dialogState.id,

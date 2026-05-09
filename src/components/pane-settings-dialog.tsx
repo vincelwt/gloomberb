@@ -9,7 +9,7 @@ import type {
   PaneSettingTextField,
 } from "../types/plugin";
 import type { PluginRegistry } from "../plugins/registry";
-import { colors } from "../theme/colors";
+import { blendHex, colors } from "../theme/colors";
 import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
 import { NativeSelect, openNativeSelect, type NativeSelectElement } from "./ui/native-select";
 
@@ -78,6 +78,14 @@ const DESKTOP_TEXT_STYLE = {
 
 function desktopText(weight?: number) {
   return weight ? { ...DESKTOP_TEXT_STYLE, fontWeight: weight } : DESKTOP_TEXT_STYLE;
+}
+
+function desktopSubtleSurface(): string {
+  return blendHex(colors.panel, colors.bg, 0.22);
+}
+
+function desktopHoverSurface(): string {
+  return blendHex(colors.bg, colors.borderFocused, 0.08);
 }
 
 function DesktopDialogSurface({
@@ -149,7 +157,7 @@ function DesktopSwitch({
       flexDirection="row"
       alignItems="center"
       justifyContent={checked ? "flex-end" : "flex-start"}
-      backgroundColor={checked ? colors.selected : "rgba(255, 255, 255, 0.07)"}
+      backgroundColor={checked ? colors.selected : desktopSubtleSurface()}
       onMouseDown={(event: any) => {
         event.stopPropagation?.();
         event.preventDefault?.();
@@ -182,7 +190,7 @@ function DesktopValuePill({ value }: { value: string }) {
     <Box
       flexDirection="row"
       alignItems="center"
-      backgroundColor="rgba(255, 255, 255, 0.06)"
+      backgroundColor={desktopSubtleSurface()}
       style={{
         border: `1px solid ${colors.border}`,
         borderRadius: 6,
@@ -236,7 +244,7 @@ function DesktopSettingsRow({
     <Box
       flexDirection="column"
       minHeight={field.description ? undefined : 2}
-      backgroundColor={hovered || selected ? "rgba(255, 255, 255, 0.045)" : "transparent"}
+      backgroundColor={hovered || selected ? desktopHoverSurface() : "transparent"}
       onMouseMove={onHover}
       onMouseDown={field.type === "select" ? undefined : (event: any) => {
         event.stopPropagation?.();

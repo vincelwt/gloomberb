@@ -14,13 +14,27 @@ import type { PageStackViewProps } from "../../../components/ui/page-stack-view"
 import type { SegmentedControlProps } from "../../../components/ui/toggle";
 
 const CONTROL_RADIUS = 6;
-const PANEL_BORDER = blendHex(colors.border, colors.borderFocused, 0.18);
-const PANEL_FILL = blendHex(colors.panel, colors.bg, 0.22);
+
+function panelBorder(): string {
+  return blendHex(colors.border, colors.borderFocused, 0.18);
+}
+
+function panelFill(): string {
+  return blendHex(colors.panel, colors.bg, 0.22);
+}
+
+function subtlePanelFill(): string {
+  return blendHex(colors.panel, colors.bg, 0.42);
+}
+
+function selectedPanelFill(): string {
+  return blendHex(colors.selected, colors.bg, 0.42);
+}
 
 function controlBorderColor(focused = false, active = false): string {
   if (active) return colors.borderFocused;
   if (focused) return blendHex(colors.borderFocused, colors.textBright, 0.24);
-  return PANEL_BORDER;
+  return panelBorder();
 }
 
 function controlShadow(active = false): string {
@@ -33,8 +47,8 @@ function buttonPalette(props: Pick<ButtonProps, "variant" | "active" | "disabled
   if (props.disabled) {
     return {
       fg: colors.textMuted,
-      bg: "rgba(63, 72, 82, 0.35)",
-      border: PANEL_BORDER,
+      bg: subtlePanelFill(),
+      border: panelBorder(),
     };
   }
   if (props.active) {
@@ -62,14 +76,14 @@ function buttonPalette(props: Pick<ButtonProps, "variant" | "active" | "disabled
       return {
         fg: colors.textDim,
         bg: "rgba(0, 0, 0, 0)",
-        border: PANEL_BORDER,
+        border: panelBorder(),
       };
     case "secondary":
     default:
       return {
         fg: colors.text,
-        bg: PANEL_FILL,
-        border: PANEL_BORDER,
+        bg: panelFill(),
+        border: panelBorder(),
       };
   }
 }
@@ -248,7 +262,7 @@ export function WebMessageComposer({
       flexDirection="row"
       width={width}
       height={height}
-      backgroundColor={PANEL_FILL}
+      backgroundColor={panelFill()}
       onMouseDown={requestFocus}
       data-gloom-role="desktop-message-composer"
       style={{
@@ -350,7 +364,7 @@ export function WebListView({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const baseBg = bgColor ?? colors.bg;
-  const activeBg = selectedBgColor ?? "rgba(84, 201, 159, 0.12)";
+  const activeBg = selectedBgColor ?? selectedPanelFill();
   const rowHoverBg = hoverBgColor ?? hoverBg();
   const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : undefined;
   const activeScrollIndex = scrollIndex ?? selectedIndex;
@@ -435,10 +449,10 @@ export function WebListView({
               backgroundColor: "transparent",
             }
             : {
-              border: `1px solid ${PANEL_BORDER}`,
+              border: `1px solid ${panelBorder()}`,
               borderRadius: CONTROL_RADIUS,
               padding: 4,
-              backgroundColor: "rgba(9, 12, 15, 0.22)",
+              backgroundColor: subtlePanelFill(),
             }}
         >
           <Box flexDirection="column" gap={rowGap}>
@@ -454,9 +468,9 @@ export function WebListView({
       {showSelectedDescription && selectedItem?.description && (
         <Box
           flexDirection="row"
-          backgroundColor="rgba(9, 12, 15, 0.22)"
+          backgroundColor={subtlePanelFill()}
           style={{
-            border: `1px solid ${PANEL_BORDER}`,
+            border: `1px solid ${panelBorder()}`,
             borderRadius: CONTROL_RADIUS,
             paddingInline: 10,
           }}
@@ -478,9 +492,9 @@ export function WebSegmentedControl({
   return (
     <Box
       flexDirection="row"
-      backgroundColor="rgba(8, 11, 14, 0.32)"
+      backgroundColor={panelFill()}
       style={{
-        border: `1px solid ${PANEL_BORDER}`,
+        border: `1px solid ${panelBorder()}`,
         borderRadius: CONTROL_RADIUS,
         padding: 2,
       }}
@@ -531,7 +545,7 @@ export function WebDialogFrame({
         flexDirection="row"
         alignItems="center"
         style={{
-          borderBottom: showTitleDivider ? `1px solid ${PANEL_BORDER}` : "none",
+          borderBottom: showTitleDivider ? `1px solid ${panelBorder()}` : "none",
           paddingBottom: showTitleDivider ? 8 : 0,
           marginBottom: showTitleDivider ? 10 : 14,
         }}
@@ -545,7 +559,7 @@ export function WebDialogFrame({
         <Box
           height={1}
           style={{
-            borderTop: `1px solid ${PANEL_BORDER}`,
+            borderTop: `1px solid ${panelBorder()}`,
             paddingTop: 8,
             marginTop: 10,
           }}
@@ -600,7 +614,7 @@ export function WebPageStackView({
           height={1}
           flexDirection="row"
           alignItems="center"
-          backgroundColor={PANEL_FILL}
+          backgroundColor={panelFill()}
           onMouseDown={(event) => {
             event.preventDefault?.();
             event.stopPropagation?.();
@@ -608,7 +622,7 @@ export function WebPageStackView({
           }}
           data-gloom-interactive="true"
           style={{
-            border: `1px solid ${PANEL_BORDER}`,
+            border: `1px solid ${panelBorder()}`,
             borderRadius: CONTROL_RADIUS,
             paddingInline: 8,
             cursor: "pointer",
