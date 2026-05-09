@@ -17,6 +17,7 @@ import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
 import { Shell } from "./components/layout/shell";
 import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
+import { getVisiblePaneCycleOrder } from "./components/layout/pane-cycle-order";
 import { CommandBar } from "./components/command-bar/command-bar";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { useDialog, useDialogState } from "./ui/dialog";
@@ -1441,18 +1442,20 @@ function AppInner({
     if (state.commandBarOpen || state.inputCaptured) return;
 
     if (event.name === "tab") {
-      // Build pane order from current layout for cycling
-      const layout = state.config.layout;
-      const paneOrder = [
-        ...getDockedPaneIds(layout),
-        ...layout.floating.map((entry) => entry.instanceId),
-      ];
+      const paneOrder = getVisiblePaneCycleOrder(
+        state.config.layout,
+        pluginRegistry,
+        state.config.disabledPlugins,
+      );
+      if (paneOrder.length === 0) return;
 
       if (event.shift) {
         dispatch({ type: "FOCUS_PREV", paneOrder });
       } else {
         dispatch({ type: "FOCUS_NEXT", paneOrder });
       }
+      event.preventDefault();
+      event.stopPropagation();
     } else if (!isDetachedWindow && event.name === "q" && !(focusedPane?.paneId === "ticker-detail" && focusedDetailTab === "financials")) {
       rendererHost.requestExit();
     } else if (event.name === "r") {

@@ -21,6 +21,7 @@ input, textarea { cursor: text; user-select: text; }
 button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="pane-window"] {
   background-clip: padding-box;
+  isolation: isolate;
 }
 [data-gloom-role="detached-pane-window"] {
   border: 0;
