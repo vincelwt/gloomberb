@@ -95,8 +95,9 @@ import {
   resolveNativeSurfaceVisibleRect,
   type NativeSurfaceRenderableNode,
 } from "./native/surface-visibility";
-import { formatAxisCell, formatDateShort, resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
+import { formatDateShort, resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
 import { TimeAxisLabel } from "./time-axis-label";
+import { PriceAxisLabels } from "./price-axis-labels";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -1827,17 +1828,16 @@ function ComparisonStockChartView({
   );
 
   const axisBox = (
-    <Box width={axisSectionWidth} height={chartHeight} flexDirection="column">
-      {Array.from({ length: chartHeight }, (_, row) => {
-        const isCursorRow = cursorAxisLabel !== null && cursorRow === row;
-        const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
-        return (
-          <Text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
-            {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
-          </Text>
-        );
-      })}
-    </Box>
+    <PriceAxisLabels
+      axisLabels={axisLabels}
+      axisWidth={axisWidth}
+      axisSectionWidth={axisSectionWidth}
+      height={chartHeight}
+      cursorRow={cursorRow}
+      cursorPixelY={hasDisplayCursor ? displayCursor.pixelY : null}
+      cursorLabel={cursorAxisLabel}
+      cursorColor={chartColors.crosshairColor}
+    />
   );
 
   const legendRowsData = Array.from({ length: Math.ceil(symbols.length / legendColumns) }, (_, rowIndex) => (
@@ -1947,6 +1947,7 @@ function ComparisonStockChartView({
           timeLabels={timeAxisLabel}
           width={chartWidth}
           cursorColumn={cursorTimeAxisColumn}
+          cursorPixelX={hasDisplayCursor ? displayCursor.pixelX : null}
           cursorDate={cursorTimeAxisDate}
           dates={projection.dates}
           cursorColor={chartColors.crosshairColor}

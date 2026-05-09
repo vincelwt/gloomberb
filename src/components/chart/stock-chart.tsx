@@ -82,7 +82,6 @@ import {
 } from "./chart-viewport";
 import {
   buildChartScene,
-  formatAxisCell,
   formatCursorAxisValue,
   getActivePointIndex,
   getPointTerminalColumn,
@@ -128,6 +127,7 @@ import {
 import type { PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { TimeAxisLabel } from "./time-axis-label";
+import { PriceAxisLabels } from "./price-axis-labels";
 
 const MODE_CHIPS: Record<ChartRenderMode, string> = {
   area: "A",
@@ -3437,6 +3437,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         timeLabels={timeAxisLabel}
         width={chartWidth}
         cursorColumn={cursorTimeAxisColumn}
+        cursorPixelX={hasDisplayCursor ? displayCursor.pixelX : null}
         cursorDate={cursorTimeAxisDate}
         dates={timeAxisDates}
         cursorColor={chartColors.crosshairColor}
@@ -3955,17 +3956,16 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   );
 
   const axisBox = (
-    <Box width={axisSectionWidth} height={chartHeight} flexDirection="column">
-      {Array.from({ length: chartHeight }, (_, row) => {
-        const isCursorRow = cursorAxisLabel !== null && cursorRow === row;
-        const label = isCursorRow ? cursorAxisLabel : (axisLabels.get(row) ?? null);
-        return (
-          <Text key={row} fg={isCursorRow ? chartColors.crosshairColor : colors.textDim}>
-            {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
-          </Text>
-        );
-      })}
-    </Box>
+    <PriceAxisLabels
+      axisLabels={axisLabels}
+      axisWidth={axisWidth}
+      axisSectionWidth={axisSectionWidth}
+      height={chartHeight}
+      cursorRow={cursorRow}
+      cursorPixelY={hasDisplayCursor ? displayCursor.pixelY : null}
+      cursorLabel={cursorAxisLabel}
+      cursorColor={chartColors.crosshairColor}
+    />
   );
 
   if (compact) {

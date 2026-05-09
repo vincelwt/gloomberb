@@ -7,6 +7,8 @@ import {
 } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
 import { buildChartScene, buildCursorTimeAxisSegments, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
+import { buildCursorTimeAxisOverlay } from "./time-axis-label";
+import { buildCursorPriceAxisOverlay } from "./price-axis-labels";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode } from "./chart-types";
 
@@ -427,6 +429,47 @@ describe("renderChart", () => {
 
     expect(segments.map((segment) => segment.text).join("")).toHaveLength(width);
     expect(segments.find((segment) => segment.highlighted)?.text).toBe("12:30");
+  });
+
+  test("positions desktop cursor x-axis overlay from exact pixels", () => {
+    const dates = Array.from({ length: 13 }, (_, index) => new Date(2026, 0, 5, 9, 30 + index * 30));
+    const width = 72;
+    const cursorPixelX = 291.5;
+    const cellWidthPx = 8;
+    const segments = buildCursorTimeAxisSegments({
+      timeLabels: buildTimeAxis(dates, width),
+      width,
+      cursorColumn: 36,
+      cursorDate: dates[6]!,
+      dates,
+    });
+    const overlay = buildCursorTimeAxisOverlay({
+      segments,
+      width,
+      cursorPixelX,
+      cellWidthPx,
+    });
+
+    expect(overlay.label).toBe("12:30");
+    expect(overlay.baseText).toHaveLength(width);
+    expect(overlay.leftPercent).toBeCloseTo((cursorPixelX / (width * cellWidthPx - 1)) * 100, 5);
+  });
+
+  test("positions desktop cursor y-axis overlay from exact pixels", () => {
+    const height = 8;
+    const cellHeightPx = 18;
+    const cursorPixelY = 45.25;
+    const overlay = buildCursorPriceAxisOverlay({
+      axisWidth: 7,
+      axisSectionWidth: 8,
+      height,
+      cursorPixelY,
+      cursorLabel: "$214.03",
+      cellHeightPx,
+    });
+
+    expect(overlay.labelText).toBe("$214.03 ");
+    expect(overlay.topPercent).toBeCloseTo((cursorPixelY / (height * cellHeightPx - 1)) * 100, 5);
   });
 
   test("shows second precision when the visible window reaches second-level data", () => {
