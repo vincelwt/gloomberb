@@ -180,6 +180,7 @@ const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
 const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
 const NATIVE_COMMAND_BAR_PADDING_X_PX = 14;
 const NATIVE_COMMAND_BAR_PADDING_Y_PX = 14;
+const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
 
 function getDefaultConfigBackupPath(): string {
   const home = typeof process !== "undefined" ? process.env.HOME : undefined;
@@ -2379,20 +2380,24 @@ export function CommandBar({
     tickerSearchCacheRef.current.clear();
   }, [state.tickers]);
 
+  const createQuickLookLocalTickerCandidates = useCallback((tickers: Iterable<TickerRecord>) => (
+    createLocalTickerSearchCandidates(tickers, new Map(), QUICK_LOOK_TICKER_SEARCH_OPTIONS)
+  ), []);
+
   const localTickerSearchResultItems = useCallback((query?: string, options?: {
     category?: string;
     limit?: number;
   }): ResultItem[] => {
     const items = query
-      ? rankTickerSearchItems(createLocalTickerSearchCandidates(state.tickers.values()), query)
-      : createLocalTickerSearchCandidates(state.tickers.values());
+      ? rankTickerSearchItems(createQuickLookLocalTickerCandidates(state.tickers.values()), query)
+      : createQuickLookLocalTickerCandidates(state.tickers.values());
     return items
       .slice(0, options?.limit)
       .map((candidate) => ({
         ...mapTickerSearchCandidateToResultItem(candidate),
         category: options?.category ?? candidate.category,
       }));
-  }, [mapTickerSearchCandidateToResultItem, state.tickers]);
+  }, [createQuickLookLocalTickerCandidates, mapTickerSearchCandidateToResultItem, state.tickers]);
 
   const adaptTickerSearchRouteResult = useCallback((
     item: ResultItem,
@@ -2957,6 +2962,7 @@ export function CommandBar({
             brokerId: activePortfolio?.brokerId,
             brokerInstanceId: activePortfolio?.brokerInstanceId,
           },
+          ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
         if (requestId !== searchRequestIdRef.current) return;
         writeTickerSearchCache(
@@ -3281,18 +3287,26 @@ export function CommandBar({
       const recentSymbols = state.recentTickers.slice(0, maxDefaultTickers);
       const recentTickers = recentSymbols
         .map((symbol) => state.tickers.get(symbol))
-        .filter((ticker): ticker is NonNullable<typeof ticker> => ticker != null);
+        .filter((ticker): ticker is NonNullable<typeof ticker> => (
+          ticker != null && createQuickLookLocalTickerCandidates([ticker]).length > 0
+        ));
       if (recentTickers.length < maxDefaultTickers) {
         const seen = new Set(recentSymbols);
         for (const ticker of state.tickers.values()) {
           if (recentTickers.length >= maxDefaultTickers) break;
+          if (createQuickLookLocalTickerCandidates([ticker]).length === 0) continue;
           if (!seen.has(ticker.metadata.ticker)) recentTickers.push(ticker);
         }
       }
-      items.push(...recentTickers.map((ticker) => ({
-        ...mapTickerSearchCandidateToResultItem(createLocalTickerSearchCandidates([ticker])[0]!),
-        category: "Tickers",
-      })));
+      items.push(...recentTickers.flatMap((ticker) => {
+        const candidate = createQuickLookLocalTickerCandidates([ticker])[0];
+        return candidate
+          ? [{
+            ...mapTickerSearchCandidateToResultItem(candidate),
+            category: "Tickers",
+          }]
+          : [];
+      }));
       items.push(...paneShortcutItems());
       for (const command of availableCommands) {
         const item = commandToItem(command);
@@ -3325,6 +3339,7 @@ export function CommandBar({
     buildLayoutItems,
     buildPluginItems,
     buildThemeItems,
+    createQuickLookLocalTickerCandidates,
     createPluginCommandItem,
     currentRoute,
     executeCollectionCommand,
@@ -3412,6 +3427,7 @@ export function CommandBar({
             brokerId: activeSearchPortfolio?.brokerId,
             brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
           },
+          ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
         if (requestId !== rootSearchRequestIdRef.current) return;
         writeTickerSearchCache(

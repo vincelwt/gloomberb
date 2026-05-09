@@ -3,12 +3,14 @@ import type { InstrumentSearchResult } from "../types/instrument";
 import type { TickerRecord } from "../types/ticker";
 import type { TickerMetadata } from "../types/ticker";
 import type { TickerRepository } from "../data/ticker-repository";
+import { parseOptionSymbol } from "./options";
 
 export type TickerSearchInstrumentClass = "equity" | "fund" | "derivative" | "other";
 export type TickerSearchCategory = "Saved" | "Primary Listing" | "Other Listings" | "Funds & Derivatives";
 
 const FUND_TYPES = new Set(["ETF", "ETN", "ETP", "FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
 const DERIVATIVE_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "FUT", "FUTURE", "FUTURES", "WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
+const OPTION_TYPES = new Set(["OPT", "OPTION", "OPTIONS"]);
 const EQUITY_TYPES = new Set(["STK", "STOCK", "EQUITY", "COMMONSTOCK", "COMMON STOCK", "ADR", "ORDINARYSHARES", "ORDINARY SHARES"]);
 
 const EXCHANGE_HINT_ALIASES: Record<string, string[]> = {
@@ -90,6 +92,10 @@ interface SearchQueryIntent {
   assetPreference: TickerSearchInstrumentClass | null;
 }
 
+interface TickerSearchCandidateOptions {
+  includeOptionContracts?: boolean;
+}
+
 export function normalizeTickerInput(activeTicker: string | null, arg?: string): string | null {
   const explicitTicker = arg?.trim().toUpperCase();
   if (explicitTicker) return explicitTicker;
@@ -99,11 +105,13 @@ export function normalizeTickerInput(activeTicker: string | null, arg?: string):
 export function createLocalTickerSearchCandidates(
   tickers: Iterable<TickerRecord>,
   providerHints: ReadonlyMap<string, InstrumentSearchResult> = new Map(),
+  options: TickerSearchCandidateOptions = {},
 ): TickerSearchCandidate[] {
-  return Array.from(tickers).map((ticker) => {
+  return Array.from(tickers).flatMap((ticker) => {
+    if (options.includeOptionContracts === false && isOptionTickerRecord(ticker)) return [];
     const symbol = normalizeTickerSymbol(ticker.metadata.ticker);
     const hint = providerHints.get(symbol);
-    return {
+    return [{
       id: `goto:${ticker.metadata.ticker}`,
       label: ticker.metadata.ticker,
       symbol,
@@ -118,18 +126,20 @@ export function createLocalTickerSearchCandidates(
       searchAliases: buildSymbolAliases(symbol),
       ticker,
       result: hint,
-    };
+    }];
   });
 }
 
 export function createProviderTickerSearchCandidates(
   searchResults: InstrumentSearchResult[],
   localTickers: ReadonlyMap<string, TickerRecord>,
+  options: TickerSearchCandidateOptions = {},
 ): TickerSearchCandidate[] {
-  return searchResults.map((result) => {
+  return searchResults.flatMap((result) => {
+    if (options.includeOptionContracts === false && isOptionSearchResult(result)) return [];
     const symbol = getSearchResultSymbol(result);
     const saved = localTickers.has(symbol);
-    return {
+    return [{
       id: `search:${result.symbol}`,
       label: symbol,
       symbol,
@@ -143,7 +153,7 @@ export function createProviderTickerSearchCandidates(
       instrumentClass: classifyInstrumentKind(result.brokerContract?.secType || result.type),
       searchAliases: buildSearchResultAliases(result),
       result,
-    };
+    }];
   });
 }
 
@@ -154,6 +164,7 @@ export async function searchTickerCandidates({
   searchContext,
   localLimit = 6,
   totalLimit = 8,
+  includeOptionContracts = true,
 }: {
   query: string;
   tickers: ReadonlyMap<string, TickerRecord>;
@@ -161,6 +172,7 @@ export async function searchTickerCandidates({
   searchContext?: SearchRequestContext;
   localLimit?: number;
   totalLimit?: number;
+  includeOptionContracts?: boolean;
 }): Promise<TickerSearchCandidate[]> {
   return buildTickerSearchCandidates({
     query,
@@ -168,6 +180,7 @@ export async function searchTickerCandidates({
     providerResults: await searchProviderResults(dataProvider, query, searchContext),
     localLimit,
     totalLimit,
+    includeOptionContracts,
   });
 }
 
@@ -177,19 +190,25 @@ export function buildTickerSearchCandidates({
   providerResults,
   localLimit = 6,
   totalLimit = 8,
+  includeOptionContracts = true,
 }: {
   query: string;
   tickers: ReadonlyMap<string, TickerRecord>;
   providerResults: InstrumentSearchResult[];
   localLimit?: number;
   totalLimit?: number;
+  includeOptionContracts?: boolean;
 }): TickerSearchCandidate[] {
-  const providerHints = buildProviderHintMap(providerResults);
+  const candidateOptions = { includeOptionContracts };
+  const filteredProviderResults = includeOptionContracts
+    ? providerResults
+    : providerResults.filter((result) => !isOptionSearchResult(result));
+  const providerHints = buildProviderHintMap(filteredProviderResults);
   const localItems = rankTickerSearchItems(
-    createLocalTickerSearchCandidates(tickers.values(), providerHints),
+    createLocalTickerSearchCandidates(tickers.values(), providerHints, candidateOptions),
     query,
   );
-  const providerItems = createProviderTickerSearchCandidates(providerResults, tickers);
+  const providerItems = createProviderTickerSearchCandidates(filteredProviderResults, tickers, candidateOptions);
   const ranked = rankTickerSearchItems([...localItems, ...providerItems], query);
   return limitTickerSearchCandidates(assignTickerSearchCategories(ranked), totalLimit, localLimit);
 }
@@ -549,6 +568,31 @@ function shouldReplaceAssetCategory(currentCategory: string | undefined, nextCat
   const currentClass = classifyInstrumentKind(currentCategory);
   const nextClass = classifyInstrumentKind(nextCategory);
   return currentClass === "equity" && nextClass !== "equity";
+}
+
+function isOptionTickerRecord(ticker: TickerRecord): boolean {
+  return isOptionType(ticker.metadata.assetCategory)
+    || parseOptionSymbol(ticker.metadata.ticker) != null
+    || (ticker.metadata.broker_contracts ?? []).some(isOptionBrokerContract);
+}
+
+function isOptionSearchResult(result: InstrumentSearchResult): boolean {
+  return isOptionType(result.type)
+    || parseOptionSymbol(result.symbol) != null
+    || isOptionBrokerContract(result.brokerContract);
+}
+
+function isOptionBrokerContract(contract: InstrumentSearchResult["brokerContract"]): boolean {
+  if (!contract) return false;
+  return isOptionType(contract.secType)
+    || parseOptionSymbol(contract.localSymbol || "") != null
+    || contract.right === "C"
+    || contract.right === "P"
+    || contract.strike != null;
+}
+
+function isOptionType(rawType?: string): boolean {
+  return OPTION_TYPES.has(normalizeSearchText(rawType || ""));
 }
 
 function analyzeSearchQuery(query: string): SearchQueryIntent {
