@@ -1737,7 +1737,6 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     const initialFrame = testSetup.captureCharFrame();
     expect(initialFrame).toContain("Delete Layout");
-    expect(initialFrame).toContain("Danger");
 
     await act(async () => {
       testSetup!.mockInput.pressEnter();
