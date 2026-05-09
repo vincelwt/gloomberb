@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text, useUiHost } from "../../ui";
+import { Box, ScrollBox, Text, useNativeRenderer, useUiHost } from "../../ui";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
@@ -6,9 +6,9 @@ import type { ColumnConfig } from "../../types/config";
 import { useAppDispatch, usePaneInstance } from "../../state/app-context";
 import { useViewport } from "../../react/input";
 import { padTo } from "../../utils/format";
-import { useRafCallback } from "../../react/use-raf-callback";
 import { measurePerf } from "../../utils/perf-marks";
 import { useDoubleClickActivation } from "../use-double-click-activation";
+import { useScrollBoxScrollActivity } from "../table-view-shared";
 import { EmptyState } from "./status";
 import {
   expandTableColumns,
@@ -158,6 +158,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
   const appViewport = useViewport();
+  const nativeRenderer = useNativeRenderer();
   const [scrollVersion, setScrollVersion] = useState(0);
   const scrollTop = virtualize ? (scrollRef.current?.scrollTop ?? 0) : 0;
   const measuredViewportHeight = scrollRef.current?.viewport?.height;
@@ -228,9 +229,13 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
       setScrollVersion((current) => current + 1);
     }
     onBodyScrollActivity();
-  }, [onBodyScrollActivity, virtualize]);
-  const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
-  const scheduleHeaderScrollSync = useRafCallback(syncHeaderScroll);
+    nativeRenderer.requestRender();
+  }, [nativeRenderer, onBodyScrollActivity, virtualize]);
+  useScrollBoxScrollActivity({
+    scrollRef,
+    onVerticalScroll: handleBodyScrollActivity,
+    onHorizontalScroll: syncHeaderScroll,
+  });
   const focusPane = useCallback(() => {
     if (!paneInstanceId) return;
     dispatch({ type: "FOCUS_PANE", paneId: paneInstanceId });
@@ -376,11 +381,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
         focusable={false}
         onMouseDown={() => {
           focusPane();
-          scheduleHeaderScrollSync();
         }}
-        onMouseUp={scheduleBodyScrollActivity}
-        onMouseDrag={scheduleBodyScrollActivity}
-        onMouseScroll={scheduleBodyScrollActivity}
         onSizeChange={measureContentWidth}
       >
         {items.length === 0 ? (

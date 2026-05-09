@@ -64,6 +64,16 @@ function TickerListTableHarness() {
 
 function LargeTickerListTableHarness() {
   const [cursorSymbol, setCursorSymbol] = useState("T0");
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+
+  useEffect(() => {
+    tableScrollRef = scrollRef.current;
+    return () => {
+      if (tableScrollRef === scrollRef.current) {
+        tableScrollRef = null;
+      }
+    };
+  });
 
   return (
     <TickerListTable
@@ -75,6 +85,7 @@ function LargeTickerListTableHarness() {
       setCursorSymbol={setCursorSymbol}
       resolveCell={resolveCell}
       financialsMap={financialsMap}
+      scrollRef={scrollRef}
     />
   );
 }
@@ -159,6 +170,18 @@ describe("TickerListTable", () => {
     expect(frame).toContain("T0");
     expect(frame).not.toContain("T999");
     expect(resolveCellCallCount).toBeLessThan(40);
+
+    await act(async () => {
+      for (let index = 0; index < 12; index++) {
+        await testSetup!.mockMouse.scroll(2, 2, "down");
+      }
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+
+    const scrollTop = tableScrollRef?.scrollTop ?? 0;
+    expect(scrollTop).toBeGreaterThan(0);
+    expect(testSetup.captureCharFrame()).toContain(`T${scrollTop}`);
   });
 
   test("preserves manual scroll when market data reorders rows around the same cursor", async () => {

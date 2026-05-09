@@ -1,4 +1,13 @@
-import { Box, ScrollBox, Text, tickerContextMenuItems, useContextMenu, useRendererHost, useUiCapabilities } from "../ui";
+import {
+  Box,
+  ScrollBox,
+  Text,
+  tickerContextMenuItems,
+  useContextMenu,
+  useNativeRenderer,
+  useRendererHost,
+  useUiCapabilities,
+} from "../ui";
 import { memo, useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../ui";
 import { EmptyState } from "./ui";
@@ -12,8 +21,8 @@ import { renderChart, resolveChartPalette, type StyledContent } from "./chart/ch
 import type { ProjectedChartPoint } from "./chart/chart-data";
 import { tableContentWidthProps, useMeasuredTableContentWidth } from "./ui/table-layout";
 import { useViewport } from "../react/input";
-import { useRafCallback } from "../react/use-raf-callback";
 import { measurePerf } from "../utils/perf-marks";
+import { useScrollBoxScrollActivity } from "./table-view-shared";
 
 export interface TickerTableCell {
   text: string;
@@ -328,6 +337,7 @@ export function TickerListTable({
   const hoveredIdxRef = useRef(hoveredIdx);
   const appViewport = useViewport();
   const renderer = useRendererHost();
+  const nativeRenderer = useNativeRenderer();
   const { showContextMenu } = useContextMenu();
   const { nativeContextMenu } = useUiCapabilities();
   const [scrollVersion, setScrollVersion] = useState(0);
@@ -387,12 +397,16 @@ export function TickerListTable({
       setScrollVersion((current) => current + 1);
     }
     onBodyScrollActivity?.();
-  }, [onBodyScrollActivity, virtualize]);
+    nativeRenderer.requestRender();
+  }, [nativeRenderer, onBodyScrollActivity, virtualize]);
   const syncHeader = useCallback(() => {
     syncHeaderScroll?.();
   }, [syncHeaderScroll]);
-  const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
-  const scheduleHeaderScrollSync = useRafCallback(syncHeader);
+  useScrollBoxScrollActivity({
+    scrollRef: effectiveScrollRef,
+    onVerticalScroll: handleBodyScrollActivity,
+    onHorizontalScroll: syncHeader,
+  });
   const setHoveredIdxIfChanged = useCallback((index: number | null) => {
     if (hoveredIdxRef.current === index) return;
     setHoveredIdx(index);
@@ -448,10 +462,6 @@ export function TickerListTable({
         scrollX
         scrollY
         focusable={false}
-        onMouseDown={scheduleHeaderScrollSync}
-        onMouseUp={scheduleBodyScrollActivity}
-        onMouseDrag={scheduleBodyScrollActivity}
-        onMouseScroll={scheduleBodyScrollActivity}
         onSizeChange={measureContentWidth}
       >
         {tickers.length === 0 ? (
