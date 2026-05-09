@@ -30,6 +30,24 @@ interface FloatingPaneWrapperProps {
   children: ReactNode;
 }
 
+function TerminalFloatingPaneBorder({ width, height }: { width: number; height: number }) {
+  const borderWidth = Math.max(0, Math.floor(width));
+  const borderHeight = Math.max(0, Math.floor(height));
+  const bodyHeight = Math.max(0, borderHeight - 2);
+  if (borderWidth < 2 || bodyHeight <= 0) return null;
+
+  return (
+    <>
+      <Box position="absolute" top={1} left={0} width={1} height={bodyHeight}>
+        <Text fg={colors.border} selectable={false}>{"│".repeat(bodyHeight)}</Text>
+      </Box>
+      <Box position="absolute" top={1} left={borderWidth - 1} width={1} height={bodyHeight}>
+        <Text fg={colors.border} selectable={false}>{"│".repeat(bodyHeight)}</Text>
+      </Box>
+    </>
+  );
+}
+
 /** Pure visual wrapper; Shell owns the interaction state and supplies handlers. */
 export function FloatingPaneWrapper({
   paneId,
@@ -101,7 +119,17 @@ export function FloatingPaneWrapper({
         {children}
       </Box>
 
-      {reserveFooter && <PaneFooterBar footer={footer} focused={focused} width={width} reserveRight={2} />}
+      {reserveFooter && (
+        <PaneFooterBar
+          footer={footer}
+          focused={focused}
+          width={width}
+          reserveRight={2}
+          showBorder={!nativePaneChrome && !focused}
+        />
+      )}
+
+      {!nativePaneChrome && !focused && <TerminalFloatingPaneBorder width={width} height={height} />}
 
       {nativePaneChrome ? (
         <Box
@@ -117,7 +145,7 @@ export function FloatingPaneWrapper({
         />
       ) : (
         <Box position="absolute" bottom={0} right={0} width={2} height={1}>
-          <Text fg={focused ? colors.borderFocused : colors.textDim} selectable={false}>{focused ? "─◢" : " ◢"}</Text>
+          <Text fg={focused ? colors.borderFocused : colors.border} selectable={false}>{"─◢"}</Text>
         </Box>
       )}
     </Box>

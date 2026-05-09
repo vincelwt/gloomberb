@@ -108,7 +108,6 @@ export function PaneHeader({
   const backgroundColor = floating ? floatingPaneTitleBg(focused) : paneTitleBg(focused);
   const actionText = showActions ? PANE_HEADER_ACTION : "     ";
   const closeText = floating ? PANE_HEADER_CLOSE : "";
-  const bc = colors.borderFocused;
   const textColor = paneTitleText(focused, floating);
 
   if (nativePaneChrome) {
@@ -184,9 +183,10 @@ export function PaneHeader({
     );
   }
 
-  if (focused) {
+  if (focused || floating) {
     // Build: ┌─:: Title ─────────── ... x─┐
     // Reserve 2 for corners, 1 for ─ after ┌, 1 for ─ before ┐
+    const borderColor = focused ? colors.borderFocused : colors.border;
     const innerWidth = Math.max(0, width - 4);
     const contentWidth = PANE_HEADER_GRIP.length + closeText.length + actionText.length;
     const titleWidth = Math.max(0, innerWidth - contentWidth);
@@ -196,9 +196,9 @@ export function PaneHeader({
 
     return (
       <Box height={PANE_HEADER_HEIGHT} width={width} backgroundColor={backgroundColor} flexDirection="row">
-        <Text fg={bc} selectable={false}>{"┌─"}</Text>
+        <Text fg={borderColor} selectable={false}>{"┌─"}</Text>
         <Text fg={textColor} selectable={false}>{`${PANE_HEADER_GRIP}${clippedTitle}`}</Text>
-        <Text fg={bc} selectable={false}>{fill}</Text>
+        <Text fg={borderColor} selectable={false}>{fill}</Text>
         <TerminalPaneButton
           text={actionText}
           fg={textColor}
@@ -213,7 +213,7 @@ export function PaneHeader({
             onMouseDown={onCloseMouseDown}
           />
         )}
-        <Text fg={bc} selectable={false}>{"─┐"}</Text>
+        <Text fg={borderColor} selectable={false}>{"─┐"}</Text>
       </Box>
     );
   }

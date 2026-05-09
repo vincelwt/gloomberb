@@ -586,8 +586,8 @@ function resolveHeaderHitAreas(
   actionStart: number | null;
   closeStart: number | null;
 } {
-  // When focused, the header renders ┌─...─┐ adding 2 chars on each side
-  let rightEdge = options.focused ? width - 2 : width;
+  // Focused panes and all floating panes render ┌─...─┐, adding 2 chars on each side.
+  let rightEdge = options.focused || options.floating ? width - 2 : width;
   let closeStart: number | null = null;
   let actionStart: number | null = null;
 
