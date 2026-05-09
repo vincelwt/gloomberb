@@ -120,6 +120,16 @@ function dedupeArticles(items: NewsArticle[]): NewsArticle[] {
   return sortByPublishedAt([...byKey.values()]).slice(0, MAX_ARTICLES);
 }
 
+function mergeNewsArticle(base: NewsArticle, detail: NewsArticle): NewsArticle {
+  const detailItems = detail.items ?? [];
+  const baseItems = base.items ?? [];
+  return {
+    ...base,
+    ...detail,
+    items: detailItems.length > 0 ? detailItems : baseItems,
+  };
+}
+
 function filterArticlesForQuery(items: NewsArticle[], query: NewsQuery): NewsArticle[] {
   let filtered = items;
   if (query.since) {
@@ -262,6 +272,24 @@ export class NewsService {
 
   async load(query: NewsQuery): Promise<NewsQueryState> {
     return this.refreshQuery(normalizeQuery(query), true);
+  }
+
+  async loadStory(storyId: string): Promise<NewsArticle | null> {
+    const sources = this.enabledSources({ feed: "latest" })
+      .filter((source) => !!source.provider.fetchNewsStory);
+
+    for (const source of sources) {
+      try {
+        const article = await source.provider.fetchNewsStory?.(storyId);
+        if (!article) continue;
+        this.mergeStoryDetail(article);
+        return article;
+      } catch {
+        // Continue to lower-priority sources.
+      }
+    }
+
+    return null;
   }
 
   async poll(query: NewsQuery = DEFAULT_GLOBAL_QUERY): Promise<void> {
@@ -411,6 +439,26 @@ export class NewsService {
 
   private rebuildArticlePool(): void {
     this.articles = dedupeArticles([...this.queryStates.values()].flatMap((state) => state.articles));
+  }
+
+  private mergeStoryDetail(article: NewsArticle): void {
+    let changed = false;
+    for (const [key, state] of this.queryStates) {
+      let stateChanged = false;
+      const nextArticles = state.articles.map((existing) => {
+        if (existing.id !== article.id) return existing;
+        stateChanged = true;
+        changed = true;
+        return mergeNewsArticle(existing, article);
+      });
+      if (stateChanged) {
+        this.queryStates.set(key, { ...state, articles: nextArticles });
+      }
+    }
+
+    if (!changed) return;
+    this.rebuildArticlePool();
+    this.notify();
   }
 
   getTopStories(count = 20): NewsArticle[] {

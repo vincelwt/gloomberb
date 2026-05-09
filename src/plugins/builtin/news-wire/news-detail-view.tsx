@@ -10,9 +10,27 @@ import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 import { wrapTextLines } from "../../../utils/text-wrap";
 
-export function useNewsArticleDetail(articles: MarketNewsItem[]) {
+function hasStoryItems(article: MarketNewsItem | null): boolean {
+  return (article?.items?.length ?? 0) > 0;
+}
+
+function mergeLoadedArticle(base: MarketNewsItem, loaded: MarketNewsItem | null | undefined): MarketNewsItem {
+  if (!loaded) return base;
+  return {
+    ...base,
+    ...loaded,
+    items: hasStoryItems(loaded) ? loaded.items : base.items,
+  };
+}
+
+export function useNewsArticleDetail(
+  articles: MarketNewsItem[],
+  loadArticleDetail?: (articleId: string) => Promise<MarketNewsItem | null>,
+) {
   const [detailArticleId, setDetailArticleId] = useState<string | null>(null);
-  const detailArticle = useMemo(
+  const [loadedArticles, setLoadedArticles] = useState<Map<string, MarketNewsItem>>(() => new Map());
+  const requestedArticleIds = useRef<Set<string>>(new Set());
+  const baseDetailArticle = useMemo(
     () => (
       detailArticleId
         ? articles.find((article) => article.id === detailArticleId) ?? null
@@ -20,12 +38,36 @@ export function useNewsArticleDetail(articles: MarketNewsItem[]) {
     ),
     [articles, detailArticleId],
   );
+  const detailArticle = useMemo(() => (
+    baseDetailArticle && detailArticleId
+      ? mergeLoadedArticle(baseDetailArticle, loadedArticles.get(detailArticleId))
+      : baseDetailArticle
+  ), [baseDetailArticle, detailArticleId, loadedArticles]);
 
   useEffect(() => {
-    if (detailArticleId && !detailArticle) {
+    if (detailArticleId && !baseDetailArticle) {
       setDetailArticleId(null);
     }
-  }, [detailArticle, detailArticleId]);
+  }, [baseDetailArticle, detailArticleId]);
+
+  useEffect(() => {
+    if (!detailArticleId || !baseDetailArticle || hasStoryItems(detailArticle)) return;
+    if (!loadArticleDetail || requestedArticleIds.current.has(detailArticleId)) return;
+
+    requestedArticleIds.current.add(detailArticleId);
+    void loadArticleDetail(detailArticleId)
+      .then((loadedArticle) => {
+        if (!loadedArticle) return;
+        setLoadedArticles((current) => {
+          const next = new Map(current);
+          next.set(detailArticleId, loadedArticle);
+          return next;
+        });
+      })
+      .catch(() => {
+        requestedArticleIds.current.delete(detailArticleId);
+      });
+  }, [baseDetailArticle, detailArticle, detailArticleId, loadArticleDetail]);
 
   const openArticle = useCallback((article: MarketNewsItem) => {
     setDetailArticleId(article.id);

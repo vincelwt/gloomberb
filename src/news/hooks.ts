@@ -1,6 +1,6 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { buildNewsQueryKey, type NewsService } from "./aggregator";
-import type { NewsQuery, NewsQueryState } from "./types";
+import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 
 let sharedService: NewsService | null = null;
 
@@ -36,4 +36,8 @@ export function useNewsArticles(query: NewsQuery | null | undefined): NewsQueryS
   }, [key]);
 
   return query && sharedService ? sharedService.getQueryState(query) : idleState();
+}
+
+export function useLoadNewsStory(): (storyId: string) => Promise<NewsArticle | null> {
+  return useCallback(async (storyId: string) => sharedService?.loadStory(storyId) ?? null, []);
 }

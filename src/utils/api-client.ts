@@ -1093,6 +1093,10 @@ class GloomApiClient {
     return this.request<CloudNewsListResponse>(`/news${query ? `?${query}` : ""}`);
   }
 
+  async getCloudNewsStory(storyId: string): Promise<CloudNewsPayload> {
+    return this.request<CloudNewsPayload>(`/news/${encodeURIComponent(storyId)}`);
+  }
+
   async getCloudTickerTweets(params: {
     ticker: string;
     limit?: number;

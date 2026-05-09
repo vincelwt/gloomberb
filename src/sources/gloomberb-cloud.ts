@@ -575,6 +575,13 @@ export function createGloomberbCloudCapabilities(provider = createGloomberbCloud
           );
           return response.items.map((item) => mapCloudNewsArticle(item, query.ticker));
         },
+        async fetchNewsStory(storyId: string): Promise<NewsArticle | null> {
+          const story = await withCloudFallback(
+            () => apiClient.getCloudNewsStory(storyId),
+            "Cloud news story is unavailable",
+          );
+          return mapCloudNewsArticle(story);
+        },
       },
     }),
   ];

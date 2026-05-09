@@ -24,7 +24,11 @@ import type {
   DataTableProps,
   DataTableSectionHeader,
 } from "../../../components/ui/data-table";
-import { getTableWidth, hasMeaningfulTableHorizontalOverflow } from "../../../components/ui/table-layout";
+import {
+  buildTableGridTemplateColumns,
+  getTableWidth,
+  hasMeaningfulTableHorizontalOverflow,
+} from "../../../components/ui/table-layout";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { useScrollbarActivity } from "./scrollbar-activity";
 
@@ -82,32 +86,6 @@ function clippedCellTextStyle(
     textOverflow: "ellipsis",
     textAlign: column.align,
   };
-}
-
-function columnMinCh(column: DataTableColumn): number {
-  const width = Math.max(1, Math.floor(column.width));
-  if ((column.flexGrow ?? 0) > 0) {
-    return Math.max(8, Math.min(18, Math.floor(width * 0.35)));
-  }
-  if (column.align === "right") {
-    return Math.max(3, Math.min(width, 8));
-  }
-  if (width >= 16) {
-    return Math.max(8, Math.min(16, Math.floor(width * 0.35)));
-  }
-  return Math.max(1, Math.min(width, 8));
-}
-
-function columnFlexWeight(column: DataTableColumn): number {
-  const flexGrow = column.flexGrow ?? 0;
-  const baseWeight = Math.max(1, Math.floor(column.width));
-  return flexGrow > 0 ? baseWeight * Math.max(1, flexGrow) : baseWeight;
-}
-
-function buildGridTemplateColumns(columns: readonly DataTableColumn[]): string {
-  return columns
-    .map((column) => `minmax(${columnMinCh(column)}ch, ${columnFlexWeight(column)}fr)`)
-    .join(" ");
 }
 
 function toCellY(pixels: number): number {
@@ -494,7 +472,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const [scrollbarActive, markScrollbarActive] = useScrollbarActivity();
   const tableWidth = useMemo(() => getTableWidth(columns), [columns]);
   const gridTemplateColumns = useMemo(
-    () => buildGridTemplateColumns(columns),
+    () => buildTableGridTemplateColumns(columns),
     [columns],
   );
   const selectRow = useCallback((item: T, index: number) => {

@@ -6,7 +6,7 @@ import type { MarketNewsItem } from "../types/news-source";
 function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketNewsItem {
   return {
     ...overrides,
-    id: overrides.url,
+    id: overrides.id ?? overrides.url,
     title: "Test headline",
     url: overrides.url,
     source: "Test",
@@ -47,6 +47,17 @@ function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems:
     provider: {
       getCachedNews: () => cachedItems,
       fetchNews: mock(async () => fetchItems),
+    },
+  });
+}
+
+function makeStorySource(id: string, items: MarketNewsItem[], story: MarketNewsItem): NewsCapability {
+  return newsProvider({
+    id,
+    name: id,
+    provider: {
+      fetchNews: mock(async () => items),
+      fetchNewsStory: mock(async (storyId: string) => storyId === story.id ? story : null),
     },
   });
 }
@@ -263,5 +274,42 @@ describe("NewsService", () => {
     expect(state.articles).toHaveLength(1);
     expect(state.articles[0]!.url).toBe(fallbackItem.url);
     expect(state.sourceIds).toEqual(["fallback"]);
+  });
+
+  it("loads story detail and merges source items into existing query state", async () => {
+    const listArticle = makeItem({
+      id: "story-1",
+      url: "https://detail.example.com/story",
+      items: [],
+    });
+    const detailArticle = makeItem({
+      ...listArticle,
+      items: [{
+        id: "item-2",
+        sourceKey: "wire-b",
+        sourceName: "Wire B",
+        title: "Follow-up",
+        url: "https://detail.example.com/follow-up",
+        publishedAt: new Date("2026-04-01T10:05:00.000Z"),
+      }, {
+        id: "item-1",
+        sourceKey: "wire-a",
+        sourceName: "Wire A",
+        title: "Original",
+        url: "https://detail.example.com/original",
+        publishedAt: new Date("2026-04-01T10:00:00.000Z"),
+      }],
+    });
+
+    agg.register(makeStorySource("cloud", [listArticle], detailArticle));
+
+    const initial = await agg.load({ feed: "top", limit: 10 });
+    expect(initial.articles[0]?.items).toEqual([]);
+
+    const detail = await agg.loadStory("story-1");
+    const state = agg.getQueryState({ feed: "top", limit: 10 });
+
+    expect(detail?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
+    expect(state.articles[0]?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
   });
 });

@@ -1,7 +1,7 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PaneProps } from "../../../types/plugin";
-import { useNewsArticles } from "../../../news/hooks";
+import { useLoadNewsStory, useNewsArticles } from "../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import { Spinner } from "../../../components";
 import type { MarketNewsItem } from "../../../types/news-source";
@@ -41,7 +41,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const [aiRunning, setAiRunning] = useState(false);
   const [spinFrame, setSpinFrame] = useState(0);
   const processingRef = useRef(false);
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
+  const loadNewsStory = useLoadNewsStory();
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
 
   useEffect(() => {

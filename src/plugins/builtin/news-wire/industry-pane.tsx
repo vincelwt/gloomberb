@@ -2,7 +2,7 @@ import { Box } from "../../../ui";
 import { useEffect, useMemo } from "react";
 import type { PaneProps } from "../../../types/plugin";
 import type { MarketNewsItem } from "../../../types/news-source";
-import { useNewsArticles } from "../../../news/hooks";
+import { useLoadNewsStory, useNewsArticles } from "../../../news/hooks";
 import type { NewsQueryPhase } from "../../../news/types";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import { Spinner, Tabs } from "../../../components";
@@ -43,7 +43,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("industry:sort", DEFAULT_SORT);
   const { articles, allArticles, phase } = useIndustryArticles(category);
   const loading = phase === "loading" || (phase === "refreshing" && articles.length === 0);
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
+  const loadNewsStory = useLoadNewsStory();
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };

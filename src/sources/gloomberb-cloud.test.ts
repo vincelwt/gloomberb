@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createGloomberbCloudCapabilities, GloomberbCloudProvider } from "./gloomberb-cloud";
 import type { NewsCapability } from "../capabilities";
-import { apiClient, type AuthUser } from "../utils/api-client";
+import { apiClient, type AuthUser, type CloudNewsPayload } from "../utils/api-client";
 
 const verifiedUser: AuthUser = {
   id: "user-1",
@@ -21,7 +21,55 @@ const originalGetCloudHolders = apiClient.getCloudHolders.bind(apiClient);
 const originalGetCloudAnalystResearch = apiClient.getCloudAnalystResearch.bind(apiClient);
 const originalGetCloudCorporateActions = apiClient.getCloudCorporateActions.bind(apiClient);
 const originalGetCloudNews = apiClient.getCloudNews.bind(apiClient);
+const originalGetCloudNewsStory = apiClient.getCloudNewsStory.bind(apiClient);
 const originalSubscribeQuotes = apiClient.subscribeQuotes.bind(apiClient);
+
+function makeCloudNewsPayload(overrides: Partial<CloudNewsPayload> = {}): CloudNewsPayload {
+  return {
+    id: "story-1",
+    headline: "Apple raises guidance",
+    summary: "Apple lifted its outlook after stronger iPhone demand.",
+    topic: "guidance",
+    topics: ["guidance"],
+    category: "guidance",
+    sentiment: "positive",
+    sectors: ["information_technology"],
+    firstPublishedAt: "2026-04-01T10:00:00.000Z",
+    lastPublishedAt: "2026-04-01T10:05:00.000Z",
+    firstSeenAt: "2026-04-01T10:00:10.000Z",
+    lastSeenAt: "2026-04-01T10:05:10.000Z",
+    primaryUrl: "https://example.com/aapl-guidance",
+    primarySource: "example-wire",
+    scores: {
+      importance: 91,
+      urgency: 74,
+      marketImpact: 88,
+      novelty: 86,
+      confidence: 95,
+    },
+    flags: {
+      breaking: true,
+      developing: false,
+      stale: false,
+    },
+    variantCount: 1,
+    sourceCount: 1,
+    sources: ["example-wire"],
+    entities: [],
+    tickerLinks: [{
+      symbol: "AAPL",
+      exchange: "XNAS",
+      canonicalTicker: "AAPL:XNAS",
+      relationType: "direct",
+      displayTier: "primary",
+      confidence: 0.98,
+      relevanceScore: 95,
+      impactScore: 93,
+      sentiment: "positive",
+    }],
+    ...overrides,
+  };
+}
 
 afterEach(() => {
   apiClient.ensureVerifiedSession = originalEnsureVerifiedSession;
@@ -31,6 +79,7 @@ afterEach(() => {
   apiClient.getCloudAnalystResearch = originalGetCloudAnalystResearch;
   apiClient.getCloudCorporateActions = originalGetCloudCorporateActions;
   apiClient.getCloudNews = originalGetCloudNews;
+  apiClient.getCloudNewsStory = originalGetCloudNewsStory;
   apiClient.subscribeQuotes = originalSubscribeQuotes;
 });
 
@@ -495,5 +544,41 @@ describe("GloomberbCloudProvider", () => {
       novelty: 71,
       confidence: 93,
     });
+  });
+
+  test("fetches story detail with ordered source items", async () => {
+    let requestedStoryId = "";
+    apiClient.getCloudNewsStory = async (storyId) => {
+      requestedStoryId = storyId;
+      return makeCloudNewsPayload({
+        id: storyId,
+        items: [{
+          id: "item-2",
+          sourceKey: "wire-b",
+          sourceName: "Wire B",
+          title: "Follow-up",
+          summary: "More details emerged.",
+          url: "https://example.com/follow-up",
+          publishedAt: "2026-04-01T10:05:00.000Z",
+          hasArticleText: true,
+        }, {
+          id: "item-1",
+          sourceKey: "wire-a",
+          sourceName: "Wire A",
+          title: "Original",
+          summary: "The first report.",
+          url: "https://example.com/original",
+          publishedAt: "2026-04-01T10:00:00.000Z",
+          hasArticleText: false,
+        }],
+      });
+    };
+
+    const source = createGloomberbCloudCapabilities().find((capability) => capability.kind === "news") as NewsCapability;
+    const story = await source.provider.fetchNewsStory?.("story-1");
+
+    expect(requestedStoryId).toBe("story-1");
+    expect(story?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
+    expect(story?.items?.[0]?.publishedAt).toEqual(new Date("2026-04-01T10:05:00.000Z"));
   });
 });

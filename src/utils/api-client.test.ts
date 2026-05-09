@@ -320,4 +320,36 @@ describe("apiClient cloud news", () => {
     expect(url.searchParams.get("cursor")).toBe("cursor-1");
     expect(result).toEqual({ items: [], nextCursor: null });
   });
+
+  test("fetches news story details from the story route", async () => {
+    let seenUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      seenUrl = String(input);
+      return createResponse({
+        id: "story-1",
+        headline: "Story headline",
+        summary: "Story summary",
+        category: "general",
+        sentiment: "neutral",
+        sectors: [],
+        firstPublishedAt: "2026-04-01T10:00:00.000Z",
+        lastPublishedAt: "2026-04-01T10:05:00.000Z",
+        firstSeenAt: "2026-04-01T10:00:10.000Z",
+        lastSeenAt: "2026-04-01T10:05:10.000Z",
+        primaryUrl: "https://example.com/story",
+        primarySource: "example-wire",
+        variantCount: 2,
+        sourceCount: 2,
+        sources: ["example-wire"],
+        entities: [],
+        tickerLinks: [],
+        items: [],
+      });
+    });
+
+    const story = await apiClient.getCloudNewsStory("story-1");
+
+    expect(new URL(seenUrl).pathname).toBe("/news/story-1");
+    expect(story.id).toBe("story-1");
+  });
 });

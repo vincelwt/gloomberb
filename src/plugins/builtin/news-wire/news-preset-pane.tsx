@@ -1,6 +1,6 @@
 import { Box } from "../../../ui";
 import type { NewsQuery } from "../../../news/types";
-import { useNewsArticles } from "../../../news/hooks";
+import { useLoadNewsStory, useNewsArticles } from "../../../news/hooks";
 import type { PaneProps } from "../../../types/plugin";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../plugin-runtime";
 import { Spinner } from "../../../components";
@@ -45,7 +45,8 @@ export function NewsPresetPane({
     `${paneKey}:sort`,
     defaultSort,
   );
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles);
+  const loadNewsStory = useLoadNewsStory();
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
 
   useNewsArticleFooter({

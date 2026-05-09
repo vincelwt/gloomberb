@@ -6,6 +6,7 @@ export interface NewsDataProvider {
   supports?(query: NewsQuery): boolean;
   getCachedNews?(query: NewsQuery): NewsArticle[];
   fetchNews(query: NewsQuery): Promise<NewsArticle[]>;
+  fetchNewsStory?(storyId: string): Promise<NewsArticle | null>;
 }
 
 export interface CapabilityRouteSource {
