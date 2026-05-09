@@ -2,6 +2,7 @@ import { createElement, useMemo, type SVGProps } from "react";
 import { Box, ChartSurface, Span, Text, TextAttributes, useNativeRenderer, useUiCapabilities, useUiHost } from "../ui";
 import { computeBitmapSize, type NativeChartBitmap } from "./chart/native/chart-rasterizer";
 import { colors } from "../theme/colors";
+import { useThemeColors } from "../theme/theme-context";
 
 export interface SpeedometerSegment {
   from: number;
@@ -542,6 +543,7 @@ export function SpeedometerGauge({
   maxWidth = DEFAULT_MAX_WIDTH,
   compact = false,
 }: SpeedometerGaugeProps) {
+  useThemeColors();
   const props = {
     value,
     valueLabel,

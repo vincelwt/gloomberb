@@ -93,6 +93,7 @@ async function boot() {
                 desktopWindowBridge={desktopWindowBridge}
                 desktopApplicationMenuBridge={desktopApplicationMenuBridge}
                 desktopSnapshot={desktopSnapshot}
+                desktopThemePreview={init.desktopThemePreview}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

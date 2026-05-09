@@ -43,6 +43,7 @@ import {
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
 import { colors } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
 import { FloatingPaneWrapper } from "./floating-pane";
@@ -782,6 +783,7 @@ function resolveExternalDockPreview(
 }
 
 export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview }: ShellProps) {
+  useThemeColors();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);

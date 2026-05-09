@@ -1,6 +1,7 @@
 import { memo, useCallback } from "react";
 import { PaneInstanceProvider } from "../../state/app-context";
 import { PaneKeyboardScrollController } from "../../state/pane-scroll-registry";
+import { useThemeColors } from "../../theme/theme-context";
 import type { PaneDef } from "../../types/plugin";
 
 interface PaneContentProps {
@@ -22,6 +23,7 @@ export const PaneContent = memo(function PaneContent({
   height,
   onClose,
 }: PaneContentProps) {
+  useThemeColors();
   const close = useCallback(() => {
     onClose?.(paneId);
   }, [onClose, paneId]);

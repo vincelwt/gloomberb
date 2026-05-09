@@ -7,6 +7,7 @@ import {
   type ContextMenuSelectMessage,
   type DesktopDockPreviewMessage,
   type DesktopStateMessage,
+  type DesktopThemePreviewMessage,
   type ElectrobunBackendInit,
   type ElectrobunDesktopRpcSchema,
   type UpdateProgressMessage,
@@ -17,6 +18,7 @@ type ContextMenuSelectListener = (message: ContextMenuSelectMessage) => void;
 type ApplicationMenuSelectListener = (message: ApplicationMenuSelectMessage) => void;
 type DesktopStateListener = (message: DesktopStateMessage) => void;
 type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
+type DesktopThemePreviewListener = (message: DesktopThemePreviewMessage) => void;
 type UpdateProgressListener = (message: UpdateProgressMessage) => void;
 type CapabilityEventListener = (message: CapabilityEventMessage) => void;
 
@@ -25,6 +27,7 @@ const contextMenuSelectListeners = new Map<string, Set<ContextMenuSelectListener
 const applicationMenuSelectListeners = new Set<ApplicationMenuSelectListener>();
 const desktopStateListeners = new Set<DesktopStateListener>();
 const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
+const desktopThemePreviewListeners = new Set<DesktopThemePreviewListener>();
 const updateProgressListeners = new Set<UpdateProgressListener>();
 const capabilityEventListeners = new Map<string, Set<CapabilityEventListener>>();
 
@@ -78,6 +81,11 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
       },
       "desktop.dockPreview": (message) => {
         for (const listener of desktopDockPreviewListeners) {
+          listener({ preview: decodeRpcValue(message.preview) });
+        }
+      },
+      "desktop.themePreview": (message) => {
+        for (const listener of desktopThemePreviewListeners) {
           listener({ preview: decodeRpcValue(message.preview) });
         }
       },
@@ -162,6 +170,13 @@ export function onDesktopDockPreview(listener: DesktopDockPreviewListener): () =
   desktopDockPreviewListeners.add(listener);
   return () => {
     desktopDockPreviewListeners.delete(listener);
+  };
+}
+
+export function onDesktopThemePreview(listener: DesktopThemePreviewListener): () => void {
+  desktopThemePreviewListeners.add(listener);
+  return () => {
+    desktopThemePreviewListeners.delete(listener);
   };
 }
 

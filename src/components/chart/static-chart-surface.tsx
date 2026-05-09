@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Box, ChartSurface, Text, useNativeRenderer, useUiCapabilities } from "../../ui";
+import { useThemeColors } from "../../theme/theme-context";
 import type { ProjectedChartPoint } from "./chart-data";
 import {
   buildChartScene,
@@ -45,6 +46,7 @@ export function StaticChartSurface({
   yAxisColor,
   formatYAxisValue,
 }: StaticChartSurfaceProps) {
+  useThemeColors();
   const {
     canvasCharts,
     nativeCharts,

@@ -1,5 +1,4 @@
 import type { AppAction } from "../../state/app-context";
-import { themes, getThemeIds } from "../../theme/themes";
 
 export type CommandExecutor = (dispatch: React.Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
 
@@ -238,15 +237,6 @@ export const commands: Command[] = [
     execute: () => {}, // handled by command bar (needs confirm dialog)
   },
 ];
-
-/** Get theme options for the command bar */
-export function getThemeOptions(): Array<{ id: string; name: string; description: string }> {
-  return getThemeIds().map((id) => ({
-    id,
-    name: themes[id]!.name,
-    description: themes[id]!.description,
-  }));
-}
 
 /** Find a command whose prefix matches the start of the input */
 export function matchPrefix(input: string, commandList: Command[] = commands): { command: Command; arg: string } | null {
