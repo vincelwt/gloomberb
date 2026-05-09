@@ -9,7 +9,7 @@ import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../.
 import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane-footer";
 import { PaneContent } from "./pane-content";
-import { getPaneBodyWidth } from "./pane-sizing";
+import { getPaneBodyWidth, NATIVE_PANE_BODY_LAYOUT_PROPS } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 import {
@@ -132,6 +132,9 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
         const bodyHeight = Math.max(1, height - headerHeightRows - footerHeightRows);
         const background = floatingPaneBg(focused);
         const titleBackground = floatingPaneTitleBg(focused);
+        const bodyLayoutProps = nativePaneChrome
+          ? NATIVE_PANE_BODY_LAYOUT_PROPS
+          : { height: bodyHeight };
 
         return (
           <Box
@@ -182,7 +185,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 )}
               </Box>
             </Box>
-            <Box height={bodyHeight} overflow="hidden" backgroundColor={background}>
+            <Box {...bodyLayoutProps} overflow="hidden" backgroundColor={background}>
               <PaneContent
                 component={paneDef.component}
                 paneId={instance.instanceId}

@@ -781,6 +781,8 @@ function ChannelSidebar({
     ? blendHex(colors.selected, colors.borderFocused, 0.32)
     : blendHex(colors.panel, colors.selected, 0.35);
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null);
+  const sidebarLayoutHeight = nativePaneChrome ? "100%" : height;
+  const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
   const sidebarBorder = borderWidth > 0
     ? (
       <Box width={1} height={height} flexDirection="column">
@@ -794,15 +796,17 @@ function ChannelSidebar({
   return (
     <Box
       width={width}
-      height={height}
+      height={sidebarLayoutHeight}
       flexDirection="row"
       position="relative"
+      style={nativeFillStyle}
     >
       <Box
         width={listWidth}
-        height={height}
+        height={sidebarLayoutHeight}
         flexDirection="column"
         backgroundColor={sidebarBg}
+        style={nativeFillStyle}
       >
         {channels.map((channel) => {
           const active = channel.id === activeChannelId;
@@ -853,7 +857,7 @@ function ChannelSidebar({
           top={0}
           right={0}
           width={1}
-          height={height}
+          height={sidebarLayoutHeight}
           style={{
             width: 1,
             height: "100%",
@@ -1532,9 +1536,17 @@ export function ChatContent({
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
     : undefined;
+  const chatLayoutHeight = nativePaneChrome ? "100%" : height;
+  const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
 
   return (
-    <Box flexDirection="row" width={width} height={height}>
+    <Box
+      flexDirection="row"
+      width={width}
+      height={chatLayoutHeight}
+      flexGrow={nativePaneChrome ? 1 : undefined}
+      style={nativeFillStyle}
+    >
       {showChannelSidebar && (
         <ChannelSidebar
           channels={channels}
@@ -1552,9 +1564,11 @@ export function ChatContent({
       <Box
         flexDirection="column"
         width={chatWidth}
-        height={height}
+        height={chatLayoutHeight}
+        flexGrow={nativePaneChrome ? 1 : undefined}
         backgroundColor={chatContentBg}
         onMouseDown={() => setSidebarFocused(false)}
+        style={nativeFillStyle}
       >
       {compactChannelHeaderHeight > 0 && (
         <Box height={1} width={contentWidth} flexDirection="row">

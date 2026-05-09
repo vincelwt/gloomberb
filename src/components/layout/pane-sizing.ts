@@ -2,6 +2,12 @@
 const PANE_HEADER_ROWS = 1;
 const PANE_FOOTER_ROWS = 1;
 
+export const NATIVE_PANE_BODY_LAYOUT_PROPS = {
+  flexGrow: 1,
+  flexBasis: 0,
+  minHeight: 0,
+} as const;
+
 export function shouldReservePaneFooter(nativePaneChrome: boolean | undefined, showFooter: boolean): boolean {
   return !nativePaneChrome || showFooter;
 }

@@ -120,6 +120,8 @@ body.gloom-dragging {
   pointer-events: auto;
 }
 [data-gloom-role="status-bar"] {
+  flex: 0 0 var(--cell-h);
+  height: var(--cell-h);
   min-height: var(--cell-h);
   max-height: var(--cell-h);
   align-items: center;
@@ -130,6 +132,8 @@ body.gloom-dragging {
   line-height: var(--cell-h);
 }
 [data-gloom-role="pane-footer"] {
+  flex: 0 0 var(--cell-h);
+  height: var(--cell-h);
   min-height: var(--cell-h);
   max-height: var(--cell-h);
   align-items: center;
