@@ -455,8 +455,6 @@ export interface GloomPluginContext {
   on<K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void): () => void;
   emit<K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]): void;
 
-  showWidget(widgetId: string): void;
-  hideWidget(widgetId: string): void;
   notify(notification: AppNotificationRequest): void;
 }
 

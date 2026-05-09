@@ -213,9 +213,9 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     getPluginPaneTemplateIds: () => [],
     hasPaneSettings,
     events: { emit: () => {} },
-    hideWidget: () => {},
+    hidePane: () => {},
     pinTicker: () => {},
-    showWidget: () => {},
+    showPane: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
     notify: () => {},
@@ -2613,7 +2613,15 @@ describe("CommandBar", () => {
   });
 
   test("matches the direct help command", async () => {
-    testSetup = await testRender(<CommandBarHarness query="help" />, {
+    const openedPanes: string[] = [];
+    testSetup = await testRender(<CommandBarHarness
+      query="help"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.showPane = (paneId: string) => {
+          openedPanes.push(paneId);
+        };
+      }}
+    />, {
       width: 80,
       height: 18,
     });
@@ -2623,6 +2631,13 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Help");
     expect(frame).toContain("Navigation");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    expect(openedPanes).toEqual(["help"]);
   });
 
   test("skips pane templates whose canCreate throws", async () => {

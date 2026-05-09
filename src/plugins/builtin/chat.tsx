@@ -903,7 +903,7 @@ export function ChatPane({ focused, width, height, close }: PaneProps) {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
-  const { showWidget } = usePluginAppActions();
+  const { showPane } = usePluginAppActions();
   const cloudPluginDisabled = useAppSelector((state) => state.config.disabledPlugins.includes("gloomberb-cloud"));
   const initialSnapshot = controller.getSnapshot();
   const [username, setUsername] = useState<string | null>(initialSnapshot.user?.username ?? null);
@@ -914,7 +914,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    showWidget("chat");
+    showPane("chat");
   };
 
   useEffect(() => {
@@ -1065,9 +1065,9 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       execute: () => {
         const registry = getSharedRegistry();
         if (registry?.isPaneFloating("chat")) {
-          ctx.hideWidget("chat");
+          ctx.hidePane("chat");
         } else {
-          ctx.showWidget("chat");
+          ctx.showPane("chat");
         }
       },
     });
@@ -1095,7 +1095,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         }
         chatController.clearSession();
         await chatController.refreshSession();
-        ctx.showWidget("chat");
+        ctx.showPane("chat");
       },
     });
 
@@ -1131,7 +1131,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         await apiClient.sendVerification();
         chatController.clearSession();
         await chatController.refreshSession();
-        ctx.showWidget("chat");
+        ctx.showPane("chat");
       },
     });
 

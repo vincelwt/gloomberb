@@ -80,7 +80,7 @@ export const ibkrBroker: BrokerAdapter = {
     return [{
       id: "ibkr-console",
       label: "IBKR Console",
-      widgetId: "ibkr-trading",
+      paneId: "ibkr-trading",
       disabled: normalized.connectionMode !== "gateway",
       disabledReason: "IBKR Console is available for Gateway / TWS profiles.",
     }];

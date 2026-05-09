@@ -32,9 +32,8 @@ import type {
 } from "../types/plugin";
 import type { ContextMenuContext, ContextMenuItem } from "../types/context-menu";
 import type { TickerRecord } from "../types/ticker";
-import { addPaneFloating, removePane } from "./pane-manager";
 import { EventBus, type PluginEvents } from "./event-bus";
-import { createPaneInstance, resolvePaneInstance } from "../types/config";
+import { resolvePaneInstance } from "../types/config";
 import { createPluginPersistence } from "./plugin-persistence";
 import { debugLog } from "../utils/debug-log";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "./plugin-runtime";
@@ -172,6 +171,12 @@ export class PluginRegistry implements PluginRuntimeAccess {
   };
   openPluginCommandWorkflow = (commandId: string) => {
     this.openPluginCommandWorkflowFn(commandId);
+  };
+  showPane = (paneId: string) => {
+    this.showPaneFn(paneId);
+  };
+  hidePane = (paneId: string) => {
+    this.hidePaneFn(paneId);
   };
 
   getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [], detached: [] });
@@ -528,41 +533,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
     }
   }
 
-  showWidget(paneId: string): void {
-    try {
-      const disabledPlugins = new Set(this.getConfigFn().disabledPlugins);
-      for (const [pluginId, items] of this.pluginItems) {
-        if (items.panes.includes(paneId) && disabledPlugins.has(pluginId)) {
-          return;
-        }
-      }
-    } catch {
-      return;
-    }
-
-    const layout = this.getLayoutFn();
-    const existingInstanceId = this.resolvePaneTarget(paneId);
-    if (existingInstanceId && layout.floating.some((entry) => entry.instanceId === existingInstanceId)) {
-      this.focusPaneFn(existingInstanceId);
-      return;
-    }
-
-    const def = this.panesMap.get(paneId);
-    const { width, height } = this.getTermSizeFn();
-    const instance = existingInstanceId
-      ? layout.instances.find((entry) => entry.instanceId === existingInstanceId)!
-      : createPaneInstance(paneId, { instanceId: `${paneId}:main` });
-    const nextLayout = addPaneFloating(layout, instance, width, height, def);
-    this.updateLayoutFn(nextLayout);
-    this.focusPaneFn(instance.instanceId);
-  }
-
-  hideWidget(paneId: string): void {
-    const target = this.resolvePaneTarget(paneId);
-    if (!target) return;
-    this.updateLayoutFn(removePane(this.getLayoutFn(), target));
-  }
-
   private createContext(pluginId: string): GloomPluginContext {
     const items = this.getOrCreatePluginItems(pluginId);
 
@@ -716,8 +686,6 @@ export class PluginRegistry implements PluginRuntimeAccess {
       },
       emit: (event, payload) => this.events.emit(event, payload),
 
-      showWidget: (widgetId) => this.showWidget(widgetId),
-      hideWidget: (widgetId) => this.hideWidget(widgetId),
       notify: (notification) => this.notifyFn(notification),
     };
   }

@@ -144,7 +144,7 @@ describe("HelpPane", () => {
     const calls: string[] = [];
     const runtime = createTestPluginRuntime({
       openCommandBar: (query?: string) => calls.push(`command:${query ?? ""}`),
-      showWidget: (paneId: string) => calls.push(`widget:${paneId}`),
+      showPane: (paneId: string) => calls.push(`pane:${paneId}`),
     });
 
     await renderHelpPane(runtime);
@@ -161,6 +161,6 @@ describe("HelpPane", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(calls).toEqual(["widget:debug"]);
+    expect(calls).toEqual(["pane:debug"]);
   });
 });

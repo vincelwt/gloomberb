@@ -199,11 +199,11 @@ describe("plugin runtime hooks", () => {
       openCommandBar(query?: string) {
         calls.push(`command:${query ?? ""}`);
       },
-      showWidget(widgetId: string) {
-        calls.push(`show:${widgetId}`);
+      showPane(paneId: string) {
+        calls.push(`show:${paneId}`);
       },
-      hideWidget(widgetId: string) {
-        calls.push(`hide:${widgetId}`);
+      hidePane(paneId: string) {
+        calls.push(`hide:${paneId}`);
       },
       openPluginCommandWorkflow(commandId: string) {
         calls.push(`workflow:${commandId}`);
@@ -230,8 +230,8 @@ describe("plugin runtime hooks", () => {
     });
 
     actions?.openCommandBar("PL ");
-    actions?.showWidget("debug");
-    actions?.hideWidget("chat");
+    actions?.showPane("debug");
+    actions?.hidePane("chat");
     actions?.openPluginCommandWorkflow("set-alert");
     actions?.notify({ body: "Saved", type: "success" });
 

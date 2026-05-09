@@ -76,7 +76,7 @@ function createShellPluginRegistry(options?: {
     openPaneSettingsFn: () => {},
     openCommandBar: () => {},
     updateLayoutFn: () => {},
-    hideWidget: () => {},
+    hidePane: () => {},
   } as unknown as PluginRegistry;
 }
 
@@ -114,7 +114,7 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
     openPaneSettingsFn: () => {},
     openCommandBar: () => {},
     updateLayoutFn: () => {},
-    hideWidget: () => {},
+    hidePane: () => {},
     focusPaneFn: () => {},
     pinTicker: () => {},
     navigateTicker: () => {},

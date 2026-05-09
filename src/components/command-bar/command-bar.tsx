@@ -1285,7 +1285,7 @@ export function CommandBar({
           : disabledPlugins.filter((entry) => entry !== plugin.id);
         if (enabled) {
           for (const paneId of pluginRegistry.getPluginPaneIds(plugin.id)) {
-            pluginRegistry.hideWidget(paneId);
+            pluginRegistry.hidePane(paneId);
           }
         }
         void saveConfig({ ...state.config, disabledPlugins: nextDisabled });
@@ -2759,7 +2759,7 @@ export function CommandBar({
     switch (command.id) {
       case "help":
         closeAll({ revertThemePreview: false });
-        pluginRegistry.showWidget("help");
+        pluginRegistry.showPane("help");
         return;
       case "pane-settings":
         if (state.focusedPaneId) openPaneSettingsRoute(state.focusedPaneId);

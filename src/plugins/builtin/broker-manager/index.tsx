@@ -202,7 +202,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   const config = useAppSelector((state) => state.config);
   const brokerAccounts = useAppSelector((state) => state.brokerAccounts);
   const dialog = useDialog();
-  const { openCommandBar, showWidget } = usePluginAppActions();
+  const { openCommandBar, showPane } = usePluginAppActions();
   const {
     getBrokerAdapter,
     connectBrokerInstance,
@@ -363,8 +363,8 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
       setMessage(action.disabledReason ?? `${action.label} is unavailable for this profile.`);
       return;
     }
-    if (action.widgetId) showWidget(action.widgetId);
-  }, [primaryProfileAction, showWidget]);
+    if (action.paneId) showPane(action.paneId);
+  }, [primaryProfileAction, showPane]);
 
   const removeSelected = useCallback(async () => {
     if (!selectedRow) return;
@@ -392,7 +392,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   const hasSelectedRow = selectedRow !== null;
   const selectedHasAdapter = !!selectedRow?.adapter;
   const canUseSelectedBroker = selectedHasAdapter && !busy;
-  const canOpenSelectedAction = selectedProfileActions.some((action) => !action.disabled && action.widgetId);
+  const canOpenSelectedAction = selectedProfileActions.some((action) => !action.disabled && action.paneId);
   const canRemoveSelected = hasSelectedRow && !busy;
 
   const footerActionsRef = useRef({
@@ -752,7 +752,7 @@ export const brokerManagerPlugin: GloomPlugin = {
       keywords: ["broker", "brokers", "connection", "accounts", "sync"],
       category: "navigation",
       execute: () => {
-        ctx.showWidget("brokers");
+        ctx.showPane("brokers");
       },
     });
   },

@@ -340,7 +340,7 @@ export const debugPlugin: GloomPlugin = {
       keywords: ["debug", "log", "logs", "console", "errors"],
       category: "navigation",
       execute: () => {
-        ctx.showWidget("debug");
+        ctx.showPane("debug");
       },
     });
 

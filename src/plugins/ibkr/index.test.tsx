@@ -110,8 +110,6 @@ function setupIbkrPlugin(config: AppConfig) {
     pinTicker: () => {},
     on: () => () => {},
     emit: () => {},
-    showWidget: () => {},
-    hideWidget: () => {},
     notify: ({ body }: { body: string }) => { toasts.push(body); },
   } satisfies GloomPluginContext;
 

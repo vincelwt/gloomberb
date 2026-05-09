@@ -65,7 +65,7 @@ function Harness({
   const runtime = createTestPluginRuntime({
     getBrokerAdapter: (brokerType) => brokerType === "ibkr" ? ibkrBroker : null,
     openCommandBar: (query) => calls.push(`command:${query ?? ""}`),
-    showWidget: (paneId) => calls.push(`widget:${paneId}`),
+    showPane: (paneId) => calls.push(`pane:${paneId}`),
     connectBrokerInstance: async (instanceId) => { calls.push(`connect:${instanceId}`); },
     syncBrokerInstance: async (instanceId) => { calls.push(`sync:${instanceId}`); },
     updateBrokerInstance: async (instanceId) => { calls.push(`update:${instanceId}`); },
@@ -163,6 +163,6 @@ describe("BrokersPane", () => {
     await pressKey("s");
     await pressKey("o");
 
-    expect(calls).toEqual(["connect:ibkr-paper", "sync:ibkr-paper", "widget:ibkr-trading"]);
+    expect(calls).toEqual(["connect:ibkr-paper", "sync:ibkr-paper", "pane:ibkr-trading"]);
   });
 });

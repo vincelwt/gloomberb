@@ -67,7 +67,7 @@ export interface BrokerConnectionStatus {
 export interface BrokerProfileAction {
   id: string;
   label: string;
-  widgetId?: string;
+  paneId?: string;
   disabled?: boolean;
   disabledReason?: string;
 }

@@ -1431,13 +1431,13 @@ describe("ChatContent", () => {
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
     });
-    const openedWidgets: string[] = [];
+    const openedPanes: string[] = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
     state.config.disabledPlugins = [];
 
     const runtime = createTestPluginRuntime({
-      showWidget(paneId: string) {
-        openedWidgets.push(paneId);
+      showPane(paneId: string) {
+        openedPanes.push(paneId);
       },
     });
 
@@ -1480,7 +1480,7 @@ describe("ChatContent", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(openedWidgets).toEqual(["chat"]);
+    expect(openedPanes).toEqual(["chat"]);
   });
 
   test("auth commands use a single-form layout and signup no longer prompts for display name", () => {
@@ -1500,8 +1500,8 @@ describe("ChatContent", () => {
       registerCommand: (command: { id: string; wizardLayout?: string; wizard?: Array<{ key: string }> }) => {
         registeredCommands.push(command);
       },
-      showWidget: () => {},
-      hideWidget: () => {},
+      showPane: () => {},
+      hidePane: () => {},
       notify: () => {},
     } as any);
 

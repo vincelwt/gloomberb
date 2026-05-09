@@ -211,7 +211,7 @@ function resolvePluginShortcuts(registry: ReturnType<typeof getSharedRegistry>):
 
 export function HelpPane({ width, height }: PaneProps) {
   const registry = getSharedRegistry();
-  const { openCommandBar, showWidget } = usePluginAppActions();
+  const { openCommandBar, showPane } = usePluginAppActions();
   const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
@@ -232,7 +232,7 @@ export function HelpPane({ width, height }: PaneProps) {
     : [platformShortcut("V")];
 
   const openDebugLog = () => {
-    showWidget("debug");
+    showPane("debug");
   };
 
   const openLayoutActions = () => {

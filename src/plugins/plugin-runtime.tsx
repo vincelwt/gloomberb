@@ -35,8 +35,8 @@ export interface PluginRuntimeAccess {
   switchTab(tabId: string, paneId?: string): void;
   switchPanel(panel: "left" | "right"): void;
   openCommandBar(query?: string): void;
-  showWidget(widgetId: string): void;
-  hideWidget(widgetId: string): void;
+  showPane(paneId: string): void;
+  hidePane(paneId: string): void;
   openPluginCommandWorkflow(commandId: string): void;
   notify(notification: AppNotificationRequest): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
@@ -114,11 +114,11 @@ export function usePluginAppActions() {
   const openCommandBar = useCallback((query?: string) => {
     runtime.openCommandBar(query);
   }, [runtime]);
-  const showWidget = useCallback((widgetId: string) => {
-    runtime.showWidget(widgetId);
+  const showPane = useCallback((paneId: string) => {
+    runtime.showPane(paneId);
   }, [runtime]);
-  const hideWidget = useCallback((widgetId: string) => {
-    runtime.hideWidget(widgetId);
+  const hidePane = useCallback((paneId: string) => {
+    runtime.hidePane(paneId);
   }, [runtime]);
   const openPluginCommandWorkflow = useCallback((commandId: string) => {
     runtime.openPluginCommandWorkflow(commandId);
@@ -129,8 +129,8 @@ export function usePluginAppActions() {
 
   return {
     openCommandBar,
-    showWidget,
-    hideWidget,
+    showPane,
+    hidePane,
     openPluginCommandWorkflow,
     notify,
   };
