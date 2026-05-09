@@ -1,6 +1,6 @@
 import { Box, SpinnerMark, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { useEffect, type ReactNode } from "react";
-import { colors, priceColor } from "../../theme/colors";
+import { blendHex, colors, priceColor } from "../../theme/colors";
 import { useAppActive } from "../../state/app-activity";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import {
@@ -23,8 +23,8 @@ const UPDATE_NOTICE_DURATION_MS = 5_000;
 
 function DesktopHeaderPill({
   children,
-  backgroundColor = "rgba(8, 12, 15, 0.34)",
-  borderColor = "rgba(132, 145, 161, 0.22)",
+  backgroundColor = blendHex(colors.header, colors.bg, 0.28),
+  borderColor = blendHex(colors.border, colors.headerText, 0.22),
 }: {
   children: ReactNode;
   backgroundColor?: string;
@@ -173,8 +173,8 @@ export function Header() {
             Gloomberb
           </Text>
           <DesktopHeaderPill
-            backgroundColor="rgba(84, 201, 159, 0.12)"
-            borderColor="rgba(84, 201, 159, 0.28)"
+            backgroundColor={blendHex(colors.header, colors.headerText, 0.1)}
+            borderColor={blendHex(colors.border, colors.headerText, 0.28)}
           >
             <Text fg={colors.headerText} style={{ fontSize: 11 }}>v{VERSION}</Text>
           </DesktopHeaderPill>
@@ -184,8 +184,11 @@ export function Header() {
         </Box>
         {mktLabel ? (
           <Box paddingRight={1}>
-            <DesktopHeaderPill borderColor="rgba(132, 145, 161, 0.18)">
-              <Text fg={mktColor}>{mktLabel}</Text>
+            <DesktopHeaderPill
+              backgroundColor={blendHex(colors.header, mktColor, 0.12)}
+              borderColor={blendHex(colors.border, mktColor, 0.3)}
+            >
+              <Text fg={mktColor} style={{ fontSize: 11, fontWeight: 700 }}>{mktLabel}</Text>
             </DesktopHeaderPill>
           </Box>
         ) : null}
