@@ -54,7 +54,6 @@ export interface ChatMessage {
 export interface ChatChannel {
   id: string;
   name: string;
-  description: string | null;
   created_at: string;
 }
 
@@ -467,7 +466,7 @@ class GloomApiClient {
     throw new Error(message);
   }
 
-  private extractSessionCookie(res: Response): void {
+  private extractSessionCookie(res: CloudApiResponse): void {
     const setCookie = res.headers.getSetCookie?.() ?? [];
     const fallbackHeader = res.headers.get("set-cookie");
     if (fallbackHeader) {

@@ -98,13 +98,19 @@ export interface ScrollBoxRenderable {
   scrollTop: number;
   scrollLeft?: number;
   scrollHeight: number;
+  scrollTopPx?: number;
+  scrollLeftPx?: number;
+  scrollHeightPx?: number;
+  scrollWidthPx?: number;
   viewport?: { width: number; height: number };
+  viewportPx?: { width: number; height: number };
   visible?: boolean;
   parent?: unknown;
   getBoundingClientRect?: () => { x: number; y: number; width: number; height: number };
   horizontalScrollBar?: { visible: boolean };
   verticalScrollBar?: { visible: boolean };
   scrollTo(target: number | { x?: number; y?: number }, y?: number): void;
+  scrollToPixels?(target: number | { x?: number; y?: number }, y?: number): void;
 }
 
 export interface InputRenderable {

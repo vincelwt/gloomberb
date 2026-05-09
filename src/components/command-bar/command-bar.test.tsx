@@ -8,6 +8,7 @@ import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/co
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
+import type { PaneTemplateCreateOptions } from "../../types/plugin";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -161,7 +162,7 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         paneId: "chat",
         label: "New Chat Pane",
         description: "Open another floating chat window",
-        shortcut: { prefix: "CHAT" },
+        shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text" },
       }],
       ["quote-monitor-pane", {
         id: "quote-monitor-pane",
@@ -272,6 +273,7 @@ function CommandBarHarness({
     ...createInitialState(config),
     commandBarOpen: true,
     commandBarQuery: query,
+    focusedPaneId: "portfolio-list:main",
     tickers: new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker])),
     config: { ...config, disabledPlugins },
     paneState: selectedTicker
@@ -333,7 +335,7 @@ describe("CommandBar", () => {
   });
 
   test("runs check for updates from the command bar", async () => {
-    const calls = [];
+    const calls: number[] = [];
 
     testSetup = await testRender(<CommandBarHarness query="check for updates" live onCheckForUpdates={() => { calls.push(Date.now()); }} />, {
       width: 80,
@@ -956,7 +958,7 @@ describe("CommandBar", () => {
   });
 
   test("typing a shorthand and pressing enter executes the inferred quote monitor shortcut", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query=""
@@ -987,6 +989,39 @@ describe("CommandBar", () => {
         arg: "AAPL",
         symbol: "AAPL",
         ticker: makeTicker("AAPL", "Apple Inc."),
+      },
+    }]);
+  });
+
+  test("typing a chat channel shortcut opens that channel directly", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query=""
+      live
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("CHAT help");
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{
+      templateId: "new-chat-pane",
+      options: {
+        arg: "help",
       },
     }]);
   });
@@ -1904,7 +1939,7 @@ describe("CommandBar", () => {
   });
 
   test("does not treat no-argument shortcut prefixes as typed pane names", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="Top News"
@@ -2090,7 +2125,7 @@ describe("CommandBar", () => {
   });
 
   test("QQ MSFT executes directly without opening a secondary workflow", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="QQ MSFT"
@@ -2123,7 +2158,7 @@ describe("CommandBar", () => {
   });
 
   test("CMP AAPL,MSFT creates the comparison chart directly", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="CMP AAPL,MSFT"
@@ -2202,7 +2237,7 @@ describe("CommandBar", () => {
   });
 
   test("CMP with one resolved ticker opens inline completion instead of creating a one-symbol chart", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="CMP AMD"
@@ -2246,7 +2281,7 @@ describe("CommandBar", () => {
   });
 
   test("AI <prompt> opens the inline workflow and prefills the textarea prompt", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="AI quality compounders"
@@ -2302,7 +2337,7 @@ describe("CommandBar", () => {
   });
 
   test("submits typed AI screener prompts from the textarea field", async () => {
-    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(<CommandBarHarness
       query="AI"
@@ -2749,7 +2784,7 @@ describe("CommandBar", () => {
         query="auth login"
         live
         configurePluginRegistry={(pluginRegistry) => {
-          pluginRegistry.commands.set("auth-login", {
+          (pluginRegistry.commands as Map<string, any>).set("auth-login", {
             id: "auth-login",
             label: "Auth Login",
             description: "Log in to your account",
@@ -2789,7 +2824,7 @@ describe("CommandBar", () => {
         query="workspace"
         live
         configurePluginRegistry={(pluginRegistry) => {
-          pluginRegistry.commands.set("new-workspace", {
+          (pluginRegistry.commands as Map<string, any>).set("new-workspace", {
             id: "new-workspace",
             label: "Workspace",
             description: "Create a workspace",
@@ -2799,7 +2834,7 @@ describe("CommandBar", () => {
             wizard: [
               { key: "name", label: "Name", type: "text", placeholder: "Research" },
             ],
-            execute: async (values) => {
+            execute: async (values?: Record<string, string>) => {
               submitted.push(values);
             },
           } as any);
