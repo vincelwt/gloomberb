@@ -1,5 +1,5 @@
 import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, type SetStateAction } from "react";
 import { useShortcut } from "../../../react/input";
 import { TextAttributes } from "../../../ui";
 import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../ui";
@@ -33,7 +33,22 @@ const chatHistories = new Map<string, ChatMessage[]>();
 export { __setDetectedProvidersForTests };
 export type { AiProvider };
 
+function sameMessages(left: readonly ChatMessage[], right: readonly ChatMessage[]): boolean {
+  return left.length === right.length && left.every((message, index) => {
+    const other = right[index];
+    if (!other) return false;
+    return message.role === other.role
+      && message.content === other.content
+      && message.loading === other.loading;
+  });
+}
+
+function historyKeyFor(providerId: string, symbol: string): string {
+  return `conversation:${providerId}:${symbol}`;
+}
+
 export function __setAskAiHistoryForTests(symbol: string, messages: ChatMessage[]): void {
+  chatHistories.set(historyKeyFor("claude", symbol), messages);
   chatHistories.set(symbol, messages);
 }
 
@@ -58,7 +73,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   const [providers] = useState(() => detectProviders());
   const defaultProviderId = resolveDefaultAiProviderId(providers);
   const [providerId, setProviderId] = usePluginState<string>("providerId", defaultProviderId);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversationMessagesByKey, setConversationMessagesByKey] = useState<Record<string, ChatMessage[]>>({});
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<TextareaRenderable>(null);
@@ -73,6 +88,18 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
   const conversationKey = tickerSymbol && currentProvider
     ? `conversation:${currentProvider.id}:${tickerSymbol}`
     : "__conversation:none__";
+  const historyKey = tickerSymbol && currentProvider ? historyKeyFor(currentProvider.id, tickerSymbol) : null;
+  const messages = conversationMessagesByKey[conversationKey] ?? [];
+  const setMessages = useCallback((nextValue: SetStateAction<ChatMessage[]>) => {
+    setConversationMessagesByKey((previous) => {
+      const previousMessages = previous[conversationKey] ?? [];
+      const nextMessages = typeof nextValue === "function"
+        ? (nextValue as (value: ChatMessage[]) => ChatMessage[])(previousMessages)
+        : nextValue;
+      if (sameMessages(previousMessages, nextMessages)) return previous;
+      return { ...previous, [conversationKey]: nextMessages };
+    });
+  }, [conversationKey]);
   const [persistedConversation, setPersistedConversation] = usePluginState<PersistedConversation | null>(
     conversationKey,
     null,
@@ -81,36 +108,39 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
 
   useEffect(() => {
     if (!tickerSymbol) {
-      setMessages((previous) => (previous.length === 0 ? previous : []));
+      setConversationMessagesByKey((previous) => {
+        const previousMessages = previous[conversationKey] ?? [];
+        return previousMessages.length === 0 ? previous : { ...previous, [conversationKey]: [] };
+      });
       return;
     }
 
-    if (persistedConversation && Date.now() - persistedConversation.updatedAt <= ASK_AI_RETENTION_MS) {
-      chatHistories.set(tickerSymbol, persistedConversation.messages);
+    if (historyKey && persistedConversation && Date.now() - persistedConversation.updatedAt <= ASK_AI_RETENTION_MS) {
+      chatHistories.set(historyKey, persistedConversation.messages);
     }
 
-    const nextMessages = chatHistories.get(tickerSymbol) ?? [];
-    setMessages((previous) => (
-      previous.length === nextMessages.length && previous.every((message, index) => message === nextMessages[index])
-        ? previous
-        : nextMessages
-    ));
-  }, [persistedConversation, tickerSymbol]);
+    const nextMessages = (historyKey ? chatHistories.get(historyKey) : null) ?? chatHistories.get(tickerSymbol) ?? [];
+    setConversationMessagesByKey((previous) => {
+      const previousMessages = previous[conversationKey] ?? [];
+      return sameMessages(previousMessages, nextMessages) ? previous : { ...previous, [conversationKey]: nextMessages };
+    });
+  }, [conversationKey, historyKey, persistedConversation, tickerSymbol]);
 
   useEffect(() => {
-    if (!tickerSymbol || !currentProvider || messages.length === 0) return;
+    if (!tickerSymbol || !currentProvider || !historyKey || messages.length === 0) return;
     const hasLoading = messages.some((message) => message.loading);
     if (hasLoading) {
-      chatHistories.set(tickerSymbol, messages);
+      chatHistories.set(historyKey, messages);
       return;
     }
     const trimmed = messages.slice(-ASK_AI_HISTORY_LIMIT);
-    chatHistories.set(tickerSymbol, trimmed);
+    chatHistories.set(historyKey, trimmed);
+    if (persistedConversation && sameMessages(persistedConversation.messages, trimmed)) return;
     setPersistedConversation({
       updatedAt: Date.now(),
       messages: trimmed,
     });
-  }, [currentProvider, messages, setPersistedConversation, tickerSymbol]);
+  }, [currentProvider, historyKey, messages, persistedConversation, setPersistedConversation, tickerSymbol]);
 
   useEffect(() => {
     const sb = scrollRef.current;

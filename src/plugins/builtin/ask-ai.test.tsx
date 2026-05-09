@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useReducer } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
-import { AppContext, PaneInstanceProvider, createInitialState } from "../../state/app-context";
+import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../state/app-context";
 import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../types/config";
 import { Box } from "../../ui";
@@ -257,5 +257,92 @@ describe("AskAiTab", () => {
     });
 
     expect(opened).toEqual(["AAPL"]);
+  });
+
+  test("does not persist previous ticker messages while hydrating a newly selected ticker", async () => {
+    setProviders([
+      { id: "claude", name: "Claude", command: "claude", available: true, buildArgs: () => [] },
+    ]);
+
+    const runtime = createStatefulTestPluginRuntime();
+    runtime.setResumeState("ai", "conversation:claude:AAPL", {
+      updatedAt: Date.now(),
+      messages: [
+        { role: "user", content: "AAPL question" },
+        { role: "assistant", content: "AAPL answer", loading: false },
+      ],
+    }, 1);
+    runtime.setResumeState("ai", "conversation:claude:MSFT", {
+      updatedAt: Date.now(),
+      messages: [
+        { role: "user", content: "MSFT question" },
+        { role: "assistant", content: "MSFT answer", loading: false },
+      ],
+    }, 1);
+
+    let selectSymbol: ((symbol: string) => void) | null = null;
+
+    const config = createDefaultConfig("/tmp/gloomberb-ai-navigation");
+    const initialState = createInitialState(config);
+    initialState.focusedPaneId = PANE_ID;
+    initialState.paneState["portfolio-list:main"] = {
+      ...initialState.paneState["portfolio-list:main"],
+      cursorSymbol: "AAPL",
+    };
+    initialState.tickers = new Map([
+      ["AAPL", makeTicker("AAPL", "Apple Inc.")],
+      ["MSFT", makeTicker("MSFT", "Microsoft Corporation")],
+    ]);
+
+    function NavigableAskAiHarness() {
+      const [state, dispatch] = useReducer(appReducer, initialState);
+      selectSymbol = (symbol) => {
+        dispatch({
+          type: "UPDATE_PANE_STATE",
+          paneId: "portfolio-list:main",
+          patch: { cursorSymbol: symbol },
+        });
+      };
+
+      return (
+        <AppContext value={{ state, dispatch }}>
+          <PaneInstanceProvider paneId={PANE_ID}>
+            <PluginRenderProvider pluginId="ai" runtime={runtime}>
+              <PaneFooterProvider>
+                {(footer) => (
+                  <Box flexDirection="column" width={60} height={12}>
+                    <AskAiTab width={60} height={11} focused onCapture={() => {}} />
+                    <PaneFooterBar footer={footer} focused width={60} />
+                  </Box>
+                )}
+              </PaneFooterProvider>
+            </PluginRenderProvider>
+          </PaneInstanceProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<NavigableAskAiHarness />, {
+        width: 60,
+        height: 12,
+      });
+    });
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("AAPL answer");
+
+    await act(() => {
+      selectSymbol?.("MSFT");
+    });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("MSFT answer");
+    expect(frame).not.toContain("AAPL answer");
+    expect((runtime.getResumeState("ai", "conversation:claude:MSFT") as any)?.messages).toEqual([
+      { role: "user", content: "MSFT question" },
+      { role: "assistant", content: "MSFT answer", loading: false },
+    ]);
   });
 });
