@@ -92,6 +92,18 @@ export interface QuoteSubscriptionTarget {
   route?: "auto" | "provider" | "broker";
 }
 
+export interface QuoteBatchResult {
+  target: QuoteSubscriptionTarget;
+  quote: Quote | null;
+  error?: unknown;
+}
+
+export interface TickerFinancialsBatchResult {
+  target: CachedFinancialsTarget;
+  financials: TickerFinancials | null;
+  error?: unknown;
+}
+
 export interface AssetDataProvider {
   readonly id: string;
   readonly name: string;
@@ -99,7 +111,9 @@ export interface AssetDataProvider {
   readonly cachePolicy?: CachePolicyMap;
 
   canProvide?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<boolean> | boolean;
-  getCachedFinancialsForTargets?(targets: CachedFinancialsTarget[], options?: { allowExpired?: boolean }): Map<string, TickerFinancials>;
+  getCachedFinancialsForTargets?(targets: CachedFinancialsTarget[], options?: { allowExpired?: boolean }): Map<string, TickerFinancials> | Promise<Map<string, TickerFinancials>>;
+  getQuotesBatch?(targets: QuoteSubscriptionTarget[], options?: { forceRefresh?: boolean }): Promise<QuoteBatchResult[]>;
+  getTickerFinancialsBatch?(targets: CachedFinancialsTarget[], options?: { forceRefresh?: boolean }): Promise<TickerFinancialsBatchResult[]>;
   getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials>;
   getQuote(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<Quote>;
   getExchangeRate(fromCurrency: string): Promise<number>;

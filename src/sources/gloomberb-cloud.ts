@@ -5,15 +5,24 @@ import {
   type ManualChartResolution,
 } from "../components/chart/chart-resolution";
 import { assetDataProvider, newsProvider, type PluginCapability } from "../capabilities";
-import type { AssetDataProvider, MarketDataRequestContext, NewsItem, QuoteSubscriptionTarget, SearchRequestContext, SecFilingItem } from "../types/data-provider";
+import type {
+  AssetDataProvider,
+  CachedFinancialsTarget,
+  MarketDataRequestContext,
+  NewsItem,
+  QuoteBatchResult,
+  QuoteSubscriptionTarget,
+  SearchRequestContext,
+  SecFilingItem,
+  TickerFinancialsBatchResult,
+} from "../types/data-provider";
 import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
 import {
   apiClient,
   type CloudAnalystResearchPayload,
-  type CloudCompanyProfile,
   type CloudCorporateActionsPayload,
-  type CloudFundamentals,
+  type CloudMarketBatchItem,
   type CloudHoldersPayload,
   type CloudMarketResponse,
   type CloudNewsPayload,
@@ -101,6 +110,34 @@ function mapPricePoint(point: CloudPricePointPayload, divisor = 1): PricePoint {
     close: normalizePriceValueByDivisor(point.close, divisor) ?? point.close,
     volume: point.volume,
   };
+}
+
+function mapCloudFinancials(financials: TickerFinancials): TickerFinancials {
+  const quote = financials.quote ? mapQuote(financials.quote as CloudQuotePayload) : undefined;
+  const divisor = quote ? resolveCurrencyUnit(quote.currency).divisor : 1;
+  return {
+    quote,
+    quoteContributions: financials.quoteContributions,
+    profile: financials.profile,
+    fundamentals: financials.fundamentals,
+    annualStatements: financials.annualStatements ?? [],
+    quarterlyStatements: financials.quarterlyStatements ?? [],
+    priceHistory: (financials.priceHistory ?? []).map((point) =>
+      point.date instanceof Date
+        ? point
+        : mapPricePoint(point as unknown as CloudPricePointPayload, divisor)
+    ),
+  };
+}
+
+function mapBatchError<T>(
+  item: CloudMarketBatchItem<T>,
+  fallbackMessage: string,
+): Error {
+  if (isEmptyCloudStatus(item.status)) {
+    return createProviderMiss(item.reasonCode ?? fallbackMessage);
+  }
+  return new Error(item.reasonCode ?? fallbackMessage);
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -358,25 +395,43 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
     await requireVerifiedSession();
     return withCloudFallback(async () => {
-      const [quoteResponse, profileResponse, fundamentalsResponse, statementsResponse] = await Promise.all([
-        apiClient.getCloudQuote(ticker, exchange),
-        apiClient.getCloudProfile(ticker, exchange),
-        apiClient.getCloudFundamentals(ticker, exchange),
-        apiClient.getCloudStatements(ticker, exchange, "both"),
-      ]);
-      const quote = mapQuote(unwrapRequiredCloudResponse(quoteResponse, `Cloud quote is unavailable for ${ticker}`));
-      const profile = unwrapOptionalCloudResponse(profileResponse) as CloudCompanyProfile | null;
-      const fundamentals = unwrapOptionalCloudResponse(fundamentalsResponse) as CloudFundamentals | null;
-      const statements = unwrapOptionalCloudResponse(statementsResponse);
-      return {
-        quote,
-        profile: profile ?? undefined,
-        fundamentals: fundamentals ?? undefined,
-        annualStatements: statements?.annualStatements ?? [],
-        quarterlyStatements: statements?.quarterlyStatements ?? [],
-        priceHistory: [],
-      };
+      const response = await apiClient.getCloudFinancials(ticker, exchange);
+      return mapCloudFinancials(unwrapRequiredCloudResponse(response, `Cloud financials are unavailable for ${ticker}`));
     }, `Cloud financials are unavailable for ${ticker}`);
+  }
+
+  async getTickerFinancialsBatch(
+    targets: CachedFinancialsTarget[],
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<TickerFinancialsBatchResult[]> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudFinancialsBatch(
+        targets.map((target) => ({
+          symbol: target.symbol,
+          exchange: target.exchange,
+        })),
+        options.forceRefresh ? "refresh" : "cache-first",
+      );
+      const payload = unwrapRequiredCloudResponse(response, "Cloud financials are unavailable");
+      return payload.items.map((item, index) => {
+        const target = targets[index] ?? {
+          symbol: item.symbol,
+          exchange: item.exchange,
+        };
+        if ((item.status === "success" || item.status === "partial") && item.data) {
+          return {
+            target,
+            financials: mapCloudFinancials(item.data),
+          };
+        }
+        return {
+          target,
+          financials: null,
+          error: mapBatchError(item, `Cloud financials are unavailable for ${target.symbol}`),
+        };
+      });
+    }, "Cloud financials are unavailable");
   }
 
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
@@ -388,6 +443,40 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       )),
       `Cloud quotes are unavailable for ${ticker}`,
     );
+  }
+
+  async getQuotesBatch(
+    targets: QuoteSubscriptionTarget[],
+    options: { forceRefresh?: boolean } = {},
+  ): Promise<QuoteBatchResult[]> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudQuotesBatch(
+        targets.map((target) => ({
+          symbol: target.symbol,
+          exchange: target.exchange,
+        })),
+        options.forceRefresh ? "refresh" : "cache-first",
+      );
+      const payload = unwrapRequiredCloudResponse(response, "Cloud quotes are unavailable");
+      return payload.items.map((item, index) => {
+        const target = targets[index] ?? {
+          symbol: item.symbol,
+          exchange: item.exchange,
+        };
+        if ((item.status === "success" || item.status === "partial") && item.data) {
+          return {
+            target,
+            quote: mapQuote(item.data),
+          };
+        }
+        return {
+          target,
+          quote: null,
+          error: mapBatchError(item, `Cloud quotes are unavailable for ${target.symbol}`),
+        };
+      });
+    }, "Cloud quotes are unavailable");
   }
 
   async getExchangeRate(fromCurrency: string): Promise<number> {

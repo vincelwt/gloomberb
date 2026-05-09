@@ -26,6 +26,8 @@ export function assetDataProvider(provider: AssetDataProvider): AssetDataCapabil
     operations: {
       canProvide: op((input: any) => provider.canProvide?.(input.ticker, input.exchange, input.context) ?? true, "query"),
       getCachedFinancialsForTargets: op((input: any) => provider.getCachedFinancialsForTargets?.(input.targets ?? [], input.options) ?? new Map()),
+      getQuotesBatch: op((input: any) => provider.getQuotesBatch?.(input.targets ?? [], input.options) ?? Promise.resolve([])),
+      getTickerFinancialsBatch: op((input: any) => provider.getTickerFinancialsBatch?.(input.targets ?? [], input.options) ?? Promise.resolve([])),
       getTickerFinancials: op((input: any) => provider.getTickerFinancials(input.ticker, input.exchange, input.context)),
       getQuote: op((input: any) => provider.getQuote(input.ticker, input.exchange, input.context)),
       getExchangeRate: op((input: any) => provider.getExchangeRate(input.fromCurrency)),

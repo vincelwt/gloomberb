@@ -16,6 +16,7 @@ import { normalizeTimestamp } from "./timestamp";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
 const SESSION_COOKIE_NAMES = ["__Secure-gloomberb.session_token", "gloomberb.session_token"] as const;
+const QUOTE_SUBSCRIPTION_FLUSH_MS = 25;
 const cloudApiLog = debugLog.createLogger("cloud-api");
 const HARD_SESSION_INVALID_PATTERNS = [
   /\b(user|account)\b.*\b(not found|deleted|removed|disabled|deactivated|suspended)\b/i,
@@ -306,6 +307,23 @@ export interface CloudMarketResponse<T> {
   };
 }
 
+export interface CloudMarketBatchTarget {
+  symbol: string;
+  exchange?: string;
+}
+
+export interface CloudMarketBatchItem<T> {
+  symbol: string;
+  exchange: string;
+  status: CloudMarketStatus;
+  data: T | null;
+  reasonCode?: string;
+}
+
+export interface CloudMarketBatchPayload<T> {
+  items: Array<CloudMarketBatchItem<T>>;
+}
+
 export interface CloudVerificationResponse {
   sent: boolean;
   email?: string;
@@ -392,6 +410,9 @@ class GloomApiClient {
   private readonly channelListeners = new Map<string, Set<ChannelListener>>();
   private readonly quoteListeners = new Map<string, Set<QuoteListener>>();
   private readonly quoteTargets = new Map<string, QuoteStreamTarget>();
+  private readonly pendingQuoteSubscribes = new Map<string, QuoteStreamTarget>();
+  private readonly pendingQuoteUnsubscribes = new Map<string, QuoteStreamTarget>();
+  private quoteSubscriptionFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.baseUrl = getCloudApiBaseUrl();
@@ -654,6 +675,62 @@ class GloomApiClient {
     }
   }
 
+  private scheduleQuoteSubscriptionFlush(): void {
+    if (this.quoteSubscriptionFlushTimer) return;
+    this.quoteSubscriptionFlushTimer = setTimeout(() => {
+      this.quoteSubscriptionFlushTimer = null;
+      this.flushQueuedQuoteSubscriptions();
+    }, QUOTE_SUBSCRIPTION_FLUSH_MS);
+  }
+
+  private queueQuoteSubscribes(targets: QuoteStreamTarget[]): void {
+    for (const target of targets) {
+      const key = marketKey(target.symbol, target.exchange);
+      this.pendingQuoteUnsubscribes.delete(key);
+      this.pendingQuoteSubscribes.set(key, target);
+    }
+    this.scheduleQuoteSubscriptionFlush();
+  }
+
+  private queueQuoteUnsubscribes(targets: QuoteStreamTarget[]): void {
+    for (const target of targets) {
+      const key = marketKey(target.symbol, target.exchange);
+      if (this.pendingQuoteSubscribes.delete(key)) continue;
+      this.pendingQuoteUnsubscribes.set(key, target);
+    }
+    this.scheduleQuoteSubscriptionFlush();
+  }
+
+  private flushQueuedQuoteSubscriptions(): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      this.pendingQuoteSubscribes.clear();
+      this.pendingQuoteUnsubscribes.clear();
+      return;
+    }
+    const subscribes = [...this.pendingQuoteSubscribes.values()];
+    const unsubscribes = [...this.pendingQuoteUnsubscribes.values()];
+    this.pendingQuoteSubscribes.clear();
+    this.pendingQuoteUnsubscribes.clear();
+    if (subscribes.length > 0) {
+      this.sendSocketMessage({
+        type: "market.subscribe",
+        symbols: subscribes.map((target) => ({
+          symbol: target.symbol,
+          exchange: target.exchange ?? "",
+        })),
+      });
+    }
+    if (unsubscribes.length > 0) {
+      this.sendSocketMessage({
+        type: "market.unsubscribe",
+        symbols: unsubscribes.map((target) => ({
+          symbol: target.symbol,
+          exchange: target.exchange ?? "",
+        })),
+      });
+    }
+  }
+
   private async handleSocketMessage(raw: string): Promise<void> {
     let parsed: any;
     try {
@@ -879,13 +956,7 @@ class GloomApiClient {
         count: newSubscriptions.length,
         symbols: newSubscriptions.map((target) => marketKey(target.symbol, target.exchange)),
       });
-      this.sendSocketMessage({
-        type: "market.subscribe",
-        symbols: newSubscriptions.map((target) => ({
-          symbol: target.symbol,
-          exchange: target.exchange ?? "",
-        })),
-      });
+      this.queueQuoteSubscribes(newSubscriptions);
     }
 
     return () => {
@@ -911,13 +982,7 @@ class GloomApiClient {
           count: removedTargets.length,
           symbols: removedTargets.map((target) => marketKey(target.symbol, target.exchange)),
         });
-        this.sendSocketMessage({
-          type: "market.unsubscribe",
-          symbols: removedTargets.map((target) => ({
-            symbol: target.symbol,
-            exchange: target.exchange ?? "",
-          })),
-        });
+        this.queueQuoteUnsubscribes(removedTargets);
       }
 
       if (!this.shouldKeepSocketOpen()) {
@@ -934,6 +999,12 @@ class GloomApiClient {
     this.channelListeners.clear();
     this.quoteListeners.clear();
     this.quoteTargets.clear();
+    this.pendingQuoteSubscribes.clear();
+    this.pendingQuoteUnsubscribes.clear();
+    if (this.quoteSubscriptionFlushTimer) {
+      clearTimeout(this.quoteSubscriptionFlushTimer);
+      this.quoteSubscriptionFlushTimer = null;
+    }
     this.reconnectDelayMs = 1000;
     this.teardownSocket();
   }
@@ -953,6 +1024,16 @@ class GloomApiClient {
     return this.request<CloudMarketResponse<CloudQuotePayload>>(`/market/quote?${params.toString()}`);
   }
 
+  async getCloudQuotesBatch(
+    targets: CloudMarketBatchTarget[],
+    mode: "cache-first" | "refresh" = "cache-first",
+  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>> {
+    return this.request<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>>("/market/quotes/batch", {
+      method: "POST",
+      body: JSON.stringify({ targets, mode }),
+    });
+  }
+
   async getCloudProfile(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCompanyProfile>> {
     const params = new URLSearchParams({ symbol });
     if (exchange) params.set("exchange", exchange);
@@ -963,6 +1044,22 @@ class GloomApiClient {
     const params = new URLSearchParams({ symbol });
     if (exchange) params.set("exchange", exchange);
     return this.request<CloudMarketResponse<CloudFundamentals>>(`/market/fundamentals?${params.toString()}`);
+  }
+
+  async getCloudFinancials(symbol: string, exchange?: string): Promise<CloudMarketResponse<TickerFinancials>> {
+    const params = new URLSearchParams({ symbol });
+    if (exchange) params.set("exchange", exchange);
+    return this.request<CloudMarketResponse<TickerFinancials>>(`/market/financials?${params.toString()}`);
+  }
+
+  async getCloudFinancialsBatch(
+    targets: CloudMarketBatchTarget[],
+    mode: "cache-first" | "refresh" = "cache-first",
+  ): Promise<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>> {
+    return this.request<CloudMarketResponse<CloudMarketBatchPayload<TickerFinancials>>>("/market/financials/batch", {
+      method: "POST",
+      body: JSON.stringify({ targets, mode }),
+    });
   }
 
   async getCloudHolders(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudHoldersPayload>> {

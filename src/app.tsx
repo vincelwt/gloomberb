@@ -515,6 +515,96 @@ function AppInner({
     });
   }, [performRefreshQuote]);
 
+  const refreshTickersBatch = useCallback((entries: Array<{ ticker: TickerRecord; priority: number }>) => {
+    const runnable = entries.filter(({ ticker }) => {
+      const symbol = ticker.metadata.ticker;
+      return !refreshInFlight.has(symbol) && !pendingRefreshesRef.current.financials.has(symbol);
+    });
+    if (runnable.length === 0) return;
+    for (const { ticker } of runnable) {
+      pendingRefreshesRef.current.financials.add(ticker.metadata.ticker);
+    }
+    const priority = Math.min(...runnable.map((entry) => entry.priority));
+    refreshQueueRef.current.queue.enqueue({
+      key: `financials-batch:${priority}:${runnable.map(({ ticker }) => ticker.metadata.ticker).join(",")}`,
+      priority,
+      run: async () => {
+        const instrumentEntries = runnable.flatMap(({ ticker }) => {
+          const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+          return instrument ? [{ ticker, instrument }] : [];
+        });
+        for (const { ticker } of runnable) {
+          const symbol = ticker.metadata.ticker;
+          refreshInFlight.add(symbol);
+          dispatch({ type: "SET_REFRESHING", symbol, refreshing: true });
+        }
+        try {
+          const entries = await marketData.loadSnapshotsBatch(instrumentEntries.map((entry) => entry.instrument));
+          entries.forEach((entry, index) => {
+            const ticker = instrumentEntries[index]?.ticker;
+            const data = entry.data ?? entry.lastGoodData;
+            if (ticker && data) {
+              pluginRegistry.events.emit("ticker:refreshed", { symbol: ticker.metadata.ticker, financials: data });
+              const currency = data.quote?.currency;
+              if (currency) void marketData.loadFxRate(currency).catch(() => {});
+            }
+          });
+          void marketData.loadFxRate(state.config.baseCurrency).catch(() => {});
+        } finally {
+          for (const { ticker } of runnable) {
+            const symbol = ticker.metadata.ticker;
+            refreshInFlight.delete(symbol);
+            pendingRefreshesRef.current.financials.delete(symbol);
+            dispatch({ type: "SET_REFRESHING", symbol, refreshing: false });
+          }
+        }
+      },
+    });
+  }, [dispatch, marketData, pluginRegistry.events, state.config.baseCurrency]);
+
+  const refreshQuotesBatch = useCallback((entries: Array<{ ticker: TickerRecord; priority: number }>) => {
+    const runnable = entries.filter(({ ticker }) => {
+      const symbol = ticker.metadata.ticker;
+      return !refreshInFlight.has(symbol)
+        && !quoteRefreshInFlight.has(symbol)
+        && !pendingRefreshesRef.current.financials.has(symbol)
+        && !pendingRefreshesRef.current.quotes.has(symbol);
+    });
+    if (runnable.length === 0) return;
+    for (const { ticker } of runnable) {
+      pendingRefreshesRef.current.quotes.add(ticker.metadata.ticker);
+    }
+    const priority = Math.min(...runnable.map((entry) => entry.priority));
+    refreshQueueRef.current.queue.enqueue({
+      key: `quotes-batch:${priority}:${runnable.map(({ ticker }) => ticker.metadata.ticker).join(",")}`,
+      priority,
+      run: async () => {
+        const instrumentEntries = runnable.flatMap(({ ticker }) => {
+          const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+          return instrument ? [{ ticker, instrument }] : [];
+        });
+        for (const { ticker } of runnable) {
+          quoteRefreshInFlight.add(ticker.metadata.ticker);
+        }
+        try {
+          const entries = await marketData.loadQuotesBatch(instrumentEntries.map((entry) => entry.instrument));
+          entries.forEach((entry) => {
+            const quote = entry.data ?? entry.lastGoodData;
+            const currency = quote?.currency;
+            if (currency) void marketData.loadFxRate(currency).catch(() => {});
+          });
+          void marketData.loadFxRate(state.config.baseCurrency).catch(() => {});
+        } finally {
+          for (const { ticker } of runnable) {
+            const symbol = ticker.metadata.ticker;
+            quoteRefreshInFlight.delete(symbol);
+            pendingRefreshesRef.current.quotes.delete(symbol);
+          }
+        }
+      },
+    });
+  }, [marketData, state.config.baseCurrency]);
+
   const primeCachedFinancials = useCallback((entries: Array<{ ticker: TickerRecord; financials: TickerFinancials }>) => {
     const primeEntries = entries.flatMap(({ ticker, financials }) => {
       const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
@@ -725,6 +815,8 @@ function AppInner({
           primeCachedFinancials,
           refreshTicker,
           refreshQuote,
+          refreshTickersBatch,
+          refreshQuotesBatch,
           autoImportBrokerPositions,
           persistedBrokerAccounts,
         }), {
@@ -736,7 +828,7 @@ function AppInner({
         // Will show empty state
       }
     })();
-  }, [autoImportBrokerPositions, dataProvider, dispatch, primeCachedFinancials, tickerRepository, refreshQuote, refreshTicker, sessionSnapshot, state.config, state.initialized]);
+  }, [autoImportBrokerPositions, dataProvider, dispatch, primeCachedFinancials, tickerRepository, refreshQuote, refreshQuotesBatch, refreshTicker, refreshTickersBatch, sessionSnapshot, state.config, state.initialized]);
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
 

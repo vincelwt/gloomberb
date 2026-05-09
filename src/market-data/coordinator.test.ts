@@ -632,4 +632,79 @@ describe("MarketDataCoordinator", () => {
     expect(financials?.quote?.marketCap).toBe(3_640_775_908_600);
     expect(financials?.fundamentals?.trailingPE).toBe(31.4);
   });
+
+  it("batch loads only missing quotes when fresh quote data is already stored", async () => {
+    const batchTargets: QuoteSubscriptionTarget[][] = [];
+    const provider = createProvider({
+      getQuote: async () => ({
+        symbol: "AAPL",
+        price: 100,
+        currency: "USD",
+        change: 0,
+        changePercent: 0,
+        lastUpdated: 1_700_000_000_000,
+      }),
+      getQuotesBatch: async (targets) => {
+        batchTargets.push(targets);
+        return targets.map((target) => ({
+          target,
+          quote: {
+            symbol: target.symbol,
+            price: target.symbol === "MSFT" ? 200 : 300,
+            currency: "USD",
+            change: 0,
+            changePercent: 0,
+            lastUpdated: 1_700_000_000_000,
+          },
+        }));
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const aapl = { symbol: "AAPL", exchange: "NASDAQ" };
+    const msft = { symbol: "MSFT", exchange: "NASDAQ" };
+
+    await coordinator.loadQuote(aapl);
+    await coordinator.loadQuotesBatch([aapl, msft]);
+
+    expect(batchTargets).toHaveLength(1);
+    expect(batchTargets[0]?.map((target) => target.symbol)).toEqual(["MSFT"]);
+    expect(coordinator.getQuoteEntry(aapl).data?.price).toBe(100);
+    expect(coordinator.getQuoteEntry(msft).data?.price).toBe(200);
+  });
+
+  it("batch loads snapshots through provider batch support", async () => {
+    const batchSymbols: string[][] = [];
+    const provider = createProvider({
+      getTickerFinancialsBatch: async (targets) => {
+        batchSymbols.push(targets.map((target) => target.symbol));
+        return targets.map((target) => ({
+          target,
+          financials: {
+            quote: {
+              symbol: target.symbol,
+              price: target.symbol === "AAPL" ? 150 : 250,
+              currency: "USD",
+              change: 0,
+              changePercent: 0,
+              lastUpdated: 1_700_000_000_000,
+            },
+            fundamentals: { trailingPE: target.symbol === "AAPL" ? 20 : 30 },
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+          },
+        }));
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+
+    await coordinator.loadSnapshotsBatch([
+      { symbol: "AAPL", exchange: "NASDAQ" },
+      { symbol: "MSFT", exchange: "NASDAQ" },
+    ]);
+
+    expect(batchSymbols).toEqual([["AAPL", "MSFT"]]);
+    expect(coordinator.getTickerFinancialsSync({ symbol: "AAPL", exchange: "NASDAQ" })?.quote?.price).toBe(150);
+    expect(coordinator.getTickerFinancialsSync({ symbol: "MSFT", exchange: "NASDAQ" })?.fundamentals?.trailingPE).toBe(30);
+  });
 });

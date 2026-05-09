@@ -140,6 +140,12 @@ export function useResetTableScroll({
   resetScrollKey?: unknown;
   afterReset?: () => void;
 }) {
+  const afterResetRef = useRef(afterReset);
+
+  useEffect(() => {
+    afterResetRef.current = afterReset;
+  }, [afterReset]);
+
   useEffect(() => {
     if (resetScrollKey === undefined) return;
     const body = scrollRef.current;
@@ -151,8 +157,8 @@ export function useResetTableScroll({
     if (header) {
       header.scrollLeft = 0;
     }
-    if (afterReset) {
-      queueMicrotask(afterReset);
+    if (afterResetRef.current) {
+      queueMicrotask(afterResetRef.current);
     }
-  }, [afterReset, headerScrollRef, resetScrollKey, scrollRef]);
+  }, [headerScrollRef, resetScrollKey, scrollRef]);
 }
