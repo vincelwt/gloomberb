@@ -99,7 +99,7 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
   const shortcutsRef = useRef<ShortcutEntry[]>([]);
 
   const dispatchShortcut = (shortcutEvent: KeyEventLike) => {
-    for (const phase of ["normal", "after"] as const) {
+    for (const phase of ["before", "normal", "after"] as const) {
       if (phase === "after" && (shortcutEvent.defaultPrevented || shortcutEvent.propagationStopped)) break;
       for (const entry of shortcutsRef.current) {
         if (entry.phase !== phase || !entry.enabledRef.current) continue;

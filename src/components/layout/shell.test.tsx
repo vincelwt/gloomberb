@@ -6,6 +6,7 @@ import { act, createElement, useReducer } from "react";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { setSharedMarketDataForTests } from "../../plugins/registry";
+import { useShortcut } from "../../react/input";
 import { cloneLayout, createDefaultConfig } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { setSharedRegistryForTests } from "../../plugins/registry";
@@ -16,6 +17,7 @@ import type { PaneProps } from "../../types/plugin";
 import { StockChart } from "../chart/stock-chart";
 import { StatusBar } from "./status-bar";
 import { Header } from "./header";
+import { DetachedPaneShell } from "./detached-pane-shell";
 import {
   buildNativeWindowState,
   constrainFloatingRectToBounds,
@@ -209,6 +211,31 @@ function createChartShellDataProvider(historyBySymbol: Record<string, PricePoint
     getArticleSummary: async () => null,
     getPriceHistory: async (symbol) => historyBySymbol[symbol] ?? [],
   };
+}
+
+async function emitKeypress(event: { name?: string; sequence?: string }) {
+  await act(async () => {
+    const keyEvent = {
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: false,
+      eventType: "press",
+      repeated: false,
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      },
+      ...event,
+    };
+    testSetup!.renderer.keyInput.emit("keypress", keyEvent as any);
+    await testSetup!.renderOnce();
+    await testSetup!.renderOnce();
+  });
 }
 
 function HeaderHarness({
@@ -933,6 +960,177 @@ describe("Shell", () => {
     expect(updateLayout?.layout.instances).toEqual([]);
     expect(updateLayout?.layout.floating).toEqual([]);
     expect(updateLayout?.layout.dockRoot).toBeNull();
+  });
+
+  test("closes the focused pane after double Escape", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    if (!mainPane) throw new Error("missing default portfolio pane");
+
+    const singlePaneLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }],
+      floating: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: cloneLayout(singlePaneLayout),
+        layouts: [{ name: "Default", layout: cloneLayout(singlePaneLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(actions).toContainEqual({ type: "PUSH_LAYOUT_HISTORY" });
+    expect(updateLayout?.layout.instances).toEqual([]);
+    expect(updateLayout?.layout.floating).toEqual([]);
+    expect(updateLayout?.layout.dockRoot).toBeNull();
+  });
+
+  test("closes on double Escape even when the focused pane handles the first Escape", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    if (!mainPane) throw new Error("missing default portfolio pane");
+
+    let consumedEscapes = 0;
+    function EscapeConsumerPane() {
+      useShortcut((event) => {
+        if (event.name !== "escape") return;
+        consumedEscapes += 1;
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      return <text>Escape Consumer</text>;
+    }
+
+    const singlePaneLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }],
+      floating: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: cloneLayout(singlePaneLayout),
+        layouts: [{ name: "Default", layout: cloneLayout(singlePaneLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell
+            pluginRegistry={createShellPluginRegistry({
+              portfolioListComponent: EscapeConsumerPane,
+            })}
+          />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(consumedEscapes).toBe(1);
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(consumedEscapes).toBe(1);
+    expect(updateLayout?.layout.dockRoot).toBeNull();
+  });
+
+  test("closes on double Escape while pane input is captured", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    if (!mainPane) throw new Error("missing default portfolio pane");
+
+    const singlePaneLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }],
+      floating: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: cloneLayout(singlePaneLayout),
+        layouts: [{ name: "Default", layout: cloneLayout(singlePaneLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+      inputCaptured: true,
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.dockRoot).toBeNull();
+  });
+
+  test("closes a detached pane window after double Escape", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-test");
+    const state = {
+      ...createInitialState(config),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const closedPaneIds: string[] = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <TestDialogProvider>
+          <DetachedPaneShell
+            pluginRegistry={createShellPluginRegistry()}
+            desktopWindowBridge={{
+              kind: "detached",
+              paneId: "portfolio-list:main",
+              subscribeState: () => () => {},
+              closeDetachedPane: async (paneId) => {
+                closedPaneIds.push(paneId);
+              },
+            }}
+          />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(closedPaneIds).toEqual([]);
+
+    await emitKeypress({ name: "escape", sequence: "\u001b" });
+    expect(closedPaneIds).toEqual(["portfolio-list:main"]);
   });
 
   test("closes the focused floating pane with Ctrl+W", async () => {

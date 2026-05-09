@@ -333,6 +333,46 @@ describe("shared UI kit", () => {
     expect(frame).toContain("Insider");
   });
 
+  test("moves focused tabs with arrow keys and leaves Tab for pane focus", async () => {
+    let lastSelected = "overview";
+
+    function KeyboardTabsHarness() {
+      const [activeValue, setActiveValue] = useState("overview");
+      return (
+        <Tabs
+          tabs={[
+            { label: "Overview", value: "overview" },
+            { label: "News", value: "news" },
+            { label: "Chart", value: "chart" },
+          ]}
+          activeValue={activeValue}
+          onSelect={(value) => {
+            lastSelected = value;
+            setActiveValue(value);
+          }}
+          focused
+        />
+      );
+    }
+
+    testSetup = await testRender(<KeyboardTabsHarness />, { width: 40, height: 4 });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      testSetup!.mockInput.pressArrow("right");
+      await testSetup!.renderOnce();
+    });
+
+    expect(lastSelected).toBe("news");
+
+    await act(async () => {
+      testSetup!.mockInput.pressTab();
+      await testSetup!.renderOnce();
+    });
+
+    expect(lastSelected).toBe("news");
+  });
+
   test("renders tab actions for editable tab sets", async () => {
     testSetup = await testRender(
       <Tabs

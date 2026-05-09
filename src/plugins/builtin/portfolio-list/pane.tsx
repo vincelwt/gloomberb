@@ -282,7 +282,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     [tickers, financialsMap, activeSort, columnContext, columns],
   );
 
-  const currentTabIdx = visibleCollections.findIndex((collection) => collection.id === activeCollectionId);
   const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
   const safeSelectedIdx = selectedIdx >= 0 ? selectedIdx : 0;
 
@@ -359,35 +358,15 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
-    if (showCollectionTabs && (key === "h" || key === "left")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      const previousCollection = visibleCollections[Math.max(currentTabIdx - 1, 0)];
-      if (previousCollection) handleCollectionSelect(previousCollection.id);
-      return true;
-    }
-
-    if (showCollectionTabs && (key === "l" || key === "right")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      const nextCollection = visibleCollections[Math.min(currentTabIdx + 1, visibleCollections.length - 1)];
-      if (nextCollection) handleCollectionSelect(nextCollection.id);
-      return true;
-    }
-
     return false;
   }, [
     cashDrawerExpanded,
-    currentTabIdx,
     focused,
     openTickerFloating,
     safeSelectedIdx,
     setCashDrawerExpanded,
-    handleCollectionSelect,
     showCashDrawer,
-    showCollectionTabs,
     sortedTickers,
-    visibleCollections,
   ]);
 
   useEffect(() => {
@@ -590,6 +569,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
                 activeValue={activeCollectionId}
                 onSelect={handleCollectionSelect}
                 compact
+                focused={focused}
               />
             </Box>
           </Box>

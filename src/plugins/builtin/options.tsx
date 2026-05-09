@@ -246,23 +246,8 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       return true;
     }
 
-    if (!interactive) return false;
-
-    const numExp = chain?.expirationDates.length ?? 0;
-    if (event.name === "h" || event.name === "left") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setExpIdx((i) => Math.max(i - 1, 0));
-      return true;
-    }
-    if (event.name === "l" || event.name === "right") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setExpIdx((i) => Math.min(i + 1, Math.max(numExp - 1, 0)));
-      return true;
-    }
     return false;
-  }, [chain?.expirationDates.length, enterInteractive, exitInteractive, interactive, strikes.length]);
+  }, [enterInteractive, exitInteractive, interactive, strikes.length]);
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view options.</Text>;
   if (loading && !chain) return <Spinner label="Loading options chain..." />;
@@ -299,6 +284,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
             }}
             compact
             variant="bare"
+            focused={focused && interactive}
           />
         </Box>
         {loading && <Spinner />}

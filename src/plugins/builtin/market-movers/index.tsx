@@ -345,22 +345,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     const key = event.name;
 
-    if (key === "tab" || key === "right" || key === "l") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      const currentTabIdx = TABS.findIndex((t) => t.id === activeTab);
-      setActiveTab(TABS[(currentTabIdx + 1) % TABS.length]!.id);
-      setSelectedSymbol(null);
-      return true;
-    }
-    if (key === "left" || key === "h") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      const currentTabIdx = TABS.findIndex((t) => t.id === activeTab);
-      setActiveTab(TABS[(currentTabIdx - 1 + TABS.length) % TABS.length]!.id);
-      setSelectedSymbol(null);
-      return true;
-    }
     if (key === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -451,6 +435,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
           }}
           compact
           variant="bare"
+          focused={focused}
         />
       </Box>
 

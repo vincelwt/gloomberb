@@ -272,6 +272,7 @@ function CommandBarHarness({
     ...createInitialState(config),
     commandBarOpen: true,
     commandBarQuery: query,
+    focusedPaneId: "portfolio-list:main",
     tickers: new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker])),
     config: { ...config, disabledPlugins },
     paneState: selectedTicker

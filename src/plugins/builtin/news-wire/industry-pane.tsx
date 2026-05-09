@@ -65,21 +65,6 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     setSelectedArticleId(null);
   }, [category, setSelectedArticleId]);
 
-  const handleRootKeyDown = (event: {
-    name?: string;
-    preventDefault?: () => void;
-    stopPropagation?: () => void;
-  }) => {
-    if (event.name !== "left" && event.name !== "right" && event.name !== "h" && event.name !== "l") return;
-    event.stopPropagation?.();
-    event.preventDefault?.();
-    const index = SECTOR_TABS.indexOf(category);
-    const delta = event.name === "left" || event.name === "h" ? -1 : 1;
-    const nextIndex = Math.max(0, Math.min(SECTOR_TABS.length - 1, index + delta));
-    setCategory(SECTOR_TABS[nextIndex]!);
-    return true;
-  };
-
   useNewsArticleFooter({
     registrationId: "news-wire:industry",
     focused,
@@ -94,6 +79,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
         onSelect={(value) => setCategory(value as SectorNewsSelection)}
         compact
         variant="bare"
+        focused={focused}
       />
     </Box>
   );
@@ -127,7 +113,6 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
       rootBefore={rootBefore}
-      onRootKeyDown={handleRootKeyDown}
       columns={["time", "source", "title", "tickers", "categories"]}
       emptyContent={loading && articles.length === 0 ? (
         <Box width="100%" paddingX={1} paddingY={1}>

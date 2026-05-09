@@ -863,6 +863,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
           variant="pill"
           closeMode="active"
           onAdd={editorState ? undefined : openCreateEditor}
+          focused={focused && !editorState}
         />
       </Box>
 

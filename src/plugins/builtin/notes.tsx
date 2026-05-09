@@ -473,6 +473,7 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
             variant="pill"
             closeMode="active"
             onAdd={addTab}
+            focused={focused && !editing && !renaming}
           />
         </Box>
         {/* Rename input */}

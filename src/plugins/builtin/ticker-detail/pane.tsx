@@ -84,26 +84,17 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     return next;
   }, [mountedTabIds, resolvedTabId, visibleTabIds]);
 
-  const allTabsRef = useRef(allTabs);
-  allTabsRef.current = allTabs;
-
   const stateRef = useRef({
     focused,
     chartInteractive,
     pluginCaptured,
     activeTabId: resolvedTabId,
-    tabIdx: Math.max(0, allTabs.findIndex((tab) => tab.id === resolvedTabId)),
-    allTabCount: allTabs.length,
-    hideTabs: paneSettings.hideTabs,
   });
   stateRef.current = {
     focused,
     chartInteractive,
     pluginCaptured,
     activeTabId: resolvedTabId,
-    tabIdx: Math.max(0, allTabs.findIndex((tab) => tab.id === resolvedTabId)),
-    allTabCount: allTabs.length,
-    hideTabs: paneSettings.hideTabs,
   };
 
   const setChartInteractiveEager = useCallback((value: boolean) => {
@@ -162,17 +153,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
       if (currentState.chartInteractive) return;
     }
 
-    if (currentState.hideTabs) return;
-
-    const tabs = allTabsRef.current;
-    if (event.name === "h" || event.name === "left") {
-      const nextIndex = Math.max(currentState.tabIdx - 1, 0);
-      setActiveTabId(tabs[nextIndex]!.id);
-    } else if (event.name === "l" || event.name === "right") {
-      const nextIndex = Math.min(currentState.tabIdx + 1, currentState.allTabCount - 1);
-      setActiveTabId(tabs[nextIndex]!.id);
-    }
-  }, [setActiveTabId, setChartInteractiveEager]);
+  }, [setChartInteractiveEager]);
 
   useShortcut(handleKeyboard);
 
@@ -196,6 +177,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
           tabs={allTabs.map((tab) => ({ label: tab.name, value: tab.id }))}
           activeValue={resolvedTabId}
           onSelect={setActiveTabId}
+          focused={focused && !pluginCaptured && !(resolvedTabId === "chart" && chartInteractive)}
         />
       )}
 

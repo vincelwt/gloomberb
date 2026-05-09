@@ -1,7 +1,6 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
-import { useShortcut } from "../../../react/input";
 import { DataTableView, Tabs, type DataTableColumn } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { ColumnConfig } from "../../../types/config";
@@ -278,7 +277,6 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     () => portfolios.find((portfolio) => portfolio.id === activePortfolioId) ?? null,
     [activePortfolioId, portfolios],
   );
-  const activePortfolioIndex = portfolios.findIndex((portfolio) => portfolio.id === activePortfolioId);
   const portfolioTabs = useMemo(
     () => portfolios.map((portfolio) => ({ label: portfolio.name, value: portfolio.id })),
     [portfolios],
@@ -555,22 +553,6 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     setSectorSort((current) => nextSectorSortPreference(current, columnId));
   }, []);
 
-  useShortcut((event) => {
-    if (!focused) return;
-
-    const key = event.name;
-    if ((key === "h" || key === "left") && activePortfolioIndex > 0) {
-      const previousPortfolio = portfolios[activePortfolioIndex - 1];
-      if (previousPortfolio) handlePortfolioSelect(previousPortfolio.id);
-      return;
-    }
-    if ((key === "l" || key === "right") && activePortfolioIndex >= 0 && activePortfolioIndex < portfolios.length - 1) {
-      const nextPortfolio = portfolios[activePortfolioIndex + 1];
-      if (nextPortfolio) handlePortfolioSelect(nextPortfolio.id);
-      return;
-    }
-  });
-
   useEffect(() => {
     if (activePortfolioId !== currentPortfolioId) {
       setCurrentPortfolioId(activePortfolioId);
@@ -592,6 +574,7 @@ export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
                 activeValue={activePortfolioId}
                 onSelect={handlePortfolioSelect}
                 compact
+                focused={focused}
               />
             </Box>
           </Box>

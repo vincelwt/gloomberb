@@ -243,6 +243,7 @@ export function PredictionMarketDetailPane({
           activeValue={detailTab}
           onSelect={(value) => onDetailTabChange(value as PredictionDetailTab)}
           compact
+          focused={focused}
         />
       </Box>
 
