@@ -1,11 +1,13 @@
 import { describe, expect, test, mock, beforeEach, afterAll } from "bun:test";
 import { createThrottledFetch } from "./throttled-fetch";
+import { setHttpFetchTransport } from "./http-transport";
 
 // Mock global fetch
 const originalFetch = globalThis.fetch;
 let fetchMock: ReturnType<typeof mock>;
 
 beforeEach(() => {
+  setHttpFetchTransport(null);
   fetchMock = mock(() => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })));
   globalThis.fetch = fetchMock as any;
 });
@@ -156,9 +158,29 @@ describe("createThrottledFetch", () => {
     expect(transportMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  test("uses the shared HTTP transport by default", async () => {
+    const transportMock = mock((url: string, init?: RequestInit) => {
+      expect(url).toBe("https://api.example.com/shared");
+      expect((init?.headers as Record<string, string>)["X-Shared"]).toBe("1");
+      return Promise.resolve(new Response("shared", { status: 203 }));
+    });
+    setHttpFetchTransport(transportMock);
+
+    const client = createThrottledFetch({
+      defaultHeaders: { "X-Shared": "1" },
+    });
+    const resp = await client.fetch("https://api.example.com/shared");
+
+    expect(resp.status).toBe(203);
+    expect(await resp.text()).toBe("shared");
+    expect(transportMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 // Restore
 afterAll(() => {
+  setHttpFetchTransport(null);
   globalThis.fetch = originalFetch;
 });

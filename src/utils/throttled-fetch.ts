@@ -7,6 +7,8 @@
  *   const data = await client.fetch("https://api.example.com/data");
  */
 
+import { httpFetch } from "./http-transport";
+
 const DEFAULT_REQUESTS_PER_MINUTE = 30;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -50,7 +52,7 @@ export function createThrottledFetch(
   const defaultHeaders = options.defaultHeaders ?? {};
   const dedupeGetRequests = options.dedupeGetRequests ?? true;
   const fetchTransport =
-    options.transport ?? ((url: string, init?: RequestInit) => globalThis.fetch(url, init));
+    options.transport ?? httpFetch;
 
   // Sliding window: track timestamps of recent requests per host
   const hostTimestamps = new Map<string, number[]>();

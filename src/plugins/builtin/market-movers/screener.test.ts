@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { parseScreenerResponse, parseTrendingResponse } from "./screener";
+import {
+  createYahooScreenerApi,
+  fetchScreener,
+  parseScreenerResponse,
+  parseTrendingResponse,
+} from "./screener";
 
 const SAMPLE_SCREENER_RESPONSE = {
   finance: {
@@ -121,5 +126,38 @@ describe("parseTrendingResponse", () => {
     const results = parseTrendingResponse(data);
     expect(results).toHaveLength(1);
     expect(results[0]!.symbol).toBe("SPY");
+  });
+});
+
+describe("fetchScreener", () => {
+  test("falls back to the secondary Yahoo host when the primary host fails", async () => {
+    const requestedHosts: string[] = [];
+    const userAgents: string[] = [];
+    const api = createYahooScreenerApi(async (url, init) => {
+      const parsed = new URL(url);
+      requestedHosts.push(parsed.host);
+      userAgents.push(String((init?.headers as Record<string, string> | undefined)?.["User-Agent"] ?? ""));
+
+      if (parsed.host === "query2.finance.yahoo.com") {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      expect(parsed.pathname).toBe("/v1/finance/screener/predefined/saved");
+      expect(parsed.searchParams.get("formatted")).toBe("false");
+      expect(parsed.searchParams.get("lang")).toBe("en-US");
+      expect(parsed.searchParams.get("region")).toBe("US");
+      expect(parsed.searchParams.get("scrIds")).toBe("day_gainers");
+      expect(parsed.searchParams.get("count")).toBe("2");
+      return Response.json(SAMPLE_SCREENER_RESPONSE);
+    });
+
+    const results = await fetchScreener("day_gainers", 2, api);
+
+    expect(requestedHosts).toEqual([
+      "query2.finance.yahoo.com",
+      "query1.finance.yahoo.com",
+    ]);
+    expect(userAgents.every((agent) => agent.includes("Mozilla/5.0"))).toBe(true);
+    expect(results.map((result) => result.symbol)).toEqual(["AAPL", "MSFT"]);
   });
 });

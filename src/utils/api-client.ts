@@ -12,6 +12,7 @@ import type {
 import type { InstrumentSearchResult } from "../types/instrument";
 import { debugLog } from "./debug-log";
 import { canonicalExchange, normalizeSymbol, publicTickerKey } from "./exchanges";
+import { httpFetch } from "./http-transport";
 import { normalizeTimestamp } from "./timestamp";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
@@ -26,10 +27,10 @@ const HARD_SESSION_INVALID_PATTERNS = [
 type CloudApiResponse = Pick<Response, "ok" | "status" | "headers" | "text">;
 type CloudApiFetchTransport = (url: string, init?: RequestInit) => Promise<CloudApiResponse>;
 
-let cloudApiFetchTransport: CloudApiFetchTransport = (url, init) => fetch(url, init);
+let cloudApiFetchTransport: CloudApiFetchTransport = httpFetch;
 
 export function setCloudApiFetchTransport(transport: CloudApiFetchTransport | null): void {
-  cloudApiFetchTransport = transport ?? ((url, init) => fetch(url, init));
+  cloudApiFetchTransport = transport ?? httpFetch;
 }
 
 function getCloudApiBaseUrl(): string {

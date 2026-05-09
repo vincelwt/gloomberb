@@ -197,6 +197,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const [activeTab, setActiveTab] = useState<TabId>("gainers");
   const [quotes, setQuotes] = useState<ScreenerQuote[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<MarketMoverSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [summaryQuotes, setSummaryQuotes] = useState<MarketSummaryQuote[]>([]);
@@ -260,12 +261,14 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
       setQuotes(cached.data);
       setSelectedSymbol(null);
+      setLoadError(null);
       return;
     }
 
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setLoading(true);
+    setLoadError(null);
 
     try {
       let data: ScreenerQuote[];
@@ -318,7 +321,12 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       cacheRef.current.set(tab, { data, fetchedAt: Date.now() });
       setQuotes(data);
       setSelectedSymbol(null);
-    } catch { /* leave existing data */ }
+      setLoadError(null);
+    } catch (error) {
+      if (fetchGenRef.current === gen) {
+        setLoadError(error instanceof Error ? error.message : "Market movers unavailable");
+      }
+    }
     finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
@@ -461,7 +469,8 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         onSelect={(row) => setSelectedSymbol(row.symbol)}
         onActivate={(row) => openSymbol(row.symbol)}
         renderCell={renderCell}
-        emptyStateTitle={loading ? "Loading movers..." : "No data"}
+        emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No data"}
+        emptyStateHint={loadError ? "Yahoo Finance did not return market movers." : undefined}
       />
     </Box>
   );

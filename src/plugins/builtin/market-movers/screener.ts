@@ -1,14 +1,54 @@
-import { createThrottledFetch } from "../../../utils/throttled-fetch";
+import { createThrottledFetch, type ThrottledFetchTransport } from "../../../utils/throttled-fetch";
 
-const screenerClient = createThrottledFetch({
-  requestsPerMinute: 15,
-  maxRetries: 2,
-  timeoutMs: 10_000,
-  defaultHeaders: {
-    "User-Agent": "Gloomberb/0.4.1",
-    Accept: "application/json",
-  },
-});
+const YAHOO_FINANCE_HOSTS = [
+  "query2.finance.yahoo.com",
+  "query1.finance.yahoo.com",
+] as const;
+
+const YAHOO_FINANCE_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  Accept: "application/json,text/plain,*/*",
+  "Accept-Language": "en-US,en;q=0.9",
+  Referer: "https://finance.yahoo.com/",
+};
+
+export interface YahooScreenerApi {
+  fetchJson<T = unknown>(path: string, params: Record<string, string | number>): Promise<T>;
+}
+
+export function createYahooScreenerApi(transport?: ThrottledFetchTransport): YahooScreenerApi {
+  const client = createThrottledFetch({
+    requestsPerMinute: 15,
+    maxRetries: 2,
+    timeoutMs: 10_000,
+    defaultHeaders: YAHOO_FINANCE_HEADERS,
+    transport,
+  });
+
+  return {
+    async fetchJson<T = unknown>(path: string, params: Record<string, string | number>): Promise<T> {
+      let lastError: unknown;
+      for (const host of YAHOO_FINANCE_HOSTS) {
+        const url = new URL(`https://${host}${path}`);
+        for (const [key, value] of Object.entries(params)) {
+          url.searchParams.set(key, String(value));
+        }
+
+        try {
+          return await client.fetchJson<T>(url.toString());
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Yahoo Finance screener request failed");
+    },
+  };
+}
+
+const screenerApi = createYahooScreenerApi();
 
 export type ScreenerCategory = "day_gainers" | "day_losers" | "most_actives";
 
@@ -75,9 +115,18 @@ export function parseScreenerResponse(data: any): ScreenerQuote[] {
   }
 }
 
-export async function fetchScreener(category: ScreenerCategory, count = 25): Promise<ScreenerQuote[]> {
-  const url = `https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=${category}&count=${count}`;
-  const data = await screenerClient.fetchJson(url);
+export async function fetchScreener(
+  category: ScreenerCategory,
+  count = 25,
+  api: YahooScreenerApi = screenerApi,
+): Promise<ScreenerQuote[]> {
+  const data = await api.fetchJson("/v1/finance/screener/predefined/saved", {
+    formatted: "false",
+    lang: "en-US",
+    region: "US",
+    scrIds: category,
+    count,
+  });
   return parseScreenerResponse(data);
 }
 
@@ -96,9 +145,13 @@ export function parseTrendingResponse(data: any): TrendingSymbol[] {
   }
 }
 
-export async function fetchTrending(count = 25): Promise<TrendingSymbol[]> {
-  const url = `https://query2.finance.yahoo.com/v1/finance/trending/US?count=${count}`;
-  const data = await screenerClient.fetchJson(url);
+export async function fetchTrending(
+  count = 25,
+  api: YahooScreenerApi = screenerApi,
+): Promise<TrendingSymbol[]> {
+  const data = await api.fetchJson("/v1/finance/trending/US", {
+    count,
+  });
   return parseTrendingResponse(data);
 }
 
