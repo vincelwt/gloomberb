@@ -141,6 +141,8 @@ export interface AnalystRatingRecord {
   action?: string;
   current?: string;
   prior?: string;
+  currentPriceTarget?: number;
+  priorPriceTarget?: number;
 }
 
 export interface AnalystEstimateRecord {

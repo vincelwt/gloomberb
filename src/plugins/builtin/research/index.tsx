@@ -7,7 +7,7 @@ import {
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../components";
-import type { AnalystResearchData, CorporateActionsData, TickerFinancials } from "../../../types/financials";
+import type { AnalystRatingRecord, AnalystResearchData, CorporateActionsData, TickerFinancials } from "../../../types/financials";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { usePaneInstance, usePaneTicker } from "../../../state/app-context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
@@ -110,6 +110,32 @@ function ratingActionColor(action: string | undefined): string {
   return colors.textDim;
 }
 
+function formatPriceTarget(value: number | undefined, currency: string): string {
+  if (value == null) return "-";
+  return formatCurrency(value, currency)
+    .replace(/\.00\b/, "")
+    .replace(/(\.\d)0\b/, "$1");
+}
+
+function formatRatingTarget(row: AnalystResearchData["ratings"][number], currency: string): string {
+  const current = row.currentPriceTarget;
+  const prior = row.priorPriceTarget;
+  if (current == null && prior == null) return "-";
+  if (current == null) return ` ${formatPriceTarget(prior, currency)}`;
+  if (prior == null) return ` ${formatPriceTarget(current, currency)}`;
+  return ` ${formatPriceTarget(prior, currency)} → ${formatPriceTarget(current, currency)}`;
+}
+
+function ratingTargetDelta(row: AnalystResearchData["ratings"][number]): number | null {
+  if (row.currentPriceTarget == null || row.priorPriceTarget == null) return null;
+  return row.currentPriceTarget - row.priorPriceTarget;
+}
+
+function ratingTargetBackground(delta: number | null): string | undefined {
+  if (delta == null || delta === 0) return undefined;
+  return blendHex(colors.bg, delta > 0 ? colors.positive : colors.negative, 0.42);
+}
+
 function AnalystSummary({ data, width }: { data: AnalystResearchData | null; width: number }) {
   const target = data?.priceTarget;
   const upside = targetUpside(target);
@@ -170,26 +196,135 @@ function AnalystSummary({ data, width }: { data: AnalystResearchData | null; wid
   );
 }
 
-type RatingColumnId = "date" | "firm" | "action" | "current" | "prior";
+export type RatingColumnId = "date" | "firm" | "action" | "current" | "target" | "prior";
 type RatingColumn = DataTableColumn & { id: RatingColumnId };
+export type SortDirection = "asc" | "desc";
+
+export interface RatingSortPreference {
+  columnId: RatingColumnId;
+  direction: SortDirection;
+}
+
+const DEFAULT_RATING_SORT: RatingSortPreference = {
+  columnId: "date",
+  direction: "desc",
+};
+
+const DEFAULT_RATING_SORT_DIRECTIONS: Record<RatingColumnId, SortDirection> = {
+  date: "desc",
+  firm: "asc",
+  action: "asc",
+  current: "asc",
+  target: "desc",
+  prior: "asc",
+};
 
 const RATING_COLUMNS: RatingColumn[] = [
   { id: "date", label: "DATE", width: 10, align: "left" },
-  { id: "firm", label: "FIRM", width: 24, align: "left" },
-  { id: "action", label: "ACTION", width: 11, align: "left" },
-  { id: "current", label: "RATING", width: 14, align: "left" },
-  { id: "prior", label: "PRIOR", width: 14, align: "left" },
+  { id: "firm", label: "FIRM", width: 20, align: "left" },
+  { id: "action", label: "ACTION", width: 10, align: "left" },
+  { id: "current", label: "RATING", width: 13, align: "left" },
+  { id: "target", label: "TARGET", width: 13, align: "left" },
+  { id: "prior", label: "PRIOR", width: 13, align: "left" },
 ];
+
+function normalizedText(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.toLocaleLowerCase() : null;
+}
+
+function ratingTargetSortValue(row: AnalystRatingRecord): number | null {
+  return row.currentPriceTarget ?? row.priorPriceTarget ?? null;
+}
+
+function ratingSortValue(row: AnalystRatingRecord, columnId: RatingColumnId): string | number | null {
+  switch (columnId) {
+    case "date":
+      return normalizedText(row.date);
+    case "firm":
+      return normalizedText(row.firm);
+    case "action":
+      return normalizedText(row.action);
+    case "current":
+      return normalizedText(row.current);
+    case "target":
+      return ratingTargetSortValue(row);
+    case "prior":
+      return normalizedText(row.prior);
+  }
+}
+
+function compareSortValues(
+  left: string | number | null,
+  right: string | number | null,
+  direction: SortDirection,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+
+  const comparison = typeof left === "string" && typeof right === "string"
+    ? left.localeCompare(right)
+    : Number(left) - Number(right);
+  return direction === "asc" ? comparison : -comparison;
+}
+
+export function sortRatingRows<T extends AnalystRatingRecord>(
+  rows: readonly T[],
+  preference: RatingSortPreference,
+): T[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const primary = compareSortValues(
+        ratingSortValue(left.row, preference.columnId),
+        ratingSortValue(right.row, preference.columnId),
+        preference.direction,
+      );
+      if (primary !== 0) return primary;
+
+      const dateTieBreak = preference.columnId === "date"
+        ? 0
+        : compareSortValues(
+          ratingSortValue(left.row, "date"),
+          ratingSortValue(right.row, "date"),
+          "desc",
+        );
+      if (dateTieBreak !== 0) return dateTieBreak;
+
+      return left.index - right.index;
+    })
+    .map((entry) => entry.row);
+}
+
+export function nextRatingSortPreference(
+  current: RatingSortPreference,
+  columnId: string,
+): RatingSortPreference {
+  const typedColumnId = columnId as RatingColumnId;
+  if (current.columnId !== typedColumnId) {
+    return {
+      columnId: typedColumnId,
+      direction: DEFAULT_RATING_SORT_DIRECTIONS[typedColumnId] ?? "asc",
+    };
+  }
+  return {
+    columnId: typedColumnId,
+    direction: current.direction === "asc" ? "desc" : "asc",
+  };
+}
 
 function AnalystResearchView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const dataProvider = useAssetData();
   const { symbol, exchange } = useSymbolBinding();
+  const [sortPreference, setSortPreference] = useState<RatingSortPreference>(DEFAULT_RATING_SORT);
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider?.getAnalystResearch) throw new Error("Analyst data unavailable");
     return dataProvider.getAnalystResearch(nextSymbol, nextExchange, forceRefresh ? { cacheMode: "refresh" } : undefined);
   }, [dataProvider]);
   const { data, loading, error, reload } = useTickerRequest<AnalystResearchData>(loader, symbol, exchange);
-  const rows = data?.ratings ?? [];
+  const rows = useMemo(() => sortRatingRows(data?.ratings ?? [], sortPreference), [data?.ratings, sortPreference]);
+  const ratingCurrency = data?.priceTarget?.currency ?? data?.currency ?? "USD";
 
   const renderCell = useCallback((
     row: AnalystResearchData["ratings"][number],
@@ -207,10 +342,20 @@ function AnalystResearchView({ focused, width, height }: { focused: boolean; wid
         return { text: row.action ?? "-", color: selectedColor ?? ratingActionColor(row.action) };
       case "current":
         return { text: row.current ?? "-", color: selectedColor ?? colors.text };
+      case "target": {
+        const delta = ratingTargetDelta(row);
+        const hasTarget = row.currentPriceTarget != null || row.priorPriceTarget != null;
+        return {
+          text: formatRatingTarget(row, ratingCurrency),
+          color: selectedColor ?? (hasTarget ? colors.textBright : colors.textDim),
+          backgroundColor: rowState.selected ? undefined : ratingTargetBackground(delta),
+          attributes: hasTarget ? TextAttributes.BOLD : undefined,
+        };
+      }
       case "prior":
         return { text: row.prior ?? "-", color: selectedColor ?? colors.textDim };
     }
-  }, []);
+  }, [ratingCurrency]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name !== "r") return false;
@@ -219,6 +364,9 @@ function AnalystResearchView({ focused, width, height }: { focused: boolean; wid
     reload();
     return true;
   }, [reload]);
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) => nextRatingSortPreference(current, columnId));
+  }, []);
 
   usePaneFooter("analyst-research", () => ({
     info: [
@@ -237,15 +385,14 @@ function AnalystResearchView({ focused, width, height }: { focused: boolean; wid
       onRootKeyDown={handleKeyDown}
       columns={RATING_COLUMNS}
       items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
       getItemKey={(row, index) => `${row.date}:${row.firm}:${index}`}
       isSelected={() => false}
       onSelect={() => {}}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading analyst data..." : error ?? "No analyst data"}
-      showHorizontalScrollbar={false}
     />
   );
 }

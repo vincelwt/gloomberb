@@ -32,4 +32,48 @@ describe("YahooFinanceClient exchange aliases", () => {
     });
     expect(history[0]?.close).toBe(200);
   });
+
+  test("preserves analyst rating price targets from upgrade history", async () => {
+    const provider = new YahooFinanceClient() as any;
+    let requestUrl = "";
+    provider.getSymbolsToTry = () => ["AMD"];
+    provider.fetchJsonWithCrumb = async (_label: string, url: string) => {
+      requestUrl = url;
+      return {
+        quoteSummary: {
+          result: [{
+            price: { symbol: "AMD", currency: "USD", exchangeName: "NasdaqGS" },
+            financialData: {},
+            recommendationTrend: { trend: [] },
+            earningsTrend: { trend: [] },
+            upgradeDowngradeHistory: {
+              history: [{
+                epochGradeDate: 1778188318,
+                firm: "Citigroup",
+                toGrade: "Neutral",
+                fromGrade: "Neutral",
+                action: "main",
+                priceTargetAction: "Raises",
+                currentPriceTarget: 358,
+                priorPriceTarget: 248,
+              }],
+            },
+          }],
+        },
+      };
+    };
+
+    const research = await provider.getAnalystResearch("AMD", "NASDAQ");
+
+    expect(requestUrl).toContain("upgradeDowngradeHistory");
+    expect(research.ratings[0]).toMatchObject({
+      date: "2026-05-07",
+      firm: "Citigroup",
+      action: "Raises",
+      current: "Neutral",
+      prior: "Neutral",
+      currentPriceTarget: 358,
+      priorPriceTarget: 248,
+    });
+  });
 });

@@ -195,6 +195,128 @@ describe("AssetDataRouter", () => {
     expect(holders.holders[0]?.name).toBe("Vanguard Group Inc");
   });
 
+  test("falls back to later analyst providers when rating targets are missing", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getAnalystResearch(symbol) {
+        return {
+          providerId: "cloud",
+          symbol,
+          ratings: [{ date: "2026-05-01", firm: "Cloud Firm", action: "Raises", current: "Buy", prior: "Buy" }],
+          recommendations: [],
+          earningsEstimates: [],
+          revenueEstimates: [],
+        };
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getAnalystResearch(symbol) {
+        return {
+          providerId: "yahoo",
+          symbol,
+          ratings: [{
+            date: "2026-05-01",
+            firm: "Yahoo Firm",
+            action: "Raises",
+            current: "Buy",
+            prior: "Buy",
+            currentPriceTarget: 680,
+            priorPriceTarget: 595,
+          }],
+          recommendations: [],
+          earningsEstimates: [],
+          revenueEstimates: [],
+        };
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const research = await router.getAnalystResearch("AAPL", "NASDAQ");
+
+    expect(research.providerId).toBe("yahoo");
+    expect(research.ratings[0]?.currentPriceTarget).toBe(680);
+    expect(research.ratings[0]?.priorPriceTarget).toBe(595);
+  });
+
+  test("prefers cached analyst records with rating targets", async () => {
+    const dbPath = createTempDbPath("cached-analyst-targets");
+    const persistence = new AppPersistence(dbPath);
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getAnalystResearch(symbol) {
+        return {
+          providerId: "cloud",
+          symbol,
+          ratings: [{ date: "2026-05-01", firm: "Cloud Firm", action: "Raises", current: "Buy", prior: "Buy" }],
+          recommendations: [],
+          earningsEstimates: [],
+          revenueEstimates: [],
+        };
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getAnalystResearch(symbol) {
+        return {
+          providerId: "yahoo",
+          symbol,
+          ratings: [{
+            date: "2026-05-01",
+            firm: "Yahoo Firm",
+            action: "Raises",
+            current: "Buy",
+            prior: "Buy",
+            currentPriceTarget: 680,
+            priorPriceTarget: 595,
+          }],
+          recommendations: [],
+          earningsEstimates: [],
+          revenueEstimates: [],
+        };
+      },
+    };
+    const unavailableProvider = (id: string, priority: number): DataProvider => ({
+      ...fallbackProvider,
+      id,
+      name: id,
+      priority,
+      async getAnalystResearch() {
+        throw new Error(`${id} should not be fetched`);
+      },
+    });
+
+    try {
+      const seedRouter = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
+      await seedRouter.getAnalystResearch("AAPL", "NASDAQ");
+
+      const cachedRouter = new AssetDataRouter(
+        unavailableProvider("yahoo", 1000),
+        [unavailableProvider("cloud", 100)],
+        persistence.resources,
+      );
+      const research = await cachedRouter.getAnalystResearch("AAPL", "NASDAQ");
+
+      expect(research.providerId).toBe("yahoo");
+      expect(research.ratings[0]?.currentPriceTarget).toBe(680);
+      expect(research.ratings[0]?.priorPriceTarget).toBe(595);
+    } finally {
+      persistence.close();
+    }
+  });
+
   test("prefers broker quotes over fallback quotes", async () => {
     const router = new AssetDataRouter(fallbackProvider);
     const broker: BrokerAdapter = {

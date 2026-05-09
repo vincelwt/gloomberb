@@ -1,6 +1,6 @@
 import { Box } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { DetailTabDef, PaneProps } from "../../../types/plugin";
 import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
 import {
@@ -33,6 +33,29 @@ function sameStringSet(left: Set<string>, right: Set<string>): boolean {
   return true;
 }
 
+function registryDetailTabsSnapshot(registry: ReturnType<typeof getSharedRegistry>): string {
+  if (!registry) return "";
+  return [...registry.detailTabs.values()]
+    .map((tab) => `${tab.id}:${tab.name}:${tab.order}:${registry.getDetailTabPluginId?.(tab.id) ?? ""}`)
+    .join("\0");
+}
+
+function useRegistryDetailTabsSnapshot(registry: ReturnType<typeof getSharedRegistry>): string {
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    const events = registry?.events;
+    if (!events) return () => {};
+    const unregisterRegistered = events.on("plugin:registered", onStoreChange);
+    const unregisterUnregistered = events.on("plugin:unregistered", onStoreChange);
+    return () => {
+      unregisterRegistered();
+      unregisterUnregistered();
+    };
+  }, [registry]);
+
+  const getSnapshot = useCallback(() => registryDetailTabsSnapshot(registry), [registry]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -54,6 +77,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
 
   const disabledPlugins = config.disabledPlugins;
   const registry = getSharedRegistry();
+  const detailTabsSnapshot = useRegistryDetailTabsSnapshot(registry);
   const pluginTabs = useMemo<DetailTabDef[]>(() => (
     registry
       ? [...registry.detailTabs.values()].filter((tab) => {
@@ -61,7 +85,7 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
         return !ownerId || !disabledPlugins.includes(ownerId);
       })
       : []
-  ), [disabledPlugins, registry]);
+  ), [disabledPlugins, registry, detailTabsSnapshot]);
   const allTabs = buildVisibleDetailTabs(pluginTabs, ticker, financials, {
     config,
     hasOptionsChain,
