@@ -487,6 +487,26 @@ describe("quote merging", () => {
 });
 
 describe("layout focus fallback", () => {
+  test("starts with the top floating pane focused when no session pane is active", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const layout = {
+      ...cloneLayout(config.layout),
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      floating: [
+        { instanceId: "chat:main", x: 4, y: 2, width: 36, height: 10, zIndex: 70 },
+        { instanceId: "ticker-detail:main", x: 12, y: 4, width: 36, height: 10, zIndex: 95 },
+      ],
+    };
+
+    const state = createInitialState({
+      ...config,
+      layout,
+      layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+    });
+
+    expect(state.focusedPaneId).toBe("ticker-detail:main");
+  });
+
   test("cycles backward from a stale focused pane to the last visible pane", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const state = createInitialState(config);

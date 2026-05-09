@@ -37,8 +37,12 @@ import {
   type WindowFrame,
   type WindowMinimumSize,
 } from "./window-frame";
-
-const MAIN_WINDOW_RPC_KEY = "main";
+import {
+  detachedRpcKey,
+  focusWindowForRpcKey,
+  MAIN_WINDOW_RPC_KEY,
+  paneIdFromDetachedRpcKey,
+} from "./window-focus";
 
 type DesktopRpc = ReturnType<typeof BrowserView.defineRPC<ElectrobunDesktopRpcSchema>>;
 type WindowMoveEvent = { data?: { x?: number; y?: number } };
@@ -101,10 +105,6 @@ function requireDesktopWorkspace(): DesktopWorkspace {
   return desktopWorkspace;
 }
 
-function detachedRpcKey(instanceId: string): string {
-  return `detached:${instanceId}`;
-}
-
 function registerWindowRpc(key: string, rpc: DesktopRpc): void {
   windowRpcs.set(key, rpc);
   rpcWindowKeys.set(rpc, key);
@@ -156,10 +156,11 @@ function normalizeInitWindowTarget(
   if (rpcKey === MAIN_WINDOW_RPC_KEY) {
     return { kind: "main" };
   }
-  if (rpcKey?.startsWith("detached:")) {
+  const detachedPaneId = paneIdFromDetachedRpcKey(rpcKey);
+  if (detachedPaneId) {
     return {
       kind: "detached",
-      paneId: rpcKey.slice("detached:".length) || undefined,
+      paneId: detachedPaneId,
     };
   }
   const kind = payload.kind === "detached" ? "detached" : "main";
@@ -881,7 +882,7 @@ async function handleDesktop(
       }
       const snapshot = workspace.popOutPane(payload.paneId, resolveDetachedWindowFrame(payload.paneId));
       await commitDesktopSnapshot(snapshot);
-      (detachedWindows.get(payload.paneId) as any)?.focus?.();
+      focusWindowForRpcKey(detachedRpcKey(payload.paneId), mainWindow, detachedWindows);
       return null;
     }
     case "desktop.dockDetachedPane": {
@@ -911,7 +912,7 @@ async function handleDesktop(
       if (typeof payload.paneId !== "string") {
         throw new Error("desktop.focusDetachedPane requires paneId.");
       }
-      (detachedWindows.get(payload.paneId) as any)?.focus?.();
+      focusWindowForRpcKey(detachedRpcKey(payload.paneId), mainWindow, detachedWindows);
       return null;
     default:
       throw new Error(`Unknown desktop method: ${method}`);
@@ -1055,6 +1056,9 @@ async function handleBackendRequest(
     case "host.copyText":
       Utils.clipboardWriteText(normalizeText(payload.text) ?? "");
       return null;
+    case "host.focusWindow":
+      focusWindowForRpcKey(getRpcWindowKey(rpc), mainWindow, detachedWindows);
+      return null;
     case "host.copyPngImage": {
       const pngBase64 = normalizeText(payload.pngBase64);
       if (!pngBase64) throw new Error("host.copyPngImage requires PNG data.");
@@ -1141,6 +1145,7 @@ mainWindow = new BrowserWindow({
   sandbox: false,
 });
 updateWindowFrameCache(mainWindow, DEFAULT_WINDOW_FRAME, MAIN_WINDOW_MIN_SIZE);
+focusWindowForRpcKey(MAIN_WINDOW_RPC_KEY, mainWindow, detachedWindows);
 (mainWindow as any).on?.("move", (event: WindowMoveEvent) => {
   applyWindowMoveEvent(mainWindow, event);
 });
