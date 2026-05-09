@@ -8,7 +8,10 @@ export function getPaneDisplayTitle(
   paneDef: PaneDef,
 ): string {
   if (instance.paneId === "chat") {
-    return instance.title ?? "#everyone";
+    const channelId = typeof instance.settings?.channelId === "string" && instance.settings.channelId.trim()
+      ? instance.settings.channelId.trim()
+      : "everyone";
+    return instance.title ?? `#${channelId}`;
   }
 
   if (instance.paneId === "ticker-detail") {

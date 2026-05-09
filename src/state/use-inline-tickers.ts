@@ -33,7 +33,7 @@ export function useInlineTickers(texts: readonly string[]): {
   const tickers = useAppSelector((state) => state.tickers);
   const financials = useAppSelector((state) => state.financials);
   const registry = getSharedRegistry();
-  const [, setRefreshVersion] = useState(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const textsKey = texts.join("\u0000");
   const symbols = useMemo(() => normalizeSymbols(texts), [textsKey]);
   const symbolsKey = symbols.join("|");
@@ -168,15 +168,18 @@ export function useInlineTickers(texts: readonly string[]): {
     registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
   }, [registry]);
 
-  const catalog: Record<string, InlineTickerCatalogEntry> = {};
-  for (const symbol of symbols) {
-    const ticker = tickers.get(symbol) ?? null;
-    const quote = financials.get(symbol)?.quote ?? null;
-    const status: InlineTickerStatus = ticker
-      ? (quote ? "ready" : quoteMissingSymbols.has(symbol) ? "missing" : "loading")
-      : (missingSymbols.has(symbol) ? "missing" : "loading");
-    catalog[symbol] = { status, ticker, quote };
-  }
+  const catalog = useMemo(() => {
+    const entries: Record<string, InlineTickerCatalogEntry> = {};
+    for (const symbol of symbols) {
+      const ticker = tickers.get(symbol) ?? null;
+      const quote = financials.get(symbol)?.quote ?? null;
+      const status: InlineTickerStatus = ticker
+        ? (quote ? "ready" : quoteMissingSymbols.has(symbol) ? "missing" : "loading")
+        : (missingSymbols.has(symbol) ? "missing" : "loading");
+      entries[symbol] = { status, ticker, quote };
+    }
+    return entries;
+  }, [financials, refreshVersion, symbols, tickers]);
 
   return { catalog, openTicker };
 }
