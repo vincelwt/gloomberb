@@ -3,6 +3,7 @@ import { memo, useCallback, useMemo, useRef, useState, type RefObject } from "re
 import { TextAttributes, type ScrollBoxRenderable } from "../ui";
 import { EmptyState } from "./ui";
 import { colors, hoverBg } from "../theme/colors";
+import { useThemeColors } from "../theme/theme-context";
 import { getSharedRegistry } from "../plugins/registry";
 import type { ColumnConfig } from "../types/config";
 import type { TickerFinancials, PricePoint } from "../types/financials";
@@ -102,6 +103,7 @@ const TickerListHeader = memo(function TickerListHeader({
   onHeaderClick?: (columnId: string) => void;
   onSizeChange?: () => void;
 }) {
+  useThemeColors();
   return (
     <ScrollBox
       ref={headerScrollRef}
@@ -211,6 +213,7 @@ const TickerListRow = memo(function TickerListRow({
   priceHistory?: PricePoint[];
   contentWidth: number;
 }) {
+  useThemeColors();
   const lastActivatedAtRef = useRef<number | null>(null);
   const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
 

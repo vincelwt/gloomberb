@@ -1,6 +1,7 @@
 import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector, useFocusedTicker } from "../../state/app-context";
 import {
   selectActiveLayoutIndex,
@@ -57,6 +58,7 @@ function truncate(text: string, width: number): string {
 }
 
 export function StatusBar() {
+  useThemeColors();
   const { nativePaneChrome, nativeContextMenu } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const registry = getSharedRegistry();

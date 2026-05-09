@@ -38,11 +38,10 @@ export interface CommandBarRouteBase {
 
 export interface CommandBarModeRoute extends CommandBarRouteBase {
   kind: "mode";
-  screen: "ticker-search" | "themes" | "plugins" | "layout";
+  screen: "ticker-search" | "plugins" | "layout";
   query: string;
   selectedIdx: number;
   hoveredIdx: number | null;
-  themeBaseId?: string;
   payload?: Record<string, unknown>;
 }
 

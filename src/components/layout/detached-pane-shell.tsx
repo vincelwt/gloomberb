@@ -6,6 +6,7 @@ import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { findPaneInstance } from "../../types/config";
 import type { PluginRegistry } from "../../plugins/registry";
 import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane-footer";
 import { PaneContent } from "./pane-content";
 import { getPaneBodyWidth } from "./pane-sizing";
@@ -23,6 +24,7 @@ function stopMouse(event?: { stopPropagation?: () => void; preventDefault?: () =
 }
 
 export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: DetachedPaneShellProps) {
+  useThemeColors();
   const dispatch = useAppDispatch();
   const rendererHost = useRendererHost();
   const config = useAppSelector((state) => state.config);

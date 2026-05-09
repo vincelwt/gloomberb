@@ -5,7 +5,33 @@ import { getTheme, DEFAULT_THEME, type Theme } from "./themes";
 // React components re-read these on each render triggered by the SET_THEME action.
 export const colors: Omit<Theme, "name" | "description"> = { ...getTheme(DEFAULT_THEME) };
 
+export type ColorKey = keyof typeof colors;
+
 let currentThemeId = DEFAULT_THEME;
+let transientPreviewThemeId: string | null = null;
+let cssThemeId: string | null = null;
+let cssThemeDocument: unknown = null;
+
+const THEME_CSS_VARIABLES: Array<[ColorKey, string]> = [
+  ["bg", "--gloom-bg"],
+  ["panel", "--gloom-panel"],
+  ["border", "--gloom-border"],
+  ["borderFocused", "--gloom-border-focused"],
+  ["text", "--gloom-text"],
+  ["textDim", "--gloom-text-dim"],
+  ["textBright", "--gloom-text-bright"],
+  ["textMuted", "--gloom-text-muted"],
+  ["positive", "--gloom-positive"],
+  ["negative", "--gloom-negative"],
+  ["neutral", "--gloom-neutral"],
+  ["warning", "--gloom-warning"],
+  ["header", "--gloom-header"],
+  ["headerText", "--gloom-header-text"],
+  ["selected", "--gloom-selected"],
+  ["selectedText", "--gloom-selected-text"],
+  ["commandBg", "--gloom-command-bg"],
+  ["commandBorder", "--gloom-command-border"],
+];
 
 export function getCurrentThemeId(): string {
   return currentThemeId;
@@ -16,14 +42,34 @@ export function applyTheme(id: string): void {
   currentThemeId = id;
   // Mutate in-place so every existing import sees the new values
   Object.assign(colors, theme);
+  syncThemeCssVariables();
 }
 
-export function syncTheme(id: string): void {
-  if (currentThemeId === id) return;
+export function previewTheme(id: string): void {
+  transientPreviewThemeId = id;
   applyTheme(id);
 }
 
-export type ColorKey = keyof typeof colors;
+export function clearTransientThemePreview(): void {
+  transientPreviewThemeId = null;
+}
+
+export function syncTheme(id: string): void {
+  if (
+    transientPreviewThemeId
+    && currentThemeId === transientPreviewThemeId
+    && id !== transientPreviewThemeId
+  ) {
+    syncThemeCssVariables();
+    return;
+  }
+  transientPreviewThemeId = null;
+  if (currentThemeId === id) {
+    syncThemeCssVariables();
+    return;
+  }
+  applyTheme(id);
+}
 
 export { blendHex } from "./color-utils";
 
@@ -47,6 +93,21 @@ export function getComparisonSeriesColor(index: number): string {
 /** Returns a hover background color derived from bg and selected */
 export function hoverBg(): string {
   return blendHex(colors.bg, colors.selected, 0.5);
+}
+
+function syncThemeCssVariables(): void {
+  const documentLike = (globalThis as {
+    document?: { documentElement?: { style?: { setProperty: (name: string, value: string) => void } } };
+  }).document;
+  const style = documentLike?.documentElement?.style;
+  if (!style) return;
+  if (cssThemeId === currentThemeId && cssThemeDocument === documentLike) return;
+  cssThemeId = currentThemeId;
+  cssThemeDocument = documentLike;
+  for (const [key, name] of THEME_CSS_VARIABLES) {
+    style.setProperty(name, colors[key]);
+  }
+  style.setProperty("--gloom-hover-bg", hoverBg());
 }
 
 export function commandBarBg(): string {

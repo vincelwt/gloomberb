@@ -13,14 +13,14 @@ import {
   type ReactNode,
 } from "react";
 import type { SessionStore } from "../data/session-store";
-import { syncTheme } from "../theme/colors";
+import { ThemeProvider } from "../theme/theme-context";
 import {
   findPaneInstance,
   materializeDetachedPanesAsFloating,
   type AppConfig,
   type PaneInstanceConfig,
 } from "../types/config";
-import type { DesktopSharedStateSnapshot, DesktopWindowBridge } from "../types/desktop-window";
+import type { DesktopSharedStateSnapshot, DesktopThemePreviewState, DesktopWindowBridge } from "../types/desktop-window";
 import { setPaneSetting } from "../pane-settings";
 import { useTickerFinancials } from "../market-data/hooks";
 import {
@@ -142,7 +142,7 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
   const context = useRequiredAppContext();
   const selectorRef = useRef(selector);
   selectorRef.current = selector;
-  const lastSnapshotRef = useRef<{ selection: T; themeId: string } | undefined>(undefined);
+  const lastSnapshotRef = useRef<{ selection: T } | undefined>(undefined);
 
   if (!isAppStoreContextValue(context)) {
     return selector(context.state);
@@ -153,12 +153,11 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
     () => {
       const state = context.getState();
       const selection = selectorRef.current(state);
-      const themeId = getEffectiveThemeId(state);
       const previous = lastSnapshotRef.current;
-      if (previous && Object.is(previous.selection, selection) && previous.themeId === themeId) {
+      if (previous && Object.is(previous.selection, selection)) {
         return previous;
       }
-      const nextSnapshot = { selection, themeId };
+      const nextSnapshot = { selection };
       lastSnapshotRef.current = nextSnapshot;
       return nextSnapshot;
     },
@@ -166,7 +165,6 @@ export function useAppSelector<T>(selector: (state: AppState) => T): T {
       const state = context.getState();
       return {
         selection: selectorRef.current(state),
-        themeId: getEffectiveThemeId(state),
       };
     },
   );
@@ -303,6 +301,7 @@ export function AppProvider({
   sessionSnapshot = null,
   desktopBridge,
   desktopSnapshot = null,
+  initialThemePreview = null,
 }: {
   config: AppConfig;
   children: ReactNode;
@@ -310,34 +309,40 @@ export function AppProvider({
   sessionSnapshot?: AppSessionSnapshot | null;
   desktopBridge?: DesktopWindowBridge;
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
+  initialThemePreview?: DesktopThemePreviewState | null;
 }) {
   const [state, rawDispatch] = useReducer(
     appReducer,
-    { config, sessionSnapshot, desktopSnapshot },
+    { config, sessionSnapshot, desktopSnapshot, initialThemePreview },
     (initialState: {
       config: AppConfig;
       sessionSnapshot?: AppSessionSnapshot | null;
       desktopSnapshot?: DesktopSharedStateSnapshot | null;
+      initialThemePreview?: DesktopThemePreviewState | null;
     }) => {
       const {
         config: initialConfig,
         sessionSnapshot: initialSessionSnapshot,
         desktopSnapshot: initialDesktopSnapshot,
+        initialThemePreview: initialDesktopThemePreview,
       } = initialState;
-      const nextState = createInitialState(initialConfig, initialSessionSnapshot);
-      return initialDesktopSnapshot
-        ? appReducer(nextState, { type: "HYDRATE_DESKTOP_SNAPSHOT", snapshot: initialDesktopSnapshot })
+      const baseState = createInitialState(initialConfig, initialSessionSnapshot);
+      const nextState = initialDesktopSnapshot
+        ? appReducer(baseState, { type: "HYDRATE_DESKTOP_SNAPSHOT", snapshot: initialDesktopSnapshot })
+        : baseState;
+      return initialDesktopThemePreview
+        ? appReducer(nextState, { type: "PREVIEW_THEME", theme: initialDesktopThemePreview.theme })
         : nextState;
     },
   );
-  // Sync the current theme before descendants read the shared palette during this render.
-  syncTheme(getEffectiveThemeId(state));
+  const effectiveThemeId = getEffectiveThemeId(state);
   const previousRecentTickers = useRef(state.recentTickers);
   const stateRef = useRef(state);
   const listenersRef = useRef(new Set<() => void>());
   const storeRef = useRef<AppContextStoreValue | null>(null);
   const lastMainSyncRef = useRef<string | null>(null);
   const lastDetachedPaneSyncRef = useRef<string | null>(null);
+  const lastThemePreviewSyncRef = useRef<string | null | undefined>(undefined);
 
   stateRef.current = state;
 
@@ -421,12 +426,35 @@ export function AppProvider({
 
   useEffect(() => {
     if (desktopBridge?.kind !== "main" || !desktopBridge.syncMainState) return;
-    const snapshot = buildDesktopSnapshot(state);
+    const snapshot = buildDesktopSnapshot(stateRef.current);
     const signature = serializeDesktopSnapshot(snapshot);
     if (signature === lastMainSyncRef.current) return;
     lastMainSyncRef.current = signature;
     void desktopBridge.syncMainState(snapshot);
-  }, [buildDesktopSnapshot, desktopBridge, serializeDesktopSnapshot, state]);
+  }, [
+    buildDesktopSnapshot,
+    desktopBridge,
+    serializeDesktopSnapshot,
+    state.activePanel,
+    state.config,
+    state.focusedPaneId,
+    state.paneState,
+    state.statusBarVisible,
+  ]);
+
+  useEffect(() => {
+    if (desktopBridge?.kind !== "main" || !desktopBridge.syncThemePreview) return;
+    if (lastThemePreviewSyncRef.current === state.themePreview) return;
+    lastThemePreviewSyncRef.current = state.themePreview;
+    void desktopBridge.syncThemePreview({ theme: state.themePreview });
+  }, [desktopBridge, state.themePreview]);
+
+  useEffect(() => {
+    if (desktopBridge?.kind !== "detached" || !desktopBridge.subscribeThemePreview) return;
+    return desktopBridge.subscribeThemePreview((preview) => {
+      dispatch({ type: "PREVIEW_THEME", theme: preview.theme });
+    });
+  }, [desktopBridge, dispatch]);
 
   useEffect(() => {
     if (desktopBridge?.kind !== "detached" || !desktopBridge.replaceDetachedPaneState || !desktopBridge.paneId) return;
@@ -445,5 +473,9 @@ export function AppProvider({
 
   usePersistSessionSnapshot(sessionStore, state, APP_SESSION_ID, APP_SESSION_SCHEMA_VERSION);
 
-  return <AppContext.Provider value={storeRef.current}>{children}</AppContext.Provider>;
+  return (
+    <ThemeProvider themeId={effectiveThemeId}>
+      <AppContext.Provider value={storeRef.current}>{children}</AppContext.Provider>
+    </ThemeProvider>
+  );
 }

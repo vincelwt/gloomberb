@@ -2,9 +2,10 @@ import type { PaneRuntimeState } from "../../../core/state/app-state";
 import type {
   DesktopDockPreviewState,
   DesktopSharedStateSnapshot,
+  DesktopThemePreviewState,
   DesktopWindowBridge,
 } from "../../../types/desktop-window";
-import { backendRequest, getElectrobunBackendInitSnapshot, onDesktopDockPreview, onDesktopState } from "./backend-rpc";
+import { backendRequest, getElectrobunBackendInitSnapshot, onDesktopDockPreview, onDesktopState, onDesktopThemePreview } from "./backend-rpc";
 import { detachedSnapshotKey, prepareDetachedSnapshot } from "./desktop-window-snapshot";
 
 export function createDesktopWindowBridge(kind: "main" | "detached", paneId?: string): DesktopWindowBridge {
@@ -19,6 +20,11 @@ export function createDesktopWindowBridge(kind: "main" | "detached", paneId?: st
     syncMainState: kind === "main"
       ? async (snapshot: DesktopSharedStateSnapshot) => {
         await backendRequest("desktop.syncMainState", { snapshot });
+      }
+      : undefined,
+    syncThemePreview: kind === "main"
+      ? async (preview: DesktopThemePreviewState) => {
+        await backendRequest("desktop.setThemePreview", { preview });
       }
       : undefined,
     replaceDetachedPaneState: kind === "detached"
@@ -52,6 +58,11 @@ export function createDesktopWindowBridge(kind: "main" | "detached", paneId?: st
     },
     subscribeDockPreview(listener: (preview: DesktopDockPreviewState) => void) {
       return onDesktopDockPreview((message) => {
+        listener(message.preview);
+      });
+    },
+    subscribeThemePreview(listener: (preview: DesktopThemePreviewState) => void) {
+      return onDesktopThemePreview((message) => {
         listener(message.preview);
       });
     },

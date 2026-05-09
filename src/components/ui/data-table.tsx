@@ -2,6 +2,7 @@ import { Box, ScrollBox, Text, useUiHost } from "../../ui";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type RefObject } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 import type { ColumnConfig } from "../../types/config";
 import { useAppDispatch, usePaneInstance } from "../../state/app-context";
 import { useViewport } from "../../react/input";
@@ -155,6 +156,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   scrollToIndexAlign = "nearest",
   scrollToIndexVersion = 0,
 }: DataTableProps<T, C>) {
+  useThemeColors();
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
   const appViewport = useViewport();

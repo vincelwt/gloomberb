@@ -1,6 +1,6 @@
 import { Box, ContextMenuProvider, useNativeRenderer, useRendererHost } from "./ui";
 import { ToastViewport, useToastHost } from "./ui/toast";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useShortcut } from "./react/input";
 import {
   AppProvider,
@@ -23,7 +23,7 @@ import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
 import { useDialog, useDialogState } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
 import type { TickerRepository } from "./data/ticker-repository";
-import { colors, syncTheme } from "./theme/colors";
+import { ThemeProvider, useThemeColors } from "./theme/theme-context";
 import {
   createPaneInstance,
   findPaneInstance,
@@ -45,7 +45,7 @@ import type { TickerRecord } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
 import type { TickerFinancials } from "./types/financials";
 import type { BrokerAccount } from "./types/trading";
-import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopWindowBridge } from "./types/desktop-window";
+import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState, DesktopWindowBridge } from "./types/desktop-window";
 import type { DesktopApplicationMenuBridge } from "./types/desktop-menu";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
 
@@ -138,6 +138,15 @@ interface AppInnerProps {
   sessionSnapshot?: AppSessionSnapshot | null;
   desktopWindowBridge?: DesktopWindowBridge;
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
+}
+
+function ThemedAppRoot({ children }: { children: ReactNode }) {
+  const themeColors = useThemeColors();
+  return (
+    <Box flexDirection="column" flexGrow={1} backgroundColor={themeColors.bg}>
+      {children}
+    </Box>
+  );
 }
 
 function AppInner({
@@ -1492,20 +1501,20 @@ function AppInner({
   if (desktopWindowBridge?.kind === "detached" && desktopWindowBridge.paneId) {
     return (
       <ContextMenuProvider pluginRegistry={pluginRegistry}>
-        <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+        <ThemedAppRoot>
           <DetachedPaneShell
             pluginRegistry={pluginRegistry}
             desktopWindowBridge={{ ...desktopWindowBridge, kind: "detached", paneId: desktopWindowBridge.paneId }}
           />
           <ToastViewport position="bottom-right" />
-        </Box>
+        </ThemedAppRoot>
       </ContextMenuProvider>
     );
   }
 
   return (
     <ContextMenuProvider pluginRegistry={pluginRegistry}>
-      <Box flexDirection="column" flexGrow={1} backgroundColor={colors.bg}>
+      <ThemedAppRoot>
         <Header />
         <Shell
           pluginRegistry={pluginRegistry}
@@ -1523,7 +1532,7 @@ function AppInner({
           />
         )}
         <ToastViewport position="bottom-right" />
-      </Box>
+      </ThemedAppRoot>
     </ContextMenuProvider>
   );
 }
@@ -1535,6 +1544,7 @@ interface AppProps {
   desktopWindowBridge?: DesktopWindowBridge;
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
+  desktopThemePreview?: DesktopThemePreviewState | null;
 }
 
 export function App({
@@ -1544,6 +1554,7 @@ export function App({
   desktopWindowBridge,
   desktopApplicationMenuBridge,
   desktopSnapshot = null,
+  desktopThemePreview = null,
 }: AppProps) {
   const renderer = useNativeRenderer();
   const effectiveInitialConfig = useMemo(() => {
@@ -1573,9 +1584,6 @@ export function App({
     return initialCliLaunch.config;
   });
   const [showOnboarding, setShowOnboarding] = useState(!effectiveInitialConfig.onboardingComplete);
-
-  // Keep the shared palette aligned before this render builds any JSX that reads `colors`.
-  syncTheme(config.theme);
 
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
@@ -1632,14 +1640,16 @@ export function App({
 
   if (showOnboarding) {
     return (
-      <OnboardingWizard
-        config={config}
-        pluginRegistry={services.pluginRegistry}
-        onComplete={(updatedConfig) => {
-          setConfig(updatedConfig);
-          setShowOnboarding(false);
-        }}
-      />
+      <ThemeProvider themeId={config.theme}>
+        <OnboardingWizard
+          config={config}
+          pluginRegistry={services.pluginRegistry}
+          onComplete={(updatedConfig) => {
+            setConfig(updatedConfig);
+            setShowOnboarding(false);
+          }}
+        />
+      </ThemeProvider>
     );
   }
 
@@ -1650,6 +1660,7 @@ export function App({
       sessionSnapshot={sessionSnapshot}
       desktopBridge={desktopWindowBridge}
       desktopSnapshot={desktopSnapshot}
+      initialThemePreview={desktopThemePreview}
     >
       <AppInner
         pluginRegistry={services.pluginRegistry}

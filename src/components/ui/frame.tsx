@@ -2,6 +2,7 @@ import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { type ComponentType, type ReactNode } from "react";
 import { colors } from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
 
 export interface DialogFrameProps {
   title: string;
@@ -11,6 +12,7 @@ export interface DialogFrameProps {
 }
 
 export function DialogFrame({ title, children, footer, showTitleDivider = true }: DialogFrameProps) {
+  useThemeColors();
   const HostDialogFrame = useUiHost().DialogFrame as ComponentType<DialogFrameProps> | undefined;
   if (HostDialogFrame) {
     return (

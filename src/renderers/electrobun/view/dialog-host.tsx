@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { DialogHostProvider, type DialogApi } from "../../../ui/dialog";
 import { blendHex, colors } from "../../../theme/colors";
+import { useThemeColors } from "../../../theme/theme-context";
 
 interface DialogState {
   id: string;
@@ -13,6 +14,7 @@ interface DialogState {
 let nextDialogId = 1;
 
 export function WebDialogHostProvider({ children }: { children: ReactNode }) {
+  useThemeColors();
   const [dialogState, setDialogState] = useState<DialogState | null>(null);
   const dialogBorder = blendHex(colors.border, colors.borderFocused, 0.18);
   const dialogBg = blendHex(colors.panel, colors.bg, 0.12);

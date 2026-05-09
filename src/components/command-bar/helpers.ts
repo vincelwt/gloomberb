@@ -14,7 +14,7 @@ import type {
 } from "./workflow-types";
 import type { CollectionKind, CollectionMembershipAction } from "./workflow-ops";
 
-export type RouteCommandId = "security-description" | "theme" | "plugins" | "layout";
+export type RouteCommandId = "security-description" | "plugins" | "layout";
 export type CollectionCommandId = "add-watchlist" | "add-portfolio" | "remove-watchlist" | "remove-portfolio";
 
 export function summarizeError(error: unknown): Record<string, string> {
@@ -30,7 +30,6 @@ export function summarizeError(error: unknown): Record<string, string> {
 
 export function isRouteCommandId(commandId: string): commandId is RouteCommandId {
   return commandId === "security-description"
-    || commandId === "theme"
     || commandId === "plugins"
     || commandId === "layout";
 }
@@ -237,12 +236,10 @@ export function normalizeWizardFields(steps: WizardStep[]): {
   return { fields, description, initialValues, pendingLabel, successLabel };
 }
 
-export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-search" | "themes" | "plugins" | "layout" {
+export function routeCommandIdToScreen(commandId: RouteCommandId): "ticker-search" | "plugins" | "layout" {
   switch (commandId) {
     case "security-description":
       return "ticker-search";
-    case "theme":
-      return "themes";
     case "plugins":
       return "plugins";
     case "layout":

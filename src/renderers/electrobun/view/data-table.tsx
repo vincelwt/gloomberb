@@ -14,7 +14,7 @@ import {
   type RefObject,
 } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui/host";
-import { colors, hoverBg } from "../../../theme/colors";
+import { useThemeColors } from "../../../theme/theme-context";
 import { useAppDispatch, usePaneInstance } from "../../../state/app-context";
 import { useRafCallback } from "../../../react/use-raf-callback";
 import { measurePerf } from "../../../utils/perf-marks";
@@ -36,6 +36,14 @@ interface VirtualRow {
 }
 
 const TABLE_INLINE_PADDING_PX = 8;
+const CSS_BG = "var(--gloom-bg)";
+const CSS_PANEL = "var(--gloom-panel)";
+const CSS_TEXT = "var(--gloom-text)";
+const CSS_TEXT_DIM = "var(--gloom-text-dim)";
+const CSS_TEXT_BRIGHT = "var(--gloom-text-bright)";
+const CSS_SELECTED = "var(--gloom-selected)";
+const CSS_SELECTED_TEXT = "var(--gloom-selected-text)";
+const CSS_HOVER_BG = "var(--gloom-hover-bg)";
 
 function hasAttribute(attributes: unknown, flag: number): boolean {
   return typeof attributes === "number" && (attributes & flag) !== 0;
@@ -265,6 +273,82 @@ function renderHeaderLabel<C extends DataTableColumn>(
   };
 }
 
+function WebDataTableHeader<C extends DataTableColumn>({
+  columns,
+  focusPane,
+  gridTemplateColumns,
+  onHeaderClick,
+  sortColumnId,
+  sortDirection,
+}: {
+  columns: C[];
+  focusPane: () => void;
+  gridTemplateColumns: string;
+  onHeaderClick: (columnId: string) => void;
+  sortColumnId: string | null;
+  sortDirection: "asc" | "desc";
+}) {
+  useThemeColors();
+  return (
+    <div
+      data-gloom-role="data-table-header-row"
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 2,
+        display: "grid",
+        gridTemplateColumns,
+        columnGap: "1ch",
+        alignItems: "center",
+        width: "100%",
+        minWidth: 0,
+        height: WEB_CELL_HEIGHT,
+        paddingLeft: TABLE_INLINE_PADDING_PX,
+        paddingRight: TABLE_INLINE_PADDING_PX,
+        boxSizing: "border-box",
+        backgroundColor: CSS_PANEL,
+      }}
+    >
+      {columns.map((column) => {
+        const { isSorted, text } = renderHeaderLabel(
+          column,
+          sortColumnId,
+          sortDirection,
+        );
+        return (
+          <div
+            key={column.id}
+            data-gloom-role="data-table-header-cell"
+            data-gloom-interactive="true"
+            style={{
+              minWidth: 0,
+              height: WEB_CELL_HEIGHT,
+              overflow: "hidden",
+              backgroundColor: column.headerBackgroundColor ?? CSS_PANEL,
+            }}
+            onMouseDown={(event) => {
+              focusPane();
+              event.preventDefault();
+              onHeaderClick(column.id);
+            }}
+          >
+            <span
+              title={text}
+              style={clippedCellTextStyle(
+                column,
+                isSorted ? CSS_TEXT : column.headerColor ?? CSS_TEXT_DIM,
+                TextAttributes.BOLD,
+              )}
+            >
+              {text}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function WebDataTableRowInner<
   T,
   C extends DataTableColumn,
@@ -303,6 +387,7 @@ function WebDataTableRowInner<
   selected: boolean;
   setHoveredIdx: (index: number | null) => void;
 }) {
+  useThemeColors();
   const sectionHeader: DataTableSectionHeader | null =
     renderSectionHeader?.(item, index) ?? null;
   const baseRowStyle: CSSProperties = {
@@ -330,7 +415,7 @@ function WebDataTableRowInner<
         data-gloom-role="data-table-section-header"
         style={{
           ...baseRowStyle,
-          backgroundColor: sectionHeader.backgroundColor ?? colors.bg,
+          backgroundColor: sectionHeader.backgroundColor ?? CSS_BG,
         }}
         onMouseDown={(event) => {
           focusPane();
@@ -341,7 +426,7 @@ function WebDataTableRowInner<
           title={sectionHeader.text}
           style={{
             ...cellTextStyle(
-              sectionHeader.color ?? colors.textBright,
+              sectionHeader.color ?? CSS_TEXT_BRIGHT,
               sectionHeader.attributes ?? TextAttributes.BOLD,
             ),
             gridColumn: "1 / -1",
@@ -358,10 +443,10 @@ function WebDataTableRowInner<
   const rowState = { selected, hovered };
   const rowBackgroundColor = getRowBackgroundColor?.(item, index, rowState);
   const rowBg = selected
-    ? colors.selected
+    ? CSS_SELECTED
     : hovered
-      ? hoverBg()
-      : rowBackgroundColor ?? colors.bg;
+      ? CSS_HOVER_BG
+      : rowBackgroundColor ?? CSS_BG;
 
   return (
     <div
@@ -438,7 +523,7 @@ function WebDataTableRowInner<
                 title={cell.text}
                 style={clippedCellTextStyle(
                   column,
-                  cell.color ?? (selected ? colors.selectedText : colors.text),
+                  cell.color ?? (selected ? CSS_SELECTED_TEXT : CSS_TEXT),
                   cell.attributes ?? TextAttributes.NONE,
                 )}
               >
@@ -624,7 +709,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     width: "100%",
     minWidth: 0,
     minHeight: 0,
-    backgroundColor: colors.bg,
+    backgroundColor: CSS_BG,
     overflow: "hidden",
   };
   const bodyScrollerStyle: CSSProperties = {
@@ -634,7 +719,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     minHeight: 0,
     overflowX: horizontalScrollEnabled ? "auto" : "hidden",
     overflowY: "auto",
-    backgroundColor: colors.bg,
+    backgroundColor: CSS_BG,
   };
 
   return (
@@ -673,77 +758,29 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             minHeight: WEB_CELL_HEIGHT,
           }}
         >
-          <div
-            data-gloom-role="data-table-header-row"
-            style={{
-              position: "sticky",
-              top: 0,
-              zIndex: 2,
-              display: "grid",
-              gridTemplateColumns,
-              columnGap: "1ch",
-              alignItems: "center",
-              width: "100%",
-              minWidth: 0,
-              height: WEB_CELL_HEIGHT,
-              paddingLeft: TABLE_INLINE_PADDING_PX,
-              paddingRight: TABLE_INLINE_PADDING_PX,
-              boxSizing: "border-box",
-              backgroundColor: colors.panel,
-            }}
-          >
-            {columns.map((column) => {
-              const { isSorted, text } = renderHeaderLabel(
-                column,
-                sortColumnId,
-                sortDirection,
-              );
-              return (
-                <div
-                  key={column.id}
-                  data-gloom-role="data-table-header-cell"
-                  data-gloom-interactive="true"
-                  style={{
-                    minWidth: 0,
-                    height: WEB_CELL_HEIGHT,
-                    overflow: "hidden",
-                    backgroundColor: column.headerBackgroundColor ?? colors.panel,
-                  }}
-                  onMouseDown={(event) => {
-                    focusPane();
-                    event.preventDefault();
-                    onHeaderClick(column.id);
-                  }}
-                >
-                  <span
-                    title={text}
-                    style={clippedCellTextStyle(
-                      column,
-                      isSorted ? colors.text : column.headerColor ?? colors.textDim,
-                      TextAttributes.BOLD,
-                    )}
-                  >
-                    {text}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <WebDataTableHeader
+            columns={columns}
+            focusPane={focusPane}
+            gridTemplateColumns={gridTemplateColumns}
+            onHeaderClick={onHeaderClick}
+            sortColumnId={sortColumnId}
+            sortDirection={sortDirection}
+          />
           {items.length === 0 ? (
             emptyContent ?? (
               <div
                 style={{
                   width: "100%",
                   padding: `${WEB_CELL_HEIGHT}px ${WEB_CELL_WIDTH}px`,
-                  color: colors.textDim,
+                  color: CSS_TEXT_DIM,
                   lineHeight: "var(--cell-h)",
                 }}
               >
-                <div style={cellTextStyle(colors.textBright, TextAttributes.BOLD)}>
+                <div style={cellTextStyle(CSS_TEXT_BRIGHT, TextAttributes.BOLD)}>
                   {emptyStateTitle}
                 </div>
                 {emptyStateHint ? (
-                  <div style={cellTextStyle(colors.textDim, TextAttributes.NONE)}>
+                  <div style={cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE)}>
                     {emptyStateHint}
                   </div>
                 ) : null}

@@ -13,7 +13,7 @@ import * as nodeConfigStoreHost from "../../../data/config-store-node";
 import { cloneLayout, findPaneInstance, type AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
 import type { PaneRuntimeState } from "../../../core/state/app-state";
-import type { DesktopDockPreviewState, DesktopSharedStateSnapshot } from "../../../types/desktop-window";
+import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState } from "../../../types/desktop-window";
 import type { ReleaseInfo, UpdateCheckResult, UpdateProgress } from "../../../updater";
 import { buildSoundCommand } from "../../../notifications/app-notifier";
 import { isPaneDetached } from "../../../plugins/pane-manager";
@@ -61,6 +61,7 @@ let services: AppServices | null = null;
 let mainWindow: BrowserWindow | null = null;
 let desktopWorkspace: DesktopWorkspace | null = null;
 let currentDockPreview: DesktopDockPreviewState = { paneId: null, edge: null };
+let currentThemePreview: DesktopThemePreviewState = { theme: null };
 let desktopUpdateInProgress = false;
 
 const detachedWindows = new Map<string, BrowserWindow>();
@@ -560,6 +561,17 @@ function sendDockPreview(preview: DesktopDockPreviewState): void {
   });
 }
 
+function sendThemePreview(preview: DesktopThemePreviewState): void {
+  if (currentThemePreview.theme === preview.theme) return;
+  currentThemePreview = preview;
+  const encodedPreview = encodeRpcValue(preview) as DesktopThemePreviewState;
+  forEachReadyWindowRpc((rpc) => {
+    rpc.send["desktop.themePreview"]({
+      preview: encodedPreview,
+    });
+  });
+}
+
 function clearDockPreview(paneId?: string): void {
   if (paneId && currentDockPreview.paneId && currentDockPreview.paneId !== paneId) return;
   sendDockPreview({ paneId: null, edge: null });
@@ -848,6 +860,7 @@ async function initialize(
     config: requireConfig(),
     sessionSnapshot: getSessionSnapshot(),
     desktopSnapshot: getDesktopSnapshot(),
+    desktopThemePreview: currentThemePreview,
     pluginState: loadPluginState(),
     capabilityManifests: requireServices().pluginRegistry.capabilities.manifests({ rendererOnly: true }),
     windowKind: windowTarget.kind,
@@ -869,6 +882,9 @@ async function handleDesktop(
       sendDesktopState(snapshot);
       return null;
     }
+    case "desktop.setThemePreview":
+      sendThemePreview((payload.preview ?? { theme: null }) as DesktopThemePreviewState);
+      return null;
     case "desktop.replaceDetachedPaneState":
       if (typeof payload.paneId !== "string") {
         throw new Error("desktop.replaceDetachedPaneState requires paneId.");

@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer } from "react";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import { CommandBar } from "./command-bar";
-import { AppContext, type AppState, appReducer, createInitialState, getEffectiveThemeId } from "../../state/app-context";
+import { AppContext, type AppAction, type AppState, appReducer, createInitialState, getEffectiveThemeId } from "../../state/app-context";
 import { createTestDataProvider } from "../../test-support/data-provider";
+import { ThemeProvider, useThemeId } from "../../theme/theme-context";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
@@ -230,6 +231,10 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
   } as unknown as PluginRegistry;
 }
 
+function ThemeProbe() {
+  return <text>{`theme:${useThemeId()}`}</text>;
+}
+
 function CommandBarHarness({
   query,
   disabledPlugins = [],
@@ -244,6 +249,7 @@ function CommandBarHarness({
   dataProvider = makeDataProvider(),
   hasPaneSettings,
   onCheckForUpdates,
+  onAction,
 }: {
   query: string;
   disabledPlugins?: string[];
@@ -258,6 +264,7 @@ function CommandBarHarness({
   dataProvider?: DataProvider;
   hasPaneSettings?: (paneId: string) => boolean;
   onCheckForUpdates?: () => void | Promise<void>;
+  onAction?: (action: AppAction) => void;
 }) {
   let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
@@ -299,24 +306,31 @@ function CommandBarHarness({
   configurePluginRegistry?.(pluginRegistry);
   const [liveState, dispatch] = useReducer(appReducer, state);
   const currentState = live ? liveState : state;
-  const currentDispatch = live ? dispatch : () => {};
+  const currentDispatch = live
+    ? (action: AppAction) => {
+      onAction?.(action);
+      dispatch(action);
+    }
+    : (_action: AppAction) => {};
 
   return (
-    <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
-      <TestDialogProvider>
-        {live && <text>{`theme:${getEffectiveThemeId(currentState)}`}</text>}
-        {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
-        {currentState.commandBarOpen && (
-          <CommandBar
-            dataProvider={dataProvider}
-            tickerRepository={tickerRepository as any}
-            pluginRegistry={pluginRegistry}
-            quitApp={() => {}}
-            onCheckForUpdates={onCheckForUpdates}
-          />
-        )}
-      </TestDialogProvider>
-    </AppContext>
+    <ThemeProvider themeId={getEffectiveThemeId(currentState)}>
+      <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
+        <TestDialogProvider>
+          {live && <ThemeProbe />}
+          {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
+          {currentState.commandBarOpen && (
+            <CommandBar
+              dataProvider={dataProvider}
+              tickerRepository={tickerRepository as any}
+              pluginRegistry={pluginRegistry}
+              quitApp={() => {}}
+              onCheckForUpdates={onCheckForUpdates}
+            />
+          )}
+        </TestDialogProvider>
+      </AppContext>
+    </ThemeProvider>
   );
 }
 
@@ -738,7 +752,6 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Commands");
     expect(frame).toContain("TH");
-    expect(frame).toContain("Themes");
     expect(frame).toContain("Amber");
     expect(frame).toContain("Paper");
     expect(frame).toContain("GitHub Light");
@@ -797,12 +810,45 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressArrow("down");
+      await Bun.sleep(220);
       await testSetup!.renderOnce();
     });
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("theme:green");
+  });
+
+  test("debounces rapid keyboard theme previews", async () => {
+    const actions: AppAction[] = [];
+    testSetup = await testRender(
+      <CommandBarHarness query="TH " live onAction={(action) => actions.push(action)} />,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      for (let index = 0; index < 6; index++) {
+        testSetup!.mockInput.pressArrow("down");
+      }
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.filter((action) => action.type === "PREVIEW_THEME")).toHaveLength(0);
+
+    await act(async () => {
+      await Bun.sleep(100);
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.filter((action) => action.type === "PREVIEW_THEME")).toHaveLength(0);
+
+    await act(async () => {
+      await Bun.sleep(150);
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.filter((action) => action.type === "PREVIEW_THEME")).toHaveLength(1);
   });
 
   test("does not preview a theme from mouse hover alone", async () => {
@@ -840,6 +886,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressArrow("down");
+      await Bun.sleep(220);
       await testSetup!.renderOnce();
     });
     await testSetup.renderOnce();
@@ -887,8 +934,10 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     await act(async () => {
       testSetup!.mockInput.pressArrow("down");
+      await Bun.sleep(220);
       await testSetup!.renderOnce();
     });
+    await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain("theme:green");
 
     await emitKeypress(testSetup, { name: "u", ctrl: true });
