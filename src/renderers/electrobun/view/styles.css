@@ -295,18 +295,11 @@ body.gloom-dragging {
   min-width: 260px;
   max-width: 420px;
   padding: 10px 12px;
-  border: 1px solid #3a4148;
-  background: #151b20;
-  color: #d8dde3;
+  border: 1px solid;
   box-shadow: 0 12px 24px rgba(0,0,0,.28);
 }
-.gloom-toast-success { border-color: #54c99f; }
-.gloom-toast-error { border-color: #ff6b5f; }
 .gloom-toast-action {
   margin-top: 8px;
-  color: #101417;
-  background: #d8dde3;
-  border: 0;
   padding: 4px 8px;
   border-radius: 4px;
 }
