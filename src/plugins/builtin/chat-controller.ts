@@ -18,6 +18,7 @@ const TRANSCRIPT_CACHE_POLICY = {
 };
 const DRAFT_SYNC_DEBOUNCE_MS = 250;
 const VERIFICATION_POLL_MS = 5_000;
+const SAFETY_REFRESH_MS = 30_000;
 const ISO_TIMESTAMP_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const USERNAME_MENTION = /(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{2,29})(?![A-Za-z0-9_])/g;
 const PENDING_RECONCILE_WINDOW_MS = 2 * 60_000;
@@ -126,6 +127,7 @@ export class ChatController {
   private wsConnection: ChatConnection | null = null;
   private wsConnected = false;
   private verificationPollTimer: ReturnType<typeof setInterval> | null = null;
+  private safetyRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private draftSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private openViewCount = 0;
   private pendingMessageSeq = 0;
@@ -214,6 +216,7 @@ export class ChatController {
     const token = apiClient.getSessionToken();
     if (!token) {
       this.stopVerificationPolling();
+      this.stopSafetyRefresh();
       this.wsConnection?.close();
       this.wsConnection = null;
       this.wsConnected = false;
@@ -229,6 +232,7 @@ export class ChatController {
     const session = await apiClient.getSession();
     if (!session) {
       this.stopVerificationPolling();
+      this.stopSafetyRefresh();
       this.wsConnection?.close();
       this.wsConnection = null;
       this.wsConnected = false;
@@ -261,23 +265,32 @@ export class ChatController {
     }
 
     this.syncVerificationPolling();
+    this.stopSafetyRefresh();
     this.wsConnection?.close();
     this.wsConnection = null;
     this.wsConnected = false;
   }
 
   async refreshMessages(): Promise<void> {
+    return this.runMessagesRefresh({ showLoading: true });
+  }
+
+  private async runMessagesRefresh(options: { showLoading: boolean }): Promise<void> {
     if (this.refreshMessagesPromise) return this.refreshMessagesPromise;
 
-    this.messagesLoading = true;
-    this.emit();
+    if (options.showLoading) {
+      this.messagesLoading = true;
+      this.emit();
+    }
 
     const request = this.fetchMessages()
       .catch(() => {
         this.persistChannelState();
       })
       .finally(() => {
-        this.messagesLoading = false;
+        if (options.showLoading) {
+          this.messagesLoading = false;
+        }
         this.refreshMessagesPromise = null;
         this.emit();
       });
@@ -333,6 +346,7 @@ export class ChatController {
 
   clearSession(): void {
     this.stopVerificationPolling();
+    this.stopSafetyRefresh();
     this.wsConnection?.close();
     this.wsConnection = null;
     this.wsConnected = false;
@@ -355,6 +369,7 @@ export class ChatController {
 
   reset(clearSession = false): void {
     this.stopVerificationPolling();
+    this.stopSafetyRefresh();
     this.wsConnection?.close();
     this.wsConnection = null;
     this.wsConnected = false;
@@ -385,6 +400,7 @@ export class ChatController {
     });
     this.flushDraftSync();
     this.stopVerificationPolling();
+    this.stopSafetyRefresh();
     this.wsConnection?.close();
     this.wsConnection = null;
     this.wsConnected = false;
@@ -431,7 +447,12 @@ export class ChatController {
   }
 
   ensureConnection(): void {
-    if (this.wsConnected || !this.user?.emailVerified || !apiClient.getSessionToken()) return;
+    if (!this.user?.emailVerified || !apiClient.getSessionToken()) {
+      this.stopSafetyRefresh();
+      return;
+    }
+    this.startSafetyRefresh();
+    if (this.wsConnected) return;
     this.wsConnected = true;
 
     void this.refreshMessages().catch(() => {});
@@ -474,6 +495,24 @@ export class ChatController {
     if (!this.verificationPollTimer) return;
     clearInterval(this.verificationPollTimer);
     this.verificationPollTimer = null;
+  }
+
+  private startSafetyRefresh(): void {
+    if (this.safetyRefreshTimer) return;
+    this.safetyRefreshTimer = setInterval(() => {
+      if (!this.user?.emailVerified || !apiClient.getSessionToken()) {
+        this.stopSafetyRefresh();
+        return;
+      }
+      void this.runMessagesRefresh({ showLoading: false }).catch(() => {});
+    }, SAFETY_REFRESH_MS);
+    this.safetyRefreshTimer.unref?.();
+  }
+
+  private stopSafetyRefresh(): void {
+    if (!this.safetyRefreshTimer) return;
+    clearInterval(this.safetyRefreshTimer);
+    this.safetyRefreshTimer = null;
   }
 
   private async fetchMessages(): Promise<void> {

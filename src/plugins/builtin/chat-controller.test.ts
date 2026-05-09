@@ -291,6 +291,74 @@ describe("ChatController", () => {
     expect((controller as any).wsConnection).toBeNull();
   });
 
+  test("runs a quiet safety refresh while the live connection is active", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const intervalCallbacks: Array<() => void> = [];
+    const intervalHandle = { unref: () => {} };
+    let cleared = false;
+    let getMessagesCalls = 0;
+    const loadingSnapshots: boolean[] = [];
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+
+    (globalThis as any).setInterval = (callback: () => void, timeout: number) => {
+      expect(timeout).toBe(30_000);
+      intervalCallbacks.push(callback);
+      return intervalHandle;
+    };
+    (globalThis as any).clearInterval = (handle: unknown) => {
+      if (handle === intervalHandle) {
+        cleared = true;
+      }
+    };
+
+    try {
+      apiClient.getMessages = async () => {
+        getMessagesCalls += 1;
+        return [];
+      };
+      apiClient.connectChannel = () => ({
+        send: async () => {
+          throw new Error("not implemented");
+        },
+        close: () => {},
+      });
+
+      controller.attachPersistence(persistence);
+      controller.ensureConnection();
+      await flushMicrotasks();
+
+      expect(intervalCallbacks).toHaveLength(1);
+      expect(getMessagesCalls).toBe(1);
+      expect(controller.getSnapshot().loading).toBe(false);
+
+      controller.subscribe((snapshot) => {
+        loadingSnapshots.push(snapshot.loading);
+      });
+      loadingSnapshots.length = 0;
+
+      intervalCallbacks[0]!();
+      await flushMicrotasks();
+
+      expect(getMessagesCalls).toBe(2);
+      expect(loadingSnapshots).toEqual([false]);
+
+      controller.clearSession();
+      expect((controller as any).safetyRefreshTimer).toBeNull();
+      expect(cleared).toBe(true);
+    } finally {
+      controller.dispose();
+      (globalThis as any).setInterval = originalSetInterval;
+      (globalThis as any).clearInterval = originalClearInterval;
+    }
+  });
+
   test("keeps the cached session when session refresh fails transiently", async () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
