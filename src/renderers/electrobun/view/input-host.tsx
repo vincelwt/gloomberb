@@ -3,6 +3,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { InputHostProvider, type InputHost, type KeyEventLike, type ShortcutOptions } from "../../../react/input";
 import {
+  isMouseBackNavigationButton,
+  MOUSE_BACK_NAVIGATION_EVENT_NAME,
+} from "../../../utils/back-navigation";
+import {
   hasWebCtrlModifier,
   isEditableKeyboardTarget,
   normalizeWebKeyName,
@@ -21,6 +25,32 @@ function toKeyEventLike(event: KeyboardEvent): KeyEventLike {
     name: key,
     sequence: webKeySequence(event),
     ctrl: hasWebCtrlModifier(event),
+    shift: event.shiftKey,
+    alt: event.altKey,
+    meta: event.metaKey,
+    super: event.metaKey,
+    targetEditable: isEditableKeyboardTarget(event.target),
+    get defaultPrevented() {
+      return event.defaultPrevented;
+    },
+    get propagationStopped() {
+      return propagationStopped;
+    },
+    preventDefault: () => event.preventDefault(),
+    stopPropagation: () => {
+      propagationStopped = true;
+      event.stopPropagation();
+    },
+  };
+}
+
+function toMouseBackKeyEventLike(event: MouseEvent): KeyEventLike {
+  let propagationStopped = false;
+  return {
+    key: MOUSE_BACK_NAVIGATION_EVENT_NAME,
+    name: MOUSE_BACK_NAVIGATION_EVENT_NAME,
+    sequence: "",
+    ctrl: event.ctrlKey,
     shift: event.shiftKey,
     alt: event.altKey,
     meta: event.metaKey,
@@ -68,22 +98,49 @@ function getViewport() {
 export function WebInputHostProvider({ children }: { children: ReactNode }) {
   const shortcutsRef = useRef<ShortcutEntry[]>([]);
 
+  const dispatchShortcut = (shortcutEvent: KeyEventLike) => {
+    for (const phase of ["normal", "after"] as const) {
+      if (phase === "after" && (shortcutEvent.defaultPrevented || shortcutEvent.propagationStopped)) break;
+      for (const entry of shortcutsRef.current) {
+        if (entry.phase !== phase || !entry.enabledRef.current) continue;
+        entry.handlerRef.current(shortcutEvent);
+        if (shortcutEvent.propagationStopped) break;
+      }
+      if (shortcutEvent.propagationStopped) break;
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const shortcutEvent = toKeyEventLike(event);
-      for (const phase of ["normal", "after"] as const) {
-        if (phase === "after" && (shortcutEvent.defaultPrevented || shortcutEvent.propagationStopped)) break;
-        for (const entry of shortcutsRef.current) {
-          if (entry.phase !== phase || !entry.enabledRef.current) continue;
-          entry.handlerRef.current(shortcutEvent);
-          if (shortcutEvent.propagationStopped) break;
-        }
-        if (shortcutEvent.propagationStopped) break;
-      }
+      dispatchShortcut(shortcutEvent);
       if (shouldConsumeWebAppKeyDown(event)) event.preventDefault();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const preventBrowserBack = (event: MouseEvent) => {
+      if (!isMouseBackNavigationButton(event.button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onMouseUp = (event: MouseEvent) => {
+      if (!isMouseBackNavigationButton(event.button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dispatchShortcut(toMouseBackKeyEventLike(event));
+    };
+
+    window.addEventListener("mousedown", preventBrowserBack, true);
+    window.addEventListener("auxclick", preventBrowserBack, true);
+    window.addEventListener("mouseup", onMouseUp, true);
+    return () => {
+      window.removeEventListener("mousedown", preventBrowserBack, true);
+      window.removeEventListener("auxclick", preventBrowserBack, true);
+      window.removeEventListener("mouseup", onMouseUp, true);
+    };
   }, []);
 
   const host = useMemo<InputHost>(() => ({

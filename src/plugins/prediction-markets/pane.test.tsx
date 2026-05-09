@@ -378,7 +378,7 @@ describe("prediction markets pane interactions", () => {
     ).toBe("polymarket:pm-1");
   });
 
-  test("supports detail outcome navigation and backspace return from the keyboard", async () => {
+  test("supports detail outcome navigation and escape return from the keyboard", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
     globalThis.fetch = (async (input: Request | string | URL) => {
@@ -511,20 +511,13 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
 
     const escapeFrame = testSetup.captureCharFrame();
-    expect(escapeFrame).toContain("\u2190 Back");
-    expect(escapeFrame).toContain("Rule 2");
+    expect(escapeFrame).toContain("search markets");
+    expect(escapeFrame).not.toContain("Rule 2");
     expect(
       harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
         "prediction-markets"
       ]?.selectedDetailMarketKey,
     ).toBe("kalshi:KXFED-27APR-T4.50");
-
-    await emitKeypress(testSetup, { name: "backspace", sequence: "\u007f" });
-    await flushFrames(testSetup);
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("search markets");
-    expect(frame).not.toContain("Rule 2");
   });
 
   test("opens full-page detail from a row double click and preserves the browse selection", async () => {

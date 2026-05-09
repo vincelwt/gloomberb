@@ -1,8 +1,11 @@
 import { Box, Text, TextAttributes, useUiHost } from "../../ui";
 import { useShortcut } from "../../react/input";
-import { type ComponentType, type ReactNode } from "react";
+import { useCallback, type ComponentType, type ReactNode } from "react";
 import { colors } from "../../theme/colors";
-import { isDetailBackNavigationKey } from "../../utils/back-navigation";
+import {
+  isDetailBackNavigationKey,
+  isMouseBackNavigationEvent,
+} from "../../utils/back-navigation";
 
 export interface PageStackViewProps {
   focused: boolean;
@@ -41,12 +44,28 @@ export function PageStackView({
     );
   }
 
+  const goBack = useCallback((event?: {
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    onBack();
+  }, [onBack]);
+
   useShortcut((event) => {
     if (!focused || !detailOpen || !isDetailBackNavigationKey(event)) return;
-    event.stopPropagation?.();
-    event.preventDefault?.();
-    onBack();
+    goBack(event);
   });
+
+  const handleMouseDown = useCallback((event: {
+    button?: unknown;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    if (!focused || !detailOpen || !isMouseBackNavigationEvent(event)) return;
+    goBack(event);
+  }, [detailOpen, focused, goBack]);
 
   if (!detailOpen) {
     return (
@@ -57,16 +76,26 @@ export function PageStackView({
   }
 
   return (
-    <Box flexDirection="column" flexGrow={1} overflow="hidden">
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      overflow="hidden"
+      onMouseDown={handleMouseDown}
+    >
       <Box height={1} flexDirection="row">
         <Box
           onMouseDown={(event) => {
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            onBack();
+            goBack(event);
           }}
+          backgroundColor={colors.selected}
         >
-          <Text fg={colors.textBright}>{`← ${backLabel}`}</Text>
+          <Text
+            fg={colors.selectedText}
+            bg={colors.selected}
+            attributes={TextAttributes.BOLD}
+          >
+            {`← ${backLabel}`}
+          </Text>
         </Box>
         {detailTitle ? (
           <>

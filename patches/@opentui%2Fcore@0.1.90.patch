@@ -1,5 +1,5 @@
 diff --git a/index-e89anq5x.js b/index-e89anq5x.js
-index e3b6cf9..14a46d7 100644
+index e3b6cf9f90b13698966eec991fa7a1b2e1e22d96..709940f3998e5cb1caa88642fa68fa9ace80b7b1 100644
 --- a/index-e89anq5x.js
 +++ b/index-e89anq5x.js
 @@ -6328,17 +6328,27 @@ class MouseParser {
@@ -66,16 +66,39 @@ index e3b6cf9..14a46d7 100644
              consumed: index - offset + 1
            };
          }
-@@ -6408,7 +6418,7 @@ class MouseParser {
+@@ -6408,10 +6418,12 @@ class MouseParser {
        consumed: 6
      };
    }
 -  decodeSgrEvent(rawButtonCode, wireX, wireY, pressRelease) {
+-    const button = rawButtonCode & 3;
 +  decodeSgrEvent(rawButtonCode, wireX, wireY, pressRelease, context = void 0) {
-     const button = rawButtonCode & 3;
++    const encodedButton = rawButtonCode & 3;
++    const isExtendedButton = (rawButtonCode & 128) !== 0;
++    const button = isExtendedButton ? 8 + encodedButton : encodedButton;
      const isScroll = (rawButtonCode & 64) !== 0;
-     const scrollDirection = !isScroll ? undefined : MouseParser.SCROLL_DIRECTIONS[button];
-@@ -6443,11 +6453,26 @@ class MouseParser {
+-    const scrollDirection = !isScroll ? undefined : MouseParser.SCROLL_DIRECTIONS[button];
++    const scrollDirection = !isScroll ? undefined : MouseParser.SCROLL_DIRECTIONS[encodedButton];
+     const isMotion = (rawButtonCode & 32) !== 0;
+     const modifiers = {
+       shift: (rawButtonCode & 4) !== 0,
+@@ -6422,7 +6434,7 @@ class MouseParser {
+     let scrollInfo;
+     if (isMotion) {
+       const isDragging = this.mouseButtonsPressed.size > 0;
+-      if (button === 3) {
++      if (!isExtendedButton && encodedButton === 3) {
+         type = "move";
+       } else if (isDragging) {
+         type = "drag";
+@@ -6437,17 +6449,32 @@ class MouseParser {
+       };
+     } else {
+       type = pressRelease === "M" ? "down" : "up";
+-      if (type === "down" && button !== 3) {
++      if (type === "down" && (isExtendedButton || encodedButton !== 3)) {
+         this.mouseButtonsPressed.add(button);
+       } else if (type === "up") {
          this.mouseButtonsPressed.clear();
        }
      }
@@ -90,9 +113,10 @@ index e3b6cf9..14a46d7 100644
 +    const pixelY = pixelModeDetected ? Math.max(wireY - 1, 0) : void 0;
      return {
        type,
-       button: button === 3 ? 0 : button,
+-      button: button === 3 ? 0 : button,
 -      x: wireX - 1,
 -      y: wireY - 1,
++      button: !isExtendedButton && encodedButton === 3 ? 0 : button,
 +      x: pixelModeDetected && pixelX !== void 0
 +        ? this.projectPixelToCell(pixelX, context?.pixelWidth ?? 0, context?.terminalWidth ?? 0)
 +        : wireX - 1,
@@ -104,7 +128,7 @@ index e3b6cf9..14a46d7 100644
        modifiers,
        scroll: scrollInfo
      };
-@@ -6856,7 +6881,13 @@ var DEFAULT_PROTOCOL_CONTEXT = {
+@@ -6856,7 +6883,13 @@ var DEFAULT_PROTOCOL_CONTEXT = {
    kittyKeyboardEnabled: false,
    privateCapabilityRepliesActive: false,
    pixelResolutionQueryActive: false,
@@ -119,7 +143,7 @@ index e3b6cf9..14a46d7 100644
  };
  var RXVT_DOLLAR_CSI_RE = /^\x1b\[\d+\$$/;
  var SYSTEM_CLOCK = new SystemClock;
-@@ -7149,7 +7180,13 @@ class StdinParser {
+@@ -7149,7 +7182,13 @@ class StdinParser {
        kittyKeyboardEnabled: options.protocolContext?.kittyKeyboardEnabled ?? false,
        privateCapabilityRepliesActive: options.protocolContext?.privateCapabilityRepliesActive ?? false,
        pixelResolutionQueryActive: options.protocolContext?.pixelResolutionQueryActive ?? false,
@@ -134,7 +158,7 @@ index e3b6cf9..14a46d7 100644
      };
    }
    get bufferCapacity() {
-@@ -7952,11 +7989,14 @@ class StdinParser {
+@@ -7952,11 +7991,14 @@ class StdinParser {
      });
    }
    emitMouse(rawBytes, encoding) {
@@ -150,7 +174,7 @@ index e3b6cf9..14a46d7 100644
      this.events.push({
        type: "mouse",
        raw: decodeLatin1(rawBytes),
-@@ -17295,6 +17335,8 @@ class MouseEvent {
+@@ -17295,6 +17337,8 @@ class MouseEvent {
    button;
    x;
    y;
@@ -159,7 +183,7 @@ index e3b6cf9..14a46d7 100644
    source;
    modifiers;
    scroll;
-@@ -17314,6 +17356,8 @@ class MouseEvent {
+@@ -17314,6 +17358,8 @@ class MouseEvent {
      this.button = attributes.button;
      this.x = attributes.x;
      this.y = attributes.y;
@@ -168,7 +192,7 @@ index e3b6cf9..14a46d7 100644
      this.modifiers = attributes.modifiers;
      this.scroll = attributes.scroll;
      this.source = attributes.source;
-@@ -17479,6 +17523,8 @@ class CliRenderer extends EventEmitter8 {
+@@ -17479,6 +17525,8 @@ class CliRenderer extends EventEmitter8 {
    resizeDebounceDelay = 100;
    enableMouseMovement = false;
    _useMouse = true;
@@ -177,7 +201,7 @@ index e3b6cf9..14a46d7 100644
    autoFocus = true;
    _useAlternateScreen = env.OTUI_USE_ALTERNATE_SCREEN;
    _suspendedMouseEnabled = false;
-@@ -17507,7 +17553,7 @@ class CliRenderer extends EventEmitter8 {
+@@ -17507,7 +17555,7 @@ class CliRenderer extends EventEmitter8 {
      this.handleResize(width, height);
    }).bind(this);
    _capabilities = null;
@@ -186,7 +210,7 @@ index e3b6cf9..14a46d7 100644
    _hasPointer = false;
    _lastPointerModifiers = { shift: false, alt: false, ctrl: false };
    _currentMousePointerStyle = undefined;
-@@ -17661,7 +17707,13 @@ Captured output:
+@@ -17661,7 +17709,13 @@ Captured output:
          kittyKeyboardEnabled: useKittyForParsing,
          privateCapabilityRepliesActive: false,
          pixelResolutionQueryActive: false,
@@ -201,7 +225,7 @@ index e3b6cf9..14a46d7 100644
        },
        clock: this.clock
      });
-@@ -17983,12 +18035,14 @@ Captured output:
+@@ -17983,12 +18037,14 @@ Captured output:
    enableMouse() {
      this._useMouse = true;
      this.lib.enableMouse(this.rendererPtr, this.enableMouseMovement);
@@ -216,7 +240,7 @@ index e3b6cf9..14a46d7 100644
    }
    enableKittyKeyboard(flags = 3) {
      this.lib.enableKittyKeyboard(this.rendererPtr, flags);
-@@ -17998,6 +18052,64 @@ Captured output:
+@@ -17998,6 +18054,64 @@ Captured output:
      this.lib.disableKittyKeyboard(this.rendererPtr);
      this.updateStdinParserProtocolContext({ kittyKeyboardEnabled: false }, true);
    }
@@ -281,7 +305,7 @@ index e3b6cf9..14a46d7 100644
    set useThread(useThread) {
      this._useThread = useThread;
      this.lib.setUseThread(this.rendererPtr, useThread);
-@@ -18031,6 +18143,7 @@ Captured output:
+@@ -18031,6 +18145,7 @@ Captured output:
      if (this._useMouse) {
        this.enableMouse();
      }
@@ -289,7 +313,7 @@ index e3b6cf9..14a46d7 100644
      this.queryPixelResolution();
    }
    stdinListener = ((chunk) => {
-@@ -18070,6 +18183,7 @@ Captured output:
+@@ -18070,6 +18185,7 @@ Captured output:
      if (isCapabilityResponse(sequence)) {
        this.lib.processCapabilityResponse(this.rendererPtr, sequence);
        this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr);
@@ -297,7 +321,7 @@ index e3b6cf9..14a46d7 100644
        this.emit("capabilities" /* CAPABILITIES */, this._capabilities);
        return true;
      }
-@@ -18079,6 +18193,7 @@ Captured output:
+@@ -18079,6 +18195,7 @@ Captured output:
      if (sequence === "\x1B[I") {
        if (this.shouldRestoreModesOnNextFocus) {
          this.lib.restoreTerminalModes(this.rendererPtr);
@@ -305,7 +329,7 @@ index e3b6cf9..14a46d7 100644
          this.shouldRestoreModesOnNextFocus = false;
        }
        if (this._terminalFocusState !== true) {
-@@ -18187,6 +18302,7 @@ Captured output:
+@@ -18187,6 +18304,7 @@ Captured output:
          }
          this.waitingForPixelResolution = false;
          this.updateStdinParserProtocolContext({ pixelResolutionQueryActive: false }, true);
@@ -313,7 +337,7 @@ index e3b6cf9..14a46d7 100644
          return true;
        }
        return false;
-@@ -18221,9 +18337,15 @@ Captured output:
+@@ -18221,9 +18339,15 @@ Captured output:
          return false;
        }
        mouseEvent.y -= this.renderOffset;
@@ -329,7 +353,7 @@ index e3b6cf9..14a46d7 100644
      this._hasPointer = true;
      this._lastPointerModifiers = mouseEvent.modifiers;
      if (this._console.visible) {
-@@ -18352,6 +18474,8 @@ Captured output:
+@@ -18352,6 +18476,8 @@ Captured output:
        button: 0,
        x: this._latestPointer.x,
        y: this._latestPointer.y,
@@ -338,7 +362,7 @@ index e3b6cf9..14a46d7 100644
        modifiers: this._lastPointerModifiers
      };
      if (lastOver && !lastOver.isDestroyed) {
-@@ -18435,6 +18559,7 @@ Captured output:
+@@ -18435,6 +18561,7 @@ Captured output:
      const prevWidth = this._terminalWidth;
      this._terminalWidth = width;
      this._terminalHeight = height;
@@ -346,7 +370,7 @@ index e3b6cf9..14a46d7 100644
      this.queryPixelResolution();
      this.setCapturedRenderable(undefined);
      this.stdinParser?.resetMouseState();
-@@ -18712,6 +18837,7 @@ Captured output:
+@@ -18712,6 +18839,7 @@ Captured output:
      }
      this._isRunning = false;
      this.waitingForPixelResolution = false;
