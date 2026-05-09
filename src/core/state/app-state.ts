@@ -387,10 +387,12 @@ function removeHistoryIndex(layoutHistory: Record<number, LayoutHistoryEntry>, r
 
 /** If paneId is a floating pane, bump its zIndex to the top. */
 function bringFloatingToFront(layout: LayoutConfig, paneId: string): LayoutConfig {
-  const entry = layout.floating.find((e) => e.instanceId === paneId);
+  const entryIndex = layout.floating.findIndex((e) => e.instanceId === paneId);
+  const entry = entryIndex >= 0 ? layout.floating[entryIndex] : undefined;
   if (!entry) return layout;
   const maxZ = layout.floating.reduce((max, e) => Math.max(max, e.zIndex ?? 50), 0);
-  if ((entry.zIndex ?? 50) >= maxZ) return layout; // already on top
+  const topEqualIndex = layout.floating.findLastIndex((e) => (e.zIndex ?? 50) === maxZ);
+  if ((entry.zIndex ?? 50) === maxZ && entryIndex === topEqualIndex) return layout; // already on top
   return {
     ...layout,
     floating: layout.floating.map((e) =>
@@ -792,7 +794,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "FOCUS_PREV": {
       if (action.paneOrder.length === 0) return state;
-      const currentIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : 0;
+      const focusedIndex = state.focusedPaneId ? action.paneOrder.indexOf(state.focusedPaneId) : -1;
+      const currentIndex = focusedIndex >= 0 ? focusedIndex : 0;
       const nextPaneId = action.paneOrder[(currentIndex - 1 + action.paneOrder.length) % action.paneOrder.length]!;
       return focusPaneState(state, nextPaneId);
     }
