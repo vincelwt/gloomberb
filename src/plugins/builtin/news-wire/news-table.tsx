@@ -3,8 +3,11 @@ import { TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
   TickerBadgeList,
+  activeStackIndex,
+  sortStackItems,
   type DataTableCell,
   type DataTableColumn,
+  type StackSortPreference,
 } from "../../../components";
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
@@ -13,10 +16,7 @@ import { useInlineTickers } from "../../../state/use-inline-tickers";
 
 export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
 
-export interface NewsSortPreference {
-  columnId: NewsColumnId;
-  direction: "asc" | "desc";
-}
+export type NewsSortPreference = StackSortPreference<NewsColumnId>;
 
 type NewsTableColumn = DataTableColumn & { id: NewsColumnId };
 
@@ -78,12 +78,12 @@ export function sortNewsArticles(
   articles: MarketNewsItem[],
   preference: NewsSortPreference,
 ): MarketNewsItem[] {
-  const direction = preference.direction === "asc" ? 1 : -1;
-  return [...articles].sort((a, b) => {
-    const primary = compareArticle(a, b, preference.columnId) * direction;
-    if (primary !== 0) return primary;
-    return b.publishedAt.getTime() - a.publishedAt.getTime();
-  });
+  return sortStackItems(
+    articles,
+    preference,
+    compareArticle,
+    (a, b) => b.publishedAt.getTime() - a.publishedAt.getTime(),
+  );
 }
 
 function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId): NewsSortPreference {
@@ -190,7 +190,7 @@ export function NewsArticleStackView({
   const { catalog: tickerCatalog, openTicker } = useInlineTickers(tableTickerTexts);
   const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
-  const activeIdx = selectedIdx >= 0 ? selectedIdx : sortedArticles.length > 0 ? 0 : -1;
+  const activeIdx = activeStackIndex(sortedArticles.length, selectedIdx);
 
   const selectIndex = useCallback((index: number) => {
     setSelectedArticleId(sortedArticles[index]?.id ?? null);

@@ -148,7 +148,7 @@ function nextSortPreference(
   return DEFAULT_SORT_PREFERENCE;
 }
 
-export function WorldIndicesPane({ focused, width, height }: PaneProps) {
+function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { pinTicker } = usePluginTickerActions();
   const [quotes, setQuotes] = useState<QuoteMap>(new Map());

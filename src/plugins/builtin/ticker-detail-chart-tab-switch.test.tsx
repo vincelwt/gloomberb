@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
-import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
-import { DialogProvider } from "@opentui-ui/dialog/react";
+import { TestDialogProvider, createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
 import { act, useReducer, type ReactElement } from "react";
 import {
   AppContext,
@@ -111,7 +110,7 @@ function DetailHarness({
   harnessDispatch = dispatch;
 
   return (
-    <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+    <TestDialogProvider>
       <AppContext value={{ state, dispatch }}>
         <PaneInstanceProvider paneId={TEST_PANE_ID}>
           <PluginRenderProvider pluginId={tickerDetailPlugin.id} runtime={runtime}>
@@ -125,7 +124,7 @@ function DetailHarness({
           </PluginRenderProvider>
         </PaneInstanceProvider>
       </AppContext>
-    </DialogProvider>
+    </TestDialogProvider>
   );
 }
 

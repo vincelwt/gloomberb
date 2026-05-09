@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { TextAttributes } from "@opentui/core";
-import { testRender } from "../../renderers/opentui/test-utils";
-import { DialogProvider } from "@opentui-ui/dialog/react";
+import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import type { ReactNode } from "react";
 import { act, createElement, useReducer } from "react";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
@@ -337,9 +336,9 @@ function ChartShellHarness({
 
   return (
     <AppContext value={{ state, dispatch }}>
-      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <TestDialogProvider>
         <Shell pluginRegistry={pluginRegistry} />
-      </DialogProvider>
+      </TestDialogProvider>
     </AppContext>
   );
 }
@@ -613,9 +612,9 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell pluginRegistry={pluginRegistry} />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 10 },
     );
@@ -655,7 +654,7 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell
             pluginRegistry={pluginRegistry}
             desktopWindowBridge={{
@@ -665,7 +664,7 @@ describe("Shell", () => {
               subscribeDockPreview: () => () => {},
             }}
           />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 10 },
     );
@@ -704,9 +703,9 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell pluginRegistry={pluginRegistry} />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 10 },
     );
@@ -823,9 +822,9 @@ describe("Shell", () => {
     setSharedRegistryForTests(pluginRegistry);
 
     testSetup = await testRender(
-      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <TestDialogProvider>
         <BrokerShellHarness pluginRegistry={pluginRegistry} />
-      </DialogProvider>,
+      </TestDialogProvider>,
       { width: 100, height: 24 },
     );
 
@@ -916,9 +915,9 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell pluginRegistry={createShellPluginRegistry()} />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 10 },
     );
@@ -959,9 +958,9 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell pluginRegistry={createShellPluginRegistry()} />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 12 },
     );
@@ -1002,9 +1001,9 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell pluginRegistry={createShellPluginRegistry()} />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 12 },
     );
@@ -1153,7 +1152,7 @@ describe("Shell", () => {
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
-        <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+        <TestDialogProvider>
           <Shell pluginRegistry={createShellPluginRegistry({
             tickerDetailComponent: ({ width, height }) => (
               <box flexDirection="column" width={width} height={height}>
@@ -1164,7 +1163,7 @@ describe("Shell", () => {
               </box>
             ),
           })} />
-        </DialogProvider>
+        </TestDialogProvider>
       </AppContext>,
       { width: 40, height: 12 },
     );

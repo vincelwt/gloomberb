@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { DialogProvider } from "@opentui-ui/dialog/react";
 import { testRender as openTuiTestRender } from "@opentui/react/test-utils";
 import { createRoot as openTuiCreateRoot, useRenderer } from "@opentui/react";
 import { UiHostProvider, type NativeRendererHost, type RendererHost } from "../../ui";
@@ -7,6 +8,22 @@ import { OpenTuiInputHostProvider } from "./input-host";
 import { openTuiUiHost } from "./ui-host";
 import { OpenTuiDialogHostProvider } from "./dialog-host";
 import { openTuiToastHost } from "./toast-host";
+
+export function TestDialogProvider({ children }: { children: ReactNode }) {
+  return (
+    <DialogProvider
+      dialogOptions={{
+        style: {
+          backgroundColor: "#000000",
+          borderColor: "#ffffff",
+          borderStyle: "single",
+        },
+      }}
+    >
+      {children}
+    </DialogProvider>
+  );
+}
 
 function createTestNativeRendererHost(renderer: any): NativeRendererHost {
   if (typeof renderer.write !== "function") {

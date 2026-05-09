@@ -471,7 +471,7 @@ function formatCompactAxisValue(value: number, units: string): string {
 // Main Calendar Pane
 // ---------------------------------------------------------------------------
 
-export function EconCalendarPane({ focused, width, height }: PaneProps) {
+function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [events, setEvents] = useState<EconEvent[]>(sharedCache?.data ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

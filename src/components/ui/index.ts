@@ -6,7 +6,6 @@ export { DataTable } from "./data-table";
 export type { DataTableCell, DataTableColumn, DataTableProps } from "./data-table";
 
 export { Button } from "./button";
-
 export { ShortcutHint } from "./shortcut-hint";
 
 export { MultiSelectDialogButton, MultiSelectDialogContent } from "./multi-select-dialog";

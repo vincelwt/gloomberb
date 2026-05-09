@@ -1,5 +1,5 @@
 import { act, useMemo, useReducer, useRef } from "react";
-import type { ScrollBoxRenderable } from "#opentui/core";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import {
   AppContext,

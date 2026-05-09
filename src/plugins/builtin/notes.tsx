@@ -1,4 +1,4 @@
-import { Box, Input, ScrollBox, Text, TextAttributes } from "../../ui";
+import { Box, Input, ScrollBox, Text } from "../../ui";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useShortcut } from "../../react/input";
 import { type InputRenderable, type TextareaRenderable } from "../../ui";
@@ -7,8 +7,8 @@ import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import { MarkdownEditor } from "../../components/markdown-editor";
 import { MarkdownText } from "../../components/markdown-text";
-import { DialogFrame, Tabs, usePaneFooter } from "../../components";
-import { type PromptContext, useDialog, useDialogKeyboard } from "../../ui/dialog";
+import { ConfirmDialog, Tabs, usePaneFooter } from "../../components";
+import { type PromptContext, useDialog } from "../../ui/dialog";
 import { NotesFiles, type QuickNoteEntry } from "./notes-files";
 
 function useSyncedText(initialValue = "") {
@@ -50,6 +50,10 @@ function formatLastEdited(updatedAt: number | undefined): string {
   return `${Math.floor(elapsedDays / 365)}y ago`;
 }
 
+function formatDeleteNoteTitle(title: string): string {
+  return title.length > 28 ? `${title.slice(0, 25)}...` : title;
+}
+
 function MarkdownNotePreview({
   text,
   width,
@@ -79,56 +83,6 @@ function MarkdownNotePreview({
           : <Text fg={colors.textDim}>{placeholder}</Text>}
       </Box>
     </ScrollBox>
-  );
-}
-
-function ConfirmDeleteNoteDialog({
-  resolve,
-  title,
-}: PromptContext<boolean> & {
-  title: string;
-}) {
-  const confirm = useCallback(() => resolve(true), [resolve]);
-  const cancel = useCallback(() => resolve(false), [resolve]);
-  const displayTitle = title.length > 28 ? `${title.slice(0, 25)}...` : title;
-
-  useDialogKeyboard((event) => {
-    event.stopPropagation();
-    if (event.name === "enter" || event.name === "return") {
-      confirm();
-      return;
-    }
-    if (event.name === "escape") {
-      cancel();
-    }
-  });
-
-  return (
-    <DialogFrame title="Delete note?" footer="Enter delete · Esc cancel">
-      <Box flexDirection="column" width={44}>
-        <Text fg={colors.text}>{`Delete "${displayTitle}"?`}</Text>
-        <Box height={1} />
-        <Text fg={colors.textDim}>This note has content.</Text>
-        <Text fg={colors.textDim}>Deleting it cannot be undone.</Text>
-        <Box height={1} />
-        <Box flexDirection="row" gap={1}>
-          <Box
-            backgroundColor={colors.negative}
-            onMouseDown={confirm}
-            data-gloom-interactive="true"
-          >
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{" Delete "}</Text>
-          </Box>
-          <Box
-            backgroundColor={colors.panel}
-            onMouseDown={cancel}
-            data-gloom-interactive="true"
-          >
-            <Text fg={colors.text}>{" Cancel "}</Text>
-          </Box>
-        </Box>
-      </Box>
-    </DialogFrame>
   );
 }
 
@@ -383,9 +337,18 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
         const confirmed = await dialog.prompt<boolean>({
           closeOnClickOutside: true,
           content: (ctx: PromptContext<boolean>) => (
-            <ConfirmDeleteNoteDialog
+            <ConfirmDialog
               {...ctx}
-              title={tab?.title ?? "Note"}
+              title="Delete note?"
+              body={[
+                `Delete "${formatDeleteNoteTitle(tab?.title ?? "Note")}"?`,
+                "This note has content.",
+                "Deleting it cannot be undone.",
+              ]}
+              confirmLabel="Delete"
+              cancelLabel="Cancel"
+              width={44}
+              footer="Enter delete · Esc cancel"
             />
           ),
         }).catch(() => false);

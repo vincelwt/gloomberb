@@ -71,12 +71,20 @@ import {
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import {
-  buildSections,
   getEmptyState,
   getRowPresentation,
   resolveCommandBarMode,
   truncateText,
 } from "./view-model";
+import {
+  buildListRows,
+  buildNativeListRows,
+  orderListResults,
+  type CommandBarListRow,
+  type ListScreenState,
+  type ResultItem,
+} from "./list-model";
+import { CommandBarConfirmBody } from "./confirm-body";
 import {
   createLocalTickerSearchCandidates,
   normalizeTickerInput,
@@ -156,49 +164,7 @@ interface CommandBarProps {
   onCheckForUpdates?: () => void | Promise<void>;
 }
 
-interface ResultItem {
-  id: string;
-  label: string;
-  detail: string;
-  category: string;
-  kind: "command" | "ticker" | "search" | "theme" | "plugin" | "action" | "info";
-  right?: string;
-  searchText?: string;
-  themeId?: string;
-  pluginToggle?: () => void | Promise<void>;
-  secondaryAction?: () => void | Promise<void>;
-  checked?: boolean;
-  current?: boolean;
-  disabled?: boolean;
-  action: () => void | Promise<void>;
-}
-
-type ListScreenKind = "root" | "mode" | "picker" | "pane-settings";
-
-interface ListScreenState {
-  kind: ListScreenKind;
-  title: string;
-  subtitle?: string;
-  query: string;
-  selectedIdx: number;
-  hoveredIdx: number | null;
-  results: ResultItem[];
-  searching: boolean;
-  emptyLabel: string;
-  emptyDetail: string;
-  footerLeft: string;
-  footerRight: string;
-}
-
 type WorkflowStringValues = Record<string, string>;
-
-type CommandBarListRow =
-  | { kind: "spacer"; id: string }
-  | { kind: "heading"; id: string; label: string }
-  | { kind: "item"; item: ResultItem; globalIdx: number }
-  | { kind: "message"; id: string; label: string; dim?: boolean }
-  | { kind: "spinner"; id: string; label: string }
-  | { kind: "filler"; id: string };
 
 const LAYOUT_MOVE_ACTIONS = [
   { id: "layout-move-left", label: "Move Left", direction: "left", unavailableDetail: "No column to the left" },
@@ -293,40 +259,6 @@ function estimateWorkflowBodyRows(route: CommandBarWorkflowRoute): number {
   }, 0);
   const statusRows = (route.error ? 1 : 0) + (route.pending && route.pendingLabel ? 1 : 0);
   return introRows + fieldRows + statusRows + 1;
-}
-
-function orderListResults(results: ResultItem[]): ResultItem[] {
-  return buildSections(results).flatMap((section) => section.items);
-}
-
-function buildListRows(listState: ListScreenState): CommandBarListRow[] {
-  const rows: CommandBarListRow[] = [];
-  const sections = buildSections(listState.results);
-  let globalIdx = 0;
-  sections.forEach((section, sectionIndex) => {
-    if (sectionIndex > 0) {
-      rows.push({ kind: "spacer", id: `spacer:${sectionIndex}:${section.category}` });
-    }
-    rows.push({ kind: "heading", id: `heading:${sectionIndex}:${section.category}`, label: section.category });
-    for (const item of section.items) {
-      rows.push({ kind: "item", item, globalIdx });
-      globalIdx += 1;
-    }
-  });
-  return rows;
-}
-
-function buildNativeListRows(listState: ListScreenState, rows: CommandBarListRow[]): CommandBarListRow[] {
-  if (listState.searching && rows.length === 0) {
-    return [{ kind: "spinner", id: "searching", label: "Searching…" }];
-  }
-  if (rows.length === 0) {
-    return [{ kind: "message", id: "empty", label: listState.emptyLabel }];
-  }
-  if (listState.searching) {
-    return [...rows, { kind: "spinner", id: "searching", label: "Searching…" }];
-  }
-  return rows;
 }
 
 function clampListIndex(index: number, length: number): number {
@@ -5331,33 +5263,14 @@ export function CommandBar({
   const renderConfirmBody = () => {
     if (currentRoute?.kind !== "confirm") return null;
     return (
-      <Box flexDirection="column" height={bodyHeight} paddingX={contentPadding}>
-        {currentRoute.body.map((line, index) => (
-          <Box key={`confirm:${index}`} height={1}>
-            <Text fg={paletteText}>{truncateText(line, queryDisplayWidth)}</Text>
-          </Box>
-        ))}
-        <Box height={1} />
-        {currentRoute.error && (
-          <Box height={1}>
-            <Text fg={colors.negative}>{truncateText(currentRoute.error, queryDisplayWidth)}</Text>
-          </Box>
-        )}
-        {currentRoute.pending && (
-          <Box height={1}>
-            <Spinner label="Working…" />
-          </Box>
-        )}
-        <Box flexGrow={1} />
-        <Box flexDirection="row" gap={1}>
-          <Button
-            label={currentRoute.confirmLabel}
-            variant={currentRoute.tone === "danger" ? "danger" : "primary"}
-            onPress={() => { void confirmCurrentRoute(); }}
-            disabled={currentRoute.pending}
-          />
-        </Box>
-      </Box>
+      <CommandBarConfirmBody
+        route={currentRoute}
+        bodyHeight={bodyHeight}
+        contentPadding={contentPadding}
+        paletteText={paletteText}
+        queryDisplayWidth={queryDisplayWidth}
+        onConfirm={() => { void confirmCurrentRoute(); }}
+      />
     );
   };
 

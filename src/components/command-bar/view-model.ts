@@ -10,11 +10,6 @@ export interface CommandBarModeInfo {
   hint: string;
 }
 
-export interface CommandBarFooterHints {
-  left: string;
-  right: string;
-}
-
 export interface CommandBarSection<T> {
   category: string;
   items: T[];
@@ -81,20 +76,6 @@ export function buildSections<T extends { category: string }>(items: T[]): Array
       return priorityDiff !== 0 ? priorityDiff : a.index - b.index;
     })
     .map(({ section }) => section);
-}
-
-export function getFooterHints(mode: CommandBarMode, isNarrow: boolean): CommandBarFooterHints {
-  const moveAndSelect = isNarrow ? "up/down move  enter select" : "up/down move  enter select";
-  if (mode === "plugins") {
-    return {
-      left: isNarrow ? "space toggle" : `${moveAndSelect}  space toggle`,
-      right: "esc cancel",
-    };
-  }
-  if (mode === "layout") {
-    return { left: moveAndSelect, right: "esc cancel" };
-  }
-  return { left: moveAndSelect, right: "esc cancel" };
 }
 
 export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?: string): { label: string; detail: string } {

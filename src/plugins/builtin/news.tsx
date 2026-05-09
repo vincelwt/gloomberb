@@ -1,6 +1,6 @@
 import { Text } from "../../ui";
 import { useRef, useEffect, useMemo, useState } from "react";
-import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin } from "../../types/plugin";
 import { usePaneTicker } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import type { NewsArticle } from "../../types/news-source";
@@ -52,7 +52,7 @@ function getFeedItems(
   });
 }
 
-export function TickerNewsView({ width, height, focused }: Pick<DetailTabProps, "width" | "height" | "focused">) {
+function TickerNewsView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
@@ -147,14 +147,6 @@ export function TickerNewsView({ width, height, focused }: Pick<DetailTabProps, 
   );
 }
 
-function NewsTab(props: DetailTabProps) {
-  return <TickerNewsView {...props} />;
-}
-
-function TickerNewsPane({ focused, width, height }: PaneProps) {
-  return <TickerNewsView focused={focused} width={width} height={height} />;
-}
-
 export const newsPlugin: GloomPlugin = {
   id: "news",
   name: "News",
@@ -167,7 +159,7 @@ export const newsPlugin: GloomPlugin = {
       id: "ticker-news",
       name: "Ticker News",
       icon: "C",
-      component: TickerNewsPane,
+      component: TickerNewsView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
@@ -190,7 +182,7 @@ export const newsPlugin: GloomPlugin = {
       id: "news",
       name: "News",
       order: 40,
-      component: NewsTab,
+      component: TickerNewsView,
     });
     disposeNewsWireFeatures = registerNewsWireFeatures(ctx);
   },

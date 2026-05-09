@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
-import { testRender } from "../renderers/opentui/test-utils";
-import { DialogProvider } from "@opentui-ui/dialog/react";
+import { TestDialogProvider, testRender } from "../renderers/opentui/test-utils";
 import { PaneTemplateTextareaStep } from "./pane-template-wizard";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -18,7 +17,7 @@ describe("PaneTemplateTextareaStep", () => {
     let resolved = "";
 
     testSetup = await testRender(
-      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <TestDialogProvider>
         <PaneTemplateTextareaStep
           resolve={(value) => { resolved = value; }}
           dialogId="textarea-test"
@@ -30,7 +29,7 @@ describe("PaneTemplateTextareaStep", () => {
             defaultValue: "Find cash-generative semiconductor suppliers",
           }}
         />
-      </DialogProvider>,
+      </TestDialogProvider>,
       { width: 80, height: 16 },
     );
 

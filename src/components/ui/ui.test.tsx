@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useEffect, useRef, useState } from "react";
-import { testRender } from "../../renderers/opentui/test-utils";
-import { DialogProvider } from "@opentui-ui/dialog/react";
+import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { Button } from "./button";
 import { ChoiceDialog } from "./choice-dialog";
@@ -192,7 +191,7 @@ function MultiSelectDialogButtonHarness() {
   const [values, setValues] = useState(["sma"]);
 
   return (
-    <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+    <TestDialogProvider>
       <MultiSelectDialogButton
         label="IND"
         title="Chart Indicators"
@@ -204,7 +203,7 @@ function MultiSelectDialogButtonHarness() {
           { value: "ema", label: "EMA" },
         ]}
       />
-    </DialogProvider>
+    </TestDialogProvider>
   );
 }
 

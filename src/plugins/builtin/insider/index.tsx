@@ -1,6 +1,6 @@
-import { Box, Text } from "../../../ui";
+import { Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { GloomPlugin } from "../../../types/plugin";
 import type { SecFilingItem } from "../../../types/data-provider";
 import {
   useResolvedEntryValue,
@@ -14,49 +14,18 @@ import { FeedDataTableStackView, Spinner, useExternalLinkFooter, type FeedDataTa
 import { usePluginPaneState } from "../../plugin-runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
-import { parseForm4Xml, transactionTypeLabel, type InsiderTransaction } from "./insider-data";
+import { parseForm4Xml, type InsiderTransaction } from "./insider-data";
 import { createTickerSurfacePaneTemplate } from "../ticker-surface";
+import {
+  buildInsiderTransactionDetailBody,
+  buildInsiderTransactionTitle,
+  formatFilingFormLabel,
+  formatFilingShortDate,
+  renderFilingNotice,
+} from "../sec-filing-display";
 
 const FORM4_LIMIT = 20;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
-
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
-function formatDate(d: Date | string | number): string {
-  const date = d instanceof Date ? d : new Date(d);
-  if (isNaN(date.getTime())) return "—";
-  return `${MONTH_NAMES[date.getMonth()]} ${String(date.getDate()).padStart(2, " ")} ${date.getFullYear()}`;
-}
-
-function wrapLines(text: string, width: number): string[] {
-  const words = text.trim().split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (!current) { current = word; continue; }
-    if (current.length + 1 + word.length <= width) {
-      current = `${current} ${word}`;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-function renderNotice(message: string, width: number) {
-  const lines = wrapLines(message, width - 4);
-  return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
-      {lines.map((line, i) => (
-        <Box key={i} height={1}>
-          <Text fg={colors.textDim}>{line}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
 
 interface ParsedFiling {
   filing: SecFilingItem;
@@ -99,46 +68,18 @@ function truncateText(text: string, width: number): string {
   return `${text.slice(0, width - 3)}...`;
 }
 
-function formatFilingForm(form: string): string {
-  const value = form.trim();
-  return value ? `FORM ${value}` : "FORM 4";
-}
-
-function buildTransactionTitle(transaction: InsiderTransaction): string {
-  const type = transactionTypeLabel(transaction.transactionType);
-  const price = transaction.pricePerShare != null
-    ? ` @ ${formatCurrency(transaction.pricePerShare)}`
-    : "";
-  const value = transaction.totalValue != null
-    ? ` | ${formatCurrency(transaction.totalValue)}`
-    : "";
-  return `${type} ${formatCompact(transaction.shares)} shares${price}${value}`;
-}
-
-function buildTransactionDetailBody(transaction: InsiderTransaction): string {
-  const lines = [
-    `Transaction: ${transactionTypeLabel(transaction.transactionType)}`,
-    `Date: ${formatDate(transaction.filingDate)}`,
-    `Shares: ${formatCompact(transaction.shares)}`,
-    `Price/Share: ${transaction.pricePerShare != null ? formatCurrency(transaction.pricePerShare) : "—"}`,
-    `Total Value: ${transaction.totalValue != null ? formatCurrency(transaction.totalValue) : "—"}`,
-    `Shares Owned After: ${transaction.sharesOwned != null ? formatCompact(transaction.sharesOwned) : "—"}`,
-  ];
-  return lines.join("\n");
-}
-
 function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
   return parsed.map(({ filing, transaction, isLoading }) => {
     const filingMeta = [
-      `Filed ${formatDate(filing.filingDate)}`,
+      `Filed ${formatFilingShortDate(filing.filingDate)}`,
       `Accession ${filing.accessionNumber}`,
-      formatFilingForm(filing.form),
+      formatFilingFormLabel(filing.form),
     ];
 
     if (!transaction) {
       return {
         id: filing.accessionNumber,
-        eyebrow: formatFilingForm(filing.form),
+        eyebrow: formatFilingFormLabel(filing.form),
         title: isLoading ? "Loading Form 4 filing..." : "Form 4 transaction unavailable",
         timestamp: filing.filingDate,
         detailTitle: isLoading ? "Loading Form 4 filing..." : "Form 4 transaction unavailable",
@@ -152,7 +93,7 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
     return {
       id: filing.accessionNumber,
       eyebrow: transaction.reportedName,
-      title: buildTransactionTitle(transaction),
+      title: buildInsiderTransactionTitle(transaction),
       timestamp: transaction.filingDate,
       preview: transaction.title || undefined,
       detailTitle: transaction.reportedName,
@@ -160,12 +101,12 @@ function toFeedItems(parsed: ParsedFiling[]): FeedDataTableItem[] {
         ...(transaction.title ? [transaction.title] : []),
         ...filingMeta,
       ],
-      detailBody: buildTransactionDetailBody(transaction),
+      detailBody: buildInsiderTransactionDetailBody(transaction),
     };
   });
 }
 
-export function InsiderView({ width, height, focused }: Pick<DetailTabProps, "width" | "height" | "focused">) {
+function InsiderView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
   const tickerKey = ticker?.metadata.ticker ?? "none";
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(`insider:selectedIdx:${tickerKey}`, 0);
@@ -290,18 +231,18 @@ export function InsiderView({ width, height, focused }: Pick<DetailTabProps, "wi
     registrationId: "insider",
     focused,
     url: error ? null : openFiling?.filingUrl,
-    source: openFiling?.form ? formatFilingForm(openFiling.form) : null,
+    source: openFiling?.form ? formatFilingFormLabel(openFiling.form) : null,
     info: footerInfo,
     hints: footerHints,
     label: "filing",
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view insider activity.</Text>;
-  if (!eligibleTicker) return renderNotice("Insider transactions are only shown for US equities.", width);
+  if (!eligibleTicker) return renderFilingNotice("Insider transactions are only shown for US equities.", width);
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
-  if (error) return renderNotice(`Error: ${error}`, width);
+  if (error) return renderFilingNotice(`Error: ${error}`, width);
   if (!loading && form4Filings.length === 0) {
-    return renderNotice(`No Form 4 filings found for ${ticker.metadata.ticker}.`, width);
+    return renderFilingNotice(`No Form 4 filings found for ${ticker.metadata.ticker}.`, width);
   }
 
   return (
@@ -321,14 +262,6 @@ export function InsiderView({ width, height, focused }: Pick<DetailTabProps, "wi
   );
 }
 
-function InsiderTab(props: DetailTabProps) {
-  return <InsiderView {...props} />;
-}
-
-function InsiderPane({ focused, width, height }: PaneProps) {
-  return <InsiderView focused={focused} width={width} height={height} />;
-}
-
 export const insiderPlugin: GloomPlugin = {
   id: "insider",
   name: "Insider Trading",
@@ -340,7 +273,7 @@ export const insiderPlugin: GloomPlugin = {
       id: "insider",
       name: "Insider",
       icon: "I",
-      component: InsiderPane,
+      component: InsiderView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 30 },
@@ -364,7 +297,7 @@ export const insiderPlugin: GloomPlugin = {
       id: "insider",
       name: "Insider",
       order: 47,
-      component: InsiderTab,
+      component: InsiderView,
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
     });
   },

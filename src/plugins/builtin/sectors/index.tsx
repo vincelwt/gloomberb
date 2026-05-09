@@ -109,7 +109,7 @@ function nextSortPreference(current: SectorSortPreference, columnId: string): Se
   return DEFAULT_SORT_PREFERENCE;
 }
 
-export function SectorPerformancePane({ focused, width, height }: PaneProps) {
+function SectorPerformancePane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
   const [rows, setRows] = useState<SectorRow[]>(

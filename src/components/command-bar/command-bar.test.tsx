@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer } from "react";
-import { testRender } from "../../renderers/opentui/test-utils";
-import { DialogProvider } from "@opentui-ui/dialog/react";
+import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import { CommandBar } from "./command-bar";
 import { AppContext, type AppState, appReducer, createInitialState, getEffectiveThemeId } from "../../state/app-context";
 import { createTestDataProvider } from "../../test-support/data-provider";
@@ -304,7 +303,7 @@ function CommandBarHarness({
 
   return (
     <AppContext value={{ state: currentState, dispatch: currentDispatch }}>
-      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <TestDialogProvider>
         {live && <text>{`theme:${getEffectiveThemeId(currentState)}`}</text>}
         {showQueryState && <text>{`query:${currentState.commandBarQuery}`}</text>}
         {currentState.commandBarOpen && (
@@ -316,7 +315,7 @@ function CommandBarHarness({
             onCheckForUpdates={onCheckForUpdates}
           />
         )}
-      </DialogProvider>
+      </TestDialogProvider>
     </AppContext>
   );
 }

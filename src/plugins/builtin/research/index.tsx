@@ -8,7 +8,7 @@ import {
   type DataTableKeyEvent,
 } from "../../../components";
 import type { AnalystResearchData, CorporateActionsData, TickerFinancials } from "../../../types/financials";
-import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { usePaneInstance, usePaneTicker } from "../../../state/app-context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
@@ -609,22 +609,6 @@ function RelativeValuationPane({ focused, width, height }: PaneProps) {
   );
 }
 
-function ResearchPane({ focused, width, height }: PaneProps) {
-  return <AnalystResearchView focused={focused} width={width} height={height} />;
-}
-
-function EventsPane({ focused, width, height }: PaneProps) {
-  return <CorporateActionsView focused={focused} width={width} height={height} />;
-}
-
-function AnalystTab({ focused, width, height }: DetailTabProps) {
-  return <AnalystResearchView focused={focused} width={width} height={height} />;
-}
-
-function EventsTab({ focused, width, height }: DetailTabProps) {
-  return <CorporateActionsView focused={focused} width={width} height={height} />;
-}
-
 export const researchPlugin: GloomPlugin = {
   id: "research",
   name: "Research",
@@ -637,14 +621,14 @@ export const researchPlugin: GloomPlugin = {
       id: "analyst-research",
       name: "Analyst",
       order: 32,
-      component: AnalystTab,
+      component: AnalystResearchView,
       isVisible: ({ ticker }) => !!ticker,
     });
     ctx.registerDetailTab({
       id: "corporate-actions",
       name: "Events",
       order: 34,
-      component: EventsTab,
+      component: CorporateActionsView,
       isVisible: ({ ticker }) => !!ticker,
     });
   },
@@ -654,7 +638,7 @@ export const researchPlugin: GloomPlugin = {
       id: "analyst-research",
       name: "Analyst Research",
       icon: "A",
-      component: ResearchPane,
+      component: AnalystResearchView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 28 },
@@ -663,7 +647,7 @@ export const researchPlugin: GloomPlugin = {
       id: "corporate-actions",
       name: "Corporate Actions",
       icon: "E",
-      component: EventsPane,
+      component: CorporateActionsView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 82, height: 24 },

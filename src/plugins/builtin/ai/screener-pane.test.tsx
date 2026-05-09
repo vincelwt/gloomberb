@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, useState } from "react";
-import { testRender } from "../../../renderers/opentui/test-utils";
-import { DialogProvider } from "@opentui-ui/dialog/react";
+import { TestDialogProvider, testRender } from "../../../renderers/opentui/test-utils";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane-footer";
 import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../../state/app-context";
 import { createDefaultConfig } from "../../../types/config";
@@ -121,7 +120,7 @@ function ScreenerHarness({
 
   return (
     <AppContext value={{ state, dispatch }}>
-      <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+      <TestDialogProvider>
         <PaneInstanceProvider paneId={PANE_ID}>
           <PluginRenderProvider pluginId="ai" runtime={runtime}>
             <PaneFooterProvider>
@@ -134,7 +133,7 @@ function ScreenerHarness({
             </PaneFooterProvider>
           </PluginRenderProvider>
         </PaneInstanceProvider>
-      </DialogProvider>
+      </TestDialogProvider>
     </AppContext>
   );
 }

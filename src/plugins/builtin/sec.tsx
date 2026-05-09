@@ -1,6 +1,6 @@
-import { Box, Text } from "../../ui";
+import { Text } from "../../ui";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin } from "../../types/plugin";
 import type { SecFilingItem } from "../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingContent, useSecFilingsQuery } from "../../market-data/hooks";
 import { instrumentFromTicker } from "../../market-data/request-types";
@@ -13,6 +13,10 @@ import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { parseForm4Xml, transactionTypeLabel } from "./insider/insider-data";
 import { formatCompact, formatCurrency } from "../../utils/format";
 import { createTickerSurfacePaneTemplate } from "./ticker-surface";
+import {
+  formatFilingMetaDate,
+  renderFilingNotice,
+} from "./sec-filing-display";
 
 const SEC_FILING_LIMIT = 50;
 const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
@@ -60,48 +64,8 @@ function getFilingDisplayTitle(filing: SecFilingItem): string {
   return description ? `${formLabel} | ${description}` : formLabel;
 }
 
-function wrapMessageLines(text: string, width: number): string[] {
-  const maxWidth = Math.max(width, 12);
-  const words = text.trim().split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-
-  for (const word of words) {
-    if (!current) {
-      current = word;
-      continue;
-    }
-    if ((current.length + 1 + word.length) <= maxWidth) {
-      current = `${current} ${word}`;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-
-  if (current) lines.push(current);
-  return lines;
-}
-
-function renderNotice(message: string, width: number) {
-  const lines = wrapMessageLines(message, width - 4);
-  return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
-      {lines.map((line, index) => (
-        <Box key={index} height={1}>
-          <Text fg={colors.textDim}>{line}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 function formatFiledAt(filing: SecFilingItem): string {
-  return filing.filingDate.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatFilingMetaDate(filing.filingDate);
 }
 
 function buildDetailBody(filing: SecFilingItem): string {
@@ -217,7 +181,7 @@ function toFeedItems(
   });
 }
 
-export function SecView({ width, height, focused }: Pick<DetailTabProps, "width" | "height" | "focused">) {
+function SecView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>(selectionKey, 0);
@@ -314,10 +278,10 @@ export function SecView({ width, height, focused }: Pick<DetailTabProps, "width"
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
-  if (!eligibleTicker) return renderNotice("SEC filings are only shown for US equities.", width);
+  if (!eligibleTicker) return renderFilingNotice("SEC filings are only shown for US equities.", width);
   if (loading && filings.length === 0) return <Spinner label="Loading SEC filings..." />;
-  if (error) return renderNotice(`Error: ${error}`, width);
-  if (filings.length === 0) return renderNotice(`No recent SEC filings for ${ticker.metadata.ticker}.`, width);
+  if (error) return renderFilingNotice(`Error: ${error}`, width);
+  if (filings.length === 0) return renderFilingNotice(`No recent SEC filings for ${ticker.metadata.ticker}.`, width);
 
   return (
     <FeedDataTableStackView
@@ -335,14 +299,6 @@ export function SecView({ width, height, focused }: Pick<DetailTabProps, "width"
   );
 }
 
-function SecTab(props: DetailTabProps) {
-  return <SecView {...props} />;
-}
-
-function SecPane({ focused, width, height }: PaneProps) {
-  return <SecView focused={focused} width={width} height={height} />;
-}
-
 export const secPlugin: GloomPlugin = {
   id: "sec",
   name: "SEC",
@@ -355,7 +311,7 @@ export const secPlugin: GloomPlugin = {
       id: "sec",
       name: "SEC",
       icon: "S",
-      component: SecPane,
+      component: SecView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
@@ -379,7 +335,7 @@ export const secPlugin: GloomPlugin = {
       id: "sec",
       name: "SEC",
       order: 45,
-      component: SecTab,
+      component: SecView,
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
     });
   },

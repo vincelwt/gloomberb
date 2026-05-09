@@ -2,24 +2,26 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
   type RefObject,
 } from "react";
-import { Box, type ScrollBoxRenderable } from "../ui";
+import type { ScrollBoxRenderable } from "../ui";
 import { useShortcut } from "../react/input";
 import { DataTable, type DataTableColumn, type DataTableProps } from "./ui";
+import {
+  isNextTableRowKey,
+  isPreviousTableRowKey,
+  isTableActivationKey,
+  stopTableKey,
+  TableViewFrame,
+  type TableViewKeyEvent,
+  useResetTableScroll,
+  useTableBodyScrollActivity,
+  useTableViewState,
+} from "./table-view-shared";
 
-export interface DataTableKeyEvent {
-  name?: string;
-  ctrl?: boolean;
-  meta?: boolean;
-  option?: boolean;
-  shift?: boolean;
-  preventDefault?: () => void;
-  stopPropagation?: () => void;
-}
+export type DataTableKeyEvent = TableViewKeyEvent;
 
 export interface DataTableViewProps<
   T,
@@ -54,23 +56,6 @@ export interface DataTableViewProps<
   resetScrollKey?: unknown;
 }
 
-function isActivationKey(name: string | undefined): boolean {
-  return name === "enter" || name === "return";
-}
-
-function isNextRowKey(name: string | undefined): boolean {
-  return name === "j" || name === "down";
-}
-
-function isPreviousRowKey(name: string | undefined): boolean {
-  return name === "k" || name === "up";
-}
-
-function stopTableKey(event: DataTableKeyEvent) {
-  event.stopPropagation?.();
-  event.preventDefault?.();
-}
-
 export function DataTableView<
   T,
   C extends DataTableColumn = DataTableColumn,
@@ -97,17 +82,19 @@ export function DataTableView<
   scrollToIndex,
   ...tableProps
 }: DataTableViewProps<T, C>) {
-  const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
-  const internalScrollRef = useRef<ScrollBoxRenderable>(null);
-  const [internalHoveredIdx, setInternalHoveredIdx] = useState<number | null>(
-    null,
-  );
-
-  const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
-  const effectiveScrollRef = scrollRef ?? internalScrollRef;
-  const effectiveHoveredIdx =
-    hoveredIdx !== undefined ? hoveredIdx : internalHoveredIdx;
-  const effectiveSetHoveredIdx = setHoveredIdx ?? setInternalHoveredIdx;
+  const {
+    effectiveHeaderScrollRef,
+    effectiveScrollRef,
+    effectiveHoveredIdx,
+    effectiveSetHoveredIdx,
+    effectiveSyncHeaderScroll,
+  } = useTableViewState({
+    headerScrollRef,
+    scrollRef,
+    syncHeaderScroll,
+    hoveredIdx,
+    setHoveredIdx,
+  });
   const [fallbackSelectedIndex, setFallbackSelectedIndex] = useState<
     number | null
   >(null);
@@ -148,36 +135,16 @@ export function DataTableView<
     setFallbackSelectedIndex(nextIndex);
   }, [fallbackSelectedIndex, navigableIndices, usesFallbackSelection]);
 
-  const defaultSyncHeaderScroll = useCallback(() => {
-    const body = effectiveScrollRef.current;
-    const header = effectiveHeaderScrollRef.current;
-    if (!body || !header) return;
-    if (header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, [effectiveHeaderScrollRef, effectiveScrollRef]);
-  const effectiveSyncHeaderScroll = syncHeaderScroll ?? defaultSyncHeaderScroll;
+  const handleBodyScrollActivity = useTableBodyScrollActivity({
+    onBodyScrollActivity,
+    syncHeaderScroll: effectiveSyncHeaderScroll,
+  });
 
-  const handleBodyScrollActivity = useCallback(() => {
-    if (onBodyScrollActivity) {
-      onBodyScrollActivity();
-      return;
-    }
-    queueMicrotask(effectiveSyncHeaderScroll);
-  }, [effectiveSyncHeaderScroll, onBodyScrollActivity]);
-
-  useEffect(() => {
-    if (resetScrollKey === undefined) return;
-    const body = effectiveScrollRef.current;
-    if (body) {
-      body.scrollTop = 0;
-      body.scrollLeft = 0;
-    }
-    const header = effectiveHeaderScrollRef.current;
-    if (header) {
-      header.scrollLeft = 0;
-    }
-  }, [effectiveHeaderScrollRef, effectiveScrollRef, resetScrollKey]);
+  useResetTableScroll({
+    headerScrollRef: effectiveHeaderScrollRef,
+    scrollRef: effectiveScrollRef,
+    resetScrollKey,
+  });
 
   const selectIndex = useCallback((index: number) => {
     if (index < 0 || index >= tableProps.items.length) return;
@@ -226,34 +193,32 @@ export function DataTableView<
     if (onRootKeyDown?.(event)) return;
     if (tableProps.items.length === 0) return;
 
-    if (isNextRowKey(event.name)) {
+    if (isNextTableRowKey(event.name)) {
       stopTableKey(event);
       selectByOffset(1);
       return;
     }
 
-    if (isPreviousRowKey(event.name)) {
+    if (isPreviousTableRowKey(event.name)) {
       stopTableKey(event);
       selectByOffset(-1);
       return;
     }
 
-    if (isActivationKey(event.name)) {
+    if (isTableActivationKey(event.name)) {
       stopTableKey(event);
       activateSelection();
     }
   });
 
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
+    <TableViewFrame
       width={rootWidth}
       height={rootHeight}
       backgroundColor={rootBackgroundColor}
-      overflow="hidden"
+      before={rootBefore}
+      after={rootAfter}
     >
-      {rootBefore}
       <DataTable<T, C>
         {...tableProps}
         headerScrollRef={effectiveHeaderScrollRef}
@@ -273,7 +238,6 @@ export function DataTableView<
           )
         )}
       />
-      {rootAfter}
-    </Box>
+    </TableViewFrame>
   );
 }

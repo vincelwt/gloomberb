@@ -1,16 +1,24 @@
 import {
   useCallback,
   useEffect,
-  useRef,
-  useState,
   type ReactNode,
   type RefObject,
 } from "react";
-import { Box, type ScrollBoxRenderable } from "../ui";
+import type { ScrollBoxRenderable } from "../ui";
 import { useShortcut } from "../react/input";
 import { TickerListTable, type TickerListTableProps } from "./ticker-list-table";
 import type { TickerRecord } from "../types/ticker";
 import type { DataTableKeyEvent } from "./data-table-view";
+import {
+  isNextTableRowKey,
+  isPreviousTableRowKey,
+  isTableActivationKey,
+  stopTableKey,
+  TableViewFrame,
+  useResetTableScroll,
+  useTableBodyScrollActivity,
+  useTableViewState,
+} from "./table-view-shared";
 
 export interface TickerListVisibleRange {
   start: number;
@@ -47,23 +55,6 @@ export interface TickerListTableViewProps extends Omit<
   resetScrollKey?: unknown;
 }
 
-function isActivationKey(name: string | undefined): boolean {
-  return name === "enter" || name === "return";
-}
-
-function isNextRowKey(name: string | undefined): boolean {
-  return name === "j" || name === "down";
-}
-
-function isPreviousRowKey(name: string | undefined): boolean {
-  return name === "k" || name === "up";
-}
-
-function stopTableKey(event: DataTableKeyEvent) {
-  event.stopPropagation?.();
-  event.preventDefault?.();
-}
-
 export function TickerListTableView({
   focused = false,
   rootBefore,
@@ -86,17 +77,19 @@ export function TickerListTableView({
   resetScrollKey,
   ...tableProps
 }: TickerListTableViewProps) {
-  const internalHeaderScrollRef = useRef<ScrollBoxRenderable>(null);
-  const internalScrollRef = useRef<ScrollBoxRenderable>(null);
-  const [internalHoveredIdx, setInternalHoveredIdx] = useState<number | null>(
-    null,
-  );
-
-  const effectiveHeaderScrollRef = headerScrollRef ?? internalHeaderScrollRef;
-  const effectiveScrollRef = scrollRef ?? internalScrollRef;
-  const effectiveHoveredIdx =
-    hoveredIdx !== undefined ? hoveredIdx : internalHoveredIdx;
-  const effectiveSetHoveredIdx = setHoveredIdx ?? setInternalHoveredIdx;
+  const {
+    effectiveHeaderScrollRef,
+    effectiveScrollRef,
+    effectiveHoveredIdx,
+    effectiveSetHoveredIdx,
+    effectiveSyncHeaderScroll,
+  } = useTableViewState({
+    headerScrollRef,
+    scrollRef,
+    syncHeaderScroll,
+    hoveredIdx,
+    setHoveredIdx,
+  });
   const selectedIndex = tableProps.tickers.findIndex(
     (ticker) => ticker.metadata.ticker === tableProps.cursorSymbol,
   );
@@ -113,24 +106,11 @@ export function TickerListTableView({
     onVisibleRangeChange({ start, end });
   }, [effectiveScrollRef, onVisibleRangeChange, tableProps.tickers.length, visibleRangeBuffer]);
 
-  const defaultSyncHeaderScroll = useCallback(() => {
-    const body = effectiveScrollRef.current;
-    const header = effectiveHeaderScrollRef.current;
-    if (!body || !header) return;
-    if (header.scrollLeft !== body.scrollLeft) {
-      header.scrollLeft = body.scrollLeft;
-    }
-  }, [effectiveHeaderScrollRef, effectiveScrollRef]);
-  const effectiveSyncHeaderScroll = syncHeaderScroll ?? defaultSyncHeaderScroll;
-
-  const handleBodyScrollActivity = useCallback(() => {
-    if (onBodyScrollActivity) {
-      onBodyScrollActivity();
-    } else {
-      queueMicrotask(effectiveSyncHeaderScroll);
-    }
-    queueMicrotask(emitVisibleRange);
-  }, [effectiveSyncHeaderScroll, emitVisibleRange, onBodyScrollActivity]);
+  const handleBodyScrollActivity = useTableBodyScrollActivity({
+    onBodyScrollActivity,
+    syncHeaderScroll: effectiveSyncHeaderScroll,
+    afterScroll: emitVisibleRange,
+  });
 
   useEffect(() => {
     const scrollBox = effectiveScrollRef.current;
@@ -139,19 +119,12 @@ export function TickerListTableView({
     emitVisibleRange();
   }, [emitVisibleRange, effectiveScrollRef, rootHeight, tableProps.tickers.length]);
 
-  useEffect(() => {
-    if (resetScrollKey === undefined) return;
-    const body = effectiveScrollRef.current;
-    if (body) {
-      body.scrollTop = 0;
-      body.scrollLeft = 0;
-    }
-    const header = effectiveHeaderScrollRef.current;
-    if (header) {
-      header.scrollLeft = 0;
-    }
-    queueMicrotask(emitVisibleRange);
-  }, [effectiveHeaderScrollRef, effectiveScrollRef, emitVisibleRange, resetScrollKey]);
+  useResetTableScroll({
+    headerScrollRef: effectiveHeaderScrollRef,
+    scrollRef: effectiveScrollRef,
+    resetScrollKey,
+    afterReset: emitVisibleRange,
+  });
 
   const selectIndex = useCallback((index: number) => {
     if (index < 0 || index >= tableProps.tickers.length) return;
@@ -192,19 +165,19 @@ export function TickerListTableView({
     if (onRootKeyDown?.(event)) return;
     if (tableProps.tickers.length === 0) return;
 
-    if (isNextRowKey(event.name)) {
+    if (isNextTableRowKey(event.name)) {
       stopTableKey(event);
       selectByOffset(1);
       return;
     }
 
-    if (isPreviousRowKey(event.name)) {
+    if (isPreviousTableRowKey(event.name)) {
       stopTableKey(event);
       selectByOffset(-1);
       return;
     }
 
-    if (isActivationKey(event.name)) {
+    if (isTableActivationKey(event.name)) {
       stopTableKey(event);
       activateSelection();
     }
@@ -224,15 +197,13 @@ export function TickerListTableView({
   }, [effectiveScrollRef, emitVisibleRange, selectedIndex]);
 
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
+    <TableViewFrame
       width={rootWidth}
       height={rootHeight}
       backgroundColor={rootBackgroundColor}
-      overflow="hidden"
+      before={rootBefore}
+      after={rootAfter}
     >
-      {rootBefore}
       <TickerListTable
         {...tableProps}
         headerScrollRef={effectiveHeaderScrollRef}
@@ -242,7 +213,6 @@ export function TickerListTableView({
         hoveredIdx={effectiveHoveredIdx}
         setHoveredIdx={effectiveSetHoveredIdx}
       />
-      {rootAfter}
-    </Box>
+    </TableViewFrame>
   );
 }

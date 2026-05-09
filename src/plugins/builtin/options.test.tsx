@@ -10,7 +10,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { applyTheme, colors, hoverBg } from "../../theme/colors";
 import { blendHex, contrastRatio } from "../../theme/color-utils";
 import { DEFAULT_THEME, themes } from "../../theme/themes";
-import { OptionsTab, optionColumnColor, optionMutedColor, type OptionColumnId } from "./options";
+import { OptionsView, optionColumnColor, optionMutedColor, type OptionColumnId } from "./options";
 
 const TEST_PANE_ID = "ticker-detail:options-test";
 const OPTION_TEST_COLUMN_IDS: OptionColumnId[] = [
@@ -117,7 +117,7 @@ function OptionsHarness({ ticker, quotePrice }: { ticker: TickerRecord; quotePri
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <OptionsTab width={122} height={14} focused onCapture={() => {}} />
+        <OptionsView width={122} height={14} focused onCapture={() => {}} />
       </PaneInstanceProvider>
     </AppContext>
   );

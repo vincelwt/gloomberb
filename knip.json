@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "bin/gloomberb",
+    "electrobun.config.ts",
+    "scripts/build.ts",
+    "scripts/build-electrobun-view.ts",
+    "src/index.tsx",
+    "src/renderers/electrobun/bun/index.ts",
+    "src/renderers/electrobun/view/main.tsx",
+    "src/renderers/electrobun/view/app-services.ts",
+    "src/renderers/electrobun/view/notes-files.ts",
+    "src/renderers/electrobun/view/native-stubs/chart-kitty-support.ts",
+    "src/renderers/electrobun/view/native-stubs/chart-surface-manager.ts",
+    "src/renderers/electrobun/view/native-stubs/chart-surface-sync.ts"
+  ],
+  "project": [
+    "electrobun.config.ts",
+    "scripts/**/*.ts",
+    "src/**/*.{ts,tsx}"
+  ],
+  "ignore": [
+    "dist/**"
+  ]
+}

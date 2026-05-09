@@ -447,6 +447,3 @@ export class NewsService {
       .slice(0, count);
   }
 }
-
-export type NewsAggregatorOptions = NewsServiceOptions;
-export class NewsAggregator extends NewsService {}

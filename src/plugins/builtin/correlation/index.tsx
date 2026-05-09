@@ -142,7 +142,7 @@ function buildCorrelationPaneTitle(symbols: string[], rangePreset: CorrelationRa
   return `${symbols.slice(0, 2).join(" · ")} +${symbols.length - 2} ${rangePreset}`;
 }
 
-export function CorrelationMatrixPane({ width, height }: PaneProps) {
+function CorrelationMatrixPane({ width, height }: PaneProps) {
   const pane = usePaneInstance();
   const { navigateTicker } = usePluginTickerActions();
   const tickers = useAppSelector((state) => state.tickers);

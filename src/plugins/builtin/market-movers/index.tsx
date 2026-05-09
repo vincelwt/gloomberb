@@ -191,7 +191,7 @@ const INDEX_SHORT: Record<string, string> = {
   "^RUT": "RUT",
 };
 
-export function MarketMoversPane({ focused, width, height }: PaneProps) {
+function MarketMoversPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { pinTicker } = usePluginTickerActions();
   const [activeTab, setActiveTab] = useState<TabId>("gainers");

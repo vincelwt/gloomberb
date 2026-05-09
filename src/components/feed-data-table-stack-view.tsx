@@ -5,6 +5,12 @@ import { colors } from "../theme/colors";
 import { formatTimeAgo } from "../utils/format";
 import { toTimestampMillis } from "../utils/timestamp";
 import { DataTableStackView } from "./data-table-stack-view";
+import {
+  activeStackIndex,
+  sortIndexedStackRows,
+  type IndexedStackRow,
+  type StackSortPreference,
+} from "./feed-stack-controller";
 import { ExternalLink, type DataTableCell, type DataTableColumn } from "./ui";
 import { wrapTextLines } from "../utils/text-wrap";
 
@@ -23,15 +29,9 @@ export interface FeedDataTableItem {
 type DetailColumnId = "time" | "source" | "title";
 type DetailColumn = DataTableColumn & { id: DetailColumnId };
 
-interface DetailRow {
-  item: FeedDataTableItem;
-  itemIndex: number;
-}
+type DetailRow = IndexedStackRow<FeedDataTableItem>;
 
-interface SortPreference {
-  columnId: DetailColumnId;
-  direction: "asc" | "desc";
-}
+type SortPreference = StackSortPreference<DetailColumnId>;
 
 interface FeedDataTableStackViewProps {
   width: number;
@@ -151,19 +151,12 @@ export function FeedDataTableStackView({
     [items, sourceLabel, titleLabel, width],
   );
   const sortedRows = useMemo(() => {
-    const direction = sortPreference.direction === "asc" ? 1 : -1;
-    return items
-      .map((item, itemIndex) => ({ item, itemIndex }))
-      .sort((a, b) => {
-        const primary = compareRows(a, b, sortPreference.columnId) * direction;
-        return primary !== 0 ? primary : a.itemIndex - b.itemIndex;
-      });
+    return sortIndexedStackRows(items, sortPreference, compareRows);
   }, [items, sortPreference]);
   const selectedRowIndex = sortedRows.findIndex(
     (row) => row.itemIndex === selectedIdx,
   );
-  const activeRowIndex =
-    selectedRowIndex >= 0 ? selectedRowIndex : sortedRows.length > 0 ? 0 : -1;
+  const activeRowIndex = activeStackIndex(sortedRows.length, selectedRowIndex);
   const openItem = useMemo(
     () =>
       openItemId

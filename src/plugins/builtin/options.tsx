@@ -1,7 +1,7 @@
 import { Box, Text } from "../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "../../ui";
-import type { DetailTabProps, GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
@@ -37,8 +37,11 @@ interface OptionTableRow {
   isPositionStrike: boolean;
 }
 
-type OptionsViewProps = Pick<DetailTabProps, "width" | "height" | "focused"> & {
-  onCapture?: DetailTabProps["onCapture"];
+type OptionsViewProps = {
+  width: number;
+  height: number;
+  focused: boolean;
+  onCapture?: (capturing: boolean) => void;
 };
 
 type OptionColorRole = "call" | "put" | "price" | "activity" | "iv" | "strike";
@@ -338,14 +341,6 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   );
 }
 
-export function OptionsTab(props: DetailTabProps) {
-  return <OptionsView {...props} />;
-}
-
-export function OptionsPane({ focused, width, height }: PaneProps) {
-  return <OptionsView focused={focused} width={width} height={height} />;
-}
-
 function buildStrikeList(chain: OptionsChain): number[] {
   const set = new Set<number>();
   for (const c of chain.calls) set.add(c.strike);
@@ -539,7 +534,7 @@ export const optionsPlugin: GloomPlugin = {
       id: "options",
       name: "Options",
       icon: "O",
-      component: OptionsPane,
+      component: OptionsView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 112, height: 28 },
@@ -562,7 +557,7 @@ export const optionsPlugin: GloomPlugin = {
       id: "options",
       name: "Options",
       order: 35, // after Chart (30), before News (40)
-      component: OptionsTab,
+      component: OptionsView,
       isVisible: ({ hasOptionsChain }) => hasOptionsChain,
     });
   },

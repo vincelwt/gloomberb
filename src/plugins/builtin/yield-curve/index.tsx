@@ -30,7 +30,7 @@ function spreadBp(points: YieldPoint[]): number | null {
   return Math.round((y10 - y2) * 100);
 }
 
-export function YieldCurvePane({ focused, width, height }: PaneProps) {
+function YieldCurvePane({ focused, width, height }: PaneProps) {
   const [points, setPoints] = useState<YieldPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

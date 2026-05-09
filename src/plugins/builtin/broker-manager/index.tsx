@@ -2,6 +2,7 @@ import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
+  ConfirmDialog,
   DataTableStackView,
   NumberField,
   SegmentedControl,
@@ -29,8 +30,7 @@ import type { BrokerAdapter, BrokerConfigField, BrokerProfileAction } from "../.
 import type { BrokerInstanceConfig } from "../../../types/config";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { BrokerAccount } from "../../../types/trading";
-import { DialogFrame } from "../../../components/ui/frame";
-import { useDialog, useDialogKeyboard, type PromptContext } from "../../../ui/dialog";
+import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { formatCurrency } from "../../../utils/format";
 import { usePluginAppActions, usePluginBrokerActions } from "../../plugin-runtime";
 import {
@@ -74,34 +74,6 @@ function truncate(value: string, width: number): string {
 function isBrokerErrorMessage(message: string | null | undefined): boolean {
   const normalized = message?.toLowerCase() ?? "";
   return normalized.includes("failed") || normalized.includes("required");
-}
-
-function ConfirmRemoveBrokerDialog({
-  resolve,
-  row,
-}: PromptContext<boolean> & { row: BrokerProfileRow }) {
-  const confirm = useCallback(() => resolve(true), [resolve]);
-  const cancel = useCallback(() => resolve(false), [resolve]);
-
-  useDialogKeyboard((event) => {
-    event.stopPropagation();
-    if (event.name === "enter" || event.name === "return") confirm();
-    if (event.name === "escape") cancel();
-  });
-
-  return (
-    <DialogFrame title="Disconnect broker?" footer="Enter disconnect · Esc cancel">
-      <Box flexDirection="column" width={58}>
-        <Text fg={colors.text}>{`Remove "${row.label}" and imported broker data?`}</Text>
-        <Text fg={colors.textDim}>Broker-managed portfolios, positions, and contracts will be removed.</Text>
-        <Box height={1} />
-        <Box flexDirection="row" gap={1}>
-          <Button label="Disconnect" variant="danger" onPress={confirm} />
-          <Button label="Back" variant="secondary" onPress={cancel} />
-        </Box>
-      </Box>
-    </DialogFrame>
-  );
 }
 
 function brokerFieldLabel(field: BrokerConfigField, focused: boolean): string {
@@ -371,7 +343,18 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     const confirmed = await dialog.prompt<boolean>({
       closeOnClickOutside: true,
       content: (ctx: PromptContext<boolean>) => (
-        <ConfirmRemoveBrokerDialog {...ctx} row={selectedRow} />
+        <ConfirmDialog
+          {...ctx}
+          title="Disconnect broker?"
+          body={[
+            `Remove "${selectedRow.label}" and imported broker data?`,
+            "Broker-managed portfolios, positions, and contracts will be removed.",
+          ]}
+          confirmLabel="Disconnect"
+          cancelLabel="Back"
+          width={58}
+          footer="Enter disconnect · Esc cancel"
+        />
       ),
     }).catch(() => false);
     if (confirmed !== true) return;

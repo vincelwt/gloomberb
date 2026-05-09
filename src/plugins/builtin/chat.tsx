@@ -891,7 +891,7 @@ export function ChatContent({
   );
 }
 
-export function ChatPane({ focused, width, height, close }: PaneProps) {
+function ChatPane({ focused, width, height, close }: PaneProps) {
   return (
     <ChatContent
       width={width}

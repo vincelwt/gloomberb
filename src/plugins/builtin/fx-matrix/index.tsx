@@ -18,7 +18,7 @@ function formatAge(ms: number): string {
   return `${Math.floor(mins / 60)}h ago`;
 }
 
-export function FxMatrixPane({ focused, width, height }: PaneProps) {
+function FxMatrixPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const [rates, setRates] = useState<Map<MajorCurrency, number>>(new Map());
   const [loading, setLoading] = useState(true);

@@ -12,7 +12,7 @@ import {
 import { useShortcut } from "../../../react/input";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import type { HolderData, HolderRecord } from "../../../types/financials";
-import type { DetailTabProps, GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { GloomPlugin } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
 import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
 import { createTickerSurfacePaneTemplate } from "../ticker-surface";
@@ -681,7 +681,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
   );
 }
 
-export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused" | "width" | "height">) {
+function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { symbol, ticker } = usePaneTicker();
   const dataProvider = useAssetData();
   const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "chart");
@@ -899,14 +899,6 @@ export function HoldersView({ focused, width, height }: Pick<PaneProps, "focused
   );
 }
 
-export function HoldersPane({ focused, width, height }: PaneProps) {
-  return <HoldersView focused={focused} width={width} height={height} />;
-}
-
-export function HoldersDetailTab({ focused, width, height }: DetailTabProps) {
-  return <HoldersView focused={focused} width={width} height={height} />;
-}
-
 export const holdersPlugin: GloomPlugin = {
   id: "holders",
   name: "Holders",
@@ -919,7 +911,7 @@ export const holdersPlugin: GloomPlugin = {
       id: "holders",
       name: "Holders",
       order: 42,
-      component: HoldersDetailTab,
+      component: HoldersView,
       isVisible: ({ ticker }) => !!ticker,
     });
   },
@@ -929,7 +921,7 @@ export const holdersPlugin: GloomPlugin = {
       id: "holders",
       name: "Holders",
       icon: "H",
-      component: HoldersPane,
+      component: HoldersView,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 105, height: 34 },

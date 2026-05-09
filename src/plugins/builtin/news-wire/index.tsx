@@ -1,7 +1,7 @@
+import type { PaneProps } from "../../../types/plugin";
 import type { GloomPluginContext } from "../../../types/plugin";
+import type { NewsQuery } from "../../../news/types";
 import { createRssNewsCapability } from "./rss-source";
-import { TopPane } from "./top-pane";
-import { FeedPane } from "./feed-pane";
 import { IndustryPane } from "./industry-pane";
 import { BreakingPane } from "./breaking-pane";
 import {
@@ -15,6 +15,45 @@ import {
   loadNewsFeedSettings,
   saveNewsFeedSettings,
 } from "./feed-config";
+import { NEWS_QUERY_PRESETS } from "./news-query-presets";
+import { NewsPresetPane } from "./news-preset-pane";
+import type { NewsColumnId, NewsSortPreference } from "./news-table";
+
+interface NewsPresetPaneConfig {
+  paneKey: string;
+  title: string;
+  query: NewsQuery;
+  columns: NewsColumnId[];
+  defaultSort: NewsSortPreference;
+  emptyStateTitle: string;
+  emptyStateHint: string;
+}
+
+function createNewsPresetPane(config: NewsPresetPaneConfig) {
+  return function PresetNewsPane(props: PaneProps) {
+    return <NewsPresetPane {...props} {...config} />;
+  };
+}
+
+const TopPane = createNewsPresetPane({
+  paneKey: "top",
+  title: "Top News",
+  query: NEWS_QUERY_PRESETS.top,
+  columns: ["rank", "time", "source", "title", "tickers", "importance"],
+  defaultSort: { columnId: "importance", direction: "desc" },
+  emptyStateTitle: "No top stories yet",
+  emptyStateHint: "Try refreshing later as new headlines are ranked.",
+});
+
+const FeedPane = createNewsPresetPane({
+  paneKey: "feed",
+  title: "News Feed",
+  query: NEWS_QUERY_PRESETS.feed,
+  columns: ["time", "source", "title", "tickers", "categories"],
+  defaultSort: { columnId: "time", direction: "desc" },
+  emptyStateTitle: "No feed stories yet",
+  emptyStateHint: "Try refreshing later as wire stories arrive.",
+});
 
 export function registerNewsWireFeatures(ctx: GloomPluginContext): () => void {
   setDigestPersistence(ctx.persistence);

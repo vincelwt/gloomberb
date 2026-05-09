@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { DialogProvider } from "@opentui-ui/dialog/react";
-import { testRender } from "../../renderers/opentui/test-utils";
+import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import { act } from "react";
 import { Box } from "../../ui";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
@@ -122,7 +121,7 @@ function TradeHarness({
   const tradeTab = <TradeTab focused width={88} height={30} onCapture={() => {}} />;
 
   return (
-    <DialogProvider dialogOptions={{ style: { backgroundColor: "#000000", borderColor: "#ffffff", borderStyle: "single" } }}>
+    <TestDialogProvider>
       <AppContext value={{ state, dispatch: () => {} }}>
         <PaneInstanceProvider paneId={TEST_PANE_ID}>
           {withFooter
@@ -139,7 +138,7 @@ function TradeHarness({
             : tradeTab}
         </PaneInstanceProvider>
       </AppContext>
-    </DialogProvider>
+    </TestDialogProvider>
   );
 }
 

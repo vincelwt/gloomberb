@@ -65,23 +65,6 @@ export function resolveDefaultAiProviderId(providers = detectProviders()): strin
   return getAvailableProviders(providers)[0]?.id ?? providers[0]?.id ?? "claude";
 }
 
-export function listAiProviderOptions(
-  preferredId?: string | null,
-  providers = detectProviders(),
-): Array<{ label: string; value: string }> {
-  const ordered = [...providers].sort((left, right) => {
-    if (left.id === preferredId) return -1;
-    if (right.id === preferredId) return 1;
-    if (left.available !== right.available) return left.available ? -1 : 1;
-    return left.name.localeCompare(right.name);
-  });
-
-  return ordered.map((provider) => ({
-    value: provider.id,
-    label: provider.available ? provider.name : `${provider.name} (missing)`,
-  }));
-}
-
 export function __setDetectedProvidersForTests(providers: AiProvider[] | null): void {
   detectedProviders = providers;
 }
