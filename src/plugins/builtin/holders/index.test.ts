@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { buildTreemap, buildTreemapRects } from "./index";
+import {
+  buildTreemap,
+  buildTreemapRects,
+  formatHolderOwnershipPercent,
+  resolveHolderOwnershipPercent,
+} from "./index";
 import type { HolderRecord } from "../../../types/financials";
 
 function holder(name: string, value: number): HolderRecord & { id: string } {
@@ -42,4 +47,11 @@ test("groups large holders using terminal cell aspect instead of full-height str
   expect(rects[0]!.height).toBeLessThan(40);
   expect(rects[1]!.height).toBeLessThan(40);
   expect(rects[0]!.width).toBeCloseTo(rects[1]!.width, 8);
+});
+
+test("resolves holder ownership from provider percent before value over market cap", () => {
+  expect(resolveHolderOwnershipPercent({ percentHeld: 0.085, value: 120 }, 1_000)).toBe(0.085);
+  expect(resolveHolderOwnershipPercent({ value: 120 }, 1_000)).toBe(0.12);
+  expect(resolveHolderOwnershipPercent({ value: 120 }, undefined)).toBeUndefined();
+  expect(formatHolderOwnershipPercent(0.085)).toBe("8.50%");
 });

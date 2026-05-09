@@ -90,6 +90,23 @@ function formatMaybePercent(value: number | undefined): string {
   return Math.abs(value) <= 1 ? formatPercent(value) : formatPercentRaw(value);
 }
 
+export function resolveHolderOwnershipPercent(row: Pick<HolderRecord, "percentHeld" | "value">, marketCap: number | undefined): number | undefined {
+  if (row.percentHeld != null) return row.percentHeld;
+  if (row.value == null || row.value < 0 || marketCap == null || marketCap <= 0) return undefined;
+  return row.value / marketCap;
+}
+
+export function formatHolderOwnershipPercent(value: number | undefined): string {
+  if (value == null) return "-";
+  const percent = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${percent.toFixed(2)}%`;
+}
+
+function formatHolderOwnershipLine(row: HolderRow, marketCap: number | undefined): string | null {
+  const ownership = resolveHolderOwnershipPercent(row, marketCap);
+  return ownership == null ? null : `${formatHolderOwnershipPercent(ownership)} held`;
+}
+
 function formatSignedCompact(value: number | undefined): string {
   if (value == null) return "-";
   const sign = value > 0 ? "+" : "";
@@ -133,7 +150,7 @@ function buildColumns(width: number): HolderColumn[] {
   ];
 }
 
-function sortValue(row: HolderRow, columnId: HolderColumnId): string | number | null {
+function sortValue(row: HolderRow, columnId: HolderColumnId, marketCap?: number): string | number | null {
   switch (columnId) {
     case "holder":
       return row.name;
@@ -146,7 +163,7 @@ function sortValue(row: HolderRow, columnId: HolderColumnId): string | number | 
     case "changePercent":
       return row.changePercent ?? null;
     case "percentHeld":
-      return row.percentHeld ?? null;
+      return resolveHolderOwnershipPercent(row, marketCap) ?? null;
     case "reportDate":
       return row.reportDate ?? null;
   }
@@ -167,10 +184,10 @@ function compareSortValues(
   return direction === "asc" ? comparison : -comparison;
 }
 
-function sortRows(rows: HolderRow[], preference: SortPreference): HolderRow[] {
+function sortRows(rows: HolderRow[], preference: SortPreference, marketCap?: number): HolderRow[] {
   return [...rows].sort((left, right) => compareSortValues(
-    sortValue(left, preference.columnId),
-    sortValue(right, preference.columnId),
+    sortValue(left, preference.columnId, marketCap),
+    sortValue(right, preference.columnId, marketCap),
     preference.direction,
   ));
 }
@@ -428,10 +445,11 @@ function desktopTileColor(row: HolderRow): string {
   return blendHex(colors.panel, row.changePercent > 0 ? colors.positive : colors.negative, intensity);
 }
 
-function Tile({ tile, selected, currency, onSelect }: {
+function Tile({ tile, selected, currency, marketCap, onSelect }: {
   tile: TileLayout;
   selected: boolean;
   currency: string;
+  marketCap?: number;
   onSelect: () => void;
 }) {
   const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
@@ -443,6 +461,7 @@ function Tile({ tile, selected, currency, onSelect }: {
   const amount = tile.row.value != null
     ? formatMoneyCompact(tile.row.value, currency)
     : formatCompact(tile.row.shares);
+  const ownership = formatHolderOwnershipLine(tile.row, marketCap);
   const change = tile.row.changePercent != null ? formatMaybePercent(tile.row.changePercent) : "No change";
 
   return (
@@ -463,6 +482,9 @@ function Tile({ tile, selected, currency, onSelect }: {
         <Text fg={textColor} attributes={attributes}>{padTo(amount, innerWidth)}</Text>
       )}
       {renderHeight >= 3 && (
+        <Text fg={textColor} attributes={attributes}>{padTo(ownership ?? change, innerWidth)}</Text>
+      )}
+      {ownership && renderHeight >= 4 && (
         <Text fg={textColor} attributes={attributes}>{padTo(change, innerWidth)}</Text>
       )}
     </Box>
@@ -473,21 +495,24 @@ function pct(value: number, total: number): string {
   return `${total > 0 ? value / total * 100 : 0}%`;
 }
 
-function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currency, onSelect, onHover }: {
+function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currency, marketCap, onSelect, onHover }: {
   tile: FloatTileLayout;
   chartWidth: number;
   chartHeight: number;
   selected: boolean;
   hovered: boolean;
   currency: string;
+  marketCap?: number;
   onSelect: () => void;
   onHover: (hovered: boolean) => void;
 }) {
   const amount = tile.row.value != null
     ? formatMoneyCompact(tile.row.value, currency)
     : formatCompact(tile.row.shares);
+  const ownership = formatHolderOwnershipLine(tile.row, marketCap);
   const change = tile.row.changePercent != null ? formatMaybePercent(tile.row.changePercent) : "No change";
   const canShowDetails = tile.width >= 7 && tile.height >= 3;
+  const canShowChange = tile.height >= 3.7;
   const canShowLabel = tile.width >= 4 && tile.height >= 1.4;
   const isTiny = tile.width < 5 || tile.height < 2;
   const backgroundColor = desktopTileColor(tile.row);
@@ -562,20 +587,24 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
       {canShowDetails && (
         <>
           <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{amount}</Text>
-          <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{change}</Text>
+          <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{ownership ?? change}</Text>
+          {ownership && canShowChange && (
+            <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{change}</Text>
+          )}
         </>
       )}
     </Box>
   );
 }
 
-function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, currency, cellAspect }: {
+function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, currency, marketCap, cellAspect }: {
   rows: HolderRow[];
   width: number;
   height: number;
   selectedId: string | null;
   onSelect: (row: HolderRow) => void;
   currency: string;
+  marketCap?: number;
   cellAspect: number;
 }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -621,6 +650,7 @@ function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, curr
             selected={tile.row.id === selectedId}
             hovered={tile.row.id === hoveredId}
             currency={currency}
+            marketCap={marketCap}
             onSelect={() => onSelect(tile.row)}
             onHover={(isHovered) => setHoveredId((current) => (isHovered ? tile.row.id : current === tile.row.id ? null : current))}
           />
@@ -630,13 +660,14 @@ function DesktopHoldersTreemap({ rows, width, height, selectedId, onSelect, curr
   );
 }
 
-function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }: {
+function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency, marketCap }: {
   rows: HolderRow[];
   width: number;
   height: number;
   selectedId: string | null;
   onSelect: (row: HolderRow) => void;
   currency: string;
+  marketCap?: number;
 }) {
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   const chartWidth = Math.max(1, width - 2);
@@ -652,6 +683,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
         selectedId={selectedId}
         onSelect={onSelect}
         currency={currency}
+        marketCap={marketCap}
         cellAspect={cellAspect}
       />
     );
@@ -674,6 +706,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
             tile={tile}
             selected={tile.row.id === selectedId}
             currency={currency}
+            marketCap={marketCap}
             onSelect={() => onSelect(tile.row)}
           />
         ))}
@@ -684,7 +717,7 @@ function HoldersTreemap({ rows, width, height, selectedId, onSelect, currency }:
 
 function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { nativePaneChrome } = useUiCapabilities();
-  const { symbol, ticker } = usePaneTicker();
+  const { symbol, ticker, financials } = usePaneTicker();
   const dataProvider = useAssetData();
   const [viewMode, setViewMode] = usePluginPaneState<ViewMode>("viewMode", "chart");
   const [sortPreference, setSortPreference] = usePluginPaneState<SortPreference>("sortPreference", DEFAULT_SORT);
@@ -695,9 +728,11 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
   const fetchGenRef = useRef(0);
 
   const currency = data?.currency ?? ticker?.metadata.currency ?? "USD";
+  const quoteMarketCap = financials?.quote?.marketCap;
+  const marketCap = financials?.quote?.currency && financials.quote.currency !== currency ? undefined : quoteMarketCap;
   const exchange = ticker?.metadata.exchange ?? "";
   const rows = useMemo(() => buildRows(data), [data]);
-  const sortedRows = useMemo(() => sortRows(rows, sortPreference), [rows, sortPreference]);
+  const sortedRows = useMemo(() => sortRows(rows, sortPreference, marketCap), [marketCap, rows, sortPreference]);
   const columns = useMemo(() => buildColumns(width), [width]);
   const selectedIdx = selectedId
     ? sortedRows.findIndex((row) => row.id === selectedId)
@@ -833,11 +868,14 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
           color: selectedColor ?? (row.changePercent != null ? priceColor(row.changePercent) : colors.textDim),
         };
       case "percentHeld":
-        return { text: formatMaybePercent(row.percentHeld), color: selectedColor ?? colors.textDim };
+        return {
+          text: formatHolderOwnershipPercent(resolveHolderOwnershipPercent(row, marketCap)),
+          color: selectedColor ?? colors.textDim,
+        };
       case "reportDate":
         return { text: displayDate(row.reportDate), color: selectedColor ?? colors.textDim };
     }
-  }, [currency]);
+  }, [currency, marketCap]);
 
   usePaneFooter("holders", () => ({
     info: [
@@ -896,6 +934,7 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
           selectedId={selectedId}
           onSelect={(row) => setSelectedId(row.id)}
           currency={currency}
+          marketCap={marketCap}
         />
       )}
     </Box>
