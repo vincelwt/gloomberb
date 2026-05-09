@@ -16,6 +16,8 @@ import {
 } from "./fear-greed-data";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const DESKTOP_SUMMARY_STACK_WIDTH = 84;
+const CHART_META_STACK_WIDTH = 84;
 const FEAR_GREED_GAUGE_SEGMENTS: SpeedometerSegment[] = [
   { from: 0, to: 24.999, label: "EXTREME FEAR", color: colors.negative },
   { from: 25, to: 44.999, label: "FEAR", color: colors.warning },
@@ -141,7 +143,7 @@ function PreviousScoreGrid({ data, width, layout = "grid" }: { data: FearGreedDa
     { label: "1 month ago", value: data.overall.previousMonth },
     { label: "1 year ago", value: data.overall.previousYear },
   ];
-  const columns = width >= 84 ? 4 : 2;
+  const columns = width >= 84 ? 4 : width >= 42 ? 2 : 1;
   const columnWidth = Math.max(18, Math.floor((width - 2) / columns));
   const rows = Array.from({ length: Math.ceil(items.length / columns) }, (_, rowIndex) => (
     items.slice(rowIndex * columns, rowIndex * columns + columns)
@@ -226,6 +228,7 @@ function SentimentChart({
   overlays?: ChartIndicatorOverlays | null;
 }) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const stackMeta = width < CHART_META_STACK_WIDTH;
   const chartWidth = Math.max(24, width - 2);
   const chartHeight = width >= 96 ? 12 : 10;
   const color = ratingColor(rating);
@@ -245,27 +248,36 @@ function SentimentChart({
         <Box flexGrow={1} />
         <SentimentBadge rating={rating} />
       </Box>
-      <Box flexDirection="row" height={1}>
-        <Text fg={color}>● </Text>
-        <Text fg={colors.textDim}>{primaryLabel}</Text>
-        {secondaryLabel ? (
-          <>
-            <Text fg={colors.warning}>  ● </Text>
-            <Text fg={colors.textDim}>{secondaryLabel}</Text>
-          </>
-        ) : null}
-        <Box flexGrow={1} />
-        <Text fg={colors.textDim}>score </Text>
-        <Text fg={color} attributes={TextAttributes.BOLD}>{formatScore(score)}</Text>
-        <Text fg={colors.textDim}>  latest </Text>
-        <Text fg={colors.text}>{formatIndicatorValue(latest, valueFormat)}</Text>
-        {secondaryLabel && secondaryValue != null ? (
-          <>
-            <Text fg={colors.textDim}>  avg </Text>
-            <Text fg={colors.text}>{formatIndicatorValue(secondaryValue, valueFormat)}</Text>
-          </>
-        ) : null}
-      </Box>
+      {stackMeta ? (
+        <>
+          <Box flexDirection="row" height={1} overflow="hidden">
+            <SeriesLegend color={color} primaryLabel={primaryLabel} secondaryLabel={secondaryLabel} />
+          </Box>
+          <Box flexDirection="row" height={1} overflow="hidden">
+            <ChartStats
+              color={color}
+              latest={latest}
+              score={score}
+              secondaryLabel={secondaryLabel}
+              secondaryValue={secondaryValue}
+              valueFormat={valueFormat}
+            />
+          </Box>
+        </>
+      ) : (
+        <Box flexDirection="row" height={1} overflow="hidden">
+          <SeriesLegend color={color} primaryLabel={primaryLabel} secondaryLabel={secondaryLabel} />
+          <Box flexGrow={1} />
+          <ChartStats
+            color={color}
+            latest={latest}
+            score={score}
+            secondaryLabel={secondaryLabel}
+            secondaryValue={secondaryValue}
+            valueFormat={valueFormat}
+          />
+        </Box>
+      )}
       {points.length >= 2 ? (
         <Box marginTop={1}>
           <StaticChartSurface
@@ -290,6 +302,60 @@ function SentimentChart({
         <Text fg={colors.textDim}>{formatUpdatedAt(updatedAt)}</Text>
       </Box>
     </Box>
+  );
+}
+
+function SeriesLegend({
+  color,
+  primaryLabel,
+  secondaryLabel,
+}: {
+  color: string;
+  primaryLabel: string;
+  secondaryLabel?: string;
+}) {
+  return (
+    <>
+      <Text fg={color}>● </Text>
+      <Text fg={colors.textDim}>{primaryLabel}</Text>
+      {secondaryLabel ? (
+        <>
+          <Text fg={colors.warning}>  ● </Text>
+          <Text fg={colors.textDim}>{secondaryLabel}</Text>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function ChartStats({
+  color,
+  latest,
+  score,
+  secondaryLabel,
+  secondaryValue,
+  valueFormat,
+}: {
+  color: string;
+  latest: number | null;
+  score: number | null;
+  secondaryLabel?: string;
+  secondaryValue?: number | null;
+  valueFormat: FearGreedValueFormat;
+}) {
+  return (
+    <>
+      <Text fg={colors.textDim}>score </Text>
+      <Text fg={color} attributes={TextAttributes.BOLD}>{formatScore(score)}</Text>
+      <Text fg={colors.textDim}>  latest </Text>
+      <Text fg={colors.text}>{formatIndicatorValue(latest, valueFormat)}</Text>
+      {secondaryLabel && secondaryValue != null ? (
+        <>
+          <Text fg={colors.textDim}>  avg </Text>
+          <Text fg={colors.text}>{formatIndicatorValue(secondaryValue, valueFormat)}</Text>
+        </>
+      ) : null}
+    </>
   );
 }
 
@@ -368,6 +434,11 @@ function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
     void load(true);
   }, [load]);
 
+  const stackDesktopSummary = isDesktopWeb && width < DESKTOP_SUMMARY_STACK_WIDTH;
+  const desktopSummaryRailWidth = stackDesktopSummary ? Math.max(18, Math.min(width - 2, 42)) : 26;
+  const desktopSummaryGaugeMaxWidth = Math.max(1, Math.min(width - 2, 50));
+  const desktopSummaryGaugeMinWidth = Math.min(34, desktopSummaryGaugeMaxWidth);
+
   useShortcut((event) => {
     if (!focused) return;
     if (event.name === "r") {
@@ -417,14 +488,25 @@ function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
       <ScrollBox flexGrow={1} scrollY focusable={false}>
         <Box flexDirection="column" paddingBottom={1}>
           {isDesktopWeb ? (
-            <Box flexDirection="row" alignItems="center" justifyContent="center" gap={4} paddingX={1}>
+            <Box
+              flexDirection={stackDesktopSummary ? "column" : "row"}
+              alignItems="center"
+              justifyContent="center"
+              gap={stackDesktopSummary ? 0 : 4}
+              paddingX={1}
+            >
               <SpeedometerGauge
                 value={data.overall.score}
                 valueLabel={ratingLabel(data.overall.rating)}
                 width={width}
                 segments={FEAR_GREED_GAUGE_SEGMENTS}
+                minWidth={stackDesktopSummary ? desktopSummaryGaugeMinWidth : undefined}
+                maxWidth={stackDesktopSummary ? desktopSummaryGaugeMaxWidth : undefined}
+                compact={stackDesktopSummary}
               />
-              <PreviousScoreGrid data={data} width={26} layout="rail" />
+              <Box marginTop={0}>
+                <PreviousScoreGrid data={data} width={desktopSummaryRailWidth} layout="rail" />
+              </Box>
             </Box>
           ) : (
             <>

@@ -20,6 +20,7 @@ export interface SpeedometerGaugeProps {
   currentLabel?: string;
   minWidth?: number;
   maxWidth?: number;
+  compact?: boolean;
 }
 
 interface GaugeCell {
@@ -43,6 +44,7 @@ const DEFAULT_MIN_WIDTH = 34;
 const DEFAULT_MAX_WIDTH = 50;
 const DESKTOP_VIEWBOX_WIDTH = 520;
 const DESKTOP_VIEWBOX_HEIGHT = 232;
+const DESKTOP_COMPACT_VIEWBOX_HEIGHT = 214;
 const DESKTOP_CENTER_X = 260;
 const DESKTOP_CENTER_Y = 182;
 const DESKTOP_ARC_RADIUS = 138;
@@ -351,21 +353,24 @@ function DesktopGauge({
   currentLabel,
   minWidth,
   maxWidth,
+  compact,
 }: Required<SpeedometerGaugeProps>) {
   const gaugeWidth = Math.min(Math.max(width - 2, minWidth), maxWidth);
+  const gaugeHeight = compact ? 9 : 12;
+  const viewBoxHeight = compact ? DESKTOP_COMPACT_VIEWBOX_HEIGHT : DESKTOP_VIEWBOX_HEIGHT;
   const needleAngle = valueToDegrees(value, min, max);
   const needleEnd = polarToCartesian(DESKTOP_CENTER_X, DESKTOP_CENTER_Y, DESKTOP_NEEDLE_RADIUS, needleAngle);
 
   return (
     <Box
       width={gaugeWidth}
-      height={12}
-      marginTop={1}
+      height={gaugeHeight}
+      marginTop={compact ? 0 : 1}
       overflow="hidden"
       style={{ alignSelf: "center", maxWidth: 420 }}
     >
       <svg
-        viewBox={`0 0 ${DESKTOP_VIEWBOX_WIDTH} ${DESKTOP_VIEWBOX_HEIGHT}`}
+        viewBox={`0 0 ${DESKTOP_VIEWBOX_WIDTH} ${viewBoxHeight}`}
         width="100%"
         height="100%"
         role="img"
@@ -535,6 +540,7 @@ export function SpeedometerGauge({
   currentLabel = "Current reading",
   minWidth = DEFAULT_MIN_WIDTH,
   maxWidth = DEFAULT_MAX_WIDTH,
+  compact = false,
 }: SpeedometerGaugeProps) {
   const props = {
     value,
@@ -546,6 +552,7 @@ export function SpeedometerGauge({
     currentLabel,
     minWidth,
     maxWidth,
+    compact,
   };
   return useUiHost().kind === "desktop-web"
     ? <DesktopGauge {...props} />
