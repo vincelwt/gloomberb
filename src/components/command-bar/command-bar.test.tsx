@@ -2201,6 +2201,50 @@ describe("CommandBar", () => {
     expect(frame).toContain("AAPL,");
   });
 
+  test("CMP with one resolved ticker opens inline completion instead of creating a one-symbol chart", async () => {
+    const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="CMP AMD"
+      extraTickers={[makeTicker("AMD", "Advanced Micro Devices")]}
+      configurePluginRegistry={(pluginRegistry) => {
+        (pluginRegistry.panes as Map<string, any>).set("comparison-chart", {
+          id: "comparison-chart",
+          name: "Comparison Chart",
+          component: () => null,
+          defaultPosition: "right",
+        });
+        (pluginRegistry.paneTemplates as Map<string, any>).set("comparison-chart-pane", {
+          id: "comparison-chart-pane",
+          paneId: "comparison-chart",
+          label: "Comparison Chart",
+          description: "Compare multiple symbols in one pane",
+          shortcut: { prefix: "CMP", argPlaceholder: "tickers", argKind: "ticker-list" },
+          wizard: [{ key: "tickers", label: "Tickers", type: "text" }],
+          canCreate: (_context: unknown, options?: { symbols?: string[] | null }) => !options?.symbols || options.symbols.length >= 2,
+        });
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    const frame = await waitForFrameToContain("Tickers");
+    expect(created).toEqual([]);
+    expect(frame).toContain("Comparison Chart");
+    expect(frame).toContain("AMD");
+  });
+
   test("AI <prompt> opens the inline workflow and prefills the textarea prompt", async () => {
     const created: Array<{ templateId: string; options?: Record<string, unknown> }> = [];
 

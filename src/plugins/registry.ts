@@ -169,6 +169,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
   openCommandBar = (query?: string) => {
     this.openCommandBarFn(query);
   };
+  openPaneSettings = (paneId?: string) => {
+    this.openPaneSettingsFn(paneId);
+  };
   openPluginCommandWorkflow = (commandId: string) => {
     this.openPluginCommandWorkflowFn(commandId);
   };

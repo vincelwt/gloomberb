@@ -2266,10 +2266,15 @@ export function CommandBar({
           activeCollectionId,
           buildSharedWorkflowDeps(),
         );
-        await openPaneTemplateDirect(template, {
+        const createOptions = {
           arg: trimmedList,
           symbols,
-        });
+        };
+        if (template.canCreate && !template.canCreate(getPaneTemplateContext(), createOptions)) {
+          openPaneTemplateWorkflow(template, { arg: trimmedArg });
+          return;
+        }
+        await openPaneTemplateDirect(template, createOptions);
       } catch {
         openPaneTemplateWorkflow(template, { arg: trimmedArg });
       }

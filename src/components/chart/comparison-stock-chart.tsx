@@ -96,6 +96,7 @@ import {
   type NativeSurfaceRenderableNode,
 } from "./native/surface-visibility";
 import { formatAxisCell, formatDateShort, resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
+import { TimeAxisLabel } from "./time-axis-label";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -110,6 +111,7 @@ interface ComparisonStockChartProps {
   symbols: string[];
   axisMode: ChartAxisMode;
   onOpenSymbol: (symbol: string) => void;
+  onEditTickers?: () => void;
 }
 
 interface ComparisonChartSymbolSource {
@@ -512,6 +514,7 @@ function ComparisonStockChartView({
   preferredRenderer,
   symbolSources,
   onOpenSymbol,
+  onEditTickers,
 }: ComparisonStockChartViewProps) {
   const renderer = useNativeRenderer();
   const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
@@ -546,6 +549,7 @@ function ComparisonStockChartView({
   const lastCanvasBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const displayCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
+  const mouseCrosshairDisabledRef = useRef(false);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
   const animationFrameRef = useRef<number | null>(null);
   const pendingCanonicalResetRef = useRef(1);
@@ -1034,6 +1038,14 @@ function ComparisonStockChartView({
     selectedSymbol: viewState.selectedSymbol,
     colors: chartColors,
   }), [chartColors, chartHeight, chartWidth, projection, viewState.selectedSymbol]);
+  const displayScene = useMemo(() => buildComparisonChartScene(projection, {
+    width: chartWidth,
+    height: chartHeight,
+    cursorX: displayCursorX,
+    cursorY: displayCursorY,
+    selectedSymbol: viewState.selectedSymbol,
+    colors: chartColors,
+  }), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, projection, viewState.selectedSymbol]);
 
   const staticResult = useMemo(() => renderComparisonChart(projection, {
     width: chartWidth,
@@ -1085,6 +1097,12 @@ function ComparisonStockChartView({
     };
 
     return [
+      ...(onEditTickers ? [{
+        id: "tickers",
+        key: "t",
+        label: "ickers",
+        onPress: onEditTickers,
+      }] : []),
       {
         id: "mode",
         key: "m",
@@ -1108,25 +1126,12 @@ function ComparisonStockChartView({
       { id: "reset", key: "0", label: "reset", onPress: resetView },
       ...(width >= 72 ? [{ id: "range", key: "1-7", label: "range", onPress: cycleRange }] : []),
     ];
-  }, [effectiveResolution, resolutionChips, series, supportMap, viewState.presetRange, visibleDateWindow, width]);
+  }, [effectiveResolution, onEditTickers, resolutionChips, series, supportMap, viewState.presetRange, visibleDateWindow, width]);
 
   usePaneFooter("comparison-chart", () => ({
     order: 10,
     hints: footerHints,
   }), [footerHints]);
-
-  const liveScene = useMemo(() => (
-    effectiveRenderer === "kitty"
-      ? staticScene
-      : buildComparisonChartScene(projection, {
-        width: chartWidth,
-        height: chartHeight,
-        cursorX: displayCursorX,
-        cursorY: displayCursorY,
-        selectedSymbol: viewState.selectedSymbol,
-        colors: chartColors,
-      })
-  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, staticScene, viewState.selectedSymbol]);
 
   const nativeCrosshair = useMemo<NativeCrosshairOverlay | null>(() => {
     if (displayCursor.cellX === null || displayCursor.cellY === null) return null;
@@ -1414,7 +1419,11 @@ function ComparisonStockChartView({
         setResolution(nextResolution);
         return;
       }
+      case "t":
+        onEditTickers?.();
+        return;
       case "h":
+        mouseCrosshairDisabledRef.current = false;
         cursorMotionKindRef.current = "discrete";
         setViewState((current) => ({
           ...current,
@@ -1422,6 +1431,7 @@ function ComparisonStockChartView({
         }));
         return;
       case "l":
+        mouseCrosshairDisabledRef.current = false;
         cursorMotionKindRef.current = "discrete";
         setViewState((current) => ({
           ...current,
@@ -1429,6 +1439,7 @@ function ComparisonStockChartView({
         }));
         return;
       case "escape":
+        mouseCrosshairDisabledRef.current = true;
         updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
         setViewState((current) => ({ ...current, cursorX: null, cursorY: null }));
         return;
@@ -1485,6 +1496,7 @@ function ComparisonStockChartView({
   });
 
   const handlePlotMove = (event: ChartMouseEvent) => {
+    if (mouseCrosshairDisabledRef.current) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
     const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
@@ -1503,6 +1515,7 @@ function ComparisonStockChartView({
   };
 
   const handlePlotDown = (event: ChartMouseEvent) => {
+    mouseCrosshairDisabledRef.current = false;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
     const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
@@ -1525,6 +1538,7 @@ function ComparisonStockChartView({
   };
 
   const handlePlotDrag = (event: ChartMouseEvent) => {
+    if (mouseCrosshairDisabledRef.current && !dragRef.current) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (localPointer) {
       const selectionCursor = resolveSelectionCursor(localPointer, projection.dates.length, chartWidth);
@@ -1610,7 +1624,8 @@ function ComparisonStockChartView({
   }
 
   const hasChartData = series.some((entry) => entry.points.length > 0);
-  const cursorScene = effectiveRenderer === "kitty" ? staticScene : liveScene;
+  const hasDisplayCursor = displayCursorX !== null && displayCursorY !== null;
+  const cursorScene = hasDisplayCursor ? displayScene : staticScene;
   const selectedSeries = hasChartData ? (cursorScene?.selectedSeries ?? staticResult.selectedSeries) : null;
   const selectedPoint = hasChartData ? (cursorScene?.selectedPoint ?? staticResult.selectedPoint) : null;
   const selectedRawValue = selectedPoint?.rawValue ?? selectedSeries?.latestRawValue ?? null;
@@ -1638,6 +1653,8 @@ function ComparisonStockChartView({
     start: visibleWindow.dates[0] ?? null,
     end: visibleWindow.dates[visibleWindow.dates.length - 1] ?? null,
   });
+  const cursorTimeAxisColumn = hasDisplayCursor ? displayScene?.cursorColumn ?? null : null;
+  const cursorTimeAxisDate = hasDisplayCursor ? displayScene?.activeDate ?? null : null;
 
   const canvasBitmapSize = useMemo(() => {
     if (!canvasCharts) return null;
@@ -1926,7 +1943,14 @@ function ComparisonStockChartView({
       </Box>
 
       <Box height={timeAxisRows}>
-        <Text fg={colors.textDim}>{timeAxisLabel}</Text>
+        <TimeAxisLabel
+          timeLabels={timeAxisLabel}
+          width={chartWidth}
+          cursorColumn={cursorTimeAxisColumn}
+          cursorDate={cursorTimeAxisDate}
+          dates={projection.dates}
+          cursorColor={chartColors.crosshairColor}
+        />
       </Box>
 
       {legendRows > 0 && (

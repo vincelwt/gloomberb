@@ -8,7 +8,7 @@ import {
   DEFAULT_COMPARISON_CHART_RESOLUTION,
   normalizeChartResolution,
 } from "../../components/chart/chart-resolution";
-import { usePluginTickerActions } from "../../plugins/plugin-runtime";
+import { usePluginAppActions, usePluginTickerActions } from "../../plugins/plugin-runtime";
 import { usePaneInstance } from "../../state/app-context";
 import { colors } from "../../theme/colors";
 import type { GloomPlugin, PaneProps, PaneSettingsDef } from "../../types/plugin";
@@ -16,6 +16,7 @@ import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } fro
 
 export const COMPARISON_CHART_PANE_ID = "comparison-chart";
 export const COMPARISON_CHART_TEMPLATE_ID = "comparison-chart-pane";
+export const MIN_COMPARISON_CHART_SYMBOLS = 2;
 
 interface ComparisonChartPaneSettings {
   axisMode: ChartAxisMode;
@@ -77,7 +78,7 @@ function buildComparisonChartSettingsDef(): PaneSettingsDef {
       {
         key: "symbolsText",
         label: "Tickers",
-        description: `Enter 1-${MAX_TICKER_LIST_SIZE} tickers separated by commas.`,
+        description: `Enter ${MIN_COMPARISON_CHART_SYMBOLS}-${MAX_TICKER_LIST_SIZE} tickers separated by commas.`,
         type: "text",
         placeholder: "AAPL, MSFT, NVDA",
       },
@@ -102,12 +103,16 @@ export function buildComparisonChartPaneTitle(symbols: string[]): string {
 }
 function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
   const { navigateTicker } = usePluginTickerActions();
+  const { openPaneSettings } = usePluginAppActions();
   const pane = usePaneInstance();
   const settings = useMemo(() => getComparisonChartPaneSettings(pane?.settings), [pane?.settings]);
 
   const openTicker = useCallback((symbol: string) => {
     navigateTicker(symbol);
   }, [navigateTicker]);
+  const editTickers = useCallback(() => {
+    openPaneSettings(paneId);
+  }, [openPaneSettings, paneId]);
 
   if (settings.symbols.length === 0) {
     return (
@@ -127,6 +132,7 @@ function ComparisonChartPane({ paneId, focused, width, height }: PaneProps) {
         symbols={settings.symbols}
         axisMode={settings.axisMode}
         onOpenSymbol={openTicker}
+        onEditTickers={editTickers}
       />
     </Box>
   );
@@ -162,15 +168,15 @@ export const comparisonChartPlugin: GloomPlugin = {
           label: "Comparison Tickers",
           placeholder: "AAPL, MSFT, NVDA",
           body: [
-            `Enter 1-${MAX_TICKER_LIST_SIZE} ticker symbols separated by commas.`,
+            `Enter ${MIN_COMPARISON_CHART_SYMBOLS}-${MAX_TICKER_LIST_SIZE} ticker symbols separated by commas.`,
           ],
           type: "text",
         },
       ],
-      canCreate: (_context, options) => !options?.symbols || options.symbols.length > 0,
+      canCreate: (_context, options) => !options?.symbols || options.symbols.length >= MIN_COMPARISON_CHART_SYMBOLS,
       createInstance: (_context, options) => {
         const symbols = options?.symbols ?? [];
-        if (symbols.length === 0) return null;
+        if (symbols.length < MIN_COMPARISON_CHART_SYMBOLS) return null;
         return {
           title: buildComparisonChartPaneTitle(symbols),
           placement: "floating",

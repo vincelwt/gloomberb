@@ -918,6 +918,76 @@ function writeAxisLabel(axis: string[], start: number, label: string) {
   }
 }
 
+export interface AxisLabelSegment {
+  text: string;
+  highlighted: boolean;
+}
+
+function formatCursorTimeAxisValue(
+  value: Date | string | number,
+  dates: Array<Date | string | number>,
+  width: number,
+): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (isNaN(date.getTime())) return "—";
+
+  const normalizedDates = dates.map((entry) => (entry instanceof Date ? entry : new Date(entry)));
+  const validDates = normalizedDates.filter((entry) => !isNaN(entry.getTime()));
+  if (validDates.length === 0) return formatDateShort(date);
+
+  const first = validDates[0]!;
+  const last = validDates[validDates.length - 1]!;
+  const spanMs = Math.max(last.getTime() - first.getTime(), 1);
+  const roughLabelCount = Math.max(Math.floor(normalizeCount(width, 0) / 10), 2);
+  const minGapMs = getMinPositiveGapMs(validDates);
+  const effectiveStepMs = Math.max(spanMs / Math.max(roughLabelCount - 1, 1), minGapMs || 0);
+  const unit = resolveAxisLabelUnit(effectiveStepMs);
+  const counterpart = isSameCalendarDay(first, last)
+    ? first
+    : isSameCalendarDay(date, first)
+      ? last
+      : first;
+
+  return formatTimeAxisBoundaryLabel(date, unit, counterpart);
+}
+
+export function buildCursorTimeAxisSegments({
+  timeLabels,
+  width,
+  cursorColumn,
+  cursorDate,
+  dates,
+}: {
+  timeLabels: string;
+  width: number;
+  cursorColumn: number | null;
+  cursorDate: Date | string | number | null;
+  dates: Array<Date | string | number>;
+}): AxisLabelSegment[] {
+  const axisWidth = normalizeCount(width, 0);
+  if (axisWidth <= 0) return [];
+
+  const base = timeLabels.padEnd(axisWidth).slice(0, axisWidth);
+  if (cursorColumn === null || cursorDate === null) {
+    return [{ text: base, highlighted: false }];
+  }
+
+  const label = formatCursorTimeAxisValue(cursorDate, dates, axisWidth);
+  if (!label) return [{ text: base, highlighted: false }];
+
+  const axis = base.split("");
+  const column = Math.max(Math.min(Math.round(cursorColumn), axisWidth - 1), 0);
+  const start = resolveAxisLabelStart(column, label, axisWidth);
+  const end = Math.min(start + label.length, axisWidth);
+  writeAxisLabel(axis, start, label);
+
+  return [
+    { text: axis.slice(0, start).join(""), highlighted: false },
+    { text: axis.slice(start, end).join(""), highlighted: true },
+    { text: axis.slice(end).join(""), highlighted: false },
+  ].filter((segment) => segment.text.length > 0);
+}
+
 export function buildTimeAxis(dates: Array<Date | string | number>, width: number): string {
   const axisWidth = normalizeCount(width, 0);
   if (dates.length === 0 || axisWidth <= 0) return "";

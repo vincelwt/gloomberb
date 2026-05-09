@@ -6,7 +6,7 @@ import {
   resolveStableOhlcProjectionOptions,
 } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
-import { buildChartScene, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
+import { buildChartScene, buildCursorTimeAxisSegments, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode } from "./chart-types";
 
@@ -412,6 +412,21 @@ describe("renderChart", () => {
     expect(buildTimeAxis(dates, 72)).toBe(
       "09:30     10:30 11:00       12:00      13:00       14:00 14:30     15:30",
     );
+  });
+
+  test("overlays the cursor date on the x-axis without changing its width", () => {
+    const dates = Array.from({ length: 13 }, (_, index) => new Date(2026, 0, 5, 9, 30 + index * 30));
+    const width = 72;
+    const segments = buildCursorTimeAxisSegments({
+      timeLabels: buildTimeAxis(dates, width),
+      width,
+      cursorColumn: 36,
+      cursorDate: dates[6]!,
+      dates,
+    });
+
+    expect(segments.map((segment) => segment.text).join("")).toHaveLength(width);
+    expect(segments.find((segment) => segment.highlighted)?.text).toBe("12:30");
   });
 
   test("shows second precision when the visible window reaches second-level data", () => {

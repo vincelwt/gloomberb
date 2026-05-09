@@ -37,6 +37,7 @@ export interface PluginRuntimeAccess {
   openCommandBar(query?: string): void;
   showPane(paneId: string): void;
   hidePane(paneId: string): void;
+  openPaneSettings(paneId?: string): void;
   openPluginCommandWorkflow(commandId: string): void;
   notify(notification: AppNotificationRequest): void;
   subscribeResumeState(pluginId: string, key: string, listener: () => void): () => void;
@@ -120,6 +121,9 @@ export function usePluginAppActions() {
   const hidePane = useCallback((paneId: string) => {
     runtime.hidePane(paneId);
   }, [runtime]);
+  const openPaneSettings = useCallback((paneId?: string) => {
+    runtime.openPaneSettings(paneId);
+  }, [runtime]);
   const openPluginCommandWorkflow = useCallback((commandId: string) => {
     runtime.openPluginCommandWorkflow(commandId);
   }, [runtime]);
@@ -131,6 +135,7 @@ export function usePluginAppActions() {
     openCommandBar,
     showPane,
     hidePane,
+    openPaneSettings,
     openPluginCommandWorkflow,
     notify,
   };

@@ -127,6 +127,7 @@ import {
 } from "./native/surface-visibility";
 import type { PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
+import { TimeAxisLabel } from "./time-axis-label";
 
 const MODE_CHIPS: Record<ChartRenderMode, string> = {
   area: "A",
@@ -1497,6 +1498,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const lastCanvasBaseBitmapRef = useRef<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const displayCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const targetCursorRef = useRef<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
+  const mouseCrosshairDisabledRef = useRef(false);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
   const animationFrameRef = useRef<number | null>(null);
   const pendingCanonicalResetRef = useRef(1);
@@ -2889,6 +2891,11 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     if (!interactive) return;
 
     switch (key) {
+      case "escape":
+        mouseCrosshairDisabledRef.current = true;
+        updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
+        commitSelectionCursor({ cursorX: null, cursorY: null });
+        return;
       case "left":
         if (event.shift) {
           if (effectiveResolution === "auto") {
@@ -2906,6 +2913,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
             return { ...cleared, panOffset: current.panOffset + panStep };
           });
         } else {
+          mouseCrosshairDisabledRef.current = false;
           cursorMotionKindRef.current = "discrete";
           const pointCount = projection.points.length;
           const currentIndex = pointCount <= 0
@@ -2957,6 +2965,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
             return cleared.panOffset === nextPanOffset ? cleared : { ...cleared, panOffset: nextPanOffset };
           });
         } else {
+          mouseCrosshairDisabledRef.current = false;
           cursorMotionKindRef.current = "discrete";
           const pointCount = projection.points.length;
           const currentIndex = pointCount <= 0
@@ -3041,6 +3050,19 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     colors: chartColors,
     timeAxisDates,
   }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, timeAxisDates, volumeHeight]);
+  const displayScene = useMemo(() => buildChartScene(projection.points, {
+    width: chartWidth,
+    height: chartHeight,
+    showVolume: showVolume && !compact,
+    volumeHeight,
+    cursorX: displayCursorX,
+    cursorY: displayCursorY,
+    mode: projection.effectiveMode,
+    axisMode,
+    colors: chartColors,
+    timeAxisDates,
+    indicators,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
   const snappedSelectionCursorX = selectionScene
     ? getPointTerminalColumn(selectionScene.activeIdx, projection.points.length, chartWidth, projection.effectiveMode)
     : null;
@@ -3402,6 +3424,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     : null;
   const isUpdating = !compact && (renderBodyState.updating || boundsBodyState.updating);
   const timeAxisLabel = selectionScene?.timeLabels ?? staticResult.timeLabels;
+  const cursorTimeAxisColumn = hasDisplayCursor ? displayScene?.cursorColumn ?? null : null;
+  const cursorTimeAxisDate = hasDisplayCursor ? displayScene?.dateAtCursor ?? null : null;
   const timeAxisBox = (
     <Box
       height={1}
@@ -3409,7 +3433,14 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       overflow="hidden"
       data-gloom-role="chart-time-axis"
     >
-      <Text fg={colors.textDim} style={{ whiteSpace: "pre" }}>{timeAxisLabel}</Text>
+      <TimeAxisLabel
+        timeLabels={timeAxisLabel}
+        width={chartWidth}
+        cursorColumn={cursorTimeAxisColumn}
+        cursorDate={cursorTimeAxisDate}
+        dates={timeAxisDates}
+        cursorColor={chartColors.crosshairColor}
+      />
     </Box>
   );
   const chartFooterHints = useMemo<PaneHint[]>(() => {
@@ -3556,6 +3587,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
   const handlePlotMove = (event: ChartMouseEvent) => {
     if (!interactive || compact) return;
+    if (mouseCrosshairDisabledRef.current) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
     const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
@@ -3577,6 +3609,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     if (compact) return;
     if (!interactive) onActivate?.();
     focusPaneForMouseInteraction(event);
+    mouseCrosshairDisabledRef.current = false;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (!localPointer) return;
     const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);
@@ -3601,6 +3634,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
   const handlePlotDrag = (event: ChartMouseEvent) => {
     if (compact || (!interactive && !dragRef.current)) return;
+    if (mouseCrosshairDisabledRef.current && !dragRef.current) return;
     const localPointer = getLocalPlotPointer(event, plotRef.current, renderer);
     if (localPointer) {
       const selectionCursor = resolveSelectionCursor(localPointer, projection.points.length, chartWidth, projection.effectiveMode);

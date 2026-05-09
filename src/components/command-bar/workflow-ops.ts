@@ -14,6 +14,7 @@ import { cleanPortfolioPaneSettings, resolvePortfolioPaneCollectionId } from "..
 import {
   buildComparisonChartPaneTitle,
   COMPARISON_CHART_PANE_ID,
+  MIN_COMPARISON_CHART_SYMBOLS,
 } from "../../plugins/builtin/comparison-chart";
 import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 
@@ -415,6 +416,9 @@ export async function applyPaneSettingFieldValue(
       descriptor.context.activeCollectionId,
       deps,
     );
+    if (symbols.length < MIN_COMPARISON_CHART_SYMBOLS) {
+      throw new Error(`Enter at least ${MIN_COMPARISON_CHART_SYMBOLS} tickers.`);
+    }
     const nextLayout = updatePaneInstance(state.config.layout, targetId, (instance) => ({
       ...instance,
       title: buildComparisonChartPaneTitle(symbols),

@@ -25,6 +25,7 @@ export function createTestPluginRuntime(
     openCommandBar() {},
     showPane() {},
     hidePane() {},
+    openPaneSettings() {},
     openPluginCommandWorkflow() {},
     notify() {},
     subscribeResumeState: () => () => {},

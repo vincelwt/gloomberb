@@ -109,7 +109,7 @@ function createRegistrySpy(spy: { selected: string[]; focused: string[] }): Plug
   } as unknown as PluginRegistry;
 }
 
-function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): PluginRuntimeAccess {
+function createRuntimeSpy(spy: { selected: string[]; focused: string[]; settings?: string[] }): PluginRuntimeAccess {
   return createTestPluginRuntime({
     pinTicker: (symbol: string) => {
       spy.selected.push(symbol);
@@ -118,6 +118,9 @@ function createRuntimeSpy(spy: { selected: string[]; focused: string[] }): Plugi
     navigateTicker: (symbol: string) => {
       spy.selected.push(symbol);
       spy.focused.push("ticker-detail");
+    },
+    openPaneSettings: (paneId) => {
+      spy.settings?.push(paneId ?? "");
     },
   });
 }
@@ -196,7 +199,7 @@ async function mountComparisonHarness(
   settings: Record<string, unknown>,
   tickers: TickerRecord[],
   financials: Array<[string, TickerFinancials]>,
-  spy: { selected: string[]; focused: string[] } = { selected: [], focused: [] },
+  spy: { selected: string[]; focused: string[]; settings?: string[] } = { selected: [], focused: [] },
 ) {
   actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
   testSetup = await createTestRenderer({ width: 120, height: 20 });
@@ -251,6 +254,21 @@ describe("comparisonChartPlugin", () => {
     });
   });
 
+  test("requires at least two symbols when creating a comparison pane", async () => {
+    const template = comparisonChartPlugin.paneTemplates?.[0]!;
+    const context = {
+      config: createDefaultConfig("/tmp/gloomberb-compare"),
+      layout: { dockRoot: null, instances: [], floating: [], detached: [] },
+      focusedPaneId: null,
+      activeTicker: null,
+      activeCollectionId: null,
+    };
+
+    expect(template.canCreate?.(context, { arg: "AMD" })).toBe(true);
+    expect(template.canCreate?.(context, { arg: "AMD", symbols: ["AMD"] })).toBe(false);
+    expect(await template.createInstance?.(context, { symbols: ["AMD"] })).toBeNull();
+  });
+
   test("renders one shared overlay chart with the mixed-currency warning", async () => {
     const provider = createProvider({
       AAPL: [100, 102, 104, 106],
@@ -284,6 +302,7 @@ describe("comparisonChartPlugin", () => {
     expect(frame).toContain("2:1W");
     expect(frame).toContain("1D");
     expect(frame).toContain("view:");
+    expect(frame).toContain("[t]ickers");
     expect(frame).toContain("[m]ode");
     expect(frame).toContain("[r]es");
     expect(frame).not.toContain("[up/down]legend");
@@ -363,5 +382,37 @@ describe("comparisonChartPlugin", () => {
 
     expect(spy.selected).toEqual(["MSFT"]);
     expect(spy.focused).toEqual(["ticker-detail"]);
+  });
+
+  test("opens comparison ticker settings from the t shortcut", async () => {
+    const spy = { selected: [] as string[], focused: [] as string[], settings: [] as string[] };
+    const provider = createProvider({
+      AAPL: [100, 102, 104],
+      MSFT: [200, 202, 204],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy(spy));
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
+      ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
+    ], spy);
+
+    await flushFrames();
+    await pressComparisonInput(() => testSetup!.mockInput.pressKey("t"));
+
+    expect(spy.settings).toEqual([TEST_PANE_ID]);
   });
 });
