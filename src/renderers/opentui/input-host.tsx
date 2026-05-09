@@ -15,7 +15,7 @@ export function OpenTuiInputHostProvider({ children }: { children: ReactNode }) 
   const shortcutsRef = useRef<ShortcutEntry[]>([]);
   const dispatchShortcut = (event: KeyEventLike) => {
     const shortcuts = shortcutsRef.current;
-    for (const phase of ["normal", "after"] as const) {
+    for (const phase of ["before", "normal", "after"] as const) {
       if (phase === "after" && (event.defaultPrevented || event.propagationStopped)) return;
       for (const entry of shortcuts) {
         if (entry.phase !== phase || !entry.enabledRef.current) continue;

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShortcut } from "../../react/input";
 import { Box, ScrollBox, Text, useUiHost } from "../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
@@ -21,6 +22,8 @@ export interface TabsProps {
   closeMode?: "active" | "always";
   addLabel?: string;
   onAdd?: () => void;
+  focused?: boolean;
+  keyboardNavigation?: boolean;
 }
 
 const WHEEL_DELTA_PER_CELL = 8;
@@ -34,6 +37,8 @@ export function Tabs({
   closeMode = "always",
   addLabel = "+",
   onAdd,
+  focused = false,
+  keyboardNavigation = true,
 }: TabsProps) {
   const ui = useUiHost();
   const NativeTabs = ui.Tabs;
@@ -51,6 +56,34 @@ export function Tabs({
     closeFg: colors.textMuted,
     addFg: colors.textMuted,
   };
+  const selectAdjacentTab = useCallback((direction: -1 | 1) => {
+    const enabledTabs = tabs.filter((tab) => !tab.disabled);
+    if (enabledTabs.length === 0) return;
+
+    const activeIndex = enabledTabs.findIndex((tab) => tab.value === activeValue);
+    const nextIndex = activeIndex >= 0
+      ? Math.max(0, Math.min(activeIndex + direction, enabledTabs.length - 1))
+      : direction > 0 ? 0 : enabledTabs.length - 1;
+    const nextTab = enabledTabs[nextIndex];
+    if (!nextTab || nextTab.value === activeValue) return;
+    onSelect(nextTab.value);
+  }, [activeValue, onSelect, tabs]);
+
+  useShortcut((event) => {
+    if (event.ctrl || event.meta || event.alt || event.targetEditable) return;
+
+    if (event.name === "h" || event.name === "left") {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentTab(-1);
+      return;
+    }
+    if (event.name === "l" || event.name === "right") {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAdjacentTab(1);
+    }
+  }, { enabled: focused && keyboardNavigation });
 
   if (NativeTabs) {
     return (

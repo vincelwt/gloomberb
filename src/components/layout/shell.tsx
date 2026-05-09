@@ -58,6 +58,11 @@ import {
   getShortcutDisplayMode,
   type ShortcutDisplayMode,
 } from "../../utils/shortcut-labels";
+import {
+  createDoubleEscapeCloseState,
+  recordDoubleEscapeClose,
+  resetDoubleEscapeClose,
+} from "../../utils/double-escape-close";
 
 interface ShellProps {
   pluginRegistry: PluginRegistry;
@@ -808,6 +813,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const overlayOpen = commandBarOpen || dialogOpen || !!menuState;
 
   const dragRef = useRef<DragMode | null>(null);
+  const doubleEscapeCloseRef = useRef(createDoubleEscapeCloseState());
   const [dragFloatingRect, setDragFloatingRect] = useState<{ paneId: string; rect: FloatingRect } | null>(null);
   const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(null);
   const [dividerPreview, setDividerPreview] = useState<DividerPreviewState | null>(null);
@@ -964,13 +970,36 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     return true;
   }, [contentHeight, persistLayout, visibleLayout, width]);
 
+  useEffect(() => {
+    if (overlayOpen) {
+      resetDoubleEscapeClose(doubleEscapeCloseRef.current);
+    }
+  }, [overlayOpen]);
+
   useShortcut((event) => {
-    if (event.name === "escape") {
+    const isEscape = event.name === "escape" || event.name === "esc";
+    if (isEscape) {
+      const doubleEscapeState = doubleEscapeCloseRef.current;
+      if (!dragRef.current && !overlayOpen) {
+        if (recordDoubleEscapeClose(doubleEscapeState, focusedPaneId, Date.now()) && closeFocusedPane()) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      } else {
+        resetDoubleEscapeClose(doubleEscapeState);
+      }
+
       if (!dragRef.current) return;
       cancelActiveDrag();
-      return;
+      event.preventDefault();
+      event.stopPropagation();
+    } else {
+      resetDoubleEscapeClose(doubleEscapeCloseRef.current);
     }
+  }, { phase: "before" });
 
+  useShortcut((event) => {
     const shortcut = resolvePaneManagementShortcut(event);
     if (!shortcut || dragRef.current || overlayOpen) return;
     if (inputCaptured && !inputCaptureAllowsPaneManagementShortcut(shortcut, event)) return;

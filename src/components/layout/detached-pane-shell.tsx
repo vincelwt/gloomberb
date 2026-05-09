@@ -1,5 +1,5 @@
 import { Box, Text, useRendererHost, useUiCapabilities } from "../../ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut, useViewport } from "../../react/input";
 import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
@@ -11,6 +11,11 @@ import { PaneContent } from "./pane-content";
 import { getPaneBodyWidth } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
+import {
+  createDoubleEscapeCloseState,
+  recordDoubleEscapeClose,
+  resetDoubleEscapeClose,
+} from "../../utils/double-escape-close";
 
 interface DetachedPaneShellProps {
   pluginRegistry: PluginRegistry;
@@ -28,6 +33,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
+  const doubleEscapeCloseRef = useRef(createDoubleEscapeCloseState());
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
@@ -73,6 +79,21 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
       window.removeEventListener("blur", handleBlur);
     };
   }, [focusPane]);
+
+  useShortcut((event) => {
+    const doubleEscapeState = doubleEscapeCloseRef.current;
+    const isEscape = event.name === "escape" || event.name === "esc";
+    if (isEscape) {
+      if (recordDoubleEscapeClose(doubleEscapeState, desktopWindowBridge.paneId, Date.now())) {
+        event.preventDefault();
+        event.stopPropagation();
+        void desktopWindowBridge.closeDetachedPane?.(desktopWindowBridge.paneId);
+      }
+      return;
+    }
+
+    resetDoubleEscapeClose(doubleEscapeState);
+  }, { phase: "before" });
 
   useShortcut((event) => {
     if (event.name !== "w" || (!event.ctrl && !event.meta && !event.super)) return;

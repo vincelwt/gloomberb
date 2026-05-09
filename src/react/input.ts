@@ -19,7 +19,7 @@ export interface KeyEventLike {
 export interface ShortcutOptions {
   enabled?: boolean;
   scope?: string;
-  phase?: "normal" | "after";
+  phase?: "before" | "normal" | "after";
 }
 
 export interface InputHost {

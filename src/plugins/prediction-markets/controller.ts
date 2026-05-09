@@ -11,7 +11,6 @@ import { getAdjacentPredictionCategoryId } from "./categories";
 import { usePredictionMarketsDataState } from "./controller-data";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
 import {
-  getAdjacentPredictionDetailTab,
   getAdjacentPredictionVenueScope,
   parsePredictionSearchShortcut,
   parsePredictionVenueScope,
@@ -517,20 +516,6 @@ export function usePredictionMarketsController({
           } else {
             scrollDetailBy(-1);
           }
-          return;
-        }
-
-        if (command === "previous-category") {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          setDetailTab(getAdjacentPredictionDetailTab(detailTab, "previous"));
-          return;
-        }
-
-        if (command === "next-category") {
-          event.stopPropagation?.();
-          event.preventDefault?.();
-          setDetailTab(getAdjacentPredictionDetailTab(detailTab, "next"));
           return;
         }
 

@@ -759,11 +759,11 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
       removeTab(activeTab.id);
       return;
     }
-    if (event.name === "[" || event.name === "left") {
+    if (event.name === "[") {
       cycleTabs(-1);
       return;
     }
-    if (event.name === "]" || event.name === "right") {
+    if (event.name === "]") {
       cycleTabs(1);
       return;
     }
@@ -917,6 +917,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
           variant="pill"
           closeMode="active"
           onAdd={editorState ? undefined : addTab}
+          focused={focused && !editorState}
         />
       </Box>
 

@@ -866,6 +866,7 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
           onSelect={(value) => setViewMode(value as ViewMode)}
           compact
           variant="bare"
+          focused={focused}
         />
       </Box>
 
