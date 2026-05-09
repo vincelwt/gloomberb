@@ -7,9 +7,10 @@ export function shouldReservePaneFooter(nativePaneChrome: boolean | undefined, s
 }
 
 export function getPaneBodyHeight(height: number, reserveFooter = true): number {
-  return Math.max(1, height - PANE_HEADER_ROWS - (reserveFooter ? PANE_FOOTER_ROWS : 0));
+  const cellHeight = Math.max(1, Math.floor(height));
+  return Math.max(1, cellHeight - PANE_HEADER_ROWS - (reserveFooter ? PANE_FOOTER_ROWS : 0));
 }
 
 export function getPaneBodyWidth(width: number): number {
-  return Math.max(1, width);
+  return Math.max(1, Math.floor(width));
 }

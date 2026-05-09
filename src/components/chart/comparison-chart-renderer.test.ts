@@ -119,6 +119,32 @@ describe("renderComparisonChart", () => {
     expect(result.activeDate?.toISOString()).toBe("2024-01-03T00:00:00.000Z");
   });
 
+  test("renders when precise desktop layout passes a fractional chart height", () => {
+    const projection = projectComparisonChartData([
+      makeSeries("AAPL", "#00ff00", [10, 12, 11, 13]),
+    ], 12, {
+      panOffset: 0,
+      zoomLevel: 1,
+      renderMode: "area",
+    }, "percent");
+
+    const result = renderComparisonChart(projection, {
+      width: 12,
+      height: 6.5,
+      cursorX: null,
+      cursorY: null,
+      selectedSymbol: "AAPL",
+      colors: {
+        bgColor: "#000000",
+        gridColor: "#333333",
+        crosshairColor: "#ffffff",
+      },
+    });
+
+    expect(result.lines.length).toBeGreaterThan(0);
+    expect(textLines(result).some((line) => /[^\s]/.test(line))).toBe(true);
+  });
+
   test("keeps terminal comparison chart cells transparent", () => {
     const projection = projectComparisonChartData([
       makeSeries("AAPL", "#00ff00", [10, 12, 11, 13]),

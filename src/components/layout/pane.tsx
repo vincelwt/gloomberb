@@ -47,7 +47,7 @@ export function PaneWrapper({
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
   const bodyHeight = typeof height === "number"
-    ? title ? getPaneBodyHeight(height, reserveFooter) : height
+    ? title ? getPaneBodyHeight(height, reserveFooter) : Math.max(1, Math.floor(height))
     : undefined;
 
   return (

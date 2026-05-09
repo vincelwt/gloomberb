@@ -80,6 +80,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeCount(value: number, min: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(Math.floor(value), min);
+}
+
 function getComparisonDotX(index: number, count: number, width: number): number {
   if (count <= 1) return Math.round(Math.max(width - 1, 0) / 2);
   return Math.round((index / (count - 1)) * Math.max(width - 1, 0));
@@ -260,15 +265,17 @@ export function buildComparisonChartScene(
 
   const min = Math.min(...values);
   const max = Math.max(...values);
+  const width = normalizeCount(opts.width, 1);
+  const height = normalizeCount(opts.height, 1);
   const selectedSeries = getSelectedSeries(projection.series, opts.selectedSymbol);
-  const activeIdx = getActiveIndex(projection.dates.length, opts.width, opts.cursorX);
+  const activeIdx = getActiveIndex(projection.dates.length, width, opts.cursorX);
   const activeDate = projection.dates[activeIdx] ?? projection.dates[projection.dates.length - 1]!;
   const selectedPoint = selectedSeries?.points[activeIdx] ?? null;
-  const chartRows = opts.height;
+  const chartRows = height;
   const range = max - min || 1;
   const cursorX = opts.cursorX === null
     ? null
-    : clamp(opts.cursorX, 0, Math.max(opts.width - 1, 0));
+    : clamp(opts.cursorX, 0, Math.max(width - 1, 0));
   const fallbackValue = selectedPoint?.value ?? selectedSeries?.latestValue ?? min;
   const cursorY = cursorX === null
     ? null
@@ -282,7 +289,7 @@ export function buildComparisonChartScene(
   const cursorColumn = cursorX === null ? null : Math.round(cursorX);
   const cursorDotX = cursorX === null
     ? null
-    : Math.round((cursorX / Math.max(opts.width - 1, 1)) * Math.max(opts.width * 2 - 1, 0));
+    : Math.round((cursorX / Math.max(width - 1, 1)) * Math.max(width * 2 - 1, 0));
   const cursorRow = cursorY === null ? null : Math.round(cursorY);
   const crosshairValue = cursorY === null
     ? null
@@ -291,8 +298,8 @@ export function buildComparisonChartScene(
   return {
     dates: projection.dates,
     series: projection.series,
-    width: opts.width,
-    height: opts.height,
+    width,
+    height,
     chartRows,
     mode: projection.effectiveMode,
     axisMode: projection.effectiveAxisMode,

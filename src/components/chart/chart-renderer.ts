@@ -157,10 +157,14 @@ export function createPixelBuffer(width: number, heightPixels: number): PixelBuf
 }
 
 function setPixel(buf: PixelBuffer, x: number, y: number, color: string, layer: number) {
-  if (x >= 0 && x < buf.width && y >= 0 && y < buf.height) {
-    const existing = buf.pixels[y]![x];
+  const px = Math.round(x);
+  const py = Math.round(y);
+  if (px >= 0 && px < buf.width && py >= 0 && py < buf.height) {
+    const row = buf.pixels[py];
+    if (!row) return;
+    const existing = row[px];
     if (!existing || layer >= existing.layer) {
-      buf.pixels[y]![x] = { color, layer };
+      row[px] = { color, layer };
     }
   }
 }
@@ -178,17 +182,22 @@ export function drawLine(
   color: string,
   layer: number = LAYER_DATA,
 ) {
-  let dx = Math.abs(x1 - x0);
-  let dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
+  const startX = Math.round(x0);
+  const startY = Math.round(y0);
+  const endX = Math.round(x1);
+  const endY = Math.round(y1);
+  if (![startX, startY, endX, endY].every(Number.isFinite)) return;
+  let dx = Math.abs(endX - startX);
+  let dy = Math.abs(endY - startY);
+  const sx = startX < endX ? 1 : -1;
+  const sy = startY < endY ? 1 : -1;
   let err = dx - dy;
-  let x = x0;
-  let y = y0;
+  let x = startX;
+  let y = startY;
 
   while (true) {
     setPixel(buf, x, y, color, layer);
-    if (x === x1 && y === y1) break;
+    if (x === endX && y === endY) break;
     const e2 = 2 * err;
     if (e2 > -dy) {
       err -= dy;
@@ -492,11 +501,14 @@ export function drawGridLines(
   yPositions: number[],
   color: string,
 ) {
-  for (const y of yPositions) {
+  for (const rawY of yPositions) {
+    const y = Math.round(rawY);
     if (y < 0 || y >= buf.height) continue;
     // Dotted horizontal line — dot every 6th column (≈ every 3 terminal columns)
+    const row = buf.pixels[y];
+    if (!row) continue;
     for (let x = 0; x < buf.width; x++) {
-      if (x % 6 === 0 && !buf.pixels[y]![x]) {
+      if (x % 6 === 0 && !row[x]) {
         setPixel(buf, x, y, color, LAYER_GRID);
       }
     }
