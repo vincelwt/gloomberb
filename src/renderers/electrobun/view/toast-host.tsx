@@ -1,16 +1,41 @@
 /// <reference lib="dom" />
 /** @jsxImportSource react */
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { colors } from "../../../theme/colors";
 import { ToastHostProvider, type ToastHost, type ToastOptions } from "../../../ui/toast";
+
+type WebToastType = "info" | "success" | "error";
 
 interface ToastEntry {
   id: number;
   body: string;
-  type: "info" | "success" | "error";
+  type: WebToastType;
   action?: ToastOptions["action"];
 }
 
 let nextToastId = 1;
+
+function webToastBorderColor(type: WebToastType): string {
+  if (type === "success") return colors.positive;
+  if (type === "error") return colors.negative;
+  return colors.borderFocused;
+}
+
+function getToastStyle(type: WebToastType): CSSProperties {
+  return {
+    background: colors.panel,
+    borderColor: webToastBorderColor(type),
+    color: colors.text,
+  };
+}
+
+function getToastActionStyle(): CSSProperties {
+  return {
+    background: colors.selected,
+    border: `1px solid ${colors.borderFocused}`,
+    color: colors.selectedText,
+  };
+}
 
 export function WebToastHostProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
@@ -33,11 +58,12 @@ export function WebToastHostProvider({ children }: { children: ReactNode }) {
       return (
         <div className="gloom-toast-viewport">
           {toasts.map((toast) => (
-            <div key={toast.id} className={`gloom-toast gloom-toast-${toast.type}`}>
+            <div key={toast.id} className="gloom-toast" style={getToastStyle(toast.type)}>
               <div>{toast.body}</div>
               {toast.action && (
                 <button
                   className="gloom-toast-action"
+                  style={getToastActionStyle()}
                   onClick={() => {
                     toast.action?.onClick();
                     dismiss(toast.id);
