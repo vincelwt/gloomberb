@@ -48,18 +48,11 @@ const DESKTOP_CENTER_Y = 182;
 const DESKTOP_ARC_RADIUS = 138;
 const DESKTOP_NEEDLE_RADIUS = 104;
 const DESKTOP_LABEL_POSITIONS = [
-  { x: 90, y: 84 },
-  { x: 172, y: 44 },
-  { x: 260, y: 30 },
-  { x: 348, y: 44 },
-  { x: 430, y: 84 },
-];
-const DESKTOP_TICK_LABEL_POSITIONS = [
-  { x: 78, y: 224 },
-  { x: 170, y: 224 },
-  { x: 260, y: 224 },
-  { x: 350, y: 224 },
-  { x: 442, y: 224 },
+  { x: 76, y: 84 },
+  { x: 154, y: 44 },
+  { x: 260, y: 18 },
+  { x: 366, y: 44 },
+  { x: 444, y: 84 },
 ];
 
 function SvgText(props: SVGProps<SVGTextElement>) {
@@ -418,19 +411,12 @@ function DesktopGauge({
             </SvgText>
           );
         })}
-        {[min, min + (max - min) * 0.25, min + (max - min) * 0.5, min + (max - min) * 0.75, max].map((tick, index) => {
+        {[min, min + (max - min) * 0.25, min + (max - min) * 0.5, min + (max - min) * 0.75, max].map((tick) => {
           const angle = valueToDegrees(tick, min, max);
           const outer = polarToCartesian(DESKTOP_CENTER_X, DESKTOP_CENTER_Y, DESKTOP_ARC_RADIUS + 16, angle);
           const inner = polarToCartesian(DESKTOP_CENTER_X, DESKTOP_CENTER_Y, DESKTOP_ARC_RADIUS - 10, angle);
-          const label = DESKTOP_TICK_LABEL_POSITIONS[index]
-            ?? polarToCartesian(DESKTOP_CENTER_X, DESKTOP_CENTER_Y, DESKTOP_ARC_RADIUS + 34, angle);
           return (
-            <g key={tick}>
-              <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} stroke={colors.textDim} strokeWidth="2" />
-              <SvgText x={label.x} y={label.y} fill={colors.textDim} textAnchor="middle" fontFamily="inherit" fontSize="13">
-                {formatGaugeValue(tick)}
-              </SvgText>
-            </g>
+            <line key={tick} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} stroke={colors.textDim} strokeWidth="2" />
           );
         })}
         <line
@@ -443,7 +429,16 @@ function DesktopGauge({
           strokeLinecap="round"
         />
         <circle cx={DESKTOP_CENTER_X} cy={DESKTOP_CENTER_Y} r="27" fill={colors.bg} />
-        <SvgText x={DESKTOP_CENTER_X} y={DESKTOP_CENTER_Y + 18} fill={colors.textBright} textAnchor="middle" fontFamily="inherit" fontSize="31" fontWeight="800">
+        <SvgText
+          x={DESKTOP_CENTER_X}
+          y={DESKTOP_CENTER_Y + 2}
+          fill={colors.textBright}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="inherit"
+          fontSize="31"
+          fontWeight="800"
+        >
           {formatGaugeValue(value)}
         </SvgText>
       </svg>

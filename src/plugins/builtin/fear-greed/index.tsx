@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes, useUiHost } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { SpeedometerGauge, StaticChartSurface, usePaneFooter, type SpeedometerSegment } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
@@ -134,7 +134,7 @@ function SentimentBadge({ rating }: { rating: FearGreedRating }) {
   );
 }
 
-function PreviousScoreGrid({ data, width }: { data: FearGreedData; width: number }) {
+function PreviousScoreGrid({ data, width, layout = "grid" }: { data: FearGreedData; width: number; layout?: "grid" | "rail" }) {
   const items = [
     { label: "Previous close", value: data.overall.previousClose },
     { label: "1 week ago", value: data.overall.previousWeek },
@@ -146,6 +146,24 @@ function PreviousScoreGrid({ data, width }: { data: FearGreedData; width: number
   const rows = Array.from({ length: Math.ceil(items.length / columns) }, (_, rowIndex) => (
     items.slice(rowIndex * columns, rowIndex * columns + columns)
   ));
+
+  if (layout === "rail") {
+    return (
+      <Box flexDirection="column" width={width} flexShrink={0}>
+        {items.map((item) => {
+          const value = item.value;
+          const color = value == null ? colors.textDim : ratingColor(value < 25 ? "extreme fear" : value < 45 ? "fear" : value <= 55 ? "neutral" : "greed");
+          return (
+            <Box key={item.label} flexDirection="row" height={1}>
+              <Text fg={colors.textDim}>{item.label}: </Text>
+              <Box flexGrow={1} />
+              <Text fg={color} attributes={TextAttributes.BOLD}>{formatScore(value)}</Text>
+            </Box>
+          );
+        })}
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
@@ -184,7 +202,6 @@ function chartOverlay(indicator: FearGreedIndicator): ChartIndicatorOverlays | n
 
 function SentimentChart({
   title,
-  subtitle,
   rating,
   score,
   points,
@@ -197,7 +214,6 @@ function SentimentChart({
   overlays,
 }: {
   title: string;
-  subtitle: string;
   rating: FearGreedRating;
   score: number | null;
   points: FearGreedIndicator["points"];
@@ -209,6 +225,7 @@ function SentimentChart({
   secondaryValue?: number | null;
   overlays?: ChartIndicatorOverlays | null;
 }) {
+  const isDesktopWeb = useUiHost().kind === "desktop-web";
   const chartWidth = Math.max(24, width - 2);
   const chartHeight = width >= 96 ? 12 : 10;
   const color = ratingColor(rating);
@@ -222,14 +239,11 @@ function SentimentChart({
   const latest = points.length > 0 ? points[points.length - 1]!.close : null;
 
   return (
-    <Box flexDirection="column" marginTop={2} paddingX={1}>
+    <Box flexDirection="column" marginTop={isDesktopWeb ? 1 : 2} paddingX={1}>
       <Box flexDirection="row" height={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{title.toUpperCase()}</Text>
         <Box flexGrow={1} />
         <SentimentBadge rating={rating} />
-      </Box>
-      <Box height={1} marginTop={1}>
-        <Text fg={colors.text} attributes={TextAttributes.BOLD}>{subtitle}</Text>
       </Box>
       <Box flexDirection="row" height={1}>
         <Text fg={color}>● </Text>
@@ -301,7 +315,6 @@ function IndexHistoryChart({ data, width }: { data: FearGreedData; width: number
   return (
     <SentimentChart
       title={indicator.definition.title}
-      subtitle={indicator.definition.subtitle}
       rating={indicator.rating}
       score={indicator.score}
       points={indicator.points}
@@ -314,6 +327,7 @@ function IndexHistoryChart({ data, width }: { data: FearGreedData; width: number
 }
 
 function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
+  const isDesktopWeb = useUiHost().kind === "desktop-web";
   const [data, setData] = useState<FearGreedData | null>(sharedCache?.data ?? null);
   const [loading, setLoading] = useState(!sharedCache);
   const [error, setError] = useState<string | null>(null);
@@ -402,18 +416,32 @@ function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       <ScrollBox flexGrow={1} scrollY focusable={false}>
         <Box flexDirection="column" paddingBottom={1}>
-          <SpeedometerGauge
-            value={data.overall.score}
-            valueLabel={ratingLabel(data.overall.rating)}
-            width={width}
-            segments={FEAR_GREED_GAUGE_SEGMENTS}
-          />
+          {isDesktopWeb ? (
+            <Box flexDirection="row" alignItems="center" justifyContent="center" gap={4} paddingX={1}>
+              <SpeedometerGauge
+                value={data.overall.score}
+                valueLabel={ratingLabel(data.overall.rating)}
+                width={width}
+                segments={FEAR_GREED_GAUGE_SEGMENTS}
+              />
+              <PreviousScoreGrid data={data} width={26} layout="rail" />
+            </Box>
+          ) : (
+            <>
+              <SpeedometerGauge
+                value={data.overall.score}
+                valueLabel={ratingLabel(data.overall.rating)}
+                width={width}
+                segments={FEAR_GREED_GAUGE_SEGMENTS}
+              />
+              <PreviousScoreGrid data={data} width={width} />
+            </>
+          )}
           {loading ? (
             <Box height={1} paddingX={1} marginTop={1} justifyContent="center">
               <Text fg={colors.textMuted}>refreshing...</Text>
             </Box>
           ) : null}
-          <PreviousScoreGrid data={data} width={width} />
           {error ? (
             <Box paddingX={1} marginTop={1}>
               <Text fg={colors.warning}>{error}</Text>
@@ -427,7 +455,6 @@ function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
             <SentimentChart
               key={indicator.definition.id}
               title={indicator.definition.title}
-              subtitle={indicator.definition.subtitle}
               rating={indicator.rating}
               score={indicator.score}
               points={indicator.points}
