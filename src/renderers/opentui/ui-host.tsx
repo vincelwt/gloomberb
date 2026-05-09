@@ -4,6 +4,7 @@ import "opentui-spinner/react";
 import { TextAttributes, type UiHost, type TextProps } from "../../ui/host";
 import { renderAsciiText } from "../../ui/ascii-font";
 import { OpenTuiImageSurface } from "./image-surface";
+import { OpenTuiChartSurface } from "./chart-surface";
 
 function mapTextAttributes(appAttributes: number | undefined, props?: TextProps): number | undefined {
   const flags = typeof appAttributes === "number" ? appAttributes : 0;
@@ -43,7 +44,9 @@ function mapTextContent(content: unknown): unknown {
 
 export const openTuiUiHost: UiHost = {
   kind: "opentui",
-  capabilities: {},
+  capabilities: {
+    nativeCharts: true,
+  },
   Box: ({ children, ...props }) => <box {...props}>{children}</box>,
   Text: ({ children, ...props }) => {
     const textProps = stripTextProps(props);
@@ -66,7 +69,7 @@ export const openTuiUiHost: UiHost = {
   ScrollBox: ({ children, ...props }) => <scrollbox {...props}>{children}</scrollbox>,
   Input: ({ children, ...props }) => createElement("input" as any, props, children),
   Textarea: ({ children, ...props }) => createElement("textarea" as any, props, children),
-  ChartSurface: ({ children, bitmap: _bitmap, bitmaps: _bitmaps, crosshair: _crosshair, ...props }) => <box {...props}>{children}</box>,
+  ChartSurface: OpenTuiChartSurface,
   ImageSurface: OpenTuiImageSurface,
   SpinnerMark: ({ children, ...props }) => createElement("spinner" as any, props, children),
   AsciiText: ({ text, font = "tiny", color, fg, bg, backgroundColor, selectable = false, ...props }) => {

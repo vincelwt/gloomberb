@@ -1,6 +1,8 @@
 
 export { PriceSelectorDialog } from "./price-selector-dialog";
 export { StaticChartSurface } from "./chart/static-chart-surface";
+export { SpeedometerGauge } from "./speedometer-gauge";
+export type { SpeedometerSegment } from "./speedometer-gauge";
 export type { QuoteFlashDirection } from "./ticker-list-table";
 export { TickerListTableView } from "./ticker-list-table-view";
 export type { TickerListVisibleRange } from "./ticker-list-table-view";

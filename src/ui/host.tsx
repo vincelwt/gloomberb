@@ -245,6 +245,7 @@ export interface UiHost {
     cellHeightPx?: number;
     pixelRatio?: number;
     canvasCharts?: boolean;
+    nativeCharts?: boolean;
     nativeContextMenu?: boolean;
   };
   Box: ComponentType<BoxProps>;

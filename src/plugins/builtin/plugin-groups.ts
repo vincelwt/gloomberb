@@ -4,6 +4,7 @@ import { correlationPlugin } from "./correlation";
 import { earningsPlugin } from "./earnings";
 import { registerEconCalendarFeature } from "./econ";
 import { fxMatrixPlugin } from "./fx-matrix";
+import { fearGreedPlugin } from "./fear-greed";
 import { holdersPlugin } from "./holders";
 import { insiderPlugin } from "./insider";
 import { marketMoversPlugin } from "./market-movers";
@@ -74,6 +75,7 @@ export const marketOverviewPlugin = createPluginGroup({
     correlationPlugin,
     worldIndicesPlugin,
     marketMoversPlugin,
+    fearGreedPlugin,
     sectorsPlugin,
     fxMatrixPlugin,
   ],

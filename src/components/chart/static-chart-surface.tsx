@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, ChartSurface, Text, useUiCapabilities } from "../../ui";
+import { Box, ChartSurface, Text, useNativeRenderer, useUiCapabilities } from "../../ui";
 import type { ProjectedChartPoint } from "./chart-data";
 import {
   buildChartScene,
@@ -8,7 +8,7 @@ import {
   renderChart,
   type RenderChartOptions,
 } from "./chart-renderer";
-import { renderNativeChartBase, type NativeChartBitmap } from "./native/chart-rasterizer";
+import { computeBitmapSize, renderNativeChartBase, type NativeChartBitmap } from "./native/chart-rasterizer";
 
 export interface StaticChartSurfaceProps extends Omit<
   RenderChartOptions,
@@ -47,10 +47,12 @@ export function StaticChartSurface({
 }: StaticChartSurfaceProps) {
   const {
     canvasCharts,
+    nativeCharts,
     cellWidthPx = 8,
     cellHeightPx = 18,
     pixelRatio = 1,
   } = useUiCapabilities();
+  const nativeRenderer = useNativeRenderer();
   const timeAxisRows = showTimeAxis ? 1 : 0;
   const labelRows = yAxisLabel ? 1 : 0;
   const totalWidth = Math.max(1, Math.floor(width));
@@ -101,14 +103,36 @@ export function StaticChartSurface({
     : 0;
   const axisGap = axisWidth > 0 ? 1 : 0;
   const plotWidth = Math.max(1, totalWidth - axisWidth - axisGap);
+  const rendererResolution = nativeRenderer.resolution;
+  const rendererTerminalWidth = nativeRenderer.terminalWidth;
+  const rendererTerminalHeight = nativeRenderer.terminalHeight;
   const bitmapSize = useMemo(() => {
-    if (!canvasCharts) return null;
+    if (nativeCharts && rendererResolution && rendererTerminalWidth > 0 && rendererTerminalHeight > 0) {
+      return computeBitmapSize(
+        { x: 0, y: 0, width: plotWidth, height: plotHeight },
+        rendererResolution,
+        rendererTerminalWidth,
+        rendererTerminalHeight,
+      );
+    }
+    if (!canvasCharts && !nativeCharts) return null;
     const scale = Math.max(1, pixelRatio);
     return {
       pixelWidth: Math.max(1, Math.round(plotWidth * cellWidthPx * scale)),
       pixelHeight: Math.max(1, Math.round(plotHeight * cellHeightPx * scale)),
     };
-  }, [canvasCharts, cellHeightPx, cellWidthPx, pixelRatio, plotHeight, plotWidth]);
+  }, [
+    canvasCharts,
+    cellHeightPx,
+    cellWidthPx,
+    nativeCharts,
+    pixelRatio,
+    plotHeight,
+    plotWidth,
+    rendererResolution,
+    rendererTerminalHeight,
+    rendererTerminalWidth,
+  ]);
   const renderOptions = useMemo<RenderChartOptions>(() => ({
     width: plotWidth,
     height: plotHeight,
