@@ -141,7 +141,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
   pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
-  navigateTickerFn: ((symbol: string) => void) = () => {};
+  navigateTickerFn: ((symbol: string, options?: { sourcePaneId?: string | null }) => void) = () => {};
   getMarketData = () => this.marketData;
   getCapability = (capabilityId: string) => this.capabilities.get(capabilityId)?.capability ?? null;
   getBrokerAdapter = (brokerType: string) => this.brokersMap.get(brokerType) ?? null;
@@ -154,8 +154,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
   pinTicker = (symbol: string, options?: { floating?: boolean; paneType?: string }) => {
     this.pinTickerFn(symbol, options);
   };
-  navigateTicker = (symbol: string) => {
-    this.navigateTickerFn(symbol);
+  navigateTicker = (symbol: string, options?: { sourcePaneId?: string | null }) => {
+    this.navigateTickerFn(symbol, options);
   };
   selectTicker = (symbol: string, paneId?: string) => {
     this.selectTickerFn(symbol, paneId);

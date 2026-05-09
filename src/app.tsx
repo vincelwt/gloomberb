@@ -95,6 +95,10 @@ import {
   createPaneTemplateOrThrow,
 } from "./components/command-bar/workflow-ops";
 import { getPaneTemplateDisplayLabel } from "./components/command-bar/pane-template-display";
+import {
+  resolveTickerNavigationDetailPane,
+  shouldFocusTickerNavigationTarget,
+} from "./plugins/ticker-navigation";
 import { debugLog } from "./utils/debug-log";
 import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { instrumentFromTicker } from "./market-data/request-types";
@@ -1273,8 +1277,9 @@ function AppInner({
     activatePane(instance.instanceId, nextLayout);
   };
 
-  pluginRegistry.navigateTickerFn = (rawSymbol) => {
+  pluginRegistry.navigateTickerFn = (rawSymbol, options) => {
     if (isDetachedWindow) return;
+    const sourcePaneId = options?.sourcePaneId ?? stateRef.current.focusedPaneId;
     (async () => {
       try {
       // Resolve or create the ticker in the local database
@@ -1297,45 +1302,31 @@ function AppInner({
         }
       }
 
-      // Active panel resolution — navigate the focused or linked detail pane:
-      // 1. If the focused pane IS a ticker-detail, retarget it directly
-      // 2. If a ticker-detail follows the focused pane, retarget that
+      // Active panel resolution — navigate the initiating or linked detail pane:
+      // 1. If the source pane IS a ticker-detail, retarget it directly
+      // 2. If a ticker-detail follows the source pane, retarget that
       // 3. Any follow-mode ticker-detail in the layout
       // 4. Any ticker-detail in the layout
       // 5. Fall back to pinning a new pane
       const currentState = stateRef.current;
       const currentLayout = currentState.config.layout;
-      const focused = currentState.focusedPaneId;
-
-      const focusedInstance = focused
-        ? findPaneInstance(currentLayout, focused)
-        : null;
-
-      const detailPane =
-        (focusedInstance?.paneId === "ticker-detail" && isPaneInLayout(currentLayout, focusedInstance.instanceId)
-          ? focusedInstance
-          : null)
-        ?? currentLayout.instances.find((inst) =>
-          inst.paneId === "ticker-detail"
-          && inst.binding?.kind === "follow"
-          && inst.binding.sourceInstanceId === focused
-          && isPaneInLayout(currentLayout, inst.instanceId),
-        )
-        ?? currentLayout.instances.find((inst) =>
-          inst.paneId === "ticker-detail"
-          && inst.binding?.kind === "follow"
-          && isPaneInLayout(currentLayout, inst.instanceId),
-        )
-        ?? currentLayout.instances.find((inst) =>
-          inst.paneId === "ticker-detail"
-          && isPaneInLayout(currentLayout, inst.instanceId),
-        );
+      const detailPane = resolveTickerNavigationDetailPane(currentLayout, sourcePaneId);
+      const focusIfStillOwned = (paneId: string, layout: LayoutConfig) => {
+        if (!shouldFocusTickerNavigationTarget({
+          sourcePaneId,
+          currentFocusedPaneId: stateRef.current.focusedPaneId,
+          targetPaneId: paneId,
+        })) {
+          return;
+        }
+        activatePane(paneId, layout);
+      };
 
       if (detailPane) {
         if (detailPane.binding?.kind === "follow") {
           const sourceId = detailPane.binding.sourceInstanceId;
           dispatch({ type: "UPDATE_PANE_STATE", paneId: sourceId, patch: { cursorSymbol: symbol } });
-          activatePane(detailPane.instanceId, currentLayout);
+          focusIfStillOwned(detailPane.instanceId, currentLayout);
         } else {
           const nextLayout = {
             ...currentLayout,
@@ -1346,9 +1337,13 @@ function AppInner({
             )),
           };
           persistLayout(nextLayout);
-          activatePane(detailPane.instanceId, nextLayout);
+          focusIfStillOwned(detailPane.instanceId, nextLayout);
         }
-      } else {
+      } else if (shouldFocusTickerNavigationTarget({
+        sourcePaneId,
+        currentFocusedPaneId: stateRef.current.focusedPaneId,
+        targetPaneId: null,
+      })) {
         pluginRegistry.pinTicker(symbol, { floating: false });
       }
       } catch (err) {

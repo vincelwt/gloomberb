@@ -27,7 +27,6 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
   const rendererHost = useRendererHost();
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);
-  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
@@ -51,12 +50,6 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     setWindowFocused(true);
     dispatch({ type: "FOCUS_PANE", paneId: desktopWindowBridge.paneId });
   }, [desktopWindowBridge.paneId, dispatch]);
-
-  useEffect(() => {
-    if (windowFocused && focusedPaneId !== desktopWindowBridge.paneId) {
-      focusPane();
-    }
-  }, [desktopWindowBridge.paneId, focusPane, focusedPaneId, windowFocused]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return;

@@ -13,6 +13,7 @@ import {
   useAppDispatch,
   useAppSelector,
   useAppStateRef,
+  useOptionalPaneInstanceId,
   usePaneInstanceId,
   type PaneRuntimeState,
 } from "../state/app-context";
@@ -30,7 +31,7 @@ export interface PluginRuntimeAccess {
   syncBrokerInstance(instanceId: string): Promise<void>;
   removeBrokerInstance(instanceId: string): Promise<void>;
   pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
-  navigateTicker(symbol: string): void;
+  navigateTicker(symbol: string, options?: { sourcePaneId?: string | null }): void;
   selectTicker(symbol: string, paneId?: string): void;
   switchTab(tabId: string, paneId?: string): void;
   switchPanel(panel: "left" | "right"): void;
@@ -85,9 +86,13 @@ function usePluginRenderContext(): PluginRenderContextValue {
 
 export function usePluginTickerActions() {
   const { runtime } = usePluginRenderContext();
+  const sourcePaneId = useOptionalPaneInstanceId();
+  const navigateTicker = useCallback((symbol: string) => {
+    runtime.navigateTicker(symbol, { sourcePaneId });
+  }, [runtime, sourcePaneId]);
   return {
     pinTicker: runtime.pinTicker,
-    navigateTicker: runtime.navigateTicker,
+    navigateTicker,
   };
 }
 

@@ -20,6 +20,7 @@ import {
   usePluginPaneActions,
   usePluginPaneState,
   usePluginState,
+  usePluginTickerActions,
   useSetPluginConfigStates,
 } from "./plugin-runtime";
 
@@ -242,6 +243,39 @@ describe("plugin runtime hooks", () => {
       "workflow:set-alert",
       "notify:Saved",
     ]);
+  });
+
+  test("scopes ticker navigation to the rendering pane", async () => {
+    const calls: string[] = [];
+    let actions: ReturnType<typeof usePluginTickerActions> | null = null;
+
+    const runtime = createTestPluginRuntime({
+      navigateTicker(symbol: string, options?: { sourcePaneId?: string | null }) {
+        calls.push(`${symbol}:${options?.sourcePaneId ?? ""}`);
+      },
+    });
+
+    function HookProbe() {
+      actions = usePluginTickerActions();
+      return <text>ticker-actions</text>;
+    }
+
+    testSetup = await testRender(
+      <PaneInstanceProvider paneId="comparison-chart:main">
+        <PluginRenderProvider pluginId="comparison-chart" runtime={runtime}>
+          <HookProbe />
+        </PluginRenderProvider>
+      </PaneInstanceProvider>,
+      { width: 40, height: 5 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    actions?.navigateTicker("MSFT");
+
+    expect(calls).toEqual(["MSFT:comparison-chart:main"]);
   });
 
   test("exposes renderer pane actions through the plugin hook", async () => {
