@@ -179,6 +179,8 @@ type QuoteSummaryResponse = {
           priceTargetAction?: string;
           toGrade?: string;
           fromGrade?: string;
+          currentPriceTarget?: { raw?: number } | number | null;
+          priorPriceTarget?: { raw?: number } | number | null;
         }>;
       };
       earningsTrend?: {
@@ -412,12 +414,16 @@ function mapYahooAnalystResearchResponse(
         const action = normalizeYahooRatingAction(rating.action, rating.priceTargetAction);
         const current = rating.toGrade?.trim();
         const prior = rating.fromGrade?.trim();
+        const currentPriceTarget = financeRawNumber(rating.currentPriceTarget);
+        const priorPriceTarget = financeRawNumber(rating.priorPriceTarget);
         return {
           date,
           firm,
           ...(action ? { action } : {}),
           ...(current ? { current } : {}),
           ...(prior ? { prior } : {}),
+          ...(currentPriceTarget != null ? { currentPriceTarget } : {}),
+          ...(priorPriceTarget != null ? { priorPriceTarget } : {}),
         };
       })
       .filter((rating): rating is AnalystResearchData["ratings"][number] => rating !== null)

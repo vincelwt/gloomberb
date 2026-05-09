@@ -19,6 +19,7 @@ import {
   type BrokerInstanceConfig,
 } from "../../types/config";
 import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
+import { EventBus } from "../event-bus";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { DetailTabDef } from "../../types/plugin";
@@ -541,6 +542,43 @@ describe("TickerDetailPane", () => {
     await flushFrame();
     const frame = testSetup.captureCharFrame();
     expect(frame).not.toContain("SEC");
+  });
+
+  test("refreshes plugin tabs when registration completes after the pane mounted", async () => {
+    const detailTabs = new Map<string, DetailTabDef>();
+    const events = new EventBus();
+    setSharedRegistryForTests({
+      detailTabs,
+      events,
+      getDetailTabPluginId: () => "company-research",
+    } as unknown as PluginRegistry);
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).not.toContain("Analyst");
+
+    await act(async () => {
+      detailTabs.set("analyst-research", {
+        id: "analyst-research",
+        name: "Analyst",
+        order: 32,
+        component: () => <text>Analyst body</text>,
+        isVisible: ({ ticker }) => !!ticker,
+      });
+      events.emit("plugin:registered", { pluginId: "company-research" });
+    });
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("Analyst");
   });
 
   test("passes visible tab content height to plugin tabs", async () => {

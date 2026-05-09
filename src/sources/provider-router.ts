@@ -152,6 +152,16 @@ function hasAnalystResearchValue(data: AnalystResearchData): boolean {
     || data.revenueEstimates.length > 0;
 }
 
+function hasAnalystRatingPriceTargets(data: AnalystResearchData): boolean {
+  return data.ratings.some((rating) => (
+    rating.currentPriceTarget != null || rating.priorPriceTarget != null
+  ));
+}
+
+function isAnalystResearchMissingRatingTargets(data: AnalystResearchData): boolean {
+  return data.ratings.length > 0 && !hasAnalystRatingPriceTargets(data);
+}
+
 function hasCorporateActionsValue(data: CorporateActionsData): boolean {
   return data.dividends.length > 0
     || data.splits.length > 0
@@ -649,9 +659,9 @@ export class AssetDataRouter implements DataProvider {
   async getAnalystResearch(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<AnalystResearchData> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
-    const cached = this.selectCachedResource<AnalystResearchData>("analystResearch", entityKey, variantKeys, this.getProviderSourceKeys(), false);
+    const cached = this.selectCachedAnalystResearch(entityKey, variantKeys, this.getProviderSourceKeys(), false);
     const forceRefresh = context?.cacheMode === "refresh";
-    if (cached && !forceRefresh) {
+    if (cached && !forceRefresh && !isAnalystResearchMissingRatingTargets(cached.value)) {
       this.scheduleRevalidation(this.makeRevalidationKey("analystResearch", ticker, exchange, context), async () => {
         await this.revalidateAnalystResearch(ticker, exchange, context);
       });
@@ -1007,7 +1017,17 @@ export class AssetDataRouter implements DataProvider {
     sourceKeys: string[],
     allowExpired: boolean,
   ): CachedResourceRecord<T> | null {
-    return this.listCachedResources(kind, entityKey, variantKeys, sourceKeys, allowExpired)[0] ?? null;
+    return this.listCachedResources<T>(kind, entityKey, variantKeys, sourceKeys, allowExpired)[0] ?? null;
+  }
+
+  private selectCachedAnalystResearch(
+    entityKey: string,
+    variantKeys: string[],
+    sourceKeys: string[],
+    allowExpired: boolean,
+  ): CachedResourceRecord<AnalystResearchData> | null {
+    const records = this.listCachedResources<AnalystResearchData>("analystResearch", entityKey, variantKeys, sourceKeys, allowExpired);
+    return records.find((record) => !isAnalystResearchMissingRatingTargets(record.value)) ?? records[0] ?? null;
   }
 
   private selectCachedArrayResource<T>(
@@ -1738,6 +1758,7 @@ export class AssetDataRouter implements DataProvider {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
     let firstEmptyResult: SourceResult<AnalystResearchData> | null = null;
+    let firstIncompleteResult: SourceResult<AnalystResearchData> | null = null;
     let lastError: unknown = null;
 
     for (const provider of this.providersInPriorityOrder()) {
@@ -1746,7 +1767,13 @@ export class AssetDataRouter implements DataProvider {
         const value = await provider.getAnalystResearch(ticker, exchange, context);
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource("analystResearch", entityKey, variantKey, sourceKey, value, this.resolveProviderPolicy("analystResearch", provider));
-        if (hasAnalystResearchValue(value)) return { sourceKey, value };
+        if (hasAnalystResearchValue(value)) {
+          if (isAnalystResearchMissingRatingTargets(value)) {
+            firstIncompleteResult ??= { sourceKey, value };
+            continue;
+          }
+          return { sourceKey, value };
+        }
         firstEmptyResult ??= { sourceKey, value };
       } catch (error) {
         lastError = error;
@@ -1756,6 +1783,7 @@ export class AssetDataRouter implements DataProvider {
       }
     }
 
+    if (firstIncompleteResult) return firstIncompleteResult;
     if (firstEmptyResult) return firstEmptyResult;
     if (lastError) throw lastError;
     return null;
