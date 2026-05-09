@@ -318,23 +318,13 @@ function getTopFloatingPaneId(layout: LayoutConfig): string | null {
   return topInstanceId;
 }
 
-function resolveFocusedPaneId(
-  previousLayout: LayoutConfig,
-  nextLayout: LayoutConfig,
-  focusedPaneId: string | null,
-): string | null {
+function resolveFocusedPaneId(nextLayout: LayoutConfig, focusedPaneId: string | null): string | null {
   const paneOrder = getPaneOrder(nextLayout);
   if (paneOrder.length === 0) return null;
   if (focusedPaneId && paneOrder.includes(focusedPaneId)) {
     return focusedPaneId;
   }
-  const previouslyFloating = focusedPaneId
-    ? previousLayout.floating.some((entry) => entry.instanceId === focusedPaneId)
-    : false;
-  if (previouslyFloating) {
-    return getTopFloatingPaneId(nextLayout) ?? paneOrder[0] ?? null;
-  }
-  return paneOrder[0] ?? null;
+  return getTopFloatingPaneId(nextLayout) ?? paneOrder[0] ?? null;
 }
 
 function getPanelFocusTarget(layout: LayoutConfig, panel: "left" | "right"): string | null {
@@ -446,7 +436,7 @@ function withFocusedPane(state: AppState, config: AppConfig): AppState {
       layouts: syncLayouts(config.layouts, config.activeLayoutIndex, normalizedLayout),
     };
   const nextPaneState = reconcilePaneState(nextConfig, state.paneState);
-  const focusedPaneId = resolveFocusedPaneId(state.config.layout, nextConfig.layout, state.focusedPaneId);
+  const focusedPaneId = resolveFocusedPaneId(nextConfig.layout, state.focusedPaneId);
   const focusedConfig = bringFocusedFloatingPaneToFront(nextConfig, focusedPaneId);
   return {
     ...state,
@@ -854,7 +844,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
 export function createInitialState(config: AppConfig, sessionSnapshot: AppSessionSnapshot | null = null): AppState {
   const paneState = reconcilePaneState(config, sessionSnapshot?.paneState ?? {});
-  const defaultFocusedPaneId = getPaneOrder(config.layout)[0] ?? null;
+  const defaultFocusedPaneId = getTopFloatingPaneId(config.layout) ?? getPaneOrder(config.layout)[0] ?? null;
   const focusedPaneId = sessionSnapshot?.focusedPaneId
     && config.layout.instances.some((instance) => instance.instanceId === sessionSnapshot.focusedPaneId)
     ? sessionSnapshot.focusedPaneId

@@ -86,6 +86,7 @@ export function PaneWrapper({
         flexGrow={bodyHeight == null ? 1 : 0}
         flexBasis={bodyHeight == null ? 0 : undefined}
         overflow="hidden"
+        backgroundColor={bg}
       >
         {children}
       </Box>

@@ -115,7 +115,7 @@ export function FloatingPaneWrapper({
       />
 
       {/* Content */}
-      <Box height={bodyHeight} overflow="hidden">
+      <Box height={bodyHeight} overflow="hidden" backgroundColor={bg}>
         {children}
       </Box>
 

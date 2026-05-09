@@ -6,7 +6,7 @@ import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
 import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
-import { initElectrobunBackend } from "./backend-rpc";
+import { backendRequest, initElectrobunBackend } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
 import { installElectrobunBrokerRemoteClient } from "./broker-remote-client";
 import { installElectrobunConfigStoreHost } from "./config-host";
@@ -45,8 +45,23 @@ debugLog.mirrorToConsole({
 });
 const stopMainThreadMonitor = startMainThreadMonitor("electrobun.web", { mirrorToConsole: true });
 
+rootElement.tabIndex = -1;
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
 bootLog.warn("diagnostic console mirror enabled", { sources: ELECTROBUN_WEB_CONSOLE_LOG_SOURCES });
+
+function focusWebSurface(): void {
+  window.focus();
+  rootElement.focus({ preventScroll: true });
+}
+
+function requestStartupFocus(): void {
+  focusWebSurface();
+  requestAnimationFrame(() => {
+    void backendRequest("host.focusWindow")
+      .catch(() => null)
+      .then(() => focusWebSurface());
+  });
+}
 
 async function boot() {
   bootLog.info("boot started");
@@ -85,6 +100,7 @@ async function boot() {
       </UiHostProvider>,
     );
   });
+  requestStartupFocus();
   bootLog.info("root render scheduled", {
     layoutPanes: config.layout.instances.length,
     floatingPanes: config.layout.floating.length,
