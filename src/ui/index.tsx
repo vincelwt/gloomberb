@@ -39,6 +39,7 @@ export type {
   PixelResolution,
   RGBA as RGBAColor,
   RendererHost,
+  ScrollBarRenderable,
   ScrollBoxRenderable,
   ScrollBoxProps,
   SyntaxStyleLike,

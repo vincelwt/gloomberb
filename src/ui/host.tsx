@@ -94,6 +94,12 @@ export interface BoxRenderable {
   [key: string]: unknown;
 }
 
+export interface ScrollBarRenderable {
+  visible: boolean;
+  on?(event: "change", handler: () => void): void;
+  off?(event: "change", handler: () => void): void;
+}
+
 export interface ScrollBoxRenderable {
   scrollTop: number;
   scrollLeft?: number;
@@ -107,8 +113,8 @@ export interface ScrollBoxRenderable {
   visible?: boolean;
   parent?: unknown;
   getBoundingClientRect?: () => { x: number; y: number; width: number; height: number };
-  horizontalScrollBar?: { visible: boolean };
-  verticalScrollBar?: { visible: boolean };
+  horizontalScrollBar?: ScrollBarRenderable;
+  verticalScrollBar?: ScrollBarRenderable;
   scrollTo(target: number | { x?: number; y?: number }, y?: number): void;
   scrollToPixels?(target: number | { x?: number; y?: number }, y?: number): void;
 }
