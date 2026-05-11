@@ -87,9 +87,32 @@ function parseLine(line: string): ParsedLine {
   return { segments: parseInlineMarkdown(line) };
 }
 
-function SegmentSpan({ segment }: { segment: StyledSegment }) {
+function wrappedTextStyle() {
+  return {
+    minWidth: 0,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+  } as const;
+}
+
+function wrappedInlineTextStyle() {
+  return {
+    ...wrappedTextStyle(),
+    display: "inline",
+  } as const;
+}
+
+function SegmentSpan({ segment, wrap = false }: { segment: StyledSegment; wrap?: boolean }) {
+  const wrapProps = wrap
+    ? {
+        wrapText: true,
+        wrapMode: "word",
+        style: wrappedInlineTextStyle(),
+      }
+    : {};
+
   if (segment.code) {
-    return <Span fg={colors.textDim}>{segment.text}</Span>;
+    return <Span fg={colors.textDim} {...wrapProps}>{segment.text}</Span>;
   }
   const attrs =
     (segment.bold ? TextAttributes.BOLD : 0) |
@@ -99,6 +122,7 @@ function SegmentSpan({ segment }: { segment: StyledSegment }) {
     <Span
       fg={segment.color ?? undefined}
       attributes={attrs || undefined}
+      {...wrapProps}
     >
       {segment.text}
     </Span>
@@ -124,6 +148,15 @@ function MarkdownLine({
 }) {
   const indent = parsed.indent ?? 0;
   const indentStr = indent > 0 ? " ".repeat(indent) : "";
+  const shouldWrap = lineWidth != null;
+  const textWrapProps = shouldWrap
+    ? {
+        width: lineWidth,
+        wrapText: true,
+        wrapMode: "word",
+        style: wrappedTextStyle(),
+      }
+    : {};
 
   // Check if any segment contains ticker symbols
   const fullText = parsed.segments.map((s) => s.text).join("");
@@ -133,10 +166,10 @@ function MarkdownLine({
   if (!hasTickers) {
     // Simple case: no tickers, render as styled text
     return (
-      <Text fg={textColor}>
+      <Text fg={textColor} {...textWrapProps}>
         {indentStr}
         {parsed.segments.map((segment, i) => (
-          <SegmentSpan key={i} segment={segment} />
+          <SegmentSpan key={i} segment={segment} wrap={shouldWrap} />
         ))}
       </Text>
     );
@@ -153,16 +186,28 @@ function MarkdownLine({
           if (token.kind === "text") {
             if (!token.value) return null;
             return (
-              <Text key={`${segIdx}:${tokIdx}`} fg={textColor}>
-                <SegmentSpan segment={{ ...segment, text: token.value }} />
+              <Text
+                key={`${segIdx}:${tokIdx}`}
+                fg={textColor}
+                {...(shouldWrap
+                  ? { wrapText: true, wrapMode: "word", style: wrappedTextStyle() }
+                  : {})}
+              >
+                <SegmentSpan segment={{ ...segment, text: token.value }} wrap={shouldWrap} />
               </Text>
             );
           }
           const entry = catalog[token.symbol];
           if (!entry || entry.status === "missing") {
             return (
-              <Text key={`${segIdx}:${tokIdx}`} fg={textColor}>
-                <SegmentSpan segment={{ ...segment, text: token.value }} />
+              <Text
+                key={`${segIdx}:${tokIdx}`}
+                fg={textColor}
+                {...(shouldWrap
+                  ? { wrapText: true, wrapMode: "word", style: wrappedTextStyle() }
+                  : {})}
+              >
+                <SegmentSpan segment={{ ...segment, text: token.value }} wrap={shouldWrap} />
               </Text>
             );
           }

@@ -300,13 +300,32 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     nativePaneChrome,
     terminalBottomInset: terminalFooterClearance,
   });
-  const chatHeight = Math.max(height - composerBlockHeight, 0);
+  const chatHeight = nativePaneChrome ? undefined : Math.max(height - composerBlockHeight, 0);
+  const layoutHeight = nativePaneChrome ? "100%" : height;
+  const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
 
   return (
-    <Box flexDirection="column" paddingX={nativePaneChrome ? 0 : 1} height={height} overflow="hidden">
-      {chatHeight > 0 && (
-        <ScrollBox ref={scrollRef} height={chatHeight} scrollY>
-          <Box flexDirection="column" paddingX={nativePaneChrome ? 1 : 0}>
+    <Box
+      flexDirection="column"
+      paddingX={nativePaneChrome ? 0 : 1}
+      height={layoutHeight}
+      flexGrow={nativePaneChrome ? 1 : undefined}
+      overflow="hidden"
+      style={nativeFillStyle}
+    >
+      {(nativePaneChrome || (chatHeight ?? 0) > 0) && (
+        <ScrollBox
+          ref={scrollRef}
+          height={nativePaneChrome ? undefined : chatHeight}
+          flexGrow={nativePaneChrome ? 1 : undefined}
+          scrollY
+          style={nativeFillStyle}
+        >
+          <Box
+            flexDirection="column"
+            paddingX={nativePaneChrome ? 1 : 0}
+            style={nativeFillStyle}
+          >
             {messages.length === 0 ? (
               <Box paddingTop={1}>
                 <Text fg={colors.textDim}>
@@ -354,7 +373,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
         placeholder="Ask a question..."
         terminalPrefix=" > "
         terminalBottomInset={terminalFooterClearance}
-        width={nativePaneChrome ? width : contentWidth}
+        width={nativePaneChrome ? "100%" : contentWidth}
         height={composerHeight}
         onFocusRequest={focusInput}
         onInput={(value) => setInputValue(value)}
