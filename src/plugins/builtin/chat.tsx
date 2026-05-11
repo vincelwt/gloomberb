@@ -891,7 +891,6 @@ export function ChatContent({
   const channelSidebarWidth = showChannelSidebar
     ? Math.min(CHANNEL_SIDEBAR_MAX_WIDTH, Math.max(CHANNEL_SIDEBAR_MIN_WIDTH, Math.floor(width * 0.24)))
     : 0;
-  const compactChannelHeaderHeight = nativePaneChrome && !showChannelSidebar && channels.length > 1 ? 1 : 0;
   const chatWidth = Math.max(width - channelSidebarWidth, 1);
   const contentWidth = Math.max(chatWidth - 2, 1);
   const composerPrefixWidth = nativePaneChrome ? 0 : 3;
@@ -1453,7 +1452,7 @@ export function ChatContent({
   const inputAreaHeight = canSend ? composerBlockHeight + inputMetaHeight : 2;
   const topSeparatorHeight = nativePaneChrome ? 0 : 1;
   const footerSeparatorHeight = !nativePaneChrome && !canSend ? 1 : 0;
-  const messageAreaHeight = Math.max(1, height - compactChannelHeaderHeight - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
+  const messageAreaHeight = Math.max(1, height - topSeparatorHeight - footerSeparatorHeight - inputAreaHeight);
   const composerWidth = nativePaneChrome ? chatWidth : contentWidth;
 
   useEffect(() => {
@@ -1531,8 +1530,6 @@ export function ChatContent({
     )
     : "";
   const inputPlaceholder = replyTo ? `Reply to @${replyTo.user.username}...` : "Type a message...";
-  const activeChannel = channels.find((channel) => channel.id === channelId);
-  const activeChannelLabel = formatChannelLabel(activeChannel, channelId);
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
     : undefined;
@@ -1570,15 +1567,6 @@ export function ChatContent({
         onMouseDown={() => setSidebarFocused(false)}
         style={nativeFillStyle}
       >
-      {compactChannelHeaderHeight > 0 && (
-        <Box height={1} width={contentWidth} flexDirection="row">
-          <Text fg={colors.textDim}>#</Text>
-          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-            {truncateChannelLabel(activeChannelLabel, Math.max(contentWidth - 1, 1))}
-          </Text>
-        </Box>
-      )}
-
       {!nativePaneChrome && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
