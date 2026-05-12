@@ -2,7 +2,7 @@ import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, us
 import { useCallback, useEffect, useState } from "react";
 import { colors, hoverBg } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
-import { useAppDispatch, useAppSelector, useFocusedTicker } from "../../state/app-context";
+import { useAppDispatch, useAppSelector } from "../../state/app-context";
 import {
   selectActiveLayoutIndex,
   selectGridlockTipSequence,
@@ -10,9 +10,6 @@ import {
   selectSavedLayouts,
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
-import {
-  getExtendedHoursInfo,
-} from "../../utils/market-status";
 import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
@@ -35,8 +32,6 @@ type LayoutTabItem = {
 type StatusBarViewProps = {
   activeLayoutIdx: number;
   dismissGridlockTip: (event?: StatusBarEvent) => void;
-  extColor: string;
-  extText: string;
   handleGridlockTip: (event?: StatusBarEvent) => void;
   handleLayoutSelect: (value: string) => void;
   hasMultipleLayouts: boolean;
@@ -47,7 +42,6 @@ type StatusBarViewProps = {
   openLayoutContextMenu: (index: number, event: any) => void | Promise<unknown>;
   setHoveredControl: SetHoveredControl;
   showGridlockTip: boolean;
-  symbol: string | null | undefined;
 };
 
 function truncate(text: string, width: number): string {
@@ -68,13 +62,7 @@ export function StatusBar() {
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const gridlockTipVisible = useAppSelector(selectGridlockTipVisible);
   const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
-  const { symbol, financials: focusedFinancials } = useFocusedTicker();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
-
-  // Extended hours info for selected ticker
-  const extInfo = getExtendedHoursInfo(focusedFinancials?.quote);
-  const extText = extInfo?.text ?? "";
-  const extColor = extInfo?.color ?? colors.textDim;
 
   const hasMultipleLayouts = layouts.length > 1;
   const showGridlockTip = gridlockTipVisible && !!registry;
@@ -211,8 +199,6 @@ export function StatusBar() {
   const viewProps: StatusBarViewProps = {
     activeLayoutIdx,
     dismissGridlockTip,
-    extColor,
-    extText,
     handleGridlockTip,
     handleLayoutSelect,
     hasMultipleLayouts,
@@ -223,7 +209,6 @@ export function StatusBar() {
     openLayoutContextMenu,
     setHoveredControl,
     showGridlockTip,
-    symbol,
   };
 
   if (nativePaneChrome) {
@@ -416,15 +401,10 @@ function TerminalGridlockTip({
   );
 }
 
-function StatusBarWidgets({ extColor, extText, symbol }: Pick<StatusBarViewProps, "extColor" | "extText" | "symbol">) {
+function StatusBarWidgets() {
   return (
     <>
       <Box flexGrow={1} />
-      {extText && (
-        <Box paddingRight={1}>
-          <Text fg={extColor}>{symbol} {extText}</Text>
-        </Box>
-      )}
       <PluginSlot name="status:widget" />
     </>
   );
