@@ -37,7 +37,7 @@ function levelColor(level: LogLevel): string {
   switch (level) {
     case "debug": return colors.textDim;
     case "info": return colors.positive;
-    case "warn": return "#e5c07b";
+    case "warn": return colors.warning;
     case "error": return colors.negative;
   }
 }

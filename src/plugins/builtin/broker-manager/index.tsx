@@ -47,7 +47,7 @@ type BrokerColumn = DataTableColumn & { id: BrokerColumnId };
 function stateColor(state: BrokerDisplayState): string {
   switch (state) {
     case "connected": return colors.positive;
-    case "connecting": return "#e5c07b";
+    case "connecting": return colors.warning;
     case "error": return colors.negative;
     case "disabled": return colors.textMuted;
     case "unavailable": return colors.negative;

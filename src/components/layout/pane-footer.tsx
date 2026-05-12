@@ -393,7 +393,7 @@ export function PaneFooterBar({
           "--pane-footer-border-color": empty ? "transparent" : topBorderColor,
           borderTop: `1px solid ${empty ? "transparent" : topBorderColor}`,
           backgroundColor: nativeBackgroundColor,
-          boxShadow: empty ? "none" : "inset 0 1px 0 rgba(255,255,255,0.03)",
+          boxShadow: empty ? "none" : `inset 0 1px 0 ${blendHex(nativeBackgroundColor, colors.textBright, 0.03)}`,
         }}
       >
         <FooterContent

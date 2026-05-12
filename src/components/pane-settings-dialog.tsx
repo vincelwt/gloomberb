@@ -167,7 +167,9 @@ function DesktopSwitch({
       style={{
         border: `1px solid ${checked ? colors.borderFocused : colors.border}`,
         borderRadius: 999,
-        boxShadow: checked ? "inset 0 1px 0 rgba(255,255,255,0.10)" : "inset 0 1px 0 rgba(255,255,255,0.05)",
+        boxShadow: checked
+          ? `inset 0 1px 0 ${blendHex(colors.selected, colors.textBright, 0.1)}`
+          : `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.05)}`,
         cursor: "pointer",
         paddingInline: 2,
       }}
@@ -178,7 +180,7 @@ function DesktopSwitch({
         backgroundColor={checked ? colors.selectedText : colors.textMuted}
         style={{
           borderRadius: 999,
-          boxShadow: "0 1px 2px rgba(0, 0, 0, 0.35)",
+          boxShadow: `0 1px 2px ${blendHex(colors.panel, colors.bg, 0.35)}`,
         }}
       />
     </Box>

@@ -1,6 +1,6 @@
 import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useState } from "react";
-import { colors, hoverBg } from "../../theme/colors";
+import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector, useFocusedTicker } from "../../state/app-context";
 import {
@@ -251,7 +251,7 @@ function NativeStatusBar({
       }}
       style={{
         borderTop: `1px solid ${colors.border}`,
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        boxShadow: `inset 0 1px 0 ${blendHex(colors.panel, colors.textBright, 0.03)}`,
         paddingInline: 8,
       }}
     >

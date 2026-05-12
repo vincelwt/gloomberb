@@ -18,6 +18,8 @@ import {
   commandBarSelectedText,
   commandBarSubtleText,
   commandBarText,
+  blendHex,
+  colors,
   getCurrentThemeId,
   previewTheme,
 } from "../../theme/colors";
@@ -5679,7 +5681,7 @@ export function CommandBar({
         data-gloom-role="command-bar-panel"
         style={nativePaneChrome ? {
           borderRadius: 8,
-          boxShadow: "0 14px 32px rgba(0,0,0,0.18)",
+          boxShadow: `0 14px 32px ${blendHex(commandBarBg(), colors.bg, 0.18)}`,
           overflow: "hidden",
           padding: `${NATIVE_COMMAND_BAR_PADDING_Y_PX}px ${NATIVE_COMMAND_BAR_PADDING_X_PX}px`,
         } : undefined}

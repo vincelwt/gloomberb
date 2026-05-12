@@ -73,21 +73,20 @@ export function syncTheme(id: string): void {
 
 export { blendHex } from "./color-utils";
 
-const COMPARISON_SERIES_COLORS = [
-  "#5bc0eb",
-  "#f6ae2d",
-  "#f26419",
-  "#6f2dbd",
-  "#00a896",
-  "#ef476f",
-  "#118ab2",
-  "#8ac926",
-  "#ff7f51",
-  "#4361ee",
-] as const;
-
 export function getComparisonSeriesColor(index: number): string {
-  return COMPARISON_SERIES_COLORS[((index % COMPARISON_SERIES_COLORS.length) + COMPARISON_SERIES_COLORS.length) % COMPARISON_SERIES_COLORS.length]!;
+  const seriesColors = [
+    colors.borderFocused,
+    colors.warning,
+    colors.positive,
+    colors.negative,
+    colors.textBright,
+    colors.neutral,
+    blendHex(colors.borderFocused, colors.positive, 0.45),
+    blendHex(colors.warning, colors.negative, 0.35),
+    blendHex(colors.textBright, colors.positive, 0.35),
+    blendHex(colors.borderFocused, colors.negative, 0.35),
+  ];
+  return seriesColors[((index % seriesColors.length) + seriesColors.length) % seriesColors.length]!;
 }
 
 /** Returns a hover background color derived from bg and selected */

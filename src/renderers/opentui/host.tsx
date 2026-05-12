@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { resetTerminalInputState } from "../../utils/terminal-input-reset";
 import type { KeyEventLike } from "../../react/input";
 import type { NativeRendererHost, RendererHost } from "../../ui/host";
+import { colors } from "../../theme/colors";
 
 export { useKeyboard, useRenderer, useTerminalDimensions };
 export type { CliRenderer };
@@ -54,7 +55,7 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
-    backgroundColor: "#000000",
+    backgroundColor: colors.bg,
     enableMouseMovement: true,
   });
   const root = createRoot(renderer);
