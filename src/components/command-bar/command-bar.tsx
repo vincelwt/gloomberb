@@ -2205,6 +2205,94 @@ export function CommandBar({
     }
   }, []);
 
+  const activatePaneSettingField = useCallback((
+    paneId: string,
+    field: PaneSettingField,
+    currentValue: unknown,
+    options?: { keepRouteOpen?: boolean },
+  ) => {
+    const normalized = normalizePaneSettingField(paneId, field, currentValue);
+    if (normalized.mode === "toggle") {
+      if (options?.keepRouteOpen) {
+        updateTopRoute((route) => route.kind === "pane-settings"
+          ? { ...route, pendingFieldKey: field.key, error: null }
+          : route);
+      }
+      void pluginRegistry.applyPaneSettingValueFn(paneId, field, !normalized.value)
+        .then(() => {
+          if (options?.keepRouteOpen) {
+            updateTopRoute((route) => route.kind === "pane-settings"
+              ? { ...route, pendingFieldKey: null, error: null }
+              : route);
+          } else {
+            closeAll({ revertThemePreview: false });
+          }
+        })
+        .catch((error) => {
+          if (options?.keepRouteOpen) {
+            updateTopRoute((route) => route.kind === "pane-settings"
+              ? {
+                ...route,
+                pendingFieldKey: null,
+                error: error instanceof Error ? error.message : "Could not apply that setting.",
+              }
+              : route);
+            return;
+          }
+          notify(error instanceof Error ? error.message : "Could not apply that setting.", { type: "error" });
+        });
+      return;
+    }
+    if (normalized.mode === "workflow" && normalized.route) {
+      openWorkflowRoute(normalized.route);
+      return;
+    }
+    if (normalized.mode === "picker") {
+      openPickerRoute(normalized.route);
+    }
+  }, [
+    closeAll,
+    normalizePaneSettingField,
+    notify,
+    openPickerRoute,
+    openWorkflowRoute,
+    pluginRegistry,
+    updateTopRoute,
+  ]);
+
+  const buildPaneSettingItems = useCallback((
+    paneId: string | null,
+    query: string,
+    options?: { keepRouteOpen?: boolean },
+  ): ResultItem[] => {
+    if (!paneId) return [];
+    const descriptor = pluginRegistry.resolvePaneSettings(paneId);
+    if (!descriptor) return [];
+
+    const category = descriptor.settingsDef.title || "Pane Settings";
+    const paneLabel = descriptor.pane.title || descriptor.paneDef.name || descriptor.pane.paneId;
+    const items = descriptor.settingsDef.fields.map((field): ResultItem => {
+      const currentValue = descriptor.context.settings[field.key];
+      return {
+        id: `pane-setting:${field.key}`,
+        label: field.label,
+        detail: summarizePaneSettingValue(field, currentValue),
+        category,
+        kind: "action",
+        right: field.type,
+        searchText: `${category} ${paneLabel} ${field.label} ${field.description || ""} ${field.type}`,
+        action: () => activatePaneSettingField(descriptor.paneId, field, currentValue, options),
+      };
+    });
+
+    return query
+      ? fuzzyFilter(items, query, (item) => `${item.label} ${item.detail} ${item.right || ""} ${item.searchText || ""}`)
+      : items;
+  }, [
+    activatePaneSettingField,
+    pluginRegistry,
+  ]);
+
   function readWorkflowTextareaValue(fieldId: string, fallback = ""): string {
     const ref = getInputRef(workflowInputRefs.current, fieldId).current;
     const nextValue = (ref as TextareaRenderable | null)?.editBuffer?.getText?.();
@@ -3720,6 +3808,8 @@ export function CommandBar({
       const allItems = [
         ...tickerItems,
         ...commandItems,
+        ...buildLayoutItems("", { confirmDangerousActions: true }),
+        ...buildPaneSettingItems(state.focusedPaneId, rootQuery),
         ...paneShortcutItems({ includePromptableTickerTemplates: true }),
         ...nonShortcutPaneTemplateItems(),
         ...tickerActionItems(),
@@ -3735,6 +3825,7 @@ export function CommandBar({
     activeTickerSymbol,
     availableCommands,
     buildLayoutItems,
+    buildPaneSettingItems,
     buildPluginItems,
     createQuickLookLocalTickerCandidates,
     createPluginCommandItem,
@@ -4319,21 +4410,7 @@ export function CommandBar({
     if (currentRoute.kind === "pane-settings") {
       const descriptor = pluginRegistry.resolvePaneSettings(currentRoute.paneId);
       if (!descriptor) return null;
-      const items = descriptor.settingsDef.fields.map((field) => {
-        const currentValue = descriptor.context.settings[field.key];
-        return {
-          id: `pane-setting:${field.key}`,
-          label: field.label,
-          detail: summarizePaneSettingValue(field, currentValue),
-          category: descriptor.settingsDef.title || "Pane Settings",
-          kind: "action" as const,
-          right: field.type,
-          action: () => {},
-        };
-      });
-      const filtered = currentRoute.query
-        ? fuzzyFilter(items, currentRoute.query, (item) => `${item.label} ${item.detail} ${item.right || ""}`)
-        : items;
+      const filtered = buildPaneSettingItems(currentRoute.paneId, currentRoute.query, { keepRouteOpen: true });
       return {
         kind: "pane-settings",
         title: descriptor.settingsDef.title || "Pane Settings",
@@ -4358,6 +4435,7 @@ export function CommandBar({
     activeTickerData,
     activeTickerSymbol,
     buildLayoutItems,
+    buildPaneSettingItems,
     buildPluginItems,
     closeAll,
     createPaneTemplateItem,
@@ -4805,40 +4883,7 @@ export function CommandBar({
     }
 
     if (currentRoute?.kind === "pane-settings") {
-      const descriptor = pluginRegistry.resolvePaneSettings(currentRoute.paneId);
-      if (!descriptor) return;
-      const selectedField = descriptor.settingsDef.fields.find((field) => `pane-setting:${field.key}` === selected.id);
-      if (!selectedField) return;
-      const currentValue = descriptor.context.settings[selectedField.key];
-      const normalized = normalizePaneSettingField(currentRoute.paneId, selectedField, currentValue);
-      if (normalized.mode === "toggle") {
-        updateTopRoute((route) => route.kind === "pane-settings"
-          ? { ...route, pendingFieldKey: selectedField.key, error: null }
-          : route);
-        void pluginRegistry.applyPaneSettingValueFn(currentRoute.paneId, selectedField, !normalized.value)
-          .then(() => {
-            updateTopRoute((route) => route.kind === "pane-settings"
-              ? { ...route, pendingFieldKey: null, error: null }
-              : route);
-          })
-          .catch((error) => {
-            updateTopRoute((route) => route.kind === "pane-settings"
-              ? {
-                ...route,
-                pendingFieldKey: null,
-                error: error instanceof Error ? error.message : "Could not apply that setting.",
-              }
-              : route);
-          });
-        return;
-      }
-      if (normalized.mode === "workflow" && normalized.route) {
-        openWorkflowRoute(normalized.route);
-        return;
-      }
-      if (normalized.mode === "picker") {
-        openPickerRoute(normalized.route);
-      }
+      void selected.action();
       return;
     }
 
@@ -4846,10 +4891,7 @@ export function CommandBar({
   }, [
     closeAll,
     currentRoute,
-    normalizePaneSettingField,
     openInlineConfirm,
-    openPickerRoute,
-    openWorkflowRoute,
     persistLayoutChange,
     pluginRegistry,
     resolveImmediateRootSelection,

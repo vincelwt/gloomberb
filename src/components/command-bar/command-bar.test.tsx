@@ -9,7 +9,7 @@ import { cloneLayout, createDefaultConfig, type AppConfig } from "../../types/co
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
-import type { PaneTemplateCreateOptions } from "../../types/plugin";
+import type { PaneSettingField, PaneTemplateCreateOptions } from "../../types/plugin";
 import { useShortcut } from "../../react/input";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -231,6 +231,40 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     removeBrokerInstanceFn: async () => {},
     getConfigFn: () => createDefaultConfig("/tmp/gloomberb-test"),
   } as unknown as PluginRegistry;
+}
+
+function makeQuoteMonitorPaneSettingsDescriptor(
+  pluginRegistry: PluginRegistry,
+  fields: PaneSettingField[],
+  settings: Record<string, unknown> = {},
+) {
+  const config = createDefaultConfig("/tmp/gloomberb-test");
+  const pane = {
+    instanceId: "quote-monitor:main",
+    paneId: "quote-monitor",
+    title: "Quote Monitor",
+    settings,
+  };
+  return {
+    paneId: "quote-monitor:main",
+    pane,
+    paneDef: pluginRegistry.panes.get("quote-monitor")!,
+    settingsDef: {
+      title: "Quote Monitor Settings",
+      fields,
+    },
+    context: {
+      config,
+      layout: cloneLayout(config.layout),
+      paneId: "quote-monitor:main",
+      paneType: "quote-monitor",
+      pane,
+      settings,
+      paneState: {},
+      activeTicker: "AAPL",
+      activeCollectionId: "main",
+    },
+  } as any;
 }
 
 function ThemeProbe() {
@@ -2103,6 +2137,32 @@ describe("CommandBar", () => {
     expect(frame).toContain("Current Layout");
   });
 
+  test("runs layout actions directly from root search", async () => {
+    const actions: AppAction[] = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="undo layout change"
+      live
+      configureConfig={layoutModeConfig}
+      configureState={layoutModeState}
+      onAction={(action) => actions.push(action)}
+    />, {
+      width: 90,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+
+    expect(testSetup.captureCharFrame()).toContain("Undo Layout Change");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.some((action) => action.type === "UNDO_LAYOUT")).toBe(true);
+  });
+
   test("renders filtered saved layouts with textual previews", async () => {
     testSetup = await testRender(<CommandBarHarness
       query="LAY Research"
@@ -2735,41 +2795,12 @@ describe("CommandBar", () => {
       })}
       hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
       configurePluginRegistry={(pluginRegistry) => {
-        pluginRegistry.resolvePaneSettings = () => ({
-          paneId: "quote-monitor:main",
-          pane: {
-            instanceId: "quote-monitor:main",
-            paneId: "quote-monitor",
-            title: "Quote Monitor",
-            settings: {},
-          },
-          paneDef: pluginRegistry.panes.get("quote-monitor")!,
-          settingsDef: {
-            title: "Quote Monitor Settings",
-            fields: [{
-              key: "symbol",
-              label: "Symbol",
-              type: "text",
-              description: "Ticker symbol to track",
-            }],
-          },
-          context: {
-            config: createDefaultConfig("/tmp/gloomberb-test"),
-            layout: cloneLayout(createDefaultConfig("/tmp/gloomberb-test").layout),
-            paneId: "quote-monitor:main",
-            paneType: "quote-monitor",
-            pane: {
-              instanceId: "quote-monitor:main",
-              paneId: "quote-monitor",
-              title: "Quote Monitor",
-              settings: {},
-            },
-            settings: {},
-            paneState: {},
-            activeTicker: "AAPL",
-            activeCollectionId: "main",
-          },
-        }) as any;
+        pluginRegistry.resolvePaneSettings = () => makeQuoteMonitorPaneSettingsDescriptor(pluginRegistry, [{
+          key: "symbol",
+          label: "Symbol",
+          type: "text",
+          description: "Ticker symbol to track",
+        }]);
         pluginRegistry.applyPaneSettingValueFn = async (paneId, field, value) => {
           appliedValues.push({ paneId, key: field.key, value });
         };
@@ -2816,6 +2847,64 @@ describe("CommandBar", () => {
     }]);
   });
 
+  test("opens focused pane settings directly from root search", async () => {
+    const appliedValues: Array<{ paneId: string; key: string; value: unknown }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="ticker symbol"
+      configureState={(state) => ({
+        ...state,
+        focusedPaneId: "quote-monitor:main",
+      })}
+      hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.resolvePaneSettings = () => makeQuoteMonitorPaneSettingsDescriptor(pluginRegistry, [{
+          key: "symbol",
+          label: "Symbol",
+          type: "text",
+          description: "Ticker symbol to track",
+        }]);
+        pluginRegistry.applyPaneSettingValueFn = async (paneId, field, value) => {
+          appliedValues.push({ paneId, key: field.key, value });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quote Monitor Settings");
+    expect(frame).toContain("Symbol");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Apply");
+    expect(frame).toContain("Symbol");
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("MSFT");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(appliedValues).toEqual([{
+      paneId: "quote-monitor:main",
+      key: "symbol",
+      value: "MSFT",
+    }]);
+  });
+
   test("uses backspace as back only when a pane-settings route query is empty", async () => {
     testSetup = await testRender(<CommandBarHarness
       query="PS"
@@ -2825,41 +2914,12 @@ describe("CommandBar", () => {
       })}
       hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
       configurePluginRegistry={(pluginRegistry) => {
-        pluginRegistry.resolvePaneSettings = () => ({
-          paneId: "quote-monitor:main",
-          pane: {
-            instanceId: "quote-monitor:main",
-            paneId: "quote-monitor",
-            title: "Quote Monitor",
-            settings: {},
-          },
-          paneDef: pluginRegistry.panes.get("quote-monitor")!,
-          settingsDef: {
-            title: "Quote Monitor Settings",
-            fields: [{
-              key: "symbol",
-              label: "Symbol",
-              type: "text",
-              description: "Ticker symbol to track",
-            }],
-          },
-          context: {
-            config: createDefaultConfig("/tmp/gloomberb-test"),
-            layout: cloneLayout(createDefaultConfig("/tmp/gloomberb-test").layout),
-            paneId: "quote-monitor:main",
-            paneType: "quote-monitor",
-            pane: {
-              instanceId: "quote-monitor:main",
-              paneId: "quote-monitor",
-              title: "Quote Monitor",
-              settings: {},
-            },
-            settings: {},
-            paneState: {},
-            activeTicker: "AAPL",
-            activeCollectionId: "main",
-          },
-        }) as any;
+        pluginRegistry.resolvePaneSettings = () => makeQuoteMonitorPaneSettingsDescriptor(pluginRegistry, [{
+          key: "symbol",
+          label: "Symbol",
+          type: "text",
+          description: "Ticker symbol to track",
+        }]);
       }}
     />, {
       width: 100,
@@ -2915,48 +2975,17 @@ describe("CommandBar", () => {
       })}
       hasPaneSettings={(paneId) => paneId === "quote-monitor:main"}
       configurePluginRegistry={(pluginRegistry) => {
-        pluginRegistry.resolvePaneSettings = () => ({
-          paneId: "quote-monitor:main",
-          pane: {
-            instanceId: "quote-monitor:main",
-            paneId: "quote-monitor",
-            title: "Quote Monitor",
-            settings: {},
-          },
-          paneDef: pluginRegistry.panes.get("quote-monitor")!,
-          settingsDef: {
-            title: "Quote Monitor Settings",
-            fields: [{
-              key: "columns",
-              label: "Columns",
-              type: "ordered-multi-select",
-              description: "Visible columns",
-              options: [
-                { value: "volume", label: "AAA", description: "Volume column" },
-                { value: "spread", label: "BBB", description: "Spread column" },
-                { value: "beta", label: "CCC", description: "Beta column" },
-              ],
-            }],
-          },
-          context: {
-            config: createDefaultConfig("/tmp/gloomberb-test"),
-            layout: cloneLayout(createDefaultConfig("/tmp/gloomberb-test").layout),
-            paneId: "quote-monitor:main",
-            paneType: "quote-monitor",
-            pane: {
-              instanceId: "quote-monitor:main",
-              paneId: "quote-monitor",
-              title: "Quote Monitor",
-              settings: {},
-            },
-            settings: {
-              columns: ["volume", "spread"],
-            },
-            paneState: {},
-            activeTicker: "AAPL",
-            activeCollectionId: "main",
-          },
-        }) as any;
+        pluginRegistry.resolvePaneSettings = () => makeQuoteMonitorPaneSettingsDescriptor(pluginRegistry, [{
+          key: "columns",
+          label: "Columns",
+          type: "ordered-multi-select",
+          description: "Visible columns",
+          options: [
+            { value: "volume", label: "AAA", description: "Volume column" },
+            { value: "spread", label: "BBB", description: "Spread column" },
+            { value: "beta", label: "CCC", description: "Beta column" },
+          ],
+        }], { columns: ["volume", "spread"] });
       }}
     />, {
       width: 100,
