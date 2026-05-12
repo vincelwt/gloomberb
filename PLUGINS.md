@@ -326,8 +326,8 @@ ctx.openPaneSettings("my-pane:1");     // Open settings for a specific pane
 ctx.showPane("my-pane");               // Show a hidden pane
 ctx.hidePane("my-pane");               // Hide a pane
 ctx.focusPane("my-pane");              // Move focus to a pane
-ctx.pinTicker("AAPL");                 // Pin a ticker to its own detail pane
-ctx.pinTicker("AAPL", { floating: true, paneType: "ticker-detail" });
+ctx.pinTicker("AAPL");                 // Open or focus a fixed detail pane for AAPL
+ctx.pinTicker("AAPL", { floating: true, paneType: "ticker-detail", forceNewPane: true });
 ctx.createPaneFromTemplate("quote-monitor-new", { symbol: "AAPL" });
 ```
 

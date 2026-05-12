@@ -96,7 +96,8 @@ import {
 } from "./components/command-bar/workflow-ops";
 import { getPaneTemplateDisplayLabel } from "./components/command-bar/pane-template-display";
 import {
-  resolveTickerNavigationDetailPane,
+  findFixedTickerPaneForSymbol,
+  resolveTickerNavigationReplacementPane,
   shouldFocusTickerNavigationTarget,
 } from "./plugins/ticker-navigation";
 import { debugLog } from "./utils/debug-log";
@@ -1109,6 +1110,16 @@ function AppInner({
     dispatch({ type: "SET_ACTIVE_PANEL", panel: resolvePanelForPane(paneId, layout) });
     dispatch({ type: "FOCUS_PANE", paneId });
   }, [dispatch, resolvePanelForPane, state.config.layout]);
+  const focusVisiblePane = (paneId: string, layout: LayoutConfig = state.config.layout) => {
+    const nextLayout = layout.floating.some((entry) => entry.instanceId === paneId)
+      ? bringToFront(layout, paneId)
+      : layout;
+
+    if (nextLayout !== state.config.layout) {
+      persistLayout(nextLayout, { pushHistory: false });
+    }
+    activatePane(paneId, nextLayout);
+  };
   const placePaneInstance = useCallback((
     instance: PaneInstanceConfig,
     paneDef: NonNullable<ReturnType<typeof pluginRegistry.panes.get>>,
@@ -1341,20 +1352,20 @@ function AppInner({
       return;
     }
 
-    const layout = state.config.layout.floating.some((entry) => entry.instanceId === instanceId)
-      ? bringToFront(state.config.layout, instanceId)
-      : state.config.layout;
-
-    if (layout !== state.config.layout) {
-      persistLayout(layout, { pushHistory: false });
-    }
-    activatePane(instanceId, layout);
+    focusVisiblePane(instanceId);
   };
   pluginRegistry.pinTickerFn = (symbol, options) => {
     if (isDetachedWindow) return;
     const paneType = options?.paneType ?? "ticker-detail";
     const paneDef = pluginRegistry.panes.get(paneType);
     if (!paneDef) return;
+    const existing = options?.forceNewPane
+      ? null
+      : findFixedTickerPaneForSymbol(state.config.layout, paneType, symbol);
+    if (existing) {
+      focusVisiblePane(existing.instanceId);
+      return;
+    }
     const instance = buildPaneInstance(paneType, {
       title: symbol,
       binding: { kind: "fixed", symbol },
@@ -1383,52 +1394,43 @@ function AppInner({
     const sourcePaneId = options?.sourcePaneId ?? stateRef.current.focusedPaneId;
     (async () => {
       try {
-      // Resolve or create the ticker in the local database
-      const resolved = await resolveTickerSearch({
-        query: rawSymbol,
-        activeTicker: null,
-        tickers: stateRef.current.tickers,
-        dataProvider,
-      });
+        // Resolve or create the ticker in the local database
+        const resolved = await resolveTickerSearch({
+          query: rawSymbol,
+          activeTicker: null,
+          tickers: stateRef.current.tickers,
+          dataProvider,
+        });
 
-      let symbol = rawSymbol;
-      if (resolved?.kind === "local") {
-        symbol = resolved.symbol;
-      } else if (resolved?.kind === "provider" && resolved.result) {
-        const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolved.result);
-        symbol = ticker.metadata.ticker;
-        dispatch({ type: "UPDATE_TICKER", ticker });
-        if (created) {
-          pluginRegistry.events.emit("ticker:added", { symbol, ticker });
+        let symbol = rawSymbol;
+        if (resolved?.kind === "local") {
+          symbol = resolved.symbol;
+        } else if (resolved?.kind === "provider" && resolved.result) {
+          const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolved.result);
+          symbol = ticker.metadata.ticker;
+          dispatch({ type: "UPDATE_TICKER", ticker });
+          if (created) {
+            pluginRegistry.events.emit("ticker:added", { symbol, ticker });
+          }
         }
-      }
 
-      // Active panel resolution — navigate the initiating or linked detail pane:
-      // 1. If the source pane IS a ticker-detail, retarget it directly
-      // 2. If a ticker-detail follows the source pane, retarget that
-      // 3. Any follow-mode ticker-detail in the layout
-      // 4. Any ticker-detail in the layout
-      // 5. Fall back to pinning a new pane
-      const currentState = stateRef.current;
-      const currentLayout = currentState.config.layout;
-      const detailPane = resolveTickerNavigationDetailPane(currentLayout, sourcePaneId);
-      const focusIfStillOwned = (paneId: string, layout: LayoutConfig) => {
-        if (!shouldFocusTickerNavigationTarget({
-          sourcePaneId,
-          currentFocusedPaneId: stateRef.current.focusedPaneId,
-          targetPaneId: paneId,
-        })) {
-          return;
-        }
-        activatePane(paneId, layout);
-      };
+        // Only actions that originate from a ticker detail replace that exact pane.
+        // Everything else opens or focuses a fixed ticker detail for the symbol.
+        const currentState = stateRef.current;
+        const currentLayout = currentState.config.layout;
+        const detailPane = resolveTickerNavigationReplacementPane(currentLayout, sourcePaneId);
+        const focusIfStillOwned = (paneId: string, layout: LayoutConfig) => {
+          if (!shouldFocusTickerNavigationTarget({
+            sourcePaneId,
+            currentFocusedPaneId: stateRef.current.focusedPaneId,
+            targetPaneId: paneId,
+          })) {
+            return;
+          }
+          activatePane(paneId, layout);
+        };
 
-      if (detailPane) {
-        if (detailPane.binding?.kind === "follow") {
-          const sourceId = detailPane.binding.sourceInstanceId;
-          dispatch({ type: "UPDATE_PANE_STATE", paneId: sourceId, patch: { cursorSymbol: symbol } });
-          focusIfStillOwned(detailPane.instanceId, currentLayout);
-        } else {
+        if (detailPane) {
           const nextLayout = {
             ...currentLayout,
             instances: currentLayout.instances.map((instance) => (
@@ -1439,14 +1441,13 @@ function AppInner({
           };
           persistLayout(nextLayout);
           focusIfStillOwned(detailPane.instanceId, nextLayout);
+        } else if (shouldFocusTickerNavigationTarget({
+          sourcePaneId,
+          currentFocusedPaneId: stateRef.current.focusedPaneId,
+          targetPaneId: null,
+        })) {
+          pluginRegistry.pinTicker(symbol, { floating: false });
         }
-      } else if (shouldFocusTickerNavigationTarget({
-        sourcePaneId,
-        currentFocusedPaneId: stateRef.current.focusedPaneId,
-        targetPaneId: null,
-      })) {
-        pluginRegistry.pinTicker(symbol, { floating: false });
-      }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         pluginRegistry.notify({ body: `Failed to navigate to ${rawSymbol}: ${message}`, type: "error" });

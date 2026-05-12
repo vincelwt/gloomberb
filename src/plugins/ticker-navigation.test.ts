@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createPaneInstance, type LayoutConfig, type PaneInstanceConfig } from "../types/config";
 import {
-  resolveTickerNavigationDetailPane,
+  findFixedTickerPaneForSymbol,
+  resolveTickerNavigationReplacementPane,
   shouldFocusTickerNavigationTarget,
 } from "./ticker-navigation";
 
@@ -20,8 +21,8 @@ function createLayout(instances: PaneInstanceConfig[]): LayoutConfig {
   };
 }
 
-describe("resolveTickerNavigationDetailPane", () => {
-  test("prefers the detail pane following the pane that opened ticker navigation", () => {
+describe("resolveTickerNavigationReplacementPane", () => {
+  test("only replaces the ticker detail pane that opened ticker navigation", () => {
     const layout = createLayout([
       createPaneInstance("portfolio-list", {
         instanceId: "portfolio-list:main",
@@ -42,8 +43,37 @@ describe("resolveTickerNavigationDetailPane", () => {
     ]);
 
     expect(
-      resolveTickerNavigationDetailPane(layout, "comparison-chart:main")?.instanceId,
-    ).toBe("ticker-detail:compare");
+      resolveTickerNavigationReplacementPane(layout, "comparison-chart:main")?.instanceId,
+    ).toBeUndefined();
+    expect(
+      resolveTickerNavigationReplacementPane(layout, "ticker-detail:portfolio")?.instanceId,
+    ).toBe("ticker-detail:portfolio");
+  });
+});
+
+describe("findFixedTickerPaneForSymbol", () => {
+  test("finds only a visible fixed pane for the requested symbol", () => {
+    const layout = createLayout([
+      createPaneInstance("portfolio-list", {
+        instanceId: "portfolio-list:main",
+        binding: { kind: "none" },
+      }),
+      createPaneInstance("ticker-detail", {
+        instanceId: "ticker-detail:follow",
+        binding: { kind: "follow", sourceInstanceId: "portfolio-list:main" },
+      }),
+      createPaneInstance("ticker-detail", {
+        instanceId: "ticker-detail:aapl",
+        binding: { kind: "fixed", symbol: "AAPL" },
+      }),
+      createPaneInstance("ticker-detail", {
+        instanceId: "ticker-detail:msft",
+        binding: { kind: "fixed", symbol: "MSFT" },
+      }),
+    ]);
+
+    expect(findFixedTickerPaneForSymbol(layout, "ticker-detail", "AAPL")?.instanceId).toBe("ticker-detail:aapl");
+    expect(findFixedTickerPaneForSymbol(layout, "ticker-detail", "NVDA")).toBeNull();
   });
 });
 

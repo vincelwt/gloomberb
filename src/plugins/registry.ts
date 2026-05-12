@@ -26,6 +26,7 @@ import type {
   PaneSettingsDef,
   PaneTemplateCreateOptions,
   PaneTemplateDef,
+  PinTickerOptions,
   PluginPaneSettingsState,
   PluginResumeState,
   TickerAction,
@@ -140,7 +141,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   createPaneFromTemplateAsyncFn: ((templateId: string, options?: PaneTemplateCreateOptions) => Promise<void>) = async () => {};
   hidePaneFn: ((paneId: string) => void) = () => {};
   focusPaneFn: ((paneId: string) => void) = () => {};
-  pinTickerFn: ((symbol: string, options?: { floating?: boolean; paneType?: string }) => void) = () => {};
+  pinTickerFn: ((symbol: string, options?: PinTickerOptions) => void) = () => {};
   navigateTickerFn: ((symbol: string, options?: { sourcePaneId?: string | null }) => void) = () => {};
   getMarketData = () => this.marketData;
   getCapability = (capabilityId: string) => this.capabilities.get(capabilityId)?.capability ?? null;
@@ -151,7 +152,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   );
   syncBrokerInstance = (instanceId: string) => this.syncBrokerInstanceFn(instanceId);
   removeBrokerInstance = (instanceId: string) => this.removeBrokerInstanceFn(instanceId);
-  pinTicker = (symbol: string, options?: { floating?: boolean; paneType?: string }) => {
+  pinTicker = (symbol: string, options?: PinTickerOptions) => {
     this.pinTickerFn(symbol, options);
   };
   navigateTicker = (symbol: string, options?: { sourcePaneId?: string | null }) => {

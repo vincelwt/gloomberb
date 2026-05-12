@@ -20,7 +20,7 @@ import {
 import type { BrokerAdapter } from "../types/broker";
 import type { PluginCapability } from "../capabilities";
 import type { DataProvider } from "../types/data-provider";
-import type { AppNotificationRequest, BrokerInstanceUpdateOptions } from "../types/plugin";
+import type { AppNotificationRequest, BrokerInstanceUpdateOptions, PinTickerOptions } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
   getMarketData(): DataProvider | null;
@@ -30,7 +30,7 @@ export interface PluginRuntimeAccess {
   updateBrokerInstance(instanceId: string, values: Record<string, unknown>, options?: BrokerInstanceUpdateOptions): Promise<void>;
   syncBrokerInstance(instanceId: string): Promise<void>;
   removeBrokerInstance(instanceId: string): Promise<void>;
-  pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  pinTicker(symbol: string, options?: PinTickerOptions): void;
   navigateTicker(symbol: string, options?: { sourcePaneId?: string | null }): void;
   selectTicker(symbol: string, paneId?: string): void;
   switchTab(tabId: string, paneId?: string): void;

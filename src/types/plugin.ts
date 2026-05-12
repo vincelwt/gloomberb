@@ -406,6 +406,12 @@ export interface BrokerInstanceUpdateOptions {
   replaceConfig?: boolean;
 }
 
+export interface PinTickerOptions {
+  floating?: boolean;
+  paneType?: string;
+  forceNewPane?: boolean;
+}
+
 export interface GloomPluginContext {
   registerPane(pane: PaneDef): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
@@ -448,7 +454,7 @@ export interface GloomPluginContext {
   createPaneFromTemplate(templateId: string, options?: PaneTemplateCreateOptions): void;
   hidePane(paneId: string): void;
   focusPane(paneId: string): void;
-  pinTicker(symbol: string, options?: { floating?: boolean; paneType?: string }): void;
+  pinTicker(symbol: string, options?: PinTickerOptions): void;
   navigateTicker(symbol: string, options?: { sourcePaneId?: string | null }): void;
   openPaneSettings(paneId?: string): void;
 

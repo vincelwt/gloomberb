@@ -845,8 +845,12 @@ export function CommandBar({
     dispatch({ type: "FOCUS_PANE", paneId: targetPane.instanceId });
   }, [dispatch]);
 
-  const openFixedTickerPane = useCallback((symbol: string) => {
-    pluginRegistry.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+  const openFixedTickerPane = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
+    pluginRegistry.pinTicker(symbol, {
+      floating: true,
+      paneType: "ticker-detail",
+      forceNewPane: options?.forceNewPane,
+    });
   }, [pluginRegistry]);
 
   const commitTheme = useCallback((themeId: string) => {
@@ -872,7 +876,7 @@ export function CommandBar({
       ? findPaneInstance(currentState.config.layout, currentState.focusedPaneId)
       : null;
     if (options?.forceNewPane) {
-      openFixedTickerPane(symbol);
+      openFixedTickerPane(symbol, { forceNewPane: true });
       return;
     }
 

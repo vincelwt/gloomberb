@@ -127,7 +127,7 @@ function selectedTextMenuItems(text: string, registry: PluginRegistry | null, co
       contextMenuDivider("selected-text:ticker-divider"),
       {
         id: "selected-text:open-ticker",
-        label: "Open as Ticker",
+        label: "Open Ticker Detail",
         onSelect: () => registry?.navigateTicker(symbol),
       },
       {
@@ -224,13 +224,13 @@ export function tickerContextMenuItems({
   const items: ContextMenuItem[] = [
     {
       id: "ticker:open",
-      label: `Open ${symbol}`,
+      label: `Open ${symbol} Detail`,
       onSelect: () => (openTicker ? openTicker(symbol) : registry?.navigateTicker(symbol)),
     },
     {
       id: "ticker:pin-floating",
-      label: `Pin ${symbol} in Floating Detail`,
-      onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" }),
+      label: `Open ${symbol} in New Floating Detail`,
+      onSelect: () => registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail", forceNewPane: true }),
     },
     {
       id: "ticker:copy-symbol",
