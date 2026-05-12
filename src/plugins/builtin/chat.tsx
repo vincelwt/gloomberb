@@ -64,7 +64,13 @@ const MESSAGE_SELECTION_BOTTOM_INSET = 1;
 const DESKTOP_MESSAGE_RIGHT_PADDING = 2;
 const CHANNEL_SIDEBAR_MIN_WIDTH = 18;
 const CHANNEL_SIDEBAR_MAX_WIDTH = 24;
+const DESKTOP_CHANNEL_SIDEBAR_MIN_WIDTH = 14;
+const DESKTOP_CHANNEL_SIDEBAR_MAX_WIDTH = 19;
+const DESKTOP_CHANNEL_SIDEBAR_WIDTH_RATIO = 0.192;
 const CHANNEL_SIDEBAR_BREAKPOINT = 72;
+const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
+const DESKTOP_ONLINE_COUNT_PADDING_X = 1;
+const DESKTOP_CHAT_INPUT_TOP_MARGIN_PX = 6;
 const DEFAULT_CHAT_CHANNEL_ID = "everyone";
 const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
@@ -309,6 +315,73 @@ function CloudStatusIcon() {
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+      </svg>
+    </Span>
+  );
+}
+
+function ChannelNotificationIcon({
+  enabled,
+  onMouseDown,
+}: {
+  enabled: boolean;
+  onMouseDown?: (event: any) => void;
+}) {
+  const { nativePaneChrome } = useUiCapabilities();
+  const iconColor = enabled ? colors.positive : colors.textMuted;
+
+  if (!nativePaneChrome) {
+    return (
+      <Text fg={iconColor} selectable={false} onMouseDown={onMouseDown}>
+        {enabled ? "◖)" : "◖·"}
+      </Text>
+    );
+  }
+
+  return (
+    <Span
+      fg={iconColor}
+      onMouseDown={onMouseDown}
+      style={{
+        color: iconColor,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 16,
+        height: 16,
+      }}
+    >
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+        <path
+          d="M4.5 9.5v5h3.2l4.8 4v-13l-4.8 4H4.5Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {enabled ? (
+          <>
+            <path
+              d="M16 8.5a5 5 0 0 1 0 7"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+            <path
+              d="M18.8 5.8a9 9 0 0 1 0 12.4"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </>
+        ) : (
+          <path
+            d="M19 5 5 19"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+        )}
       </svg>
     </Span>
   );
@@ -785,7 +858,8 @@ function ChannelSidebar({
   const { nativePaneChrome } = useUiCapabilities();
   const borderWidth = nativePaneChrome ? 0 : width > 1 ? 1 : 0;
   const listWidth = Math.max(width - borderWidth, 1);
-  const notificationWidth = canManageNotifications ? 2 : 0;
+  const notificationWidth = canManageNotifications ? (nativePaneChrome ? DESKTOP_NOTIFICATION_ICON_WIDTH : 2) : 0;
+  const onlineCountPaddingX = nativePaneChrome ? DESKTOP_ONLINE_COUNT_PADDING_X : 0;
   const labelWidth = Math.max(listWidth - 3 - notificationWidth, 1);
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const sidebarBg = keyboardFocused ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel;
@@ -873,13 +947,7 @@ function ChannelSidebar({
                   onMouseDown={toggleNotifications}
                   style={{ cursor: "pointer" }}
                 >
-                  <Text
-                    fg={notificationsEnabled ? colors.positive : colors.textMuted}
-                    selectable={false}
-                    onMouseDown={toggleNotifications}
-                  >
-                    {notificationsEnabled ? "◖)" : "◖·"}
-                  </Text>
+                  <ChannelNotificationIcon enabled={notificationsEnabled} onMouseDown={toggleNotifications} />
                 </Box>
               )}
             </Box>
@@ -891,9 +959,11 @@ function ChannelSidebar({
             <Text fg={colors.textDim}> syncing</Text>
           </Box>
         )}
-        <Box height={1} width={listWidth} flexDirection="row">
+        <Box height={1} width={listWidth} flexDirection="row" paddingX={onlineCountPaddingX}>
           <Text fg={colors.positive}>●</Text>
-          <Text fg={colors.textDim}>{` ${truncateChannelLabel(`${onlineCount} online`, Math.max(listWidth - 2, 1))}`}</Text>
+          <Text fg={colors.textDim}>
+            {` ${truncateChannelLabel(`${onlineCount} online`, Math.max(listWidth - 2 - onlineCountPaddingX * 2, 1))}`}
+          </Text>
         </Box>
       </Box>
       {sidebarBorder}
@@ -934,8 +1004,11 @@ export function ChatContent({
   const [channels, setChannels] = useState<ChatChannel[]>(initialSnapshot.channels);
   const [channelsLoading, setChannelsLoading] = useState(initialSnapshot.channelsLoading);
   const showChannelSidebar = channels.length > 1 && width >= CHANNEL_SIDEBAR_BREAKPOINT && height >= 8;
+  const sidebarMinWidth = nativePaneChrome ? DESKTOP_CHANNEL_SIDEBAR_MIN_WIDTH : CHANNEL_SIDEBAR_MIN_WIDTH;
+  const sidebarMaxWidth = nativePaneChrome ? DESKTOP_CHANNEL_SIDEBAR_MAX_WIDTH : CHANNEL_SIDEBAR_MAX_WIDTH;
+  const sidebarWidthRatio = nativePaneChrome ? DESKTOP_CHANNEL_SIDEBAR_WIDTH_RATIO : 0.24;
   const channelSidebarWidth = showChannelSidebar
-    ? Math.min(CHANNEL_SIDEBAR_MAX_WIDTH, Math.max(CHANNEL_SIDEBAR_MIN_WIDTH, Math.floor(width * 0.24)))
+    ? Math.min(sidebarMaxWidth, Math.max(sidebarMinWidth, Math.floor(width * sidebarWidthRatio)))
     : 0;
   const chatWidth = Math.max(width - channelSidebarWidth, 1);
   const contentWidth = Math.max(chatWidth - 2, 1);
@@ -1705,6 +1778,17 @@ export function ChatContent({
 
       {canSend ? (
         <>
+          {nativePaneChrome && (
+            <Box
+              width={composerWidth}
+              style={{
+                flex: `0 0 ${DESKTOP_CHAT_INPUT_TOP_MARGIN_PX}px`,
+                height: DESKTOP_CHAT_INPUT_TOP_MARGIN_PX,
+                minHeight: DESKTOP_CHAT_INPUT_TOP_MARGIN_PX,
+              }}
+            />
+          )}
+
           {replyTo && (
             <Box height={1} width={contentWidth} flexDirection="row">
               <Text fg={colors.textMuted}> replying to </Text>
