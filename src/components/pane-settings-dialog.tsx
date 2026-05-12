@@ -10,6 +10,7 @@ import type {
 } from "../types/plugin";
 import type { PluginRegistry } from "../plugins/registry";
 import { blendHex, colors } from "../theme/colors";
+import { isPlainKey } from "../utils/keyboard";
 import { Button, DialogFrame, ListView, MultiSelectDialogContent, TextField } from "./ui";
 import { NativeSelect, openNativeSelect, type NativeSelectElement } from "./ui/native-select";
 
@@ -333,8 +334,8 @@ function useSelectFieldDialogController({
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
-    if (event.name === "up" || event.name === "k") setSelectedIndex((index) => Math.max(0, index - 1));
-    else if (event.name === "down" || event.name === "j") setSelectedIndex((index) => Math.min(field.options.length - 1, index + 1));
+    if (isPlainKey(event, "up", "k")) setSelectedIndex((index) => Math.max(0, index - 1));
+    else if (isPlainKey(event, "down", "j")) setSelectedIndex((index) => Math.min(field.options.length - 1, index + 1));
     else if (event.name === "escape") dismiss();
     else if (event.name === "enter" || event.name === "return" || isSpaceKey(event)) {
       const option = field.options[selectedIndex];
@@ -716,8 +717,8 @@ export function PaneSettingsDialogContent({
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
-    if (event.name === "up" || event.name === "k") setSelectedIndex((index) => Math.max(0, index - 1));
-    else if (event.name === "down" || event.name === "j") setSelectedIndex((index) => Math.min(fields.length - 1, index + 1));
+    if (isPlainKey(event, "up", "k")) setSelectedIndex((index) => Math.max(0, index - 1));
+    else if (isPlainKey(event, "down", "j")) setSelectedIndex((index) => Math.min(fields.length - 1, index + 1));
     else if (event.name === "escape") dismiss();
     else if (event.name === "enter" || event.name === "return" || isSpaceKey(event)) {
       void openFieldEditor(fields[selectedIndex]).catch(() => {});

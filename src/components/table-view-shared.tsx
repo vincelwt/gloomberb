@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { Box, type ScrollBoxRenderable } from "../ui";
+import { isPlainKeyboardEvent } from "../utils/keyboard";
 
 function listenToScrollBarChange(
   scrollBar: ScrollBoxRenderable["verticalScrollBar"],
@@ -28,6 +29,8 @@ export interface TableViewKeyEvent {
   name?: string;
   ctrl?: boolean;
   meta?: boolean;
+  super?: boolean;
+  alt?: boolean;
   option?: boolean;
   shift?: boolean;
   readonly defaultPrevented?: boolean;
@@ -74,11 +77,23 @@ export function isTableActivationKey(name: string | undefined): boolean {
   return name === "enter" || name === "return";
 }
 
-export function isNextTableRowKey(name: string | undefined): boolean {
+function getTableKeyName(event: TableViewKeyEvent | string | undefined): string | undefined {
+  return typeof event === "string" ? event : event?.name;
+}
+
+function isPlainTableKey(event: TableViewKeyEvent | string | undefined): boolean {
+  return typeof event !== "object" || isPlainKeyboardEvent(event);
+}
+
+export function isNextTableRowKey(event: TableViewKeyEvent | string | undefined): boolean {
+  const name = getTableKeyName(event);
+  if (!isPlainTableKey(event)) return false;
   return name === "j" || name === "down";
 }
 
-export function isPreviousTableRowKey(name: string | undefined): boolean {
+export function isPreviousTableRowKey(event: TableViewKeyEvent | string | undefined): boolean {
+  const name = getTableKeyName(event);
+  if (!isPlainTableKey(event)) return false;
   return name === "k" || name === "up";
 }
 

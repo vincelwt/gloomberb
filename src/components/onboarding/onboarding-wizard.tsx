@@ -12,6 +12,7 @@ import { resolveBrokerConfigFields, type BrokerAdapter, type BrokerConfigField }
 import { buildBrokerProfileConfig, validateBrokerProfileValues } from "../../brokers/profile-form";
 import { createBrokerInstanceId } from "../../utils/broker-instances";
 import { isBackNavigationKey, isPlainEscape } from "../../utils/back-navigation";
+import { isPlainKey } from "../../utils/keyboard";
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
 import { syncBrokerInstance } from "../../brokers/sync-broker-instance";
 import { debugLog } from "../../utils/debug-log";
@@ -528,24 +529,24 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
     // --- Step-specific controls ---
     if (step === "theme") {
-      if (event.name === "up" || event.name === "k") {
+      if (isPlainKey(event, "up", "k")) {
         setThemeIdx((i) => Math.max(0, i - 1));
-      } else if (event.name === "down" || event.name === "j") {
+      } else if (isPlainKey(event, "down", "j")) {
         setThemeIdx((i) => Math.min(themeIds.length - 1, i + 1));
       }
     } else if (step === "portfolio" && portfolioSub === "choose") {
-      if (event.name === "up" || event.name === "k") {
+      if (isPlainKey(event, "up", "k")) {
         setPortfolioOptionIdx((i) => Math.max(0, i - 1));
-      } else if (event.name === "down" || event.name === "j") {
+      } else if (isPlainKey(event, "down", "j")) {
         setPortfolioOptionIdx((i) => Math.min(portfolioChoices.length - 1, i + 1));
       }
     } else if (step === "portfolio" && portfolioSub === "broker-fields" && selectedBrokerId) {
       const currentField = activeBrokerFields[brokerFieldIdx];
       if (currentField?.type === "select") {
         const optionCount = currentField.options?.length ?? 0;
-        if (event.name === "up" || event.name === "k") {
+        if (isPlainKey(event, "up", "k")) {
           setBrokerSelectIdx((index) => Math.max(0, index - 1));
-        } else if (event.name === "down" || event.name === "j") {
+        } else if (isPlainKey(event, "down", "j")) {
           setBrokerSelectIdx((index) => Math.min(optionCount - 1, index + 1));
         }
       }

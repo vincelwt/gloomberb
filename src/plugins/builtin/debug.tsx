@@ -7,6 +7,7 @@ import { usePaneFooter } from "../../components";
 import { usePluginAppActions } from "../plugin-runtime";
 import { colors, hoverBg } from "../../theme/colors";
 import { debugLog, type LogEntry, type LogLevel } from "../../utils/debug-log";
+import { isPlainKey } from "../../utils/keyboard";
 import { wrapTextLines } from "../../utils/text-wrap";
 import { writeFileSync } from "fs";
 import { join } from "path";
@@ -154,12 +155,12 @@ function DebugPane({ focused, width, height }: PaneProps) {
     }
 
     // Navigation
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       setAutoScroll(false);
       setSelectedIdx((prev) => Math.min(prev + 1, entries.length - 1));
       return;
     }
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       setAutoScroll(false);
       setSelectedIdx((prev) => Math.max(prev - 1, 0));
       return;

@@ -8,6 +8,7 @@ import { TickerBadge } from "../../../components/ticker-badge";
 import { ExternalLink, ExternalLinkText } from "../../../components/ui";
 import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
+import { isPlainKey } from "../../../utils/keyboard";
 import { wrapTextLines } from "../../../utils/text-wrap";
 
 function hasStoryItems(article: MarketNewsItem | null): boolean {
@@ -196,13 +197,13 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
 
   useShortcut((event) => {
     if (!focused) return;
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       scrollBy(1);
       return;
     }
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       scrollBy(-1);

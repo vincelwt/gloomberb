@@ -1594,7 +1594,7 @@ function AppInner({
         }
       }
     }
-  });
+  }, { phase: "before" });
 
   if (desktopWindowBridge?.kind === "detached" && desktopWindowBridge.paneId) {
     return (

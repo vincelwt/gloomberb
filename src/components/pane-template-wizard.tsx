@@ -4,6 +4,7 @@ import { type InputRenderable, type TextareaRenderable } from "../ui";
 import { type AlertContext, type PromptContext, useDialogKeyboard } from "../ui/dialog";
 import type { WizardStep } from "../types/plugin";
 import { colors } from "../theme/colors";
+import { isPlainKey } from "../utils/keyboard";
 import { DialogFrame, ListView, TextField } from "./ui";
 
 export function PaneTemplateInfoStep({
@@ -165,9 +166,9 @@ export function PaneTemplateSelectStep({
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
-    if (event.name === "up" || event.name === "k") {
+    if (isPlainKey(event, "up", "k")) {
       setSelectedIndex((index) => Math.max(0, index - 1));
-    } else if (event.name === "down" || event.name === "j") {
+    } else if (isPlainKey(event, "down", "j")) {
       setSelectedIndex((index) => Math.min(options.length - 1, index + 1));
     } else if (event.name === "return" || event.name === "enter") {
       resolve(options[selectedIndex]?.value ?? "");

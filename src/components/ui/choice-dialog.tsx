@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Box, Text } from "../../ui";
 import { type PromptContext, useDialogKeyboard } from "../../ui/dialog";
 import { colors } from "../../theme/colors";
+import { isPlainKey } from "../../utils/keyboard";
 import { DialogFrame } from "./frame";
 import { ListView, type ListViewItem } from "./list-view";
 
@@ -58,9 +59,9 @@ export function ChoiceDialog({
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
-    if (event.name === "up" || event.name === "k") {
+    if (isPlainKey(event, "up", "k")) {
       setIndex((current) => clampChoiceIndex(current - 1, choices.length));
-    } else if (event.name === "down" || event.name === "j") {
+    } else if (isPlainKey(event, "down", "j")) {
       setIndex((current) => clampChoiceIndex(current + 1, choices.length));
     } else if (event.name === "enter" || event.name === "return") {
       activateChoice(selectedChoice);

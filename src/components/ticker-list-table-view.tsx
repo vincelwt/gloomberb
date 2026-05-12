@@ -168,13 +168,13 @@ export function TickerListTableView({
     if (onRootKeyDown?.(event)) return;
     if (tableProps.tickers.length === 0) return;
 
-    if (isNextTableRowKey(event.name)) {
+    if (isNextTableRowKey(event)) {
       stopTableKey(event);
       selectByOffset(1);
       return;
     }
 
-    if (isPreviousTableRowKey(event.name)) {
+    if (isPreviousTableRowKey(event)) {
       stopTableKey(event);
       selectByOffset(-1);
       return;

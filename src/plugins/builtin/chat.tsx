@@ -12,6 +12,7 @@ import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { tokenizeInlineContent } from "../../utils/inline-content-tokenizer";
+import { isPlainKey } from "../../utils/keyboard";
 import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { setPaneSetting } from "../../pane-settings";
@@ -1432,20 +1433,20 @@ export function ChatContent({
     const isEnterKey = event.name === "return" || event.name === "enter";
 
     if (sidebarFocusedRef.current && showChannelSidebar) {
-      if (event.name === "left") {
+      if (isPlainKey(event, "left")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         return;
       }
 
-      if (event.name === "right") {
+      if (isPlainKey(event, "right")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         focusChatContent();
         return;
       }
 
-      if (event.name === "up" || event.name === "down") {
+      if (isPlainKey(event, "up", "down")) {
         event.preventDefault?.();
         event.stopPropagation?.();
         moveSidebarChannelSelection(event.name);
@@ -1454,7 +1455,7 @@ export function ChatContent({
     }
 
     if (
-      event.name === "left" &&
+      isPlainKey(event, "left") &&
       showChannelSidebar &&
       (!inputFocused || inputValueRef.current.length === 0) &&
       focusChannelSidebar()
@@ -1476,7 +1477,7 @@ export function ChatContent({
         return;
       }
 
-      if ((event.name === "up" || event.name === "down") && shouldLeaveComposerForSelection(event.name)) {
+      if (isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(event.name)) {
         const moved = moveMessageSelection(event.name);
         if (moved) {
           event.preventDefault?.();
@@ -1489,12 +1490,12 @@ export function ChatContent({
       return;
     }
 
-    if ((event.name === "]" || event.sequence === "]") && cycleChannel(1)) {
+    if (isPlainKey(event, "]") && cycleChannel(1)) {
       event.preventDefault?.();
       event.stopPropagation?.();
       return;
     }
-    if ((event.name === "[" || event.sequence === "[") && cycleChannel(-1)) {
+    if (isPlainKey(event, "[") && cycleChannel(-1)) {
       event.preventDefault?.();
       event.stopPropagation?.();
       return;
@@ -1507,7 +1508,7 @@ export function ChatContent({
       return;
     }
 
-    if ((isEnterKey || event.name === "i") && canSend) {
+    if ((isEnterKey || isPlainKey(event, "i")) && canSend) {
       event.preventDefault?.();
       event.stopPropagation?.();
       queueMicrotask(() => focusComposer());
@@ -1524,7 +1525,7 @@ export function ChatContent({
       return;
     }
 
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       if (selectedIdx === messages.length - 1) {
@@ -1534,7 +1535,7 @@ export function ChatContent({
       moveMessageSelection("down");
       return;
     }
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       if (selectedIdx === 0 && hasOlderMessages && !loadingOlderMessages) {
@@ -1545,14 +1546,14 @@ export function ChatContent({
       return;
     }
 
-    if (canSend && event.name === "r" && selectedIdx >= 0 && selectedIdx < messages.length) {
+    if (canSend && isPlainKey(event, "r") && selectedIdx >= 0 && selectedIdx < messages.length) {
       event.preventDefault?.();
       event.stopPropagation?.();
       beginReplyTo(selectedIdx, { deferFocus: true });
       return;
     }
 
-    if (event.name === "g" && !event.shift) {
+    if (isPlainKey(event, "g")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       setSelectedIdx(0);

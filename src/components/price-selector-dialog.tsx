@@ -8,6 +8,7 @@ import { colors } from "../theme/colors";
 import { formatMarketPrice } from "../utils/market-format";
 import { DialogFrame, ListView, NumberField } from "./ui";
 import { padTo } from "../utils/format";
+import { isPlainKey } from "../utils/keyboard";
 
 interface PricePreset {
   label: string;
@@ -98,9 +99,9 @@ export function PriceSelectorDialog({
     }
 
     if (mode === "list") {
-      if (event.name === "up" || event.name === "k") {
+      if (isPlainKey(event, "up", "k")) {
         setIndex((current) => Math.max(0, current - 1));
-      } else if (event.name === "down" || event.name === "j") {
+      } else if (isPlainKey(event, "down", "j")) {
         if (index < presets.length - 1) {
           setIndex((current) => current + 1);
         } else {

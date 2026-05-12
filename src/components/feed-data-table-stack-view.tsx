@@ -3,6 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "../ui";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { colors } from "../theme/colors";
 import { formatTimeAgo } from "../utils/format";
+import { isPlainKey } from "../utils/keyboard";
 import { toTimestampMillis } from "../utils/timestamp";
 import { DataTableStackView } from "./data-table-stack-view";
 import {
@@ -245,13 +246,13 @@ export function FeedDataTableStackView({
     preventDefault?: () => void;
     stopPropagation?: () => void;
   }) => {
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       scrollDetailBy(1);
       return true;
     }
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       scrollDetailBy(-1);

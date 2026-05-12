@@ -14,6 +14,7 @@ import { blendHex, colors, priceColor } from "../../../theme/colors";
 import type { HolderData, HolderRecord } from "../../../types/financials";
 import type { GloomPlugin } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
+import { isPlainKey } from "../../../utils/keyboard";
 import { useAssetData, usePluginPaneState } from "../../plugin-runtime";
 import { createTickerSurfacePaneTemplate } from "../ticker-surface";
 
@@ -810,7 +811,7 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
 
   useShortcut((event) => {
     if (!focused || viewMode !== "chart") return;
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       const nextIdx = Math.min((selectedIdx >= 0 ? selectedIdx : 0) + 1, sortedRows.length - 1);
@@ -818,7 +819,7 @@ function HoldersView({ focused, width, height }: { focused: boolean; width: numb
       if (nextRow) setSelectedId(nextRow.id);
       return;
     }
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       const nextIdx = Math.max((selectedIdx >= 0 ? selectedIdx : 0) - 1, 0);

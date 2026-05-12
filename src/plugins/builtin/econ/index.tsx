@@ -12,6 +12,7 @@ import { resolveFredMapping } from "./fred-series-map";
 import { resolveChartPalette } from "../../../components/chart/chart-renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/chart-data";
 import { apiClient, type CloudFredObservationPayload, type CloudFredSeriesInfoPayload } from "../../../utils/api-client";
+import { isPlainKey } from "../../../utils/keyboard";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -202,11 +203,11 @@ function EconDetailView({ event, width, height, focused }: EconDetailViewProps) 
 
   useShortcut((ev) => {
     if (!focused) return;
-    if (ev.name === "j" || ev.name === "down") {
+    if (isPlainKey(ev, "j", "down")) {
       ev.stopPropagation?.();
       ev.preventDefault?.();
       scrollDetailBy(1);
-    } else if (ev.name === "k" || ev.name === "up") {
+    } else if (isPlainKey(ev, "k", "up")) {
       ev.stopPropagation?.();
       ev.preventDefault?.();
       scrollDetailBy(-1);
