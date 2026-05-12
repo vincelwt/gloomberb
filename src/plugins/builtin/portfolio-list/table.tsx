@@ -62,6 +62,7 @@ export function PortfolioTickerTable({
   visibleRangeBuffer,
   resetScrollKey,
   onRowActivate,
+  rootHeight,
 }: {
   columns: ColumnConfig[];
   focused?: boolean;
@@ -80,6 +81,7 @@ export function PortfolioTickerTable({
   visibleRangeBuffer?: number;
   resetScrollKey?: unknown;
   onRowActivate?: (ticker: TickerRecord) => void;
+  rootHeight?: number;
 }) {
   const cellCacheRef = useRef(createRowValueCache<string, ReturnType<typeof getColumnValue>>(5000));
   const resolveCell = useCallback(
@@ -112,6 +114,7 @@ export function PortfolioTickerTable({
       visibleRangeBuffer={visibleRangeBuffer}
       resetScrollKey={resetScrollKey}
       onRowActivate={onRowActivate}
+      rootHeight={rootHeight}
     />
   );
 }

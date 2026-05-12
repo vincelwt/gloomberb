@@ -56,7 +56,8 @@ export function TableViewFrame({
   return (
     <Box
       flexDirection="column"
-      flexGrow={1}
+      flexGrow={height == null ? 1 : undefined}
+      flexShrink={height == null ? undefined : 0}
       width={width}
       height={height}
       backgroundColor={backgroundColor}

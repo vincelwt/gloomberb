@@ -5,6 +5,7 @@ import { join } from "path";
 import { act, useReducer } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppPersistence } from "../../data/app-persistence";
+import { TickerRepository } from "../../data/ticker-repository";
 import { AppContext, appReducer, createInitialState, PaneInstanceProvider, type AppAction } from "../../state/app-context";
 import { AssetDataRouter } from "../../sources/provider-router";
 import { cloneLayout, createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../../types/config";
@@ -14,6 +15,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
+import { PluginRegistry, setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
 import type { BrokerAdapter } from "../../types/broker";
 import { portfolioListPlugin } from "./portfolio-list";
 
@@ -24,6 +26,7 @@ let harnessDispatch: React.Dispatch<AppAction> | null = null;
 let sharedCoordinator: MarketDataCoordinator | null = null;
 let harnessState: ReturnType<typeof createInitialState> | null = null;
 const tempPaths: string[] = [];
+const tempPersistences: AppPersistence[] = [];
 
 const PortfolioPane = portfolioListPlugin.panes![0]!.component as (props: {
   paneId: string;
@@ -154,6 +157,75 @@ function createPortfolioConfigWithColumns(
   }
   return config;
 }
+
+function createManualCollectionConfig(collectionId: string): AppConfig {
+  const config = createDefaultConfig("/tmp/gloomberb-portfolio-list");
+  const layout = {
+    dockRoot: { kind: "pane" as const, instanceId: TEST_PANE_ID },
+    instances: [{
+      instanceId: TEST_PANE_ID,
+      paneId: "portfolio-list",
+      binding: { kind: "none" as const },
+      params: { collectionId },
+    }],
+    floating: [],
+  };
+
+  return {
+    ...config,
+    layout,
+    layouts: [{ name: "Default", layout: cloneLayout(layout) }],
+  };
+}
+
+function installQuickAddRegistry(provider: DataProvider): PluginRegistry {
+  const persistence = new AppPersistence(createTempDbPath("quick-add"));
+  tempPersistences.push(persistence);
+  const registry = new PluginRegistry(provider, new TickerRepository(persistence.tickers), persistence);
+  registry.getConfigFn = () => harnessState?.config ?? createDefaultConfig("/tmp/gloomberb-portfolio-list");
+  return registry;
+}
+
+function createQuickAddProvider(match = true): DataProvider {
+  return {
+    id: "quick-add-test",
+    name: "Quick Add Test",
+    async getTickerFinancials() {
+      return {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: makeQuote({ symbol: "MSFT", price: 420, change: 5.2, changePercent: 1.25, name: "Microsoft" }),
+      };
+    },
+    async getQuote(symbol) {
+      if (match && symbol === "MSFT") {
+        return makeQuote({ symbol: "MSFT", price: 420, change: 5.2, changePercent: 1.25, name: "Microsoft" });
+      }
+      throw new Error(`No quote for ${symbol}`);
+    },
+    async getExchangeRate() {
+      return 1;
+    },
+    async search(query) {
+      if (!match || query !== "MSFT") return [];
+      return [{
+        symbol: "MSFT",
+        name: "Microsoft",
+        exchange: "NASDAQ",
+        currency: "USD",
+        type: "STK",
+      }];
+    },
+    async getArticleSummary() {
+      return null;
+    },
+    async getPriceHistory() {
+      return [];
+    },
+  };
+}
+
 function createPortfolioState(
   config: AppConfig,
   collectionId: string,
@@ -193,6 +265,7 @@ function PortfolioHarness({
   exchangeRates,
   stateMutator,
   runtime = createTestPluginRuntime(),
+  paneHeight = 24,
 }: {
   config: AppConfig;
   collectionId: string;
@@ -203,6 +276,7 @@ function PortfolioHarness({
   exchangeRates?: Map<string, number>;
   stateMutator?: (state: ReturnType<typeof createInitialState>) => void;
   runtime?: PluginRuntimeAccess;
+  paneHeight?: number;
 }) {
   const initialState = createPortfolioState(config, collectionId, expanded, {
     ticker,
@@ -224,7 +298,7 @@ function PortfolioHarness({
             paneType="portfolio-list"
             focused
             width={100}
-            height={24}
+            height={paneHeight}
           />
         </PluginRenderProvider>
       </PaneInstanceProvider>
@@ -249,7 +323,12 @@ afterEach(async () => {
   harnessDispatch = null;
   sharedCoordinator = null;
   setSharedMarketDataCoordinator(null);
+  setSharedMarketDataForTests(undefined);
+  setSharedRegistryForTests(undefined);
   harnessState = null;
+  for (const persistence of tempPersistences.splice(0)) {
+    persistence.close();
+  }
   for (const path of tempPaths.splice(0)) {
     if (existsSync(path)) rmSync(path, { force: true });
   }
@@ -289,6 +368,151 @@ describe("PortfolioListPane cash and margin UI", () => {
       await testSetup!.renderOnce();
     });
     expect(pinned).toEqual([{ symbol: "AAPL", options: { floating: true, paneType: "ticker-detail" } }]);
+  });
+
+  test("quick-add validates and adds an exact watchlist ticker", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(true));
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        ticker={makeTicker({ portfolios: [], watchlists: [], positions: [] })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => notifications.push(notification),
+        })}
+        paneHeight={12}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      testSetup!.mockInput.pressKey("n");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("MSFT");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 360));
+    });
+    await flushFrame();
+
+    const previewFrame = testSetup.captureCharFrame();
+    expect(previewFrame).toContain("420");
+    expect(previewFrame).not.toMatch(/MSFT\s+420/);
+    expect(previewFrame).toContain("+1.25%");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(harnessState?.tickers.get("MSFT")?.metadata.watchlists).toEqual(["watchlist"]);
+    expect(notifications.at(-1)).toMatchObject({
+      type: "success",
+      body: "Added MSFT to Watchlist.",
+    });
+  });
+
+  test("quick-add adds an exact ticker to a manual portfolio", async () => {
+    const config = createManualCollectionConfig("main");
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(true));
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="main"
+        ticker={makeTicker({ portfolios: [], watchlists: [], positions: [] })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => notifications.push(notification),
+        })}
+        paneHeight={12}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      testSetup!.mockInput.pressKey("n");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("MSFT");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 360));
+    });
+    await flushFrame();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(harnessState?.tickers.get("MSFT")?.metadata.portfolios).toEqual(["main"]);
+    expect(notifications.at(-1)).toMatchObject({
+      type: "success",
+      body: "Added MSFT to Main Portfolio.",
+    });
+  });
+
+  test("quick-add rejects unresolved ticker input", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(false));
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        ticker={makeTicker({ portfolios: [], watchlists: [], positions: [] })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => notifications.push(notification),
+        })}
+        paneHeight={12}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    await act(async () => {
+      testSetup!.mockInput.pressKey("n");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("NOPE");
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 360));
+    });
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("No exact ticker match");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(harnessState?.tickers.has("NOPE")).toBe(false);
+    expect(notifications.at(-1)).toMatchObject({
+      type: "error",
+      body: "No exact ticker match",
+    });
   });
 
   test("keeps non-broker portfolios unchanged", async () => {

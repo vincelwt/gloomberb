@@ -23,6 +23,7 @@ import type { CliCommandContext, CliCommandDef } from "../../../../types/plugin"
 import type { TickerRecord } from "../../../../types/ticker";
 import {
   addTickerToPortfolio,
+  addTickerToWatchlist,
   createManualPortfolio,
   deleteManualPortfolio,
   findPortfolio,
@@ -415,7 +416,7 @@ async function deleteWatchlist(name: string, ctx: CliCommandContext) {
   persistence.close();
 }
 
-async function addTickerToWatchlist(watchlistName: string, symbol: string, ctx: CliCommandContext) {
+async function addTickerToWatchlistCommand(watchlistName: string, symbol: string, ctx: CliCommandContext) {
   const { config, store, dataProvider, persistence } = await ctx.initMarketData();
   const watchlist = findWatchlist(config, watchlistName);
   if (!watchlist) {
@@ -424,19 +425,14 @@ async function addTickerToWatchlist(watchlistName: string, symbol: string, ctx: 
 
   try {
     const ticker = await resolveTickerForCli(symbol, store, dataProvider);
-    if (ticker.metadata.watchlists.includes(watchlist.id)) {
+    const result = addTickerToWatchlist(ticker, watchlist.id);
+    if (!result.changed) {
       console.log(cliStyles.warning(`${ticker.metadata.ticker} is already in "${watchlist.name}".`));
       persistence.close();
       return;
     }
 
-    const nextTicker: TickerRecord = {
-      ...ticker,
-      metadata: {
-        ...ticker.metadata,
-        watchlists: [...ticker.metadata.watchlists, watchlist.id],
-      },
-    };
+    const nextTicker = result.ticker;
     await store.saveTicker(nextTicker);
     console.log(cliStyles.success(`Added ${nextTicker.metadata.ticker} to "${watchlist.name}".`));
     if (nextTicker.metadata.name) {
@@ -644,7 +640,7 @@ export const watchlistCliCommand: CliCommandDef = {
       const symbol = args.at(-1);
       const name = args.slice(1, -1).join(" ");
       if (!name || !symbol) ctx.fail("Usage: gloomberb watchlist add <watchlist> <ticker>");
-      await addTickerToWatchlist(name!, symbol!, ctx);
+      await addTickerToWatchlistCommand(name!, symbol!, ctx);
       return;
     }
 
