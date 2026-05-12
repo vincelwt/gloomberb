@@ -247,16 +247,39 @@ function projectX(index: number, count: number, left: number, right: number): nu
   return lerp(left, right, index / (count - 1));
 }
 
+function isOhlcLikeMode(mode: ChartRenderMode): boolean {
+  return mode === "ohlc" || mode === "hlc";
+}
+
+function isHighLowMode(mode: ChartRenderMode): boolean {
+  return mode === "candles" || isOhlcLikeMode(mode);
+}
+
+function getNativeBarMetrics(count: number, width: number, mode: Extract<ChartRenderMode, "candles" | "ohlc" | "hlc">) {
+  const spacing = width / Math.max(count, 1);
+  if (mode === "candles") {
+    return {
+      bodyWidth: clamp(spacing * 0.58, 2, Math.max(spacing - 1, 2)),
+      tickLength: 0,
+      stemThickness: 1.2,
+    };
+  }
+
+  return {
+    bodyWidth: 0,
+    tickLength: clamp(spacing * 0.5, 3, Math.max(spacing * 0.62, 3)),
+    stemThickness: clamp(spacing * 0.12, 2, 3.2),
+  };
+}
+
 function projectChartX(index: number, count: number, width: number, mode: ChartRenderMode): number {
-  if (mode !== "candles" && mode !== "ohlc") {
+  if (!isHighLowMode(mode)) {
     return projectX(index, count, 0, Math.max(width - 1, 0));
   }
 
-  const spacing = width / Math.max(count, 1);
-  const bodyWidth = clamp(spacing * 0.58, 2, Math.max(spacing - 1, 2));
-  const tickLength = clamp(spacing * 0.34, 2, Math.max(spacing * 0.48, 2));
-  const horizontalPad = mode === "ohlc"
-    ? Math.ceil(Math.max(tickLength - 1, 0))
+  const { bodyWidth, tickLength, stemThickness } = getNativeBarMetrics(count, width, mode);
+  const horizontalPad = isOhlcLikeMode(mode)
+    ? Math.ceil(Math.max(tickLength - 1, stemThickness / 2, 0))
     : Math.ceil(bodyWidth / 2);
   return projectX(index, count, horizontalPad, Math.max(width - 1 - horizontalPad, horizontalPad));
 }
@@ -332,13 +355,11 @@ function drawCandles(
   scene: ChartScene,
   top: number,
   bottom: number,
-  mode: Extract<ChartRenderMode, "candles" | "ohlc">,
+  mode: Extract<ChartRenderMode, "candles" | "ohlc" | "hlc">,
 ) {
-  const spacing = width / Math.max(scene.points.length, 1);
-  const bodyWidth = clamp(spacing * 0.58, 2, Math.max(spacing - 1, 2));
-  const tickLength = clamp(spacing * 0.34, 2, Math.max(spacing * 0.48, 2));
-  const horizontalPad = mode === "ohlc"
-    ? Math.ceil(Math.max(tickLength - 1, 0))
+  const { bodyWidth, tickLength, stemThickness } = getNativeBarMetrics(scene.points.length, width, mode);
+  const horizontalPad = isOhlcLikeMode(mode)
+    ? Math.ceil(Math.max(tickLength - 1, stemThickness / 2, 0))
     : Math.ceil(bodyWidth / 2);
   const plotLeft = horizontalPad;
   const plotRight = Math.max(width - 1 - horizontalPad, plotLeft);
@@ -355,10 +376,12 @@ function drawCandles(
     const wickColor = parseHex(isUp ? scene.colors.wickUp : scene.colors.wickDown, 0.92);
     const bodyColor = parseHex(isUp ? scene.colors.candleUp : scene.colors.candleDown, 1);
 
-    if (mode === "ohlc") {
-      drawLine(data, width, height, x, highY, x, lowY, wickColor, 1.2);
-      drawLine(data, width, height, x - tickLength, openY, x, openY, bodyColor, 1.4);
-      drawLine(data, width, height, x, closeY, x + tickLength, closeY, bodyColor, 1.4);
+    if (isOhlcLikeMode(mode)) {
+      drawLine(data, width, height, x, highY, x, lowY, wickColor, stemThickness);
+      if (mode === "ohlc") {
+        drawLine(data, width, height, x - tickLength, openY, x, openY, bodyColor, Math.max(stemThickness, 1.4));
+      }
+      drawLine(data, width, height, x, closeY, x + tickLength, closeY, bodyColor, Math.max(stemThickness, 1.4));
       continue;
     }
 
@@ -395,7 +418,7 @@ function drawVolume(
     if (heightRatio <= 0) continue;
     const x = projectX(index, scene.points.length, 0, width - 1);
     const barTop = lerp(bottom, top, heightRatio);
-    const isUp = scene.mode === "candles" || scene.mode === "ohlc"
+    const isUp = isHighLowMode(scene.mode)
       ? point.close >= point.open
       : index === 0 || point.close >= scene.points[index - 1]!.close;
     const color = parseHex(isUp ? scene.colors.volumeUp : scene.colors.volumeDown, 0.6);
@@ -485,6 +508,9 @@ export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pix
         break;
       case "ohlc":
         drawCandles(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom, "ohlc");
+        break;
+      case "hlc":
+        drawCandles(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom, "hlc");
         break;
     }
 

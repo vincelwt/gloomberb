@@ -2,7 +2,7 @@ import type { Portfolio, Watchlist } from "./ticker";
 
 export const CURRENT_CONFIG_VERSION = 15;
 
-export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc";
+export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
 
 export interface ChartPreferences {

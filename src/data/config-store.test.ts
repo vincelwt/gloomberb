@@ -219,7 +219,7 @@ describe("loadConfig", () => {
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 7,
       chartPreferences: {
-        defaultRenderMode: "line",
+        defaultRenderMode: "hlc",
         renderer: "nope",
       },
     }));
@@ -227,7 +227,7 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
 
     expect(config.chartPreferences).toEqual({
-      defaultRenderMode: "line",
+      defaultRenderMode: "hlc",
       renderer: "auto",
     });
     expect(config.pluginConfig).toEqual({});

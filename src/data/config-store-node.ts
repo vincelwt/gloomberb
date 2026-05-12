@@ -266,7 +266,8 @@ function isChartPreferences(value: unknown): value is ChartPreferences {
   return (defaultRenderMode === "area"
     || defaultRenderMode === "line"
     || defaultRenderMode === "candles"
-    || defaultRenderMode === "ohlc")
+    || defaultRenderMode === "ohlc"
+    || defaultRenderMode === "hlc")
     && (renderer === "auto" || renderer === "kitty" || renderer === "braille");
 }
 
@@ -278,6 +279,7 @@ function sanitizeChartPreferences(value: unknown, fallback: ChartPreferences): C
     || candidate.defaultRenderMode === "line"
     || candidate.defaultRenderMode === "candles"
     || candidate.defaultRenderMode === "ohlc"
+    || candidate.defaultRenderMode === "hlc"
     ? candidate.defaultRenderMode
     : fallback.defaultRenderMode;
   const renderer = candidate.renderer === "auto"

@@ -2,14 +2,14 @@ import type { PricePoint } from "../../types/financials";
 
 export type TimeRange = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "ALL";
 export type ChartResolution = "auto" | "1m" | "5m" | "15m" | "30m" | "45m" | "1h" | "1d" | "1wk" | "1mo";
-export type ChartRenderMode = "area" | "line" | "candles" | "ohlc";
+export type ChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 export type ChartAxisMode = "price" | "percent";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
 export type ResolvedChartRenderer = "kitty" | "braille";
 export type ComparisonChartRenderMode = "area" | "line";
 
 export const TIME_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
-export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc"];
+export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc", "hlc"];
 export const CHART_RENDERER_PREFERENCES: ChartRendererPreference[] = ["auto", "kitty", "braille"];
 export const COMPARISON_RENDER_MODES: ComparisonChartRenderMode[] = ["area", "line"];
 

@@ -183,6 +183,8 @@ describe("resolveRenderMode", () => {
     expect(resolveRenderMode("candles", 28)).toMatchObject({ effectiveMode: "ohlc", fallbackMode: "ohlc" });
     expect(resolveRenderMode("candles", 39)).toMatchObject({ effectiveMode: "ohlc", fallbackMode: "ohlc" });
     expect(resolveRenderMode("candles", 40)).toMatchObject({ effectiveMode: "candles", fallbackMode: null });
+    expect(resolveRenderMode("hlc", 27)).toMatchObject({ effectiveMode: "line", fallbackMode: "line" });
+    expect(resolveRenderMode("hlc", 28)).toMatchObject({ effectiveMode: "hlc", fallbackMode: null });
   });
 
   test("forces compact charts back to area mode", () => {
@@ -192,7 +194,7 @@ describe("resolveRenderMode", () => {
     expect(projection.fallbackMode).toBeNull();
   });
 
-  test("uses fewer projected buckets for candles and ohlc to preserve spacing", () => {
+  test("uses fewer projected buckets for candles and ohlc-style bars to preserve spacing", () => {
     const denseSeries = Array.from({ length: 100 }, (_, i) => ({
       date: new Date(2024, 0, i + 1),
       open: 100 + i,
@@ -204,6 +206,7 @@ describe("resolveRenderMode", () => {
 
     expect(projectChartData(denseSeries, 80, "candles", false).points).toHaveLength(34);
     expect(projectChartData(denseSeries, 80, "ohlc", false).points).toHaveLength(34);
+    expect(projectChartData(denseSeries, 80, "hlc", false).points).toHaveLength(34);
     expect(projectChartData(denseSeries, 80, "line", false).points).toHaveLength(80);
   });
 
@@ -528,6 +531,7 @@ describe("renderChart", () => {
       { mode: "line", width: 12, cursorX: 4 },
       { mode: "candles", width: 40, cursorX: 13 },
       { mode: "ohlc", width: 28, cursorX: 9 },
+      { mode: "hlc", width: 28, cursorX: 9 },
     ];
 
     for (const testCase of cases) {
@@ -553,6 +557,7 @@ describe("renderChart", () => {
       { mode: "area", width: 12, height: 6, cursorX: 5, cursorY: 4 },
       { mode: "candles", width: 40, height: 6, cursorX: 13, cursorY: 3 },
       { mode: "ohlc", width: 28, height: 6, cursorX: 9, cursorY: 1 },
+      { mode: "hlc", width: 28, height: 6, cursorX: 9, cursorY: 1 },
     ];
 
     for (const testCase of cases) {
@@ -638,12 +643,26 @@ describe("renderChart", () => {
         width: 28,
         height: 6,
         lines: [
-          "⠁  ⠁  ⠁  ⢸  ⠁  ⠁  ⡄  ⠁  ⠁  ⠁",
-          " ⢰       ⢸⠒⠂    ⠐⠒⡇         ",
-          "⠁⢸⠒⠂  ⠁ ⠒⢺  ⠁  ⠁  ⡇  ⠁  ⠁ ⡆⠁",
-          "⠤⢼ ⡀  ⡀  ⠸  ⡀  ⡀  ⡇  ⡀  ⡀ ⡏⠉",
-          " ⠸                ⡧⠤    ⠠⠤⡇ ",
-          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀  ⡇  ⡀  ⡀ ⠃⡀",
+          "⠁  ⠁  ⠁  ⢸⣿ ⠁  ⠁ ⣤⡄  ⠁  ⠁  ⠁",
+          " ⢰⣶      ⢸⣿⠒⠂  ⠐⠒⣿⡇         ",
+          "⠁⢸⣿⠒⠂ ⠁ ⠒⢺⣿ ⠁  ⠁ ⣿⡇  ⠁  ⠁⣶⡆⠁",
+          "⠤⢼⣿⡀  ⡀  ⠸⠿ ⡀  ⡀ ⣿⡇  ⡀  ⡀⣿⡏⠉",
+          " ⠸⠿              ⣿⡧⠤   ⠠⠤⣿⡇ ",
+          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀ ⣿⡇  ⡀  ⡀⠛⠃⡀",
+        ],
+        timeLabels: "Jan 2    3        4    Jan 5",
+      },
+      {
+        mode: "hlc",
+        width: 28,
+        height: 6,
+        lines: [
+          "⠁  ⠁  ⠁  ⢸⣿ ⠁  ⠁ ⣤⡄  ⠁  ⠁  ⠁",
+          " ⢰⣶      ⢸⣿⠒⠂    ⣿⡇         ",
+          "⠁⢸⣿⠒⠂ ⠁  ⢸⣿ ⠁  ⠁ ⣿⡇  ⠁  ⠁⣶⡆⠁",
+          "⡀⢸⣿⡀  ⡀  ⠸⠿ ⡀  ⡀ ⣿⡇  ⡀  ⡀⣿⡏⠉",
+          " ⠸⠿              ⣿⡧⠤     ⣿⡇ ",
+          "⡀  ⡀  ⡀  ⡀  ⡀  ⡀ ⣿⡇  ⡀  ⡀⠛⠃⡀",
         ],
         timeLabels: "Jan 2    3        4    Jan 5",
       },

@@ -43,6 +43,10 @@ function getRequestedRenderMode(mode?: ChartRenderMode, compact = false): ChartR
   return mode ?? "area";
 }
 
+function isOhlcProjectionMode(mode: ChartRenderMode): boolean {
+  return mode === "candles" || mode === "ohlc" || mode === "hlc";
+}
+
 export function resolveRenderMode(
   mode: ChartRenderMode | undefined,
   chartWidth: number,
@@ -64,6 +68,7 @@ export function resolveRenderMode(
       else if (chartWidth < 40) effectiveMode = "ohlc";
       break;
     case "ohlc":
+    case "hlc":
       if (chartWidth < 28) effectiveMode = "line";
       break;
   }
@@ -328,11 +333,11 @@ export function projectChartData(
 ): ChartProjection {
   const { requestedMode, effectiveMode, fallbackMode } = resolveRenderMode(mode, targetWidth, compact);
   const ohlcBucketWidth = options.ohlcBucketWidth ?? targetWidth;
-  const projectionWidth = effectiveMode === "candles" || effectiveMode === "ohlc"
+  const projectionWidth = isOhlcProjectionMode(effectiveMode)
     ? Math.max(Math.floor(ohlcBucketWidth / 2), 1)
     : targetWidth;
 
-  const projectedPoints = effectiveMode === "candles" || effectiveMode === "ohlc"
+  const projectedPoints = isOhlcProjectionMode(effectiveMode)
     ? bucketOhlcSeries(points, projectionWidth, options)
     : projectCloseSeries(points, projectionWidth);
 

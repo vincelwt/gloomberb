@@ -135,6 +135,7 @@ const MODE_CHIPS: Record<ChartRenderMode, string> = {
   line: "L",
   candles: "C",
   ohlc: "O",
+  hlc: "H",
 };
 
 const MODE_LABELS: Record<ChartRenderMode, string> = {
@@ -142,6 +143,7 @@ const MODE_LABELS: Record<ChartRenderMode, string> = {
   line: "LINE",
   candles: "CANDLES",
   ohlc: "OHLC",
+  hlc: "HLC",
 };
 
 const AXIS_MEASURE_PALETTE = resolveChartPalette({
@@ -3412,7 +3414,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 
   const hasHistory = chartWindow.points.length > 0;
   const requestedMode = projection.requestedMode;
-  const showOhlcSummary = projection.effectiveMode === "candles" || projection.effectiveMode === "ohlc";
+  const showOhlcSummary = projection.effectiveMode === "candles" || projection.effectiveMode === "ohlc" || projection.effectiveMode === "hlc";
   const hasDisplayCursor = displayCursorX !== null && displayCursorY !== null;
   const activePoint = showOhlcSummary ? (selectionScene?.activePoint ?? null) : null;
   const visiblePriceRange = selectionScene
@@ -3552,26 +3554,33 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       priceRange: visiblePriceRange,
     });
 
+    const parts: PaneFooterSegment["parts"] = [
+      ...(projection.effectiveMode === "hlc"
+        ? []
+        : [
+            { text: "O", tone: "label" as const },
+            { text: formatPrice(activePoint.open), tone: "value" as const },
+          ]),
+      { text: "H", tone: "label" },
+      { text: formatPrice(activePoint.high), tone: "value" },
+      { text: "L", tone: "label" },
+      { text: formatPrice(activePoint.low), tone: "value" },
+      { text: "C", tone: "label" },
+      { text: formatPrice(activePoint.close), tone: "value" },
+      { text: "V", tone: "label" },
+      { text: formatCompact(activePoint.volume), tone: "value" },
+    ];
+
     return [{
-      id: "ohlc",
-      parts: [
-        { text: "O", tone: "label" },
-        { text: formatPrice(activePoint.open), tone: "value" },
-        { text: "H", tone: "label" },
-        { text: formatPrice(activePoint.high), tone: "value" },
-        { text: "L", tone: "label" },
-        { text: formatPrice(activePoint.low), tone: "value" },
-        { text: "C", tone: "label" },
-        { text: formatPrice(activePoint.close), tone: "value" },
-        { text: "V", tone: "label" },
-        { text: formatCompact(activePoint.volume), tone: "value" },
-      ],
+      id: projection.effectiveMode === "hlc" ? "hlc" : "ohlc",
+      parts,
     }];
   }, [
     activePoint,
     chartAssetCategory,
     chartCurrency,
     compact,
+    projection.effectiveMode,
     showOhlcSummary,
     visiblePriceRange,
   ]);

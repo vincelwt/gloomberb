@@ -278,15 +278,41 @@ function getBarHalfWidth(pointCount: number, bufWidth: number): number {
   return Math.floor(barW / 2);
 }
 
+function isOhlcLikeMode(mode: ChartRenderMode): boolean {
+  return mode === "ohlc" || mode === "hlc";
+}
+
+function isHighLowMode(mode: ChartRenderMode): boolean {
+  return mode === "candles" || isOhlcLikeMode(mode);
+}
+
+function getOhlcTickLength(pointCount: number, bufWidth: number): number {
+  if (pointCount <= 1) return 4;
+  const spacing = bufWidth / pointCount;
+  return Math.min(Math.max(Math.round(spacing * 0.45), 3), 5);
+}
+
+function getOhlcStemWidth(pointCount: number, bufWidth: number): number {
+  if (pointCount <= 1) return 3;
+  const spacing = bufWidth / pointCount;
+  return Math.min(Math.max(Math.round(spacing * 0.2), 2), 3);
+}
+
+function getOhlcHorizontalPad(pointCount: number, bufWidth: number): number {
+  const tickLen = getOhlcTickLength(pointCount, bufWidth);
+  const stemWidth = getOhlcStemWidth(pointCount, bufWidth);
+  return Math.max(tickLen - 1, Math.ceil((stemWidth - 1) / 2), 0);
+}
+
 function getDotX(index: number, pointCount: number, width: number, mode: ChartRenderMode): number {
   switch (mode) {
     case "candles": {
       const pad = getCandleHalfWidth(pointCount, width);
       return getSeriesPosition(index, pointCount, width, pad, pad);
     }
-    case "ohlc": {
-      const tickLen = Math.max(getCandleHalfWidth(pointCount, width), 2);
-      const pad = Math.max(tickLen - 1, 0);
+    case "ohlc":
+    case "hlc": {
+      const pad = getOhlcHorizontalPad(pointCount, width);
       return getSeriesPosition(index, pointCount, width, pad, pad);
     }
     default:
@@ -415,12 +441,16 @@ function drawOhlcChart(
   palette: ResolvedChartPalette,
   min: number,
   max: number,
+  mode: Extract<ChartRenderMode, "ohlc" | "hlc">,
 ) {
-  const tickLen = Math.max(getCandleHalfWidth(points.length, buf.width), 2);
+  const tickLen = getOhlcTickLength(points.length, buf.width);
+  const stemWidth = getOhlcStemWidth(points.length, buf.width);
+  const stemLeft = Math.floor((stemWidth - 1) / 2);
+  const stemRight = Math.ceil((stemWidth - 1) / 2);
 
   for (let i = 0; i < points.length; i++) {
     const point = points[i]!;
-    const x = getDotX(i, points.length, buf.width, "ohlc");
+    const x = getDotX(i, points.length, buf.width, mode);
     const highY = getScaledY(point.high, min, max, chartTop, chartBottom);
     const lowY = getScaledY(point.low, min, max, chartTop, chartBottom);
     const openY = getScaledY(point.open, min, max, chartTop, chartBottom);
@@ -428,14 +458,15 @@ function drawOhlcChart(
     const isUp = point.close >= point.open;
     const color = isUp ? palette.candleUp : palette.candleDown;
 
-    // Vertical line
-    drawLine(buf, x, highY, x, lowY, color, LAYER_DATA);
-
-    // Open tick extends left
-    for (let dx = 0; dx < tickLen; dx++) {
-      setPixel(buf, x - dx, openY, color, LAYER_DATA);
+    for (let dx = -stemLeft; dx <= stemRight; dx++) {
+      drawLine(buf, x + dx, highY, x + dx, lowY, color, LAYER_DATA);
     }
-    // Close tick extends right
+
+    if (mode === "ohlc") {
+      for (let dx = 0; dx < tickLen; dx++) {
+        setPixel(buf, x - dx, openY, color, LAYER_DATA);
+      }
+    }
     for (let dx = 0; dx < tickLen; dx++) {
       setPixel(buf, x + dx, closeY, color, LAYER_DATA);
     }
@@ -1222,10 +1253,10 @@ export function buildChartScene(
   if (points.length === 0) return null;
 
   const dimensions = normalizeRenderDimensions(opts);
-  const dataMin = opts.mode === "candles" || opts.mode === "ohlc"
+  const dataMin = isHighLowMode(opts.mode)
     ? Math.min(...points.map((point) => point.low))
     : Math.min(...points.map((point) => point.close));
-  const dataMax = opts.mode === "candles" || opts.mode === "ohlc"
+  const dataMax = isHighLowMode(opts.mode)
     ? Math.max(...points.map((point) => point.high))
     : Math.max(...points.map((point) => point.close));
   const indicatorValues = getIndicatorOverlayValues(opts.indicators);
@@ -1394,7 +1425,10 @@ export function renderChart(
       drawCandlestickChart(buf, points, 0, chartDotBottom, palette, min, max);
       break;
     case "ohlc":
-      drawOhlcChart(buf, points, 0, chartDotBottom, palette, min, max);
+      drawOhlcChart(buf, points, 0, chartDotBottom, palette, min, max, "ohlc");
+      break;
+    case "hlc":
+      drawOhlcChart(buf, points, 0, chartDotBottom, palette, min, max, "hlc");
       break;
   }
 
@@ -1406,7 +1440,7 @@ export function renderChart(
       volDotBottom,
       palette.volumeUp,
       palette.volumeDown,
-      mode === "candles" || mode === "ohlc" ? "openClose" : "previousClose",
+      isHighLowMode(mode) ? "openClose" : "previousClose",
       mode,
     );
   }
