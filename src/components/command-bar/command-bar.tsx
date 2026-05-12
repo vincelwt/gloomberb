@@ -185,6 +185,37 @@ const NATIVE_COMMAND_BAR_PADDING_X_PX = 14;
 const NATIVE_COMMAND_BAR_PADDING_Y_PX = 14;
 const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
 
+function normalizeCommandTickerSearchText(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
+function isLikelyPlainTickerSearch(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (!/^[A-Za-z0-9.^=\-/]+$/.test(trimmed)) return false;
+
+  const compact = normalizeCommandTickerSearchText(trimmed);
+  if (compact.length < 2) return false;
+  if (compact.length <= 6) return true;
+  return /[.^=\-/]/.test(trimmed) && compact.length <= 10;
+}
+
+function isExactTickerResultMatch(item: ResultItem, query: string): boolean {
+  if (item.kind !== "ticker" && item.kind !== "search") return false;
+  const normalizedQuery = normalizeCommandTickerSearchText(query);
+  if (!normalizedQuery) return false;
+  return normalizeCommandTickerSearchText(item.label) === normalizedQuery;
+}
+
+function getPaneTemplateArgKind(template: PaneTemplateDef): string | undefined {
+  return template.shortcut?.argKind ?? template.shortcut?.argPlaceholder;
+}
+
+function canPromptForPaneTemplateArg(template: PaneTemplateDef): boolean {
+  const argKind = getPaneTemplateArgKind(template);
+  return argKind === "ticker" || argKind === "ticker-list" || argKind === "tickers";
+}
+
 function getDefaultConfigBackupPath(): string {
   const home = typeof process !== "undefined" ? process.env.HOME : undefined;
   return `${home || "~"}/gloomberb-config-backup.json`;
@@ -563,9 +594,10 @@ const CommandBarListBody = memo(function CommandBarListBody({
 
         const isSelected = row.globalIdx === visibleListState.selectedIdx;
         const isHovered = row.globalIdx === visibleListState.hoveredIdx && !isSelected;
+        const itemRowKey = `item:${row.globalIdx}:${row.item.id}:${row.item.category}:${row.item.label}:${row.item.right || ""}`;
         return (
           <CommandBarListItemRow
-            key={row.item.id}
+            key={itemRowKey}
             item={row.item}
             globalIdx={row.globalIdx}
             isSelected={isSelected}
@@ -2446,7 +2478,7 @@ export function CommandBar({
       const argPlaceholder = template.shortcut?.argPlaceholder;
       return template.wizard.some((step) => step.type === "textarea" || step.key !== argPlaceholder);
     }
-    if (template.shortcut?.argPlaceholder === "ticker" || template.shortcut?.argPlaceholder === "tickers") {
+    if (canPromptForPaneTemplateArg(template)) {
       return !arg?.trim();
     }
     return false;
@@ -2632,6 +2664,57 @@ export function CommandBar({
       }]
   ), [mapTickerSearchCandidateToResultItem]);
 
+  const mergeTickerSearchResultItems = useCallback((
+    query: string,
+    preferredItems: ResultItem[],
+    fallbackItems: ResultItem[],
+  ): ResultItem[] => {
+    const merged: ResultItem[] = [];
+    const seen = new Set<string>();
+    const addItem = (item: ResultItem) => {
+      if (item.kind === "info") return;
+      const key = `${item.label.trim().toUpperCase()}:${(item.right || "").trim().toUpperCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(item);
+    };
+    preferredItems.forEach(addItem);
+    fallbackItems.forEach(addItem);
+    if (merged.length === 0) return fallbackItems;
+
+    return rankTickerSearchItems(merged, query)
+      .map((item) => isExactTickerResultMatch(item, query) && item.category !== "Saved"
+        ? { ...item, category: "Exact Match" }
+        : item);
+  }, []);
+
+  const mergePlainRootTickerResults = useCallback((
+    query: string,
+    providerItems: ResultItem[],
+    rootItems: ResultItem[],
+  ): ResultItem[] => {
+    const merged: ResultItem[] = [];
+    const seen = new Set<string>();
+    const addItem = (item: ResultItem, options?: { skipInfo?: boolean }) => {
+      if (options?.skipInfo && item.kind === "info") return;
+      const key = (item.kind === "ticker" || item.kind === "search")
+        ? `${item.kind}:${item.label.trim().toUpperCase()}:${(item.right || "").trim().toUpperCase()}`
+        : `${item.kind}:${item.id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(item);
+    };
+
+    providerItems
+      .filter((item) => item.category === "Exact Match" || isExactTickerResultMatch(item, query))
+      .forEach((item) => addItem(item, { skipInfo: true }));
+    rootItems.forEach((item) => addItem(item));
+    providerItems
+      .filter((item) => item.category !== "Exact Match" && !isExactTickerResultMatch(item, query))
+      .forEach((item) => addItem(item, { skipInfo: true }));
+    return merged.length > 0 ? merged : rootItems;
+  }, []);
+
   const buildTickerSearchCacheKey = useCallback((
     query: string,
     brokerId?: string | null,
@@ -2718,7 +2801,10 @@ export function CommandBar({
     activeCollectionId,
   }), [activeCollectionId, activeTickerSymbol, state.config, state.focusedPaneId]);
 
-  const getAvailablePaneTemplates = useCallback((options?: PaneTemplateCreateOptions): PaneTemplateDef[] => {
+  const getAvailablePaneTemplates = useCallback((
+    options?: PaneTemplateCreateOptions,
+    availability?: { includePromptableTickerTemplates?: boolean },
+  ): PaneTemplateDef[] => {
     const disabledPlugins = new Set(state.config.disabledPlugins || []);
     const context = getPaneTemplateContext();
     return [...pluginRegistry.paneTemplates.values()]
@@ -2727,7 +2813,12 @@ export function CommandBar({
         if (pluginId && disabledPlugins.has(pluginId)) return false;
         if (!template.canCreate) return true;
         try {
-          return template.canCreate(context, options);
+          const canCreate = template.canCreate(context, options);
+          if (canCreate) return true;
+          return !!availability?.includePromptableTickerTemplates
+            && !options?.arg
+            && !context.activeTicker
+            && canPromptForPaneTemplateArg(template);
         } catch (error) {
           commandBarLog.error("Pane template canCreate failed", {
             templateId: template.id,
@@ -2751,13 +2842,13 @@ export function CommandBar({
       const prefix = template.shortcut?.prefix?.toUpperCase();
       if (!prefix) return false;
       const arg = trimmed.slice(prefix.length).trim();
-      const argKind = template.shortcut?.argKind ?? template.shortcut?.argPlaceholder;
+      const argKind = getPaneTemplateArgKind(template);
       if (upper !== prefix && (!argKind || !upper.startsWith(`${prefix} `))) return false;
       if (!template.canCreate) return true;
       try {
         const canCreate = template.canCreate(context, arg ? { arg } : undefined);
         if (canCreate) return true;
-        if (!arg && !context.activeTicker && (argKind === "ticker" || argKind === "ticker-list")) {
+        if (!arg && !context.activeTicker && canPromptForPaneTemplateArg(template)) {
           return true;
         }
         return false;
@@ -2837,8 +2928,11 @@ export function CommandBar({
   const paneShortcutItems = useCallback((options?: {
     filterQuery?: string;
     createOptions?: PaneTemplateCreateOptions;
+    includePromptableTickerTemplates?: boolean;
   }): ResultItem[] => {
-    const items = getAvailablePaneTemplates(options?.createOptions)
+    const items = getAvailablePaneTemplates(options?.createOptions, {
+      includePromptableTickerTemplates: options?.includePromptableTickerTemplates,
+    })
       .filter((template) => template.shortcut)
       .map((template) => createPaneTemplateItem(template, {
         category: "Panes",
@@ -3217,6 +3311,7 @@ export function CommandBar({
 
   useEffect(() => {
     if (tickerSearchRouteQuery == null) {
+      searchRequestIdRef.current += 1;
       setTickerSearchPending(false);
       setTickerSearchResults([]);
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -3225,6 +3320,7 @@ export function CommandBar({
 
     const searchQuery = tickerSearchRouteQuery.trim();
     if (!searchQuery) {
+      searchRequestIdRef.current += 1;
       setTickerSearchPending(false);
       setTickerSearchResults([]);
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -3239,7 +3335,7 @@ export function CommandBar({
       activePortfolio?.brokerInstanceId,
     );
     setTickerSearchResults(cachedCandidates
-      ? buildTickerSearchResultItems(cachedCandidates, searchQuery)
+      ? mergeTickerSearchResultItems(searchQuery, localItems, buildTickerSearchResultItems(cachedCandidates, searchQuery))
       : localItems);
     const requestId = ++searchRequestIdRef.current;
     const searchDelay = skipTickerSearchDebounceRef.current ? 0 : 200;
@@ -3266,7 +3362,11 @@ export function CommandBar({
           activePortfolio?.brokerId,
           activePortfolio?.brokerInstanceId,
         );
-        setTickerSearchResults(buildTickerSearchResultItems(combined, searchQuery));
+        setTickerSearchResults(mergeTickerSearchResultItems(
+          searchQuery,
+          localTickerSearchResultItems(searchQuery, { limit: 6 }),
+          buildTickerSearchResultItems(combined, searchQuery),
+        ));
       } catch {
         if (requestId !== searchRequestIdRef.current) return;
         const nextItems: ResultItem[] = [{
@@ -3295,6 +3395,7 @@ export function CommandBar({
     buildTickerSearchResultItems,
     localTickerSearchResultItems,
     mapTickerSearchCandidateToResultItem,
+    mergeTickerSearchResultItems,
     readTickerSearchCache,
     tickerSearchRouteQuery,
     writeTickerSearchCache,
@@ -3559,8 +3660,8 @@ export function CommandBar({
           label: "Type a ticker symbol",
           detail: "Open security details after resolving a ticker",
           category: "Search",
-          kind: "info",
-          action: () => {},
+          kind: "command",
+          action: () => openModeRoute("ticker-search", ""),
         });
       } else if (match.arg) {
         items.push(...localTickerSearchResultItems(match.arg, { limit: 6 }));
@@ -3610,7 +3711,7 @@ export function CommandBar({
       const allItems = [
         ...tickerItems,
         ...commandItems,
-        ...paneShortcutItems(),
+        ...paneShortcutItems({ includePromptableTickerTemplates: true }),
         ...nonShortcutPaneTemplateItems(),
         ...tickerActionItems(),
         ...pluginCommandItems(),
@@ -3644,6 +3745,18 @@ export function CommandBar({
     tickerActionItems,
   ]);
 
+  const rootPlainTickerSearchArg = useMemo(() => {
+    if (activeMatch || rootShortcutIntent.kind !== "none" || !isLikelyPlainTickerSearch(rootQuery)) return null;
+    const normalizedQuery = normalizeCommandTickerSearchText(rootQuery);
+    const hasExactNonTickerResult = rootResultModel.items.some((item) => (
+      item.kind !== "ticker"
+      && item.kind !== "search"
+      && normalizeCommandTickerSearchText(item.label) === normalizedQuery
+    ));
+    return hasExactNonTickerResult ? null : rootQuery.trim();
+  }, [activeMatch, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
+  const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
+
   useEffect(() => {
     if (currentRoute) return;
 
@@ -3668,6 +3781,7 @@ export function CommandBar({
 
   useEffect(() => {
     if (currentRoute) {
+      rootSearchRequestIdRef.current += 1;
       setRootSearching(false);
       setRootProviderResults(null);
       setRootProviderResultsQuery(null);
@@ -3676,7 +3790,8 @@ export function CommandBar({
       return;
     }
 
-    if (!rootSecurityDescriptionArg) {
+    if (!rootTickerSearchArg) {
+      rootSearchRequestIdRef.current += 1;
       setRootSearching(false);
       setRootProviderResults(null);
       setRootProviderResultsQuery(null);
@@ -3685,7 +3800,7 @@ export function CommandBar({
       return;
     }
 
-    const searchQuery = rootSecurityDescriptionArg;
+    const searchQuery = rootTickerSearchArg;
     if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
     if (rootLastSearchedQueryRef.current === searchQuery) {
       return;
@@ -3699,7 +3814,10 @@ export function CommandBar({
       activeSearchPortfolio?.brokerId,
       activeSearchPortfolio?.brokerInstanceId,
     );
-    setRootProviderResults(cachedCandidates ? buildTickerSearchResultItems(cachedCandidates, searchQuery) : null);
+    const localItems = localTickerSearchResultItems(searchQuery, { limit: 6 });
+    setRootProviderResults(cachedCandidates
+      ? mergeTickerSearchResultItems(searchQuery, localItems, buildTickerSearchResultItems(cachedCandidates, searchQuery))
+      : null);
     setRootProviderResultsQuery(cachedCandidates ? searchQuery : null);
 
     const requestId = ++rootSearchRequestIdRef.current;
@@ -3723,7 +3841,11 @@ export function CommandBar({
           activeSearchPortfolio?.brokerId,
           activeSearchPortfolio?.brokerInstanceId,
         );
-        setRootProviderResults(buildTickerSearchResultItems(combined, searchQuery));
+        setRootProviderResults(mergeTickerSearchResultItems(
+          searchQuery,
+          localTickerSearchResultItems(searchQuery, { limit: 6 }),
+          buildTickerSearchResultItems(combined, searchQuery),
+        ));
         setRootProviderResultsQuery(searchQuery);
       } catch {
         if (requestId !== rootSearchRequestIdRef.current) return;
@@ -3751,20 +3873,46 @@ export function CommandBar({
     buildTickerSearchResultItems,
     currentRoute,
     dataProvider,
+    localTickerSearchResultItems,
+    mergeTickerSearchResultItems,
     readTickerSearchCache,
-    rootSecurityDescriptionArg,
+    rootTickerSearchArg,
     state.config.portfolios,
     state.tickers,
     writeTickerSearchCache,
   ]);
 
   const rootResults = useMemo(() => {
-    if (rootSecurityDescriptionArg && rootProviderResultsQuery === rootSecurityDescriptionArg && rootProviderResults) {
+    if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
+      if (rootPlainTickerSearchArg) {
+        return mergePlainRootTickerResults(rootPlainTickerSearchArg, rootProviderResults, rootResultModel.items);
+      }
       return rootProviderResults;
     }
     return rootResultModel.items;
-  }, [rootProviderResults, rootProviderResultsQuery, rootResultModel.items, rootSecurityDescriptionArg]);
+  }, [
+    mergePlainRootTickerResults,
+    rootPlainTickerSearchArg,
+    rootProviderResults,
+    rootProviderResultsQuery,
+    rootResultModel.items,
+    rootTickerSearchArg,
+  ]);
   const orderedRootResults = useMemo(() => orderListResults(rootResults), [rootResults]);
+  const activeRootProviderResultsKey = useMemo(() => {
+    if (!rootTickerSearchArg || rootProviderResultsQuery !== rootTickerSearchArg || !rootProviderResults) return null;
+    return [
+      rootTickerSearchArg,
+      ...rootProviderResults.map((item) => `${item.id}:${item.category}:${item.label}:${item.right || ""}`),
+    ].join("\n");
+  }, [rootProviderResults, rootProviderResultsQuery, rootTickerSearchArg]);
+
+  useEffect(() => {
+    if (!activeRootProviderResultsKey) return;
+    setRootSelectedIdx(0);
+    setRootHoveredIdx(null);
+    nativeListScrollRef.current?.scrollTo(0);
+  }, [activeRootProviderResultsKey]);
 
   const rootGhostCompletion = !currentRoute && rootShortcutIntent.kind === "inferred-complete"
     ? rootShortcutIntent.completionQuery
@@ -3776,7 +3924,7 @@ export function CommandBar({
     if (currentRoute || rootShortcutIntent.kind === "none") return null;
 
     if (rootShortcutIntent.source === "pane-template") {
-      const argKind = rootShortcutIntent.template.shortcut?.argKind ?? rootShortcutIntent.template.shortcut?.argPlaceholder;
+      const argKind = getPaneTemplateArgKind(rootShortcutIntent.template);
       if (argKind === "ticker") {
         const symbol = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
         if (symbol) {
@@ -3809,8 +3957,8 @@ export function CommandBar({
       const symbol = normalizeTickerInput(activeTickerSymbol, rootShortcutIntent.argText);
       if (symbol) {
         return rootShortcutIntent.kind === "inferred-complete"
-          ? `Shortcut: DES ${symbol} · Tab to accept`
-          : `Shortcut: DES ${symbol}`;
+          ? `Shortcut: ${rootShortcutIntent.prefix} ${symbol} · Tab to accept`
+          : `Shortcut: ${rootShortcutIntent.prefix} ${symbol}`;
       }
       return "Shortcut: Description";
     }
@@ -3865,7 +4013,7 @@ export function CommandBar({
       return true;
     }
     if (intent.source === "pane-template") {
-      const argKind = intent.template.shortcut?.argKind ?? intent.template.shortcut?.argPlaceholder;
+      const argKind = getPaneTemplateArgKind(intent.template);
       if (argKind === "ticker") {
         openModeRoute("ticker-search", intent.argText, {
           action: "pane-template",
@@ -3959,7 +4107,7 @@ export function CommandBar({
       }
       return {
         id: `security-description:${match.arg}`,
-        label: `DES ${match.arg.toUpperCase()}`,
+        label: `${match.prefix} ${match.arg.toUpperCase()}`,
         detail: "Open security details or resolve the ticker",
         category: "Search",
         kind: "command",
@@ -5221,8 +5369,18 @@ export function CommandBar({
       Math.max(7, estimateWorkflowBodyRows(currentRoute)),
     )
     : baseBodyHeight;
-  const bodyHeight = currentRoute?.kind === "workflow" ? workflowBodyHeight : baseBodyHeight;
-  const listBodyHeight = baseBodyHeight;
+  const shouldUseCompactListHeight = nativePaneChrome
+    && visibleListState != null
+    && !themePickerActive
+    && !showCustomMultiSelectPicker;
+  const listBodyHeight = shouldUseCompactListHeight
+    ? Math.min(baseBodyHeight, Math.max(1, nativeListRows.length))
+    : baseBodyHeight;
+  const bodyHeight = currentRoute?.kind === "workflow"
+    ? workflowBodyHeight
+    : shouldUseCompactListHeight
+      ? listBodyHeight
+      : baseBodyHeight;
   const nativePanelPaddingColumns = nativePaneChrome
     ? Math.ceil((NATIVE_COMMAND_BAR_PADDING_X_PX * 2) / Math.max(1, cellWidthPx))
     : 0;
@@ -5233,7 +5391,7 @@ export function CommandBar({
     || currentRoute?.kind === "confirm"
     || showCustomMultiSelectPicker)
     ? 1
-    : 3;
+    : currentRoute ? 3 : 2;
   const barHeight = nativePaneChrome
     ? bodyHeight + nativeBodyChromeRows + nativePanelPaddingRows
     : bodyHeight + 7;

@@ -5,7 +5,18 @@ export function fuzzyMatch(query: string, target: string): { match: boolean; sco
   const t = target.toLowerCase();
 
   if (q.length === 0) return { match: true, score: 0 };
-  if (t.startsWith(q)) return { match: true, score: 1000 - q.length }; // exact prefix match
+  if (t === q) return { match: true, score: 2500 - q.length };
+
+  const tokens = t.split(/\s+/).filter(Boolean);
+  const exactTokenIndex = tokens.findIndex((token) => token === q);
+  if (exactTokenIndex >= 0) return { match: true, score: 2200 - q.length - exactTokenIndex };
+
+  const prefixTokenIndex = tokens.findIndex((token) => token.startsWith(q));
+  if (prefixTokenIndex >= 0) {
+    const token = tokens[prefixTokenIndex]!;
+    return { match: true, score: 1000 - q.length - prefixTokenIndex - (token.length - q.length) };
+  }
+
   if (t.includes(q)) return { match: true, score: 500 - q.length }; // substring match
 
   let qi = 0;

@@ -47,7 +47,7 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
 
   switch (match.command.id) {
     case "security-description":
-      return { kind: "search", badge: "DES", hint: "Open security details for a ticker" };
+      return { kind: "search", badge: match.prefix, hint: "Open security details for a ticker" };
     case "theme":
       return { kind: "themes", badge: "THEMES", hint: "Preview with arrows, Enter to save, Esc to revert" };
     case "plugins":
@@ -128,6 +128,7 @@ export function truncateText(text: string, width: number): string {
 
 function getCategoryPriority(category: string): number {
   const normalized = category.trim().toLowerCase();
+  if (normalized === "exact match") return -50;
   if (normalized === "saved") return -40;
   if (normalized === "primary listing") return -30;
   if (normalized === "other listings") return -20;
