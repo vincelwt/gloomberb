@@ -3,7 +3,12 @@ import type { ReactNode } from "react";
 import { colors, paneBg } from "../../theme/colors";
 import { PaneHeader } from "./pane-header";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane-footer";
-import { getPaneBodyHeight, NATIVE_PANE_BODY_LAYOUT_PROPS, shouldReservePaneFooter } from "./pane-sizing";
+import {
+  getNativePaneBodyHeight,
+  getPaneBodyHeight,
+  NATIVE_PANE_BODY_LAYOUT_PROPS,
+  shouldReservePaneFooter,
+} from "./pane-sizing";
 
 interface PaneWrapperProps {
   paneId?: string;
@@ -22,6 +27,23 @@ interface PaneWrapperProps {
   onActionMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
+}
+
+function resolvePaneBodyHeight(
+  height: number,
+  hasTitle: boolean,
+  reserveFooter: boolean,
+  nativePaneChrome: boolean | undefined,
+): number {
+  if (nativePaneChrome) {
+    return hasTitle
+      ? getNativePaneBodyHeight(height, reserveFooter)
+      : Math.max(1, height);
+  }
+
+  return hasTitle
+    ? getPaneBodyHeight(height, reserveFooter)
+    : Math.max(1, Math.floor(height));
 }
 
 export function PaneWrapper({
@@ -47,7 +69,7 @@ export function PaneWrapper({
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
   const bodyHeight = typeof height === "number"
-    ? title ? getPaneBodyHeight(height, reserveFooter) : Math.max(1, Math.floor(height))
+    ? resolvePaneBodyHeight(height, !!title, reserveFooter, nativePaneChrome)
     : undefined;
   const bodyLayoutProps = nativePaneChrome
     ? NATIVE_PANE_BODY_LAYOUT_PROPS

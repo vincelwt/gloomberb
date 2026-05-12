@@ -9,7 +9,7 @@ import { colors, floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../.
 import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane-footer";
 import { PaneContent } from "./pane-content";
-import { getPaneBodyWidth, NATIVE_PANE_BODY_LAYOUT_PROPS } from "./pane-sizing";
+import { getNativePaneBodyWidth, getPaneBodyWidth, NATIVE_PANE_BODY_LAYOUT_PROPS } from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 import {
@@ -52,7 +52,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     ? getPaneDisplayTitle(titleState, instance, paneDef)
     : "Detached Pane";
   const focused = windowFocused;
-  const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(width)) : getPaneBodyWidth(width);
+  const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(width) : getPaneBodyWidth(width);
 
   const focusPane = useCallback(() => {
     setWindowFocused(true);

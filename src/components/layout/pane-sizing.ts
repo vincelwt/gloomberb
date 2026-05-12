@@ -20,3 +20,15 @@ export function getPaneBodyHeight(height: number, reserveFooter = true): number 
 export function getPaneBodyWidth(width: number): number {
   return Math.max(1, Math.floor(width));
 }
+
+export function getNativePaneBodyHeight(height: number, reserveFooter = true): number {
+  const preciseHeight = Number.isFinite(height) ? height : 1;
+  return Math.max(
+    1,
+    preciseHeight - PANE_HEADER_ROWS - (reserveFooter ? PANE_FOOTER_ROWS : 0),
+  );
+}
+
+export function getNativePaneBodyWidth(width: number): number {
+  return Math.max(1, Number.isFinite(width) ? width : 1);
+}

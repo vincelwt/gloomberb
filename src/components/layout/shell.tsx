@@ -50,7 +50,13 @@ import { FloatingPaneWrapper } from "./floating-pane";
 import { PaneContent } from "./pane-content";
 import { PaneWrapper } from "./pane";
 import { hasPaneFooterContent, PaneFooterProvider } from "./pane-footer";
-import { getPaneBodyHeight, getPaneBodyWidth, shouldReservePaneFooter } from "./pane-sizing";
+import {
+  getNativePaneBodyHeight,
+  getNativePaneBodyWidth,
+  getPaneBodyHeight,
+  getPaneBodyWidth,
+  shouldReservePaneFooter,
+} from "./pane-sizing";
 import { getPaneDisplayTitle } from "./pane-title";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "./titlebar-overlay";
 import { capturePaneScreenshotPngBase64 } from "../../utils/dom-screenshot";
@@ -1621,7 +1627,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         if (!pane) return null;
         const focused = focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
-        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(leaf.rect.width)) : getPaneBodyWidth(leaf.rect.width);
+        const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(leaf.rect.width) : getPaneBodyWidth(leaf.rect.width);
         return (
           <Box
             key={`dock:${leaf.instanceId}`}
@@ -1634,7 +1640,9 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
             <PaneFooterProvider>
               {(footer) => {
                 const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
-                const bodyHeight = getPaneBodyHeight(leaf.rect.height, reserveFooter);
+                const bodyHeight = nativePaneChrome
+                  ? getNativePaneBodyHeight(leaf.rect.height, reserveFooter)
+                  : getPaneBodyHeight(leaf.rect.height, reserveFooter);
                 return (
                   <PaneWrapper
                     paneId={leaf.instanceId}
@@ -1674,12 +1682,14 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
           : rect;
         const focused = focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
-        const bodyWidth = nativePaneChrome ? Math.max(1, Math.floor(preview.width)) : getPaneBodyWidth(preview.width);
+        const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(preview.width) : getPaneBodyWidth(preview.width);
         return (
           <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
             {(footer) => {
               const reserveFooter = shouldReservePaneFooter(nativePaneChrome, hasPaneFooterContent(footer));
-              const bodyHeight = getPaneBodyHeight(preview.height, reserveFooter);
+              const bodyHeight = nativePaneChrome
+                ? getNativePaneBodyHeight(preview.height, reserveFooter)
+                : getPaneBodyHeight(preview.height, reserveFooter);
               return (
                 <FloatingPaneWrapper
                   paneId={pane.instance.instanceId}
