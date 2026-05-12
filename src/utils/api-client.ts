@@ -48,7 +48,7 @@ export interface ChatMessage {
   replyToId: string | null;
   createdAt: string;
   user: { id: string; username: string; displayName: string };
-  replyTo?: { content: string; user: { username: string } } | null;
+  replyTo?: { content: string; user: { id?: string; username: string } } | null;
   clientStatus?: "sending" | "failed";
   clientError?: string | null;
 }
@@ -57,6 +57,29 @@ export interface ChatChannel {
   id: string;
   name: string;
   created_at: string;
+}
+
+export interface ChatChannelState {
+  channelId: string;
+  notificationsEnabled: boolean;
+  lastReadMessageId: string | null;
+  unreadCount: number;
+}
+
+export interface ChatNotification {
+  id: string;
+  type: "reply";
+  channelId: string;
+  messageId: string;
+  createdAt: string;
+  message: ChatMessage;
+}
+
+export interface ChatStateResponse {
+  channels: ChatChannel[];
+  onlineCount: number;
+  channelStates: ChatChannelState[];
+  notifications: ChatNotification[];
 }
 
 export interface AuthUser {
@@ -352,6 +375,21 @@ function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => normalizeChatMessage(message));
 }
 
+function normalizeChatNotification(notification: ChatNotification): ChatNotification {
+  return {
+    ...notification,
+    createdAt: normalizeTimestamp(notification.createdAt),
+    message: normalizeChatMessage(notification.message),
+  };
+}
+
+function normalizeChatState(response: ChatStateResponse): ChatStateResponse {
+  return {
+    ...response,
+    notifications: response.notifications.map(normalizeChatNotification),
+  };
+}
+
 function normalizeTweet(tweet: CloudTweetPayload): CloudTweetPayload {
   return {
     ...tweet,
@@ -370,6 +408,8 @@ function normalizeTweetSearchResponse(response: CloudTweetSearchResponse): Cloud
 }
 
 type ChannelListener = (message: ChatMessage) => void;
+type ChatNotificationListener = (notification: ChatNotification) => void;
+type ChatPresenceListener = (onlineCount: number) => void;
 type QuoteListener = (target: QuoteStreamTarget, quote: CloudQuotePayload) => void;
 type SessionCookieName = (typeof SESSION_COOKIE_NAMES)[number];
 
@@ -408,6 +448,8 @@ class GloomApiClient {
   private reconnectDelayMs = 1000;
 
   private readonly channelListeners = new Map<string, Set<ChannelListener>>();
+  private readonly chatNotificationListeners = new Set<ChatNotificationListener>();
+  private readonly chatPresenceListeners = new Set<ChatPresenceListener>();
   private readonly quoteListeners = new Map<string, Set<QuoteListener>>();
   private readonly quoteTargets = new Map<string, QuoteStreamTarget>();
   private readonly pendingQuoteSubscribes = new Map<string, QuoteStreamTarget>();
@@ -650,7 +692,12 @@ class GloomApiClient {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     if (payload && typeof payload === "object" && "type" in (payload as Record<string, unknown>)) {
       const type = (payload as Record<string, unknown>).type;
-      if (type === "market.subscribe" || type === "market.unsubscribe" || type === "chat.subscribe") {
+      if (
+        type === "market.subscribe"
+        || type === "market.unsubscribe"
+        || type === "chat.subscribe"
+        || type === "chat.unsubscribe"
+      ) {
         cloudApiLog.info("send websocket message", payload);
       }
     }
@@ -773,6 +820,21 @@ class GloomApiClient {
       return;
     }
 
+    if (parsed?.type === "chat.notification" && parsed.data) {
+      const notification = normalizeChatNotification(parsed.data as ChatNotification);
+      for (const listener of this.chatNotificationListeners) {
+        listener(notification);
+      }
+      return;
+    }
+
+    if (parsed?.type === "chat.presence" && typeof parsed.onlineCount === "number") {
+      for (const listener of this.chatPresenceListeners) {
+        listener(parsed.onlineCount);
+      }
+      return;
+    }
+
     if (parsed?.type === "market.quote" && parsed.quote && typeof parsed.symbol === "string") {
       const key = marketKey(parsed.symbol, parsed.exchange);
       const target = this.quoteTargets.get(key) ?? {
@@ -853,6 +915,32 @@ class GloomApiClient {
     return this.request<ChatChannel[]>("/chat/channels");
   }
 
+  async getChatPresence(): Promise<{ onlineCount: number }> {
+    return this.request<{ onlineCount: number }>("/chat/presence");
+  }
+
+  async getChatState(): Promise<ChatStateResponse> {
+    const state = await this.request<ChatStateResponse>("/chat/state");
+    return normalizeChatState(state);
+  }
+
+  async updateChatChannelState(
+    channelId: string,
+    body: { notificationsEnabled?: boolean; readThroughMessageId?: string },
+  ): Promise<ChatChannelState> {
+    return this.request<ChatChannelState>(`/chat/channels/${channelId}/state`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async markChatNotificationsDelivered(notificationIds: string[]): Promise<{ delivered: number }> {
+    return this.request<{ delivered: number }>("/chat/notifications/delivered", {
+      method: "POST",
+      body: JSON.stringify({ notificationIds }),
+    });
+  }
+
   async getMessages(
     channelId: string,
     opts?: { after?: string; before?: string; limit?: number },
@@ -914,11 +1002,26 @@ class GloomApiClient {
         current.delete(onMessage);
         if (current.size === 0) {
           this.channelListeners.delete(channelId);
+          this.sendSocketMessage({ type: "chat.unsubscribe", channelId });
         }
         if (!this.shouldKeepSocketOpen()) {
           this.teardownSocket();
         }
       },
+    };
+  }
+
+  subscribeChatNotifications(listener: ChatNotificationListener): () => void {
+    this.chatNotificationListeners.add(listener);
+    return () => {
+      this.chatNotificationListeners.delete(listener);
+    };
+  }
+
+  subscribeChatPresence(listener: ChatPresenceListener): () => void {
+    this.chatPresenceListeners.add(listener);
+    return () => {
+      this.chatPresenceListeners.delete(listener);
     };
   }
 
@@ -997,6 +1100,8 @@ class GloomApiClient {
       channelTargets: this.channelListeners.size,
     });
     this.channelListeners.clear();
+    this.chatNotificationListeners.clear();
+    this.chatPresenceListeners.clear();
     this.quoteListeners.clear();
     this.quoteTargets.clear();
     this.pendingQuoteSubscribes.clear();

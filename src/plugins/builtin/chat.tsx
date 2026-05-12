@@ -34,6 +34,8 @@ interface ChatContentProps {
     | "attachChannelView"
     | "getSnapshot"
     | "refreshChannels"
+    | "refreshChatState"
+    | "refreshPresence"
     | "loadOlderMessages"
     | "loadOlderChannelMessages"
     | "refreshMessages"
@@ -43,6 +45,7 @@ interface ChatContentProps {
     | "sendToChannel"
     | "setDraft"
     | "setChannelDraft"
+    | "setChannelNotificationsEnabled"
     | "setReplyToId"
     | "setChannelReplyToId"
     | "subscribe"
@@ -752,35 +755,45 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
 
 function ChannelSidebar({
   channels,
+  channelStates,
   activeChannelId,
+  onlineCount,
   width,
   height,
   focused,
   keyboardFocused,
   loading,
+  canManageNotifications,
   onSelect,
   onFocusRequest,
+  onToggleNotifications,
 }: {
   channels: ChatChannel[];
+  channelStates: ReturnType<ChatController["getSnapshot"]>["channelStates"];
   activeChannelId: string;
+  onlineCount: number;
   width: number;
   height: number;
   focused: boolean;
   keyboardFocused: boolean;
   loading: boolean;
+  canManageNotifications: boolean;
   onSelect?: (channelId: string) => void;
   onFocusRequest?: () => void;
+  onToggleNotifications?: (channelId: string, enabled: boolean) => void;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
   const borderWidth = nativePaneChrome ? 0 : width > 1 ? 1 : 0;
   const listWidth = Math.max(width - borderWidth, 1);
-  const labelWidth = Math.max(listWidth - 3, 1);
+  const notificationWidth = canManageNotifications ? 2 : 0;
+  const labelWidth = Math.max(listWidth - 3 - notificationWidth, 1);
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const sidebarBg = keyboardFocused ? blendHex(colors.panel, colors.borderFocused, 0.18) : colors.panel;
   const activeBg = keyboardFocused
     ? blendHex(colors.selected, colors.borderFocused, 0.32)
     : blendHex(colors.panel, colors.selected, 0.35);
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null);
+  const channelStateById = useMemo(() => new Map(channelStates.map((state) => [state.channelId, state])), [channelStates]);
   const sidebarLayoutHeight = nativePaneChrome ? "100%" : height;
   const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
   const sidebarBorder = borderWidth > 0
@@ -810,6 +823,9 @@ function ChannelSidebar({
       >
         {channels.map((channel) => {
           const active = channel.id === activeChannelId;
+          const channelState = channelStateById.get(channel.id);
+          const notificationsEnabled = channelState?.notificationsEnabled === true;
+          const unread = (channelState?.unreadCount ?? 0) > 0;
           const hovered = hoveredChannelId === channel.id && !active;
           const fg = active ? colors.selectedText : keyboardFocused ? colors.text : colors.textDim;
           const bg = active ? activeBg : hovered ? hoverBg() : sidebarBg;
@@ -824,6 +840,14 @@ function ChannelSidebar({
             onFocusRequest?.();
             onSelect?.(channel.id);
           };
+          const toggleNotifications = (event: any) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            if (event) {
+              event[CHAT_CHANNEL_MOUSE_HANDLED] = true;
+            }
+            onToggleNotifications?.(channel.id, !notificationsEnabled);
+          };
           return (
             <Box
               key={channel.id}
@@ -837,9 +861,27 @@ function ChannelSidebar({
               style={{ cursor: "pointer" }}
             >
               <Text fg={fg} selectable={false} onMouseDown={selectChannel}> </Text>
-              <Text fg={fg} selectable={false} onMouseDown={selectChannel}>{active ? "#" : " "}</Text>
-              <Text fg={fg} selectable={false} onMouseDown={selectChannel}>{truncateChannelLabel(label, labelWidth)}</Text>
+              <Text fg={fg} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={selectChannel}>{active ? "#" : " "}</Text>
+              <Text fg={fg} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={selectChannel}>{truncateChannelLabel(label, labelWidth)}</Text>
               <Box flexGrow={1} onMouseDown={selectChannel} />
+              {canManageNotifications && (
+                <Box
+                  width={notificationWidth}
+                  height={1}
+                  alignItems="center"
+                  justifyContent="center"
+                  onMouseDown={toggleNotifications}
+                  style={{ cursor: "pointer" }}
+                >
+                  <Text
+                    fg={notificationsEnabled ? colors.positive : colors.textMuted}
+                    selectable={false}
+                    onMouseDown={toggleNotifications}
+                  >
+                    {notificationsEnabled ? "◖)" : "◖·"}
+                  </Text>
+                </Box>
+              )}
             </Box>
           );
         })}
@@ -849,6 +891,10 @@ function ChannelSidebar({
             <Text fg={colors.textDim}> syncing</Text>
           </Box>
         )}
+        <Box height={1} width={listWidth} flexDirection="row">
+          <Text fg={colors.positive}>●</Text>
+          <Text fg={colors.textDim}>{` ${truncateChannelLabel(`${onlineCount} online`, Math.max(listWidth - 2, 1))}`}</Text>
+        </Box>
       </Box>
       {sidebarBorder}
       {nativePaneChrome && (
@@ -897,6 +943,8 @@ export function ChatContent({
   const composerTextWidth = Math.max(contentWidth - composerPrefixWidth, 1);
   const inputValueRef = useRef(initialSnapshot.draft);
   const [messages, setMessages] = useState<ChatMessage[]>(initialSnapshot.messages);
+  const [channelStates, setChannelStates] = useState(initialSnapshot.channelStates);
+  const [onlineCount, setOnlineCount] = useState(initialSnapshot.onlineCount);
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [user, setUser] = useState<{ id: string; username: string; emailVerified: boolean } | null>(initialSnapshot.user);
   const [loading, setLoading] = useState(initialSnapshot.loading);
@@ -951,6 +999,7 @@ export function ChatContent({
 
   useEffect(() => {
     void controller.refreshChannels().catch(() => {});
+    void controller.refreshPresence().catch(() => {});
     void controller.refreshSession().catch(() => {});
   }, [controller]);
 
@@ -961,6 +1010,8 @@ export function ChatContent({
     const snapshot = controller.getSnapshot(channelId);
     setMessages(snapshot.messages);
     setChannels(snapshot.channels);
+    setChannelStates(snapshot.channelStates);
+    setOnlineCount(snapshot.onlineCount);
     setChannelsLoading(snapshot.channelsLoading);
     setHasSavedSession(snapshot.hasSavedSession);
     setUser(snapshot.user);
@@ -986,6 +1037,8 @@ export function ChatContent({
     function handleSnapshot(snapshot: ReturnType<ChatController["getSnapshot"]>) {
       setMessages(snapshot.messages);
       setChannels(snapshot.channels);
+      setChannelStates(snapshot.channelStates);
+      setOnlineCount(snapshot.onlineCount);
       setChannelsLoading(snapshot.channelsLoading);
       setHasSavedSession(snapshot.hasSavedSession);
       setUser(snapshot.user);
@@ -1131,7 +1184,7 @@ export function ChatContent({
       oldestMessageId: messages[0]?.id ?? null,
       scrollHeight: getScrollHeight(scrollBox, exactPixels),
       scrollTop: getScrollTop(scrollBox, exactPixels),
-      selectedMessageId: selectedIdx >= 0 ? messages[selectedIdx]?.id ?? null : null,
+      selectedMessageId: selectedIdx >= 0 ? messages[selectedIdx]?.id ?? null : messages[0]?.id ?? null,
     };
     setFollowMessages(false);
     const request = useDefaultControllerChannel
@@ -1469,30 +1522,32 @@ export function ChatContent({
     const anchor = prependAnchorRef.current;
     if (!anchor || loadingOlderMessages) return;
 
-    queueMicrotask(() => {
-      const currentAnchor = prependAnchorRef.current;
-      const scrollBox = scrollRef.current;
-      if (!currentAnchor || !scrollBox) return;
-      if (pendingJumpMessageIdRef.current) {
-        prependAnchorRef.current = null;
-        return;
-      }
-
-      const previousOldestIndex = currentAnchor.oldestMessageId
-        ? messages.findIndex((message) => message.id === currentAnchor.oldestMessageId)
-        : -1;
-      const exactPixels = nativePaneChrome === true && hasPixelScrollMetrics(scrollBox);
-      const addedRows = !exactPixels && previousOldestIndex > 0
-        ? getMessageTopOffset(messages, previousOldestIndex, contentWidth)
-        : Math.max(0, getScrollHeight(scrollBox, exactPixels) - currentAnchor.scrollHeight);
-      scrollToPosition(scrollBox, currentAnchor.scrollTop + addedRows, exactPixels);
-      if (currentAnchor.selectedMessageId) {
-        const selectedMessageIndex = messages.findIndex((message) => message.id === currentAnchor.selectedMessageId);
-        if (selectedMessageIndex >= 0) {
-          setSelectedIdx(selectedMessageIndex);
-        }
-      }
+    const currentAnchor = anchor;
+    const scrollBox = scrollRef.current;
+    if (!scrollBox) return;
+    if (pendingJumpMessageIdRef.current) {
       prependAnchorRef.current = null;
+      return;
+    }
+
+    const previousOldestIndex = currentAnchor.oldestMessageId
+      ? messages.findIndex((message) => message.id === currentAnchor.oldestMessageId)
+      : -1;
+    const exactPixels = nativePaneChrome === true && hasPixelScrollMetrics(scrollBox);
+    const addedRows = !exactPixels && previousOldestIndex > 0
+      ? getMessageTopOffset(messages, previousOldestIndex, contentWidth)
+      : Math.max(0, getScrollHeight(scrollBox, exactPixels) - currentAnchor.scrollHeight);
+    scrollToPosition(scrollBox, currentAnchor.scrollTop + addedRows, exactPixels);
+    if (currentAnchor.selectedMessageId) {
+      const selectedMessageIndex = messages.findIndex((message) => message.id === currentAnchor.selectedMessageId);
+      if (selectedMessageIndex >= 0) {
+        setSelectedIdx(selectedMessageIndex);
+      }
+    }
+    queueMicrotask(() => {
+      if (prependAnchorRef.current === currentAnchor) {
+        prependAnchorRef.current = null;
+      }
     });
   }, [contentWidth, loadingOlderMessages, messages, nativePaneChrome]);
 
@@ -1505,6 +1560,7 @@ export function ChatContent({
     const sb = scrollRef.current;
     if (!sb) return;
     if (!selectionActive) return;
+    if (prependAnchorRef.current) return;
     if (nativePaneChrome) {
       const selectedMessageId = messages[selectedIdx]?.id ?? "";
       runAfterLayout(() => scrollElementIntoScrollBoxView(scrollRef.current, messageElementsRef.current.get(selectedMessageId)));
@@ -1547,14 +1603,20 @@ export function ChatContent({
       {showChannelSidebar && (
         <ChannelSidebar
           channels={channels}
+          channelStates={channelStates}
           activeChannelId={channelId}
+          onlineCount={onlineCount}
           width={channelSidebarWidth}
           height={height}
           focused={focused}
           keyboardFocused={sidebarFocused}
           loading={channelsLoading}
+          canManageNotifications={!!user?.emailVerified}
           onSelect={changeChannel}
           onFocusRequest={() => setSidebarFocused(true)}
+          onToggleNotifications={(nextChannelId, enabled) => {
+            controller.setChannelNotificationsEnabled(nextChannelId, enabled);
+          }}
         />
       )}
 

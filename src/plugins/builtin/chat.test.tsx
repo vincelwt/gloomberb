@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, useCallback, useMemo, useRef, useState } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import { testRender } from "../../renderers/opentui/test-utils";
@@ -8,7 +8,7 @@ import { colors } from "../../theme/colors";
 import { createDefaultConfig, findPaneInstance, type PaneInstanceConfig } from "../../types/config";
 import type { PersistedResourceValue } from "../../types/persistence";
 import type { PluginPersistence } from "../../types/plugin";
-import { Box } from "../../ui";
+import { Box, TextAttributes } from "../../ui";
 import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
@@ -21,6 +21,8 @@ const TRANSCRIPT_SOURCE = "server";
 const TRANSCRIPT_SCHEMA_VERSION = 2;
 const originalConnectChannel = apiClient.connectChannel.bind(apiClient);
 const originalGetChannels = apiClient.getChannels.bind(apiClient);
+const originalGetChatPresence = apiClient.getChatPresence.bind(apiClient);
+const originalUpdateChatChannelState = apiClient.updateChatChannelState.bind(apiClient);
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -150,6 +152,8 @@ function createController(options: {
   controller.attachPersistence(persistence);
   controller.refreshSession = async () => {};
   controller.refreshMessages = async () => {};
+  controller.refreshPresence = async () => {};
+  controller.refreshChatState = async () => {};
   return controller;
 }
 
@@ -248,11 +252,23 @@ function hexToRgbaInts(hex: string) {
   ].join(",");
 }
 
+beforeEach(() => {
+  apiClient.getChatPresence = async () => ({ onlineCount: 0 });
+  apiClient.updateChatChannelState = async (channelId, body) => ({
+    channelId,
+    notificationsEnabled: body.notificationsEnabled ?? false,
+    lastReadMessageId: body.readThroughMessageId ?? null,
+    unreadCount: 0,
+  });
+});
+
 afterEach(async () => {
   setSharedRegistryForTests(undefined);
   setSharedMarketDataForTests(undefined);
   apiClient.connectChannel = originalConnectChannel;
   apiClient.getChannels = originalGetChannels;
+  apiClient.getChatPresence = originalGetChatPresence;
+  apiClient.updateChatChannelState = originalUpdateChatChannelState;
   apiClient.setSessionToken(null);
 
   if (testSetup) {
@@ -466,6 +482,136 @@ describe("ChatContent", () => {
     await flushFrame();
 
     expect(testSetup.captureCharFrame()).toContain("#options");
+  });
+
+  test("renders unread sidebar channels in bold and clears them when opened", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const optionsState = (controller as any).ensureChannelState("options");
+    optionsState.unreadCount = 2;
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    function ChannelPane() {
+      const [channelId, setChannelId] = useState("equities");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={12}
+              focused
+              channelId={channelId}
+              onChannelChange={setChannelId}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<ChannelPane />, {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+    const unreadLine = testSetup.captureSpans().lines.find((line) => lineText(line).includes("options"));
+    const unreadSpan = unreadLine?.spans.find((span) => span.text.includes("options"));
+    expect((unreadSpan?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("options"));
+    const col = lines[row]?.indexOf("options") ?? -1;
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    const readLine = testSetup.captureSpans().lines.find((line) => lineText(line).includes("#options"));
+    const readSpan = readLine?.spans.find((span) => span.text.includes("options"));
+    expect((readSpan?.attributes ?? 0) & TextAttributes.BOLD).toBe(0);
+  });
+
+  test("toggles sidebar channel notifications without selecting the channel", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const toggles: Array<{ channelId: string; enabled: boolean }> = [];
+    controller.setChannelNotificationsEnabled = (channelId: string, enabled: boolean) => {
+      toggles.push({ channelId, enabled });
+    };
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    function ChannelPane() {
+      const [channelId, setChannelId] = useState("equities");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={12}
+              focused
+              channelId={channelId}
+              onChannelChange={setChannelId}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<ChannelPane />, {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    const lines = frame.split("\n");
+    const row = lines.findIndex((line) => line.includes("options"));
+    const col = lines[row]?.lastIndexOf("·") ?? -1;
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(toggles).toEqual([{ channelId: "options", enabled: true }]);
+    expect(testSetup.captureCharFrame()).toContain("#equities");
+    expect(testSetup.captureCharFrame()).not.toContain("#options");
+  });
+
+  test("shows the sidebar online count footer", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).onlineCount = 6;
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 90, height: 12 }), {
+        width: 90,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    expect(testSetup.captureCharFrame()).toContain("● 6 online");
   });
 
   test("uses arrows to move between channel sidebar and chat content", async () => {

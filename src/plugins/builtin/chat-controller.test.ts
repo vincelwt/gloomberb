@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AppNotificationRequest, PluginPersistence } from "../../types/plugin";
 import type { PersistedResourceValue } from "../../types/persistence";
-import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
+import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../utils/api-client";
 import { ChatController } from "./chat-controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
@@ -12,6 +12,12 @@ const originalConnectChannel = apiClient.connectChannel.bind(apiClient);
 const originalGetSession = apiClient.getSession.bind(apiClient);
 const originalGetMessages = apiClient.getMessages.bind(apiClient);
 const originalGetChannels = apiClient.getChannels.bind(apiClient);
+const originalGetChatPresence = apiClient.getChatPresence.bind(apiClient);
+const originalGetChatState = apiClient.getChatState.bind(apiClient);
+const originalUpdateChatChannelState = apiClient.updateChatChannelState.bind(apiClient);
+const originalMarkChatNotificationsDelivered = apiClient.markChatNotificationsDelivered.bind(apiClient);
+const originalSubscribeChatNotifications = apiClient.subscribeChatNotifications.bind(apiClient);
+const originalSubscribeChatPresence = apiClient.subscribeChatPresence.bind(apiClient);
 
 const SERVER_CHAT_CHANNELS: ChatChannel[] = [
   { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
@@ -100,6 +106,30 @@ class TrackingPersistence extends MemoryPersistence {
   }
 }
 
+beforeEach(() => {
+  apiClient.getChatPresence = async () => ({ onlineCount: 0 });
+  apiClient.getChatState = async () => ({
+    channels: SERVER_CHAT_CHANNELS,
+    onlineCount: 0,
+    channelStates: SERVER_CHAT_CHANNELS.map((channel) => ({
+      channelId: channel.id,
+      notificationsEnabled: false,
+      lastReadMessageId: null,
+      unreadCount: 0,
+    })),
+    notifications: [],
+  });
+  apiClient.updateChatChannelState = async (channelId, body) => ({
+    channelId,
+    notificationsEnabled: body.notificationsEnabled ?? false,
+    lastReadMessageId: body.readThroughMessageId ?? null,
+    unreadCount: 0,
+  });
+  apiClient.markChatNotificationsDelivered = async () => ({ delivered: 1 });
+  apiClient.subscribeChatNotifications = () => () => {};
+  apiClient.subscribeChatPresence = () => () => {};
+});
+
 afterEach(() => {
   apiClient.dispose();
   apiClient.setSessionToken(null);
@@ -107,6 +137,12 @@ afterEach(() => {
   apiClient.getSession = originalGetSession;
   apiClient.getMessages = originalGetMessages;
   apiClient.getChannels = originalGetChannels;
+  apiClient.getChatPresence = originalGetChatPresence;
+  apiClient.getChatState = originalGetChatState;
+  apiClient.updateChatChannelState = originalUpdateChatChannelState;
+  apiClient.markChatNotificationsDelivered = originalMarkChatNotificationsDelivered;
+  apiClient.subscribeChatNotifications = originalSubscribeChatNotifications;
+  apiClient.subscribeChatPresence = originalSubscribeChatPresence;
 });
 
 describe("ChatController", () => {
@@ -280,6 +316,7 @@ describe("ChatController", () => {
     const controller = new ChatController();
 
     apiClient.setSessionToken("token-123");
+    (controller as any).sessionToken = "token-123";
     (controller as any).user = { id: "u1", username: "vince", emailVerified: false };
 
     controller.setAppActive(false);
@@ -297,6 +334,7 @@ describe("ChatController", () => {
     let closed = false;
 
     apiClient.setSessionToken("token-123");
+    (controller as any).sessionToken = "token-123";
     (controller as any).user = { id: "u1", username: "vince", emailVerified: false };
     (controller as any).syncVerificationPolling();
     expect((controller as any).verificationPollTimer).not.toBeNull();
@@ -853,6 +891,222 @@ describe("ChatController", () => {
     });
 
     detachView();
+  });
+
+  test("loads server chat state, pending reply notifications, and acks delivery", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const deliveredIds: string[][] = [];
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    apiClient.getSession = async () => ({
+      id: "u1",
+      name: "Vince",
+      email: "vince@example.com",
+      username: "vince",
+      emailVerified: true,
+      image: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    apiClient.getChatState = async () => ({
+      channels: SERVER_CHAT_CHANNELS,
+      onlineCount: 7,
+      channelStates: [{
+        channelId: "options",
+        notificationsEnabled: true,
+        lastReadMessageId: "m1",
+        unreadCount: 3,
+      }],
+      notifications: [{
+        id: "n1",
+        type: "reply",
+        channelId: "options",
+        messageId: "m2",
+        createdAt: "2026-03-28T00:02:00.000Z",
+        message: {
+          id: "m2",
+          channelId: "options",
+          content: "answering you",
+          replyToId: "m1",
+          createdAt: "2026-03-28T00:02:00.000Z",
+          user: { id: "u2", username: "bob", displayName: "Bob" },
+          replyTo: { content: "question", user: { id: "u1", username: "vince" } },
+        },
+      }],
+    });
+    apiClient.markChatNotificationsDelivered = async (ids) => {
+      deliveredIds.push(ids);
+      return { delivered: ids.length };
+    };
+    apiClient.connectChannel = () => ({
+      send: async () => {
+        throw new Error("not implemented");
+      },
+      close: () => {},
+    });
+
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
+    });
+    controller.attachPersistence(persistence);
+
+    await controller.refreshSession();
+
+    expect(controller.getSnapshot("options").onlineCount).toBe(7);
+    expect(controller.getSnapshot("options").channelStates.find((entry) => entry.channelId === "options")).toMatchObject({
+      notificationsEnabled: true,
+      unreadCount: 3,
+    });
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      subtitle: "#options",
+      body: "@bob replied to you: answering you",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
+    expect(deliveredIds).toEqual([["n1"]]);
+  });
+
+  test("toggles channel notifications optimistically and keeps the channel connected", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const connectedChannels: string[] = [];
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    apiClient.updateChatChannelState = async (channelId, body) => ({
+      channelId,
+      notificationsEnabled: body.notificationsEnabled === true,
+      lastReadMessageId: null,
+      unreadCount: 0,
+    });
+    apiClient.connectChannel = (channelId) => {
+      connectedChannels.push(channelId);
+      return {
+        send: async () => {
+          throw new Error("not implemented");
+        },
+        close: () => {},
+      };
+    };
+
+    controller.attachPersistence(persistence);
+    controller.setChannelNotificationsEnabled("options", true);
+    await flushMicrotasks();
+
+    expect(controller.getSnapshot("options").channelStates.find((entry) => entry.channelId === "options")).toMatchObject({
+      notificationsEnabled: true,
+    });
+    expect(connectedChannels).toContain("options");
+  });
+
+  test("dedupes reply notifications by message id", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const notification: ChatNotification = {
+      id: "n1",
+      type: "reply",
+      channelId: "everyone",
+      messageId: "m2",
+      createdAt: "2026-03-28T00:02:00.000Z",
+      message: {
+        id: "m2",
+        channelId: "everyone",
+        content: "same reply",
+        replyToId: "m1",
+        createdAt: "2026-03-28T00:02:00.000Z",
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+        replyTo: { content: "question", user: { id: "u1", username: "vince" } },
+      },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.setNotifier((entry) => {
+      notifications.push(entry);
+    });
+    controller.attachPersistence(persistence);
+
+    (controller as any).handleChatNotification(notification);
+    (controller as any).handleChatNotification({ ...notification, id: "n2" });
+
+    expect(notifications).toHaveLength(1);
+  });
+
+  test("tracks unread channel messages and clears them when the channel opens", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: "options",
+      content: "new option flow",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.attachPersistence(persistence);
+
+    (controller as any).mergeMessages("options", [message]);
+
+    expect(controller.getSnapshot("options").channelStates.find((entry) => entry.channelId === "options")).toMatchObject({
+      unreadCount: 1,
+    });
+
+    const detachView = controller.attachChannelView("options");
+
+    expect(controller.getSnapshot("options").channelStates.find((entry) => entry.channelId === "options")).toMatchObject({
+      unreadCount: 0,
+    });
+    detachView();
+  });
+
+  test("reply notifications fire even when channel notifications are disabled", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const message: ChatMessage = {
+      id: "m2",
+      channelId: "options",
+      content: "reply without channel notify",
+      replyToId: "m1",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+      replyTo: { content: "question", user: { id: "u1", username: "vince" } },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
+    });
+    controller.attachPersistence(persistence);
+
+    (controller as any).mergeMessages("options", [message]);
+
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      subtitle: "#options",
+      body: "@bob replied to you: reply without channel notify",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
   });
 
   test("recovers from a legacy timestamp cursor by falling back to a full transcript fetch", async () => {

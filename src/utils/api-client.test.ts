@@ -282,6 +282,134 @@ describe("apiClient chat timestamps", () => {
     expect(seenCreatedAts).toEqual(["2026-04-08T07:28:27.625Z"]);
     channel.close();
   });
+
+  test("fetches chat state and normalizes pending notification timestamps", async () => {
+    let requestedUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      requestedUrl = String(input);
+      return createResponse({
+        channels: [{ id: "everyone", name: "everyone", created_at: "2026-04-08T07:00:00.000Z" }],
+        onlineCount: 2,
+        channelStates: [{
+          channelId: "everyone",
+          notificationsEnabled: true,
+          lastReadMessageId: "m1",
+          unreadCount: 1,
+        }],
+        notifications: [{
+          id: "n1",
+          type: "reply",
+          channelId: "everyone",
+          messageId: "m2",
+          createdAt: "2026-04-08 07:30:00.000",
+          message: {
+            id: "m2",
+            channelId: "everyone",
+            content: "reply",
+            replyToId: "m1",
+            createdAt: "2026-04-08 07:29:00.000",
+            user: { id: "u2", username: "bob", displayName: "Bob" },
+            replyTo: { content: "parent", user: { id: "u1", username: "vince" } },
+          },
+        }],
+      });
+    });
+
+    const state = await apiClient.getChatState();
+
+    expect(new URL(requestedUrl).pathname).toBe("/chat/state");
+    expect(state.onlineCount).toBe(2);
+    expect(state.notifications[0]?.createdAt).toBe("2026-04-08T07:30:00.000Z");
+    expect(state.notifications[0]?.message.createdAt).toBe("2026-04-08T07:29:00.000Z");
+  });
+
+  test("updates chat channel state and marks notifications delivered", async () => {
+    const requests: Array<{ path: string; method: string; body: unknown }> = [];
+    const responses = [
+      createResponse({
+        channelId: "everyone",
+        notificationsEnabled: true,
+        lastReadMessageId: "m2",
+        unreadCount: 0,
+      }),
+      createResponse({ delivered: 2 }),
+      createResponse({ onlineCount: 4 }),
+    ];
+    globalThis.fetch = mockFetch(async (input: Request | string | URL, init?: RequestInit) => {
+      requests.push({
+        path: new URL(String(input)).pathname,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      return responses.shift() as Response;
+    });
+
+    await apiClient.updateChatChannelState("everyone", {
+      notificationsEnabled: true,
+      readThroughMessageId: "m2",
+    });
+    await apiClient.markChatNotificationsDelivered(["n1", "n2"]);
+    const presence = await apiClient.getChatPresence();
+
+    expect(requests).toEqual([
+      {
+        path: "/chat/channels/everyone/state",
+        method: "PATCH",
+        body: { notificationsEnabled: true, readThroughMessageId: "m2" },
+      },
+      {
+        path: "/chat/notifications/delivered",
+        method: "POST",
+        body: { notificationIds: ["n1", "n2"] },
+      },
+      {
+        path: "/chat/presence",
+        method: "GET",
+        body: null,
+      },
+    ]);
+    expect(presence).toEqual({ onlineCount: 4 });
+  });
+
+  test("emits websocket chat presence and notification events", async () => {
+    const seenPresence: number[] = [];
+    const seenNotifications: string[] = [];
+    const unsubscribePresence = apiClient.subscribeChatPresence((onlineCount) => {
+      seenPresence.push(onlineCount);
+    });
+    const unsubscribeNotifications = apiClient.subscribeChatNotifications((notification) => {
+      seenNotifications.push(`${notification.id}:${notification.message.createdAt}`);
+    });
+
+    await (apiClient as any).handleSocketMessage(JSON.stringify({
+      type: "chat.presence",
+      onlineCount: 5,
+    }));
+    await (apiClient as any).handleSocketMessage(JSON.stringify({
+      type: "chat.notification",
+      data: {
+        id: "n1",
+        type: "reply",
+        channelId: "everyone",
+        messageId: "m2",
+        createdAt: "2026-04-08 07:30:00.000",
+        message: {
+          id: "m2",
+          channelId: "everyone",
+          content: "reply",
+          replyToId: "m1",
+          createdAt: "2026-04-08 07:29:00.000",
+          user: { id: "u2", username: "bob", displayName: "Bob" },
+          replyTo: { content: "parent", user: { id: "u1", username: "vince" } },
+        },
+      },
+    }));
+
+    expect(seenPresence).toEqual([5]);
+    expect(seenNotifications).toEqual(["n1:2026-04-08T07:29:00.000Z"]);
+    unsubscribePresence();
+    unsubscribeNotifications();
+  });
 });
 
 describe("apiClient cloud news", () => {

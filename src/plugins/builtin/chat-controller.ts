@@ -1,5 +1,12 @@
 import type { AppNotificationRequest, PluginPersistence, PluginResumeState } from "../../types/plugin";
-import { apiClient, type ChatChannel, type ChatMessage, type PersistedAuthUser } from "../../utils/api-client";
+import {
+  apiClient,
+  type ChatChannel,
+  type ChatChannelState,
+  type ChatMessage,
+  type ChatNotification,
+  type PersistedAuthUser,
+} from "../../utils/api-client";
 import { debugLog } from "../../utils/debug-log";
 import { toTimestampMillis } from "../../utils/timestamp";
 
@@ -44,11 +51,13 @@ interface PersistedTranscript {
 export interface ChatControllerSnapshot {
   channelId: string;
   channels: ChatChannel[];
+  channelStates: ChatChannelState[];
   channelsLoading: boolean;
   loading: boolean;
   loadingOlderMessages: boolean;
   hasOlderMessages: boolean;
   hasSavedSession: boolean;
+  onlineCount: number;
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
   draft: string;
@@ -71,6 +80,8 @@ interface ChannelRuntimeState {
   replyToId: string | null;
   lastCursor: string | null;
   lastViewedMessageId: string | null;
+  notificationsEnabled: boolean;
+  unreadCount: number;
   wsConnection: ChatConnection | null;
   wsConnected: boolean;
   draftSyncTimer: ReturnType<typeof setTimeout> | null;
@@ -105,6 +116,8 @@ function createEmptyChannelState(): ChannelRuntimeState {
     replyToId: null,
     lastCursor: null,
     lastViewedMessageId: null,
+    notificationsEnabled: false,
+    unreadCount: 0,
     wsConnection: null,
     wsConnected: false,
     draftSyncTimer: null,
@@ -152,6 +165,23 @@ function formatMentionToast(message: ChatMessage): string {
   return `@${author} mentioned you: ${snippet}`;
 }
 
+function formatReplyToast(message: ChatMessage): string {
+  const author = message.user.username || "Someone";
+  const normalized = message.content.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return `@${author} replied to you.`;
+  }
+  const snippet = normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
+  return `@${author} replied to you: ${snippet}`;
+}
+
+function formatChannelToast(channelId: string, message: ChatMessage): string {
+  const author = message.user.username || "Someone";
+  const normalized = message.content.replace(/\s+/g, " ").trim();
+  const snippet = normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
+  return snippet ? `#${channelId} @${author}: ${snippet}` : `#${channelId} @${author} sent a message.`;
+}
+
 function isLegacyTimestampCursor(cursor: string | null): boolean {
   return !!cursor && ISO_TIMESTAMP_CURSOR.test(cursor);
 }
@@ -182,9 +212,11 @@ export class ChatController {
   private resume: PluginResumeState | null = null;
   private appActive = true;
   private hydrated = false;
+  private sessionToken: string | null = null;
   private sessionChecked = false;
   private user: { id: string; username: string; emailVerified: boolean } | null = null;
   private channels: ChatChannel[] = [];
+  private onlineCount = 0;
   private channelsLoading = false;
   private channelsPromise: Promise<void> | null = null;
   private channelStates = new Map<string, ChannelRuntimeState>();
@@ -193,6 +225,9 @@ export class ChatController {
   private pendingMessageSeq = 0;
   private notifyFn: (notification: AppNotificationRequest) => void = () => {};
   private listeners = new Set<ChannelListenerEntry>();
+  private chatNotificationUnsubscribe: (() => void) | null = null;
+  private chatPresenceUnsubscribe: (() => void) | null = null;
+  private notifiedMessageIds = new Set<string>();
 
   private get wsConnection(): ChatConnection | null {
     return this.ensureChannelState(DEFAULT_CHAT_CHANNEL_ID).wsConnection;
@@ -217,7 +252,8 @@ export class ChatController {
     }) ?? this.persistence.getState<PersistedSessionState>(SESSION_STATE_KEY, {
       schemaVersion: SESSION_SCHEMA_VERSION,
     });
-    apiClient.setSessionToken(session?.sessionToken ?? null);
+    this.sessionToken = session?.sessionToken ?? null;
+    apiClient.setSessionToken(this.sessionToken);
     // WebSocket tokens are short-lived connection credentials. Reusing a persisted
     // one can trap reconnects on an expired token even while the session cookie is valid.
     apiClient.setWebSocketToken(null);
@@ -259,11 +295,13 @@ export class ChatController {
     return {
       channelId: normalizedChannelId,
       channels: this.channels,
+      channelStates: this.getChannelStateSnapshots(),
       channelsLoading: this.channelsLoading,
       loading: !this.sessionChecked || channel.messagesLoading,
       loadingOlderMessages: channel.olderMessagesLoading,
       hasOlderMessages: channel.messages.length > 0 && !channel.reachedOldestMessage,
-      hasSavedSession: !!apiClient.getSessionToken(),
+      hasSavedSession: !!this.sessionToken,
+      onlineCount: this.onlineCount,
       user: this.user,
       messages: this.getVisibleMessages(normalizedChannelId),
       draft: channel.draft,
@@ -274,6 +312,22 @@ export class ChatController {
 
   getChannels(): ChatChannel[] {
     return this.channels;
+  }
+
+  private getChannelStateSnapshots(): ChatChannelState[] {
+    const channelIds = new Set<string>([
+      ...this.channels.map((channel) => channel.id),
+      ...this.channelStates.keys(),
+    ]);
+    return [...channelIds].map((channelId) => {
+      const channel = this.ensureChannelState(channelId);
+      return {
+        channelId,
+        notificationsEnabled: channel.notificationsEnabled,
+        lastReadMessageId: channel.lastViewedMessageId,
+        unreadCount: channel.unreadCount,
+      };
+    });
   }
 
   async refreshChannels(): Promise<void> {
@@ -296,6 +350,33 @@ export class ChatController {
 
     this.channelsPromise = request;
     return request;
+  }
+
+  async refreshPresence(): Promise<void> {
+    const presence = await apiClient.getChatPresence();
+    this.onlineCount = presence.onlineCount;
+    this.emit();
+  }
+
+  async refreshChatState(): Promise<void> {
+    if (!this.user?.emailVerified || !this.sessionToken) {
+      await this.refreshPresence();
+      return;
+    }
+    const state = await apiClient.getChatState();
+    this.channels = normalizeChannels(state.channels);
+    this.onlineCount = state.onlineCount;
+    for (const entry of state.channelStates) {
+      const channel = this.ensureChannelState(entry.channelId);
+      channel.notificationsEnabled = entry.notificationsEnabled;
+      channel.unreadCount = entry.unreadCount;
+      channel.lastViewedMessageId = entry.lastReadMessageId ?? channel.lastViewedMessageId;
+    }
+    for (const notification of state.notifications) {
+      this.handleChatNotification(notification);
+    }
+    this.ensureOpenChannelConnections();
+    this.emit();
   }
 
   async resolveRequiredChannelId(channelId: string): Promise<string> {
@@ -361,22 +442,26 @@ export class ChatController {
     });
     channel.messages = transcript?.value.messages ?? [];
     channel.lastCursor = resolveHydratedCursor(channel.messages, persistedCursor);
-    channel.lastViewedMessageId = this.user?.id && apiClient.getSessionToken()
+    channel.lastViewedMessageId = this.user?.id && this.sessionToken
       ? persistedViewedMessageId ?? getLatestMessageId(channel.messages)
       : null;
   }
 
   async refreshSession(): Promise<void> {
     const token = apiClient.getSessionToken();
+    this.sessionToken = token;
     if (!token) {
       this.stopVerificationPolling();
       this.stopSafetyRefresh();
+      this.stopRealtimeSubscriptions();
       this.closeAllConnections();
       this.user = null;
       this.sessionChecked = true;
       for (const channel of this.channelStates.values()) {
         channel.pendingMessages = [];
         channel.lastViewedMessageId = null;
+        channel.unreadCount = 0;
+        channel.notificationsEnabled = false;
       }
       this.persistSession();
       this.emit();
@@ -387,13 +472,17 @@ export class ChatController {
     if (!session) {
       this.stopVerificationPolling();
       this.stopSafetyRefresh();
+      this.stopRealtimeSubscriptions();
       this.closeAllConnections();
       apiClient.setSessionToken(null);
+      this.sessionToken = null;
       this.user = null;
       this.sessionChecked = true;
       for (const channel of this.channelStates.values()) {
         channel.pendingMessages = [];
         channel.lastViewedMessageId = null;
+        channel.unreadCount = 0;
+        channel.notificationsEnabled = false;
       }
       this.persistSession();
       this.emit();
@@ -402,6 +491,7 @@ export class ChatController {
 
     const previousIdentity = `${this.user?.id ?? ""}:${normalizeUsername(this.user?.username) ?? ""}`;
     const nextUser = { id: session.id, username: session.username ?? session.name, emailVerified: !!session.emailVerified };
+    this.sessionToken = apiClient.getSessionToken();
     this.user = nextUser;
     const nextIdentity = `${nextUser.id}:${normalizeUsername(nextUser.username) ?? ""}`;
     if (previousIdentity && previousIdentity !== nextIdentity) {
@@ -416,12 +506,15 @@ export class ChatController {
 
     if (nextUser?.emailVerified) {
       this.stopVerificationPolling();
+      this.ensureRealtimeSubscriptions();
+      await this.refreshChatState().catch(() => {});
       this.ensureOpenChannelConnections();
       return;
     }
 
     this.syncVerificationPolling();
     this.stopSafetyRefresh();
+    this.stopRealtimeSubscriptions();
     this.closeAllConnections();
   }
 
@@ -510,6 +603,33 @@ export class ChatController {
     this.emit(normalizedChannelId);
   }
 
+  setChannelNotificationsEnabled(channelId: string, enabled: boolean): void {
+    const normalizedChannelId = normalizeChannelId(channelId);
+    const channel = this.ensureChannelState(normalizedChannelId);
+    if (channel.notificationsEnabled === enabled) return;
+
+    const previous = channel.notificationsEnabled;
+    channel.notificationsEnabled = enabled;
+    this.emit();
+    this.ensureOpenChannelConnections();
+
+    void apiClient.updateChatChannelState(normalizedChannelId, {
+      notificationsEnabled: enabled,
+    }).then((nextState) => {
+      this.applyChannelState(nextState);
+      this.ensureOpenChannelConnections();
+      this.emit();
+    }).catch((error) => {
+      channel.notificationsEnabled = previous;
+      this.ensureOpenChannelConnections();
+      this.emit();
+      this.notifyFn({
+        body: error instanceof Error ? error.message : "Failed to update channel notifications.",
+        type: "error",
+      });
+    });
+  }
+
   attachView(): () => void {
     return this.attachChannelView(DEFAULT_CHAT_CHANNEL_ID);
   }
@@ -530,12 +650,16 @@ export class ChatController {
   clearSession(): void {
     this.stopVerificationPolling();
     this.stopSafetyRefresh();
+    this.stopRealtimeSubscriptions();
     this.closeAllConnections();
+    this.sessionToken = null;
     this.user = null;
     this.sessionChecked = false;
     for (const channel of this.channelStates.values()) {
       channel.pendingMessages = [];
       channel.lastViewedMessageId = null;
+      channel.unreadCount = 0;
+      channel.notificationsEnabled = false;
     }
     this.emit();
   }
@@ -548,11 +672,13 @@ export class ChatController {
       return;
     }
     this.syncVerificationPolling();
+    void this.refreshChatState().catch(() => {});
   }
 
   reset(clearSession = false): void {
     this.stopVerificationPolling();
     this.stopSafetyRefresh();
+    this.stopRealtimeSubscriptions();
     this.closeAllConnections();
     for (const [channelId, channel] of this.channelStates) {
       this.clearDraftSyncTimer(channel);
@@ -562,12 +688,15 @@ export class ChatController {
       channel.replyToId = null;
       channel.lastCursor = null;
       channel.lastViewedMessageId = null;
+      channel.unreadCount = 0;
+      channel.notificationsEnabled = false;
       channel.reachedOldestMessage = false;
       channel.openViewCount = 0;
       this.persistence?.deleteResource(TRANSCRIPT_KIND, channelId, { sourceKey: TRANSCRIPT_SOURCE });
       this.persistChannelState(channelId);
     }
     if (clearSession) {
+      this.sessionToken = null;
       this.user = null;
       apiClient.setSessionToken(null);
       this.persistence?.deleteState(SESSION_STATE_KEY);
@@ -587,6 +716,7 @@ export class ChatController {
     }
     this.stopVerificationPolling();
     this.stopSafetyRefresh();
+    this.stopRealtimeSubscriptions();
     this.closeAllConnections();
     for (const channel of this.channelStates.values()) {
       channel.messagesLoading = false;
@@ -597,6 +727,7 @@ export class ChatController {
     }
     this.notifyFn = () => {};
     this.listeners.clear();
+    this.notifiedMessageIds.clear();
   }
 
   send(content: string, replyToId?: string): void {
@@ -606,8 +737,8 @@ export class ChatController {
   sendToChannel(channelId: string, content: string, replyToId?: string): void {
     const normalizedChannelId = normalizeChannelId(channelId);
     const channel = this.ensureChannelState(normalizedChannelId);
-    if (!this.user?.emailVerified || !apiClient.getSessionToken()) return;
-    if (!channel.wsConnection && this.user?.emailVerified && apiClient.getSessionToken()) {
+    if (!this.user?.emailVerified || !this.sessionToken) return;
+    if (!channel.wsConnection && this.user?.emailVerified && this.sessionToken) {
       this.ensureConnection(normalizedChannelId);
     }
     const connection = channel.wsConnection;
@@ -641,7 +772,7 @@ export class ChatController {
   ensureConnection(channelId = DEFAULT_CHAT_CHANNEL_ID): void {
     const normalizedChannelId = normalizeChannelId(channelId);
     const channel = this.ensureChannelState(normalizedChannelId);
-    if (!this.user?.emailVerified || !apiClient.getSessionToken()) {
+    if (!this.user?.emailVerified || !this.sessionToken) {
       this.stopSafetyRefresh();
       return;
     }
@@ -675,8 +806,15 @@ export class ChatController {
     }
   }
 
+  private applyChannelState(state: ChatChannelState): void {
+    const channel = this.ensureChannelState(state.channelId);
+    channel.notificationsEnabled = state.notificationsEnabled;
+    channel.unreadCount = state.unreadCount;
+    channel.lastViewedMessageId = state.lastReadMessageId ?? channel.lastViewedMessageId;
+  }
+
   private syncVerificationPolling(): void {
-    if (!this.appActive || !apiClient.getSessionToken() || !this.user || this.user.emailVerified) {
+    if (!this.appActive || !this.sessionToken || !this.user || this.user.emailVerified) {
       this.stopVerificationPolling();
       return;
     }
@@ -684,6 +822,27 @@ export class ChatController {
     this.verificationPollTimer = setInterval(() => {
       void this.refreshSession().catch(() => {});
     }, VERIFICATION_POLL_MS);
+  }
+
+  private ensureRealtimeSubscriptions(): void {
+    if (!this.chatNotificationUnsubscribe) {
+      this.chatNotificationUnsubscribe = apiClient.subscribeChatNotifications((notification) => {
+        this.handleChatNotification(notification);
+      });
+    }
+    if (!this.chatPresenceUnsubscribe) {
+      this.chatPresenceUnsubscribe = apiClient.subscribeChatPresence((onlineCount) => {
+        this.onlineCount = onlineCount;
+        this.emit();
+      });
+    }
+  }
+
+  private stopRealtimeSubscriptions(): void {
+    this.chatNotificationUnsubscribe?.();
+    this.chatNotificationUnsubscribe = null;
+    this.chatPresenceUnsubscribe?.();
+    this.chatPresenceUnsubscribe = null;
   }
 
   private stopVerificationPolling(): void {
@@ -695,7 +854,7 @@ export class ChatController {
   private startSafetyRefresh(): void {
     if (this.safetyRefreshTimer) return;
     this.safetyRefreshTimer = setInterval(() => {
-      if (!this.user?.emailVerified || !apiClient.getSessionToken()) {
+      if (!this.user?.emailVerified || !this.sessionToken) {
         this.stopSafetyRefresh();
         return;
       }
@@ -723,9 +882,15 @@ export class ChatController {
   private ensureOpenChannelConnections(): void {
     const channelIds = new Set<string>([DEFAULT_CHAT_CHANNEL_ID]);
     for (const [channelId, channel] of this.channelStates) {
-      if (channel.openViewCount > 0 || channel.wsConnection) {
+      if (channel.openViewCount > 0 || channel.notificationsEnabled) {
         channelIds.add(channelId);
       }
+    }
+    for (const [channelId, channel] of this.channelStates) {
+      if (channelIds.has(channelId) || !channel.wsConnection || channel.openViewCount > 0) continue;
+      channel.wsConnection.close();
+      channel.wsConnection = null;
+      channel.wsConnected = false;
     }
     for (const channelId of channelIds) {
       this.ensureConnection(channelId);
@@ -734,7 +899,7 @@ export class ChatController {
 
   private getSafetyRefreshChannelIds(): string[] {
     const active = [...this.channelStates.entries()]
-      .filter(([, channel]) => channel.openViewCount > 0 || channel.wsConnection)
+      .filter(([, channel]) => channel.openViewCount > 0 || channel.notificationsEnabled || channel.wsConnection)
       .map(([channelId]) => channelId);
     return active.length > 0 ? active : [DEFAULT_CHAT_CHANNEL_ID];
   }
@@ -824,11 +989,14 @@ export class ChatController {
     channel.messages = [...merged.values()]
       .sort(compareMessages);
     channel.lastCursor = channel.messages[channel.messages.length - 1]?.id ?? channel.lastCursor;
+    const freshIncoming = [...incoming.values()].filter((message) => message.user.id !== this.user?.id);
     if (channel.openViewCount > 0) {
       this.markViewedThroughLatestMessage(channelId, false);
+    } else if (freshIncoming.length > 0) {
+      channel.unreadCount += freshIncoming.length;
     }
     if (options?.notifyMentions !== false) {
-      this.trackUnreadMentions(channelId, [...incoming.values()]);
+      this.trackIncomingNotifications(channelId, freshIncoming);
     }
     this.persistTranscript(channelId);
     this.emit(channelId);
@@ -836,7 +1004,7 @@ export class ChatController {
 
   private persistSession(): void {
     const value = {
-      sessionToken: apiClient.getSessionToken(),
+      sessionToken: this.sessionToken,
       user: this.user,
     } satisfies PersistedSessionState;
     this.resume?.setState(SESSION_STATE_KEY, value, {
@@ -911,14 +1079,32 @@ export class ChatController {
     this.persistChannelState(channelId);
   }
 
-  private trackUnreadMentions(channelId: string, messages: ChatMessage[]): void {
+  private trackIncomingNotifications(channelId: string, messages: ChatMessage[]): void {
     const channel = this.ensureChannelState(channelId);
     if (channel.openViewCount > 0) {
       return;
     }
 
-    const freshMentions = this.getMentionMessages(messages);
+    const mentions: ChatMessage[] = [];
+    for (const message of messages) {
+      if (this.isReplyToCurrentUser(message)) {
+        this.notifyReplyMessage(channelId, message);
+        continue;
+      }
+      if (this.isMentionForCurrentUser(message)) {
+        mentions.push(message);
+        continue;
+      }
+      if (channel.notificationsEnabled) {
+        this.notifyChannelMessage(channelId, message);
+      }
+    }
+
+    const freshMentions = mentions.filter((message) => !this.notifiedMessageIds.has(message.id));
     if (freshMentions.length === 0) return;
+    for (const message of freshMentions) {
+      this.notifiedMessageIds.add(message.id);
+    }
 
     if (freshMentions.length === 1) {
       this.notifyFn({
@@ -932,6 +1118,50 @@ export class ChatController {
     this.notifyFn({
       title: "Gloomberb chat",
       body: `${freshMentions.length} new mentions in #${channelId}.`,
+      type: "info",
+      desktop: "when-inactive",
+    });
+  }
+
+  private handleChatNotification(notification: ChatNotification): void {
+    if (notification.type === "reply") {
+      this.notifyReplyMessage(notification.channelId, notification.message);
+    }
+    void apiClient.markChatNotificationsDelivered([notification.id]).catch(() => {});
+  }
+
+  private isReplyToCurrentUser(message: ChatMessage): boolean {
+    return !!this.user?.id
+      && message.user.id !== this.user.id
+      && message.replyTo?.user.id === this.user.id;
+  }
+
+  private isMentionForCurrentUser(message: ChatMessage): boolean {
+    const normalizedUsername = normalizeUsername(this.user?.username);
+    return !!normalizedUsername
+      && message.user.id !== this.user?.id
+      && messageMentionsUsername(message.content, normalizedUsername);
+  }
+
+  private notifyReplyMessage(channelId: string, message: ChatMessage): void {
+    if (this.notifiedMessageIds.has(message.id)) return;
+    this.notifiedMessageIds.add(message.id);
+    this.notifyFn({
+      title: "Gloomberb chat",
+      subtitle: `#${channelId}`,
+      body: formatReplyToast(message),
+      type: "info",
+      desktop: "when-inactive",
+    });
+  }
+
+  private notifyChannelMessage(channelId: string, message: ChatMessage): void {
+    if (this.notifiedMessageIds.has(message.id)) return;
+    this.notifiedMessageIds.add(message.id);
+    this.notifyFn({
+      title: "Gloomberb chat",
+      subtitle: `#${channelId}`,
+      body: formatChannelToast(channelId, message),
       type: "info",
       desktop: "when-inactive",
     });
@@ -966,12 +1196,22 @@ export class ChatController {
   private markViewedThroughLatestMessage(channelId: string, persist = true): boolean {
     const channel = this.ensureChannelState(channelId);
     const latestMessageId = channel.messages[channel.messages.length - 1]?.id ?? null;
-    if (channel.lastViewedMessageId === latestMessageId) {
+    const previousUnreadCount = channel.unreadCount;
+    if (channel.lastViewedMessageId === latestMessageId && previousUnreadCount === 0) {
       return false;
     }
     channel.lastViewedMessageId = latestMessageId;
+    channel.unreadCount = 0;
     if (persist) {
       this.persistChannelState(channelId);
+    }
+    if (latestMessageId && this.user?.emailVerified && this.sessionToken) {
+      void apiClient.updateChatChannelState(channelId, {
+        readThroughMessageId: latestMessageId,
+      }).then((state) => {
+        this.applyChannelState(state);
+        this.emit();
+      }).catch(() => {});
     }
     return true;
   }
@@ -1001,7 +1241,7 @@ export class ChatController {
       replyTo: replyToMessage
         ? {
           content: replyToMessage.content,
-          user: { username: replyToMessage.user.username },
+          user: { id: replyToMessage.user.id, username: replyToMessage.user.username },
         }
         : null,
       clientStatus: "sending",
