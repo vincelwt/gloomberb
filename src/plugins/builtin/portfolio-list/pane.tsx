@@ -46,6 +46,8 @@ import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
 import { priceColor } from "../../../theme/colors";
 import { PortfolioTickerTable, type QuoteFlashDirection } from "./table";
 import { useThrottledCursorSymbol } from "./use-throttled-cursor-symbol";
+import { isManualPortfolio } from "./mutations";
+import { QuickAddTickerInput, type QuickAddCollectionKind } from "./quick-add";
 
 const VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS = 5 * 60_000;
 const VISIBLE_FINANCIAL_WARMUP_DELAY_MS = 350;
@@ -209,6 +211,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [now, setNow] = useState(Date.now());
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
+  const [quickAddFocused, setQuickAddFocused] = useState(false);
 
   const previousPricesRef = useRef<Map<string, number>>(new Map());
   const mountedRef = useRef(true);
@@ -235,6 +238,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   );
   const activeCollectionId = resolveActiveCollectionId(currentCollectionId, visibleCollections);
   const isPortfolioTab = getCollectionTypeFromConfig(config, activeCollectionId) === "portfolio";
+  const activeCollectionEntry = visibleCollections.find((collection) => collection.id === activeCollectionId) ?? null;
   const currentPortfolio = useMemo(() => (
     isPortfolioTab
       ? config.portfolios.find((portfolio) => portfolio.id === activeCollectionId) ?? null
@@ -334,6 +338,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     flushCursorSymbol(ticker.metadata.ticker);
     openTickerFloating(ticker.metadata.ticker);
   }, [flushCursorSymbol, openTickerFloating]);
+  const handleTickerAdded = useCallback((symbol: string) => {
+    setCursorSymbol(symbol, { immediate: true });
+  }, [setCursorSymbol]);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (!focused) return;
@@ -555,6 +562,30 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       : [],
   }), [cashDrawerExpanded, setCashDrawerExpanded, showCashDrawer, summaryFooterInfo]);
 
+  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
+    if (!activeCollectionId) return null;
+    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
+    if (collectionType === "watchlist") return "watchlist";
+    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
+      return "portfolio";
+    }
+    return null;
+  }, [activeCollectionId, config, currentPortfolio]);
+  const showQuickAdd = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
+  const quickAddHeight = showQuickAdd ? 1 : 0;
+  const tableHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight);
+  const quickAddRow = activeCollectionId && activeCollectionEntry && quickAddCollectionKind ? (
+    <QuickAddTickerInput
+      collectionId={activeCollectionId}
+      collectionKind={quickAddCollectionKind}
+      collectionName={activeCollectionEntry.name}
+      focused={focused}
+      width={width}
+      onAdded={handleTickerAdded}
+      onFocusChange={setQuickAddFocused}
+    />
+  ) : null;
+
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box flexDirection="column" height={headerHeight}>
@@ -575,7 +606,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
       <PortfolioTickerTable
         columns={columns}
-        focused={focused}
+        focused={focused && !quickAddFocused}
         sortColumnId={activeSort.columnId}
         sortDirection={activeSort.direction}
         onHeaderClick={handleHeaderClick}
@@ -590,7 +621,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         visibleRangeBuffer={3}
         resetScrollKey={activeCollectionId}
         onRowActivate={handleRowActivate}
+        rootHeight={tableHeight}
       />
+
+      {quickAddRow}
 
       {showCashDrawer && accountState && (
         <Box height={drawerHeight} paddingX={1}>
