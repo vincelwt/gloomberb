@@ -4,7 +4,15 @@ export interface SectorDef {
   etf: string;
 }
 
-export const SECTORS: SectorDef[] = [
+export type SectorCollectionId = "sectors" | "industries";
+
+export interface SectorCollection {
+  id: SectorCollectionId;
+  label: string;
+  items: SectorDef[];
+}
+
+const CORE_SECTORS: SectorDef[] = [
   { name: "Technology",       etf: "XLK" },
   { name: "Healthcare",       etf: "XLV" },
   { name: "Financials",       etf: "XLF" },
@@ -17,3 +25,35 @@ export const SECTORS: SectorDef[] = [
   { name: "Real Estate",      etf: "XLRE" },
   { name: "Materials",        etf: "XLB" },
 ];
+
+const INDUSTRIES: SectorDef[] = [
+  { name: "Semiconductors",   etf: "SMH" },
+  { name: "Software",         etf: "IGV" },
+  { name: "Cybersecurity",    etf: "CIBR" },
+  { name: "Aero/Defense",     etf: "ITA" },
+  { name: "Banks",            etf: "KBE" },
+  { name: "Regional Banks",   etf: "KRE" },
+  { name: "Biotech",          etf: "XBI" },
+  { name: "Pharma",           etf: "PPH" },
+  { name: "Homebuilders",     etf: "XHB" },
+  { name: "Retail",           etf: "XRT" },
+  { name: "Food & Bev.",      etf: "PBJ" },
+  { name: "Leisure",          etf: "PEJ" },
+  { name: "Transportation",   etf: "IYT" },
+  { name: "Metals/Mining",    etf: "XME" },
+  { name: "Oil & Gas E&P",    etf: "XOP" },
+  { name: "Clean Energy",     etf: "ICLN" },
+  { name: "Infrastructure",   etf: "PAVE" },
+  { name: "Gold Miners",      etf: "GDX" },
+];
+
+export const SECTOR_COLLECTIONS: SectorCollection[] = [
+  { id: "sectors", label: "Sectors", items: CORE_SECTORS },
+  { id: "industries", label: "Industries", items: INDUSTRIES },
+];
+
+export const SECTORS = CORE_SECTORS;
+
+export function getSectorCollection(id: SectorCollectionId): SectorCollection {
+  return SECTOR_COLLECTIONS.find((collection) => collection.id === id) ?? SECTOR_COLLECTIONS[0]!;
+}
