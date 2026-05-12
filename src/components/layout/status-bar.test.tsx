@@ -187,7 +187,7 @@ describe("StatusBar", () => {
     }
   });
 
-  test("omits focused ticker venue and quote source labels", async () => {
+  test("omits focused ticker quote details", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     config.layout.instances = config.layout.instances.map((instance) => (
       instance.instanceId === "ticker-detail:main"
@@ -247,6 +247,9 @@ describe("StatusBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("AMD");
+    expect(frame).not.toContain("Pre");
+    expect(frame).not.toContain("101");
     expect(frame).not.toContain("NASDAQ PRE-MKT");
     expect(frame).not.toContain("px IBKR live");
     expect(frame).not.toContain("ses Yahoo");
