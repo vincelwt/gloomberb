@@ -873,7 +873,6 @@ function ComparisonStockChartView({
   ]);
   const axisSectionWidth = axisWidth + axisRightPadding;
   const chartWidth = Math.max(width - axisSectionWidth - axisGap, minChartWidth);
-  const maxCursorX = chartWidth - 1;
   const seriesDates = useMemo(() => getUniqueSortedSeriesDates(series), [series]);
   const visibleDateWindow = useMemo(() => buildVisibleDateWindow(seriesDates, viewState.panOffset, viewState.zoomLevel), [seriesDates, viewState.panOffset, viewState.zoomLevel]);
   const activePreset = resolveVisibleActivePreset(seriesDates, {
@@ -1004,6 +1003,16 @@ function ComparisonStockChartView({
         ? current
         : { ...current, cursorX: next.cursorX, cursorY: next.cursorY }
     ));
+  };
+
+  const selectSymbolByOffset = (offset: number) => {
+    setViewState((current) => {
+      const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
+      return {
+        ...current,
+        selectedSymbol: symbols[clamp(currentIndex + offset, 0, symbols.length - 1)] ?? current.selectedSymbol,
+      };
+    });
   };
 
   useEffect(() => {
@@ -1425,22 +1434,6 @@ function ComparisonStockChartView({
       case "t":
         onEditTickers?.();
         return;
-      case "h":
-        mouseCrosshairDisabledRef.current = false;
-        cursorMotionKindRef.current = "discrete";
-        setViewState((current) => ({
-          ...current,
-          cursorX: current.cursorX === null ? maxCursorX : Math.max(current.cursorX - 1, 0),
-        }));
-        return;
-      case "l":
-        mouseCrosshairDisabledRef.current = false;
-        cursorMotionKindRef.current = "discrete";
-        setViewState((current) => ({
-          ...current,
-          cursorX: current.cursorX === null ? 0 : Math.min(current.cursorX + 1, maxCursorX),
-        }));
-        return;
       case "escape":
         mouseCrosshairDisabledRef.current = true;
         updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
@@ -1451,42 +1444,20 @@ function ComparisonStockChartView({
         if (viewState.selectedSymbol) onOpenSymbol(viewState.selectedSymbol);
         return;
       case "left":
-        setViewState((current) => {
-          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
-          return {
-            ...current,
-            selectedSymbol: symbols[Math.max(currentIndex - 1, 0)] ?? current.selectedSymbol,
-          };
-        });
+      case "h":
+        selectSymbolByOffset(-1);
         return;
       case "right":
-        setViewState((current) => {
-          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
-          return {
-            ...current,
-            selectedSymbol: symbols[Math.min(currentIndex + 1, symbols.length - 1)] ?? current.selectedSymbol,
-          };
-        });
+      case "l":
+        selectSymbolByOffset(1);
         return;
       case "up":
       case "k":
-        setViewState((current) => {
-          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
-          return {
-            ...current,
-            selectedSymbol: symbols[Math.max(currentIndex - legendColumns, 0)] ?? current.selectedSymbol,
-          };
-        });
+        selectSymbolByOffset(-legendColumns);
         return;
       case "down":
       case "j":
-        setViewState((current) => {
-          const currentIndex = Math.max(symbols.indexOf(current.selectedSymbol ?? symbols[0] ?? ""), 0);
-          return {
-            ...current,
-            selectedSymbol: symbols[Math.min(currentIndex + legendColumns, symbols.length - 1)] ?? current.selectedSymbol,
-          };
-        });
+        selectSymbolByOffset(legendColumns);
         return;
     }
 

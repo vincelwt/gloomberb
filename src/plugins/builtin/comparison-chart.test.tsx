@@ -346,7 +346,7 @@ describe("comparisonChartPlugin", () => {
     expect(frame).toContain("AUTO");
   });
 
-  test("moves legend selection with the keyboard and opens the selected ticker on Enter", async () => {
+  test("moves legend selection with arrow and h/l keys, then opens the selected ticker on Enter", async () => {
     const spy = { selected: [] as string[], focused: [] as string[] };
     const provider = createProvider({
       AAPL: [100, 102, 104],
@@ -378,6 +378,8 @@ describe("comparisonChartPlugin", () => {
 
     await flushFrames();
     await pressComparisonInput(() => testSetup!.mockInput.pressArrow("right"));
+    await pressComparisonInput(() => testSetup!.mockInput.pressKey("l"));
+    await pressComparisonInput(() => testSetup!.mockInput.pressKey("h"));
     await pressComparisonInput(() => testSetup!.mockInput.pressEnter());
 
     expect(spy.selected).toEqual(["MSFT"]);
