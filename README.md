@@ -1,30 +1,70 @@
 <div align="center">
 
-<img src="src/assets/gloomberb-logo.png" alt="Gloomberb logo" width="96" />
+<img src="https://gloomberb.com/gloomberb-logo-grayscale.svg" alt="Gloomberb logo" width="76" />
 
 # Gloomberb
 
-**Modern extensible financial terminal.**
+**Open-source finance terminal. Fast, keyboard-driven and extensible.**
 
-> The Bloomberb Terminal for the rest of us.
+Available as a desktop app or TUI.
 
-<img src="https://gloomberb.com/landing-terminal.png" alt="Gloomberb terminal screenshot" width="720" />
+<a href="https://gloomberb.com/download/desktop"><strong>Download desktop for Mac</strong></a>
+
+<br />
+<br />
+
+<img src="https://gloomberb.com/landing-terminal.png" alt="Gloomberb terminal showing portfolio, watchlists, market data, and chart panels." width="720" />
 
 </div>
 
-## ✨ Features
+## Functions
 
-- **Track portfolios & trade**
-- **Real-time quotes & fundamentals**
-- **Beautiful high-rez charts**
-- **Fast & keyboard-driven**
-- **Powerful layouts**
-- **Extensible**
-- **100% local**
+Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command name.
 
-For the best experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty or WezTerm.
+| Shortcut | Function |
+|----------|----------|
+| `DES <ticker>` | Security details for a ticker |
+| `QQ <ticker>` | Ticker quote |
+| `PM <query>` | Polymarket and Kalshi prediction data |
+| `TOP` | Ranked market stories |
+| `MOST` | Top gainers, losers, most active, and trending tickers |
+| `WEI` | Global equity indices |
+| `ECON` | Economic events and releases |
+| `CMP <tickers>` | Ticker charts |
+| `CORR <tickers>` | Ticker return correlations |
+| `ANR <ticker>` | Analyst targets and ratings |
+| `SEC <ticker>` | SEC filings and company disclosures |
+| `TWIT <query>` | Ticker-related market posts |
+| `OMON <ticker>` | Options monitor |
+| `PORT` | Portfolio risk and sector exposure |
+| `BI` / `SP` | S&P 500 sector performance |
+| `FXC` | Major FX cross rates |
+| `FNG` | Fear and greed market gauge |
+| `ALRT` | Price alerts |
+| `CHAT` | Gloomberb Cloud chat |
+| `PF` | Portfolio and watchlist workspace |
+| `N` | News feed |
+| `CN <ticker>` | Ticker news |
+| `NI` | Sector news |
+| `FIRST` | Breaking news |
+| `NOTE` | Notes |
+| `AI <prompt>` | AI screener |
+| `GC` | Yield curve |
+| `ERN` | Earnings calendar |
+| `HDS <ticker>` | Institutional holders |
+| `INS <ticker>` | Insider activity |
+| `EVT <ticker>` | Corporate actions |
+| `RV <tickers>` | Relative valuation |
+| `IBKR` | IBKR trading pane |
+| `BR` | Broker connections |
 
-## 🚀 Install
+## Install
+
+Desktop:
+
+- [Download Gloomberb for Mac](https://gloomberb.com/download/desktop)
+
+Terminal UI:
 
 ```bash
 curl -fsSL gloomberb.com/install | bash
@@ -32,139 +72,46 @@ curl -fsSL gloomberb.com/install | bash
 bun install -g gloomberb
 ```
 
-Then run `gloomberb`.
+Then run:
 
-## 🧩 Plugins
+```bash
+gloomberb
+```
 
-Everything, from the portfolio list to broker integrations, is a plugin. 
+For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
 
-Plugins can add tabs, columns, command bar commands, CLI commands, status bar widgets, and more.
-
-See **[PLUGINS.md](PLUGINS.md)** for the plugin API and the shared UI surface available through `gloomberb/components`.
-
-### Core plugins
-
-| Plugin | Description |
-|--------|-------------|
-| **Portfolio List** | Main ticker list with portfolios & watchlists |
-| **Ticker Detail** | Overview, financials, and chart tabs |
-| **Gloomberb Cloud** | Near-real-time market data, macro calendar, yield curve, and chat |
-| **Manual Entry** | Manually add positions, saved locally |
-| **IBKR** | Import positions from Flex Query or trade with Gateway API |
-| **News** | Ticker and market-wide news from Cloud, Yahoo fallback, and RSS feeds |
-| **SEC** | View recent SEC filings for supported US equities |
-| **Options** | View US equity options chains |
-| **Notes** | Write and save markdown notes, stored locally |
-| **AI** | Keep an Ask AI detail tab for tickers and create prompt-driven AI screener panes |
-| **Alerts** | Create price trigger alerts with desktop notifications |
-| **Compare Charts** | Compare multiple ticker charts overlaid on one shared chart |
-| **Prediction Markets** | Browse Polymarket and Kalshi markets |
-| **Correlation** | Compare ticker return correlations |
-| **Portfolio Analytics** | Sharpe ratio, beta, and sector allocation |
-| **Insider** | View recent insider transactions |
-| **World Equity Indices** | Global equity index monitor grouped by region |
-| **Market Movers** | Gainers, losers, most active, and trending tickers |
-| **FX Cross Rates** | Currency cross-rate matrix for major FX pairs |
-| **Sector Performance** | S&P 500 sector performance via ETF proxies |
-| **Earnings Calendar** | Upcoming earnings dates and estimates |
-| **Research** | Analyst ratings, corporate actions, and relative valuation |
-
-### Data providers
-
-| Provider | Description |
-|----------|-------------|
-| **Gloomberb Cloud** | Real-time data (recommended, free) |
-| **Yahoo Finance** | Delayed data, rate-limiting |
-
-### Broker connectors
-
-| Plugin | Description |
-|--------|-------------|
-| **IBKR** | Import positions from Flex Query or trade with Gateway API |
-| **Manual Entry** | Manually add positions, saved locally |
-
-Toggleable plugins can be enabled/disabled from the command bar screen (`Ctrl+p`).
-
-## 💻 CLI
+## CLI
 
 Running `gloomberb` with no arguments launches the terminal UI. Use `gloomberb help` to see the full command list.
-Feature-owned root commands such as `portfolio`, `watchlist`, and `predictions` are registered by their plugins rather than hardcoded in the main CLI switch.
 
 | Command | Use |
 |---------|-----|
 | `gloomberb` | Launch the terminal UI |
-| `gloomberb help` | Show all CLI commands and plugin-owned help |
+| `gloomberb help` | Show all CLI commands |
 | `gloomberb search <query>` | Search tickers and company names |
 | `gloomberb ticker <symbol>` | Show quote, ownership, and financials |
-| `gloomberb portfolio [action]` | List, inspect, create, delete, and manage manual portfolios |
-| `gloomberb watchlist [action]` | List, inspect, create, delete, and manage watchlists |
-| `gloomberb predictions [...]` | Launch the UI with Prediction Markets focused |
+| `gloomberb portfolio [action]` | Manage manual portfolios |
+| `gloomberb watchlist [action]` | Manage watchlists |
+| `gloomberb predictions [...]` | Launch Prediction Markets |
 | `gloomberb plugins` | List installed plugins |
 | `gloomberb install <user/repo>` | Install a plugin from GitHub |
 | `gloomberb remove <name>` | Remove an installed plugin |
 | `gloomberb update [name]` | Update plugins |
 
-```bash
-gloomberb
-gloomberb help
-gloomberb search NVDA
-gloomberb ticker AAPL
-gloomberb portfolio list
-gloomberb portfolio show Research
-gloomberb portfolio create Research
-gloomberb portfolio add Research ASML
-gloomberb portfolio position set Research NVDA 10 400
-gloomberb watchlist list
-gloomberb watchlist add Growth NVDA
-gloomberb predictions kalshi macro top fed
-gloomberb plugins
-gloomberb update
-```
+## Plugins
 
-## Command Bar Shortcuts
+Everything from the portfolio list to broker integrations is a plugin. Plugins can add panes, tabs, columns, command bar commands, CLI commands, status bar widgets, and data providers.
 
-Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command name.
+Core plugin areas include:
 
-| Shortcut | Opens |
-|----------|-------|
-| `PF` | Collection Pane |
-| `DES <ticker>` | Ticker Detail |
-| `QQ <ticker>` | Quote Monitor |
-| `CHAT` | New Chat Pane |
-| `IBKR` | New IBKR Trading Pane |
-| `NOTE` | Notes |
-| `AI <prompt>` | AI Screener |
-| `CMP <tickers>` | Comparison Chart |
-| `PM <query>` | Prediction Markets |
-| `CORR <tickers>` | Correlation Matrix |
-| `PORT` | Portfolio Analytics |
-| `ECON` | Economic Calendar |
-| `WEI` | World Equity Indices |
-| `MOST` | Market Movers |
-| `TOP` | Top News |
-| `N` | News Feed |
-| `CN <ticker>` | Ticker News |
-| `NI` | Industry News |
-| `FIRST` | Breaking News |
-| `ALRT` | Alerts |
-| `FXC` | FX Cross Rates |
-| `GC` | Yield Curve |
-| `BI` | Sector Performance |
-| `ERN` | Earnings Calendar |
-| `OMON <ticker>` | Options |
-| `HDS <ticker>` | Holders |
-| `ANR <ticker>` | Analyst Research |
-| `EVT <ticker>` | Corporate Actions |
-| `SEC <ticker>` | SEC Filings |
-| `INS <ticker>` | Insider Activity |
-| `RV <tickers>` | Relative Valuation |
+- Portfolios, watchlists, manual entry, and broker connections
+- Ticker details, quotes, charts, options, filings, holders, insiders, and research
+- News, market movers, global indices, sectors, FX, earnings, macro data, and yield curves
+- Prediction markets, alerts, notes, chat, AI screeners, and external plugins
 
-| Shortcut | Command |
-|----------|---------|
-| `GL` | Gridlock all windows |
-| `SA <symbol condition price>` | Add Alert, e.g. `SA AMD above 200` |
+See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface available through `gloomberb/components`.
 
-## ⌨️ Keyboard Shortcuts
+## Keyboard
 
 | Key | Action |
 |-----|--------|
@@ -174,10 +121,10 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | `Ctrl+Shift+D` | Dock or float focused pane |
 | `Ctrl+Shift+L` | Layout actions |
 | `Ctrl+Shift+G` | Gridlock all windows |
-| `Tab` | Switch between panels |
-| `j` / `k` | Navigate ticker list |
+| `Tab` | Switch panes |
+| `j` / `k` | Navigate lists |
 | `h` / `l` | Switch tabs |
-| `m` | Cycle chart mode in the chart tab |
+| `m` | Cycle chart mode |
 | `q` | Quit |
 
 Desktop builds also accept the matching `Cmd` shortcuts on macOS, plus `Cmd/Ctrl+Shift+O` to pop out a pane.
@@ -188,4 +135,4 @@ MIT
 
 ## Credits
 
-- [OpenTUI](https://opentui.com/) for the layout
+- [OpenTUI](https://opentui.com/) for the layout engine
