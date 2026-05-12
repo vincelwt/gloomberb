@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import type {
   AppConfig,
@@ -89,7 +89,9 @@ function normalizeConfig(saved: Record<string, unknown>, dataDir: string): { con
   const activeLayoutIndex = sanitizeActiveLayoutIndex(saved.activeLayoutIndex, layouts.length);
   const layout = cloneLayout(layouts[activeLayoutIndex]?.layout ?? directLayout);
   const syncedLayouts = layouts.map((entry, index) => (
-    index === activeLayoutIndex ? { ...entry, layout: cloneLayout(layout) } : entry
+    index === activeLayoutIndex
+      ? { ...entry, layout: cloneLayout(layout), paneState: sanitizeSavedPaneState(entry.paneState, layout) }
+      : entry
   ));
 
   const disabledPlugins = sanitizeDisabledPlugins(saved, defaults.disabledPlugins, {
@@ -138,7 +140,9 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   const activeLayoutIndex = sanitizeActiveLayoutIndex(config.activeLayoutIndex, config.layouts.length || 1);
   const layout = sanitizeLayout(config.layout, createDefaultConfig(config.dataDir).layout);
   const layouts = sanitizeSavedLayouts(config.layouts, layout).map((entry, index) => (
-    index === activeLayoutIndex ? { ...entry, layout: cloneLayout(layout) } : entry
+    index === activeLayoutIndex
+      ? { ...entry, layout: cloneLayout(layout), paneState: sanitizeSavedPaneState(entry.paneState, layout) }
+      : entry
   ));
 
   const persisted: AppConfig = {
@@ -158,7 +162,14 @@ export async function saveConfig(config: AppConfig): Promise<void> {
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
 
-  await writeFile(configPath, JSON.stringify(persisted, null, 2), "utf-8");
+  const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await writeFile(tempPath, JSON.stringify(persisted, null, 2), "utf-8");
+    await rename(tempPath, configPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 export async function initDataDir(dataDir: string): Promise<AppConfig> {
@@ -236,6 +247,41 @@ function sanitizeDisabledSources(saved: Record<string, unknown>, fallback: strin
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function sanitizeSerializableValue(value: unknown): unknown {
+  if (value == null) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => sanitizeSerializableValue(entry))
+      .filter((entry) => entry !== undefined);
+  }
+  if (isPlainRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, entry]) => [key, sanitizeSerializableValue(entry)])
+        .filter(([, entry]) => entry !== undefined),
+    );
+  }
+  return undefined;
+}
+
+function sanitizeSavedPaneState(
+  value: unknown,
+  layout: LayoutConfig,
+): Record<string, Record<string, unknown>> | undefined {
+  if (!isPlainRecord(value)) return undefined;
+  const validPaneIds = new Set(layout.instances.map((instance) => instance.instanceId));
+  const paneState = Object.fromEntries(
+    Object.entries(value)
+      .filter(([paneId, entry]) => validPaneIds.has(paneId) && isPlainRecord(entry))
+      .map(([paneId, entry]) => [paneId, sanitizeSerializableValue(entry)])
+      .filter((entry): entry is [string, Record<string, unknown>] => isPlainRecord(entry[1])),
+  );
+  return paneState;
 }
 
 function isPluginConfigMap(value: unknown): value is Record<string, Record<string, unknown>> {
@@ -376,10 +422,21 @@ function sanitizeSavedLayouts(value: unknown, fallbackLayout: LayoutConfig): Sav
       && typeof entry === "object"
       && typeof (entry as SavedLayout).name === "string",
     )
-    .map((entry) => ({
-      name: entry.name,
-      layout: sanitizeLayout(entry.layout, fallbackLayout),
-    }));
+    .map((entry) => {
+      const layout = sanitizeLayout(entry.layout, fallbackLayout);
+      return {
+        id: typeof entry.id === "string" ? entry.id : undefined,
+        name: entry.name,
+        layout,
+        paneState: sanitizeSavedPaneState((entry as { paneState?: unknown }).paneState, layout),
+        focusedPaneId: typeof entry.focusedPaneId === "string" || entry.focusedPaneId === null
+          ? entry.focusedPaneId
+          : undefined,
+        activePanel: entry.activePanel === "right" || entry.activePanel === "left"
+          ? entry.activePanel
+          : undefined,
+      };
+    });
 
   return layouts.length > 0 ? layouts : [{ name: "Default", layout: cloneLayout(fallbackLayout) }];
 }

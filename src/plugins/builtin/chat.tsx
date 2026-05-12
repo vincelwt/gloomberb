@@ -3,7 +3,7 @@ import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
 import type { GloomPlugin, PaneProps } from "../../types/plugin";
-import { useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
+import { syncConfigActiveLayoutState, useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
 import { useInlineTickers, type InlineTickerCatalogEntry } from "../../state/use-inline-tickers";
 import { ExternalLinkText, getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
@@ -1869,9 +1869,6 @@ function ChatPane({ focused, width, height, close }: PaneProps) {
   const persistChannelId = useCallback((nextChannelId: string) => {
     const currentState = stateRef.current;
     const layout = setPaneSetting(currentState.config.layout, paneId, "channelId", nextChannelId);
-    const layouts = currentState.config.layouts.map((savedLayout, index) => (
-      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
-    ));
     const pluginConfig = {
       ...currentState.config.pluginConfig,
       "gloomberb-cloud": {
@@ -1882,11 +1879,16 @@ function ChatPane({ focused, width, height, close }: PaneProps) {
     const nextConfig = {
       ...currentState.config,
       layout,
-      layouts,
       pluginConfig,
     };
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
-    scheduleConfigSave(nextConfig);
+    const syncedConfig = syncConfigActiveLayoutState(
+      nextConfig,
+      currentState.paneState,
+      currentState.focusedPaneId,
+      currentState.activePanel,
+    );
+    dispatch({ type: "SET_CONFIG", config: syncedConfig });
+    scheduleConfigSave(syncedConfig);
   }, [dispatch, paneId, stateRef]);
   const [channelId, setLocalChannelId] = useState(initialChannelIdRef.current);
   const pendingChannelIdRef = useRef<string | null>(null);

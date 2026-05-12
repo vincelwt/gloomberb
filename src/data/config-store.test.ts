@@ -342,6 +342,40 @@ describe("loadConfig", () => {
     });
   });
 
+  test("preserves saved layout pane state and focus metadata", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      layouts: [{
+        name: "Chart",
+        layout: DEFAULT_LAYOUT,
+        paneState: {
+          "ticker-detail:main": { activeTabId: "chart" },
+          "missing:pane": { activeTabId: "overview" },
+        },
+        focusedPaneId: "ticker-detail:main",
+        activePanel: "right",
+      }],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.layouts[0]?.paneState).toEqual({
+      "ticker-detail:main": { activeTabId: "chart" },
+    });
+    expect(config.layouts[0]?.focusedPaneId).toBe("ticker-detail:main");
+    expect(config.layouts[0]?.activePanel).toBe("right");
+
+    await saveConfig(config);
+    const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
+      layouts: Array<{ paneState?: Record<string, unknown>; focusedPaneId?: string | null; activePanel?: string }>;
+    };
+    expect(persisted.layouts[0]?.paneState).toEqual({
+      "ticker-detail:main": { activeTabId: "chart" },
+    });
+    expect(persisted.layouts[0]?.focusedPaneId).toBe("ticker-detail:main");
+    expect(persisted.layouts[0]?.activePanel).toBe("right");
+  });
+
   test("migrates legacy main portfolio panes to the portfolio default columns", async () => {
     const dataDir = await createTempConfigDir();
     const legacyColumnIds = DEFAULT_COLUMNS.map((column) => column.id);

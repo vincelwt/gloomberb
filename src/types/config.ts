@@ -108,8 +108,12 @@ export interface LayoutConfig {
 }
 
 export interface SavedLayout {
+  id?: string;
   name: string;
   layout: LayoutConfig;
+  paneState?: Record<string, Record<string, unknown>>;
+  focusedPaneId?: string | null;
+  activePanel?: "left" | "right";
 }
 
 export interface AppConfig {
@@ -585,8 +589,8 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     watchlists: [{ id: "watchlist", name: "Watchlist" }],
     layout,
     layouts: [
-      { name: "Home", layout: cloneLayout(layout) },
-      { name: "Monitor", layout: cloneLayout(DEFAULT_MONITOR_LAYOUT) },
+      { name: "Home", layout: cloneLayout(layout), paneState: {} },
+      { name: "Monitor", layout: cloneLayout(DEFAULT_MONITOR_LAYOUT), paneState: {} },
     ],
     activeLayoutIndex: 0,
     brokerInstances: [],

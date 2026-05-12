@@ -1,13 +1,15 @@
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
-import type { PaneRuntimeState } from "../../../core/state/app-state";
+import { clonePaneStateMap, syncConfigActiveLayoutState, type PaneRuntimeState } from "../../../core/state/app-state";
 import { cloneLayout, type AppConfig } from "../../../types/config";
 import type { DesktopSharedStateSnapshot } from "../../../types/desktop-window";
 import { detachPaneToFrame, dockPane, insertAtRootEdge, removePane } from "../../../plugins/pane-manager";
 
-function clonePaneStateMap(state: Record<string, PaneRuntimeState>): Record<string, PaneRuntimeState> {
-  return Object.fromEntries(
-    Object.entries(state).map(([paneId, paneState]) => [paneId, { ...paneState }]),
-  );
+function cloneSavedLayouts(config: AppConfig): AppConfig["layouts"] {
+  return config.layouts.map((entry) => ({
+    ...entry,
+    layout: cloneLayout(entry.layout),
+    paneState: entry.paneState ? clonePaneStateMap(entry.paneState) : entry.paneState,
+  }));
 }
 
 function filterPaneState(
@@ -18,17 +20,6 @@ function filterPaneState(
   return Object.fromEntries(
     Object.entries(paneState).filter(([paneId]) => validPaneIds.has(paneId)),
   );
-}
-
-function syncActiveLayout(config: AppConfig): AppConfig {
-  return {
-    ...config,
-    layouts: config.layouts.map((entry, index) => (
-      index === config.activeLayoutIndex
-        ? { ...entry, layout: cloneLayout(config.layout) }
-        : entry
-    )),
-  };
 }
 
 export interface DesktopWorkspace {
@@ -55,22 +46,37 @@ export function createDesktopWorkspace(
   config: AppConfig,
   sessionSnapshot: AppSessionSnapshot | null,
 ): DesktopWorkspace {
+  const savedPaneState = config.layouts[config.activeLayoutIndex]?.paneState ?? {};
+  const initialPaneState = filterPaneState(config.layout, clonePaneStateMap({
+    ...(sessionSnapshot?.paneState ?? {}),
+    ...savedPaneState,
+  }));
+  const initialFocusedPaneId = config.layouts[config.activeLayoutIndex]?.focusedPaneId
+    ?? sessionSnapshot?.focusedPaneId
+    ?? null;
+  const initialActivePanel = config.layouts[config.activeLayoutIndex]?.activePanel
+    ?? (sessionSnapshot?.activePanel === "right" ? "right" : "left");
   let sharedState: DesktopSharedStateSnapshot = {
-    config: syncActiveLayout(config),
-    paneState: filterPaneState(config.layout, clonePaneStateMap(sessionSnapshot?.paneState ?? {})),
-    focusedPaneId: sessionSnapshot?.focusedPaneId ?? null,
-    activePanel: sessionSnapshot?.activePanel === "right" ? "right" : "left",
+    config: syncConfigActiveLayoutState(config, initialPaneState, initialFocusedPaneId, initialActivePanel),
+    paneState: initialPaneState,
+    focusedPaneId: initialFocusedPaneId,
+    activePanel: initialActivePanel,
     statusBarVisible: sessionSnapshot?.statusBarVisible !== false,
   };
 
   const updateConfig = (nextConfig: AppConfig, options?: { layoutChanged?: boolean }) => {
-    const syncedConfig = syncActiveLayout(nextConfig);
+    const syncedConfig = syncConfigActiveLayoutState(
+      nextConfig,
+      sharedState.paneState,
+      sharedState.focusedPaneId,
+      sharedState.activePanel,
+    );
     sharedState = {
       ...sharedState,
       config: {
         ...syncedConfig,
         layout: cloneLayout(syncedConfig.layout),
-        layouts: syncedConfig.layouts.map((entry) => ({ ...entry, layout: cloneLayout(entry.layout) })),
+        layouts: cloneSavedLayouts(syncedConfig),
       },
       paneState: filterPaneState(syncedConfig.layout, sharedState.paneState),
       layoutChanged: options?.layoutChanged,
@@ -82,7 +88,7 @@ export function createDesktopWorkspace(
     config: {
       ...sharedState.config,
       layout: cloneLayout(sharedState.config.layout),
-      layouts: sharedState.config.layouts.map((entry) => ({ ...entry, layout: cloneLayout(entry.layout) })),
+      layouts: cloneSavedLayouts(sharedState.config),
     },
     paneState: clonePaneStateMap(sharedState.paneState),
     focusedPaneId: sharedState.focusedPaneId,
@@ -94,12 +100,17 @@ export function createDesktopWorkspace(
   return {
     getSnapshot,
     syncMainState(snapshot) {
-      const syncedConfig = syncActiveLayout(snapshot.config);
+      const syncedConfig = syncConfigActiveLayoutState(
+        snapshot.config,
+        snapshot.paneState,
+        snapshot.focusedPaneId,
+        snapshot.activePanel,
+      );
       sharedState = {
         config: {
           ...syncedConfig,
           layout: cloneLayout(syncedConfig.layout),
-          layouts: syncedConfig.layouts.map((entry) => ({ ...entry, layout: cloneLayout(entry.layout) })),
+          layouts: cloneSavedLayouts(syncedConfig),
         },
         paneState: filterPaneState(syncedConfig.layout, clonePaneStateMap(snapshot.paneState)),
         focusedPaneId: snapshot.focusedPaneId,
@@ -113,12 +124,19 @@ export function createDesktopWorkspace(
       return updateConfig(config, options);
     },
     replaceDetachedPaneState(paneId, paneState) {
+      const nextPaneState = filterPaneState(sharedState.config.layout, {
+        ...sharedState.paneState,
+        [paneId]: { ...paneState },
+      });
       sharedState = {
         ...sharedState,
-        paneState: filterPaneState(sharedState.config.layout, {
-          ...sharedState.paneState,
-          [paneId]: { ...paneState },
-        }),
+        config: syncConfigActiveLayoutState(
+          sharedState.config,
+          nextPaneState,
+          sharedState.focusedPaneId,
+          sharedState.activePanel,
+        ),
+        paneState: nextPaneState,
       };
       return getSnapshot();
     },

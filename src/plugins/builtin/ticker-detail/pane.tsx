@@ -154,12 +154,6 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
     });
   }, [resolvedTabId, visibleTabIds]);
 
-  useEffect(() => {
-    if (resolvedTabId !== activeTabId) {
-      setActiveTabId(resolvedTabId);
-    }
-  }, [activeTabId, resolvedTabId, setActiveTabId]);
-
   const handleKeyboard = useCallback((event: { name?: string }) => {
     const currentState = stateRef.current;
     if (!currentState.focused || currentState.pluginCaptured) return;

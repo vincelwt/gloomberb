@@ -329,6 +329,64 @@ describe("pane state updates", () => {
 
     expect(next).toBe(initial);
   });
+
+  test("keeps pane runtime state scoped to each saved layout", () => {
+    let state = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
+    const originalLayoutIndex = state.config.activeLayoutIndex;
+
+    state = appReducer(state, {
+      type: "UPDATE_PANE_STATE",
+      paneId: "ticker-detail:main",
+      patch: { activeTabId: "chart" },
+    });
+    state = appReducer(state, { type: "DUPLICATE_LAYOUT", index: originalLayoutIndex });
+    const duplicateLayoutIndex = state.config.activeLayoutIndex;
+
+    state = appReducer(state, {
+      type: "UPDATE_PANE_STATE",
+      paneId: "ticker-detail:main",
+      patch: { activeTabId: "financials" },
+    });
+
+    expect(state.config.layouts[duplicateLayoutIndex]?.paneState?.["ticker-detail:main"]?.activeTabId).toBe("financials");
+
+    state = appReducer(state, { type: "SWITCH_LAYOUT", index: originalLayoutIndex });
+    expect(state.paneState["ticker-detail:main"]?.activeTabId).toBe("chart");
+    expect(state.config.layouts[originalLayoutIndex]?.paneState?.["ticker-detail:main"]?.activeTabId).toBe("chart");
+
+    state = appReducer(state, { type: "SWITCH_LAYOUT", index: duplicateLayoutIndex });
+    expect(state.paneState["ticker-detail:main"]?.activeTabId).toBe("financials");
+  });
+
+  test("hydrates saved layout pane state before legacy session pane state", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    config.layouts[config.activeLayoutIndex] = {
+      ...config.layouts[config.activeLayoutIndex]!,
+      paneState: {
+        "ticker-detail:main": { activeTabId: "chart" },
+      },
+      focusedPaneId: "ticker-detail:main",
+      activePanel: "right",
+    };
+    const sessionSnapshot: AppSessionSnapshot = {
+      paneState: {
+        "ticker-detail:main": { activeTabId: "overview" },
+      },
+      focusedPaneId: "portfolio-list:main",
+      activePanel: "left",
+      statusBarVisible: true,
+      openPaneIds: ["portfolio-list:main", "ticker-detail:main"],
+      hydrationTargets: [],
+      exchangeCurrencies: ["USD"],
+      savedAt: Date.now(),
+    };
+
+    const state = createInitialState(config, sessionSnapshot);
+
+    expect(state.paneState["ticker-detail:main"]?.activeTabId).toBe("chart");
+    expect(state.focusedPaneId).toBe("ticker-detail:main");
+    expect(state.activePanel).toBe("right");
+  });
 });
 
 describe("quote merging", () => {
@@ -487,6 +545,61 @@ describe("quote merging", () => {
 });
 
 describe("layout focus fallback", () => {
+  test("switching to an old layout without focused metadata uses that layout's top floating pane", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const targetLayout = {
+      ...cloneLayout(config.layout),
+      dockRoot: null,
+      floating: [
+        { instanceId: "chat:main", x: 4, y: 2, width: 36, height: 10, zIndex: 70 },
+        { instanceId: "ticker-detail:main", x: 12, y: 4, width: 36, height: 10, zIndex: 95 },
+      ],
+    };
+    config.layouts = [
+      { name: "Current", layout: cloneLayout(config.layout), paneState: {} },
+      { name: "Floating", layout: cloneLayout(targetLayout), paneState: {} },
+    ];
+    config.activeLayoutIndex = 0;
+
+    let state = createInitialState(config);
+    state = appReducer(state, { type: "FOCUS_PANE", paneId: "chat:main" });
+    state = appReducer(state, { type: "SWITCH_LAYOUT", index: 1 });
+
+    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
+    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
+    expect(state.focusedPaneId).toBe("ticker-detail:main");
+    expect((tickerEntry?.zIndex ?? 0) > (chatEntry?.zIndex ?? 0)).toBe(true);
+  });
+
+  test("switching layouts raises the saved focused floating pane above stale z-order", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const targetLayout = {
+      ...cloneLayout(config.layout),
+      dockRoot: null,
+      floating: [
+        { instanceId: "chat:main", x: 4, y: 2, width: 36, height: 10, zIndex: 70 },
+        { instanceId: "ticker-detail:main", x: 12, y: 4, width: 36, height: 10, zIndex: 95 },
+      ],
+    };
+    config.layouts = [
+      { name: "Current", layout: cloneLayout(config.layout), paneState: {} },
+      {
+        name: "Floating",
+        layout: cloneLayout(targetLayout),
+        paneState: {},
+        focusedPaneId: "chat:main",
+      },
+    ];
+    config.activeLayoutIndex = 0;
+
+    const state = appReducer(createInitialState(config), { type: "SWITCH_LAYOUT", index: 1 });
+
+    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
+    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
+    expect(state.focusedPaneId).toBe("chat:main");
+    expect((chatEntry?.zIndex ?? 0) > (tickerEntry?.zIndex ?? 0)).toBe(true);
+  });
+
   test("starts with the top floating pane focused when no session pane is active", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const layout = {
