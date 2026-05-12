@@ -162,6 +162,7 @@ export function TickerListTableView({
   }, [activateIndex, selectedIndex, tableProps.tickers.length]);
 
   useShortcut((event) => {
+    if (event.defaultPrevented || event.propagationStopped) return;
     if (!focused || !keyboardNavigation) return;
 
     if (onRootKeyDown?.(event)) return;

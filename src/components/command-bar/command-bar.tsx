@@ -2,8 +2,7 @@ import { Box, Input, ScrollBox, Text, Textarea, useUiCapabilities } from "../../
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
-import { useNativeRenderer } from "../../ui";
-import { useViewport } from "../../react/input";
+import { useShortcut, useViewport } from "../../react/input";
 import { Button, NumberField, Spinner, TextField } from "../ui";
 import { NativeSelect, openNativeSelect, type NativeSelectElement } from "../ui/native-select";
 import { ToggleList } from "../toggle-list";
@@ -661,7 +660,6 @@ export function CommandBar({
   const stateRef = useRef(state);
   stateRef.current = state;
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
-  const renderer = useNativeRenderer();
   const { width: termWidth, height: termHeight } = useViewport();
   const { nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18 } = useUiCapabilities();
   const availableCommands = useMemo(
@@ -4842,343 +4840,277 @@ export function CommandBar({
     }
   }, [currentRoute, pluginRegistry, updateTopRoute, updateWorkflowValue]);
 
-  useEffect(() => {
-    const keyInput = renderer.keyInput as typeof renderer.keyInput & {
-      onInternal?: (event: "keypress", handler: (event: {
-        name: string;
-        sequence?: string;
-        ctrl?: boolean;
-        option?: boolean;
-        meta?: boolean;
-        shift?: boolean;
-        stopPropagation: () => void;
-        preventDefault: () => void;
-      }) => void) => void;
-      offInternal?: (event: "keypress", handler: (event: {
-        name: string;
-        sequence?: string;
-        ctrl?: boolean;
-        option?: boolean;
-        meta?: boolean;
-        shift?: boolean;
-        stopPropagation: () => void;
-        preventDefault: () => void;
-      }) => void) => void;
-    };
-    if (!keyInput) return undefined;
-    const handleKeyPress = (event: {
-      name: string;
-      sequence?: string;
-      ctrl?: boolean;
-      option?: boolean;
-      meta?: boolean;
-      shift?: boolean;
-      stopPropagation: () => void;
-      preventDefault: () => void;
-    }) => {
-      if (event.name === "escape" || event.name === "`") {
-        event.stopPropagation();
-        event.preventDefault();
-        dismissCommandBar();
-        return;
-      }
+  useShortcut((event) => {
+    if (event.name === "escape" || event.name === "`") {
+      event.stopPropagation();
+      event.preventDefault();
+      dismissCommandBar();
+      return;
+    }
 
-      if (currentRoute?.kind === "confirm") {
-        if (isPlainBackspace(event)) {
-          event.stopPropagation();
-          event.preventDefault();
-          popRoute();
-          return;
-        }
-        if (event.name === "return" || event.name === "enter" || event.name === "y") {
-          event.stopPropagation();
-          event.preventDefault();
-          void confirmCurrentRoute();
-          return;
-        }
-        if (event.name === "n") {
-          event.stopPropagation();
-          event.preventDefault();
-          popRoute();
-        }
-        return;
-      }
-
-      if (
-        currentRoute
-        && (currentRoute.kind === "mode"
-          || currentRoute.kind === "picker"
-          || currentRoute.kind === "pane-settings")
-        && isPlainBackspace(event)
-        && currentRoute.query.length === 0
-      ) {
+    if (currentRoute?.kind === "confirm") {
+      if (isPlainBackspace(event)) {
         event.stopPropagation();
         event.preventDefault();
         popRoute();
         return;
       }
-
-      if (currentRoute?.kind === "workflow") {
-        const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
-        const activeField = visibleFields.find((field) => field.id === currentRoute.activeFieldId) ?? visibleFields[0];
-        const activeTextarea = activeField?.type === "textarea";
-
-        if (isPlainBackspace(event)) {
-          const activeValue = activeField
-            ? getWorkflowFieldStringValue(activeField, currentRoute.values[activeField.id])
-            : "";
-          if (!activeField || !isWorkflowTextField(activeField) || activeValue.length === 0) {
-            event.stopPropagation();
-            event.preventDefault();
-            popRoute();
-            return;
-          }
-        }
-
-        if (event.name === "tab") {
-          event.stopPropagation();
-          event.preventDefault();
-          moveWorkflowFocus(event.shift ? -1 : 1);
-          return;
-        }
-
-        if (activeTextarea && event.ctrl && event.name === "s") {
-          event.stopPropagation();
-          event.preventDefault();
-          void submitWorkflowRoute(currentRoute);
-          return;
-        }
-
-        if (activeTextarea && (event.name === "up" || event.name === "down" || (event.ctrl && (event.name === "p" || event.name === "n")))) {
-          return;
-        }
-
-        if (event.name === "up" || (event.ctrl && event.name === "p")) {
-          event.stopPropagation();
-          event.preventDefault();
-          moveWorkflowFocus(-1);
-          return;
-        }
-
-        if (event.name === "down" || (event.ctrl && event.name === "n")) {
-          event.stopPropagation();
-          event.preventDefault();
-          moveWorkflowFocus(1);
-          return;
-        }
-
-        if (event.name === "space" && activeField?.type === "toggle") {
-          event.stopPropagation();
-          event.preventDefault();
-          updateWorkflowValue(activeField.id, !coerceFieldBoolean(currentRoute.values[activeField.id]));
-          return;
-        }
-
-        if (
-          event.name === "return"
-          || event.name === "enter"
-          || (nativePaneChrome && event.name === "space" && activeField?.type === "select")
-        ) {
-          if (!activeField) return;
-          if (activeField.type === "select" || activeField.type === "multi-select" || activeField.type === "ordered-multi-select" || activeField.type === "toggle") {
-            event.stopPropagation();
-            event.preventDefault();
-            if (nativePaneChrome && activeField.type === "select") {
-              openNativeSelect(workflowNativeSelectRefs.current.get(activeField.id));
-              return;
-            }
-            openWorkflowFieldPicker(currentRoute, activeField);
-            return;
-          }
-        }
-
-        return;
-      }
-
-      if (currentRoute?.kind === "picker") {
-        if (event.name === "up" || (event.ctrl && event.name === "p")) {
-          event.stopPropagation();
-          event.preventDefault();
-          moveListSelection(-1);
-          return;
-        }
-        if (event.name === "down" || (event.ctrl && event.name === "n")) {
-          event.stopPropagation();
-          event.preventDefault();
-          moveListSelection(1);
-          return;
-        }
-        if (currentRoute.pickerId === "field-multi-select" && (event.name === "space" || event.sequence === " ")) {
-          event.stopPropagation();
-          event.preventDefault();
-          const listState = visibleListStateRef.current;
-          const selected = listState?.results[listState.selectedIdx];
-          if (!selected) return;
-          handleMultiSelectToggle(selected.id);
-          return;
-        }
-        if (currentRoute.pickerId === "field-multi-select" && event.name === "[") {
-          event.stopPropagation();
-          event.preventDefault();
-          handleMultiSelectMove("up");
-          return;
-        }
-        if (currentRoute.pickerId === "field-multi-select" && event.name === "]") {
-          event.stopPropagation();
-          event.preventDefault();
-          handleMultiSelectMove("down");
-          return;
-        }
-        if (event.name === "return" || event.name === "enter") {
-          event.stopPropagation();
-          event.preventDefault();
-          if (currentRoute.pickerId === "field-multi-select") {
-            commitMultiSelectPicker();
-            return;
-          }
-          activateListSelection();
-        }
-        return;
-      }
-
-      if (currentRoute?.kind === "pane-settings") {
-        if (event.name === "up" || (event.ctrl && event.name === "p")) {
-          event.stopPropagation();
-          event.preventDefault();
-          moveListSelection(-1);
-          return;
-        }
-        if (event.name === "down" || (event.ctrl && event.name === "n")) {
-          event.stopPropagation();
-          event.preventDefault();
-          moveListSelection(1);
-          return;
-        }
-        if (event.name === "return" || event.name === "enter" || event.name === "space") {
-          event.stopPropagation();
-          event.preventDefault();
-          activateListSelection();
-        }
-        return;
-      }
-
-      if (themePickerActive) {
-        if (event.name === "up" || (event.ctrl && event.name === "p")) {
-          event.stopPropagation();
-          event.preventDefault();
-          themePickerRef.current?.move(-1);
-          return;
-        }
-        if (event.name === "down" || (event.ctrl && event.name === "n")) {
-          event.stopPropagation();
-          event.preventDefault();
-          themePickerRef.current?.move(1);
-          return;
-        }
-        if (event.name === "return" || event.name === "enter") {
-          event.stopPropagation();
-          event.preventDefault();
-          themePickerRef.current?.commit();
-          return;
-        }
-      }
-
-      const activeListState = visibleListStateRef.current;
-      if (!activeListState) return;
-
-      if (!currentRoute && event.name === "tab") {
-        if (acceptRootShortcutTab()) {
-          event.stopPropagation();
-          event.preventDefault();
-          return;
-        }
-      }
-
-      if (event.name === "down" || (event.ctrl && event.name === "n")) {
+      if (event.name === "return" || event.name === "enter" || event.name === "y") {
         event.stopPropagation();
         event.preventDefault();
-        moveListSelection(1);
+        void confirmCurrentRoute();
+        return;
+      }
+      if (event.name === "n") {
+        event.stopPropagation();
+        event.preventDefault();
+        popRoute();
+      }
+      return;
+    }
+
+    if (
+      currentRoute
+      && (currentRoute.kind === "mode"
+        || currentRoute.kind === "picker"
+        || currentRoute.kind === "pane-settings")
+      && isPlainBackspace(event)
+      && currentRoute.query.length === 0
+    ) {
+      event.stopPropagation();
+      event.preventDefault();
+      popRoute();
+      return;
+    }
+
+    if (currentRoute?.kind === "workflow") {
+      const visibleFields = getVisibleWorkflowFields(currentRoute.fields, currentRoute.values);
+      const activeField = visibleFields.find((field) => field.id === currentRoute.activeFieldId) ?? visibleFields[0];
+      const activeTextarea = activeField?.type === "textarea";
+
+      if (isPlainBackspace(event)) {
+        const activeValue = activeField
+          ? getWorkflowFieldStringValue(activeField, currentRoute.values[activeField.id])
+          : "";
+        if (!activeField || !isWorkflowTextField(activeField) || activeValue.length === 0) {
+          event.stopPropagation();
+          event.preventDefault();
+          popRoute();
+          return;
+        }
+      }
+
+      if (event.name === "tab") {
+        event.stopPropagation();
+        event.preventDefault();
+        moveWorkflowFocus(event.shift ? -1 : 1);
+        return;
+      }
+
+      if (activeTextarea && event.ctrl && event.name === "s") {
+        event.stopPropagation();
+        event.preventDefault();
+        void submitWorkflowRoute(currentRoute);
+        return;
+      }
+
+      if (activeTextarea && (event.name === "up" || event.name === "down" || (event.ctrl && (event.name === "p" || event.name === "n")))) {
         return;
       }
 
       if (event.name === "up" || (event.ctrl && event.name === "p")) {
         event.stopPropagation();
         event.preventDefault();
+        moveWorkflowFocus(-1);
+        return;
+      }
+
+      if (event.name === "down" || (event.ctrl && event.name === "n")) {
+        event.stopPropagation();
+        event.preventDefault();
+        moveWorkflowFocus(1);
+        return;
+      }
+
+      if (event.name === "space" && activeField?.type === "toggle") {
+        event.stopPropagation();
+        event.preventDefault();
+        updateWorkflowValue(activeField.id, !coerceFieldBoolean(currentRoute.values[activeField.id]));
+        return;
+      }
+
+      if (
+        event.name === "return"
+        || event.name === "enter"
+        || (nativePaneChrome && event.name === "space" && activeField?.type === "select")
+      ) {
+        if (!activeField) return;
+        if (activeField.type === "select" || activeField.type === "multi-select" || activeField.type === "ordered-multi-select" || activeField.type === "toggle") {
+          event.stopPropagation();
+          event.preventDefault();
+          if (nativePaneChrome && activeField.type === "select") {
+            openNativeSelect(workflowNativeSelectRefs.current.get(activeField.id));
+            return;
+          }
+          openWorkflowFieldPicker(currentRoute, activeField);
+          return;
+        }
+      }
+
+      return;
+    }
+
+    if (currentRoute?.kind === "picker") {
+      if (event.name === "up" || (event.ctrl && event.name === "p")) {
+        event.stopPropagation();
+        event.preventDefault();
         moveListSelection(-1);
         return;
       }
-
-      if ((event.meta && (event.name === "backspace" || event.name === "delete")) || (event.ctrl && event.name === "u")) {
+      if (event.name === "down" || (event.ctrl && event.name === "n")) {
         event.stopPropagation();
         event.preventDefault();
-        setActiveListQuery("");
+        moveListSelection(1);
         return;
       }
-
-      if ((event.ctrl && event.name === "w") || (event.meta && (event.name === "h" || event.name === "u"))) {
+      if (currentRoute.pickerId === "field-multi-select" && (event.name === "space" || event.sequence === " ")) {
         event.stopPropagation();
         event.preventDefault();
-        const trimmed = activeListState.query.replace(/\s+$/, "");
-        const nextQuery = trimmed.replace(/[^\s]+$/, "").replace(/\s+$/, "");
-        setActiveListQuery(nextQuery);
+        const listState = visibleListStateRef.current;
+        const selected = listState?.results[listState.selectedIdx];
+        if (!selected) return;
+        handleMultiSelectToggle(selected.id);
         return;
       }
-
-      const pluginToggleMode = (currentRoute?.kind === "mode" && currentRoute.screen === "plugins")
-        || (!currentRoute && rootModeInfo.kind === "plugins");
-      if (pluginToggleMode && event.name === "space") {
+      if (currentRoute.pickerId === "field-multi-select" && event.name === "[") {
         event.stopPropagation();
         event.preventDefault();
-        const selected = activeListState.results[activeListState.selectedIdx];
-        if (selected?.pluginToggle) {
-          void selected.pluginToggle();
-        }
+        handleMultiSelectMove("up");
         return;
       }
-
+      if (currentRoute.pickerId === "field-multi-select" && event.name === "]") {
+        event.stopPropagation();
+        event.preventDefault();
+        handleMultiSelectMove("down");
+        return;
+      }
       if (event.name === "return" || event.name === "enter") {
         event.stopPropagation();
         event.preventDefault();
-        if (event.shift) {
-          activateListSelection({ secondary: true });
+        if (currentRoute.pickerId === "field-multi-select") {
+          commitMultiSelectPicker();
           return;
         }
         activateListSelection();
       }
-    };
-
-    if (keyInput.onInternal) {
-      keyInput.onInternal("keypress", handleKeyPress);
-    } else {
-      keyInput.on("keypress", handleKeyPress);
+      return;
     }
-    return () => {
-      if (keyInput.offInternal) {
-        keyInput.offInternal("keypress", handleKeyPress);
-      } else {
-        keyInput.off("keypress", handleKeyPress);
+
+    if (currentRoute?.kind === "pane-settings") {
+      if (event.name === "up" || (event.ctrl && event.name === "p")) {
+        event.stopPropagation();
+        event.preventDefault();
+        moveListSelection(-1);
+        return;
       }
-    };
-  }, [
-    activateListSelection,
-    acceptRootShortcutTab,
-    commitMultiSelectPicker,
-    confirmCurrentRoute,
-    currentRoute,
-    dismissCommandBar,
-    handleMultiSelectMove,
-    handleMultiSelectToggle,
-    moveListSelection,
-    moveWorkflowFocus,
-    nativePaneChrome,
-    openWorkflowFieldPicker,
-    popRoute,
-    renderer,
-    rootModeInfo.kind,
-    setActiveListQuery,
-    themePickerActive,
-    updateWorkflowValue,
-  ]);
+      if (event.name === "down" || (event.ctrl && event.name === "n")) {
+        event.stopPropagation();
+        event.preventDefault();
+        moveListSelection(1);
+        return;
+      }
+      if (event.name === "return" || event.name === "enter" || event.name === "space") {
+        event.stopPropagation();
+        event.preventDefault();
+        activateListSelection();
+      }
+      return;
+    }
+
+    if (themePickerActive) {
+      if (event.name === "up" || (event.ctrl && event.name === "p")) {
+        event.stopPropagation();
+        event.preventDefault();
+        themePickerRef.current?.move(-1);
+        return;
+      }
+      if (event.name === "down" || (event.ctrl && event.name === "n")) {
+        event.stopPropagation();
+        event.preventDefault();
+        themePickerRef.current?.move(1);
+        return;
+      }
+      if (event.name === "return" || event.name === "enter") {
+        event.stopPropagation();
+        event.preventDefault();
+        themePickerRef.current?.commit();
+        return;
+      }
+    }
+
+    const activeListState = visibleListStateRef.current;
+    if (!activeListState) return;
+
+    if (!currentRoute && event.name === "tab") {
+      if (acceptRootShortcutTab()) {
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (event.name === "down" || (event.ctrl && event.name === "n")) {
+      event.stopPropagation();
+      event.preventDefault();
+      moveListSelection(1);
+      return;
+    }
+
+    if (event.name === "up" || (event.ctrl && event.name === "p")) {
+      event.stopPropagation();
+      event.preventDefault();
+      moveListSelection(-1);
+      return;
+    }
+
+    if ((event.meta && (event.name === "backspace" || event.name === "delete")) || (event.ctrl && event.name === "u")) {
+      event.stopPropagation();
+      event.preventDefault();
+      setActiveListQuery("");
+      return;
+    }
+
+    if ((event.ctrl && event.name === "w") || (event.meta && (event.name === "h" || event.name === "u"))) {
+      event.stopPropagation();
+      event.preventDefault();
+      const trimmed = activeListState.query.replace(/\s+$/, "");
+      const nextQuery = trimmed.replace(/[^\s]+$/, "").replace(/\s+$/, "");
+      setActiveListQuery(nextQuery);
+      return;
+    }
+
+    const pluginToggleMode = (currentRoute?.kind === "mode" && currentRoute.screen === "plugins")
+      || (!currentRoute && rootModeInfo.kind === "plugins");
+    if (pluginToggleMode && event.name === "space") {
+      event.stopPropagation();
+      event.preventDefault();
+      const selected = activeListState.results[activeListState.selectedIdx];
+      if (selected?.pluginToggle) {
+        void selected.pluginToggle();
+      }
+      return;
+    }
+
+    if (event.name === "return" || event.name === "enter") {
+      event.stopPropagation();
+      event.preventDefault();
+      if (event.shift) {
+        activateListSelection({ secondary: true });
+        return;
+      }
+      activateListSelection();
+    }
+  }, { phase: "before" });
 
   const barWidth = nativePaneChrome
     ? Math.max(46, Math.min(78, termWidth - 10, Math.floor(termWidth * 0.64)))

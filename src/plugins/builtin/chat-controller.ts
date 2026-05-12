@@ -66,6 +66,7 @@ export interface ChatControllerSnapshot {
 }
 
 type ChatConnection = { send: (content: string, replyToId?: string) => Promise<ChatMessage>; close: () => void };
+type MergeMessagesOptions = { countUnread?: boolean };
 
 interface ChannelRuntimeState {
   hydrated: boolean;
@@ -373,7 +374,7 @@ export class ChatController {
       channel.lastViewedMessageId = entry.lastReadMessageId ?? channel.lastViewedMessageId;
     }
     for (const notification of state.notifications) {
-      this.handleChatNotification(notification);
+      this.handleChatNotification(notification, { countUnread: false });
     }
     this.ensureOpenChannelConnections();
     this.emit();
@@ -908,6 +909,8 @@ export class ChatController {
     const channel = this.ensureChannelState(channelId);
     const legacyTimestampCursor = isLegacyTimestampCursor(channel.lastCursor);
     const hasIncrementalCursor = !!channel.lastCursor;
+    const hadMessages = channel.messages.length > 0;
+    const countIncrementalUnread = hadMessages && hasIncrementalCursor && !legacyTimestampCursor;
 
     try {
       const messages = await apiClient.getMessages(channelId, {
@@ -918,7 +921,7 @@ export class ChatController {
         channel.reachedOldestMessage = true;
       }
       if (messages.length > 0) {
-        this.mergeMessages(channelId, messages);
+        this.mergeMessages(channelId, messages, { countUnread: countIncrementalUnread });
         return;
       }
       if (legacyTimestampCursor) {
@@ -927,7 +930,7 @@ export class ChatController {
           channel.reachedOldestMessage = true;
         }
         if (fullRefresh.length > 0) {
-          this.mergeMessages(channelId, fullRefresh);
+          this.mergeMessages(channelId, fullRefresh, { countUnread: false });
           return;
         }
         channel.lastCursor = null;
@@ -940,7 +943,7 @@ export class ChatController {
         channel.reachedOldestMessage = true;
       }
       if (messages.length > 0) {
-        this.mergeMessages(channelId, messages);
+        this.mergeMessages(channelId, messages, { countUnread: false });
         return;
       }
       this.persistChannelState(channelId);
@@ -960,20 +963,20 @@ export class ChatController {
       this.persistChannelState(channelId);
       return;
     }
-    this.mergeMessages(channelId, messages, { notifyMentions: false });
+    this.mergeMessages(channelId, messages, { countUnread: false });
   }
 
   private mergeMessages(
     channelIdOrMessages: string | ChatMessage[],
-    maybeMessages?: ChatMessage[] | { notifyMentions?: boolean },
-    maybeOptions?: { notifyMentions?: boolean },
+    maybeMessages?: ChatMessage[] | MergeMessagesOptions,
+    maybeOptions?: MergeMessagesOptions,
   ): void {
     const channelId = Array.isArray(channelIdOrMessages) ? DEFAULT_CHAT_CHANNEL_ID : channelIdOrMessages;
     const messages = Array.isArray(channelIdOrMessages)
       ? channelIdOrMessages
       : (maybeMessages as ChatMessage[] | undefined) ?? [];
     const options = Array.isArray(channelIdOrMessages)
-      ? maybeMessages as { notifyMentions?: boolean } | undefined
+      ? maybeMessages as MergeMessagesOptions | undefined
       : maybeOptions;
     const channel = this.ensureChannelState(channelId);
     this.reconcilePendingMessages(channelId, messages);
@@ -992,11 +995,8 @@ export class ChatController {
     const freshIncoming = [...incoming.values()].filter((message) => message.user.id !== this.user?.id);
     if (channel.openViewCount > 0) {
       this.markViewedThroughLatestMessage(channelId, false);
-    } else if (freshIncoming.length > 0) {
+    } else if (freshIncoming.length > 0 && options?.countUnread !== false) {
       channel.unreadCount += freshIncoming.length;
-    }
-    if (options?.notifyMentions !== false) {
-      this.trackIncomingNotifications(channelId, freshIncoming);
     }
     this.persistTranscript(channelId);
     this.emit(channelId);
@@ -1079,89 +1079,27 @@ export class ChatController {
     this.persistChannelState(channelId);
   }
 
-  private trackIncomingNotifications(channelId: string, messages: ChatMessage[]): void {
-    const channel = this.ensureChannelState(channelId);
-    if (channel.openViewCount > 0) {
-      return;
-    }
-
-    const mentions: ChatMessage[] = [];
-    for (const message of messages) {
-      if (this.isReplyToCurrentUser(message)) {
-        this.notifyReplyMessage(channelId, message);
-        continue;
-      }
-      if (this.isMentionForCurrentUser(message)) {
-        mentions.push(message);
-        continue;
-      }
-      if (channel.notificationsEnabled) {
-        this.notifyChannelMessage(channelId, message);
-      }
-    }
-
-    const freshMentions = mentions.filter((message) => !this.notifiedMessageIds.has(message.id));
-    if (freshMentions.length === 0) return;
-    for (const message of freshMentions) {
-      this.notifiedMessageIds.add(message.id);
-    }
-
-    if (freshMentions.length === 1) {
-      this.notifyFn({
-        title: "Gloomberb chat",
-        body: formatMentionToast(freshMentions[0]!),
-        type: "info",
-        desktop: "when-inactive",
-      });
-      return;
-    }
-    this.notifyFn({
-      title: "Gloomberb chat",
-      body: `${freshMentions.length} new mentions in #${channelId}.`,
-      type: "info",
-      desktop: "when-inactive",
-    });
-  }
-
-  private handleChatNotification(notification: ChatNotification): void {
-    if (notification.type === "reply") {
-      this.notifyReplyMessage(notification.channelId, notification.message);
+  private handleChatNotification(notification: ChatNotification, options: { countUnread?: boolean } = {}): void {
+    this.mergeMessages(notification.channelId, [notification.message], { countUnread: options.countUnread });
+    const channel = this.ensureChannelState(notification.channelId);
+    if (channel.openViewCount === 0) {
+      this.notifyServerMessage(notification);
     }
     void apiClient.markChatNotificationsDelivered([notification.id]).catch(() => {});
   }
 
-  private isReplyToCurrentUser(message: ChatMessage): boolean {
-    return !!this.user?.id
-      && message.user.id !== this.user.id
-      && message.replyTo?.user.id === this.user.id;
-  }
-
-  private isMentionForCurrentUser(message: ChatMessage): boolean {
-    const normalizedUsername = normalizeUsername(this.user?.username);
-    return !!normalizedUsername
-      && message.user.id !== this.user?.id
-      && messageMentionsUsername(message.content, normalizedUsername);
-  }
-
-  private notifyReplyMessage(channelId: string, message: ChatMessage): void {
-    if (this.notifiedMessageIds.has(message.id)) return;
-    this.notifiedMessageIds.add(message.id);
+  private notifyServerMessage(notification: ChatNotification): void {
+    if (this.notifiedMessageIds.has(notification.messageId)) return;
+    this.notifiedMessageIds.add(notification.messageId);
+    const body = notification.type === "reply"
+      ? formatReplyToast(notification.message)
+      : notification.type === "mention"
+        ? formatMentionToast(notification.message)
+        : formatChannelToast(notification.channelId, notification.message);
     this.notifyFn({
       title: "Gloomberb chat",
-      subtitle: `#${channelId}`,
-      body: formatReplyToast(message),
-      type: "info",
-      desktop: "when-inactive",
-    });
-  }
-
-  private notifyChannelMessage(channelId: string, message: ChatMessage): void {
-    if (this.notifiedMessageIds.has(message.id)) return;
-    this.notifiedMessageIds.add(message.id);
-    this.notifyFn({
-      title: "Gloomberb chat",
-      subtitle: `#${channelId}`,
-      body: formatChannelToast(channelId, message),
+      subtitle: `#${notification.channelId}`,
+      body,
       type: "info",
       desktop: "when-inactive",
     });

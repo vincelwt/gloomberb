@@ -586,6 +586,54 @@ describe("ChatController", () => {
     });
   });
 
+  test("hydrates missing transcript cache without marking history unread", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const history: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "already seen",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    persistence.setState("channel:everyone", {
+      draft: "",
+      replyToId: null,
+      lastCursor: "m1",
+      lastViewedMessageId: "m1",
+    }, { schemaVersion: 1 });
+
+    controller.setNotifier((notification) => {
+      notifications.push(notification);
+    });
+    controller.attachPersistence(persistence);
+
+    const calls: Array<{ channelId: string; opts?: { after?: string; before?: string; limit?: number } }> = [];
+    apiClient.getMessages = async (channelId, opts) => {
+      calls.push({ channelId, opts });
+      return opts?.after ? [] : [history];
+    };
+
+    await controller.refreshMessages();
+
+    expect(calls).toEqual([{
+      channelId: "everyone",
+      opts: { limit: 50, after: undefined },
+    }]);
+    expect(controller.getSnapshot().messages).toEqual([history]);
+    expect(controller.getSnapshot().channelStates.find((entry) => entry.channelId === "everyone")).toMatchObject({
+      unreadCount: 0,
+    });
+    expect(notifications).toEqual([]);
+  });
+
   test("backfills from cached transcript when persisted cursor is ahead of the cache", async () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
@@ -744,7 +792,7 @@ describe("ChatController", () => {
     expect(notifications).toEqual([{ body: "server offline", type: "error" }]);
   });
 
-  test("tracks unread mentions and emits an app notification while chat is closed", () => {
+  test("tracks unread mentions from fetched messages without issuing local notifications", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
     const notifications: AppNotificationRequest[] = [];
@@ -770,19 +818,14 @@ describe("ChatController", () => {
     (controller as any).mergeMessages([message]);
 
     expect(controller.getSnapshot().unreadMentionCount).toBe(1);
-    expect(notifications).toEqual([{
-      title: "Gloomberb chat",
-      body: "@bob mentioned you: hey @Vince can you take a look?",
-      type: "info",
-      desktop: "when-inactive",
-    }]);
+    expect(notifications).toEqual([]);
     expect(persistence.getState<{ lastCursor: string | null; lastViewedMessageId: string | null }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
       lastCursor: "m1",
       lastViewedMessageId: null,
     });
   });
 
-  test("keeps emitting mention notifications while the app is backgrounded", () => {
+  test("displays server-issued mention notifications while the app is backgrounded", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
     const notifications: AppNotificationRequest[] = [];
@@ -806,10 +849,18 @@ describe("ChatController", () => {
     controller.attachPersistence(persistence);
     controller.setAppActive(false);
 
-    (controller as any).mergeMessages([message]);
+    (controller as any).handleChatNotification({
+      id: "n1",
+      type: "mention",
+      channelId: "everyone",
+      messageId: "m1",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      message,
+    } satisfies ChatNotification);
 
     expect(notifications).toEqual([{
       title: "Gloomberb chat",
+      subtitle: "#everyone",
       body: "@bob mentioned you: hey @vince",
       type: "info",
       desktop: "when-inactive",
@@ -846,12 +897,7 @@ describe("ChatController", () => {
     const detachView = controller.attachView();
 
     expect(controller.getSnapshot().unreadMentionCount).toBe(0);
-    expect(notifications).toEqual([{
-      title: "Gloomberb chat",
-      body: "@bob mentioned you: hey @vince",
-      type: "info",
-      desktop: "when-inactive",
-    }]);
+    expect(notifications).toEqual([]);
     expect(persistence.getState<{ lastViewedMessageId: string | null }>("channel:everyone", { schemaVersion: 1 })).toMatchObject({
       lastViewedMessageId: "m1",
     });
@@ -1043,6 +1089,46 @@ describe("ChatController", () => {
     expect(notifications).toHaveLength(1);
   });
 
+  test("displays server-issued channel notifications", () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const notifications: AppNotificationRequest[] = [];
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: "options",
+      content: "new option flow",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.setNotifier((entry) => {
+      notifications.push(entry);
+    });
+    controller.attachPersistence(persistence);
+
+    (controller as any).handleChatNotification({
+      id: "n1",
+      type: "channel",
+      channelId: "options",
+      messageId: "m1",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      message,
+    } satisfies ChatNotification);
+
+    expect(notifications).toEqual([{
+      title: "Gloomberb chat",
+      subtitle: "#options",
+      body: "#options @bob: new option flow",
+      type: "info",
+      desktop: "when-inactive",
+    }]);
+  });
+
   test("tracks unread channel messages and clears them when the channel opens", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
@@ -1075,7 +1161,7 @@ describe("ChatController", () => {
     detachView();
   });
 
-  test("reply notifications fire even when channel notifications are disabled", () => {
+  test("server reply notifications fire even when channel notifications are disabled", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
     const notifications: AppNotificationRequest[] = [];
@@ -1098,7 +1184,14 @@ describe("ChatController", () => {
     });
     controller.attachPersistence(persistence);
 
-    (controller as any).mergeMessages("options", [message]);
+    (controller as any).handleChatNotification({
+      id: "n1",
+      type: "reply",
+      channelId: "options",
+      messageId: "m2",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      message,
+    } satisfies ChatNotification);
 
     expect(notifications).toEqual([{
       title: "Gloomberb chat",

@@ -130,7 +130,7 @@ async function renderSettled() {
   });
 }
 
-async function emitKeypress(event: { name?: string; sequence?: string }) {
+async function emitKeypress(event: { name?: string; sequence?: string; defaultPrevented?: boolean; propagationStopped?: boolean }) {
   await act(async () => {
     testSetup!.renderer.keyInput.emit("keypress", {
       ctrl: false,
@@ -139,6 +139,8 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
       shift: false,
       eventType: "press",
       repeated: false,
+      defaultPrevented: false,
+      propagationStopped: false,
       preventDefault: () => {},
       stopPropagation: () => {},
       ...event,
@@ -166,6 +168,14 @@ describe("DataTableView", () => {
     await emitKeypress({ name: "enter", sequence: "\r" });
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("activated=First row");
+
+    await emitKeypress({ name: "j", sequence: "j" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=Second row activated=First row");
+
+    await emitKeypress({ name: "enter", sequence: "\r", defaultPrevented: true });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=Second row activated=First row");
   });
 
   test("keeps keyboard navigation usable without external row selection", async () => {

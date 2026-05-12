@@ -68,7 +68,7 @@ export interface ChatChannelState {
 
 export interface ChatNotification {
   id: string;
-  type: "reply";
+  type: "reply" | "mention" | "channel";
   channelId: string;
   messageId: string;
   createdAt: string;
