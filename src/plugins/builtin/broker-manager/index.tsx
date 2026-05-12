@@ -32,6 +32,7 @@ import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { BrokerAccount } from "../../../types/trading";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { formatCurrency } from "../../../utils/format";
+import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginAppActions, usePluginBrokerActions } from "../../plugin-runtime";
 import {
   buildBrokerProfileRows,
@@ -442,13 +443,13 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         saveEdit().catch(() => {});
         return;
       }
-      if (event.name === "up" || event.name === "k") {
+      if (isPlainKey(event, "up", "k")) {
         event.stopPropagation();
         const index = editKeys.indexOf(activeEditKey);
         setActiveEditKey(editKeys[Math.max(0, index - 1)] ?? "label");
         return;
       }
-      if (event.name === "down" || event.name === "j" || event.name === "tab") {
+      if (isPlainKey(event, "down", "j", "tab")) {
         event.stopPropagation();
         const index = editKeys.indexOf(activeEditKey);
         setActiveEditKey(editKeys[Math.min(editKeys.length - 1, index + 1)] ?? "label");

@@ -130,7 +130,16 @@ async function renderSettled() {
   });
 }
 
-async function emitKeypress(event: { name?: string; sequence?: string; defaultPrevented?: boolean; propagationStopped?: boolean }) {
+async function emitKeypress(event: {
+  name?: string;
+  sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  shift?: boolean;
+  option?: boolean;
+  defaultPrevented?: boolean;
+  propagationStopped?: boolean;
+}) {
   await act(async () => {
     testSetup!.renderer.keyInput.emit("keypress", {
       ctrl: false,
@@ -157,6 +166,10 @@ describe("DataTableView", () => {
     expect(testSetup.captureCharFrame()).toContain("selected=First row");
 
     await emitKeypress({ name: "j", sequence: "j" });
+    await renderSettled();
+    expect(testSetup.captureCharFrame()).toContain("selected=Second row");
+
+    await emitKeypress({ name: "k", sequence: "k", meta: true });
     await renderSettled();
     expect(testSetup.captureCharFrame()).toContain("selected=Second row");
 

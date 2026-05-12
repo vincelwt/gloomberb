@@ -5,6 +5,7 @@ import { type AlertContext, useDialog, useDialogKeyboard } from "../../ui/dialog
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { colors } from "../../theme/colors";
 import { isDetailBackNavigationKey } from "../../utils/back-navigation";
+import { isPlainKey } from "../../utils/keyboard";
 import { ToggleList } from "../toggle-list";
 import { Button } from "./button";
 import { DialogFrame } from "./frame";
@@ -176,10 +177,10 @@ export function MultiSelectDialogContent({
 
   useDialogKeyboard((event) => {
     event.stopPropagation();
-    if (event.name === "up" || event.name === "k") {
+    if (isPlainKey(event, "up", "k")) {
       const nextIndex = Math.max(0, selectedIndex - 1);
       setSelectedOptionId(displayOptions[nextIndex]?.value ?? selectedOptionId);
-    } else if (event.name === "down" || event.name === "j") {
+    } else if (isPlainKey(event, "down", "j")) {
       const nextIndex = Math.min(displayOptions.length - 1, selectedIndex + 1);
       setSelectedOptionId(displayOptions[nextIndex]?.value ?? selectedOptionId);
     } else if (isSpaceKey(event)) {

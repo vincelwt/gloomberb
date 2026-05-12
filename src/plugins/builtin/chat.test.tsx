@@ -964,6 +964,34 @@ describe("ChatContent", () => {
     expect(frame).toContain("Reply to @user2...");
   });
 
+  test("modified k does not move message selection", async () => {
+    const controller = createController({
+      messages: [makeMessage(1), makeMessage(2)],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, {
+        width: 72,
+        height: 12,
+      }), {
+        width: 72,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    await emitKeypress({ name: "up", sequence: "\u001b[A" });
+    await emitKeypress({ name: "k", sequence: "k", meta: true });
+    await emitKeypress({ name: "return", sequence: "\r" });
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("replying to @user2");
+    expect(frame).toContain("Reply to @user2...");
+    expect(frame).not.toContain("replying to @user1");
+  });
+
   test("shows the reply action next to the selected message timestamp", async () => {
     const controller = createController({
       messages: [makeMessage(1), makeMessage(2)],

@@ -7,6 +7,7 @@ import { usePaneTicker } from "../../state/app-context";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { blendForContrast, contrastRatio, higherContrast } from "../../theme/color-utils";
 import { formatCompact, formatNumber } from "../../utils/format";
+import { isPlainKey } from "../../utils/keyboard";
 import { formatMarketPrice } from "../../utils/market-format";
 import { formatExpDate, resolveOptionsTarget } from "../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../market-data/hooks";
@@ -227,7 +228,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       return true;
     }
 
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       if (strikes.length === 0) return true;
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -236,7 +237,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       setStrikeIdx((i) => Math.min(i + 1, strikes.length - 1));
       return true;
     }
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       if (strikes.length === 0) return true;
       event.preventDefault?.();
       event.stopPropagation?.();

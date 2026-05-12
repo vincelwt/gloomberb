@@ -16,6 +16,7 @@ import { colors, priceColor } from "../../theme/colors";
 import type { PaneProps } from "../../types/plugin";
 import type { Quote } from "../../types/financials";
 import { formatCurrency, padTo } from "../../utils/format";
+import { isPlainKey } from "../../utils/keyboard";
 import { formatMarketPrice, formatMarketQuantity } from "../../utils/market-format";
 import { getBrokerInstance } from "../../utils/broker-instances";
 import { usePluginPaneActions } from "../plugin-runtime";
@@ -295,13 +296,13 @@ export function TradingPane({ focused, width, height }: PaneProps) {
     if (!focused) return;
     event.stopPropagation?.();
 
-    if (event.name === "j" || event.name === "down") {
+    if (isPlainKey(event, "j", "down")) {
       const nextIndex = Math.min(tradeState.selectedOpenOrderIndex + 1, Math.max(0, gatewaySnapshot.openOrders.length - 1));
       updateTradingPaneState({ selectedOpenOrderIndex: nextIndex });
       return;
     }
 
-    if (event.name === "k" || event.name === "up") {
+    if (isPlainKey(event, "k", "up")) {
       const nextIndex = Math.max(0, tradeState.selectedOpenOrderIndex - 1);
       updateTradingPaneState({ selectedOpenOrderIndex: nextIndex });
       return;

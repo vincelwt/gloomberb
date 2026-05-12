@@ -194,13 +194,13 @@ export function DataTableView<
     if (onRootKeyDown?.(event)) return;
     if (tableProps.items.length === 0) return;
 
-    if (isNextTableRowKey(event.name)) {
+    if (isNextTableRowKey(event)) {
       stopTableKey(event);
       selectByOffset(1);
       return;
     }
 
-    if (isPreviousTableRowKey(event.name)) {
+    if (isPreviousTableRowKey(event)) {
       stopTableKey(event);
       selectByOffset(-1);
       return;
