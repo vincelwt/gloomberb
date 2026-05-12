@@ -10,6 +10,7 @@ export interface CommandContext {
 export interface Command {
   id: string;
   prefix: string;        // e.g., "DES", "AW", "RP"
+  aliases?: string[];
   label: string;
   description: string;
   hasArg?: boolean;       // true if prefix takes an argument (e.g., "DES AMD")
@@ -24,6 +25,7 @@ export const commands: Command[] = [
   {
     id: "security-description",
     prefix: "DES",
+    aliases: ["T"],
     label: "Description",
     description: "Open security details for a ticker",
     hasArg: true,
@@ -239,19 +241,27 @@ export const commands: Command[] = [
 ];
 
 /** Find a command whose prefix matches the start of the input */
-export function matchPrefix(input: string, commandList: Command[] = commands): { command: Command; arg: string } | null {
+export function matchPrefix(input: string, commandList: Command[] = commands): { command: Command; arg: string; prefix: string } | null {
   const upper = input.toUpperCase().trim();
   if (!upper) return null;
 
   // Sort by prefix length descending so longer prefixes match first (e.g., "AW" before "A")
-  const sorted = [...commandList].sort((a, b) => b.prefix.length - a.prefix.length);
+  const sorted = commandList
+    .flatMap((command) => getCommandPrefixes(command).map((prefix) => ({ command, prefix })))
+    .sort((a, b) => b.prefix.length - a.prefix.length);
 
-  for (const cmd of sorted) {
-    if (upper.startsWith(cmd.prefix + " ") || upper === cmd.prefix) {
-      const arg = input.slice(cmd.prefix.length).trim();
-      return { command: cmd, arg };
+  for (const { command, prefix } of sorted) {
+    if (upper.startsWith(`${prefix} `) || upper === prefix) {
+      const arg = input.slice(prefix.length).trim();
+      return { command, arg, prefix };
     }
   }
 
   return null;
+}
+
+export function getCommandPrefixes(command: Command): string[] {
+  return [command.prefix, ...(command.aliases ?? [])]
+    .map((prefix) => prefix.trim().toUpperCase())
+    .filter(Boolean);
 }

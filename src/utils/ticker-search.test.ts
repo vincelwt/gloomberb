@@ -82,7 +82,7 @@ describe("ticker-search utilities", () => {
       ]),
     });
 
-    expect(results.map((item) => item.id)).toEqual(["goto:AAPL", "search:APP"]);
+    expect(results.map((item) => item.id)).toEqual(["goto:AAPL", "search:APP:NASDAQ:TEST"]);
     expect(findExactTickerSearchMatch(results, "AAPL")?.id).toBe("goto:AAPL");
   });
 
@@ -97,7 +97,7 @@ describe("ticker-search utilities", () => {
       ]),
     });
 
-    expect(results.map((item) => item.id)).toEqual(["goto:AAPL", "search:APLE"]);
+    expect(results.map((item) => item.id)).toEqual(["goto:AAPL", "search:APLE:NASDAQ:TEST"]);
     expect(results[0]).toMatchObject({
       id: "goto:AAPL",
       detail: "Apple Inc",

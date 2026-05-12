@@ -999,6 +999,25 @@ describe("CommandBar", () => {
     expect(frame).toContain("Security Description");
   });
 
+  test("T without an active ticker opens ticker search on enter", async () => {
+    testSetup = await testRender(<CommandBarHarness query="T" />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Description");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Back");
+    expect(frame).toContain("Security Description");
+  });
+
   test("QQ with an active ticker shows ghost completion and tab inserts the symbol", async () => {
     testSetup = await testRender(<CommandBarHarness query="QQ" live selectedTicker="AAPL" showQueryState />, {
       width: 100,
@@ -1179,6 +1198,121 @@ describe("CommandBar", () => {
     expect(frame).toContain("AAOI");
   });
 
+  test("keeps exact T ticker matches above noisy provider matches", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="T AMD"
+        extraTickers={[
+          makeTicker("AMDL", "GraniteShares 2x Long AMD Daily"),
+          makeTicker("AMUU", "Direxion Daily AMD Bull 2X ETF"),
+        ]}
+        dataProvider={makeDataProvider(async () => [
+          { providerId: "yahoo", symbol: "DES", name: "AMD-themed synthetic listing", exchange: "ASX", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "DES2", name: "AMD-themed secondary listing", exchange: "LSE", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "AMD", name: "Advanced Micro Devices", exchange: "NASDAQ", type: "EQUITY" },
+        ])}
+      />,
+      { width: 100, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    const frame = await waitForFrameToContain("DES2");
+    const resultLines = frame
+      .split("\n")
+      .filter((line) => /\b(AMD|DES2?|DES)\b/.test(line) && /\b(NASDAQ|ASX|LSE)\b/.test(line));
+
+    expect(resultLines[0]).toContain("AMD");
+    expect(resultLines[0]).toContain("NASDAQ");
+  });
+
+  test("loads exact provider matches for plain ticker-shaped root queries", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="amd"
+        extraTickers={[
+          makeTicker("AMDL", "GraniteShares 2x Long AMD Daily"),
+          makeTicker("AMUU", "Direxion Daily AMD Bull 2X ETF"),
+        ]}
+        dataProvider={makeDataProvider(async () => [
+          { providerId: "yahoo", symbol: "DES", name: "AMD-themed synthetic listing", exchange: "ASX", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "AMD", name: "Advanced Micro Devices", exchange: "NASDAQ", type: "EQUITY" },
+        ])}
+      />,
+      { width: 100, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    const frame = await waitForFrameToContain("DES");
+    const resultLines = frame
+      .split("\n")
+      .filter((line) => /\b(AMD|AMDL|AMUU|DES)\b/.test(line) && /\b(NASDAQ|ASX)\b/.test(line));
+
+    expect(resultLines[0]).toContain("AMD");
+    expect(resultLines[0]).toContain("NASDAQ");
+  });
+
+  test("keeps pane matches visible alongside plain ticker provider results", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="opti"
+        dataProvider={makeDataProvider(async () => [
+          { providerId: "yahoo", symbol: "OPTI", name: "Optimi Health Corp", exchange: "CSE", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "OPTI", name: "Optimi Health Corp", exchange: "NEO", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "OPTI", name: "Optimi Health Corp", exchange: "LSE", type: "EQUITY" },
+        ])}
+        configurePluginRegistry={(pluginRegistry) => {
+          const paneTemplates = pluginRegistry.paneTemplates as Map<string, any>;
+          paneTemplates.set("options-pane", {
+            id: "options-pane",
+            paneId: "options",
+            label: "Options",
+            description: "Options chain for the selected ticker",
+            shortcut: { prefix: "OMON", argPlaceholder: "ticker", argKind: "ticker" },
+            canCreate: (context: any, options?: PaneTemplateCreateOptions) => (
+              context.activeTicker !== null || !!options?.arg
+            ),
+          });
+        }}
+      />,
+      { width: 100, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    const frame = await waitForFrameToContain("OPTI");
+    expect(frame).toContain("Options");
+    expect(frame).toContain("OMON");
+  });
+
+  test("clears stale provider rows after a plain ticker root search is cleared", async () => {
+    testSetup = await testRender(
+      <CommandBarHarness
+        query=""
+        live
+        dataProvider={makeDataProvider(async () => [
+          { providerId: "yahoo", symbol: "OPTI", name: "Optimi Health Corp", exchange: "CSE", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "OPTI", name: "Optimi Health Corp", exchange: "NEO", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "OPTI", name: "Optimi Health Corp", exchange: "LSE", type: "EQUITY" },
+        ])}
+      />,
+      { width: 100, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      await testSetup!.mockInput.typeText("opti");
+      await testSetup!.renderOnce();
+    });
+
+    await waitForFrameToContain("OPTI");
+    await emitKeypress(testSetup, { name: "u", ctrl: true });
+    await renderFrames(2);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Search");
+    expect(frame).toContain("Tickers");
+    expect(frame).not.toContain("OPTI");
+  });
+
   test("DES MSFT opens an exact ticker directly", async () => {
     const pinned: string[] = [];
 
@@ -1203,6 +1337,33 @@ describe("CommandBar", () => {
     });
 
     expect(pinned).toEqual(["MSFT"]);
+  });
+
+  test("T AMD opens an exact ticker directly", async () => {
+    const pinned: string[] = [];
+
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="T AMD"
+        extraTickers={[makeTicker("AMD", "Advanced Micro Devices")]}
+        configurePluginRegistry={(pluginRegistry) => {
+          pluginRegistry.pinTicker = (symbol) => {
+            pinned.push(symbol);
+          };
+        }}
+      />,
+      { width: 100, height: 20 },
+    );
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(pinned).toEqual(["AMD"]);
   });
 
   test("AW AAPL uses the active watchlist target by default", async () => {
@@ -2071,6 +2232,66 @@ describe("CommandBar", () => {
     });
 
     expect(created).toEqual([{ templateId: "news-top-pane", options: undefined }]);
+  });
+
+  test("surfaces ticker-required pane templates by name without an active ticker", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="Options"
+      extraTickers={[makeTicker("^RUT", "Chicago Board Options Exchange Russell 2000")]}
+      configurePluginRegistry={(pluginRegistry) => {
+        const paneTemplates = pluginRegistry.paneTemplates as Map<string, any>;
+        paneTemplates.set("options-pane", {
+          id: "options-pane",
+          paneId: "options",
+          label: "Options",
+          description: "Options chain for the selected ticker",
+          keywords: ["options", "chain", "calls", "puts"],
+          shortcut: { prefix: "OMON", argPlaceholder: "ticker", argKind: "ticker" },
+          canCreate: (context: any, options?: PaneTemplateCreateOptions) => (
+            context.activeTicker !== null || !!options?.arg
+          ),
+        });
+      }}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Options");
+    expect(frame).toContain("OMON");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Back");
+    expect(frame).toContain("Ticker");
+  });
+
+  test("ranks exact ticker symbols before longer ticker prefixes in root search", async () => {
+    testSetup = await testRender(<CommandBarHarness
+      query="amd"
+      extraTickers={[
+        makeTicker("AMDL", "GraniteShares 2x Long AMD Daily ETF"),
+        makeTicker("AMD", "Advanced Micro Devices"),
+      ]}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    const tickerLines = testSetup.captureCharFrame()
+      .split("\n")
+      .filter((line) => /\bAMD\b|\bAMDL\b/.test(line));
+    expect(tickerLines[0]).toMatch(/\bAMD\b/);
+    expect(tickerLines[0]).not.toMatch(/\bAMDL\b/);
   });
 
   test("opens plugin command wizards inline inside the command bar", async () => {

@@ -140,7 +140,7 @@ export function createProviderTickerSearchCandidates(
     const symbol = getSearchResultSymbol(result);
     const saved = localTickers.has(symbol);
     return [{
-      id: `search:${result.symbol}`,
+      id: buildProviderCandidateId(result, symbol),
       label: symbol,
       symbol,
       detail: [result.name, result.brokerLabel, result.type].filter(Boolean).join(" | "),
@@ -357,6 +357,7 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
         item,
         index,
         normalizedSymbol: normalizeSearchText(item.symbol || item.label),
+        symbolMatchRank: scoreSymbolMatchRank(intent, item),
         textScore,
         score: textScore + priorityScore + (textScore > 0 && saved ? 900 : 0),
       };
@@ -375,6 +376,7 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
       return !matchedLocalSymbols.has(normalizedSymbol);
     })
     .sort((a, b) => {
+      if (b.symbolMatchRank !== a.symbolMatchRank) return b.symbolMatchRank - a.symbolMatchRank;
       if (b.score !== a.score) return b.score - a.score;
       const aSaved = isSavedSearchItem(a.item);
       const bSaved = isSavedSearchItem(b.item);
@@ -461,6 +463,16 @@ function buildProviderSearchResultKey(result: InstrumentSearchResult): string {
     normalizeSearchText(result.primaryExchange || ""),
     normalizeSearchText(result.currency || ""),
   ].join("|");
+}
+
+function buildProviderCandidateId(result: InstrumentSearchResult, symbol: string): string {
+  return [
+    "search",
+    normalizeTickerSymbol(symbol),
+    normalizeSearchText(result.exchange || result.primaryExchange || result.type || ""),
+    normalizeSearchText(result.currency || ""),
+    normalizeSearchText(result.providerId || ""),
+  ].filter(Boolean).join(":");
 }
 
 function getProviderHintRichness(result: InstrumentSearchResult): number {
@@ -726,6 +738,41 @@ function scoreSearchAlias(intent: SearchQueryIntent, alias: string): number {
   }
 
   return score;
+}
+
+function scoreSymbolMatchRank(
+  intent: SearchQueryIntent,
+  item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>,
+): number {
+  if (!intent.normalizedQuery && !intent.compactQuery) return 0;
+  const displaySymbol = normalizeSearchText(item.symbol || item.label);
+  const compactDisplaySymbol = compactSearchText(item.symbol || item.label);
+
+  if (
+    displaySymbol === intent.normalizedQuery
+    || (intent.compactQuery && compactDisplaySymbol === intent.compactQuery)
+  ) {
+    return 3;
+  }
+
+  const aliases = getItemSearchAliases(item);
+  if (aliases.some((alias) => {
+    const normalizedAlias = normalizeSearchText(alias);
+    const compactAlias = compactSearchText(alias);
+    return normalizedAlias === intent.normalizedQuery
+      || (intent.compactQuery && compactAlias === intent.compactQuery);
+  })) {
+    return 2;
+  }
+
+  if (
+    displaySymbol.startsWith(intent.normalizedQuery)
+    || (intent.compactQuery && compactDisplaySymbol.startsWith(intent.compactQuery))
+  ) {
+    return 1;
+  }
+
+  return 0;
 }
 
 function scoreAssetPreference(intent: SearchQueryIntent, instrumentClass?: TickerSearchInstrumentClass): number {

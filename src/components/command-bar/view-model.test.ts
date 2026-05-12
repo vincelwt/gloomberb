@@ -11,6 +11,7 @@ describe("command bar view model helpers", () => {
   test("resolves prefix-driven modes", () => {
     expect(resolveCommandBarMode("")).toMatchObject({ kind: "default", badge: "BROWSE" });
     expect(resolveCommandBarMode("DES NVDA")).toMatchObject({ kind: "search", badge: "DES" });
+    expect(resolveCommandBarMode("T NVDA")).toMatchObject({ kind: "search", badge: "T" });
     expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
     expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
     expect(resolveCommandBarMode("LAY ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
