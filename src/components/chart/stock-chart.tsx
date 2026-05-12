@@ -6,7 +6,6 @@ import { useShortcut } from "../../react/input";
 import { useAppDispatch, useAppSelector, usePaneInstance, usePaneInstanceId, usePaneSettingValue, usePaneTicker } from "../../state/app-context";
 import { usePaneFooter, type PaneFooterSegment, type PaneHint } from "../layout/pane-footer";
 import { ShortcutHint } from "../ui";
-import { saveConfig } from "../../data/config-store";
 import { getSharedMarketData } from "../../plugins/registry";
 import { colors } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
@@ -1449,6 +1448,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const preferredRenderer = config.chartPreferences.renderer;
   const [storedRangePreset] = usePaneSettingValue("chartRangePreset", DEFAULT_TICKER_CHART_RANGE_PRESET);
   const [storedResolution] = usePaneSettingValue<ChartResolution>("chartResolution", DEFAULT_TICKER_CHART_RESOLUTION);
+  const [storedRenderMode, setStoredRenderMode] = usePaneSettingValue<ChartRenderMode>("chartRenderMode", defaultRenderMode);
   const persistChartControls = usePersistChartControlSelection("chartRangePreset");
   const [viewState, setViewState] = useState<StockChartViewportState>({
     presetRange: compact ? "1Y" : storedRangePreset,
@@ -1458,7 +1458,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     zoomLevel: 1,
     cursorX: null,
     cursorY: null,
-    renderMode: defaultRenderMode,
+    renderMode: storedRenderMode,
   });
   // Read indicator config from the chart caller, falling back to legacy pane settings.
   const indicatorConfig: IndicatorConfig = indicatorConfigOverride ?? ((pane?.settings?.indicators as IndicatorConfig) ?? EMPTY_INDICATOR_CONFIG);
@@ -1683,6 +1683,12 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     });
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
   }, [compact, selectionSupportMap, storedRangePreset, storedResolution]);
+  useEffect(() => {
+    if (compact) return;
+    setViewState((current) => (
+      current.renderMode === storedRenderMode ? current : { ...current, renderMode: storedRenderMode }
+    ));
+  }, [compact, storedRenderMode]);
   const effectiveResolution: ChartResolution = !compact
     && requestedResolution !== "auto"
     && resolutionSupport !== null
@@ -2545,18 +2551,11 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     };
   }, [preferredRenderer, renderer]);
 
-  const persistDefaultRenderMode = (nextMode: ChartRenderMode) => {
-    if (nextMode === defaultRenderMode) return;
-    const nextConfig = {
-      ...config,
-      chartPreferences: {
-        ...config.chartPreferences,
-        defaultRenderMode: nextMode,
-      },
-    };
-    dispatch({ type: "SET_CONFIG", config: nextConfig });
-    saveConfig(nextConfig).catch(() => {});
-  };
+  const persistRenderMode = useCallback((nextMode: ChartRenderMode) => {
+    if (!compact && nextMode !== storedRenderMode) {
+      setStoredRenderMode(nextMode);
+    }
+  }, [compact, setStoredRenderMode, storedRenderMode]);
 
   const expandBufferRange = (action: PendingExpansionAction): boolean => {
     if (compact) return false;
@@ -2658,7 +2657,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   };
 
   const setRenderMode = (mode: ChartRenderMode) => {
-    persistDefaultRenderMode(mode);
+    persistRenderMode(mode);
     setViewState((current) => ({ ...current, renderMode: mode }));
   };
 
@@ -2872,7 +2871,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
           const activeMode = current.renderMode ?? "area";
           const index = CHART_RENDER_MODES.indexOf(activeMode);
           const nextMode = CHART_RENDER_MODES[(index + 1) % CHART_RENDER_MODES.length]!;
-          persistDefaultRenderMode(nextMode);
+          persistRenderMode(nextMode);
           return { ...current, renderMode: nextMode };
         });
         return;
@@ -3463,7 +3462,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         const activeMode = current.renderMode ?? "area";
         const index = CHART_RENDER_MODES.indexOf(activeMode);
         const nextMode = CHART_RENDER_MODES[(index + 1) % CHART_RENDER_MODES.length]!;
-        persistDefaultRenderMode(nextMode);
+        persistRenderMode(nextMode);
         return { ...current, renderMode: nextMode };
       });
     };
@@ -3535,6 +3534,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     footerHints,
     history,
     navigableDateWindow,
+    persistRenderMode,
     resolutionChips,
     selectedResolution,
     selectionSupportMap,

@@ -33,6 +33,7 @@ import { removePaneInstances, type LayoutConfig } from "../../types/config";
 import { contextMenuDivider, type ContextMenuItem } from "../../types/context-menu";
 import {
   resolveTickerForPane,
+  syncConfigActiveLayoutState,
   useAppDispatch,
   useAppSelector,
 } from "../../state/app-context";
@@ -794,6 +795,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   const config = useAppSelector((state) => state.config);
   const paneState = useAppSelector((state) => state.paneState);
   const focusedPaneId = useAppSelector(selectFocusedPaneId);
+  const activePanel = useAppSelector((state) => state.activePanel);
   const commandBarOpen = useAppSelector(selectCommandBarOpen);
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
@@ -876,15 +878,17 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
   );
 
   const persistLayout = useCallback((nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => {
-    const layouts = config.layouts.map((savedLayout, index) => (
-      index === config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
-    ));
     if (options?.pushHistory !== false) {
       dispatch({ type: "PUSH_LAYOUT_HISTORY" });
     }
     dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
-    scheduleConfigSave({ ...config, layout: nextLayout, layouts });
-  }, [config, dispatch]);
+    scheduleConfigSave(syncConfigActiveLayoutState(
+      { ...config, layout: nextLayout },
+      paneState,
+      focusedPaneId,
+      activePanel,
+    ));
+  }, [activePanel, config, dispatch, focusedPaneId, paneState]);
 
   const closeFocusedPane = useCallback(() => {
     if (!focusedPaneId || !isPaneInLayout(visibleLayout, focusedPaneId)) return false;

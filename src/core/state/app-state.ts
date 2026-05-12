@@ -169,11 +169,33 @@ function defaultPaneStateForInstance(config: AppConfig, instance: PaneInstanceCo
   return {};
 }
 
-function reconcilePaneState(config: AppConfig, previous: Record<string, PaneRuntimeState>): Record<string, PaneRuntimeState> {
+function cloneRuntimeValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneRuntimeValue(entry)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, cloneRuntimeValue(entry)]),
+    ) as T;
+  }
+  return value;
+}
+
+export function clonePaneStateMap(previous: Record<string, Record<string, unknown>>): Record<string, PaneRuntimeState> {
+  return Object.fromEntries(
+    Object.entries(previous).map(([paneId, paneState]) => [paneId, cloneRuntimeValue(paneState) as PaneRuntimeState]),
+  );
+}
+
+function reconcilePaneState(
+  config: AppConfig,
+  previous: Record<string, PaneRuntimeState>,
+  layout: LayoutConfig = config.layout,
+): Record<string, PaneRuntimeState> {
   const next: Record<string, PaneRuntimeState> = {};
-  for (const instance of config.layout.instances) {
+  for (const instance of layout.instances) {
     const defaults = defaultPaneStateForInstance(config, instance);
-    const paneState = { ...defaults, ...(previous[instance.instanceId] ?? {}) };
+    const paneState = { ...defaults, ...cloneRuntimeValue(previous[instance.instanceId] ?? {}) };
     if (
       instance.paneId === "portfolio-list"
       && !isKnownCollection(config, paneState.collectionId as string | undefined)
@@ -286,10 +308,56 @@ function nextRecentTickers(current: string[], symbol: string | null): string[] {
   return next;
 }
 
-function syncLayouts(layouts: SavedLayout[], activeLayoutIndex: number, layout: LayoutConfig): SavedLayout[] {
-  return layouts.map((savedLayout, index) => (
-    index === activeLayoutIndex ? { ...savedLayout, layout: cloneLayout(layout) } : savedLayout
-  ));
+function cloneSavedLayout(entry: SavedLayout): SavedLayout {
+  return {
+    ...entry,
+    layout: cloneLayout(entry.layout),
+    paneState: entry.paneState ? clonePaneStateMap(entry.paneState) : entry.paneState,
+  };
+}
+
+function buildSavedLayoutSnapshot(
+  entry: SavedLayout | undefined,
+  layout: LayoutConfig,
+  paneState: Record<string, PaneRuntimeState>,
+  focusedPaneId: string | null,
+  activePanel: "left" | "right",
+): SavedLayout {
+  return {
+    ...(entry ?? { name: "Default" }),
+    layout: cloneLayout(layout),
+    paneState: clonePaneStateMap(paneState),
+    focusedPaneId,
+    activePanel,
+  };
+}
+
+export function syncConfigActiveLayoutState(
+  config: AppConfig,
+  paneState: Record<string, PaneRuntimeState>,
+  focusedPaneId: string | null,
+  activePanel: "left" | "right",
+): AppConfig {
+  const activeLayoutIndex = config.activeLayoutIndex >= 0 && config.activeLayoutIndex < config.layouts.length
+    ? config.activeLayoutIndex
+    : 0;
+  const layouts = config.layouts.length > 0
+    ? config.layouts.map((savedLayout, index) => (
+      index === activeLayoutIndex
+        ? buildSavedLayoutSnapshot(savedLayout, config.layout, reconcilePaneState(config, paneState), focusedPaneId, activePanel)
+        : cloneSavedLayout(savedLayout)
+    ))
+    : [buildSavedLayoutSnapshot(undefined, config.layout, reconcilePaneState(config, paneState), focusedPaneId, activePanel)];
+  return {
+    ...config,
+    layouts,
+    activeLayoutIndex,
+  };
+}
+
+function getActiveSavedPaneState(config: AppConfig): Record<string, PaneRuntimeState> | null {
+  const paneState = config.layouts[config.activeLayoutIndex]?.paneState;
+  return paneState ? clonePaneStateMap(paneState) : null;
 }
 
 const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
@@ -393,9 +461,7 @@ function bringFloatingToFront(layout: LayoutConfig, paneId: string): LayoutConfi
 
 function focusPaneState(state: AppState, paneId: string): AppState {
   const layout = bringFloatingToFront(state.config.layout, paneId);
-  const config = layout !== state.config.layout
-    ? { ...state.config, layout, layouts: syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout) }
-    : state.config;
+  const config = layout !== state.config.layout ? { ...state.config, layout } : state.config;
   const recentTickers = nextRecentTickers(
     state.recentTickers,
     resolveTickerForPane(state, paneId),
@@ -409,41 +475,44 @@ function focusPaneState(state: AppState, paneId: string): AppState {
   }
   return {
     ...state,
-    config,
+    config: syncConfigActiveLayoutState(config, state.paneState, paneId, state.activePanel),
     focusedPaneId: paneId,
     recentTickers,
   };
 }
 
-function bringFocusedFloatingPaneToFront(config: AppConfig, focusedPaneId: string | null): AppConfig {
-  if (!focusedPaneId) return config;
-  const layout = bringFloatingToFront(config.layout, focusedPaneId);
-  if (layout === config.layout) return config;
-  return {
-    ...config,
-    layout,
-    layouts: syncLayouts(config.layouts, config.activeLayoutIndex, layout),
-  };
-}
-
-function withFocusedPane(state: AppState, config: AppConfig): AppState {
+function withFocusedPane(
+  state: AppState,
+  config: AppConfig,
+  options: {
+    paneState?: Record<string, PaneRuntimeState>;
+    focusedPaneId?: string | null;
+    activePanel?: "left" | "right";
+  } = {},
+): AppState {
   const normalizedLayout = normalizePaneLayout(config.layout);
   const nextConfig = normalizedLayout === config.layout
     ? config
     : {
       ...config,
       layout: normalizedLayout,
-      layouts: syncLayouts(config.layouts, config.activeLayoutIndex, normalizedLayout),
-    };
-  const nextPaneState = reconcilePaneState(nextConfig, state.paneState);
-  const focusedPaneId = resolveFocusedPaneId(nextConfig.layout, state.focusedPaneId);
-  const focusedConfig = bringFocusedFloatingPaneToFront(nextConfig, focusedPaneId);
+  };
+  const activePanel = options.activePanel ?? state.activePanel;
+  const nextPaneState = reconcilePaneState(nextConfig, options.paneState ?? state.paneState);
+  const requestedFocusedPaneId = Object.prototype.hasOwnProperty.call(options, "focusedPaneId")
+    ? (options.focusedPaneId ?? null)
+    : state.focusedPaneId;
+  const focusedPaneId = resolveFocusedPaneId(nextConfig.layout, requestedFocusedPaneId);
+  const focusedLayout = focusedPaneId ? bringFloatingToFront(nextConfig.layout, focusedPaneId) : nextConfig.layout;
+  const focusedConfig = focusedLayout === nextConfig.layout ? nextConfig : { ...nextConfig, layout: focusedLayout };
+  const syncedConfig = syncConfigActiveLayoutState(focusedConfig, nextPaneState, focusedPaneId, activePanel);
   return {
     ...state,
-    config: focusedConfig,
+    config: syncedConfig,
     paneState: nextPaneState,
-    brokerAccounts: reconcileBrokerAccounts(focusedConfig, state.brokerAccounts),
+    brokerAccounts: reconcileBrokerAccounts(syncedConfig, state.brokerAccounts),
     focusedPaneId,
+    activePanel,
   };
 }
 
@@ -465,7 +534,16 @@ function hydrateDesktopSnapshot(state: AppState, snapshot: DesktopSharedStateSna
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_CONFIG":
-      return withFocusedPane({ ...state, themePreview: null, layoutHistory: {} }, action.config);
+      return withFocusedPane(
+        { ...state, themePreview: null, layoutHistory: {} },
+        action.config,
+        {
+          paneState: {
+            ...state.paneState,
+            ...(getActiveSavedPaneState(action.config) ?? {}),
+          },
+        },
+      );
 
     case "SET_TICKERS":
       return { ...state, tickers: action.tickers };
@@ -488,15 +566,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           : currentState;
       }
       const layout = clearTickerBindings(state.config.layout, action.symbol);
-      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, layout);
-      return {
+      return withFocusedPane({
         ...state,
         tickers,
         financials,
         paneState,
         recentTickers: state.recentTickers.filter((symbol) => symbol !== action.symbol),
-        config: { ...state.config, layout, layouts },
-      };
+      }, { ...state.config, layout }, { paneState });
     }
 
     case "SET_FINANCIALS": {
@@ -526,11 +602,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "SET_ACTIVE_PANEL": {
       const firstPane = getPanelFocusTarget(state.config.layout, action.panel);
-      return {
-        ...state,
+      return withFocusedPane(state, state.config, {
         activePanel: action.panel,
         focusedPaneId: firstPane ?? state.focusedPaneId,
-      };
+      });
     }
 
     case "TOGGLE_COMMAND_BAR":
@@ -658,14 +733,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const target = entry.past[entry.past.length - 1]!;
       entry.past = entry.past.slice(0, -1);
       entry.future = [cloneLayout(state.config.layout), ...entry.future].slice(0, MAX_LAYOUT_HISTORY);
-      const layouts = syncLayouts(state.config.layouts, currentIndex, target);
       return withFocusedPane({
         ...state,
         layoutHistory: setHistoryForIndex(state.layoutHistory, currentIndex, entry),
       }, {
         ...state.config,
         layout: cloneLayout(target),
-        layouts,
       });
     }
 
@@ -676,54 +749,76 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const target = entry.future[0]!;
       entry.future = entry.future.slice(1);
       entry.past = [...entry.past, cloneLayout(state.config.layout)].slice(-MAX_LAYOUT_HISTORY);
-      const layouts = syncLayouts(state.config.layouts, currentIndex, target);
       return withFocusedPane({
         ...state,
         layoutHistory: setHistoryForIndex(state.layoutHistory, currentIndex, entry),
       }, {
         ...state.config,
         layout: cloneLayout(target),
-        layouts,
       });
     }
 
     case "UPDATE_LAYOUT": {
-      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, action.layout);
-      return withFocusedPane(state, { ...state.config, layout: action.layout, layouts });
+      return withFocusedPane(state, { ...state.config, layout: action.layout });
     }
 
     case "SWITCH_LAYOUT": {
       if (action.index < 0 || action.index >= state.config.layouts.length) return state;
-      const layouts = syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout);
-      const target = layouts[action.index]!;
+      if (action.index === state.config.activeLayoutIndex) return state;
+      const currentConfig = syncConfigActiveLayoutState(
+        state.config,
+        state.paneState,
+        state.focusedPaneId,
+        state.activePanel,
+      );
+      const target = currentConfig.layouts[action.index]!;
       return withFocusedPane(state, {
-        ...state.config,
+        ...currentConfig,
         layout: cloneLayout(target.layout),
-        layouts,
         activeLayoutIndex: action.index,
+      }, {
+        paneState: target.paneState ? clonePaneStateMap(target.paneState) : {},
+        focusedPaneId: target.focusedPaneId ?? null,
+        activePanel: target.activePanel ?? state.activePanel,
       });
     }
 
     case "NEW_LAYOUT": {
+      const currentConfig = syncConfigActiveLayoutState(
+        state.config,
+        state.paneState,
+        state.focusedPaneId,
+        state.activePanel,
+      );
       const newLayout: SavedLayout = {
         name: action.name,
         layout: cloneLayout(DEFAULT_LAYOUT),
+        paneState: {},
       };
-      const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), newLayout];
+      const layouts = [...currentConfig.layouts, newLayout];
       return withFocusedPane({
         ...state,
         layoutHistory: setHistoryForIndex(state.layoutHistory, layouts.length - 1, { past: [], future: [] }),
       }, {
-        ...state.config,
+        ...currentConfig,
         layout: cloneLayout(newLayout.layout),
         layouts,
         activeLayoutIndex: layouts.length - 1,
+      }, {
+        paneState: {},
+        focusedPaneId: null,
       });
     }
 
     case "DELETE_LAYOUT": {
       if (state.config.layouts.length <= 1) return state;
-      const layouts = state.config.layouts.filter((_, index) => index !== action.index);
+      const currentConfig = syncConfigActiveLayoutState(
+        state.config,
+        state.paneState,
+        state.focusedPaneId,
+        state.activePanel,
+      );
+      const layouts = currentConfig.layouts.filter((_, index) => index !== action.index);
       const nextActiveLayoutIndex = action.index <= state.config.activeLayoutIndex
         ? Math.max(0, state.config.activeLayoutIndex - 1)
         : state.config.activeLayoutIndex;
@@ -732,20 +827,30 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         layoutHistory: removeHistoryIndex(state.layoutHistory, action.index),
       }, {
-        ...state.config,
+        ...currentConfig,
         layout: cloneLayout(nextLayout.layout),
         layouts,
         activeLayoutIndex: nextActiveLayoutIndex,
+      }, {
+        paneState: nextLayout.paneState ? clonePaneStateMap(nextLayout.paneState) : {},
+        focusedPaneId: nextLayout.focusedPaneId ?? null,
+        activePanel: nextLayout.activePanel ?? state.activePanel,
       });
     }
 
     case "RENAME_LAYOUT": {
       if (action.index < 0 || action.index >= state.config.layouts.length) return state;
+      const currentConfig = syncConfigActiveLayoutState(
+        state.config,
+        state.paneState,
+        state.focusedPaneId,
+        state.activePanel,
+      );
       return {
         ...state,
         config: {
-          ...state.config,
-          layouts: state.config.layouts.map((savedLayout, index) => (
+          ...currentConfig,
+          layouts: currentConfig.layouts.map((savedLayout, index) => (
             index === action.index ? { ...savedLayout, name: action.name } : savedLayout
           )),
         },
@@ -754,20 +859,30 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case "DUPLICATE_LAYOUT": {
       if (action.index < 0 || action.index >= state.config.layouts.length) return state;
-      const source = state.config.layouts[action.index]!;
+      const currentConfig = syncConfigActiveLayoutState(
+        state.config,
+        state.paneState,
+        state.focusedPaneId,
+        state.activePanel,
+      );
+      const source = currentConfig.layouts[action.index]!;
       const duplicate: SavedLayout = {
+        ...cloneSavedLayout(source),
         name: `${source.name} Copy`,
-        layout: cloneLayout(source.layout),
       };
-      const layouts = [...syncLayouts(state.config.layouts, state.config.activeLayoutIndex, state.config.layout), duplicate];
+      const layouts = [...currentConfig.layouts, duplicate];
       return withFocusedPane({
         ...state,
         layoutHistory: setHistoryForIndex(state.layoutHistory, layouts.length - 1, { past: [], future: [] }),
       }, {
-        ...state.config,
+        ...currentConfig,
         layout: cloneLayout(duplicate.layout),
         layouts,
         activeLayoutIndex: layouts.length - 1,
+      }, {
+        paneState: duplicate.paneState ? clonePaneStateMap(duplicate.paneState) : {},
+        focusedPaneId: duplicate.focusedPaneId ?? state.focusedPaneId,
+        activePanel: duplicate.activePanel ?? state.activePanel,
       });
     }
 
@@ -802,12 +917,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const recentTickers = Object.prototype.hasOwnProperty.call(action.patch, "cursorSymbol")
         ? nextRecentTickers(state.recentTickers, typeof nextState.cursorSymbol === "string" ? nextState.cursorSymbol : null)
         : state.recentTickers;
+      const paneState = {
+        ...state.paneState,
+        [action.paneId]: nextState,
+      };
       return {
         ...state,
-        paneState: {
-          ...state.paneState,
-          [action.paneId]: nextState,
-        },
+        config: syncConfigActiveLayoutState(state.config, paneState, state.focusedPaneId, state.activePanel),
+        paneState,
         recentTickers,
       };
     }
@@ -819,21 +936,23 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (Object.is(currentPluginValues[action.key], action.value)) {
         return state;
       }
-      return {
-        ...state,
-        paneState: {
-          ...state.paneState,
-          [action.paneId]: {
-            ...current,
-            pluginState: {
-              ...currentPluginState,
-              [action.pluginId]: {
-                ...currentPluginValues,
-                [action.key]: action.value,
-              },
+      const paneState = {
+        ...state.paneState,
+        [action.paneId]: {
+          ...current,
+          pluginState: {
+            ...currentPluginState,
+            [action.pluginId]: {
+              ...currentPluginValues,
+              [action.key]: action.value,
             },
           },
         },
+      };
+      return {
+        ...state,
+        config: syncConfigActiveLayoutState(state.config, paneState, state.focusedPaneId, state.activePanel),
+        paneState,
       };
     }
 
@@ -843,20 +962,31 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 }
 
 export function createInitialState(config: AppConfig, sessionSnapshot: AppSessionSnapshot | null = null): AppState {
-  const paneState = reconcilePaneState(config, sessionSnapshot?.paneState ?? {});
+  const activeSavedLayout = config.layouts[config.activeLayoutIndex];
+  const savedPaneState = activeSavedLayout?.paneState ? clonePaneStateMap(activeSavedLayout.paneState) : {};
+  const sessionPaneState = sessionSnapshot?.paneState ? clonePaneStateMap(sessionSnapshot.paneState) : {};
+  const paneState = reconcilePaneState(config, { ...sessionPaneState, ...savedPaneState });
   const defaultFocusedPaneId = getTopFloatingPaneId(config.layout) ?? getPaneOrder(config.layout)[0] ?? null;
-  const focusedPaneId = sessionSnapshot?.focusedPaneId
-    && config.layout.instances.some((instance) => instance.instanceId === sessionSnapshot.focusedPaneId)
-    ? sessionSnapshot.focusedPaneId
+  const requestedFocusedPaneId = activeSavedLayout?.focusedPaneId ?? sessionSnapshot?.focusedPaneId ?? null;
+  const focusedPaneId = requestedFocusedPaneId
+    && config.layout.instances.some((instance) => instance.instanceId === requestedFocusedPaneId)
+    ? requestedFocusedPaneId
     : defaultFocusedPaneId;
-  const focusedConfig = bringFocusedFloatingPaneToFront(config, focusedPaneId);
+  const activePanel = activeSavedLayout?.activePanel ?? (sessionSnapshot?.activePanel === "right" ? "right" : "left");
+  const focusedLayout = focusedPaneId ? bringFloatingToFront(config.layout, focusedPaneId) : config.layout;
+  const focusedConfig = syncConfigActiveLayoutState(
+    focusedLayout === config.layout ? config : { ...config, layout: focusedLayout },
+    paneState,
+    focusedPaneId,
+    activePanel,
+  );
   return {
     config: focusedConfig,
     tickers: new Map(),
     financials: new Map(),
     exchangeRates: new Map([["USD", 1]]),
     brokerAccounts: {},
-    activePanel: sessionSnapshot?.activePanel === "right" ? "right" : "left",
+    activePanel,
     focusedPaneId,
     paneState,
     recentTickers: config.recentTickers,

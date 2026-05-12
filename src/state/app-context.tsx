@@ -37,6 +37,7 @@ import {
   type PaneRuntimeState,
   resolveCollectionForPane,
   resolveTickerForPane,
+  syncConfigActiveLayoutState,
 } from "../core/state/app-state";
 import type { AppAction, AppState } from "../core/state/app-state";
 import { scheduleConfigSave } from "./config-save-scheduler";
@@ -50,6 +51,7 @@ export {
   getPaneState,
   resolveCollectionForPane,
   resolveFinancialsForPane,
+  syncConfigActiveLayoutState,
   resolveTickerFileForPane,
   resolveTickerForPane,
 } from "../core/state/app-state";
@@ -283,10 +285,12 @@ export function usePaneSettingValue<T>(
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
     const layout = setPaneSetting(currentState.config.layout, scopedPaneId, key, resolved);
-    const layouts = currentState.config.layouts.map((savedLayout, index) => (
-      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
-    ));
-    const nextConfig = { ...currentState.config, layout, layouts };
+    const nextConfig = syncConfigActiveLayoutState(
+      { ...currentState.config, layout },
+      currentState.paneState,
+      currentState.focusedPaneId,
+      currentState.activePanel,
+    );
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     scheduleConfigSave(nextConfig);
   }, [dispatch, fallback, key, scopedPaneId, stateRef]);

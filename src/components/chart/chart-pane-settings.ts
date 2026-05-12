@@ -4,6 +4,7 @@ import {
   useAppStateRef,
   usePaneInstance,
   usePaneInstanceId,
+  syncConfigActiveLayoutState,
 } from "../../state/app-context";
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import type { ChartResolution, TimeRange } from "./chart-types";
@@ -24,10 +25,12 @@ export function usePersistChartControlSelection(rangePresetKey: string): (
       [rangePresetKey]: range,
       chartResolution: resolution,
     });
-    const layouts = currentState.config.layouts.map((savedLayout, index) => (
-      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
-    ));
-    const nextConfig = { ...currentState.config, layout, layouts };
+    const nextConfig = syncConfigActiveLayoutState(
+      { ...currentState.config, layout },
+      currentState.paneState,
+      currentState.focusedPaneId,
+      currentState.activePanel,
+    );
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     scheduleConfigSave(nextConfig);
   };

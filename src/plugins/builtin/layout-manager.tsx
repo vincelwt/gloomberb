@@ -1,4 +1,3 @@
-import { saveConfig } from "../../data/config-store";
 import { findPaneInstance, type LayoutConfig } from "../../types/config";
 import type { AppNotificationRequest, GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import type { AppAction } from "../../state/app-context";
@@ -30,15 +29,10 @@ export function clearLayoutManagerDispatch() {
   getStateRef = null;
 }
 
-function persistLayout(ctx: Pick<GloomPluginContext, "getConfig">, layout: LayoutConfig) {
+function persistLayout(_ctx: Pick<GloomPluginContext, "getConfig">, layout: LayoutConfig) {
   if (!dispatchRef) return;
   dispatchRef({ type: "PUSH_LAYOUT_HISTORY" });
   dispatchRef({ type: "UPDATE_LAYOUT", layout });
-  const config = ctx.getConfig();
-  const layouts = config.layouts.map((savedLayout, index) => (
-    index === config.activeLayoutIndex ? { ...savedLayout, layout } : savedLayout
-  ));
-  saveConfig({ ...config, layout, layouts }).catch(() => {});
 }
 
 function getFocusedPane(layout: LayoutConfig, focusedPaneId: string | null) {

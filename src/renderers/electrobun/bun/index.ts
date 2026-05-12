@@ -10,9 +10,9 @@ import {
 import { createAppServices, type AppServices } from "../../../core/app-services";
 import { getDataDir, initDataDir, saveConfig, resetAllData, exportConfig, importConfig, setConfigStoreHost } from "../../../data/config-store";
 import * as nodeConfigStoreHost from "../../../data/config-store-node";
-import { cloneLayout, findPaneInstance, type AppConfig } from "../../../types/config";
+import { findPaneInstance, type AppConfig } from "../../../types/config";
 import type { AppSessionSnapshot } from "../../../core/state/session-persistence";
-import type { PaneRuntimeState } from "../../../core/state/app-state";
+import { syncConfigActiveLayoutState, type PaneRuntimeState } from "../../../core/state/app-state";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState } from "../../../types/desktop-window";
 import type { ReleaseInfo, UpdateCheckResult, UpdateProgress } from "../../../updater";
 import { buildSoundCommand } from "../../../notifications/app-notifier";
@@ -140,13 +140,13 @@ function scopeClientId(rpc: DesktopRpc, id: string): string {
   return `${getRpcWindowKey(rpc) ?? "window"}:${id}`;
 }
 
-function syncActiveLayout(config: AppConfig): AppConfig {
-  return {
-    ...config,
-    layouts: config.layouts.map((entry, index) => (
-      index === config.activeLayoutIndex ? { ...entry, layout: cloneLayout(config.layout) } : entry
-    )),
-  };
+function syncActiveLayout(
+  config: AppConfig,
+  paneState: Record<string, PaneRuntimeState> = config.layouts[config.activeLayoutIndex]?.paneState ?? {},
+  focusedPaneId: string | null = config.layouts[config.activeLayoutIndex]?.focusedPaneId ?? null,
+  activePanel: "left" | "right" = config.layouts[config.activeLayoutIndex]?.activePanel ?? "left",
+): AppConfig {
+  return syncConfigActiveLayoutState(config, paneState, focusedPaneId, activePanel);
 }
 
 function normalizeInitWindowTarget(
@@ -670,7 +670,7 @@ async function commitDesktopSnapshot(
   snapshot: DesktopSharedStateSnapshot,
   options: { persistConfig?: boolean; reconcileWindows?: boolean } = {},
 ): Promise<DesktopSharedStateSnapshot> {
-  const nextConfig = syncActiveLayout(snapshot.config);
+  const nextConfig = syncActiveLayout(snapshot.config, snapshot.paneState, snapshot.focusedPaneId, snapshot.activePanel);
   setCurrentConfig(nextConfig);
   desktopWorkspace = requireDesktopWorkspace();
   desktopWorkspace.replaceConfig(nextConfig, { layoutChanged: snapshot.layoutChanged });

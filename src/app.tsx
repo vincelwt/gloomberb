@@ -6,6 +6,7 @@ import {
   AppProvider,
   getFocusedCollectionId,
   getFocusedTickerSymbol,
+  syncConfigActiveLayoutState,
   useAppDispatch,
   useAppSelector,
   useAppStateRef,
@@ -348,11 +349,13 @@ function AppInner({
       if (!ensured) return null;
       if (ensured.layout !== state.config.layout) {
         dispatch({ type: "PUSH_LAYOUT_HISTORY" });
-        const layouts = state.config.layouts.map((savedLayout, index) => (
-          index === state.config.activeLayoutIndex ? { ...savedLayout, layout: ensured.layout } : savedLayout
-        ));
         dispatch({ type: "UPDATE_LAYOUT", layout: ensured.layout });
-        scheduleConfigSave({ ...state.config, layout: ensured.layout, layouts });
+        scheduleConfigSave(syncConfigActiveLayoutState(
+          { ...state.config, layout: ensured.layout },
+          state.paneState,
+          state.focusedPaneId,
+          state.activePanel,
+        ));
       }
       return ensured.instance.instanceId;
     })();
@@ -1078,14 +1081,16 @@ function AppInner({
   const persistLayout = (layout: LayoutConfig, options?: { pushHistory?: boolean }) => {
     const currentState = stateRef.current;
     const normalizedLayout = normalizePaneLayout(layout);
-    const layouts = currentState.config.layouts.map((savedLayout, index) => (
-      index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout: normalizedLayout } : savedLayout
-    ));
     if (options?.pushHistory !== false) {
       dispatch({ type: "PUSH_LAYOUT_HISTORY" });
     }
     dispatch({ type: "UPDATE_LAYOUT", layout: normalizedLayout });
-    scheduleConfigSave({ ...currentState.config, layout: normalizedLayout, layouts });
+    scheduleConfigSave(syncConfigActiveLayoutState(
+      { ...currentState.config, layout: normalizedLayout },
+      currentState.paneState,
+      currentState.focusedPaneId,
+      currentState.activePanel,
+    ));
   };
   const resolvePanelForPane = useCallback((paneId: string, layout: LayoutConfig = state.config.layout): "left" | "right" => {
     const instanceId = resolvePaneTarget(paneId, layout);

@@ -820,7 +820,7 @@ describe("TickerDetailPane", () => {
     expect(frame).toContain("+25.00%");
   });
 
-  test("falls back to Overview when a hidden active tab becomes unavailable", async () => {
+  test("renders an Overview fallback without overwriting a temporarily unavailable active tab", async () => {
     const gatewayConfig = createDetailConfig("AAPL", [createGatewayInstance()]);
     const noGatewayConfig = createDetailConfig("AAPL");
     setSharedRegistryForTests(makeRegistry());
@@ -844,7 +844,7 @@ describe("TickerDetailPane", () => {
     await flushFrame();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("active:overview");
+    expect(frame).toContain("active:ibkr-trade");
     expect(frame).not.toContain("Trade");
   });
 

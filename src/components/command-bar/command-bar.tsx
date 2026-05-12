@@ -24,16 +24,18 @@ import {
 } from "../../theme/colors";
 import {
   getFocusedCollectionId,
+  syncConfigActiveLayoutState,
   useAppDispatch,
   useAppSelector,
   useFocusedTicker,
   type AppState,
 } from "../../state/app-context";
+import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { commands, matchPrefix, type Command } from "./command-registry";
 import { useThemeColors } from "../../theme/theme-context";
 import { ThemePicker, type ThemePickerHandle } from "./theme-picker";
-import { exportConfig, importConfig, resetAllData, saveConfig } from "../../data/config-store";
+import { exportConfig, importConfig, resetAllData } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -618,6 +620,7 @@ export function CommandBar({
   const tickers = useAppSelector((state) => state.tickers);
   const financials = useAppSelector((state) => state.financials);
   const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
+  const activePanel = useAppSelector((state) => state.activePanel);
   const layoutHistory = useAppSelector((state) => state.layoutHistory);
   const recentTickers = useAppSelector((state) => state.recentTickers);
   const commandBarOpen = useAppSelector((state) => state.commandBarOpen);
@@ -633,6 +636,7 @@ export function CommandBar({
     tickers,
     financials,
     focusedPaneId,
+    activePanel,
     layoutHistory,
     recentTickers,
     commandBarOpen,
@@ -643,6 +647,7 @@ export function CommandBar({
     updateCheckInProgress,
     updateNotice,
   }) as AppState, [
+    activePanel,
     commandBarLaunchRequest,
     commandBarOpen,
     commandBarQuery,
@@ -660,6 +665,15 @@ export function CommandBar({
   ]);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const persistConfig = useCallback((nextConfig: AppState["config"]) => {
+    const currentState = stateRef.current;
+    scheduleConfigSave(syncConfigActiveLayoutState(
+      nextConfig,
+      currentState.paneState,
+      currentState.focusedPaneId,
+      currentState.activePanel,
+    ));
+  }, []);
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const renderer = useNativeRenderer();
   const { width: termWidth, height: termHeight } = useViewport();
@@ -833,15 +847,7 @@ export function CommandBar({
           : instance
       )),
     };
-    const nextConfig = {
-      ...currentState.config,
-      layout: nextLayout,
-      layouts: currentState.config.layouts.map((savedLayout, index) => (
-        index === currentState.config.activeLayoutIndex ? { ...savedLayout, layout: nextLayout } : savedLayout
-      )),
-    };
     dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
-    void saveConfig(nextConfig);
     dispatch({ type: "FOCUS_PANE", paneId: targetPane.instanceId });
   }, [dispatch]);
 
@@ -1165,9 +1171,9 @@ export function CommandBar({
     );
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     setActiveCollection(portfolio.id);
-    await saveConfig(nextConfig);
+    persistConfig(nextConfig);
     notify(`Created portfolio "${portfolio.name}".`, { type: "success" });
-  }, [dispatch, notify, setActiveCollection]);
+  }, [dispatch, notify, persistConfig, setActiveCollection]);
 
   const createWatchlist = useCallback(async (name: string) => {
     const currentState = stateRef.current;
@@ -1184,9 +1190,9 @@ export function CommandBar({
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     setActiveCollection(id);
-    await saveConfig(nextConfig);
+    persistConfig(nextConfig);
     notify(`Created watchlist "${trimmedName}".`, { type: "success" });
-  }, [dispatch, notify, setActiveCollection]);
+  }, [dispatch, notify, persistConfig, setActiveCollection]);
 
   const deleteWatchlist = useCallback(async (watchlistId: string) => {
     const currentState = stateRef.current;
@@ -1204,9 +1210,9 @@ export function CommandBar({
       const fallback = nextConfig.portfolios[0]?.id || nextConfig.watchlists[0]?.id || "";
       if (fallback) setActiveCollection(fallback);
     }
-    await saveConfig(nextConfig);
+    persistConfig(nextConfig);
     notify(`Deleted "${watchlist.name}".`, { type: "success" });
-  }, [activeCollectionId, dispatch, notify, setActiveCollection]);
+  }, [activeCollectionId, dispatch, notify, persistConfig, setActiveCollection]);
 
   const deletePortfolio = useCallback(async (portfolioId: string) => {
     const currentState = stateRef.current;
@@ -1234,9 +1240,9 @@ export function CommandBar({
       const fallback = nextConfig.portfolios[0]?.id || nextConfig.watchlists[0]?.id || "";
       if (fallback) setActiveCollection(fallback);
     }
-    await saveConfig(nextConfig);
+    persistConfig(nextConfig);
     notify(`Deleted "${portfolio.name}".`, { type: "success" });
-  }, [activeCollectionId, dispatch, notify, setActiveCollection, tickerRepository]);
+  }, [activeCollectionId, dispatch, notify, persistConfig, setActiveCollection, tickerRepository]);
 
   const setPortfolioPositionFromWorkflow = useCallback(async (values: Record<string, CommandBarFieldValue>) => {
     const currentState = stateRef.current;
@@ -1499,6 +1505,7 @@ export function CommandBar({
       const enabled = !disabledPlugins.includes(plugin.id);
       const toggleAction = () => {
         dispatch({ type: "TOGGLE_PLUGIN", pluginId: plugin.id });
+        const currentState = stateRef.current;
         const nextDisabled = enabled
           ? [...disabledPlugins, plugin.id]
           : disabledPlugins.filter((entry) => entry !== plugin.id);
@@ -1507,7 +1514,7 @@ export function CommandBar({
             pluginRegistry.hidePane(paneId);
           }
         }
-        void saveConfig({ ...state.config, disabledPlugins: nextDisabled });
+        persistConfig({ ...currentState.config, disabledPlugins: nextDisabled });
       };
       return {
         id: `plugin:${plugin.id}`,
@@ -1520,7 +1527,7 @@ export function CommandBar({
         action: toggleAction,
       };
     });
-  }, [dispatch, pluginRegistry, state.config]);
+  }, [dispatch, persistConfig, pluginRegistry, state.config]);
 
   const buildLayoutItems = useCallback((
     query: string,
@@ -3128,7 +3135,7 @@ export function CommandBar({
           },
         };
         dispatch({ type: "SET_CONFIG", config: nextConfig });
-        void saveConfig(nextConfig);
+        persistConfig(nextConfig);
         closeAll({ revertThemePreview: false });
         return;
       }
@@ -5669,15 +5676,15 @@ export function CommandBar({
               paletteText={paletteText}
               panelBg={panelBg}
               onPreview={applyThemePreview}
-              onCommit={(themeId) => {
-                const nextConfig = {
-                  ...stateRef.current.config,
-                  theme: themeId,
-                };
-                commitTheme(themeId);
-                void saveConfig(nextConfig);
-                closeAll({ revertThemePreview: false });
-              }}
+	              onCommit={(themeId) => {
+	                const nextConfig = {
+	                  ...stateRef.current.config,
+	                  theme: themeId,
+	                };
+	                commitTheme(themeId);
+	                persistConfig(nextConfig);
+	                closeAll({ revertThemePreview: false });
+	              }}
             />
           )}
 
