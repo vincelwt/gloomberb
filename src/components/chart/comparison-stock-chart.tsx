@@ -7,12 +7,12 @@ import { useChartQueries } from "../../market-data/hooks";
 import { buildChartKey } from "../../market-data/selectors";
 import { useAppSelector, usePaneSettingValue } from "../../state/app-context";
 import { usePaneFooter, type PaneHint } from "../layout/pane-footer";
-import { blendHex, colors, getComparisonSeriesColor, priceColor } from "../../theme/colors";
+import { blendHex, colors, getComparisonSeriesColor } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
 import { formatPercentRaw } from "../../utils/format";
-import { formatMarketPriceWithCurrency, formatSignedMarketPrice } from "../../utils/market-format";
+import { formatMarketPriceWithCurrency } from "../../utils/market-format";
 import { getSharedMarketData } from "../../plugins/registry";
 import {
   applyComparisonZoomAroundAnchor,
@@ -30,7 +30,6 @@ import {
 import {
   buildVisibleDateWindow,
   clearActivePreset,
-  formatVisibleSpanLabel,
   needsCanonicalPresetViewportReset,
   resolveChartBodyState,
   resolveCanonicalPresetViewport,
@@ -96,7 +95,7 @@ import {
   resolveNativeSurfaceVisibleRect,
   type NativeSurfaceRenderableNode,
 } from "./native/surface-visibility";
-import { formatDateShort, resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
+import { resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
 import { TimeAxisLabel } from "./time-axis-label";
 import { PriceAxisLabels } from "./price-axis-labels";
 
@@ -445,6 +444,23 @@ function clipText(text: string, width: number): string {
   return `${text.slice(0, width - 3)}...`;
 }
 
+function formatLegendSummary(
+  symbol: string,
+  rawValue: number | null,
+  baseValue: number | null,
+  currency: string,
+  priceRange: number | undefined,
+): string {
+  if (rawValue === null) return `${symbol} waiting`;
+  const price = formatMarketPriceWithCurrency(rawValue, currency, {
+    minimumFractionDigits: 2,
+    precisionOffset: 1,
+    priceRange,
+  });
+  if (baseValue === null || baseValue === 0) return `${symbol} ${price}`;
+  return `${symbol} ${price} ${formatPercentRaw(((rawValue - baseValue) / baseValue) * 100)}`;
+}
+
 function getInitialComparisonMode(mode: string | undefined): ComparisonChartRenderMode {
   return mode === "line" ? "line" : "area";
 }
@@ -555,6 +571,7 @@ function ComparisonStockChartView({
   const mouseCrosshairDisabledRef = useRef(false);
   const cursorMotionKindRef = useRef<ChartCursorMotionKind>("discrete");
   const animationFrameRef = useRef<number | null>(null);
+  const lastAppliedStoredSelectionKeyRef = useRef<string | null>(null);
   const pendingCanonicalResetRef = useRef(1);
   const appliedCanonicalResetRef = useRef(0);
   const pendingExpansionRef = useRef<PendingExpansionAction>(null);
@@ -564,7 +581,7 @@ function ComparisonStockChartView({
   const axisRightPadding = 1;
   const minimumAxisWidth = axisMode === "percent" ? 5 : 4;
   const axisGap = axisSectionWidthBudget > 0 ? 1 : 0;
-  const headerRows = 1;
+  const headerRows = 0;
   const controlRows = 2;
   const timeAxisRows = 1;
   const helpRows = 0;
@@ -591,13 +608,35 @@ function ComparisonStockChartView({
     ));
   };
 
-  const capabilityKey = useMemo(() => symbolSources.map((source) => [
-    source.symbol,
-    source.exchange,
-    source.brokerId ?? "",
-    source.brokerInstanceId ?? "",
-    source.instrument?.conId ?? "",
-  ].join(":")).join("|"), [symbolSources]);
+  const marketDataProvider = getSharedMarketData();
+  const capabilityDescriptor = useMemo(() => {
+    const sources = symbolSources.map((source) => ({
+      symbol: source.symbol,
+      exchange: source.exchange,
+      brokerId: source.brokerId,
+      brokerInstanceId: source.brokerInstanceId,
+      instrument: source.instrument,
+    }));
+    return {
+      key: sources.map((source) => [
+        source.symbol,
+        source.exchange,
+        source.brokerId ?? "",
+        source.brokerInstanceId ?? "",
+        source.instrument?.conId ?? "",
+        source.instrument?.localSymbol ?? "",
+        source.instrument?.symbol ?? "",
+      ].join(":")).join("|"),
+      sources,
+    };
+  }, [symbolSources]);
+  const effectiveResolutionSupport = useMemo<ChartResolutionSupport[]>(() => (
+    resolutionSupport ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS.map((resolution) => ({ resolution, maxRange: "ALL" as const }))
+  ), [resolutionSupport]);
+  const selectionSupportMap = useMemo(
+    () => buildChartResolutionSupportMap(effectiveResolutionSupport),
+    [effectiveResolutionSupport],
+  );
 
   useEffect(() => {
     if (symbols.includes(viewState.selectedSymbol ?? "")) return;
@@ -608,21 +647,25 @@ function ComparisonStockChartView({
   }, [symbols, viewState.selectedSymbol]);
 
   useEffect(() => {
+    const storedSelectionKey = `${storedRangePreset}:${storedResolution}`;
+    if (lastAppliedStoredSelectionKeyRef.current === storedSelectionKey) return;
+
+    lastAppliedStoredSelectionKeyRef.current = storedSelectionKey;
     pendingCanonicalResetRef.current += 1;
     setViewState((current) => (
       storedResolution === "auto"
-        ? resolveStoredChartSelection(current, storedRangePreset, storedResolution, supportMap)
+        ? resolveStoredChartSelection(current, storedRangePreset, storedResolution, selectionSupportMap)
         : resolvePresetSelection(
           {
             ...current,
             resolution: storedResolution,
           },
           storedRangePreset,
-          getSupportMaxRange(supportMap, storedResolution),
+          getSupportMaxRange(selectionSupportMap, storedResolution),
         )
     ));
     updateDisplayCursorTarget(EMPTY_DISPLAY_CURSOR, "discrete");
-  }, [storedRangePreset, storedResolution, supportMap]);
+  }, [selectionSupportMap, storedRangePreset, storedResolution]);
 
   const commitDisplayCursor = (next: DisplayCursorState) => {
     displayCursorRef.current = next;
@@ -705,15 +748,15 @@ function ComparisonStockChartView({
   ), [nativeSurfaceManager]);
 
   useEffect(() => {
-    const provider = getSharedMarketData();
-    if ((!provider?.getChartResolutionSupport && !provider?.getChartResolutionCapabilities) || symbolSources.length === 0) {
+    const provider = marketDataProvider;
+    if ((!provider?.getChartResolutionSupport && !provider?.getChartResolutionCapabilities) || capabilityDescriptor.sources.length === 0) {
       setResolutionSupport(null);
       return;
     }
 
     let cancelled = false;
     setResolutionSupport(null);
-    Promise.all(symbolSources.map(async (source) => {
+    Promise.all(capabilityDescriptor.sources.map(async (source) => {
       try {
         const support = provider.getChartResolutionSupport
           ? await provider.getChartResolutionSupport(
@@ -757,11 +800,7 @@ function ComparisonStockChartView({
     return () => {
       cancelled = true;
     };
-  }, [capabilityKey, symbolSources]);
-
-  const effectiveResolutionSupport = useMemo<ChartResolutionSupport[]>(() => (
-    resolutionSupport ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS.map((resolution) => ({ resolution, maxRange: "ALL" as const }))
-  ), [resolutionSupport]);
+  }, [capabilityDescriptor.key, marketDataProvider]);
   const availableManualResolutions = resolutionSupport?.map((entry) => entry.resolution) ?? DEFAULT_VISIBLE_MANUAL_CHART_RESOLUTIONS;
   const effectiveResolution: ChartResolution = viewState.resolution !== "auto"
     && resolutionSupport !== null
@@ -1600,18 +1639,9 @@ function ComparisonStockChartView({
   const hasChartData = series.some((entry) => entry.points.length > 0);
   const hasDisplayCursor = displayCursorX !== null && displayCursorY !== null;
   const cursorScene = hasDisplayCursor ? displayScene : staticScene;
-  const selectedSeries = hasChartData ? (cursorScene?.selectedSeries ?? staticResult.selectedSeries) : null;
-  const selectedPoint = hasChartData ? (cursorScene?.selectedPoint ?? staticResult.selectedPoint) : null;
-  const selectedRawValue = selectedPoint?.rawValue ?? selectedSeries?.latestRawValue ?? null;
-  const selectedBaseValue = selectedSeries?.baseValue ?? null;
-  const selectedChange = selectedRawValue !== null && selectedBaseValue !== null
-    ? selectedRawValue - selectedBaseValue
+  const legendActiveIndex = hasChartData
+    ? cursorScene?.activeIdx ?? staticScene?.activeIdx ?? null
     : null;
-  const selectedChangePct = selectedChange !== null && selectedBaseValue
-    ? (selectedChange / selectedBaseValue) * 100
-    : null;
-  const selectedCurrency = selectedSeries?.currency ?? "USD";
-  const displayDate = cursorScene?.activeDate ?? staticResult.activeDate;
   const visiblePriceRange = result.priceRange ?? staticResult.priceRange ?? undefined;
   const axisLabels = new Map(staticResult.axisLabels.map((entry) => [entry.row, entry.label]));
   const cursorRow = useCanvasChart ? cursorScene?.cursorRow ?? null : result.cursorRow;
@@ -1623,10 +1653,6 @@ function ComparisonStockChartView({
       visiblePriceRange,
     )
     : null;
-  const visibleLabel = formatVisibleSpanLabel({
-    start: visibleWindow.dates[0] ?? null,
-    end: visibleWindow.dates[visibleWindow.dates.length - 1] ?? null,
-  });
   const cursorTimeAxisColumn = hasDisplayCursor ? displayScene?.cursorColumn ?? null : null;
   const cursorTimeAxisDate = hasDisplayCursor ? displayScene?.activeDate ?? null : null;
 
@@ -1823,32 +1849,6 @@ function ComparisonStockChartView({
       flexGrow={1}
       onMouseScroll={hasChartData && !isBlockingBody && !bodyMessage ? handlePlotScroll : undefined}
     >
-      <Box flexDirection="row" gap={2} height={1}>
-        <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
-          {viewState.selectedSymbol ?? "Compare"} - {getChartResolutionLabel(effectiveResolution)}
-        </Text>
-        <Text fg={colors.textDim}>{visibleLabel}</Text>
-        <Text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
-          {selectedRawValue !== null
-            ? formatMarketPriceWithCurrency(selectedRawValue, selectedCurrency, {
-              minimumFractionDigits: 2,
-              precisionOffset: 1,
-              priceRange: visiblePriceRange,
-            })
-            : "—"}
-        </Text>
-        <Text fg={selectedChange !== null ? priceColor(selectedChange) : colors.textDim}>
-          {selectedChange !== null && selectedChangePct !== null
-            ? `${formatSignedMarketPrice(selectedChange, {
-              minimumFractionDigits: 2,
-              precisionOffset: 1,
-              priceRange: visiblePriceRange,
-            })} (${formatPercentRaw(selectedChangePct)})`
-            : "Waiting for data"}
-        </Text>
-        {displayDate && <Text fg={colors.textDim}>{formatDateShort(displayDate)}</Text>}
-      </Box>
-
       <Box flexDirection="row" height={1}>
         <Box flexDirection="row" gap={1}>
           {TIME_RANGES.map((range, index) => (
@@ -1935,19 +1935,11 @@ function ComparisonStockChartView({
                 {legendRow.map((symbol) => {
                   const item = projection.series.find((entry) => entry.symbol === symbol) ?? null;
                   const isSelected = viewState.selectedSymbol === symbol;
-                  const latestRaw = item?.latestRawValue ?? null;
-                  const latestChange = latestRaw !== null && item?.baseValue != null ? latestRaw - item.baseValue : null;
-                  const latestChangePct = latestChange !== null && item?.baseValue
-                    ? (latestChange / item.baseValue) * 100
-                    : null;
+                  const activeRaw = legendActiveIndex !== null
+                    ? item?.points[legendActiveIndex]?.rawValue ?? null
+                    : item?.latestRawValue ?? null;
                   const currency = item?.currency ?? "USD";
-                  const summary = latestRaw !== null && latestChangePct !== null
-                    ? `${symbol} ${formatMarketPriceWithCurrency(latestRaw, currency, {
-                      minimumFractionDigits: 2,
-                      precisionOffset: 1,
-                      priceRange: visiblePriceRange,
-                    })} ${formatPercentRaw(latestChangePct)}`
-                    : `${symbol} waiting`;
+                  const summary = formatLegendSummary(symbol, activeRaw, item?.baseValue ?? null, currency, visiblePriceRange);
 
                   return (
                     <Box

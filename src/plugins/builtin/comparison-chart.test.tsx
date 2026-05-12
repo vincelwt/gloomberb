@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, type ReactElement } from "react";
+import { act, useState, type ReactElement } from "react";
 import { createTestRenderer } from "@opentui/core/testing";
 import { createOpenTuiTestRoot as createRoot } from "../../renderers/opentui/test-utils";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
@@ -301,7 +301,6 @@ describe("comparisonChartPlugin", () => {
     expect(frame).toContain("1:1D");
     expect(frame).toContain("2:1W");
     expect(frame).toContain("1D");
-    expect(frame).toContain("view:");
     expect(frame).toContain("[t]ickers");
     expect(frame).toContain("[m]ode");
     expect(frame).toContain("[r]es");
@@ -310,6 +309,119 @@ describe("comparisonChartPlugin", () => {
     expect(frame).not.toContain("wheel pan");
     expect(frame).not.toContain("wheel zoom");
     expect(frame).not.toContain("side by side");
+  });
+
+  test("updates every legend value from the crosshair position", async () => {
+    const provider = createProvider({
+      AAPL: [100, 102, 104],
+      MSFT: [200, 202, 204],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
+      ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
+    ]);
+
+    await flushFrames();
+
+    let frame = testSetup!.captureCharFrame();
+    expect(frame).not.toContain("AAPL - 1D");
+    expect(frame).toContain("AAPL $104.00 +4.00%");
+    expect(frame).toContain("MSFT $204.00 +2.00%");
+
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(2, 4);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames();
+
+    frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("AAPL $100.00 0.00%");
+    expect(frame).toContain("MSFT $200.00 0.00%");
+  });
+
+  test("does not refetch resolution support when only comparison prices update", async () => {
+    let supportCalls = 0;
+    const provider = createProvider({
+      AAPL: [100, 102, 104],
+      MSFT: [200, 202, 204],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    provider.getChartResolutionCapabilities = async () => {
+      supportCalls += 1;
+      return ["5m", "15m", "1h", "1d", "1wk", "1mo"];
+    };
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    const settings = {
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    };
+    const tickers = [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ];
+    const spy = { selected: [] as string[], focused: [] as string[] };
+    const runtime = createRuntimeSpy(spy);
+    let updateFinancials: ((rows: Array<[string, TickerFinancials]>) => void) | null = null;
+    function PriceUpdateHarness({ initialFinancials }: { initialFinancials: Array<[string, TickerFinancials]> }) {
+      const [rows, setRows] = useState(initialFinancials);
+      updateFinancials = setRows;
+      return createComparisonHarness(settings, tickers, rows, runtime);
+    }
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 20 });
+    root = createRoot(testSetup.renderer);
+    await act(async () => {
+      root!.render(
+        <PriceUpdateHarness
+          initialFinancials={[
+            ["AAPL", makeFinancials("AAPL", "USD", [100, 102, 104])],
+            ["MSFT", makeFinancials("MSFT", "USD", [200, 202, 204])],
+          ]}
+        />,
+      );
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await testSetup!.renderOnce();
+    });
+    await flushFrames();
+
+    expect(supportCalls).toBe(2);
+
+    await act(async () => {
+      updateFinancials!([
+        ["AAPL", makeFinancials("AAPL", "USD", [101, 103, 105])],
+        ["MSFT", makeFinancials("MSFT", "USD", [201, 203, 205])],
+      ]);
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await testSetup!.renderOnce();
+    });
+    await flushFrames();
+
+    expect(supportCalls).toBe(2);
   });
 
   test("keeps controls visible when comparison history is empty", async () => {
