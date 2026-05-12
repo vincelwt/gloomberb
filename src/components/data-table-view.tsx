@@ -188,6 +188,7 @@ export function DataTableView<
   }, [activateIndex, effectiveSelectedIndex, navigableIndices]);
 
   useShortcut((event) => {
+    if (event.defaultPrevented || event.propagationStopped) return;
     if (!focused || !keyboardNavigation) return;
 
     if (onRootKeyDown?.(event)) return;

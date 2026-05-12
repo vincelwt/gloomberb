@@ -10,6 +10,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PaneTemplateCreateOptions } from "../../types/plugin";
+import { useShortcut } from "../../react/input";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -236,6 +237,15 @@ function ThemeProbe() {
   return <text>{`theme:${useThemeId()}`}</text>;
 }
 
+function UnhandledEnterProbe({ onEnter }: { onEnter: () => void }) {
+  useShortcut((event) => {
+    if (event.name === "enter" || event.name === "return") {
+      onEnter();
+    }
+  });
+  return null;
+}
+
 function CommandBarHarness({
   query,
   disabledPlugins = [],
@@ -251,6 +261,7 @@ function CommandBarHarness({
   hasPaneSettings,
   onCheckForUpdates,
   onAction,
+  onUnhandledEnter,
 }: {
   query: string;
   disabledPlugins?: string[];
@@ -266,6 +277,7 @@ function CommandBarHarness({
   hasPaneSettings?: (paneId: string) => boolean;
   onCheckForUpdates?: () => void | Promise<void>;
   onAction?: (action: AppAction) => void;
+  onUnhandledEnter?: () => void;
 }) {
   let config = {
     ...createDefaultConfig("/tmp/gloomberb-test"),
@@ -330,6 +342,7 @@ function CommandBarHarness({
               onCheckForUpdates={onCheckForUpdates}
             />
           )}
+          {onUnhandledEnter && <UnhandledEnterProbe onEnter={onUnhandledEnter} />}
         </TestDialogProvider>
       </AppContext>
     </ThemeProvider>
@@ -1040,6 +1053,38 @@ describe("CommandBar", () => {
         ticker: makeTicker("AAPL", "Apple Inc."),
       },
     }]);
+  });
+
+  test("consumes enter before focused pane shortcuts when executing a pane shortcut", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+    let leakedEnterCount = 0;
+
+    testSetup = await testRender(<CommandBarHarness
+      query="PF"
+      live
+      onUnhandledEnter={() => {
+        leakedEnterCount += 1;
+      }}
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{ templateId: "new-portfolio-pane", options: undefined }]);
+    expect(leakedEnterCount).toBe(0);
   });
 
   test("typing a chat channel shortcut opens that channel directly", async () => {

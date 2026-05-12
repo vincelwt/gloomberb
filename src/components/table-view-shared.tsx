@@ -30,6 +30,8 @@ export interface TableViewKeyEvent {
   meta?: boolean;
   option?: boolean;
   shift?: boolean;
+  readonly defaultPrevented?: boolean;
+  readonly propagationStopped?: boolean;
   preventDefault?: () => void;
   stopPropagation?: () => void;
 }
