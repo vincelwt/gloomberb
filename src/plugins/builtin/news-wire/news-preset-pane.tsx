@@ -45,6 +45,9 @@ export function NewsPresetPane({
     `${paneKey}:sort`,
     defaultSort,
   );
+  const effectiveSortPreference = columns.includes(sortPreference.columnId)
+    ? sortPreference
+    : defaultSort;
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
@@ -79,7 +82,7 @@ export function NewsPresetPane({
       readArticleIds={readArticleIds}
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
-      sortPreference={sortPreference}
+      sortPreference={effectiveSortPreference}
       setSortPreference={setSortPreference}
       onOpenArticle={openArticle}
       onArticleRead={markArticleRead}

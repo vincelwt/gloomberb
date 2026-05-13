@@ -75,6 +75,7 @@ const DESKTOP_CHAT_INPUT_TOP_MARGIN_PX = 6;
 const DEFAULT_CHAT_CHANNEL_ID = "everyone";
 const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
+const SCROLL_BOTTOM_THRESHOLD_PX = 2;
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   if (index === 0) return false;
@@ -178,6 +179,15 @@ function scrollToBottom(scrollBox: ScrollBoxRenderable | null, preferPixels = fa
     Math.max(0, getScrollHeight(scrollBox, exactPixels) - getViewportHeight(scrollBox, exactPixels)),
     exactPixels,
   );
+}
+
+function isScrolledToBottom(scrollBox: ScrollBoxRenderable | null, preferPixels = false) {
+  if (!scrollBox) return true;
+  const exactPixels = preferPixels && hasPixelScrollMetrics(scrollBox);
+  const scrollTop = getScrollTop(scrollBox, exactPixels);
+  const maxScrollTop = Math.max(0, getScrollHeight(scrollBox, exactPixels) - getViewportHeight(scrollBox, exactPixels));
+  const threshold = exactPixels ? SCROLL_BOTTOM_THRESHOLD_PX : 0;
+  return maxScrollTop - scrollTop <= threshold;
 }
 
 function runAfterLayout(callback: () => void) {
@@ -1058,6 +1068,7 @@ export function ChatContent({
     : 0;
   const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
   const stickyTranscript = followMessages && !selectionActive;
+  const latestMessageId = messages[messages.length - 1]?.id ?? null;
   const updateComposerRows = useCallback((draft: string) => {
     const nextRows = estimateComposerHeight(draft, composerTextWidth);
     setComposerRows((current) => (current === nextRows ? current : nextRows));
@@ -1274,6 +1285,23 @@ export function ChatContent({
     if (!scrollBox || scrollBox.scrollTop > 1) return;
     requestOlderMessages();
   }, [requestOlderMessages]);
+
+  const handleTranscriptScrollActivity = useCallback((event?: { scroll?: { direction?: "up" | "down" | "left" | "right" } }) => {
+    const direction = event?.scroll?.direction;
+    runAfterLayout(() => {
+      requestOlderMessagesIfNeeded();
+
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) return;
+      const atBottom = isScrolledToBottom(scrollBox, nativePaneChrome);
+      if (direction === "up" && !atBottom) {
+        setFollowMessages(false);
+        return;
+      }
+
+      setFollowMessages(atBottom);
+    });
+  }, [nativePaneChrome, requestOlderMessagesIfNeeded]);
 
   const scrollToLoadedMessage = useCallback((messageId: string) => {
     const targetIndex = messages.findIndex((message) => message.id === messageId);
@@ -1590,7 +1618,7 @@ export function ChatContent({
   useEffect(() => {
     if (!stickyTranscript) return;
     queueMicrotask(() => scrollToBottom(scrollRef.current, nativePaneChrome));
-  }, [contentWidth, height, messages, messageAreaHeight, nativePaneChrome, stickyTranscript]);
+  }, [channelId, contentWidth, height, latestMessageId, messageAreaHeight, nativePaneChrome, stickyTranscript]);
 
   useEffect(() => {
     const anchor = prependAnchorRef.current;
@@ -1717,7 +1745,7 @@ export function ChatContent({
         focusable={false}
         stickyScroll={stickyTranscript}
         stickyStart="bottom"
-        onMouseScroll={() => queueMicrotask(requestOlderMessagesIfNeeded)}
+        onMouseScroll={handleTranscriptScrollActivity}
         style={nativePaneChrome ? { minHeight: 0 } : undefined}
       >
         {loadingOlderMessages && (
