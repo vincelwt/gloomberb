@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { loadConfig, sanitizeLayout, saveConfig } from "./config-store";
+import { exportConfig, importConfig, loadConfig, sanitizeLayout, saveConfig } from "./config-store";
 import {
   CURRENT_CONFIG_VERSION,
   DEFAULT_COLUMNS,
@@ -449,5 +449,33 @@ describe("loadConfig", () => {
     expect(persisted.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(persisted.activeLayoutIndex).toBe(1);
     expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT);
+  });
+});
+
+describe("config backup files", () => {
+  test("expands a leading tilde when exporting and importing", async () => {
+    const originalHome = process.env.HOME;
+    const homeDir = await createTempConfigDir();
+    const dataDir = await createTempConfigDir();
+    const importDataDir = await createTempConfigDir();
+    process.env.HOME = homeDir;
+
+    try {
+      const config = await loadConfig(dataDir);
+      await exportConfig({ ...config, baseCurrency: "EUR" }, "~/gloomberb-config-backup.json");
+
+      const backupPath = join(homeDir, "gloomberb-config-backup.json");
+      const exported = JSON.parse(await readFile(backupPath, "utf-8")) as Record<string, unknown>;
+      expect(exported.baseCurrency).toBe("EUR");
+      expect(exported.dataDir).toBeUndefined();
+
+      await writeFile(backupPath, JSON.stringify({ ...exported, baseCurrency: "JPY" }), "utf-8");
+      const imported = await importConfig(importDataDir, "~/gloomberb-config-backup.json");
+
+      expect(imported.baseCurrency).toBe("JPY");
+      expect(imported.dataDir).toBe(importDataDir);
+    } finally {
+      process.env.HOME = originalHome;
+    }
   });
 });

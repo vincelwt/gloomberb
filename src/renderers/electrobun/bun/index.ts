@@ -19,7 +19,6 @@ import { buildSoundCommand } from "../../../notifications/app-notifier";
 import { isPaneDetached } from "../../../plugins/pane-manager";
 import { ELECTROBUN_CONTEXT_MENU_ACTION, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
-import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
 import { contextMenuSelectionMessage } from "./context-menu-click";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
 import { createDesktopWorkspace, type DesktopWorkspace } from "./desktop-workspace";
@@ -56,7 +55,6 @@ console.log = (...args) => console.error(...args);
 console.info = (...args) => console.error(...args);
 console.warn = (...args) => console.error(...args);
 
-startMainThreadMonitor("electrobun.bun", { mirrorToConsole: true });
 setConfigStoreHost(nodeConfigStoreHost);
 setNativeIbkrGatewayModuleLoader(() => import("../../../plugins/ibkr/gateway-service-native"));
 
@@ -134,6 +132,10 @@ function forEachReadyWindowRpc(callback: (rpc: DesktopRpc) => void): void {
     const rpc = windowRpcs.get(key);
     if (rpc) callback(rpc);
   }
+}
+
+function openMainWindowDevTools(): void {
+  mainWindow?.webview.openDevTools();
 }
 
 function scopeClientId(rpc: DesktopRpc, id: string): string {
@@ -414,6 +416,25 @@ async function runDesktopUpdate(rpc: DesktopRpc, currentVersion: string): Promis
     desktopUpdateInProgress = false;
     Electrobun.Updater.onStatusChange(null);
   }
+}
+
+interface PluginStateBackendSetEntry {
+  pluginId: string;
+  key: string;
+  value: unknown;
+  schemaVersion?: number;
+}
+
+function normalizePluginStateSetEntry(entry: unknown): PluginStateBackendSetEntry | null {
+  if (!entry || typeof entry !== "object") return null;
+  const record = entry as Record<string, unknown>;
+  if (typeof record.pluginId !== "string" || typeof record.key !== "string") return null;
+  return {
+    pluginId: record.pluginId,
+    key: record.key,
+    value: record.value,
+    schemaVersion: typeof record.schemaVersion === "number" ? record.schemaVersion : undefined,
+  };
 }
 
 function syncBackendCloudAuthState(pluginId: string, key: string, value: unknown): void {
@@ -1049,6 +1070,19 @@ async function handleBackendRequest(
       requireServices().persistence.pluginState.set(payload.pluginId as string, payload.key as string, payload.value, payload.schemaVersion as number | undefined);
       syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, payload.value);
       return null;
+    case "pluginState.setMany": {
+      const entries = Array.isArray(payload.entries)
+        ? payload.entries.flatMap((entry) => {
+            const normalized = normalizePluginStateSetEntry(entry);
+            return normalized ? [normalized] : [];
+          })
+        : [];
+      requireServices().persistence.pluginState.setMany(entries);
+      for (const entry of entries) {
+        syncBackendCloudAuthState(entry.pluginId, entry.key, entry.value);
+      }
+      return null;
+    }
     case "pluginState.delete":
       requireServices().persistence.pluginState.delete(payload.pluginId as string, payload.key as string);
       syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, null);
@@ -1142,7 +1176,12 @@ Electrobun.events.on("context-menu-clicked", (event: unknown) => {
 
 ApplicationMenu.on("application-menu-clicked", (event: unknown) => {
   const command = applicationMenuCommand(event);
-  if (!command || !readyWindowRpcs.has(MAIN_WINDOW_RPC_KEY)) return;
+  if (!command) return;
+  if (command.type === "open-devtools") {
+    openMainWindowDevTools();
+    return;
+  }
+  if (!readyWindowRpcs.has(MAIN_WINDOW_RPC_KEY)) return;
   windowRpcs.get(MAIN_WINDOW_RPC_KEY)?.send["application-menu.select"]({ command });
 });
 

@@ -1,5 +1,7 @@
-import type { DesktopApplicationMenuCommand } from "../../../types/desktop-menu";
-import { ELECTROBUN_APPLICATION_MENU_ACTION } from "./application-menu";
+import {
+  ELECTROBUN_APPLICATION_MENU_ACTION,
+  type ElectrobunApplicationMenuCommand,
+} from "./application-menu";
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -19,7 +21,7 @@ function applicationMenuClickPayload(event: unknown): Record<string, unknown> | 
   return typeof eventRecord.action === "string" ? eventRecord : null;
 }
 
-function normalizeApplicationMenuCommand(value: unknown): DesktopApplicationMenuCommand | null {
+function normalizeApplicationMenuCommand(value: unknown): ElectrobunApplicationMenuCommand | null {
   const command = record(value);
   if (!command || typeof command.type !== "string") return null;
 
@@ -42,13 +44,14 @@ function normalizeApplicationMenuCommand(value: unknown): DesktopApplicationMenu
     case "layout-undo":
     case "layout-redo":
     case "layout-gridlock":
+    case "open-devtools":
       return { type: command.type };
     default:
       return null;
   }
 }
 
-export function applicationMenuCommand(event: unknown): DesktopApplicationMenuCommand | null {
+export function applicationMenuCommand(event: unknown): ElectrobunApplicationMenuCommand | null {
   const payload = applicationMenuClickPayload(event);
   if (payload?.action !== ELECTROBUN_APPLICATION_MENU_ACTION) return null;
   return normalizeApplicationMenuCommand(payload.data);

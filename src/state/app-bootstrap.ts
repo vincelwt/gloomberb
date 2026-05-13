@@ -37,11 +37,11 @@ interface RefreshPlanEntry {
 }
 
 const MAX_BACKGROUND_WARMUP_TICKERS = 12;
-const PORTFOLIO_FINANCIAL_COLUMN_IDS = new Set([
-  "market_cap",
+const PORTFOLIO_FULL_SNAPSHOT_COLUMN_IDS = new Set([
   "pe",
   "forward_pe",
   "dividend_yield",
+  "sparkline",
 ]);
 const startupLog = debugLog.createLogger("startup");
 
@@ -157,7 +157,7 @@ function buildRefreshPlan(
     const columnIds = Array.isArray(instance.settings?.columnIds)
       ? instance.settings.columnIds.filter((value): value is string => typeof value === "string")
       : [];
-    return columnIds.some((columnId) => PORTFOLIO_FINANCIAL_COLUMN_IDS.has(columnId))
+    return columnIds.some((columnId) => PORTFOLIO_FULL_SNAPSHOT_COLUMN_IDS.has(columnId))
       ? "financials"
       : "quote";
   };

@@ -202,6 +202,13 @@ function areStreamQuotesEquivalent(current: Quote | null | undefined, next: Quot
     && JSON.stringify(current.provenance ?? null) === JSON.stringify(next.provenance ?? null);
 }
 
+function hasCachedSnapshotData(financials: TickerFinancials): boolean {
+  return !!financials.profile
+    || Object.keys(financials.fundamentals ?? {}).length > 0
+    || financials.annualStatements.length > 0
+    || financials.quarterlyStatements.length > 0;
+}
+
 function errorEntry<T>(current: QueryEntry<T>, attempt: ProviderAttempt): QueryEntry<T> {
   return {
     ...current,
@@ -365,7 +372,7 @@ export class MarketDataCoordinator {
       const fundamentalsKey = buildFundamentalsKey(instrument);
       const statementsKey = buildStatementsKey(instrument);
 
-      if (this.snapshotStore.get(snapshotKey).phase === "idle") {
+      if (hasCachedSnapshotData(normalized) && this.snapshotStore.get(snapshotKey).phase === "idle") {
         this.snapshotStore.set(
           snapshotKey,
           readyEntry(this.snapshotStore.get(snapshotKey), normalized, source, [], { keepLastGoodOnEmpty: true }),

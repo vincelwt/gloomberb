@@ -39,7 +39,7 @@ const TopPane = createNewsPresetPane({
   paneKey: "top",
   title: "Top News",
   query: NEWS_QUERY_PRESETS.top,
-  columns: ["rank", "time", "title", "tickers", "importance"],
+  columns: ["time", "title", "tickers", "importance"],
   defaultSort: { columnId: "importance", direction: "desc" },
   emptyStateTitle: "No top stories yet",
   emptyStateHint: "Try refreshing later as new headlines are ranked.",

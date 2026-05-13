@@ -13,6 +13,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { instrumentFromTicker } from "../../market-data/request-types";
 import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { PluginRegistry, setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
@@ -999,6 +1000,8 @@ describe("PortfolioListPane cash and margin UI", () => {
       ["ticker", "market_cap", "pe", "forward_pe"],
       [createBrokerInstance("flex")],
     );
+    const seededTicker = makeTicker();
+    const seededQuote = makeQuote();
     let calls = 0;
     let resolveFinancials!: (value: {
       annualStatements: [];
@@ -1043,10 +1046,26 @@ describe("PortfolioListPane cash and margin UI", () => {
       },
     };
     sharedCoordinator = new MarketDataCoordinator(provider);
+    const instrument = instrumentFromTicker(seededTicker, seededTicker.metadata.ticker);
+    if (!instrument) throw new Error("expected ticker instrument");
+    sharedCoordinator.primeCachedFinancials([{
+      instrument,
+      financials: {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: seededQuote,
+      },
+    }]);
     setSharedMarketDataCoordinator(sharedCoordinator);
 
     testSetup = await testRender(
-      <PortfolioHarness config={config} collectionId="broker:ibkr-flex:DU12345" />,
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-flex:DU12345"
+        ticker={seededTicker}
+        quote={seededQuote}
+      />,
       { width: 100, height: 12 },
     );
 

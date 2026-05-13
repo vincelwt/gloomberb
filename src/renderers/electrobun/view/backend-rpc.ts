@@ -1,6 +1,5 @@
 /// <reference lib="dom" />
 import { Electroview } from "electrobun/view";
-import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   type ApplicationMenuSelectMessage,
   type CapabilityEventMessage,
@@ -119,13 +118,11 @@ async function waitForBridgeReady(): Promise<void> {
 }
 
 export async function backendRequest<T = unknown>(method: string, payload: unknown = null): Promise<T> {
-  const result = await measurePerfAsync("electrobun.rpc.request", async () => {
-    await waitForBridgeReady();
-    return rpc.request["backend.request"]({
-      method,
-      payload: encodeRpcValue(payload),
-    });
-  }, { method });
+  await waitForBridgeReady();
+  const result = await rpc.request["backend.request"]({
+    method,
+    payload: encodeRpcValue(payload),
+  });
   return decodeRpcValue<T>(result);
 }
 

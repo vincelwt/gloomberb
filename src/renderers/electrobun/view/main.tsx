@@ -5,7 +5,6 @@ import { App } from "../../../app";
 import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
 import { measurePerfAsync } from "../../../utils/perf-marks";
-import { startMainThreadMonitor } from "../../../utils/main-thread-monitor";
 import { backendRequest, initElectrobunBackend } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
 import { installElectrobunBrokerRemoteClient } from "./broker-remote-client";
@@ -31,23 +30,9 @@ if (!rootElement) {
 
 const root = createRoot(rootElement);
 const bootLog = debugLog.createLogger("electrobun-web-boot");
-const ELECTROBUN_WEB_CONSOLE_LOG_SOURCES = [
-  "app",
-  "main-thread",
-  "perf",
-  "refresh-queue",
-  "services",
-  "startup",
-  "electrobun-web-boot",
-];
-debugLog.mirrorToConsole({
-  sources: ELECTROBUN_WEB_CONSOLE_LOG_SOURCES,
-});
-const stopMainThreadMonitor = startMainThreadMonitor("electrobun.web", { mirrorToConsole: true });
 
 rootElement.tabIndex = -1;
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
-bootLog.warn("diagnostic console mirror enabled", { sources: ELECTROBUN_WEB_CONSOLE_LOG_SOURCES });
 
 function focusWebSurface(): void {
   window.focus();
@@ -111,7 +96,6 @@ async function boot() {
 }
 
 boot().catch((error) => {
-  stopMainThreadMonitor();
   root.render(
     <div className="gloom-fatal">
       <h1>Gloomberb failed to start</h1>

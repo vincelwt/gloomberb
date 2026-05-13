@@ -4,9 +4,13 @@ import type { DesktopApplicationMenuCommand } from "../../../types/desktop-menu"
 export const ELECTROBUN_APPLICATION_MENU_ACTION = "gloom.application-menu.select";
 export const GITHUB_ISSUE_URL = "https://github.com/vincelwt/gloomberb/issues/new/choose";
 
+export type ElectrobunApplicationMenuCommand =
+  | DesktopApplicationMenuCommand
+  | { type: "open-devtools" };
+
 function commandItem(
   label: string,
-  command: DesktopApplicationMenuCommand,
+  command: ElectrobunApplicationMenuCommand,
   options: { accelerator?: string } = {},
 ): ApplicationMenuItemConfig {
   return {
@@ -72,6 +76,7 @@ export function buildApplicationMenu(): ApplicationMenuItemConfig[] {
       label: "View",
       submenu: [
         openCommandBar("Open Command Bar", "", { accelerator: "CmdOrCtrl+K" }),
+        commandItem("Open Developer Tools", { type: "open-devtools" }),
         { type: "divider" },
         commandItem("Toggle Status Bar", { type: "toggle-status-bar" }),
         { type: "divider" },

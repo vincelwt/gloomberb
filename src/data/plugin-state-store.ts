@@ -10,6 +10,13 @@ export interface PluginStateRecord<T = unknown> {
   updatedAt: number;
 }
 
+export interface PluginStateSetEntry {
+  pluginId: string;
+  key: string;
+  value: unknown;
+  schemaVersion?: number;
+}
+
 interface CachedPluginStateRecord {
   value: unknown;
   schemaVersion: number;
@@ -64,22 +71,41 @@ export class PluginStateStore {
   }
 
   set(pluginId: string, key: string, value: unknown, schemaVersion = DEFAULT_PLUGIN_STATE_SCHEMA_VERSION): void {
-    const rawValue = serializeJson(value);
+    this.setMany([{ pluginId, key, value, schemaVersion }]);
+  }
+
+  setMany(entries: PluginStateSetEntry[]): void {
+    if (entries.length === 0) return;
     const updatedAt = Date.now();
+    const records = entries.map((entry) => ({
+      pluginId: entry.pluginId,
+      key: entry.key,
+      value: entry.value,
+      schemaVersion: entry.schemaVersion ?? DEFAULT_PLUGIN_STATE_SCHEMA_VERSION,
+      rawValue: serializeJson(entry.value),
+    }));
+
     withSqliteBusyRetry("save plugin state", () => {
-      this.db
-        .query(
-          `INSERT OR REPLACE INTO plugin_state (plugin_id, key, schema_version, value, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(pluginId, key, schemaVersion, rawValue, updatedAt);
+      const insert = this.db.query(
+        `INSERT OR REPLACE INTO plugin_state (plugin_id, key, schema_version, value, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      );
+      const tx = this.db.transaction(() => {
+        for (const record of records) {
+          insert.run(record.pluginId, record.key, record.schemaVersion, record.rawValue, updatedAt);
+        }
+      });
+      tx();
     });
-    this.cache.set(`${pluginId}:${key}`, {
-      value,
-      schemaVersion,
-      updatedAt,
-      rawValue,
-    });
+
+    for (const record of records) {
+      this.cache.set(`${record.pluginId}:${record.key}`, {
+        value: record.value,
+        schemaVersion: record.schemaVersion,
+        updatedAt,
+        rawValue: record.rawValue,
+      });
+    }
   }
 
   delete(pluginId: string, key: string): void {

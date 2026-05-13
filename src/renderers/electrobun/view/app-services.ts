@@ -24,6 +24,7 @@ import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 const servicesLog = debugLog.createLogger("services");
 const ASSET_DATA_CAPABILITY_ID = "asset-data.asset-data-router";
 const NEWS_CAPABILITY_ID = "news.core";
+const PLUGIN_STATE_BACKEND_FLUSH_DELAY_MS = 25;
 
 class RemoteTickerRepository {
   async loadAllTickers(): Promise<TickerRecord[]> {
@@ -274,14 +275,19 @@ class RemoteSessionStore {
   }
 }
 
+interface PluginStatePersistEntry {
+  pluginId: string;
+  key: string;
+  value: unknown;
+  schemaVersion: number;
+}
+
 class RemotePluginStateStore {
   private readonly state = new Map<string, Map<string, unknown>>();
-  private readonly schedulers = new Map<string, ReturnType<typeof createPersistScheduler<{
-    pluginId: string;
-    key: string;
-    value: unknown;
-    schemaVersion: number;
-  }>>>();
+  private readonly schedulers = new Map<string, ReturnType<typeof createPersistScheduler<PluginStatePersistEntry>>>();
+  private readonly pendingBackendSaves = new Map<string, PluginStatePersistEntry>();
+  private backendSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private backendSaveInFlight: Promise<void> = Promise.resolve();
 
   constructor(initial: Record<string, Record<string, unknown>>) {
     for (const [pluginId, values] of Object.entries(initial)) {
@@ -304,7 +310,11 @@ class RemotePluginStateStore {
   delete(pluginId: string, key: string): void {
     this.state.get(pluginId)?.delete(key);
     this.getScheduler(pluginId, key).cancel();
-    void backendRequest("pluginState.delete", { pluginId, key }).catch(() => {});
+    this.pendingBackendSaves.delete(this.schedulerKey(pluginId, key));
+    void this.backendSaveInFlight
+      .catch(() => {})
+      .then(() => backendRequest("pluginState.delete", { pluginId, key }))
+      .catch(() => {});
   }
 
   keys(pluginId: string): string[] {
@@ -317,19 +327,51 @@ class RemotePluginStateStore {
 
   async flush(): Promise<void> {
     await Promise.all([...this.schedulers.values()].map((scheduler) => scheduler.flush()));
+    await this.flushBackendSaves();
   }
 
   private getScheduler(pluginId: string, key: string) {
-    const schedulerKey = `${pluginId}\u0000${key}`;
+    const schedulerKey = this.schedulerKey(pluginId, key);
     let scheduler = this.schedulers.get(schedulerKey);
     if (!scheduler) {
       scheduler = createPersistScheduler({
         delayMs: PLUGIN_STATE_SAVE_DEBOUNCE_MS,
-        save: (entry) => backendRequest("pluginState.set", entry),
+        save: (entry) => {
+          this.scheduleBackendSave(entry);
+        },
       });
       this.schedulers.set(schedulerKey, scheduler);
     }
     return scheduler;
+  }
+
+  private schedulerKey(pluginId: string, key: string): string {
+    return `${pluginId}\u0000${key}`;
+  }
+
+  private scheduleBackendSave(entry: PluginStatePersistEntry): void {
+    this.pendingBackendSaves.set(this.schedulerKey(entry.pluginId, entry.key), entry);
+    if (this.backendSaveTimer) return;
+    this.backendSaveTimer = setTimeout(() => {
+      void this.flushBackendSaves();
+    }, PLUGIN_STATE_BACKEND_FLUSH_DELAY_MS);
+  }
+
+  private async flushBackendSaves(): Promise<void> {
+    if (this.backendSaveTimer) {
+      clearTimeout(this.backendSaveTimer);
+      this.backendSaveTimer = null;
+    }
+    if (this.pendingBackendSaves.size === 0) return this.backendSaveInFlight;
+
+    const entries = [...this.pendingBackendSaves.values()];
+    this.pendingBackendSaves.clear();
+    const save = this.backendSaveInFlight
+      .catch(() => {})
+      .then(() => backendRequest<void>("pluginState.setMany", { entries }))
+      .catch(() => {});
+    this.backendSaveInFlight = save;
+    return save;
   }
 }
 

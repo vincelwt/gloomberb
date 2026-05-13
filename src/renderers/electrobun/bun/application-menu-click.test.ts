@@ -21,6 +21,15 @@ describe("applicationMenuCommand", () => {
     })).toBeNull();
   });
 
+  test("parses the native devtools command", () => {
+    expect(applicationMenuCommand({
+      data: {
+        action: ELECTROBUN_APPLICATION_MENU_ACTION,
+        data: { type: "open-devtools" },
+      },
+    })).toEqual({ type: "open-devtools" });
+  });
+
   test("ignores unknown command types", () => {
     expect(applicationMenuCommand({
       data: {

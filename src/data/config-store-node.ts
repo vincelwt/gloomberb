@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, rm, writeFile } from "fs/promises";
+import { homedir } from "os";
 import { dirname, join } from "path";
 import type {
   AppConfig,
@@ -46,11 +47,23 @@ const BUILTIN_PLUGIN_GROUP_ALIASES: Record<string, string> = {
 };
 
 function getGlobalConfigDir(): string {
-  return join(process.env.HOME || "~", ".gloomberb");
+  return join(getHomeDir(), ".gloomberb");
 }
 
 function getGlobalConfigFile(): string {
   return join(getGlobalConfigDir(), "config.json");
+}
+
+function getHomeDir(): string {
+  return process.env.HOME || homedir();
+}
+
+function expandHomePath(filePath: string): string {
+  if (filePath === "~") return getHomeDir();
+  if (filePath.startsWith("~/") || filePath.startsWith("~\\")) {
+    return join(getHomeDir(), filePath.slice(2));
+  }
+  return filePath;
 }
 
 export async function getDataDir(): Promise<string | null> {
@@ -197,11 +210,11 @@ export async function resetAllData(dataDir: string): Promise<void> {
 
 export async function exportConfig(config: AppConfig, destPath: string): Promise<void> {
   const { dataDir, ...rest } = config;
-  await writeFile(destPath, JSON.stringify(rest, null, 2), "utf-8");
+  await writeFile(expandHomePath(destPath), JSON.stringify(rest, null, 2), "utf-8");
 }
 
 export async function importConfig(dataDir: string, srcPath: string): Promise<AppConfig> {
-  const raw = await readFile(srcPath, "utf-8");
+  const raw = await readFile(expandHomePath(srcPath), "utf-8");
   const saved = JSON.parse(raw) as Record<string, unknown>;
   const { config } = normalizeConfig(saved, dataDir);
   await saveConfig(config);

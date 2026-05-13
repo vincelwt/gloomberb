@@ -127,6 +127,19 @@ describe("AppPersistence", () => {
     persistence.close();
   });
 
+  test("stores multiple plugin state records in one batch", () => {
+    const dbPath = createTempDbPath("plugin-state-batch");
+    const persistence = new AppPersistence(dbPath);
+    persistence.pluginState.setMany([
+      { pluginId: "ai", key: "provider", value: "openai", schemaVersion: 1 },
+      { pluginId: "news", key: "resume:read", value: { ids: ["1"] }, schemaVersion: 2 },
+    ]);
+
+    expect(persistence.pluginState.get<string>("ai", "provider", 1)?.value).toBe("openai");
+    expect(persistence.pluginState.get<{ ids: string[] }>("news", "resume:read", 2)?.value.ids).toEqual(["1"]);
+    persistence.close();
+  });
+
   test("stores and returns session snapshots", () => {
     const dbPath = createTempDbPath("session-snapshot");
     const persistence = new AppPersistence(dbPath);
