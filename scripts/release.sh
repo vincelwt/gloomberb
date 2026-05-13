@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REPO="vincelwt/gloomberb"
+
 usage() {
   cat <<'EOF'
-Usage: ./scripts/release.sh [version]
+Usage: ./scripts/release.sh <version>
 
-Options:
-  version    Optional version to force Codex to use for the release, in X.Y.Z format
-  -h, --help Show this help text
+Arguments:
+  version    Version to release, in X.Y.Z format
+
+Steps:
+1. Find the latest published GitHub release
+2. Run ./scripts/bump-version.sh <version> to bump, commit, tag, and push
+3. Create a draft GitHub release with generated notes
 EOF
 }
 
-FORCED_VERSION=""
+VERSION=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -20,56 +26,76 @@ for arg in "$@"; do
       exit 0
       ;;
     *)
-      if [[ -n "$FORCED_VERSION" ]]; then
+      if [[ -n "$VERSION" ]]; then
         echo "error: unexpected argument: $arg" >&2
         usage >&2
         exit 1
       fi
-      FORCED_VERSION="$arg"
+      VERSION="$arg"
       ;;
   esac
 done
 
-if [[ -n "$FORCED_VERSION" && ! "$FORCED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ -z "$VERSION" ]]; then
+  echo "error: version is required" >&2
+  usage >&2
+  exit 1
+fi
+
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: version must be in X.Y.Z format" >&2
   exit 1
 fi
 
-VERSION_INSTRUCTIONS=$(cat <<EOF
-3. Use the provided version exactly: $FORCED_VERSION
-EOF
-)
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-if [[ -z "$FORCED_VERSION" ]]; then
-  VERSION_INSTRUCTIONS=$(cat <<'EOF'
-3. Decide the version bump. The project is pre-1.0, so bump the minor (0.x.0) for features/breaking changes and patch (0.x.y) for fixes/improvements. Never bump to 1.0+.
-EOF
-)
+for cmd in bun gh git; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "error: required command not found: $cmd" >&2
+    exit 1
+  fi
+done
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "error: working tree must be clean before releasing" >&2
+  exit 1
 fi
 
-PROMPT=$(cat <<EOF
-You are releasing the project "gloomberb" (a Bloomberg-style terminal stock tracker).
+TAG="v$VERSION"
 
-Use gh to:
-1. Find the latest release tag and its date
-2. List all merged PRs since that release
-${VERSION_INSTRUCTIONS}
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "error: local tag $TAG already exists" >&2
+  exit 1
+fi
 
-Style rules for the release title and notes:
-- Keep it professional and straightforward, no hype or marketing speak
-- Never use em dashes
-- Title should just be the version and a short factual summary
+if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "error: remote tag $TAG already exists" >&2
+  exit 1
+fi
 
-Steps:
-1. Run ./scripts/bump-version.sh ${FORCED_VERSION:-<version>} to bump, commit, tag, and push
-2. Create the GitHub release using a short title and clean markdown release notes referencing PR numbers. IMPORTANT: Always pass --draft to gh release create so it is not published immediately.
-EOF
+LATEST_RELEASE_TAG="$(gh release view --repo "$REPO" --json tagName --jq '.tagName' 2>/dev/null || true)"
+if [[ -n "$LATEST_RELEASE_TAG" ]]; then
+  echo "Latest published release: $LATEST_RELEASE_TAG"
+else
+  echo "Latest published release: none"
+fi
+
+./scripts/bump-version.sh "$VERSION"
+
+create_args=(
+  release create "$TAG"
+  --repo "$REPO"
+  --draft
+  --verify-tag
+  --title "$TAG"
+  --generate-notes
 )
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "$LATEST_RELEASE_TAG" ]]; then
+  create_args+=(--notes-start-tag "$LATEST_RELEASE_TAG")
+fi
 
-echo "$PROMPT" | codex exec \
-  --cd "$ROOT_DIR" \
-  --sandbox danger-full-access \
-  --ask-for-approval never \
-  -
+gh "${create_args[@]}"
+
+echo "Created draft release $TAG. The tag-triggered GitHub Actions workflow will build and upload assets."

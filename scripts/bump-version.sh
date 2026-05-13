@@ -6,7 +6,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/release.sh <version> [--skip-push]
+Usage: ./scripts/bump-version.sh <version> [--skip-push]
 
 Steps:
 1. Update package.json
