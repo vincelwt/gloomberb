@@ -222,6 +222,61 @@ describe("PluginRegistry detail tabs", () => {
 });
 
 describe("PluginRegistry pane settings", () => {
+  test("resolves effective pane setting values from settings definitions", async () => {
+    const registry = createRegistry();
+    const config = createDefaultConfig("/tmp/gloomberb-pane-settings-test");
+    config.layout = {
+      dockRoot: { kind: "pane", instanceId: "test-pane:main" },
+      instances: [{
+        instanceId: "test-pane:main",
+        paneId: "test-pane",
+        binding: { kind: "none" },
+        settings: {},
+      }],
+      floating: [],
+    };
+    registry.getConfigFn = () => config;
+    registry.getLayoutFn = () => config.layout;
+
+    await registry.register(plugin("tables", (ctx) => {
+      ctx.registerPane({
+        id: "test-pane",
+        name: "Test Pane",
+        defaultPosition: "right",
+        component: () => null,
+        settings: {
+          values: {
+            columnIds: ["ticker", "price"],
+            collectionScope: "all",
+          },
+          fields: [
+            {
+              key: "columnIds",
+              label: "Columns",
+              type: "ordered-multi-select",
+              options: [
+                { value: "ticker", label: "Ticker" },
+                { value: "price", label: "Price" },
+              ],
+            },
+            {
+              key: "collectionScope",
+              label: "Collections",
+              type: "select",
+              options: [{ value: "all", label: "All" }],
+            },
+          ],
+        },
+      });
+    }));
+
+    const descriptor = registry.resolvePaneSettings("test-pane:main");
+
+    expect(descriptor?.context.settings.columnIds).toEqual(["ticker", "price"]);
+    expect(descriptor?.context.settings.collectionScope).toBe("all");
+    expect(descriptor?.rawSettings.columnIds).toBeUndefined();
+  });
+
   test("resolves plugin-scoped pane setting values from plugin config", async () => {
     const registry = createRegistry();
     const config = createDefaultConfig("/tmp/gloomberb-pane-settings-test");

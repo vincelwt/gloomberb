@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text } from "../../../ui";
+import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useFxRatesMap } from "../../../market-data/hooks";
@@ -32,7 +32,6 @@ const STAT_COLUMN_GAP = 2;
 const STAT_LABEL_WIDTH = 12;
 const BOOK_LABEL_WIDTH = 4;
 const RANGE_ENDPOINT_WIDTH = 11;
-const RANGE_MAX_WIDTH = 42;
 const POSITION_COLUMN_GAP = 1;
 
 function CompactRangeBar({
@@ -71,21 +70,23 @@ function CompactRangeBar({
   return (
     <Box flexDirection="column" width={width} flexShrink={0}>
       <Box flexDirection="row" height={1}>
-        <Text fg={colors.textDim}>{padTo(label, labelWidth)}</Text>
+        <Box width={labelWidth} overflow="hidden">
+          <Text fg={colors.textDim}>{label}</Text>
+        </Box>
         <Text fg={markerColor}>{pctLabel}</Text>
       </Box>
       <Box flexDirection="row" height={1}>
-        <Text fg={colors.textDim}>
-          {padTo(lowText, endpointWidth)}
-        </Text>
+        <Box width={endpointWidth} overflow="hidden">
+          <Text fg={colors.textDim}>{lowText}</Text>
+        </Box>
         <Box marginLeft={1} marginRight={1} width={barWidth} flexDirection="row">
           <Text fg={colors.border}>{"─".repeat(markerIndex)}</Text>
           <Text fg={markerColor}>{"●"}</Text>
           <Text fg={colors.border}>{"─".repeat(Math.max(0, barWidth - markerIndex - 1))}</Text>
         </Box>
-        <Text fg={colors.textDim}>
-          {padTo(highText, endpointWidth, "right")}
-        </Text>
+        <Box flexDirection="row" width={endpointWidth} justifyContent="flex-end" overflow="hidden">
+          <Text fg={colors.textDim}>{highText}</Text>
+        </Box>
       </Box>
     </Box>
   );
@@ -164,7 +165,10 @@ interface PositionColumn {
 
 function StatGrid({ fields, width }: { fields: StatField[]; width: number }) {
   const columnCount = width >= 58 ? 2 : 1;
-  const colWidth = Math.floor((width - STAT_COLUMN_GAP * (columnCount - 1)) / columnCount);
+  const availableWidth = width - STAT_COLUMN_GAP * (columnCount - 1);
+  const baseColWidth = Math.floor(availableWidth / columnCount);
+  const extraWidth = availableWidth - baseColWidth * columnCount;
+  const colWidths = Array.from({ length: columnCount }, (_, index) => baseColWidth + (index === columnCount - 1 ? extraWidth : 0));
   const rows: Array<Array<StatField | null>> = [];
   for (let i = 0; i < fields.length; i += columnCount) {
     rows.push(Array.from({ length: columnCount }, (_, offset) => fields[i + offset] ?? null));
@@ -175,6 +179,7 @@ function StatGrid({ fields, width }: { fields: StatField[]; width: number }) {
       {rows.map((row, i) => (
         <Box key={i} flexDirection="row" height={1}>
           {row.map((field, j) => {
+            const colWidth = colWidths[j] ?? baseColWidth;
             if (!field) {
               return (
                 <Box key={j} flexDirection="row">
@@ -189,8 +194,12 @@ function StatGrid({ fields, width }: { fields: StatField[]; width: number }) {
               <Box key={j} flexDirection="row">
                 {j > 0 && <Box width={STAT_COLUMN_GAP} />}
                 <Box width={colWidth} flexDirection="row">
-                  <Text fg={colors.textDim}>{padTo(field.label, labelWidth)}</Text>
-                  <Text fg={field.valueColor ?? colors.text}>{padTo(field.value, valueWidth, "right")}</Text>
+                  <Box width={labelWidth} overflow="hidden">
+                    <Text fg={colors.textDim}>{field.label}</Text>
+                  </Box>
+                  <Box flexDirection="row" width={valueWidth} justifyContent="flex-end" overflow="hidden">
+                    <Text fg={field.valueColor ?? colors.text}>{field.value}</Text>
+                  </Box>
                 </Box>
               </Box>
             );
@@ -300,6 +309,7 @@ export function OverviewTab({
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
   const { width: termWidth } = useViewport();
+  const { fractionalViewport = false } = useUiCapabilities();
 
   if (!ticker) return <EmptyState title="No ticker selected." />;
 
@@ -336,7 +346,7 @@ export function OverviewTab({
     routingVenue && routingVenue !== listingVenue ? `route ${routingVenue}` : "",
   ].filter((part) => part.length > 0);
 
-  const contentWidth = Math.max((width || Math.floor(termWidth * 0.5)) - 4, 20);
+  const contentWidth = Math.max((width || Math.floor(termWidth * 0.5)) - (fractionalViewport ? 2 : 4), 20);
   const chartWidth = contentWidth;
   const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
   const hasBidAsk = quote?.bid != null || quote?.ask != null;
@@ -347,8 +357,8 @@ export function OverviewTab({
   const hasYearRange = quote?.low52w != null && quote?.high52w != null && quote.high52w > quote.low52w;
   const rangeInline = contentWidth >= 70 && hasDayRange && hasYearRange;
   const rangeWidth = rangeInline
-    ? Math.min(RANGE_MAX_WIDTH, Math.floor((contentWidth - 2) / 2))
-    : Math.min(RANGE_MAX_WIDTH, contentWidth);
+    ? Math.floor((contentWidth - 2) / 2)
+    : contentWidth;
   const rangeMarkerColor = quote ? priceColor(quote.change) : colors.textDim;
 
   const stats: StatField[] = [];

@@ -8,6 +8,7 @@ import { convertCurrency, formatCompact, formatNumber, formatPercentRaw } from "
 import { formatMarketCost, formatMarketPrice, formatMarketQuantity, formatSignedMarketPrice, type MarketFormatOptions } from "../../../utils/market-format";
 import { getActiveQuoteDisplay, marketStateDot, type ActiveQuoteDisplay } from "../../../utils/market-status";
 import { formatOptionTicker } from "../../../utils/options";
+import { PRICE_SPARKLINE_COLUMN_ID } from "../../../components/price-sparkline-view";
 
 export interface ColumnContext {
   activeTab?: string;
@@ -293,6 +294,8 @@ export function getColumnValue(
       return { text: "—" };
     case "latency":
       return { text: formatQuoteAgeWithSource(quote, ctx.now) };
+    case PRICE_SPARKLINE_COLUMN_ID:
+      return { text: "" };
     default:
       return { text: "—" };
   }
@@ -387,6 +390,14 @@ export function getSortValue(
       return null;
     case "latency":
       return quote?.lastUpdated != null ? ctx.now - (clampQuoteTimestamp(quote.lastUpdated, ctx.now) ?? ctx.now) : null;
+    case PRICE_SPARKLINE_COLUMN_ID: {
+      const values = (financials?.priceHistory ?? [])
+        .map((point) => point.close)
+        .filter((value) => Number.isFinite(value));
+      const first = values[0];
+      const last = values.at(-1);
+      return first != null && last != null && first !== 0 ? ((last - first) / Math.abs(first)) * 100 : null;
+    }
     default:
       return null;
   }

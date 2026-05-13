@@ -362,12 +362,12 @@ export function QuickAddTickerInput({
       return;
     }
 
-    if (event.name === "n" && !event.ctrl && !event.meta && !event.super) {
+    if ((event.name === "a" || event.name === "n") && !event.ctrl && !event.meta && !event.super) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusInput();
     }
-  });
+  }, { phase: "before" });
 
   const inputWidth = useMemo(() => {
     const queryWidth = normalizeQuickAddQuery(inputValue).length;

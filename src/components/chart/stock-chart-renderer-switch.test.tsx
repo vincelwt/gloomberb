@@ -382,7 +382,7 @@ describe("StockChart renderer switching", () => {
     const manager = getNativeSurfaceManager(testSetup.renderer as never) as unknown as {
       surfaces: Map<string, { snapshot: { rect: { height: number } } }>;
     };
-    expect(manager.surfaces.get("chart-surface:ticker-detail:test:full:base")?.snapshot.rect.height).toBe(11);
+    expect(manager.surfaces.get("chart-surface:ticker-detail:test:full:base")?.snapshot.rect.height).toBe(12);
   });
 
   test("moves candle OHLC summary into the pane footer", async () => {

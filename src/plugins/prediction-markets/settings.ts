@@ -154,6 +154,10 @@ export function buildPredictionMarketsPaneSettingsDef(
 
   return {
     title: "Prediction Markets Settings",
+    values: {
+      ...settings,
+      columnIds: [...settings.columnIds],
+    },
     fields,
   };
 }

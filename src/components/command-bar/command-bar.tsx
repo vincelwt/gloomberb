@@ -4042,9 +4042,9 @@ export function CommandBar({
         }
         const inferred = normalizeTickerInput(activeTickerSymbol, undefined);
         if (inferred) {
-          return `Shortcut: ${rootShortcutIntent.label} · inferred ${inferred} · Tab to accept`;
+          return `Shortcut: ${rootShortcutIntent.label} for ${inferred} · Tab to accept`;
         }
-        return `Shortcut: ${rootShortcutIntent.label} · Enter tickers to compare`;
+        return `Shortcut: ${rootShortcutIntent.label} · Enter tickers`;
       }
       return `Shortcut: ${rootShortcutIntent.label}`;
     }

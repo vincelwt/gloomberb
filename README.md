@@ -24,7 +24,7 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | Shortcut | Function |
 |----------|----------|
 | `DES <ticker>` | Security details for a ticker |
-| `QQ <ticker>` | Ticker quote |
+| `QQ <tickers>` | Ticker quote monitor |
 | `PM <query>` | Polymarket and Kalshi prediction data |
 | `TOP` | Ranked market stories |
 | `MOST` | Top gainers, losers, most active, and trending tickers |

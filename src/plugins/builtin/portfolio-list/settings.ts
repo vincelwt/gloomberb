@@ -1,5 +1,6 @@
 import type { PaneSettingOption, PaneSettingsDef, PaneTemplateContext } from "../../../types/plugin";
 import { DEFAULT_COLUMNS, DEFAULT_PORTFOLIO_COLUMN_IDS, type AppConfig, type ColumnConfig } from "../../../types/config";
+import { PRICE_SPARKLINE_COLUMN_ID, PRICE_SPARKLINE_PERIOD_LABEL } from "../../../components/price-sparkline-view";
 
 export type CollectionScope = "all" | "portfolios" | "watchlists" | "custom";
 
@@ -9,7 +10,6 @@ export interface PortfolioPaneSettings {
   visibleCollectionIds: string[];
   hideHeader: boolean;
   hideCash: boolean;
-  showSparklines?: boolean;
 }
 
 export interface CollectionEntry {
@@ -20,6 +20,7 @@ export interface CollectionEntry {
 
 export const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
   ...DEFAULT_COLUMNS,
+  { id: PRICE_SPARKLINE_COLUMN_ID, label: PRICE_SPARKLINE_PERIOD_LABEL, width: 6, align: "left" },
   { id: "bid", label: "BID", width: 10, align: "right", format: "currency" },
   { id: "ask", label: "ASK", width: 10, align: "right", format: "currency" },
   { id: "spread", label: "SPREAD", width: 10, align: "right", format: "currency" },
@@ -93,6 +94,13 @@ function resolveCollectionOptions(entries: CollectionEntry[]): PaneSettingOption
   }));
 }
 
+function describeColumnOption(column: ColumnConfig): string {
+  if (column.id === PRICE_SPARKLINE_COLUMN_ID) return "One-month price sparkline.";
+  return PORTFOLIO_ONLY_COLUMN_IDS.has(column.id)
+    ? "Visible only when this pane is showing a portfolio."
+    : "Visible for watchlists and portfolios.";
+}
+
 export function getPortfolioPaneSettings(settings: Record<string, unknown> | undefined): PortfolioPaneSettings {
   const columnIds = Array.isArray(settings?.columnIds)
     ? settings.columnIds.filter((value): value is string => typeof value === "string")
@@ -107,7 +115,6 @@ export function getPortfolioPaneSettings(settings: Record<string, unknown> | und
     visibleCollectionIds,
     hideHeader: settings?.hideHeader === true,
     hideCash: settings?.hideCash === true,
-    showSparklines: settings?.showSparklines === true,
   };
 }
 
@@ -115,6 +122,7 @@ export function cleanPortfolioPaneSettings(settings: Record<string, unknown>): R
   const nextSettings = { ...settings };
   delete nextSettings.hideTabs;
   delete nextSettings.lockedCollectionId;
+  delete nextSettings.showSparklines;
   if (nextSettings.collectionScope !== "custom") {
     delete nextSettings.visibleCollectionIds;
   }
@@ -175,7 +183,10 @@ export function resolveVisibleColumns(columnIds: string[], isPortfolioTab: boole
     return resolved;
   }
 
-  return DEFAULT_COLUMNS.filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
+  return DEFAULT_PORTFOLIO_COLUMN_IDS
+    .map((columnId) => PORTFOLIO_COLUMNS_BY_ID.get(columnId))
+    .filter((column): column is ColumnConfig => column != null)
+    .filter((column) => isPortfolioTab || !PORTFOLIO_ONLY_COLUMN_IDS.has(column.id));
 }
 
 export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: PortfolioPaneSettings): PaneSettingsDef {
@@ -190,9 +201,7 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
       options: PORTFOLIO_COLUMN_DEFS.map((column) => ({
         value: column.id,
         label: column.label,
-        description: PORTFOLIO_ONLY_COLUMN_IDS.has(column.id)
-          ? "Visible only when this pane is showing a portfolio."
-          : "Visible for watchlists and portfolios.",
+        description: describeColumnOption(column),
       })),
     },
     {
@@ -222,14 +231,13 @@ export function buildPortfolioPaneSettingsDef(config: AppConfig, settings: Portf
     label: "Hide Cash Positions",
     type: "toggle",
   });
-  fields.push({
-    key: "showSparklines",
-    label: "Sparklines",
-    type: "toggle",
-  });
-
   return {
     title: "Portfolio Pane Settings",
+    values: {
+      ...settings,
+      columnIds: [...settings.columnIds],
+      visibleCollectionIds: [...settings.visibleCollectionIds],
+    },
     fields,
   };
 }

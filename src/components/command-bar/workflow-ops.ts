@@ -16,6 +16,7 @@ import {
   COMPARISON_CHART_PANE_ID,
   MIN_COMPARISON_CHART_SYMBOLS,
 } from "../../plugins/builtin/comparison-chart";
+import { buildQuoteMonitorPaneTitle } from "../../plugins/builtin/ticker-detail/settings";
 import { getPaneTemplateDisplayLabel } from "./pane-template-display";
 
 export interface SharedWorkflowDeps {
@@ -366,43 +367,21 @@ export async function applyPaneSettingFieldValue(
     return;
   }
 
-  if (descriptor.pane.paneId === "quote-monitor" && field.key === "symbol") {
+  if (descriptor.pane.paneId === "quote-monitor" && (field.key === "symbol" || field.key === "symbolsText")) {
     const rawQuery = typeof value === "string" ? value.trim() : "";
-    const resolvedTicker = await resolveTickerSearch({
-      query: rawQuery,
-      activeTicker: null,
-      tickers: state.tickers,
-      dataProvider: deps.dataProvider,
-    });
-    if (!resolvedTicker) {
-      throw new Error(`No ticker match found for "${rawQuery}".`);
-    }
-
-    const symbol = resolvedTicker.kind === "local"
-      ? resolvedTicker.ticker.metadata.ticker
-      : resolvedTicker.symbol;
-
-    if (resolvedTicker.kind === "provider") {
-      const { ticker, created } = await upsertTickerFromSearchResult(
-        deps.tickerRepository,
-        resolvedTicker.result,
-      );
-      deps.dispatch({ type: "UPDATE_TICKER", ticker });
-      if (created) {
-        deps.pluginRegistry.events.emit("ticker:added", {
-          symbol: ticker.metadata.ticker,
-          ticker,
-        });
-      }
-    }
+    const symbols = await resolveTickerListInput(rawQuery, null, deps);
+    const primarySymbol = symbols[0]!;
+    const symbolsText = formatTickerListInput(symbols);
 
     const nextLayout = updatePaneInstance(state.config.layout, targetId, (instance) => ({
       ...instance,
-      title: symbol,
-      binding: { kind: "fixed", symbol },
+      title: buildQuoteMonitorPaneTitle(symbols),
+      binding: { kind: "fixed", symbol: primarySymbol },
       settings: {
         ...(instance.settings ?? {}),
-        symbol,
+        symbol: primarySymbol,
+        symbols,
+        symbolsText,
       },
     }));
     deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
@@ -433,7 +412,7 @@ export async function applyPaneSettingFieldValue(
   }
 
   let nextSettings: Record<string, unknown> = {
-    ...descriptor.context.settings,
+    ...(descriptor.rawSettings ?? descriptor.context.settings),
     [field.key]: value,
   };
 

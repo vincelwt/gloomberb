@@ -60,6 +60,9 @@ export function resolveVisibleAiScreenerColumns(columnIds: string[]): ColumnConf
 export function buildAiScreenerPaneSettingsDef(settings: AiScreenerPaneSettings): PaneSettingsDef {
   return {
     title: "AI Screener Settings",
+    values: {
+      columnIds: [...settings.columnIds],
+    },
     fields: [
       {
         key: "columnIds",

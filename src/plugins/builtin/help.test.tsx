@@ -81,7 +81,7 @@ describe("HelpPane", () => {
           paneId: "ticker-detail",
           label: "Quote Monitor",
           description: "Open ticker detail",
-          shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
+          shortcut: { prefix: "QQ", argPlaceholder: "tickers", argKind: "ticker-list" },
         },
       ]]),
       shortcuts: new Map([[
@@ -110,7 +110,7 @@ describe("HelpPane", () => {
     const frame = testSetup!.captureCharFrame();
     expect(frame).toMatch(/AW\s+<ticker>/);
     expect(frame).toMatch(/SA\s+<symbol condition price>/);
-    expect(frame).toMatch(/QQ\s+<ticker>/);
+    expect(frame).toMatch(/QQ\s+<tickers>/);
     expect(frame).toContain("Add Alert (Alerts)");
     expect(frame).toContain("Shift+C");
     expect(frame).toContain("Toggle chat (Gloomberb Cloud)");
