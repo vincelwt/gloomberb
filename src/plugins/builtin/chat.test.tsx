@@ -1622,7 +1622,7 @@ describe("ChatContent", () => {
     expect(frame).not.toContain("message 1");
   });
 
-  test("repins the transcript to the latest message when a following chat pane regains focus", async () => {
+  test("preserves a manually scrolled transcript across focus and snapshot refreshes", async () => {
     const controller = createController({
       messages: [
         makeMessage(1),
@@ -1680,13 +1680,90 @@ describe("ChatContent", () => {
 
     await act(async () => {
       setFocused?.(true);
+      (controller as any).emit("everyone");
       await testSetup!.renderOnce();
     });
     await flushFrame();
 
-    const refocusedFrame = testSetup.captureCharFrame();
-    expect(refocusedFrame).toContain("message 8");
-    expect(refocusedFrame).not.toContain("message 2");
+    const refreshedFrame = testSetup.captureCharFrame();
+    expect(refreshedFrame).toContain("message 2");
+    expect(refreshedFrame).not.toContain("message 8");
+  });
+
+  test("opens a newly selected channel at the latest message", async () => {
+    const controller = createController({
+      messages: Array.from({ length: 8 }, (_, index) => makeMessage(index + 1)),
+    });
+    installServerChannels(controller, TEST_CHAT_CHANNELS.slice(0, 2));
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    const equitiesMessages = Array.from({ length: 8 }, (_, index) => ({
+      ...makeMessage(index + 1),
+      id: `o${index + 1}`,
+      channelId: "equities",
+      content: `equities message ${index + 1}`,
+    }));
+    const equitiesState = (controller as any).ensureChannelState("equities");
+    equitiesState.messages = equitiesMessages;
+    equitiesState.lastCursor = "o8";
+
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat-channel-scroll"));
+
+    function ChannelPane() {
+      const [channelId, setChannelId] = useState("everyone");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={13}
+              focused
+              channelId={channelId}
+              onChannelChange={setChannelId}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    await act(async () => {
+      testSetup = await testRender(<ChannelPane />, {
+        width: 90,
+        height: 13,
+      });
+    });
+
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("message 8");
+
+    await act(async () => {
+      await testSetup!.mockMouse.scroll(24, 4, "up");
+      await testSetup!.mockMouse.scroll(24, 4, "up");
+      await testSetup!.mockMouse.scroll(24, 4, "up");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+    expect(testSetup.captureCharFrame()).toContain("message 2");
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("equities"));
+    const col = lines[row]?.indexOf("equities") ?? -1;
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    const channelFrame = testSetup.captureCharFrame();
+    expect(channelFrame).toContain("equities message 8");
+    expect(channelFrame).not.toContain("equities message 1");
   });
 
   test("keeps the bottom reachable after narrowing the chat pane", async () => {

@@ -312,4 +312,45 @@ describe("NewsService", () => {
     expect(detail?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
     expect(state.articles[0]?.items?.map((item) => item.id)).toEqual(["item-2", "item-1"]);
   });
+
+  it("keeps story detail identity when a duplicate feed item wins ranking", async () => {
+    const url = "https://detail.example.com/duplicate-story";
+    const cloudArticle = makeItem({
+      id: "story-1",
+      url,
+      importance: 60,
+      publishedAt: new Date("2026-04-01T10:00:00.000Z"),
+      items: [],
+    });
+    const feedDuplicate = makeItem({
+      id: "rss-1",
+      url,
+      importance: 95,
+      publishedAt: new Date("2026-04-01T10:05:00.000Z"),
+    });
+    const detailArticle = makeItem({
+      ...cloudArticle,
+      items: [{
+        id: "item-1",
+        sourceKey: "wire-a",
+        sourceName: "Wire A",
+        title: "Original",
+        url: "https://detail.example.com/original",
+        publishedAt: new Date("2026-04-01T10:00:00.000Z"),
+      }],
+    });
+
+    agg.register({ ...makeStorySource("cloud", [cloudArticle], detailArticle), priority: 10 });
+    agg.register({ ...makeSource("rss", [feedDuplicate]), priority: 2000 });
+
+    const initial = await agg.load({ feed: "top", limit: 10 });
+
+    expect(initial.articles[0]?.id).toBe("story-1");
+    expect(initial.articles[0]?.importance).toBe(95);
+
+    await agg.loadStory(initial.articles[0]!.id);
+    const state = agg.getQueryState({ feed: "top", limit: 10 });
+
+    expect(state.articles[0]?.items?.map((item) => item.id)).toEqual(["item-1"]);
+  });
 });

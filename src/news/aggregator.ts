@@ -12,6 +12,9 @@ const MAX_ARTICLES = 500;
 const DEFAULT_POLL_INTERVAL_MS = 2 * 60 * 1000;
 const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
 const FEEDS = new Set<NewsFeed>(["latest", "top", "breaking", "ticker", "sector", "topic"]);
+const DETAIL_CAPABLE_ARTICLE = Symbol("detail-capable-news-article");
+
+type DetailCapableArticle = NewsArticle & { [DETAIL_CAPABLE_ARTICLE]?: true };
 
 function normalizeTicker(ticker: string | undefined): string {
   return ticker ? normalizeSymbol(ticker) : "";
@@ -101,6 +104,57 @@ function sortByPublishedAt(items: NewsArticle[]): NewsArticle[] {
   return [...items].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
 }
 
+function hasStoryItems(item: NewsArticle | null | undefined): boolean {
+  return (item?.items?.length ?? 0) > 0;
+}
+
+function markDetailCapableArticle(source: NewsCapability, item: NewsArticle): NewsArticle {
+  if (!source.provider.fetchNewsStory) return item;
+  Object.defineProperty(item, DETAIL_CAPABLE_ARTICLE, {
+    value: true,
+    configurable: true,
+  });
+  return item;
+}
+
+function isDetailCapableArticle(item: NewsArticle): boolean {
+  return (item as DetailCapableArticle)[DETAIL_CAPABLE_ARTICLE] === true;
+}
+
+function shouldReplaceDuplicate(existing: NewsArticle, item: NewsArticle): boolean {
+  return (
+    item.importance > existing.importance ||
+    (item.importance === existing.importance && item.publishedAt > existing.publishedAt)
+  );
+}
+
+function selectDetailArticle(
+  existing: NewsArticle,
+  item: NewsArticle,
+  winner: NewsArticle,
+): NewsArticle | null {
+  if (isDetailCapableArticle(winner)) return winner;
+  if (isDetailCapableArticle(item)) return item;
+  if (isDetailCapableArticle(existing)) return existing;
+  if (hasStoryItems(winner)) return winner;
+  if (hasStoryItems(item)) return item;
+  if (hasStoryItems(existing)) return existing;
+  return null;
+}
+
+function mergeDuplicateArticle(existing: NewsArticle, item: NewsArticle): NewsArticle {
+  const winner = shouldReplaceDuplicate(existing, item)
+    ? { ...existing, ...item }
+    : existing;
+  const detailArticle = selectDetailArticle(existing, item, winner);
+  if (!detailArticle || detailArticle.id === winner.id) return winner;
+  return {
+    ...winner,
+    id: detailArticle.id,
+    items: hasStoryItems(detailArticle) ? detailArticle.items : winner.items,
+  };
+}
+
 function dedupeArticles(items: NewsArticle[]): NewsArticle[] {
   const byKey = new Map<string, NewsArticle>();
   for (const item of items) {
@@ -110,12 +164,7 @@ function dedupeArticles(items: NewsArticle[]): NewsArticle[] {
       byKey.set(key, item);
       continue;
     }
-    if (
-      item.importance > existing.importance ||
-      (item.importance === existing.importance && item.publishedAt > existing.publishedAt)
-    ) {
-      byKey.set(key, { ...existing, ...item });
-    }
+    byKey.set(key, mergeDuplicateArticle(existing, item));
   }
   return sortByPublishedAt([...byKey.values()]).slice(0, MAX_ARTICLES);
 }
@@ -382,7 +431,8 @@ export class NewsService {
     let firstEmpty: SourceFetchResult | null = null;
     for (const source of sources) {
       try {
-        const articles = await source.provider.fetchNews(query);
+        const articles = (await source.provider.fetchNews(query))
+          .map((article) => markDetailCapableArticle(source, article));
         const result = { articles, sourceIds: [newsCapabilitySourceId(source)] };
         if (articles.length > 0) return result;
         firstEmpty ??= result;
@@ -397,7 +447,8 @@ export class NewsService {
     const settled = await Promise.allSettled(
       sources.map(async (source) => ({
         source,
-        articles: await source.provider.fetchNews(query),
+        articles: (await source.provider.fetchNews(query))
+          .map((article) => markDetailCapableArticle(source, article)),
       })),
     );
     const articles: NewsArticle[] = [];
@@ -418,7 +469,8 @@ export class NewsService {
     let changed = false;
     for (const query of queries) {
       if (source.isEnabled?.() === false || news.supports?.(query) === false) continue;
-      const cached = news.getCachedNews?.(query) ?? [];
+      const cached = (news.getCachedNews?.(query) ?? [])
+        .map((article) => markDetailCapableArticle(source, article));
       if (cached.length === 0) continue;
       const key = buildNewsQueryKey(query);
       const current = this.queryStates.get(key) ?? createIdleState();

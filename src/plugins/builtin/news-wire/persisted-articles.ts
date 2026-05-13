@@ -65,8 +65,14 @@ function samePersistedArticles(left: PersistedNewsArticle[], right: PersistedNew
   if (left.length !== right.length) return false;
   return left.every((article, index) => {
     const other = right[index];
-    return other?.id === article.id && other.publishedAt === article.publishedAt;
+    return other?.id === article.id &&
+      other.publishedAt === article.publishedAt &&
+      storyItemsSignature(other.items) === storyItemsSignature(article.items);
   });
+}
+
+function storyItemsSignature(items: PersistedNewsStoryItem[] | undefined): string {
+  return items?.map((item) => `${item.id}:${item.publishedAt}`).join("|") ?? "";
 }
 
 export function usePersistedNewsArticles(key: string, articles: MarketNewsItem[]): MarketNewsItem[] {
