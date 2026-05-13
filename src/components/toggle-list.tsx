@@ -1,6 +1,6 @@
 import { Box, Text, useUiHost } from "../ui";
 import { TextAttributes } from "../ui";
-import { colors } from "../theme/colors";
+import { blendHex, colors } from "../theme/colors";
 import { ListView, type ListRowState, type ListViewItem } from "./ui/list-view";
 
 export interface ToggleListItem {
@@ -76,8 +76,8 @@ function DesktopToggleRow({
           border: `1px solid ${checkboxBorder}`,
           borderRadius: 4,
           boxShadow: enabled
-            ? "inset 0 1px 0 rgba(255,255,255,0.28)"
-            : "inset 0 1px 0 rgba(255,255,255,0.05)",
+            ? `inset 0 1px 0 ${blendHex(colors.borderFocused, colors.textBright, 0.28)}`
+            : `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.05)}`,
         }}
       >
         {enabled && (

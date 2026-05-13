@@ -40,8 +40,8 @@ function controlBorderColor(focused = false, active = false): string {
 
 function controlShadow(active = false): string {
   return active
-    ? "0 0 0 1px rgba(84, 201, 159, 0.18), inset 0 1px 0 rgba(255,255,255,0.06)"
-    : "inset 0 1px 0 rgba(255,255,255,0.04)";
+    ? `0 0 0 1px ${blendHex(colors.bg, colors.borderFocused, 0.18)}, inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.06)}`
+    : `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.04)}`;
 }
 
 function buttonPalette(props: Pick<ButtonProps, "variant" | "active" | "disabled">) {
@@ -76,7 +76,7 @@ function buttonPalette(props: Pick<ButtonProps, "variant" | "active" | "disabled
     case "ghost":
       return {
         fg: colors.textDim,
-        bg: "rgba(0, 0, 0, 0)",
+        bg: "transparent",
         border: panelBorder(),
       };
     case "secondary":
@@ -339,7 +339,7 @@ function listRowStyle(selected: boolean): CSSProperties {
   return {
     borderRadius: CONTROL_RADIUS,
     border: `1px solid ${selected ? colors.borderFocused : "transparent"}`,
-    boxShadow: selected ? "inset 0 1px 0 rgba(255,255,255,0.06)" : undefined,
+    boxShadow: selected ? `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.06)}` : undefined,
     cursor: "pointer",
   };
 }

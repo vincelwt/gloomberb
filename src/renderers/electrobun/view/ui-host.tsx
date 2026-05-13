@@ -129,7 +129,7 @@ function commonStyle(props: Record<string, unknown>): CSSProperties {
     marginBottom: cellInset(props.marginBottom ?? props.marginY ?? props.margin, "y"),
     gap: typeof props.gap === "number" ? `${props.gap * gapUnit}px` : props.gap as CSSProperties["gap"],
     overflow: props.overflow as CSSProperties["overflow"],
-    border: props.border ? `1px solid ${typeof props.borderColor === "string" ? props.borderColor : "#3a4148"}` : undefined,
+    border: props.border ? `1px solid ${typeof props.borderColor === "string" ? props.borderColor : "var(--gloom-border)"}` : undefined,
     boxSizing: "border-box",
     minInlineSize: zeroMinInlineSize ? 0 : undefined,
     minBlockSize: zeroMinBlockSize ? 0 : undefined,
@@ -551,7 +551,7 @@ function ChartCrosshair({
           height: 7,
           borderRadius: 7,
           border: `1px solid ${crosshair.color}`,
-          backgroundColor: "rgba(255, 255, 255, 0.16)",
+          backgroundColor: `color-mix(in srgb, ${crosshair.color} 16%, transparent)`,
           boxSizing: "border-box",
           transform: "translate(-50%, -50%)",
           pointerEvents: "none",
@@ -610,7 +610,7 @@ function textInputStyle(props: Record<string, unknown>, multiline: boolean): CSS
     resize: "none",
     border: "none",
     outline: "none",
-    color: typeof textColor === "string" ? textColor : "#d8dde3",
+    color: typeof textColor === "string" ? textColor : "var(--gloom-text)",
     backgroundColor: typeof backgroundColor === "string" ? backgroundColor : "transparent",
     whiteSpace: multiline && props.wrapText ? "pre-wrap" : "pre",
     overflow: multiline ? "auto" : "hidden",
@@ -1209,7 +1209,9 @@ function WebTabs({
 
   const resolveTabBackground = (active: boolean, hovered: boolean) => {
     if (active && variant === "pill") {
-      return hovered ? "rgba(84, 201, 159, 0.24)" : palette.activeBg;
+      return hovered
+        ? `color-mix(in srgb, ${palette.activeBg} 76%, ${palette.hoverBg})`
+        : palette.activeBg;
     }
     return hovered ? palette.hoverBg : "transparent";
   };

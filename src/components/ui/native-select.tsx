@@ -2,7 +2,7 @@
 
 import { type CSSProperties } from "react";
 import { Box } from "../../ui";
-import { colors } from "../../theme/colors";
+import { blendHex, colors } from "../../theme/colors";
 
 export type NativeSelectElement = HTMLSelectElement & { showPicker?: () => void };
 
@@ -51,11 +51,11 @@ export function NativeSelect({
     width,
     height: 28,
     color: colors.text,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: blendHex(colors.panel, colors.textBright, 0.06),
     border: `1px solid ${colors.border}`,
     borderRadius: 6,
     padding: "0 8px",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+    boxShadow: `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.05)}`,
     cursor: "pointer",
     font: "inherit",
     letterSpacing: 0,

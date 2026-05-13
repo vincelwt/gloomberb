@@ -1152,9 +1152,18 @@ function resolveSelectionCursor(
   };
 }
 
-const INDICATOR_COLORS = [
-  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8",
-];
+function getIndicatorColor(index: number): string {
+  const indicatorColors = [
+    colors.negative,
+    colors.positive,
+    colors.borderFocused,
+    colors.warning,
+    colors.textBright,
+    colors.neutral,
+    colors.textMuted,
+  ];
+  return indicatorColors[((index % indicatorColors.length) + indicatorColors.length) % indicatorColors.length]!;
+}
 
 function getIndicatorWarmupPeriod(config: IndicatorConfig): number {
   const periods = [
@@ -1270,7 +1279,7 @@ function computeIndicatorOverlays(
   config: IndicatorConfig,
 ): ChartIndicatorOverlays {
   let colorIdx = 0;
-  const nextColor = () => INDICATOR_COLORS[colorIdx++ % INDICATOR_COLORS.length]!;
+  const nextColor = () => getIndicatorColor(colorIdx++);
 
   const smaLines = (config.sma ?? []).map((period) => ({
     period,

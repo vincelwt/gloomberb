@@ -1,6 +1,6 @@
 import { Box, Span, Text, useUiCapabilities } from "../../ui";
 import type { ReactNode } from "react";
-import { colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../theme/colors";
+import { blendHex, colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../theme/colors";
 
 const PANE_HEADER_HEIGHT = 1;
 const PANE_HEADER_GRIP = ":: ";
@@ -127,7 +127,9 @@ export function PaneHeader({
         style={{
           borderBottom: `1px solid ${focused ? colors.borderFocused : colors.border}`,
           paddingInline: 6,
-          boxShadow: focused ? "inset 0 -1px 0 rgba(84, 201, 159, 0.18)" : "inset 0 -1px 0 rgba(255,255,255,0.04)",
+          boxShadow: focused
+            ? `inset 0 -1px 0 ${blendHex(paneTitleBg(focused), colors.borderFocused, 0.18)}`
+            : `inset 0 -1px 0 ${blendHex(paneTitleBg(focused), colors.textBright, 0.04)}`,
         }}
       >
         <Text fg={focused ? colors.borderFocused : colors.textMuted} selectable={false} data-gloom-role="pane-grip">

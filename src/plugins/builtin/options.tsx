@@ -5,7 +5,7 @@ import type { GloomPlugin } from "../../types/plugin";
 import type { OptionContract, OptionsChain } from "../../types/financials";
 import { usePaneTicker } from "../../state/app-context";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
-import { blendForContrast, contrastRatio, higherContrast } from "../../theme/color-utils";
+import { blendForContrast, contrastRatio } from "../../theme/color-utils";
 import { formatCompact, formatNumber } from "../../utils/format";
 import { isPlainKey } from "../../utils/keyboard";
 import { formatMarketPrice } from "../../utils/market-format";
@@ -48,15 +48,6 @@ type OptionsViewProps = {
 type OptionColorRole = "call" | "put" | "price" | "activity" | "iv" | "strike";
 
 const OPTION_TEXT_MIN_CONTRAST = 4.5;
-
-const OPTION_BASE_COLORS: Record<OptionColorRole, string> = {
-  call: "#5ed69a",
-  put: "#ff9c7a",
-  price: "#dfc05b",
-  activity: "#35a7d6",
-  iv: "#8bd878",
-  strike: "#8fb7ff",
-};
 
 const OPTION_COLUMNS: Array<Omit<OptionColumn, "headerColor">> = [
   { id: "callOpenInterest", label: "C OI", width: 6, align: "right" },
@@ -405,14 +396,13 @@ function mostReadableColor(surface: string, candidates: readonly string[]): stri
 }
 
 export function optionRoleColor(role: OptionColorRole, surface: string): string {
-  const preferred = OPTION_BASE_COLORS[role];
-  const themeColor = optionRoleThemeColor(role);
+  const preferred = optionRoleThemeColor(role);
   const fallback = mostReadableColor(surface, [
     preferred,
-    themeColor,
     colors.text,
     colors.textBright,
-    higherContrast("#ffffff", "#000000", surface),
+    colors.selectedText,
+    colors.neutral,
   ]);
   return blendForContrast(preferred, surface, fallback, OPTION_TEXT_MIN_CONTRAST);
 }
@@ -422,7 +412,8 @@ export function optionMutedColor(surface: string): string {
     colors.textDim,
     colors.text,
     colors.textBright,
-    higherContrast("#ffffff", "#000000", surface),
+    colors.selectedText,
+    colors.neutral,
   ]);
   return blendForContrast(colors.textDim, surface, fallback, OPTION_TEXT_MIN_CONTRAST);
 }

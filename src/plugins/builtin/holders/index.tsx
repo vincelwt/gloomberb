@@ -11,6 +11,7 @@ import {
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
+import { higherContrast } from "../../../theme/color-utils";
 import type { HolderData, HolderRecord } from "../../../types/financials";
 import type { GloomPlugin } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
@@ -446,6 +447,14 @@ function desktopTileColor(row: HolderRow): string {
   return blendHex(colors.panel, row.changePercent > 0 ? colors.positive : colors.negative, intensity);
 }
 
+function tileTextColor(backgroundColor: string): string {
+  return higherContrast(
+    higherContrast(colors.text, colors.textBright, backgroundColor),
+    colors.selectedText,
+    backgroundColor,
+  );
+}
+
 function Tile({ tile, selected, currency, marketCap, onSelect }: {
   tile: TileLayout;
   selected: boolean;
@@ -456,7 +465,8 @@ function Tile({ tile, selected, currency, marketCap, onSelect }: {
   const renderWidth = Math.max(1, tile.width - (tile.width > 2 ? 1 : 0));
   const renderHeight = Math.max(1, tile.height - (tile.height > 2 ? 1 : 0));
   const innerWidth = Math.max(1, renderWidth - 1);
-  const textColor = "#ffffff";
+  const backgroundColor = selected ? colors.selected : tileColor(tile.row);
+  const textColor = tileTextColor(backgroundColor);
   const attributes = selected ? TextAttributes.BOLD : TextAttributes.NONE;
   const label = tile.row.name;
   const amount = tile.row.value != null
@@ -472,7 +482,7 @@ function Tile({ tile, selected, currency, marketCap, onSelect }: {
       top={tile.y}
       width={renderWidth}
       height={renderHeight}
-      backgroundColor={selected ? colors.selected : tileColor(tile.row)}
+      backgroundColor={backgroundColor}
       onMouseDown={(event: PreventableMouseEvent) => {
         event.preventDefault();
         onSelect();
@@ -517,6 +527,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
   const canShowLabel = tile.width >= 4 && tile.height >= 1.4;
   const isTiny = tile.width < 5 || tile.height < 2;
   const backgroundColor = desktopTileColor(tile.row);
+  const textColor = tileTextColor(backgroundColor);
   const style: CSSProperties = {
     position: "absolute",
     left: `calc(${pct(tile.x, chartWidth)} + 1px)`,
@@ -532,14 +543,14 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
       ? `1px solid ${colors.textBright}`
       : hovered
         ? `1px solid ${blendHex(colors.textBright, backgroundColor, 0.55)}`
-        : "1px solid rgba(255,255,255,0.11)",
+        : `1px solid ${blendHex(backgroundColor, colors.textBright, 0.11)}`,
     boxShadow: selected
-      ? "inset 0 0 0 1px rgba(255,255,255,0.55)"
+      ? `inset 0 0 0 1px ${blendHex(backgroundColor, colors.textBright, 0.55)}`
       : hovered
-        ? "inset 0 0 0 1px rgba(255,255,255,0.18)"
+        ? `inset 0 0 0 1px ${blendHex(backgroundColor, colors.textBright, 0.18)}`
         : "none",
     backgroundColor,
-    color: "#ffffff",
+    color: textColor,
     display: "flex",
     flexDirection: "column",
     alignItems: "stretch",
@@ -558,7 +569,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
     whiteSpace: "nowrap",
     lineHeight: 1.1,
     letterSpacing: 0,
-    textShadow: "0 1px 1px rgba(0,0,0,0.35)",
+    textShadow: `0 1px 1px ${blendHex(backgroundColor, colors.bg, 0.35)}`,
   };
 
   return (
@@ -574,7 +585,7 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
     >
       {canShowLabel && (
         <Text
-          fg="#ffffff"
+          fg={textColor}
           attributes={selected ? TextAttributes.BOLD : TextAttributes.NONE}
           style={{
             ...textStyle,
@@ -587,10 +598,10 @@ function DesktopTile({ tile, chartWidth, chartHeight, selected, hovered, currenc
       )}
       {canShowDetails && (
         <>
-          <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{amount}</Text>
-          <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{ownership ?? change}</Text>
+          <Text fg={textColor} style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{amount}</Text>
+          <Text fg={textColor} style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{ownership ?? change}</Text>
           {ownership && canShowChange && (
-            <Text fg="#ffffff" style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{change}</Text>
+            <Text fg={textColor} style={{ ...textStyle, fontSize: 12, fontWeight: 600 }}>{change}</Text>
           )}
         </>
       )}

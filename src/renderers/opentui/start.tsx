@@ -66,7 +66,7 @@ export async function startOpenTuiApp(): Promise<void> {
             <OpenTuiDialogHostProvider
               size="medium"
               dialogOptions={{ style: { backgroundColor: colors.bg, borderColor: colors.borderFocused, borderStyle: "single", paddingX: 2, paddingY: 1 } }}
-              backdropColor="#000000"
+              backdropColor={colors.bg}
               backdropOpacity={0.8}
             >
               <App

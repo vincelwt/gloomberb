@@ -4,6 +4,7 @@ import { testRender as openTuiTestRender } from "@opentui/react/test-utils";
 import { createRoot as openTuiCreateRoot, useRenderer } from "@opentui/react";
 import { UiHostProvider, type NativeRendererHost, type RendererHost } from "../../ui";
 import { ToastHostProvider } from "../../ui/toast";
+import { colors } from "../../theme/colors";
 import { OpenTuiInputHostProvider } from "./input-host";
 import { openTuiUiHost } from "./ui-host";
 import { OpenTuiDialogHostProvider } from "./dialog-host";
@@ -14,8 +15,8 @@ export function TestDialogProvider({ children }: { children: ReactNode }) {
     <DialogProvider
       dialogOptions={{
         style: {
-          backgroundColor: "#000000",
-          borderColor: "#ffffff",
+          backgroundColor: colors.bg,
+          borderColor: colors.borderFocused,
           borderStyle: "single",
         },
       }}
@@ -54,9 +55,9 @@ export function OpenTuiTestProviders({ children }: { children: ReactNode }) {
       <OpenTuiInputHostProvider>
         <ToastHostProvider host={openTuiToastHost}>
           <OpenTuiDialogHostProvider
-            backgroundColor="#000000"
-            containerBorderColor="#555555"
-            focusedBorderColor="#9cdcfe"
+            backgroundColor={colors.bg}
+            containerBorderColor={colors.border}
+            focusedBorderColor={colors.borderFocused}
           >
             {children}
           </OpenTuiDialogHostProvider>

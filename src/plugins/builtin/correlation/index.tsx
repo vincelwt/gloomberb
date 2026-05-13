@@ -1,9 +1,9 @@
 import { Box, ScrollBox, Text } from "../../../ui";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import { usePaneFooter } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import { colors } from "../../../theme/colors";
+import { colors, hoverBg } from "../../../theme/colors";
 import { usePluginTickerActions } from "../../plugin-runtime";
 import { useAppSelector, usePaneInstance } from "../../../state/app-context";
 import { useChartQueries } from "../../../market-data/hooks";
@@ -15,7 +15,6 @@ import {
   computeDatedReturns,
   correlateDatedReturns,
   formatCorrelation,
-  correlationColor,
   type CorrelationResult,
   type DatedReturn,
 } from "./compute";
@@ -26,6 +25,7 @@ import {
   getCorrelationPaneSettings,
   type CorrelationRangePreset,
 } from "./settings";
+import { resolveCorrelationHeatmapCellColors } from "./colors";
 
 const ROW_HEADER_WIDTH = 7;
 const MATRIX_CELL_WIDTH = 10;
@@ -142,10 +142,63 @@ function buildCorrelationPaneTitle(symbols: string[], rangePreset: CorrelationRa
   return `${symbols.slice(0, 2).join(" · ")} +${symbols.length - 2} ${rangePreset}`;
 }
 
+function handleSymbolMouseDown(event: {
+  preventDefault?: () => void;
+  stopPropagation?: () => void;
+}, openSymbol: () => void): void {
+  event.preventDefault?.();
+  event.stopPropagation?.();
+  openSymbol();
+}
+
+function SymbolLabelCell({
+  symbol,
+  width,
+  color,
+  align = "flex-start",
+  hovered,
+  onHover,
+  onLeave,
+  onOpen,
+}: {
+  symbol: string;
+  width: number;
+  color: string;
+  align?: "flex-start" | "flex-end";
+  hovered: boolean;
+  onHover: (symbol: string) => void;
+  onLeave: (symbol: string) => void;
+  onOpen: (symbol: string) => void;
+}) {
+  const openSymbol = useCallback(() => onOpen(symbol), [onOpen, symbol]);
+  return (
+    <Box
+      width={width}
+      flexShrink={0}
+      justifyContent={align}
+      paddingRight={align === "flex-end" ? 1 : undefined}
+      overflow="hidden"
+      backgroundColor={hovered ? hoverBg() : undefined}
+      style={{ cursor: "pointer" }}
+      onMouseMove={() => onHover(symbol)}
+      onMouseOut={() => onLeave(symbol)}
+      onMouseDown={(event: any) => handleSymbolMouseDown(event, openSymbol)}
+    >
+      <Text
+        fg={hovered ? colors.textBright : color}
+        attributes={TextAttributes.BOLD | TextAttributes.UNDERLINE}
+      >
+        {displaySymbol(symbol)}
+      </Text>
+    </Box>
+  );
+}
+
 function CorrelationMatrixPane({ width, height }: PaneProps) {
   const pane = usePaneInstance();
-  const { navigateTicker } = usePluginTickerActions();
+  const { navigateTicker, pinTicker } = usePluginTickerActions();
   const tickers = useAppSelector((state) => state.tickers);
+  const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const settings = useMemo(() => getCorrelationPaneSettings(pane?.settings), [pane?.settings]);
 
   const instruments = useMemo(() => {
@@ -234,6 +287,18 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
     ],
   }), [settings.rangePreset, settings.symbolsError, statusSummary, symbols.length]);
 
+  const openSymbol = useCallback((symbol: string) => {
+    if (tickers.has(symbol)) {
+      pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+      return;
+    }
+    navigateTicker(symbol);
+  }, [navigateTicker, pinTicker, tickers]);
+
+  const clearHoveredSymbol = useCallback((symbol: string) => {
+    setHoveredSymbol((current) => (current === symbol ? null : current));
+  }, []);
+
   if (settings.symbolsError) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
@@ -265,11 +330,17 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
       <Box flexDirection="row" paddingX={1} height={1} backgroundColor={headerBg}>
         <Box width={rowHeaderWidth} flexShrink={0} />
         {symbols.map((sym) => (
-          <Box key={sym} width={cellWidth} justifyContent="flex-end" paddingRight={1} overflow="hidden">
-            <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-              {displaySymbol(sym)}
-            </Text>
-          </Box>
+          <SymbolLabelCell
+            key={sym}
+            symbol={sym}
+            width={cellWidth}
+            align="flex-end"
+            color={colors.textDim}
+            hovered={hoveredSymbol === sym}
+            onHover={setHoveredSymbol}
+            onLeave={clearHoveredSymbol}
+            onOpen={openSymbol}
+          />
         ))}
       </Box>
 
@@ -283,14 +354,16 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
                 width={rowHeaderWidth}
                 flexShrink={0}
                 overflow="hidden"
-                onMouseDown={() => navigateTicker(rowSym)}
               >
-                <Text
-                  fg={rowHeaderColor(seriesBySymbol.get(rowSym)?.status ?? "loading")}
-                  attributes={TextAttributes.BOLD | TextAttributes.UNDERLINE}
-                >
-                  {displaySymbol(rowSym)}
-                </Text>
+                <SymbolLabelCell
+                  symbol={rowSym}
+                  width={rowHeaderWidth}
+                  color={rowHeaderColor(seriesBySymbol.get(rowSym)?.status ?? "loading")}
+                  hovered={hoveredSymbol === rowSym}
+                  onHover={setHoveredSymbol}
+                  onLeave={clearHoveredSymbol}
+                  onOpen={openSymbol}
+                />
               </Box>
               {/* Cells */}
               {symbols.map((colSym) => {
@@ -301,9 +374,7 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
                 } else {
                   r = matrix.results.get(pairKey(rowSym, colSym))?.correlation ?? null;
                 }
-                const cellColor = isDiag
-                  ? colors.textDim
-                  : correlationColor(r, colors.positive, colors.negative, colors.textMuted);
+                const cellColors = resolveCorrelationHeatmapCellColors(r);
                 const text = isDiag ? " 1.00" : formatCorrelation(r);
                 return (
                   <Box
@@ -311,9 +382,9 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
                     width={cellWidth}
                     justifyContent="flex-end"
                     paddingRight={1}
-                    backgroundColor={isDiag ? headerBg : undefined}
+                    backgroundColor={cellColors.background}
                   >
-                    <Text fg={cellColor}>{text}</Text>
+                    <Text fg={cellColors.foreground}>{text}</Text>
                   </Box>
                 );
               })}
