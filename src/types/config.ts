@@ -1,6 +1,6 @@
 import type { Portfolio, Watchlist } from "./ticker";
 
-export const CURRENT_CONFIG_VERSION = 15;
+export const CURRENT_CONFIG_VERSION = 16;
 
 export type DefaultChartRenderMode = "area" | "line" | "candles" | "ohlc" | "hlc";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
@@ -158,6 +158,7 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
 
 export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
   ...DEFAULT_COLUMNS.map((column) => column.id),
+  "sparkline",
   "shares",
   "avg_cost",
   "cost_basis",

@@ -471,7 +471,7 @@ describe("renderChart", () => {
       cellHeightPx,
     });
 
-    expect(overlay.labelText).toBe("$214.03 ");
+    expect(overlay.labelText).toBe("$214.03");
     expect(overlay.topPercent).toBeCloseTo((cursorPixelY / (height * cellHeightPx - 1)) * 100, 5);
   });
 

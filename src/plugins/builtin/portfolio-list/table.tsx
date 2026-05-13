@@ -56,7 +56,6 @@ export function PortfolioTickerTable({
   financialsMap,
   columnContext,
   flashSymbols,
-  showSparklines,
   onRootKeyDown,
   onVisibleRangeChange,
   visibleRangeBuffer,
@@ -75,7 +74,6 @@ export function PortfolioTickerTable({
   financialsMap: Map<string, TickerFinancials>;
   columnContext: ColumnContext;
   flashSymbols: Map<string, QuoteFlashDirection>;
-  showSparklines?: boolean;
   onRootKeyDown?: (event: DataTableKeyEvent) => boolean | void;
   onVisibleRangeChange?: (range: TickerListVisibleRange) => void;
   visibleRangeBuffer?: number;
@@ -108,7 +106,6 @@ export function PortfolioTickerTable({
       sortColumnId={sortColumnId}
       sortDirection={sortDirection}
       onHeaderClick={onHeaderClick}
-      showSparklines={showSparklines}
       onRootKeyDown={onRootKeyDown}
       onVisibleRangeChange={onVisibleRangeChange}
       visibleRangeBuffer={visibleRangeBuffer}

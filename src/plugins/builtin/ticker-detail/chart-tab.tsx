@@ -1,4 +1,4 @@
-import { Box } from "../../../ui";
+import { Box, useUiCapabilities } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useCallback, useMemo } from "react";
 import { ChartIndicatorSelector } from "../../../components/chart/chart-indicator-selector";
@@ -39,11 +39,12 @@ export function ChartTab({
   financials: TickerFinancials | null;
 }) {
   const { width: termWidth, height: termHeight } = useViewport();
+  const { fractionalViewport = false } = useUiCapabilities();
   const [rawIndicatorSelection] = usePluginConfigState<unknown>(CHART_INDICATORS_PLUGIN_CONFIG_KEY, null);
   const [indicatorSelectionVersion] = usePluginConfigState<unknown>(CHART_INDICATORS_PLUGIN_CONFIG_VERSION_KEY, null);
   const setPluginConfigStates = useSetPluginConfigStates();
 
-  const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - 2, 30);
+  const chartWidth = Math.max((width || Math.floor(termWidth * 0.55)) - (fractionalViewport ? 1 : 2), 30);
   const chartHeight = Math.max(height ?? termHeight - 8, 10);
   const hasStoredIndicatorSelection = Array.isArray(rawIndicatorSelection);
   const selectedIndicatorIds = useMemo(

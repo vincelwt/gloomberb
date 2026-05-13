@@ -1449,7 +1449,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
 }: ResolvedStockChartProps) {
   const themeColors = useThemeColors();
   const renderer = useNativeRenderer();
-  const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1 } = useUiCapabilities();
+  const { canvasCharts, cellWidthPx = 8, cellHeightPx = 18, pixelRatio = 1, fractionalViewport = false } = useUiCapabilities();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
   const paneId = usePaneInstanceId();
@@ -1741,9 +1741,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const axisSectionWidthBudget = compact
     ? axisMode === "percent" ? 11 : 8
     : axisMode === "percent" ? 11 : 10;
-  const axisRightPadding = 1;
+  const axisRightPadding = compact || fractionalViewport ? 0 : 1;
   const minimumAxisWidth = axisMode === "percent" ? 5 : 4;
-  const axisGap = axisSectionWidthBudget > 0 ? 1 : 0;
+  const axisGap = axisSectionWidthBudget > 0 ? fractionalViewport ? 0.5 : 1 : 0;
   const minChartWidth = compact ? 12 : 20;
   const measurementChartWidth = Math.max(width - axisSectionWidthBudget - axisGap, minChartWidth);
   const headerRows = compact ? 0 : 2;
@@ -1751,7 +1751,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const timeAxisRow = 1;
   // Native/canvas surfaces can cover the last physical row after pixel rounding;
   // keep the text x-axis one row clear of the pane footer.
-  const nativeSurfaceGuardRow = !compact && (useCanvasChart || effectiveRenderer === "kitty") ? 1 : 0;
+  const nativeSurfaceGuardRow = !compact && fractionalViewport && (useCanvasChart || effectiveRenderer === "kitty") ? 1 : 0;
   const volumeHeight = showVolume && !compact ? 3 : 0;
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow - nativeSurfaceGuardRow, 4);
   const chartCurrency = currencyOverride ?? financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
@@ -2377,7 +2377,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         colors: AXIS_MEASURE_PALETTE,
         timeAxisDates: measuredTimeAxisDates,
       });
-      const cursorSamples = measuredScene
+      const cursorSamples = !compact && measuredScene
         ? [
           formatCursorAxisValue(
             measuredScene.min,
@@ -2418,6 +2418,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     chartHeight,
     compact,
     displayedDateWindow,
+    fractionalViewport,
     history,
     historyOverride,
     minChartWidth,
@@ -4080,7 +4081,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
           </Box>
         ) : (
           <Box flexDirection="row" gap={1}>
-            <Text fg={colors.textDim}>mode:{MODE_LABELS[requestedMode]}</Text>
             {projection.fallbackMode && (
               <Text fg={colors.textDim}>auto:{MODE_LABELS[projection.fallbackMode]}</Text>
             )}

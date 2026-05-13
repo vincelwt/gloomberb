@@ -20,6 +20,15 @@ import { isLayoutConfig, sanitizeLayout } from "./config-layout";
 
 const configLog = debugLog.createLogger("config");
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
+const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
+  ...DEFAULT_COLUMNS.map((column) => column.id),
+  "shares",
+  "avg_cost",
+  "cost_basis",
+  "mkt_value",
+  "pnl",
+  "pnl_pct",
+];
 const BUILTIN_SOURCE_IDS = new Set(["yahoo", "gloomberb-cloud"]);
 const BUILTIN_PLUGIN_GROUP_ALIASES: Record<string, string> = {
   "comparison-chart": "market-overview",
@@ -390,24 +399,31 @@ function hasExactColumnIds(value: unknown, expected: string[]): boolean {
     && value.every((entry, index) => entry === expected[index]);
 }
 
+function shouldMigratePortfolioColumnIds(value: unknown): boolean {
+  return hasExactColumnIds(value, LEGACY_MAIN_PORTFOLIO_COLUMN_IDS)
+    || hasExactColumnIds(value, PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS);
+}
+
 function migrateLegacyPortfolioDefaultColumns(layout: LayoutConfig, enabled: boolean): LayoutConfig {
   if (!enabled) return layout;
 
-  const instanceIndex = layout.instances.findIndex((instance) =>
-    instance.instanceId === "portfolio-list:main"
-    && instance.paneId === "portfolio-list"
-    && hasExactColumnIds(instance.settings?.columnIds, LEGACY_MAIN_PORTFOLIO_COLUMN_IDS)
-  );
-  if (instanceIndex < 0) return layout;
+  const instanceIndices = layout.instances.flatMap((instance, index) => (
+    instance.paneId === "portfolio-list" && shouldMigratePortfolioColumnIds(instance.settings?.columnIds)
+      ? [index]
+      : []
+  ));
+  if (instanceIndices.length === 0) return layout;
 
   const nextLayout = cloneLayout(layout);
-  nextLayout.instances[instanceIndex] = {
-    ...nextLayout.instances[instanceIndex]!,
-    settings: {
-      ...(nextLayout.instances[instanceIndex]?.settings ?? {}),
-      columnIds: [...DEFAULT_PORTFOLIO_COLUMN_IDS],
-    },
-  };
+  for (const instanceIndex of instanceIndices) {
+    nextLayout.instances[instanceIndex] = {
+      ...nextLayout.instances[instanceIndex]!,
+      settings: {
+        ...(nextLayout.instances[instanceIndex]?.settings ?? {}),
+        columnIds: [...DEFAULT_PORTFOLIO_COLUMN_IDS],
+      },
+    };
+  }
   return nextLayout;
 }
 

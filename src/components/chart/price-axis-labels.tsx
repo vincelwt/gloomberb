@@ -25,7 +25,6 @@ function clamp(value: number, min: number, max: number): number {
 
 export function buildCursorPriceAxisOverlay({
   axisWidth,
-  axisSectionWidth,
   height,
   cursorPixelY,
   cursorLabel,
@@ -40,7 +39,7 @@ export function buildCursorPriceAxisOverlay({
 }): CursorPriceAxisOverlay {
   const labelText = cursorLabel === null
     ? null
-    : formatAxisCell(cursorLabel, axisWidth).padEnd(axisSectionWidth);
+    : formatAxisCell(cursorLabel, axisWidth).trimStart();
   const pixelHeight = Math.max(height * cellHeightPx, 1);
   let topPercent: number | null = null;
 
@@ -73,6 +72,20 @@ export function PriceAxisLabels({
     cellHeightPx,
   }), [axisSectionWidth, axisWidth, cellHeightPx, cursorLabel, cursorPixelY, height]);
   const usePixelOverlay = fractionalViewport && overlay.labelText !== null && overlay.topPercent !== null;
+  const axisPaddingWidth = Math.max(0, axisSectionWidth - axisWidth);
+  const axisLabelJustify = fractionalViewport ? "flex-start" : "flex-end";
+  const renderAxisLabel = (label: string | null, fg: string) => (
+    fractionalViewport ? (
+      <Box flexDirection="row" width={axisSectionWidth} height={1}>
+        <Box flexDirection="row" width={axisWidth} justifyContent={axisLabelJustify} overflow="hidden">
+          {label ? <Text fg={fg}>{formatAxisCell(label, axisWidth).trimStart()}</Text> : null}
+        </Box>
+        {axisPaddingWidth > 0 ? <Box width={axisPaddingWidth} /> : null}
+      </Box>
+    ) : (
+      <Text fg={fg}>{formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}</Text>
+    )
+  );
 
   return (
     <Box
@@ -86,16 +99,16 @@ export function PriceAxisLabels({
         const isCursorRow = !usePixelOverlay && cursorLabel !== null && cursorRow === row;
         const label = isCursorRow ? cursorLabel : (axisLabels.get(row) ?? null);
         return (
-          <Text key={row} fg={isCursorRow ? cursorColor : colors.textDim}>
-            {formatAxisCell(label, axisWidth).padEnd(axisSectionWidth)}
-          </Text>
+          <Box key={row} height={1}>
+            {renderAxisLabel(label, isCursorRow ? cursorColor : colors.textDim)}
+          </Box>
         );
       })}
       {usePixelOverlay ? (
-        <Text
+        <Box
           width={axisSectionWidth}
-          fg={cursorColor}
           bg={colors.bg}
+          flexDirection="row"
           style={{
             position: "absolute",
             left: 0,
@@ -106,8 +119,11 @@ export function PriceAxisLabels({
             zIndex: 1,
           }}
         >
-          {overlay.labelText}
-        </Text>
+          <Box flexDirection="row" width={axisWidth} justifyContent={axisLabelJustify} overflow="hidden">
+            <Text fg={cursorColor}>{overlay.labelText}</Text>
+          </Box>
+          {axisPaddingWidth > 0 ? <Box width={axisPaddingWidth} /> : null}
+        </Box>
       ) : null}
     </Box>
   );

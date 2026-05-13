@@ -170,8 +170,9 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
         id: "quote-monitor-pane",
         paneId: "quote-monitor",
         label: "Quote Monitor",
-        description: "Open a compact quote monitor for the selected ticker",
-        shortcut: { prefix: "QQ", argPlaceholder: "ticker" },
+        description: "Open a compact quote monitor for one or more tickers",
+        shortcut: { prefix: "QQ", argPlaceholder: "tickers", argKind: "ticker-list" },
+        wizard: [{ key: "tickers", label: "Quote Tickers", type: "text" }],
       }],
       ["new-ibkr-trading-pane", {
         id: "new-ibkr-trading-pane",
@@ -1013,7 +1014,7 @@ describe("CommandBar", () => {
     expect(frame).not.toContain("Back");
   });
 
-  test("QQ without an active ticker opens inline ticker search on enter", async () => {
+  test("QQ without an active ticker opens inline ticker-list entry on enter", async () => {
     testSetup = await testRender(<CommandBarHarness query="QQ" />, {
       width: 100,
       height: 20,
@@ -1030,7 +1031,7 @@ describe("CommandBar", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Back");
-    expect(frame).toContain("Security Description");
+    expect(frame).toContain("Quote Tickers");
   });
 
   test("T without an active ticker opens ticker search on enter", async () => {
@@ -1102,8 +1103,7 @@ describe("CommandBar", () => {
       templateId: "quote-monitor-pane",
       options: {
         arg: "AAPL",
-        symbol: "AAPL",
-        ticker: makeTicker("AAPL", "Apple Inc."),
+        symbols: ["AAPL"],
       },
     }]);
   });
@@ -2525,8 +2525,39 @@ describe("CommandBar", () => {
       templateId: "quote-monitor-pane",
       options: {
         arg: "MSFT",
-        symbol: "MSFT",
-        ticker: makeTicker("MSFT", "Microsoft Corp."),
+        symbols: ["MSFT"],
+      },
+    }]);
+  });
+
+  test("QQ AAPL,MSFT creates a multi-symbol quote monitor directly", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="QQ AAPL,MSFT"
+      selectedTicker="AAPL"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{
+      templateId: "quote-monitor-pane",
+      options: {
+        arg: "AAPL,MSFT",
+        symbols: ["AAPL", "MSFT"],
       },
     }]);
   });

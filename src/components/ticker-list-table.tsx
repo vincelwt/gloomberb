@@ -18,8 +18,7 @@ import type { ColumnConfig } from "../types/config";
 import type { TickerFinancials, PricePoint } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import { padTo } from "../utils/format";
-import { renderChart, resolveChartPalette, type StyledContent } from "./chart/chart-renderer";
-import type { ProjectedChartPoint } from "./chart/chart-data";
+import { PRICE_SPARKLINE_COLUMN_ID, PriceSparkline } from "./price-sparkline-view";
 import { tableContentWidthProps, useMeasuredTableContentWidth } from "./ui/table-layout";
 import { useViewport } from "../react/input";
 import { measurePerf } from "../utils/perf-marks";
@@ -88,7 +87,6 @@ export interface TickerListTableProps {
   onRowActivate?: (ticker: TickerRecord) => void;
   emptyTitle?: string;
   emptyHint?: string;
-  showSparklines?: boolean;
   virtualize?: boolean;
   overscan?: number;
 }
@@ -155,38 +153,6 @@ const TickerListHeader = memo(function TickerListHeader({
   );
 });
 
-function renderSparkline(priceHistory: PricePoint[]): StyledContent | null {
-  if (priceHistory.length < 5) return null;
-
-  const last20 = priceHistory.slice(-20);
-  const points: ProjectedChartPoint[] = last20.map((pt) => ({
-    date: pt.date,
-    open: pt.open ?? pt.close,
-    high: pt.high ?? pt.close,
-    low: pt.low ?? pt.close,
-    close: pt.close,
-    volume: pt.volume ?? 0,
-  }));
-
-  const first = last20[0]?.close ?? 0;
-  const last = last20[last20.length - 1]?.close ?? 0;
-  const trend = last >= first ? "positive" : "negative";
-  const palette = resolveChartPalette(colors, trend);
-
-  const result = renderChart(points, {
-    width: 10,
-    height: 1,
-    showVolume: false,
-    volumeHeight: 0,
-    cursorX: null,
-    cursorY: null,
-    mode: "line",
-    colors: palette,
-  });
-
-  return result.lines[0] ?? null;
-}
-
 const TickerListRow = memo(function TickerListRow({
   columns,
   ticker,
@@ -201,7 +167,6 @@ const TickerListRow = memo(function TickerListRow({
   onRowActivate,
   onRowContextMenu,
   openContextMenuOnMouseDown,
-  showSparklines,
   priceHistory,
   contentWidth,
 }: {
@@ -218,17 +183,12 @@ const TickerListRow = memo(function TickerListRow({
   onRowActivate?: (ticker: TickerRecord) => void;
   onRowContextMenu: (ticker: TickerRecord, financials: TickerFinancials | undefined, event: unknown) => void;
   openContextMenuOnMouseDown: boolean;
-  showSparklines?: boolean;
   priceHistory?: PricePoint[];
   contentWidth: number;
 }) {
   useThemeColors();
   const lastActivatedAtRef = useRef<number | null>(null);
   const rowBg = isSelected ? colors.selected : isHovered ? hoverBg() : colors.bg;
-
-  const sparkline = showSparklines && priceHistory && priceHistory.length >= 5
-    ? renderSparkline(priceHistory)
-    : null;
 
   return (
     <Box
@@ -268,6 +228,14 @@ const TickerListRow = memo(function TickerListRow({
       }}
     >
       {columns.map((column) => {
+        if (column.id === PRICE_SPARKLINE_COLUMN_ID) {
+          return (
+            <Box key={column.id} width={column.width + 1} overflow="hidden">
+              <PriceSparkline priceHistory={priceHistory} width={column.width} />
+            </Box>
+          );
+        }
+
         const { text, color } = resolveCell(column, ticker, financials);
         const baseFg = color || (isSelected ? colors.selectedText : colors.text);
         const shouldFlash = flashDirection != null && FLASHABLE_QUOTE_COLUMN_IDS.has(column.id);
@@ -283,11 +251,6 @@ const TickerListRow = memo(function TickerListRow({
           </Box>
         );
       })}
-      {sparkline && (
-        <Box width={12}>
-          <Text content={sparkline} />
-        </Box>
-      )}
     </Box>
   );
 }, (previous, next) => (
@@ -304,7 +267,6 @@ const TickerListRow = memo(function TickerListRow({
   && previous.onRowActivate === next.onRowActivate
   && previous.onRowContextMenu === next.onRowContextMenu
   && previous.openContextMenuOnMouseDown === next.openContextMenuOnMouseDown
-  && previous.showSparklines === next.showSparklines
   && previous.priceHistory === next.priceHistory
   && previous.contentWidth === next.contentWidth
 ));
@@ -329,7 +291,6 @@ export function TickerListTable({
   onRowActivate,
   emptyTitle = "No tickers.",
   emptyHint = "Press Ctrl+P to add one.",
-  showSparklines,
   virtualize = true,
   overscan = 4,
 }: TickerListTableProps) {
@@ -347,8 +308,8 @@ export function TickerListTable({
   hoveredIdxRef.current = hoveredIdx;
   const safeFlashSymbols = flashSymbols ?? EMPTY_FLASH_SYMBOLS;
   const tableWidth = useMemo(
-    () => columns.reduce((sum, column) => sum + column.width + 1, 2) + (showSparklines ? 12 : 0),
-    [columns, showSparklines],
+    () => columns.reduce((sum, column) => sum + column.width + 1, 2),
+    [columns],
   );
   const { contentWidth, measureContentWidth } = useMeasuredTableContentWidth(
     tableWidth,
@@ -492,7 +453,6 @@ export function TickerListTable({
                 onRowActivate={onRowActivate}
                 onRowContextMenu={handleRowContextMenu}
                 openContextMenuOnMouseDown={nativeContextMenu !== true}
-                showSparklines={showSparklines}
                 priceHistory={financialsMap.get(ticker.metadata.ticker)?.priceHistory}
                 contentWidth={contentWidth}
               />

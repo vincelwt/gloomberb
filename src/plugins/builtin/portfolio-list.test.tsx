@@ -390,7 +390,7 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     await flushFrame();
     await act(async () => {
-      testSetup!.mockInput.pressKey("n");
+      testSetup!.mockInput.pressKey("a");
       await testSetup!.renderOnce();
     });
     await act(async () => {
@@ -539,6 +539,43 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     const frame = testSetup.captureCharFrame();
     expect(frame).not.toContain("Cash & Margin");
+  });
+
+  test("renders one-month sparkline column when price history is loaded", async () => {
+    const config = createPortfolioConfigWithColumns(
+      "broker:ibkr-flex:DU12345",
+      ["ticker", "price", "sparkline"],
+      [createBrokerInstance("flex")],
+    );
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="broker:ibkr-flex:DU12345"
+        stateMutator={(state) => {
+          state.financials = new Map([[
+            "AAPL",
+            {
+              annualStatements: [],
+              quarterlyStatements: [],
+              quote: makeQuote(),
+              priceHistory: [118, 121, 119, 124, 127, 126, 130].map((close, index) => ({
+                date: `2026-03-${20 + index}T00:00:00Z` as unknown as Date,
+                close,
+              })),
+            },
+          ]]);
+        }}
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("1M");
+    const row = frame.split("\n").find((line) => line.includes("AAPL")) ?? "";
+    expect(row).toMatch(/[\u2800-\u28ff]/);
   });
 
   test("keeps native price and avg cost while converting market value and pnl to base currency", async () => {

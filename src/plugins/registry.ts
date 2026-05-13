@@ -445,6 +445,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     pane: PaneInstanceConfig;
     paneDef: PaneDef;
     settingsDef: PaneSettingsDef;
+    rawSettings: Record<string, unknown>;
     context: PaneSettingsContext;
   } | null {
     const targetPaneId = this.resolvePaneTarget(paneId);
@@ -484,8 +485,12 @@ export class PluginRegistry implements PluginRuntimeAccess {
       : paneDef.settings;
     if (!settingsDef) return null;
 
+    const rawSettings = { ...paneSettings };
+    const resolvedSettings = {
+      ...paneSettings,
+      ...(settingsDef.values ?? {}),
+    };
     if (pluginId) {
-      const resolvedSettings = { ...paneSettings };
       for (const field of settingsDef.fields) {
         if (field.storage !== "plugin") continue;
         const configValue = this.getConfigState(pluginId, field.key);
@@ -495,8 +500,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
           resolvedSettings[field.key] = configValue;
         }
       }
-      context.settings = resolvedSettings;
     }
+    context.settings = resolvedSettings;
 
     return {
       paneId: targetPaneId,
@@ -504,6 +509,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       pane,
       paneDef,
       settingsDef,
+      rawSettings,
       context,
     };
   }

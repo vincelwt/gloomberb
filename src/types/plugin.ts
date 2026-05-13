@@ -110,6 +110,7 @@ export type PaneSettingField =
 
 export interface PaneSettingsDef {
   title?: string;
+  values?: Record<string, unknown>;
   fields: PaneSettingField[];
 }
 
