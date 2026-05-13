@@ -1,4 +1,4 @@
-import { buildSections } from "./view-model";
+import { buildSections, type CommandBarSectionOrder } from "./view-model";
 
 export interface ResultItem {
   id: string;
@@ -31,6 +31,7 @@ export interface ListScreenState {
   emptyDetail: string;
   footerLeft: string;
   footerRight: string;
+  sectionOrder?: CommandBarSectionOrder;
 }
 
 export type CommandBarListRow =
@@ -41,13 +42,16 @@ export type CommandBarListRow =
   | { kind: "spinner"; id: string; label: string }
   | { kind: "filler"; id: string };
 
-export function orderListResults(results: ResultItem[]): ResultItem[] {
-  return buildSections(results).flatMap((section) => section.items);
+export function orderListResults(
+  results: ResultItem[],
+  options?: { sectionOrder?: CommandBarSectionOrder },
+): ResultItem[] {
+  return buildSections(results, options).flatMap((section) => section.items);
 }
 
 export function buildListRows(listState: ListScreenState): CommandBarListRow[] {
   const rows: CommandBarListRow[] = [];
-  const sections = buildSections(listState.results);
+  const sections = buildSections(listState.results, { sectionOrder: listState.sectionOrder });
   let globalIdx = 0;
   sections.forEach((section, sectionIndex) => {
     if (sectionIndex > 0) {

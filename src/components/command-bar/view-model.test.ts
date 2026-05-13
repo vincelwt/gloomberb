@@ -47,6 +47,26 @@ describe("command bar view model helpers", () => {
     expect(sections.map((section) => section.category)).toEqual(["Tickers", "Config", "Danger", "Debug"]);
   });
 
+  test("keeps provider ticker suggestions behind app sections in app-first order", () => {
+    const sections = buildSections([
+      { id: "pane", category: "Panes" },
+      { id: "primary", category: "Primary Listing" },
+      { id: "other", category: "Other Listings" },
+      { id: "fund", category: "Funds & Derivatives" },
+      { id: "saved", category: "Saved" },
+      { id: "exact", category: "Exact Match" },
+    ], { sectionOrder: "app-first" });
+
+    expect(sections.map((section) => section.category)).toEqual([
+      "Exact Match",
+      "Saved",
+      "Panes",
+      "Primary Listing",
+      "Other Listings",
+      "Funds & Derivatives",
+    ]);
+  });
+
   test("derives row presentation for toggles and current rows", () => {
     expect(getRowPresentation({
       id: "plugin:news",

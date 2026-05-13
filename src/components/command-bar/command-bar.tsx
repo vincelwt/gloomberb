@@ -4000,7 +4000,11 @@ export function CommandBar({
     rootResultModel.items,
     rootTickerSearchArg,
   ]);
-  const orderedRootResults = useMemo(() => orderListResults(rootResults), [rootResults]);
+  const rootSectionOrder = rootPlainTickerSearchArg ? "app-first" : "default";
+  const orderedRootResults = useMemo(
+    () => orderListResults(rootResults, { sectionOrder: rootSectionOrder }),
+    [rootResults, rootSectionOrder],
+  );
   const activeRootProviderResultsKey = useMemo(() => {
     if (!rootTickerSearchArg || rootProviderResultsQuery !== rootTickerSearchArg || !rootProviderResults) return null;
     return [
@@ -4316,6 +4320,7 @@ export function CommandBar({
         emptyDetail: emptyState.detail,
         footerLeft: getScreenFooterLeft(null),
         footerRight: getScreenFooterRight(null),
+        sectionOrder: rootSectionOrder,
       };
     }
 
@@ -4463,6 +4468,7 @@ export function CommandBar({
     rootModeInfo.kind,
     rootQuery,
     orderedRootResults,
+    rootSectionOrder,
     rootSearching,
     rootSelectedIdx,
     rootShortcutIntent,

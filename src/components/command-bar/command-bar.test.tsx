@@ -1276,7 +1276,7 @@ describe("CommandBar", () => {
     );
 
     await testSetup.renderOnce();
-    const frame = await waitForFrameToContain("DES");
+    const frame = await waitForFrameToContain("Exact Match");
     const resultLines = frame
       .split("\n")
       .filter((line) => /\b(AMD|AMDL|AMUU|DES)\b/.test(line) && /\b(NASDAQ|ASX)\b/.test(line));

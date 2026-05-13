@@ -15,6 +15,8 @@ export interface CommandBarSection<T> {
   items: T[];
 }
 
+export type CommandBarSectionOrder = "default" | "app-first";
+
 export interface CommandBarItemView {
   id: string;
   label: string;
@@ -59,7 +61,10 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
   }
 }
 
-export function buildSections<T extends { category: string }>(items: T[]): Array<CommandBarSection<T>> {
+export function buildSections<T extends { category: string }>(
+  items: T[],
+  options?: { sectionOrder?: CommandBarSectionOrder },
+): Array<CommandBarSection<T>> {
   const sections: Array<CommandBarSection<T>> = [];
   for (const item of items) {
     let section = sections.find((candidate) => candidate.category === item.category);
@@ -72,7 +77,9 @@ export function buildSections<T extends { category: string }>(items: T[]): Array
   return sections
     .map((section, index) => ({ section, index }))
     .sort((a, b) => {
-      const priorityDiff = getCategoryPriority(a.section.category) - getCategoryPriority(b.section.category);
+      const leftPriority = getCategoryPriority(a.section.category, options?.sectionOrder);
+      const rightPriority = getCategoryPriority(b.section.category, options?.sectionOrder);
+      const priorityDiff = leftPriority - rightPriority;
       return priorityDiff !== 0 ? priorityDiff : a.index - b.index;
     })
     .map(({ section }) => section);
@@ -126,10 +133,15 @@ export function truncateText(text: string, width: number): string {
   return `${text.slice(0, width - 3)}...`;
 }
 
-function getCategoryPriority(category: string): number {
+function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOrder = "default"): number {
   const normalized = category.trim().toLowerCase();
   if (normalized === "exact match") return -50;
   if (normalized === "saved") return -40;
+  if (sectionOrder === "app-first") {
+    if (normalized === "primary listing") return 100;
+    if (normalized === "other listings") return 110;
+    if (normalized === "funds & derivatives") return 120;
+  }
   if (normalized === "primary listing") return -30;
   if (normalized === "other listings") return -20;
   if (normalized === "funds & derivatives") return -10;
