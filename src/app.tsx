@@ -40,7 +40,7 @@ import {
   type PaneBinding,
   type PaneInstanceConfig,
 } from "./types/config";
-import type { CliLaunchRequest, PaneTemplateCreateOptions, PaneTemplateInstanceConfig, WizardStep } from "./types/plugin";
+import type { CliLaunchRequest, PaneTemplateCreateOptions, PaneTemplateInstanceConfig, PinTickerOptions, WizardStep } from "./types/plugin";
 import type { PaneSettingField } from "./types/plugin";
 import type { TickerRecord } from "./types/ticker";
 import type { DataProvider } from "./types/data-provider";
@@ -48,7 +48,7 @@ import type { TickerFinancials } from "./types/financials";
 import type { BrokerAccount } from "./types/trading";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState, DesktopWindowBridge } from "./types/desktop-window";
 import type { DesktopApplicationMenuBridge } from "./types/desktop-menu";
-import { resolveTickerSearch, upsertTickerFromSearchResult } from "./utils/ticker-search";
+import { resolveTickerOpenTarget, type TickerOpenTarget } from "./utils/ticker-search";
 
 import {
   clearPersistedBrokerAccounts,
@@ -1361,14 +1361,45 @@ function AppInner({
 
     focusVisiblePane(instanceId);
   };
-  pluginRegistry.pinTickerFn = (symbol, options) => {
-    if (isDetachedWindow) return;
+  const resolveOpenTickerTarget = async (rawSymbol: string): Promise<TickerOpenTarget | null> => {
+    try {
+      const target = await resolveTickerOpenTarget({
+        query: rawSymbol,
+        tickers: stateRef.current.tickers,
+        dataProvider,
+        tickerRepository,
+      });
+      if (!target) {
+        pluginRegistry.notify({ body: `Could not open ${rawSymbol}.`, type: "error" });
+      }
+      return target;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      pluginRegistry.notify({ body: `Failed to open ${rawSymbol}: ${message}`, type: "error" });
+      return null;
+    }
+  };
+  const publishTickerOpenTarget = (target: TickerOpenTarget) => {
+    const currentTicker = stateRef.current.tickers.get(target.symbol);
+    if (currentTicker !== target.ticker) {
+      dispatch({ type: "UPDATE_TICKER", ticker: target.ticker });
+    }
+    if (target.created) {
+      pluginRegistry.events.emit("ticker:added", { symbol: target.symbol, ticker: target.ticker });
+    }
+  };
+  const placePinnedTickerTarget = (target: TickerOpenTarget, options?: PinTickerOptions) => {
     const paneType = options?.paneType ?? "ticker-detail";
     const paneDef = pluginRegistry.panes.get(paneType);
     if (!paneDef) return;
+
+    publishTickerOpenTarget(target);
+    const symbol = target.symbol;
+    const currentState = stateRef.current;
+    const currentLayout = currentState.config.layout;
     const existing = options?.forceNewPane
       ? null
-      : findFixedTickerPaneForSymbol(state.config.layout, paneType, symbol);
+      : findFixedTickerPaneForSymbol(currentLayout, paneType, symbol);
     if (existing) {
       focusVisiblePane(existing.instanceId);
       return;
@@ -1381,19 +1412,28 @@ function AppInner({
     const { width, height } = pluginRegistry.getTermSizeFn();
     const shouldFloat = options?.floating ?? true;
     const nextLayout = shouldFloat
-      ? addPaneFloating(state.config.layout, instance, width, height, paneDef)
+      ? addPaneFloating(currentLayout, instance, width, height, paneDef)
       : addPaneToLayout(
-        state.config.layout,
+        currentLayout,
         instance,
         {
-          relativeTo: state.focusedPaneId && isPaneInLayout(state.config.layout, state.focusedPaneId)
-            ? state.focusedPaneId
-            : (getDockedPaneIds(state.config.layout).at(-1) ?? instance.instanceId),
+          relativeTo: currentState.focusedPaneId && isPaneInLayout(currentLayout, currentState.focusedPaneId)
+            ? currentState.focusedPaneId
+            : (getDockedPaneIds(currentLayout).at(-1) ?? instance.instanceId),
           position: "right",
         },
       );
     persistLayout(nextLayout);
     activatePane(instance.instanceId, nextLayout);
+  };
+  const openPinnedTicker = async (rawSymbol: string, options?: PinTickerOptions) => {
+    const target = await resolveOpenTickerTarget(rawSymbol);
+    if (!target) return;
+    placePinnedTickerTarget(target, options);
+  };
+  pluginRegistry.pinTickerFn = (symbol, options) => {
+    if (isDetachedWindow) return;
+    void openPinnedTicker(symbol, options);
   };
 
   pluginRegistry.navigateTickerFn = (rawSymbol, options) => {
@@ -1401,25 +1441,9 @@ function AppInner({
     const sourcePaneId = options?.sourcePaneId ?? stateRef.current.focusedPaneId;
     (async () => {
       try {
-        // Resolve or create the ticker in the local database
-        const resolved = await resolveTickerSearch({
-          query: rawSymbol,
-          activeTicker: null,
-          tickers: stateRef.current.tickers,
-          dataProvider,
-        });
-
-        let symbol = rawSymbol;
-        if (resolved?.kind === "local") {
-          symbol = resolved.symbol;
-        } else if (resolved?.kind === "provider" && resolved.result) {
-          const { ticker, created } = await upsertTickerFromSearchResult(tickerRepository, resolved.result);
-          symbol = ticker.metadata.ticker;
-          dispatch({ type: "UPDATE_TICKER", ticker });
-          if (created) {
-            pluginRegistry.events.emit("ticker:added", { symbol, ticker });
-          }
-        }
+        const target = await resolveOpenTickerTarget(rawSymbol);
+        if (!target) return;
+        const symbol = target.symbol;
 
         // Only actions that originate from a ticker detail replace that exact pane.
         // Everything else opens or focuses a fixed ticker detail for the symbol.
@@ -1438,6 +1462,7 @@ function AppInner({
         };
 
         if (detailPane) {
+          publishTickerOpenTarget(target);
           const nextLayout = {
             ...currentLayout,
             instances: currentLayout.instances.map((instance) => (
@@ -1453,7 +1478,7 @@ function AppInner({
           currentFocusedPaneId: stateRef.current.focusedPaneId,
           targetPaneId: null,
         })) {
-          pluginRegistry.pinTicker(symbol, { floating: false });
+          placePinnedTickerTarget(target, { floating: false });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
