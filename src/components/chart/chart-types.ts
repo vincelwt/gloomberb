@@ -7,6 +7,7 @@ export type ChartAxisMode = "price" | "percent";
 export type ChartRendererPreference = "auto" | "kitty" | "braille";
 export type ResolvedChartRenderer = "kitty" | "braille";
 export type ComparisonChartRenderMode = "area" | "line";
+export type ChartSessionBackgroundKind = "pre" | "post";
 
 export const TIME_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 export const CHART_RENDER_MODES: ChartRenderMode[] = ["area", "line", "candles", "ohlc", "hlc"];
@@ -46,6 +47,7 @@ export interface PixelBuffer {
   width: number;
   height: number; // virtual pixel rows (4x terminal rows for braille rendering)
   pixels: (Pixel | null)[][]; // [y][x] = pixel with color and layer, or null
+  backgrounds: (string | null)[][];
 }
 
 export interface ChartColors {
@@ -59,6 +61,22 @@ export interface ChartColors {
   axisColor: string;
   activeRangeColor: string;
   inactiveRangeColor: string;
+  preMarketBgColor: string;
+  postMarketBgColor: string;
+}
+
+export interface ChartMarketSession {
+  timeZone: string;
+  regularStartMinutes: number;
+  regularEndMinutes: number;
+  preMarketStartMinutes: number;
+  postMarketEndMinutes: number;
+}
+
+export interface ChartSessionBackgroundSpan {
+  kind: ChartSessionBackgroundKind;
+  startIndex: number;
+  endIndex: number;
 }
 
 export interface VisibleWindow {

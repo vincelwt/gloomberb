@@ -224,6 +224,11 @@ export function canonicalExchange(value?: string): string {
   return CANONICAL_EXCHANGE_ALIASES[normalized] ?? normalized;
 }
 
+export function resolveExchangeTimeZone(value?: string): string | null {
+  const canonical = canonicalExchange(value);
+  return canonical ? EXCHANGE_TIME_ZONES[canonical] ?? null : null;
+}
+
 export function publicExchange(value?: string): string {
   const canonical = canonicalExchange(value);
   return PUBLIC_EXCHANGE_ALIASES[canonical] ?? canonical;

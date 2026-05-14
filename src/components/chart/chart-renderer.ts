@@ -1,7 +1,17 @@
 import { RGBA } from "../../ui";
-import type { ChartAxisMode, ChartColors, ChartIndicatorOverlays, Pixel, PixelBuffer, ChartRenderMode } from "./chart-types";
+import type {
+  ChartAxisMode,
+  ChartColors,
+  ChartIndicatorOverlays,
+  ChartMarketSession,
+  ChartSessionBackgroundSpan,
+  Pixel,
+  PixelBuffer,
+  ChartRenderMode,
+} from "./chart-types";
 import type { ProjectedChartPoint } from "./chart-data";
 import { formatCompactMarketPriceWithCurrency, formatMarketPrice, resolveAssetDisplayKind } from "../../utils/market-format";
+import { resolveExtendedHoursBackgroundSpans } from "./market-session";
 
 // ---------------------------------------------------------------------------
 // Styled output types (unchanged public API)
@@ -26,7 +36,7 @@ export interface StyledContent {
 const LAYER_GRID = 0;
 const LAYER_FILL = 1;
 const LAYER_DATA = 2;
-const LAYER_OVERLAY = 2;
+const LAYER_OVERLAY = 1;
 const LAYER_CROSSHAIR = 3;
 
 function normalizeCount(value: number, min: number): number {
@@ -135,6 +145,8 @@ export function resolveChartPalette(
     axisColor: baseColors.textDim,
     activeRangeColor: baseColors.text,
     inactiveRangeColor: blendHex(baseColors.bg, baseColors.textDim, 0.75),
+    preMarketBgColor: blendHex(baseColors.bg, "#8a641f", 0.28),
+    postMarketBgColor: blendHex(baseColors.bg, "#7a4624", 0.28),
     candleUp: baseColors.positive,
     candleDown: baseColors.negative,
     wickUp: blendHex(baseColors.positive, baseColors.text, 0.35),
@@ -150,10 +162,12 @@ export function createPixelBuffer(width: number, heightPixels: number): PixelBuf
   const bufferWidth = normalizeCount(width, 0);
   const bufferHeight = normalizeCount(heightPixels, 0);
   const pixels: (Pixel | null)[][] = [];
+  const backgrounds: (string | null)[][] = [];
   for (let y = 0; y < bufferHeight; y++) {
     pixels.push(new Array(bufferWidth).fill(null));
+    backgrounds.push(new Array(bufferWidth).fill(null));
   }
-  return { width: bufferWidth, height: bufferHeight, pixels };
+  return { width: bufferWidth, height: bufferHeight, pixels, backgrounds };
 }
 
 function setPixel(buf: PixelBuffer, x: number, y: number, color: string, layer: number) {
@@ -221,6 +235,27 @@ function fillColumn(buf: PixelBuffer, x: number, y0: number, y1: number, color: 
 function fillRect(buf: PixelBuffer, x0: number, y0: number, x1: number, y1: number, color: string, layer: number) {
   for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) {
     fillColumn(buf, x, y0, y1, color, layer);
+  }
+}
+
+function setBackgroundPixel(buf: PixelBuffer, x: number, y: number, color: string) {
+  const px = Math.round(x);
+  const py = Math.round(y);
+  if (px < 0 || px >= buf.width || py < 0 || py >= buf.height) return;
+  const row = buf.backgrounds[py];
+  if (!row) return;
+  row[px] = color;
+}
+
+function fillBackgroundRect(buf: PixelBuffer, x0: number, y0: number, x1: number, y1: number, color: string) {
+  const left = Math.max(Math.min(Math.round(x0), Math.round(x1)), 0);
+  const right = Math.min(Math.max(Math.round(x0), Math.round(x1)), Math.max(buf.width - 1, 0));
+  const top = Math.max(Math.min(Math.round(y0), Math.round(y1)), 0);
+  const bottom = Math.min(Math.max(Math.round(y0), Math.round(y1)), Math.max(buf.height - 1, 0));
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      setBackgroundPixel(buf, x, y, color);
+    }
   }
 }
 
@@ -327,6 +362,38 @@ function getPointDotX(index: number, pointCount: number, width: number, mode: Ch
 export function getPointTerminalColumn(index: number, pointCount: number, width: number, mode: ChartRenderMode): number {
   if (width <= 1) return 0;
   return Math.min(Math.max(Math.floor(getPointDotX(index, pointCount, width, mode) / 2), 0), width - 1);
+}
+
+function getTimePointBand(index: number, pointCount: number, width: number): { left: number; right: number } {
+  const currentX = getSeriesPosition(index, pointCount, width);
+  const previousX = index > 0 ? getSeriesPosition(index - 1, pointCount, width) : currentX;
+  const nextX = index < pointCount - 1 ? getSeriesPosition(index + 1, pointCount, width) : currentX;
+  return {
+    left: index === 0 ? 0 : Math.floor((previousX + currentX) / 2) + 1,
+    right: index === pointCount - 1 ? Math.max(width - 1, 0) : Math.floor((currentX + nextX) / 2),
+  };
+}
+
+function getSessionBackgroundColor(span: ChartSessionBackgroundSpan, colors: ChartColors): string {
+  return span.kind === "pre" ? colors.preMarketBgColor : colors.postMarketBgColor;
+}
+
+function drawSessionBackgrounds(
+  buf: PixelBuffer,
+  points: ProjectedChartPoint[],
+  spans: readonly ChartSessionBackgroundSpan[],
+  yTop: number,
+  yBottom: number,
+  colors: ChartColors,
+) {
+  if (spans.length === 0 || points.length === 0) return;
+  for (const span of spans) {
+    const startIndex = Math.max(Math.min(span.startIndex, points.length - 1), 0);
+    const endIndex = Math.max(Math.min(span.endIndex, points.length - 1), startIndex);
+    const startBand = getTimePointBand(startIndex, points.length, buf.width);
+    const endBand = getTimePointBand(endIndex, points.length, buf.width);
+    fillBackgroundRect(buf, startBand.left, yTop, endBand.right, yBottom, getSessionBackgroundColor(span, colors));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -573,14 +640,19 @@ export function bufferToBrailleLines(buf: PixelBuffer): StyledContent[] {
       let topLayer = -1;
 
       // Track dots per layer so we can render only the top layer's dots
-      const dotsByLayer: Map<number, number> = new Map(); // layer → braille bits
+      const dotsByLayer: Map<number, number> = new Map(); // layer -> braille bits
       const colorByLayer: Map<number, Map<string, number>> = new Map();
+      const backgroundCounts: Map<string, number> = new Map();
 
       for (let dy = 0; dy < 4; dy++) {
         for (let dx = 0; dx < 2; dx++) {
           const px = col * 2 + dx;
           const py = row * 4 + dy;
           if (px >= buf.width || py >= buf.height) continue;
+          const bg = buf.backgrounds[py]?.[px] ?? null;
+          if (bg) {
+            backgroundCounts.set(bg, (backgroundCounts.get(bg) || 0) + 1);
+          }
           const pixel = buf.pixels[py]?.[px] ?? null;
           if (pixel) {
             const bit = BRAILLE_DOT[dy]![dx]!;
@@ -598,14 +670,19 @@ export function bufferToBrailleLines(buf: PixelBuffer): StyledContent[] {
       let char: string;
       let cellFg: string | undefined;
       let cellBg: string | undefined;
+      let bestBackgroundCount = 0;
+      for (const [bg, count] of backgroundCounts) {
+        if (count > bestBackgroundCount) {
+          bestBackgroundCount = count;
+          cellBg = bg;
+        }
+      }
 
       if (topLayer < 0) {
         char = " ";
         cellFg = undefined;
-        cellBg = undefined;
       } else {
-        // Only show dots from the highest layer — keeps lines thin in mixed
-        // cells (e.g. area chart where line and fill overlap).
+        // Only show dots from the highest layer so lines stay thin in mixed cells.
         const pattern = dotsByLayer.get(topLayer) || 0;
         char = String.fromCharCode(BRAILLE_BASE + pattern);
 
@@ -617,7 +694,6 @@ export function bufferToBrailleLines(buf: PixelBuffer): StyledContent[] {
         }
 
         cellFg = topColor;
-        cellBg = undefined;
       }
 
       if (char === runChar && cellFg === runFg && cellBg === runBg) {
@@ -823,6 +899,10 @@ function formatClockTime(date: Date, unit: AxisLabelUnit): string {
   }
 }
 
+function formatFullCalendarDate(date: Date): string {
+  return `${MONTHS[date.getMonth()]} ${date.getDate()} ${date.getFullYear()}`;
+}
+
 function isSameCalendarDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth()
@@ -985,6 +1065,10 @@ function formatCursorTimeAxisValue(
   const minGapMs = getMinPositiveGapMs(validDates);
   const effectiveStepMs = Math.max(spanMs / Math.max(roughLabelCount - 1, 1), minGapMs || 0);
   const unit = resolveAxisLabelUnit(effectiveStepMs);
+  if (unit === "year" || unit === "month") {
+    return formatFullCalendarDate(date);
+  }
+
   const counterpart = isSameCalendarDay(first, last)
     ? first
     : isSameCalendarDay(date, first)
@@ -1152,6 +1236,7 @@ export interface RenderChartOptions {
   colors: ResolvedChartPalette;
   timeAxisDates?: Array<Date | string | number>;
   indicators?: ChartIndicatorOverlays | null;
+  marketSession?: ChartMarketSession | null;
 }
 
 export interface ChartScene {
@@ -1164,6 +1249,7 @@ export interface ChartScene {
   mode: ChartRenderMode;
   colors: ResolvedChartPalette;
   indicators: ChartIndicatorOverlays | null;
+  sessionBackgroundSpans: ChartSessionBackgroundSpan[];
   min: number;
   max: number;
   activeIdx: number;
@@ -1225,27 +1311,6 @@ export function getActivePointIndex(
   return bestIndex;
 }
 
-function getIndicatorOverlayValues(indicators: ChartIndicatorOverlays | null | undefined): number[] {
-  if (!indicators) return [];
-
-  const values: number[] = [];
-  for (const line of indicators.smaLines) {
-    values.push(...line.points.map((point) => point.value));
-  }
-  for (const line of indicators.emaLines) {
-    values.push(...line.points.map((point) => point.value));
-  }
-  if (indicators.bollinger) {
-    values.push(
-      ...indicators.bollinger.upper.map((point) => point.value),
-      ...indicators.bollinger.middle.map((point) => point.value),
-      ...indicators.bollinger.lower.map((point) => point.value),
-    );
-  }
-
-  return values.filter((value) => Number.isFinite(value));
-}
-
 export function buildChartScene(
   points: ProjectedChartPoint[],
   opts: RenderChartOptions,
@@ -1259,9 +1324,8 @@ export function buildChartScene(
   const dataMax = isHighLowMode(opts.mode)
     ? Math.max(...points.map((point) => point.high))
     : Math.max(...points.map((point) => point.close));
-  const indicatorValues = getIndicatorOverlayValues(opts.indicators);
-  const min = indicatorValues.length > 0 ? Math.min(dataMin, ...indicatorValues) : dataMin;
-  const max = indicatorValues.length > 0 ? Math.max(dataMax, ...indicatorValues) : dataMax;
+  const min = dataMin;
+  const max = dataMax;
   const activeIdx = getActivePointIndex(points.length, dimensions.width, opts.cursorX, opts.mode);
   const activePoint = points[activeIdx]!;
   const range = max - min || 1;
@@ -1290,6 +1354,10 @@ export function buildChartScene(
     : max - (cursorY / Math.max(dimensions.chartRows - 1, 1)) * range;
 
   const timeAxisDates = opts.timeAxisDates ?? points.map((point) => point.date);
+  const sessionBackgroundSpans = resolveExtendedHoursBackgroundSpans(
+    points.map((point) => point.date),
+    opts.marketSession,
+  );
 
   return {
     points,
@@ -1301,6 +1369,7 @@ export function buildChartScene(
     mode: opts.mode,
     colors: opts.colors,
     indicators: opts.indicators ?? null,
+    sessionBackgroundSpans,
     min,
     max,
     activeIdx,
@@ -1412,6 +1481,14 @@ export function renderChart(
       getAxisFractionDigitFloor(assetCategory, priceRange),
     )
     : null;
+  drawSessionBackgrounds(
+    buf,
+    points,
+    scene.sessionBackgroundSpans,
+    0,
+    showVolume ? volDotBottom : chartDotBottom,
+    palette,
+  );
   drawGridLines(buf, gridLines.map((line) => line.y), palette.gridColor);
 
   switch (mode) {

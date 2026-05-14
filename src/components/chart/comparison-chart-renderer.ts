@@ -15,10 +15,12 @@ import {
   resolveAxisFractionDigits,
   type StyledContent,
 } from "./chart-renderer";
-import type { ChartAxisMode, ComparisonChartRenderMode } from "./chart-types";
+import type { ChartAxisMode, ChartColors, ChartMarketSession, ChartSessionBackgroundSpan, ComparisonChartRenderMode } from "./chart-types";
+import { resolveExtendedHoursBackgroundSpans } from "./market-session";
 
 const LAYER_FILL = 1;
 const LAYER_DATA = 2;
+type ComparisonChartColors = Pick<ChartColors, "bgColor" | "gridColor" | "crosshairColor" | "preMarketBgColor" | "postMarketBgColor">;
 
 export interface ComparisonChartScene {
   dates: Date[];
@@ -29,11 +31,8 @@ export interface ComparisonChartScene {
   mode: ComparisonChartRenderMode;
   axisMode: ChartAxisMode;
   selectedSymbol: string | null;
-  colors: {
-    bgColor: string;
-    gridColor: string;
-    crosshairColor: string;
-  };
+  colors: ComparisonChartColors;
+  sessionBackgroundSpans: ChartSessionBackgroundSpan[];
   min: number;
   max: number;
   activeIdx: number;
@@ -55,11 +54,8 @@ export interface RenderComparisonChartOptions {
   cursorX: number | null;
   cursorY: number | null;
   selectedSymbol: string | null;
-  colors: {
-    bgColor: string;
-    gridColor: string;
-    crosshairColor: string;
-  };
+  colors: ComparisonChartColors;
+  marketSession?: ChartMarketSession | null;
 }
 
 export interface RenderComparisonChartResult {
@@ -88,6 +84,16 @@ function normalizeCount(value: number, min: number): number {
 function getComparisonDotX(index: number, count: number, width: number): number {
   if (count <= 1) return Math.round(Math.max(width - 1, 0) / 2);
   return Math.round((index / (count - 1)) * Math.max(width - 1, 0));
+}
+
+function getComparisonPointBand(index: number, pointCount: number, width: number): { left: number; right: number } {
+  const currentX = getComparisonDotX(index, pointCount, width);
+  const previousX = index > 0 ? getComparisonDotX(index - 1, pointCount, width) : currentX;
+  const nextX = index < pointCount - 1 ? getComparisonDotX(index + 1, pointCount, width) : currentX;
+  return {
+    left: index === 0 ? 0 : Math.floor((previousX + currentX) / 2) + 1,
+    right: index === pointCount - 1 ? Math.max(width - 1, 0) : Math.floor((currentX + nextX) / 2),
+  };
 }
 
 function getScaledY(value: number, min: number, max: number, chartTop: number, chartBottom: number): number {
@@ -223,6 +229,29 @@ function drawComparisonAreaSeries(
   }
 }
 
+function drawSessionBackgrounds(
+  buf: ReturnType<typeof createPixelBuffer>,
+  spans: readonly ChartSessionBackgroundSpan[],
+  pointCount: number,
+  yTop: number,
+  yBottom: number,
+  colors: ComparisonChartColors,
+) {
+  if (spans.length === 0 || pointCount === 0) return;
+  for (const span of spans) {
+    const startIndex = Math.max(Math.min(span.startIndex, pointCount - 1), 0);
+    const endIndex = Math.max(Math.min(span.endIndex, pointCount - 1), startIndex);
+    const startBand = getComparisonPointBand(startIndex, pointCount, buf.width);
+    const endBand = getComparisonPointBand(endIndex, pointCount, buf.width);
+    const color = span.kind === "pre" ? colors.preMarketBgColor : colors.postMarketBgColor;
+    for (let y = Math.max(yTop, 0); y <= Math.min(yBottom, Math.max(buf.height - 1, 0)); y += 1) {
+      for (let x = Math.max(startBand.left, 0); x <= Math.min(endBand.right, Math.max(buf.width - 1, 0)); x += 1) {
+        buf.backgrounds[y]![x] = color;
+      }
+    }
+  }
+}
+
 function getActiveIndex(pointCount: number, width: number, cursorX: number | null): number {
   if (pointCount <= 0) return 0;
   if (cursorX === null || cursorX < 0 || cursorX >= width) {
@@ -294,6 +323,7 @@ export function buildComparisonChartScene(
   const crosshairValue = cursorY === null
     ? null
     : max - (cursorY / Math.max(chartRows - 1, 1)) * range;
+  const sessionBackgroundSpans = resolveExtendedHoursBackgroundSpans(projection.dates, opts.marketSession);
 
   return {
     dates: projection.dates,
@@ -305,6 +335,7 @@ export function buildComparisonChartScene(
     axisMode: projection.effectiveAxisMode,
     selectedSymbol: selectedSeries?.symbol ?? null,
     colors: opts.colors,
+    sessionBackgroundSpans,
     min,
     max,
     activeIdx,
@@ -354,6 +385,14 @@ export function renderComparisonChart(
       getComparisonAxisFractionDigitFloor(priceRange),
     )
     : null;
+  drawSessionBackgrounds(
+    buf,
+    scene.sessionBackgroundSpans,
+    scene.dates.length,
+    0,
+    chartDotBottom,
+    scene.colors,
+  );
   drawGridLines(buf, gridLines.map((line) => line.y), scene.colors.gridColor);
 
   const selectedSeries = getSelectedSeries(scene.series, scene.selectedSymbol);

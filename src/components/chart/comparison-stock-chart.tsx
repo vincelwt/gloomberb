@@ -98,6 +98,7 @@ import {
 import { resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
 import { TimeAxisLabel } from "./time-axis-label";
 import { PriceAxisLabels } from "./price-axis-labels";
+import { getChartMarketSessionKey, resolveChartMarketSession } from "./market-session";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -392,6 +393,7 @@ function buildComparisonNativeBitmapKey(
   pixelWidth: number,
   pixelHeight: number,
   paletteKey: string,
+  marketSessionKey: string,
 ): string {
   const fingerprint = projection.series
     .map((series) => [
@@ -412,6 +414,7 @@ function buildComparisonNativeBitmapKey(
     pixelWidth,
     pixelHeight,
     paletteKey,
+    marketSessionKey,
     fingerprint,
   ].join("::");
 }
@@ -598,7 +601,16 @@ function ComparisonStockChartView({
     bgColor: colors.bg,
     gridColor: blendHex(colors.bg, colors.border, 0.55),
     crosshairColor: colors.borderFocused,
+    preMarketBgColor: blendHex(colors.bg, "#1d4ed8", 0.18),
+    postMarketBgColor: blendHex(colors.bg, "#b45309", 0.18),
   }), [colors.bg, colors.border, colors.borderFocused]);
+  const marketSession = useMemo(() => resolveChartMarketSession(symbolSources.map((source) => ({
+    exchange: source.exchange,
+    primaryExchange: source.instrument?.primaryExchange,
+    currency: source.currency,
+    assetCategory: source.instrument?.secType,
+  }))), [symbolSources]);
+  const marketSessionKey = useMemo(() => getChartMarketSessionKey(marketSession), [marketSession]);
 
   const setSelectedSymbol = (symbol: string) => {
     setViewState((current) => (
@@ -1088,7 +1100,8 @@ function ComparisonStockChartView({
     cursorY: null,
     selectedSymbol: viewState.selectedSymbol,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, projection, viewState.selectedSymbol]);
+    marketSession,
+  }), [chartColors, chartHeight, chartWidth, marketSession, projection, viewState.selectedSymbol]);
   const displayScene = useMemo(() => buildComparisonChartScene(projection, {
     width: chartWidth,
     height: chartHeight,
@@ -1096,7 +1109,8 @@ function ComparisonStockChartView({
     cursorY: displayCursorY,
     selectedSymbol: viewState.selectedSymbol,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, projection, viewState.selectedSymbol]);
+    marketSession,
+  }), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, marketSession, projection, viewState.selectedSymbol]);
 
   const staticResult = useMemo(() => renderComparisonChart(projection, {
     width: chartWidth,
@@ -1105,7 +1119,8 @@ function ComparisonStockChartView({
     cursorY: null,
     selectedSymbol: viewState.selectedSymbol,
     colors: chartColors,
-  }), [chartColors, chartHeight, chartWidth, projection, viewState.selectedSymbol]);
+    marketSession,
+  }), [chartColors, chartHeight, chartWidth, marketSession, projection, viewState.selectedSymbol]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty" || useCanvasChart
@@ -1117,8 +1132,9 @@ function ComparisonStockChartView({
         cursorY: displayCursorY,
         selectedSymbol: viewState.selectedSymbol,
         colors: chartColors,
+        marketSession,
       })
-  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, projection, useCanvasChart, viewState.selectedSymbol]);
+  ), [chartColors, chartHeight, chartWidth, displayCursorX, displayCursorY, effectiveRenderer, marketSession, projection, useCanvasChart, viewState.selectedSymbol]);
 
   const result = effectiveRenderer === "kitty" || useCanvasChart ? staticResult : interactiveResult!;
   const timeAxisLabel = result.timeLabels || staticResult.timeLabels;
@@ -1282,7 +1298,14 @@ function ComparisonStockChartView({
       viewState.selectedSymbol,
       bitmapSize.pixelWidth,
       bitmapSize.pixelHeight,
-      [chartColors.bgColor, chartColors.gridColor, chartColors.crosshairColor].join(","),
+      [
+        chartColors.bgColor,
+        chartColors.gridColor,
+        chartColors.crosshairColor,
+        chartColors.preMarketBgColor,
+        chartColors.postMarketBgColor,
+      ].join(","),
+      marketSessionKey,
     );
     const cachedBitmap = lastNativeBaseBitmapRef.current?.key === bitmapKey
       ? lastNativeBaseBitmapRef.current.bitmap
@@ -1312,7 +1335,10 @@ function ComparisonStockChartView({
     chartColors.bgColor,
     chartColors.crosshairColor,
     chartColors.gridColor,
+    chartColors.postMarketBgColor,
+    chartColors.preMarketBgColor,
     effectiveRenderer,
+    marketSessionKey,
     nativeSurfaceManager,
     paneId,
     projection,
@@ -1685,9 +1711,10 @@ function ComparisonStockChartView({
         cursorY: null,
         selectedSymbol: viewState.selectedSymbol,
         colors: chartColors,
+        marketSession,
       })
       : null
-  ), [canvasBitmapSize?.pixelWidth, canvasProjection, chartColors, chartHeight, chartWidth, viewState.selectedSymbol]);
+  ), [canvasBitmapSize?.pixelWidth, canvasProjection, chartColors, chartHeight, chartWidth, marketSession, viewState.selectedSymbol]);
 
   const canvasBaseBitmapKey = useMemo(() => {
     if (!canvasBitmapSize || !canvasProjection || !hasChartData || isBlockingBody || bodyMessage) return null;
@@ -1697,7 +1724,14 @@ function ComparisonStockChartView({
       viewState.selectedSymbol,
       canvasBitmapSize.pixelWidth,
       canvasBitmapSize.pixelHeight,
-      [chartColors.bgColor, chartColors.gridColor, chartColors.crosshairColor].join(","),
+      [
+        chartColors.bgColor,
+        chartColors.gridColor,
+        chartColors.crosshairColor,
+        chartColors.preMarketBgColor,
+        chartColors.postMarketBgColor,
+      ].join(","),
+      marketSessionKey,
     );
   }, [
     bodyMessage,
@@ -1706,8 +1740,11 @@ function ComparisonStockChartView({
     chartColors.bgColor,
     chartColors.crosshairColor,
     chartColors.gridColor,
+    chartColors.postMarketBgColor,
+    chartColors.preMarketBgColor,
     hasChartData,
     isBlockingBody,
+    marketSessionKey,
     symbols.length,
     viewState.selectedSymbol,
   ]);
@@ -1922,7 +1959,7 @@ function ComparisonStockChartView({
           cursorColumn={cursorTimeAxisColumn}
           cursorPixelX={hasDisplayCursor ? displayCursor.pixelX : null}
           cursorDate={cursorTimeAxisDate}
-          dates={projection.dates}
+          dates={visibleWindow.dates}
           cursorColor={chartColors.crosshairColor}
         />
       </Box>

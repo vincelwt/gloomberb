@@ -2,7 +2,7 @@ import { type PixelResolution } from "../../../ui";
 import { measurePerf } from "../../../utils/perf-marks";
 import { computeGridLines, type ChartScene } from "../chart-renderer";
 import type { ComparisonChartScene } from "../comparison-chart-renderer";
-import type { ChartRenderMode } from "../chart-types";
+import type { ChartColors, ChartRenderMode, ChartSessionBackgroundSpan } from "../chart-types";
 
 interface RgbaColor {
   r: number;
@@ -284,6 +284,47 @@ function projectChartX(index: number, count: number, width: number, mode: ChartR
   return projectX(index, count, horizontalPad, Math.max(width - 1 - horizontalPad, horizontalPad));
 }
 
+function getProjectedPointBand(
+  index: number,
+  count: number,
+  width: number,
+  projectIndex: (targetIndex: number) => number,
+): PixelRect {
+  const currentX = projectIndex(index);
+  const previousX = index > 0 ? projectIndex(index - 1) : currentX;
+  const nextX = index < count - 1 ? projectIndex(index + 1) : currentX;
+  const left = index === 0 ? 0 : Math.floor((previousX + currentX) / 2) + 1;
+  const right = index === count - 1 ? Math.max(width - 1, 0) : Math.floor((currentX + nextX) / 2);
+  return {
+    x: clamp(left, 0, Math.max(width - 1, 0)),
+    y: 0,
+    width: Math.max(clamp(right, 0, Math.max(width - 1, 0)) - clamp(left, 0, Math.max(width - 1, 0)) + 1, 1),
+    height: 1,
+  };
+}
+
+function drawSessionBackgroundSpans(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  spans: readonly ChartSessionBackgroundSpan[],
+  pointCount: number,
+  top: number,
+  bottom: number,
+  colors: Pick<ChartColors, "preMarketBgColor" | "postMarketBgColor">,
+  projectIndex: (targetIndex: number) => number,
+) {
+  if (spans.length === 0 || pointCount === 0) return;
+  for (const span of spans) {
+    const startIndex = clamp(span.startIndex, 0, pointCount - 1);
+    const endIndex = clamp(span.endIndex, startIndex, pointCount - 1);
+    const startBand = getProjectedPointBand(startIndex, pointCount, width, projectIndex);
+    const endBand = getProjectedPointBand(endIndex, pointCount, width, projectIndex);
+    const color = parseHex(span.kind === "pre" ? colors.preMarketBgColor : colors.postMarketBgColor, 1);
+    fillRect(data, width, height, startBand.x, top, endBand.x + endBand.width - 1, bottom, color, 1);
+  }
+}
+
 function projectY(value: number, min: number, max: number, top: number, bottom: number): number {
   const range = max - min || 1;
   return lerp(bottom, top, (value - min) / range);
@@ -496,7 +537,19 @@ export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pix
     }
 
     const layout = getChartPixelLayout(scene, pixelWidth, pixelHeight);
+    drawSessionBackgroundSpans(
+      pixels,
+      pixelWidth,
+      pixelHeight,
+      scene.sessionBackgroundSpans,
+      scene.points.length,
+      layout.plotTop,
+      scene.showVolume ? layout.volumeBottom : layout.plotBottom,
+      scene.colors,
+      (index) => projectX(index, scene.points.length, 0, Math.max(pixelWidth - 1, 0)),
+    );
     drawPriceGrid(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
+    drawIndicatorOverlays(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
 
     switch (scene.mode) {
       case "area":
@@ -514,7 +567,6 @@ export function renderNativeChartBase(scene: ChartScene, pixelWidth: number, pix
         break;
     }
 
-    drawIndicatorOverlays(pixels, pixelWidth, pixelHeight, scene, layout.plotTop, layout.plotBottom);
     drawVolume(pixels, pixelWidth, pixelHeight, scene, layout.volumeTop, layout.volumeBottom);
 
     return { width: pixelWidth, height: pixelHeight, pixels };
@@ -603,6 +655,17 @@ export function renderNativeComparisonChartBase(
   }
 
   const layout = getComparisonPixelLayout(pixelWidth, pixelHeight);
+  drawSessionBackgroundSpans(
+    pixels,
+    pixelWidth,
+    pixelHeight,
+    scene.sessionBackgroundSpans,
+    scene.dates.length,
+    layout.plotTop,
+    layout.plotBottom,
+    scene.colors,
+    (index) => projectX(index, Math.max(scene.dates.length, 1), 0, pixelWidth - 1),
+  );
   drawPriceGrid(
     pixels,
     pixelWidth,

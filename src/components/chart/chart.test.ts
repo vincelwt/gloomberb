@@ -7,8 +7,9 @@ import {
 } from "./chart-data";
 import { stepCursorTowards } from "./cursor-motion";
 import { buildChartScene, buildCursorTimeAxisSegments, buildTimeAxis, formatAxisValue, formatCursorAxisValue, renderChart, resolveChartAxisWidth, resolveChartPalette } from "./chart-renderer";
-import { buildCursorTimeAxisOverlay } from "./time-axis-label";
+import { buildCursorTimeAxisOverlay, resolveCursorDateFromAxis } from "./time-axis-label";
 import { buildCursorPriceAxisOverlay } from "./price-axis-labels";
+import { resolveChartMarketSession, resolveExtendedHoursBackgroundSpans } from "./market-session";
 import type { PricePoint } from "../../types/financials";
 import type { ChartRenderMode } from "./chart-types";
 
@@ -280,9 +281,19 @@ describe("renderChart", () => {
     expect(result.axisLabels.every((entry) => entry.label.includes("."))).toBe(true);
   });
 
-  test("includes visible indicator overlays in the chart price range", () => {
+  test("keeps indicator overlays out of the chart price range", () => {
     const projection = projectChartData(chartFixture, 12, "line", false);
-    const scene = buildChartScene(projection.points, {
+    const baseScene = buildChartScene(projection.points, {
+      width: 12,
+      height: 6,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: projection.effectiveMode,
+      colors: palette,
+    });
+    const sceneWithIndicators = buildChartScene(projection.points, {
       width: 12,
       height: 6,
       showVolume: false,
@@ -300,6 +311,63 @@ describe("renderChart", () => {
             { index: 1, value: 18 },
           ],
         }],
+        emaLines: [{
+          period: 2,
+          color: "#00ffff",
+          points: [
+            { index: 0, value: 4 },
+            { index: 1, value: 20 },
+          ],
+        }],
+        bollinger: {
+          color: "#ffaa00",
+          upper: [
+            { index: 0, value: 22 },
+            { index: 1, value: 23 },
+          ],
+          middle: [
+            { index: 0, value: 14 },
+            { index: 1, value: 15 },
+          ],
+          lower: [
+            { index: 0, value: 3 },
+            { index: 1, value: 4 },
+          ],
+        },
+        rsi: null,
+        macd: null,
+      },
+    });
+
+    expect(sceneWithIndicators?.min).toBe(baseScene?.min);
+    expect(sceneWithIndicators?.max).toBe(baseScene?.max);
+  });
+
+  test("draws indicator overlays below price pixels", () => {
+    const points: PricePoint[] = [
+      { date: new Date("2024-01-02"), close: 10, volume: 100 },
+      { date: new Date("2024-01-03"), close: 11, volume: 120 },
+      { date: new Date("2024-01-04"), close: 12, volume: 140 },
+    ];
+    const result = renderChart(points, {
+      width: 12,
+      height: 6,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "line",
+      colors: palette,
+      indicators: {
+        smaLines: [{
+          period: 2,
+          color: "#ff00ff",
+          points: [
+            { index: 0, value: 10 },
+            { index: 1, value: 11 },
+            { index: 2, value: 12 },
+          ],
+        }],
         emaLines: [],
         bollinger: null,
         rsi: null,
@@ -307,8 +375,9 @@ describe("renderChart", () => {
       },
     });
 
-    expect(scene?.min).toBe(6);
-    expect(scene?.max).toBe(18);
+    const pixels = result.pixelBuffer?.pixels.flat().filter(Boolean) ?? [];
+    expect(pixels.some((pixel) => pixel?.color === palette.lineColor)).toBe(true);
+    expect(pixels.some((pixel) => pixel?.color === "#ff00ff")).toBe(false);
   });
 
   test("normalizes fractional web dimensions before drawing volume bars", () => {
@@ -434,6 +503,31 @@ describe("renderChart", () => {
     expect(segments.find((segment) => segment.highlighted)?.text).toBe("12:30");
   });
 
+  test("keeps day precision for cursor labels when the axis coarsens to months", () => {
+    const dates = Array.from({ length: 12 }, (_, index) => new Date(2025, index, 1));
+    const width = 48;
+    const segments = buildCursorTimeAxisSegments({
+      timeLabels: buildTimeAxis(dates, width),
+      width,
+      cursorColumn: 27,
+      cursorDate: new Date(2025, 8, 15),
+      dates,
+    });
+
+    expect(segments.find((segment) => segment.highlighted)?.text).toBe("Sep 15 2025");
+  });
+
+  test("resolves cursor dates from the full source axis between coarse month ticks", () => {
+    const dates = Array.from({ length: 32 }, (_, index) => new Date(2025, 2, index + 1));
+    const resolved = resolveCursorDateFromAxis({
+      dates,
+      width: 32,
+      cursorColumn: 15,
+    });
+
+    expect(resolved?.toISOString()).toBe(dates[15]!.toISOString());
+  });
+
   test("positions desktop cursor x-axis overlay from exact pixels", () => {
     const dates = Array.from({ length: 13 }, (_, index) => new Date(2026, 0, 5, 9, 30 + index * 30));
     const width = 72;
@@ -497,6 +591,59 @@ describe("renderChart", () => {
 
     expect(buildTimeAxis(monthlyDates, 48)).toBe("Jan 2025        May          Aug        Dec 2025");
     expect(buildTimeAxis(yearlyDates, 48)).toBe("2020   2021      2022     2023      2024    2025");
+  });
+
+  test("marks US premarket and postmarket bars for chart backgrounds", () => {
+    const session = resolveChartMarketSession([{ exchange: "NASDAQ", currency: "USD", assetCategory: "STK" }]);
+    const dates = [
+      new Date("2026-05-14T11:00:00Z"),
+      new Date("2026-05-14T14:00:00Z"),
+      new Date("2026-05-14T20:30:00Z"),
+    ];
+
+    expect(resolveExtendedHoursBackgroundSpans(dates, session)).toEqual([
+      { kind: "pre", startIndex: 0, endIndex: 0 },
+      { kind: "post", startIndex: 2, endIndex: 2 },
+    ]);
+  });
+
+  test("omits extended-hours backgrounds for wide intraday windows", () => {
+    const session = resolveChartMarketSession([{ exchange: "NASDAQ", currency: "USD", assetCategory: "STK" }]);
+    const dates = Array.from({ length: 12 }).flatMap((_, dayIndex) => {
+      const day = 4 + dayIndex;
+      return [
+        new Date(Date.UTC(2026, 4, day, 11, 0)),
+        new Date(Date.UTC(2026, 4, day, 14, 0)),
+        new Date(Date.UTC(2026, 4, day, 20, 30)),
+      ];
+    });
+
+    expect(resolveExtendedHoursBackgroundSpans(dates, session)).toEqual([]);
+  });
+
+  test("paints extended-hours chart cells as background colors", () => {
+    const session = resolveChartMarketSession([{ exchange: "NASDAQ", currency: "USD", assetCategory: "STK" }]);
+    const points: PricePoint[] = [
+      { date: new Date("2026-05-14T11:00:00Z"), close: 10, volume: 100 },
+      { date: new Date("2026-05-14T14:00:00Z"), close: 12, volume: 120 },
+      { date: new Date("2026-05-14T20:30:00Z"), close: 11, volume: 110 },
+    ];
+
+    const result = renderChart(points, {
+      width: 12,
+      height: 4,
+      showVolume: false,
+      volumeHeight: 0,
+      cursorX: null,
+      cursorY: null,
+      mode: "line",
+      colors: palette,
+      marketSession: session,
+    });
+
+    const backgrounds = result.lines.flatMap((line) => line.chunks.map((chunk) => chunk.bg));
+    expect(backgrounds).toContain(palette.preMarketBgColor);
+    expect(backgrounds).toContain(palette.postMarketBgColor);
   });
 
   test("uses source time-axis dates instead of projected extrema dates when provided", () => {

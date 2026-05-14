@@ -23,6 +23,51 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeDate(value: Date | string | number): Date | null {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+export function resolveCursorDateFromAxis({
+  dates,
+  width,
+  cursorColumn,
+  cursorPixelX,
+  cellWidthPx,
+}: {
+  dates: Array<Date | string | number>;
+  width: number;
+  cursorColumn: number | null;
+  cursorPixelX?: number | null;
+  cellWidthPx?: number | null;
+}): Date | null {
+  const normalizedDates = dates
+    .map(normalizeDate)
+    .filter((date): date is Date => date !== null);
+  if (normalizedDates.length === 0) return null;
+  if (normalizedDates.length === 1) return normalizedDates[0]!;
+
+  let ratio: number | null = null;
+  if (
+    cursorPixelX !== null
+    && cursorPixelX !== undefined
+    && Number.isFinite(cursorPixelX)
+    && cellWidthPx !== null
+    && cellWidthPx !== undefined
+    && Number.isFinite(cellWidthPx)
+    && cellWidthPx > 0
+  ) {
+    const pixelWidth = Math.max(width * cellWidthPx, 1);
+    ratio = clamp(cursorPixelX / Math.max(pixelWidth - 1, 1), 0, 1);
+  } else if (cursorColumn !== null && Number.isFinite(cursorColumn) && width > 1) {
+    ratio = clamp(cursorColumn / Math.max(width - 1, 1), 0, 1);
+  }
+
+  if (ratio === null) return null;
+  const index = Math.round(ratio * (normalizedDates.length - 1));
+  return normalizedDates[clamp(index, 0, normalizedDates.length - 1)] ?? null;
+}
+
 export function buildCursorTimeAxisOverlay({
   segments,
   width,
@@ -61,13 +106,22 @@ export function TimeAxisLabel({
   cursorColor,
 }: TimeAxisLabelProps) {
   const { cellWidthPx = 8, fractionalViewport = false } = useUiCapabilities();
+  const resolvedCursorDate = useMemo(() => {
+    return resolveCursorDateFromAxis({
+      dates,
+      width,
+      cursorColumn,
+      cursorPixelX: fractionalViewport ? cursorPixelX : null,
+      cellWidthPx,
+    }) ?? cursorDate;
+  }, [cellWidthPx, cursorColumn, cursorDate, cursorPixelX, dates, fractionalViewport, width]);
   const segments = useMemo(() => buildCursorTimeAxisSegments({
     timeLabels,
     width,
     cursorColumn,
-    cursorDate,
+    cursorDate: resolvedCursorDate,
     dates,
-  }), [cursorColumn, cursorDate, dates, timeLabels, width]);
+  }), [cursorColumn, dates, resolvedCursorDate, timeLabels, width]);
   const overlay = useMemo(() => buildCursorTimeAxisOverlay({
     segments,
     width,

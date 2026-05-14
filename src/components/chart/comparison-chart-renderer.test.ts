@@ -8,6 +8,14 @@ import {
 } from "./comparison-chart-renderer";
 import type { ComparisonChartSeries } from "./chart-types";
 
+const comparisonColors = {
+  bgColor: "#000000",
+  gridColor: "#333333",
+  crosshairColor: "#ffffff",
+  preMarketBgColor: "#001b44",
+  postMarketBgColor: "#442300",
+};
+
 function makeSeries(symbol: string, color: string, closes: number[]): ComparisonChartSeries {
   return {
     symbol,
@@ -51,11 +59,7 @@ describe("renderComparisonChart", () => {
       cursorX: null,
       cursorY: null,
       selectedSymbol: "AAPL",
-      colors: {
-        bgColor: "#000000",
-        gridColor: "#333333",
-        crosshairColor: "#ffffff",
-      },
+      colors: comparisonColors,
     });
 
     expect(result.axisFractionDigits).toBeGreaterThanOrEqual(1);
@@ -78,11 +82,7 @@ describe("renderComparisonChart", () => {
       cursorX: null,
       cursorY: null,
       selectedSymbol: "AAPL",
-      colors: {
-        bgColor: "#000000",
-        gridColor: "#333333",
-        crosshairColor: "#ffffff",
-      },
+      colors: comparisonColors,
     });
 
     expect(result.axisFractionDigits).toBe(1);
@@ -105,11 +105,7 @@ describe("renderComparisonChart", () => {
       cursorX: 5,
       cursorY: null,
       selectedSymbol: "MSFT",
-      colors: {
-        bgColor: "#000000",
-        gridColor: "#333333",
-        crosshairColor: "#ffffff",
-      },
+      colors: comparisonColors,
     });
 
     expect(result.lines).toHaveLength(6);
@@ -134,11 +130,7 @@ describe("renderComparisonChart", () => {
       cursorX: null,
       cursorY: null,
       selectedSymbol: "AAPL",
-      colors: {
-        bgColor: "#000000",
-        gridColor: "#333333",
-        crosshairColor: "#ffffff",
-      },
+      colors: comparisonColors,
     });
 
     expect(result.lines.length).toBeGreaterThan(0);
@@ -160,11 +152,7 @@ describe("renderComparisonChart", () => {
       cursorX: null,
       cursorY: null,
       selectedSymbol: "AAPL",
-      colors: {
-        bgColor: "#000000",
-        gridColor: "#333333",
-        crosshairColor: "#ffffff",
-      },
+      colors: comparisonColors,
     });
 
     const chunks = result.lines.flatMap((line) => line.chunks);
@@ -188,11 +176,7 @@ describe("renderComparisonChart", () => {
       cursorX: 9,
       cursorY: null,
       selectedSymbol: "NVDA",
-      colors: {
-        bgColor: "#000000",
-        gridColor: "#333333",
-        crosshairColor: "#ffffff",
-      },
+      colors: comparisonColors,
     });
 
     expect(scene).not.toBeNull();

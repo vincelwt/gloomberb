@@ -33,7 +33,7 @@ import {
 } from "../utils/api-client";
 import type { NewsArticle, NewsQuery, NewsStoryItem } from "../types/news-source";
 import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../utils/currency-units";
-import { canonicalTickerKey, publicExchange } from "../utils/exchanges";
+import { canonicalTickerKey, publicExchange, resolveExchangeTimeZone } from "../utils/exchanges";
 import { collectNewsDisplayTickers } from "../news/ticker-symbols";
 import { createProviderMiss } from "./provider-errors";
 
@@ -136,9 +136,73 @@ function mapQuote(quote: CloudQuotePayload, providerMeta?: CloudProviderMeta): Q
   };
 }
 
-function mapPricePoint(point: CloudPricePointPayload, divisor = 1): PricePoint {
+const LOCAL_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?)?$/;
+const EXPLICIT_TIME_ZONE_PATTERN = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+function getZonedDateParts(date: Date, timeZone: string): Map<string, string> {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = new Map<string, string>();
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== "literal") parts.set(part.type, part.value);
+  }
+  return parts;
+}
+
+function getTimeZoneOffsetMs(utcMs: number, timeZone: string): number {
+  const parts = getZonedDateParts(new Date(utcMs), timeZone);
+  const zonedAsUtcMs = Date.UTC(
+    Number(parts.get("year")),
+    Number(parts.get("month")) - 1,
+    Number(parts.get("day")),
+    Number(parts.get("hour")),
+    Number(parts.get("minute")),
+    Number(parts.get("second")),
+  );
+  return zonedAsUtcMs - utcMs;
+}
+
+function exchangeLocalDateTimeToUtc(match: RegExpMatchArray, timeZone: string): Date {
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4] ?? "0");
+  const minute = Number(match[5] ?? "0");
+  const second = Number(match[6] ?? "0");
+  const localAsUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  const firstOffset = getTimeZoneOffsetMs(localAsUtcMs, timeZone);
+  const firstUtcMs = localAsUtcMs - firstOffset;
+  const verifiedOffset = getTimeZoneOffsetMs(firstUtcMs, timeZone);
+  return new Date(localAsUtcMs - verifiedOffset);
+}
+
+function parseCloudPricePointDate(value: Date | string | number, exchange: string): Date {
+  if (value instanceof Date || typeof value === "number") return new Date(value);
+  if (EXPLICIT_TIME_ZONE_PATTERN.test(value)) return new Date(value);
+
+  const match = value.match(LOCAL_DATE_TIME_PATTERN);
+  if (!match) return new Date(value);
+
+  const hasTime = match[4] !== undefined;
+  if (!hasTime) {
+    return new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00Z`);
+  }
+
+  const timeZone = resolveExchangeTimeZone(exchange);
+  return timeZone ? exchangeLocalDateTimeToUtc(match, timeZone) : new Date(value);
+}
+
+function mapPricePoint(point: CloudPricePointPayload, divisor = 1, exchange = ""): PricePoint {
   return {
-    date: new Date(point.date),
+    date: parseCloudPricePointDate(point.date, exchange),
     open: normalizePriceValueByDivisor(point.open, divisor),
     high: normalizePriceValueByDivisor(point.high, divisor),
     low: normalizePriceValueByDivisor(point.low, divisor),
@@ -317,10 +381,18 @@ function padTimePart(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-function formatCloudDateTime(date: Date, includeTime: boolean): string {
-  const year = date.getFullYear();
-  const month = padTimePart(date.getMonth() + 1);
-  const day = padTimePart(date.getDate());
+function formatCloudDateTime(date: Date, includeTime: boolean, exchange = ""): string {
+  if (includeTime) {
+    const timeZone = resolveExchangeTimeZone(exchange);
+    if (timeZone) {
+      const parts = getZonedDateParts(date, timeZone);
+      return `${parts.get("year")}-${parts.get("month")}-${parts.get("day")} ${parts.get("hour")}:${parts.get("minute")}:${parts.get("second")}`;
+    }
+  }
+
+  const year = includeTime ? date.getFullYear() : date.getUTCFullYear();
+  const month = padTimePart((includeTime ? date.getMonth() : date.getUTCMonth()) + 1);
+  const day = padTimePart(includeTime ? date.getDate() : date.getUTCDate());
   if (!includeTime) {
     return `${year}-${month}-${day}`;
   }
@@ -611,7 +683,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     }
     const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
     return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
-      .map((point) => mapPricePoint(point, divisor));
+      .map((point) => mapPricePoint(point, divisor, exchange));
   }
 
   async getPriceHistoryForResolution(
@@ -629,8 +701,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, {
         interval,
-        startDate: formatCloudDateTime(startDate, includeTime),
-        endDate: formatCloudDateTime(endDate, includeTime),
+        startDate: formatCloudDateTime(startDate, includeTime, exchange),
+        endDate: formatCloudDateTime(endDate, includeTime, exchange),
       }),
       `Cloud chart data is unavailable for ${ticker}`,
     );
@@ -639,7 +711,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     }
     const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
     return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
-      .map((point) => mapPricePoint(point, divisor));
+      .map((point) => mapPricePoint(point, divisor, exchange));
   }
 
   async getDetailedPriceHistory(
@@ -656,8 +728,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, {
         interval,
-        startDate: formatCloudDateTime(startDate, includeTime),
-        endDate: formatCloudDateTime(endDate, includeTime),
+        startDate: formatCloudDateTime(startDate, includeTime, exchange),
+        endDate: formatCloudDateTime(endDate, includeTime, exchange),
       }),
       `Cloud detailed chart history is unavailable for ${ticker}`,
     );
@@ -666,7 +738,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     }
     const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
     return unwrapRequiredCloudResponse(response, `Cloud detailed chart history is unavailable for ${ticker}`)
-      .map((point) => mapPricePoint(point, divisor));
+      .map((point) => mapPricePoint(point, divisor, exchange));
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {

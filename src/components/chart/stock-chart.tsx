@@ -128,6 +128,7 @@ import type { PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { TimeAxisLabel } from "./time-axis-label";
 import { PriceAxisLabels } from "./price-axis-labels";
+import { getChartMarketSessionKey, resolveChartMarketSession } from "./market-session";
 
 const MODE_CHIPS: Record<ChartRenderMode, string> = {
   area: "A",
@@ -1086,6 +1087,7 @@ function buildNativeBitmapKey(
   showVolume: boolean,
   paletteId: string,
   indicatorKey: string,
+  marketSessionKey: string,
 ): string {
   const fingerprint = points
     .map((point) => {
@@ -1093,7 +1095,7 @@ function buildNativeBitmapKey(
       return `${date}:${point.open}:${point.high}:${point.low}:${point.close}:${point.volume ?? 0}`;
     })
     .join("|");
-  return [pointCount, pixelWidth, pixelHeight, mode, showVolume ? "1" : "0", paletteId, indicatorKey, fingerprint].join("::");
+  return [pointCount, pixelWidth, pixelHeight, mode, showVolume ? "1" : "0", paletteId, indicatorKey, marketSessionKey, fingerprint].join("::");
 }
 
 function buildNativeCrosshairBitmapKey(
@@ -1715,7 +1717,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     !compact && instrumentRef
       ? {
         instrument: instrumentRef,
-        bufferRange: indicatorBufferRange,
+        bufferRange: viewState.bufferRange,
         granularity: "range",
       }
       : null,
@@ -3044,6 +3046,14 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     themeColors.text,
     themeColors.textDim,
   ]);
+  const marketSession = useMemo(() => resolveChartMarketSession(ticker
+    ? [{
+      exchange: ticker.metadata.exchange,
+      currency: ticker.metadata.currency,
+      assetCategory: ticker.metadata.assetCategory,
+    }]
+    : []), [ticker]);
+  const marketSessionKey = useMemo(() => getChartMarketSessionKey(marketSession), [marketSession]);
 
   const cursorX = viewState.cursorX !== null ? clamp(viewState.cursorX, 0, chartWidth - 1) : null;
   const cursorY = viewState.cursorY !== null ? clamp(viewState.cursorY, 0, chartHeight - 1) : null;
@@ -3071,7 +3081,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     axisMode,
     colors: chartColors,
     timeAxisDates,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, timeAxisDates, volumeHeight]);
+    marketSession,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, marketSession, projection.effectiveMode, projection.points, selectionCursorX, selectionCursorY, showVolume, timeAxisDates, volumeHeight]);
   const displayScene = useMemo(() => buildChartScene(projection.points, {
     width: chartWidth,
     height: chartHeight,
@@ -3084,7 +3095,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     colors: chartColors,
     timeAxisDates,
     indicators,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+    marketSession,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, indicators, marketSession, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
   const snappedSelectionCursorX = selectionScene
     ? getPointTerminalColumn(selectionScene.activeIdx, projection.points.length, chartWidth, projection.effectiveMode)
     : null;
@@ -3130,7 +3142,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     colors: chartColors,
     timeAxisDates,
     indicators,
-  }), [axisMode, chartColors, chartHeight, chartWidth, compact, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+    marketSession,
+  }), [axisMode, chartColors, chartHeight, chartWidth, compact, indicators, marketSession, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const staticResult = useMemo(() => renderChart(projection.points, {
     width: chartWidth,
@@ -3146,7 +3159,8 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     colors: chartColors,
     timeAxisDates,
     indicators,
-  }), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
+    marketSession,
+  }), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, indicators, marketSession, projection.effectiveMode, projection.points, showVolume, timeAxisDates, volumeHeight]);
 
   const interactiveResult = useMemo(() => (
     effectiveRenderer === "kitty" || useCanvasChart
@@ -3165,8 +3179,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         colors: chartColors,
         timeAxisDates,
         indicators,
+        marketSession,
       })
-  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, indicators, projection.effectiveMode, projection.points, showVolume, timeAxisDates, useCanvasChart, volumeHeight]);
+  ), [axisMode, chartAssetCategory, chartColors, chartCurrency, chartHeight, chartWidth, compact, displayCursorX, displayCursorY, effectiveRenderer, indicators, marketSession, projection.effectiveMode, projection.points, showVolume, timeAxisDates, useCanvasChart, volumeHeight]);
 
   const result = effectiveRenderer === "kitty" || useCanvasChart ? staticResult : interactiveResult!;
 
@@ -3300,8 +3315,11 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         chartColors.volumeDown,
         chartColors.candleUp,
         chartColors.candleDown,
+        chartColors.preMarketBgColor,
+        chartColors.postMarketBgColor,
       ].join(","),
       indicatorRenderKey,
+      marketSessionKey,
     );
     const cachedBitmap = lastNativeBaseBitmapRef.current?.key === bitmapKey
       ? lastNativeBaseBitmapRef.current.bitmap
@@ -3331,11 +3349,14 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     chartColors.fillColor,
     chartColors.gridColor,
     chartColors.lineColor,
+    chartColors.postMarketBgColor,
+    chartColors.preMarketBgColor,
     chartColors.volumeDown,
     chartColors.volumeUp,
     compact,
     effectiveRenderer,
     indicatorRenderKey,
+    marketSessionKey,
     nativeBaseScene,
     nativeBaseSurfaceId,
     nativeSurfaceManager,
@@ -3829,9 +3850,10 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         colors: chartColors,
         timeAxisDates,
         indicators: canvasIndicators,
+        marketSession,
       })
       : null
-  ), [axisMode, canvasIndicators, canvasProjection, chartColors, chartHeight, compact, showVolume, timeAxisDates, volumeHeight]);
+  ), [axisMode, canvasIndicators, canvasProjection, chartColors, chartHeight, compact, marketSession, showVolume, timeAxisDates, volumeHeight]);
 
   const canvasBaseBitmapKey = useMemo(() => {
     if (!canvasBitmapSize || !canvasProjection || !hasHistory || isBlockingBody || bodyMessage) return null;
@@ -3850,8 +3872,11 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         chartColors.volumeDown,
         chartColors.candleUp,
         chartColors.candleDown,
+        chartColors.preMarketBgColor,
+        chartColors.postMarketBgColor,
       ].join(","),
       canvasIndicatorRenderKey,
+      marketSessionKey,
     );
   }, [
     bodyMessage,
@@ -3863,11 +3888,14 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     chartColors.fillColor,
     chartColors.gridColor,
     chartColors.lineColor,
+    chartColors.postMarketBgColor,
+    chartColors.preMarketBgColor,
     chartColors.volumeDown,
     chartColors.volumeUp,
     compact,
     hasHistory,
     isBlockingBody,
+    marketSessionKey,
     showVolume,
   ]);
 

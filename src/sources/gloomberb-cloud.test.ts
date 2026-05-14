@@ -105,8 +105,8 @@ describe("GloomberbCloudProvider", () => {
     const history = await provider.getDetailedPriceHistory(
       "AAPL",
       "NASDAQ",
-      new Date(2026, 2, 27, 10, 0, 0),
-      new Date(2026, 2, 27, 12, 0, 0),
+      new Date("2026-03-27T14:00:00Z"),
+      new Date("2026-03-27T16:00:00Z"),
       "15m",
     );
 
@@ -121,6 +121,7 @@ describe("GloomberbCloudProvider", () => {
     });
     expect(history).toHaveLength(1);
     expect(history[0]?.close).toBe(250.12);
+    expect(history[0]?.date.toISOString()).toBe("2026-03-27T14:15:00.000Z");
   });
 
   test("normalizes daily detailed history requests to 1day", async () => {

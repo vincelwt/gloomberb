@@ -204,6 +204,12 @@ function getFrameLineContaining(frame: string, text: string): string {
   return frame.split("\n").find((line) => line.includes(text)) ?? "";
 }
 
+const MONTH_LABEL_PATTERN = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/;
+
+function getTimeAxisLine(frame: string): string {
+  return frame.split("\n").find((line) => MONTH_LABEL_PATTERN.test(line)) ?? "";
+}
+
 function getFrameRowContaining(frame: string, text: string): number {
   return frame.split("\n").findIndex((line) => line.includes(text));
 }
@@ -573,6 +579,96 @@ describe("StockChart renderer switching", () => {
     expect(frame).not.toContain("AAPL -");
     expect(frame).toContain("May 28");
     expect(frame).not.toContain("view:");
+  });
+
+  test("keeps the visible range stable when indicator warmup expands history", async () => {
+    const symbol = "AAPL";
+    const config = makeChartConfig(symbol);
+    config.layout.instances = config.layout.instances.map((instance) => (
+      instance.instanceId === TEST_PANE_ID
+        ? {
+          ...instance,
+          settings: {
+            chartRangePreset: "1M",
+            chartResolution: "1d",
+          },
+        }
+        : instance
+    ));
+    config.layouts = [{ name: "Default", layout: cloneLayout(config.layout) }];
+
+    const ticker = makeTicker(symbol);
+    const fullHistory = makeHistory(260);
+    const monthHistory = fullHistory.slice(-21);
+    const yearHistory = fullHistory.slice(-252);
+    const historyForRange = (range: string) => range === "1Y" ? yearHistory : monthHistory;
+    const provider = {
+      ...makeProvider({ [symbol]: fullHistory }),
+      getPriceHistory: async (_requestSymbol: string, _exchange: string, range: string) => historyForRange(range),
+      getPriceHistoryForResolution: async (_requestSymbol: string, _exchange: string, range: string) => historyForRange(range),
+      getDetailedPriceHistory: async (
+        _requestSymbol: string,
+        _exchange: string,
+        startDate: Date,
+        endDate: Date,
+      ) => yearHistory.filter((point) => {
+        const date = point.date instanceof Date ? point.date : new Date(point.date);
+        return date >= startDate && date <= endDate;
+      }),
+    } satisfies DataProvider;
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedMarketDataForTests(provider);
+    const financials: TickerFinancials = {
+      annualStatements: [],
+      quarterlyStatements: [],
+      priceHistory: monthHistory,
+    };
+
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    testSetup = await createTestRenderer({ width: 120, height: 32 });
+    root = createRoot(testSetup.renderer);
+    act(() => {
+      root!.render(
+        <ChartHarness
+          config={config}
+          ticker={ticker}
+          financials={financials}
+        />,
+      );
+    });
+
+    await flushFrames(6);
+    await flushDebouncedChartRequests();
+    const beforeAxis = getTimeAxisLine(testSetup.captureCharFrame());
+    expect(beforeAxis).not.toBe("");
+
+    const nextConfig = {
+      ...config,
+      layout: cloneLayout(config.layout),
+    };
+    nextConfig.layout.instances = nextConfig.layout.instances.map((instance) => (
+      instance.instanceId === TEST_PANE_ID
+        ? {
+          ...instance,
+          settings: {
+            ...(instance.settings ?? {}),
+            indicators: { sma: [200] },
+          },
+        }
+        : instance
+    ));
+    nextConfig.layouts = [{ name: "Default", layout: cloneLayout(nextConfig.layout) }];
+
+    act(() => {
+      harnessDispatch!({ type: "SET_CONFIG", config: nextConfig });
+    });
+
+    await flushFrames(4);
+    await flushDebouncedChartRequests();
+    await flushFrames(4);
+
+    expect(getTimeAxisLine(testSetup.captureCharFrame())).toBe(beforeAxis);
   });
 
   test("chooses supported auto detail resolutions as the visible window changes", async () => {
