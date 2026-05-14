@@ -76,6 +76,7 @@ interface ShellProps {
   pluginRegistry: PluginRegistry;
   desktopWindowBridge?: DesktopWindowBridge;
   desktopDockPreview?: DesktopDockPreviewState | null;
+  commandBarNativeOccluder?: LayoutBounds | null;
 }
 
 interface HoverOverlay {
@@ -192,6 +193,7 @@ const DEFAULT_HEADER_HEIGHT = 1;
 const MENU_MIN_WIDTH = 18;
 const MENU_MAX_WIDTH = 44;
 const MENU_Z_INDEX = 10_000;
+const DOCK_DIVIDER_SIZE = 1;
 const PANE_DRAG_THRESHOLD = 2;
 const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
 const PANE_MANAGEMENT_ACCELERATORS = {
@@ -498,6 +500,39 @@ export function resolveNativeDockDividers(
   ));
 }
 
+function resolveDividerPreviewRect(
+  axis: "horizontal" | "vertical",
+  bounds: LayoutBounds,
+  ratio: number,
+  nativePaneChrome: boolean,
+): LayoutBounds {
+  if (axis === "horizontal") {
+    const offset = nativePaneChrome
+      ? bounds.width * ratio
+      : bounds.width > DOCK_DIVIDER_SIZE
+        ? Math.round((bounds.width - DOCK_DIVIDER_SIZE) * ratio)
+        : Math.max(0, Math.round(bounds.width * ratio) - DOCK_DIVIDER_SIZE);
+    return {
+      x: nativePaneChrome ? bounds.x + offset - (DOCK_DIVIDER_SIZE / 2) : bounds.x + offset,
+      y: bounds.y,
+      width: DOCK_DIVIDER_SIZE,
+      height: bounds.height,
+    };
+  }
+
+  const offset = nativePaneChrome
+    ? bounds.height * ratio
+    : bounds.height > DOCK_DIVIDER_SIZE
+      ? Math.round((bounds.height - DOCK_DIVIDER_SIZE) * ratio)
+      : Math.max(0, Math.round(bounds.height * ratio) - DOCK_DIVIDER_SIZE);
+  return {
+    x: bounds.x,
+    y: nativePaneChrome ? bounds.y + offset - (DOCK_DIVIDER_SIZE / 2) : bounds.y + offset,
+    width: bounds.width,
+    height: DOCK_DIVIDER_SIZE,
+  };
+}
+
 export function finalizePaneDragRelease(
   layout: LayoutConfig,
   paneId: string,
@@ -789,7 +824,12 @@ function resolveExternalDockPreview(
   }
 }
 
-export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview }: ShellProps) {
+export function Shell({
+  pluginRegistry,
+  desktopWindowBridge,
+  desktopDockPreview,
+  commandBarNativeOccluder = null,
+}: ShellProps) {
   useThemeColors();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -1047,7 +1087,9 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
     event.stopPropagation();
   });
 
-  const dockGeometryOptions = useMemo(() => (nativePaneChrome ? { precise: true } : undefined), [nativePaneChrome]);
+  const dockGeometryOptions = useMemo(() => (
+    nativePaneChrome ? { precise: true } : { reserveDividerGutters: true }
+  ), [nativePaneChrome]);
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
   const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
@@ -1092,8 +1134,29 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
       });
     }
 
+    if (menuState) {
+      occluders.push({
+        id: `pane-menu:${menuState.paneId}`,
+        rect: {
+          x: menuState.x,
+          y: menuState.y,
+          width: menuState.width,
+          height: menuState.items.length + 2,
+        },
+        zIndex: MENU_Z_INDEX,
+      });
+    }
+
+    if (commandBarNativeOccluder) {
+      occluders.push({
+        id: "command-bar:panel",
+        rect: commandBarNativeOccluder,
+        zIndex: Number.MAX_SAFE_INTEGER,
+      });
+    }
+
     return occluders;
-  }, [activeHoverOverlay, activePaneDrag, dragFloatingRect, effectiveDockPreview]);
+  }, [activeHoverOverlay, activePaneDrag, commandBarNativeOccluder, dragFloatingRect, effectiveDockPreview, menuState]);
   const nativeDockDividers = useMemo(
     () => resolveNativeDockDividers(dockDividerLayouts, dividerPreview),
     [dividerPreview, dockDividerLayouts],
@@ -1107,12 +1170,12 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         zIndex: pane.floating?.zIndex ?? 50,
       })),
       dragFloatingRect,
-      { open: overlayOpen, width, contentHeight },
+      { open: dialogOpen, width, contentHeight },
       nativeTransientOccluders,
       nativeDockDividers,
       appHeaderHeight,
     ),
-    [appHeaderHeight, contentHeight, dockedPanes, dragFloatingRect, nativeDockDividers, nativeTransientOccluders, overlayOpen, visibleFloatingPanes, width],
+    [appHeaderHeight, contentHeight, dialogOpen, dockedPanes, dragFloatingRect, nativeDockDividers, nativeTransientOccluders, visibleFloatingPanes, width],
   );
 
   useEffect(() => {
@@ -1194,22 +1257,7 @@ export function Shell({ pluginRegistry, desktopWindowBridge, desktopDockPreview 
         const total = drag.axis === "horizontal" ? drag.bounds.width : drag.bounds.height;
         const delta = drag.axis === "horizontal" ? preciseX - drag.startX : preciseShellY - drag.startY;
         const nextRatio = Math.max(0.1, Math.min(0.9, drag.startRatio + (delta / Math.max(1, total))));
-        const offset = drag.axis === "horizontal"
-          ? drag.bounds.width * nextRatio
-          : drag.bounds.height * nextRatio;
-        const nextRect = drag.axis === "horizontal"
-          ? {
-            x: nativePaneChrome ? drag.bounds.x + offset - 0.5 : drag.bounds.x + Math.round(offset) - 1,
-            y: drag.bounds.y,
-            width: 1,
-            height: drag.bounds.height,
-          }
-          : {
-            x: drag.bounds.x,
-            y: nativePaneChrome ? drag.bounds.y + offset - 0.5 : drag.bounds.y + Math.round(offset) - 1,
-            width: drag.bounds.width,
-            height: 1,
-          };
+        const nextRect = resolveDividerPreviewRect(drag.axis, drag.bounds, nextRatio, nativePaneChrome);
         updateDividerPreview({ pathKey: drag.path.join("."), rect: nextRect, ratio: nextRatio });
       } else if (drag.type === "pane-drag") {
         if (!isMeaningfulPaneDrag(drag.startX, drag.startY, preciseX, preciseShellY, dragThreshold)) {

@@ -70,6 +70,7 @@ import {
   gridlockAllPanes,
   isPaneInLayout,
   removePane,
+  type LayoutBounds,
 } from "./plugins/pane-manager";
 import { notifyGridlockComplete } from "./plugins/gridlock-notification";
 import {
@@ -206,6 +207,7 @@ function AppInner({
   const isDetachedWindow = desktopWindowBridge?.kind === "detached";
   const detachedPaneId = isDetachedWindow ? desktopWindowBridge.paneId ?? null : null;
   const [desktopDockPreview, setDesktopDockPreview] = useState<DesktopDockPreviewState | null>(null);
+  const [commandBarNativeOccluder, setCommandBarNativeOccluder] = useState<LayoutBounds | null>(null);
   appActiveRef.current = appActive;
   const appNotifier = useMemo(() => createAppNotifier({
     isAppActive: () => appActiveRef.current,
@@ -1618,6 +1620,7 @@ function AppInner({
           pluginRegistry={pluginRegistry}
           desktopWindowBridge={desktopWindowBridge}
           desktopDockPreview={desktopDockPreview}
+          commandBarNativeOccluder={commandBarNativeOccluder}
         />
         <StatusBar />
         {state.commandBarOpen && (
@@ -1627,6 +1630,7 @@ function AppInner({
             pluginRegistry={pluginRegistry}
             quitApp={() => rendererHost.requestExit()}
             onCheckForUpdates={() => runUpdateCheck(true)}
+            onNativeOccluderChange={setCommandBarNativeOccluder}
           />
         )}
         <ToastViewport position="bottom-right" />

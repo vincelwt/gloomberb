@@ -560,6 +560,32 @@ describe("Shell", () => {
     ]);
   });
 
+  test("keeps command bar native occlusion scoped to the panel", () => {
+    const state = buildNativeWindowState(
+      ["portfolio-list:main"],
+      [],
+      null,
+      { open: false, width: 120, contentHeight: 40 },
+      [
+        {
+          id: "command-bar:panel",
+          rect: { x: 24, y: 8, width: 72, height: 14 },
+          zIndex: Number.MAX_SAFE_INTEGER,
+        },
+      ],
+    );
+
+    expect(state.occluders).toEqual([
+      {
+        id: "command-bar:panel",
+        paneId: null,
+        rect: { x: 24, y: 9, width: 72, height: 14 },
+        zIndex: Number.MAX_SAFE_INTEGER,
+      },
+    ]);
+    expect(state.occluders.some((occluder) => occluder.id === "overlay:global")).toBe(false);
+  });
+
   test("adds dock dividers as global native occluders", () => {
     const state = buildNativeWindowState(
       ["left:main", "right:main"],
