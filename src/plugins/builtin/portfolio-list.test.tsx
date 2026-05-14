@@ -3,6 +3,7 @@ import { existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { act, useReducer } from "react";
+import { RGBA, TextAttributes } from "@opentui/core";
 import { testRender } from "../../renderers/opentui/test-utils";
 import { AppPersistence } from "../../data/app-persistence";
 import { TickerRepository } from "../../data/ticker-repository";
@@ -18,6 +19,7 @@ import { createTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../plugin-runtime";
 import { PluginRegistry, setSharedMarketDataForTests, setSharedRegistryForTests } from "../registry";
 import type { BrokerAdapter } from "../../types/broker";
+import { colors } from "../../theme/colors";
 import { portfolioListPlugin } from "./portfolio-list";
 
 const TEST_PANE_ID = "portfolio-list:test";
@@ -314,6 +316,10 @@ async function flushFrame() {
     await Promise.resolve();
     await testSetup!.renderOnce();
   });
+}
+
+function lineText(line: { spans: Array<{ text: string }> }) {
+  return line.spans.map((span) => span.text).join("");
 }
 
 afterEach(async () => {
@@ -1438,7 +1444,7 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(frame).toContain("+5.41%");
   });
 
-  test("quote flash keeps the existing row background intact", async () => {
+  test("quote flash dims cells without changing quote sign color or row background", async () => {
     const config = createPortfolioConfigWithColumns(
       "broker:ibkr-flex:DU12345",
       ["ticker", "price", "change", "latency"],
@@ -1455,7 +1461,18 @@ describe("PortfolioListPane cash and margin UI", () => {
             ["MSFT", makeTicker({ ticker: "MSFT", name: "Microsoft" })],
           ]);
           state.financials = new Map([
-            ["AAPL", { annualStatements: [], quarterlyStatements: [], priceHistory: [], quote: makeQuote() }],
+            ["AAPL", {
+              annualStatements: [],
+              quarterlyStatements: [],
+              priceHistory: [],
+              quote: makeQuote({
+                price: 125,
+                bid: 124.95,
+                ask: 125.05,
+                change: -5,
+                changePercent: -4.17,
+              }),
+            }],
             ["MSFT", {
               annualStatements: [],
               quarterlyStatements: [],
@@ -1484,7 +1501,7 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     await flushFrame();
     const beforeFrame = testSetup.captureSpans();
-    const beforeLine = beforeFrame.lines.find((line) => line.spans.map((span) => span.text).join("").includes("AAPL"));
+    const beforeLine = beforeFrame.lines.find((line) => lineText(line).includes("AAPL"));
     expect(beforeLine).toBeDefined();
 
     await act(async () => {
@@ -1495,8 +1512,8 @@ describe("PortfolioListPane cash and margin UI", () => {
           price: 126,
           bid: 125.95,
           ask: 126.05,
-          change: 6,
-          changePercent: 5,
+          change: -4,
+          changePercent: -3.08,
           lastUpdated: Date.now() + 1_000,
         }),
       });
@@ -1504,11 +1521,15 @@ describe("PortfolioListPane cash and margin UI", () => {
     await flushFrame();
 
     const frame = testSetup.captureSpans();
-    const aaplLine = frame.lines.find((line) => line.spans.map((span) => span.text).join("").includes("AAPL"));
+    const aaplLine = frame.lines.find((line) => lineText(line).includes("AAPL"));
     expect(aaplLine).toBeDefined();
 
     const beforeBackgrounds = beforeLine!.spans.map((span) => span.bg.toInts().join(","));
     const afterBackgrounds = aaplLine!.spans.map((span) => span.bg.toInts().join(","));
     expect(afterBackgrounds).toEqual(beforeBackgrounds);
+    const priceSpan = aaplLine!.spans.find((span) => span.text.includes("126"));
+    expect(priceSpan).toBeDefined();
+    expect(priceSpan!.fg.toInts().join(",")).toBe(RGBA.fromHex(colors.negative).toInts().join(","));
+    expect(priceSpan!.attributes & TextAttributes.DIM).not.toBe(0);
   });
 });

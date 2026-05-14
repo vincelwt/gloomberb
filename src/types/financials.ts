@@ -32,6 +32,7 @@ export interface Quote {
   volume?: number;
   name?: string;
   lastUpdated: number; // timestamp ms
+  receivedAt?: number; // local receipt timestamp ms for streamed/display freshness
   exchangeName?: string;
   fullExchangeName?: string;
   listingExchangeName?: string;

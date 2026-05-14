@@ -224,16 +224,12 @@ const STREAM_QUOTE_FIELDS: Array<keyof Quote> = [
   "dataSource",
 ];
 
-function quoteTimestampMinute(quote: Quote): number | null {
-  return Number.isFinite(quote.lastUpdated) ? Math.floor(quote.lastUpdated / 60_000) : null;
-}
-
 function areStreamQuotesEquivalent(current: Quote | null | undefined, next: Quote): boolean {
   if (!current) return false;
   for (const field of STREAM_QUOTE_FIELDS) {
     if (current[field] !== next[field]) return false;
   }
-  return quoteTimestampMinute(current) === quoteTimestampMinute(next)
+  return current.lastUpdated === next.lastUpdated
     && JSON.stringify(current.provenance ?? null) === JSON.stringify(next.provenance ?? null);
 }
 
@@ -1133,8 +1129,9 @@ export class MarketDataCoordinator {
     const key = buildQuoteKey(instrument);
     const current = this.quoteStore.get(key);
     if (areStreamQuotesEquivalent(current.data ?? current.lastGoodData, quote)) return;
-    const attempts = [createAttempt(quote.providerId ?? this.dataProvider.id, Date.now(), "success")];
-    this.quoteStore.set(key, readyQuoteEntry(current, quote, quote.providerId ?? this.dataProvider.id, attempts));
+    const receivedAt = Date.now();
+    const attempts = [createAttempt(quote.providerId ?? this.dataProvider.id, receivedAt, "success")];
+    this.quoteStore.set(key, readyQuoteEntry(current, { ...quote, receivedAt }, quote.providerId ?? this.dataProvider.id, attempts));
   }
 }
 

@@ -3,7 +3,7 @@ import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
-import { clampQuoteTimestamp, formatQuoteAgeWithSource } from "../../../utils/quote-time";
+import { formatQuoteAgeWithSource, resolveQuoteAgeTimestamp } from "../../../utils/quote-time";
 import { convertCurrency, formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
 import { formatMarketCost, formatMarketPrice, formatMarketQuantity, formatSignedMarketPrice, type MarketFormatOptions } from "../../../utils/market-format";
 import { getActiveQuoteDisplay, marketStateDot, type ActiveQuoteDisplay } from "../../../utils/market-status";
@@ -389,7 +389,7 @@ export function getSortValue(
       }
       return null;
     case "latency":
-      return quote?.lastUpdated != null ? ctx.now - (clampQuoteTimestamp(quote.lastUpdated, ctx.now) ?? ctx.now) : null;
+      return quote ? ctx.now - (resolveQuoteAgeTimestamp(quote, ctx.now) ?? ctx.now) : null;
     case PRICE_SPARKLINE_COLUMN_ID: {
       const values = (financials?.priceHistory ?? [])
         .map((point) => point.close)
