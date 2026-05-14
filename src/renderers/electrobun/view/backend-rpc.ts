@@ -5,6 +5,7 @@ import {
   type CapabilityEventMessage,
   type ContextMenuSelectMessage,
   type DesktopDockPreviewMessage,
+  type DesktopRestartMessage,
   type DesktopStateMessage,
   type DesktopThemePreviewMessage,
   type ElectrobunBackendInit,
@@ -129,6 +130,10 @@ export async function backendRequest<T = unknown>(method: string, payload: unkno
 export async function initElectrobunBackend(payload?: { kind?: "main" | "detached"; paneId?: string }): Promise<ElectrobunBackendInit> {
   initSnapshot = await backendRequest<ElectrobunBackendInit>("init", payload ?? null);
   return initSnapshot;
+}
+
+export function requestElectrobunRestart(message: DesktopRestartMessage = {}): void {
+  rpc.send["host.restart"](message);
 }
 
 export function getElectrobunBackendInitSnapshot(): ElectrobunBackendInit | null {

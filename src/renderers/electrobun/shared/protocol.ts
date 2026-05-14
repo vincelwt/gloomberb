@@ -53,6 +53,11 @@ export interface CapabilityEventMessage {
   event: unknown;
 }
 
+export interface DesktopRestartMessage {
+  reason?: string;
+  source?: string;
+}
+
 export interface ElectrobunDesktopRpcSchema {
   bun: {
     requests: {
@@ -61,7 +66,9 @@ export interface ElectrobunDesktopRpcSchema {
         response: unknown;
       };
     };
-    messages: {};
+    messages: {
+      "host.restart": DesktopRestartMessage;
+    };
   };
   webview: {
     requests: {};

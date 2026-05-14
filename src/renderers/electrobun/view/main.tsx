@@ -15,6 +15,7 @@ import {
   installElectrobunHttpFetchTransport,
 } from "./http-fetch";
 import { installElectrobunUpdateHost } from "./update-host";
+import { DesktopFatalScreen, ElectrobunErrorBoundary } from "./fatal-screen";
 import { WebInputHostProvider } from "./input-host";
 import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
@@ -27,16 +28,32 @@ const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Missing root element");
 }
+const appRootElement = rootElement;
 
-const root = createRoot(rootElement);
+const root = createRoot(appRootElement);
 const bootLog = debugLog.createLogger("electrobun-web-boot");
 
-rootElement.tabIndex = -1;
+appRootElement.tabIndex = -1;
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
+
+function renderFatalError(error: unknown, details?: string, title = "Gloomberb failed to start"): void {
+  root.render(
+    <DesktopFatalScreen
+      title={title}
+      error={error}
+      details={details}
+      source="renderer-fatal"
+    />,
+  );
+}
+
+window.__gloomRenderFatalError = (error, details) => {
+  renderFatalError(error, details, "Gloomberb crashed");
+};
 
 function focusWebSurface(): void {
   window.focus();
-  rootElement.focus({ preventScroll: true });
+  appRootElement.focus({ preventScroll: true });
 }
 
 function requestStartupFocus(): void {
@@ -69,21 +86,23 @@ async function boot() {
   const desktopApplicationMenuBridge = createApplicationMenuBridge();
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
-      <UiHostProvider ui={webUiHost} renderer={webRendererHost} nativeRenderer={webNativeRenderer}>
-        <WebInputHostProvider>
-          <WebToastHostProvider>
-            <WebDialogHostProvider>
-              <App
-                config={config}
-                desktopWindowBridge={desktopWindowBridge}
-                desktopApplicationMenuBridge={desktopApplicationMenuBridge}
-                desktopSnapshot={desktopSnapshot}
-                desktopThemePreview={init.desktopThemePreview}
-              />
-            </WebDialogHostProvider>
-          </WebToastHostProvider>
-        </WebInputHostProvider>
-      </UiHostProvider>,
+      <ElectrobunErrorBoundary>
+        <UiHostProvider ui={webUiHost} renderer={webRendererHost} nativeRenderer={webNativeRenderer}>
+          <WebInputHostProvider>
+            <WebToastHostProvider>
+              <WebDialogHostProvider>
+                <App
+                  config={config}
+                  desktopWindowBridge={desktopWindowBridge}
+                  desktopApplicationMenuBridge={desktopApplicationMenuBridge}
+                  desktopSnapshot={desktopSnapshot}
+                  desktopThemePreview={init.desktopThemePreview}
+                />
+              </WebDialogHostProvider>
+            </WebToastHostProvider>
+          </WebInputHostProvider>
+        </UiHostProvider>
+      </ElectrobunErrorBoundary>,
     );
   });
   requestStartupFocus();
@@ -96,10 +115,5 @@ async function boot() {
 }
 
 boot().catch((error) => {
-  root.render(
-    <div className="gloom-fatal">
-      <h1>Gloomberb failed to start</h1>
-      <pre>{error instanceof Error ? error.stack ?? error.message : String(error)}</pre>
-    </div>,
-  );
+  renderFatalError(error);
 });

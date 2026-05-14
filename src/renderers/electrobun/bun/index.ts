@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { Buffer } from "node:buffer";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils, ContextMenu, type UpdateStatusEntry } from "electrobun/bun";
 import {
@@ -17,7 +17,7 @@ import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemeP
 import type { ReleaseInfo, UpdateCheckResult, UpdateProgress } from "../../../updater";
 import { buildSoundCommand } from "../../../notifications/app-notifier";
 import { isPaneDetached } from "../../../plugins/pane-manager";
-import { ELECTROBUN_CONTEXT_MENU_ACTION, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
+import { ELECTROBUN_CONTEXT_MENU_ACTION, type DesktopRestartMessage, type ElectrobunDesktopRpcSchema } from "../shared/protocol";
 import { decodeRpcValue, encodeRpcValue } from "../view/rpc-codec";
 import { contextMenuSelectionMessage } from "./context-menu-click";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "./context-menu-normalize";
@@ -65,6 +65,7 @@ let desktopWorkspace: DesktopWorkspace | null = null;
 let currentDockPreview: DesktopDockPreviewState = { paneId: null, edge: null };
 let currentThemePreview: DesktopThemePreviewState = { theme: null };
 let desktopUpdateInProgress = false;
+let desktopRestartInProgress = false;
 
 const detachedWindows = new Map<string, BrowserWindow>();
 const detachedFrameTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -80,6 +81,19 @@ const capabilitySubscriptions = new Map<string, () => void>();
 
 function summarizeError(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function findMacAppBundle(execPath: string): string | null {
+  let current = dirname(execPath);
+  while (current && current !== dirname(current)) {
+    if (current.endsWith(".app")) return current;
+    current = dirname(current);
+  }
+  return null;
 }
 
 function requireServices(): AppServices {
@@ -633,6 +647,62 @@ function teardownServices(): void {
   services = null;
 }
 
+function spawnDetached(command: string[]): void {
+  const child = Bun.spawn(command, {
+    detached: true,
+    stdio: ["ignore", "ignore", "ignore"],
+  } as any);
+  child.unref();
+}
+
+function scheduleDesktopRelaunch(): void {
+  const pid = process.pid;
+  const macAppBundle = process.platform === "darwin" ? findMacAppBundle(process.execPath) : null;
+
+  if (macAppBundle) {
+    spawnDetached([
+      "sh",
+      "-c",
+      `while kill -0 ${pid} 2>/dev/null; do sleep 0.25; done; sleep 0.5; open ${shellQuote(macAppBundle)}`,
+    ]);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawnDetached([process.execPath, ...process.argv.slice(1)]);
+    return;
+  }
+
+  const args = process.argv.slice(1).map(shellQuote).join(" ");
+  spawnDetached([
+    "sh",
+    "-c",
+    `while kill -0 ${pid} 2>/dev/null; do sleep 0.25; done; cd ${shellQuote(process.cwd())}; ${shellQuote(process.execPath)}${args ? ` ${args}` : ""}`,
+  ]);
+}
+
+function restartDesktopApp(message: DesktopRestartMessage = {}): void {
+  if (desktopRestartInProgress) return;
+  desktopRestartInProgress = true;
+  console.error("[desktop-recovery] restart requested", {
+    reason: message.reason,
+    source: message.source,
+    pid: process.pid,
+    execPath: process.execPath,
+    argv: process.argv,
+  });
+  try {
+    scheduleDesktopRelaunch();
+  } catch (error) {
+    desktopRestartInProgress = false;
+    console.error("[desktop-recovery] failed to schedule restart", summarizeError(error));
+    throw error;
+  }
+  closeAllDetachedWindows();
+  teardownServices();
+  Utils.quit();
+}
+
 function resolveDetachedWindowTitle(instanceId: string): string {
   const instance = currentConfig ? findPaneInstance(currentConfig.layout, instanceId) : null;
   if (!instance) return "Gloomberb";
@@ -1087,6 +1157,12 @@ async function handleBackendRequest(
       requireServices().persistence.pluginState.delete(payload.pluginId as string, payload.key as string);
       syncBackendCloudAuthState(payload.pluginId as string, payload.key as string, null);
       return null;
+    case "host.restart":
+      restartDesktopApp({
+        reason: typeof payload.reason === "string" ? payload.reason : undefined,
+        source: typeof payload.source === "string" ? payload.source : "backend-request",
+      });
+      return null;
     case "host.exit":
       closeAllDetachedWindows();
       teardownServices();
@@ -1153,7 +1229,11 @@ function createWindowRpc(key: string): DesktopRpc {
       requests: {
         "backend.request": async ({ method, payload }) => encodeRpcValue(await handleBackendRequest(rpc, method, payload)),
       },
-      messages: {},
+      messages: {
+        "host.restart": (message) => {
+          restartDesktopApp(message);
+        },
+      },
     },
   });
   registerWindowRpc(key, rpc);

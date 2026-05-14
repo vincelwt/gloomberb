@@ -1,5 +1,5 @@
 @keyframes gloom-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-html, body, #root { width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: var(--gloom-bg); }
+html, body, #root { width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: var(--gloom-bg, #272a34); }
 #root:focus { outline: none; }
 body {
   --cell-w: 8px;
@@ -8,7 +8,7 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: var(--cell-h);
-  color: var(--gloom-text);
+  color: var(--gloom-text, #f2f2f2);
   cursor: default;
   user-select: none;
   color-scheme: dark;
@@ -284,8 +284,52 @@ body.gloom-dragging {
   top: 50%;
   height: 1px;
 }
-.gloom-loading, .gloom-fatal { padding: 24px; color: var(--gloom-text); }
-.gloom-fatal pre { white-space: pre-wrap; color: var(--gloom-negative); }
+.gloom-loading, .gloom-fatal {
+  padding: 24px;
+  color: var(--gloom-text, #f2f2f2);
+  background: var(--gloom-bg, #272a34);
+}
+.gloom-fatal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+}
+.gloom-fatal h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  line-height: 1.25;
+}
+.gloom-fatal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gloom-fatal button {
+  border: 1px solid var(--gloom-border, #5b6070);
+  border-radius: 6px;
+  padding: 5px 10px;
+  color: var(--gloom-text, #f2f2f2);
+  background: var(--gloom-panel, #1f222b);
+}
+.gloom-fatal button:hover {
+  background: color-mix(in srgb, var(--gloom-text-bright, #fff) 10%, var(--gloom-panel, #1f222b));
+}
+.gloom-fatal button[data-variant="primary"] {
+  border-color: var(--gloom-border-focused, #8cb4ff);
+  color: var(--gloom-bg, #111318);
+  background: var(--gloom-border-focused, #8cb4ff);
+}
+.gloom-fatal-status {
+  min-height: var(--cell-h);
+  color: var(--gloom-text-dim, #a7acba);
+}
+.gloom-fatal pre {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--gloom-negative, #ff5f5f);
+  user-select: text;
+}
 .gloom-toast-viewport {
   position: fixed;
   right: 16px;
