@@ -170,29 +170,40 @@ describe("MarketDataCoordinator key subscriptions", () => {
     expect(coordinator.getVersion()).toBe(1);
   });
 
-  test("ignores repeated stream quotes that only refresh timestamp noise", async () => {
+  test("applies repeated stream quotes that refresh quote freshness", async () => {
+    const realDateNow = Date.now;
     const { provider, emitQuote } = createProvider();
     const coordinator = new MarketDataCoordinator(provider);
     const aapl = { symbol: "AAPL", exchange: "NASDAQ" };
     let calls = 0;
 
-    coordinator.subscribeKeys([buildQuoteKey(aapl)], () => { calls += 1; });
-    coordinator.subscribeQuotes([{ instrument: aapl }]);
-
     const firstTimestamp = 1_700_000_000_000;
-    emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 100, { lastUpdated: firstTimestamp }));
-    await flushCoordinator();
+    try {
+      coordinator.subscribeKeys([buildQuoteKey(aapl)], () => { calls += 1; });
+      coordinator.subscribeQuotes([{ instrument: aapl }]);
 
-    emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 100, { lastUpdated: firstTimestamp + 10_000 }));
-    await flushCoordinator();
+      Date.now = () => firstTimestamp;
+      emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 100, { lastUpdated: firstTimestamp }));
+      await flushCoordinator();
 
-    expect(calls).toBe(1);
-    expect(coordinator.getQuoteEntry(aapl).data?.lastUpdated).toBe(firstTimestamp);
+      Date.now = () => firstTimestamp + 10_000;
+      emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 100, { lastUpdated: firstTimestamp + 10_000 }));
+      await flushCoordinator();
 
-    emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 101, { lastUpdated: firstTimestamp + 20_000 }));
-    await flushCoordinator();
+      expect(calls).toBe(2);
+      expect(coordinator.getQuoteEntry(aapl).data?.lastUpdated).toBe(firstTimestamp + 10_000);
+      expect(coordinator.getQuoteEntry(aapl).data?.receivedAt).toBe(firstTimestamp + 10_000);
 
-    expect(calls).toBe(2);
-    expect(coordinator.getQuoteEntry(aapl).data?.price).toBe(101);
+      Date.now = () => firstTimestamp + 20_000;
+      emitQuote({ symbol: "AAPL", exchange: "NASDAQ" }, quote("AAPL", 101, { lastUpdated: firstTimestamp + 10_000 }));
+      await flushCoordinator();
+
+      expect(calls).toBe(3);
+      expect(coordinator.getQuoteEntry(aapl).data?.price).toBe(101);
+      expect(coordinator.getQuoteEntry(aapl).data?.lastUpdated).toBe(firstTimestamp + 10_000);
+      expect(coordinator.getQuoteEntry(aapl).data?.receivedAt).toBe(firstTimestamp + 20_000);
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 });

@@ -56,17 +56,6 @@ const FLASHABLE_QUOTE_COLUMN_IDS = new Set([
   "pnl_pct",
 ]);
 
-function resolveQuoteFlashColor(direction: QuoteFlashDirection, fallbackColor: string): string {
-  switch (direction) {
-    case "up":
-      return colors.positive;
-    case "down":
-      return colors.negative;
-    default:
-      return fallbackColor === colors.textDim ? colors.text : colors.textBright;
-  }
-}
-
 export interface TickerListTableProps {
   columns: ColumnConfig[];
   tickers: TickerRecord[];
@@ -239,13 +228,13 @@ const TickerListRow = memo(function TickerListRow({
         const { text, color } = resolveCell(column, ticker, financials);
         const baseFg = color || (isSelected ? colors.selectedText : colors.text);
         const shouldFlash = flashDirection != null && FLASHABLE_QUOTE_COLUMN_IDS.has(column.id);
-        const cellFg = shouldFlash
-          ? resolveQuoteFlashColor(flashDirection, baseFg)
-          : baseFg;
 
         return (
           <Box key={column.id} width={column.width + 1}>
-            <Text fg={cellFg}>
+            <Text
+              fg={baseFg}
+              attributes={shouldFlash ? TextAttributes.DIM : TextAttributes.NONE}
+            >
               {padTo(text, column.width, column.align)}
             </Text>
           </Box>
