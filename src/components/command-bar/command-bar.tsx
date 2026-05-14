@@ -73,8 +73,10 @@ import {
   movePaneRelative,
   removePane,
   swapPanes,
+  type LayoutBounds,
 } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
+import { resolveAppHeaderHeightCells } from "../layout/shell";
 import { CHART_RENDERER_PREFERENCES } from "../chart/chart-types";
 import {
   getEmptyState,
@@ -168,6 +170,7 @@ interface CommandBarProps {
   pluginRegistry: PluginRegistry;
   quitApp: () => void;
   onCheckForUpdates?: () => void | Promise<void>;
+  onNativeOccluderChange?: (rect: LayoutBounds | null) => void;
 }
 
 type WorkflowStringValues = Record<string, string>;
@@ -645,6 +648,7 @@ export function CommandBar({
   pluginRegistry,
   quitApp,
   onCheckForUpdates,
+  onNativeOccluderChange,
 }: CommandBarProps) {
   const dispatch = useAppDispatch();
   const themeColors = useThemeColors();
@@ -709,7 +713,7 @@ export function CommandBar({
   }, []);
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const { width: termWidth, height: termHeight } = useViewport();
-  const { nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18 } = useUiCapabilities();
+  const { nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18, titleBarOverlay } = useUiCapabilities();
   const availableCommands = useMemo(
     () => nativePaneChrome
       ? commands.filter((command) => command.id !== "cycle-chart-renderer")
@@ -5390,6 +5394,13 @@ export function CommandBar({
     : bodyHeight + 7;
   const barLeft = Math.max(4, Math.floor((termWidth - barWidth) / 2));
   const barTop = Math.max(1, Math.floor((termHeight - barHeight) / 2));
+  const appHeaderHeight = resolveAppHeaderHeightCells({ titleBarOverlay, cellHeightPx });
+  const nativeOccluderRect = useMemo<LayoutBounds>(() => ({
+    x: barLeft,
+    y: barTop - appHeaderHeight,
+    width: barWidth,
+    height: barHeight,
+  }), [appHeaderHeight, barHeight, barLeft, barTop, barWidth]);
   const resultsInnerWidth = Math.max(12, barWidth - nativePanelPaddingColumns - contentPadding * 2);
   const trailingWidth = Math.max(8, Math.min(12, Math.floor(resultsInnerWidth * 0.18)));
   const labelWidth = Math.max(10, resultsInnerWidth - trailingWidth);
@@ -5418,6 +5429,13 @@ export function CommandBar({
       scrollBox.scrollTo(selectedScrollRowIndex - viewportHeight + 1);
     }
   }, [listBodyHeight, selectedScrollRowIndex, visibleListState?.kind, visibleListState?.query]);
+
+  useLayoutEffect(() => {
+    onNativeOccluderChange?.(nativeOccluderRect);
+    return () => {
+      onNativeOccluderChange?.(null);
+    };
+  }, [nativeOccluderRect, onNativeOccluderChange]);
 
   useEffect(() => {
     if (!nativePaneChrome || currentRoute?.kind !== "workflow") return;

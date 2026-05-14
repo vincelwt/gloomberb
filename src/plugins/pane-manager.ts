@@ -84,6 +84,7 @@ export interface DockDividerLayout {
 export interface DockGeometryOptions {
   precise?: boolean;
   dividerSize?: number;
+  reserveDividerGutters?: boolean;
 }
 
 export interface LayoutSimulation {
@@ -430,18 +431,31 @@ function collectDockGeometry(
 
   const precise = options.precise === true;
   const dividerSize = options.dividerSize ?? 1;
+  const reserveDividerGutters = options.reserveDividerGutters === true && !precise;
 
   if (node.axis === "horizontal") {
-    const [firstWidth, secondWidth] = resolveSplitSizes(bounds.width, node.ratio, MIN_PANE_WIDTH, precise);
+    const reserveDividerGutter = reserveDividerGutters && bounds.width > dividerSize;
+    const splitWidth = reserveDividerGutter ? bounds.width - dividerSize : bounds.width;
+    const [firstWidth, secondWidth] = resolveSplitSizes(splitWidth, node.ratio, MIN_PANE_WIDTH, precise);
     const firstBounds = { x: bounds.x, y: bounds.y, width: firstWidth, height: bounds.height };
-    const secondBounds = { x: bounds.x + firstWidth, y: bounds.y, width: secondWidth, height: bounds.height };
+    const dividerX = reserveDividerGutter
+      ? bounds.x + firstWidth
+      : precise
+        ? bounds.x + firstWidth - (dividerSize / 2)
+        : bounds.x + firstWidth - 1;
+    const secondBounds = {
+      x: reserveDividerGutter ? bounds.x + firstWidth + dividerSize : bounds.x + firstWidth,
+      y: bounds.y,
+      width: secondWidth,
+      height: bounds.height,
+    };
     dividers.push({
       path,
       axis: node.axis,
       bounds: { ...bounds },
       ratio: node.ratio,
       rect: {
-        x: precise ? bounds.x + firstWidth - (dividerSize / 2) : bounds.x + firstWidth - 1,
+        x: dividerX,
         y: bounds.y,
         width: dividerSize,
         height: bounds.height,
@@ -452,9 +466,21 @@ function collectDockGeometry(
     return { leaves, dividers };
   }
 
-  const [firstHeight, secondHeight] = resolveSplitSizes(bounds.height, node.ratio, MIN_DOCKED_HEIGHT, precise);
+  const reserveDividerGutter = reserveDividerGutters && bounds.height > dividerSize;
+  const splitHeight = reserveDividerGutter ? bounds.height - dividerSize : bounds.height;
+  const [firstHeight, secondHeight] = resolveSplitSizes(splitHeight, node.ratio, MIN_DOCKED_HEIGHT, precise);
   const firstBounds = { x: bounds.x, y: bounds.y, width: bounds.width, height: firstHeight };
-  const secondBounds = { x: bounds.x, y: bounds.y + firstHeight, width: bounds.width, height: secondHeight };
+  const dividerY = reserveDividerGutter
+    ? bounds.y + firstHeight
+    : precise
+      ? bounds.y + firstHeight - (dividerSize / 2)
+      : bounds.y + firstHeight - 1;
+  const secondBounds = {
+    x: bounds.x,
+    y: reserveDividerGutter ? bounds.y + firstHeight + dividerSize : bounds.y + firstHeight,
+    width: bounds.width,
+    height: secondHeight,
+  };
   dividers.push({
     path,
     axis: node.axis,
@@ -462,7 +488,7 @@ function collectDockGeometry(
     ratio: node.ratio,
     rect: {
       x: bounds.x,
-      y: precise ? bounds.y + firstHeight - (dividerSize / 2) : bounds.y + firstHeight - 1,
+      y: dividerY,
       width: bounds.width,
       height: dividerSize,
     },

@@ -1,11 +1,21 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import {
   buildTreemap,
   buildTreemapRects,
   formatHolderOwnershipPercent,
   resolveHolderOwnershipPercent,
+  tileTextColor,
 } from "./index";
+import { applyTheme, colors } from "../../../theme/colors";
+import { contrastRatio } from "../../../theme/color-utils";
+import { DEFAULT_THEME, themes } from "../../../theme/themes";
 import type { HolderRecord } from "../../../types/financials";
+
+const TILE_TEXT_MIN_CONTRAST = 4.5;
+
+afterEach(() => {
+  applyTheme(DEFAULT_THEME);
+});
 
 function holder(name: string, value: number): HolderRecord & { id: string } {
   return {
@@ -54,4 +64,23 @@ test("resolves holder ownership from provider percent before value over market c
   expect(resolveHolderOwnershipPercent({ value: 120 }, 1_000)).toBe(0.12);
   expect(resolveHolderOwnershipPercent({ value: 120 }, undefined)).toBeUndefined();
   expect(formatHolderOwnershipPercent(0.085)).toBe("8.50%");
+});
+
+test("keeps holder treemap text readable on semantic tile backgrounds", () => {
+  for (const themeId of Object.keys(themes)) {
+    applyTheme(themeId);
+    const backgrounds = {
+      positive: colors.positive,
+      negative: colors.negative,
+      neutral: colors.neutral,
+      selected: colors.selected,
+    };
+
+    for (const [name, background] of Object.entries(backgrounds)) {
+      expect(
+        contrastRatio(tileTextColor(background), background),
+        `${themeId} ${name}`,
+      ).toBeGreaterThanOrEqual(TILE_TEXT_MIN_CONTRAST);
+    }
+  }
 });

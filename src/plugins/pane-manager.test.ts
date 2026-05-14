@@ -5,6 +5,8 @@ import {
   applyDrop,
   floatAtRect,
   gridlockAllPanes,
+  getDockDividerLayouts,
+  getDockLeafLayouts,
   getDockedPaneIds,
   getLeafRect,
   simulateDrop,
@@ -42,6 +44,35 @@ describe("pane-manager split-tree drops", () => {
 
     expect(getLeafRect(next, notesPane.instanceId, BOUNDS)).toEqual(simulation.previewRect);
     expect(getDockedPaneIds(next)).toContain(notesPane.instanceId);
+  });
+
+  test("can reserve a gutter for dock dividers without overlapping pane rects", () => {
+    const layout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "left:main" },
+        second: { kind: "pane" as const, instanceId: "right:main" },
+      },
+      instances: [
+        createPaneInstance("left", { instanceId: "left:main" }),
+        createPaneInstance("right", { instanceId: "right:main" }),
+      ],
+      floating: [],
+      detached: [],
+    };
+
+    const leaves = getDockLeafLayouts(layout, BOUNDS, { reserveDividerGutters: true });
+    const divider = getDockDividerLayouts(layout, BOUNDS, { reserveDividerGutters: true })[0];
+    const left = leaves.find((leaf) => leaf.instanceId === "left:main");
+    const right = leaves.find((leaf) => leaf.instanceId === "right:main");
+
+    expect(left).toBeDefined();
+    expect(right).toBeDefined();
+    expect(divider).toBeDefined();
+    expect(divider!.rect.x).toBe(left!.rect.x + left!.rect.width);
+    expect(right!.rect.x).toBe(divider!.rect.x + divider!.rect.width);
   });
 
   test("splits the hovered pane on leaf drops and matches the preview", () => {

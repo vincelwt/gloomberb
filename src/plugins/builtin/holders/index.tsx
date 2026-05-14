@@ -11,7 +11,7 @@ import {
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
-import { higherContrast } from "../../../theme/color-utils";
+import { blendForContrast, higherContrast } from "../../../theme/color-utils";
 import type { HolderData, HolderRecord } from "../../../types/financials";
 import type { GloomPlugin } from "../../../types/plugin";
 import { formatCompact, formatPercent, formatPercentRaw, padTo } from "../../../utils/format";
@@ -447,12 +447,16 @@ function desktopTileColor(row: HolderRow): string {
   return blendHex(colors.panel, row.changePercent > 0 ? colors.positive : colors.negative, intensity);
 }
 
-function tileTextColor(backgroundColor: string): string {
-  return higherContrast(
+const TILE_TEXT_MIN_CONTRAST = 4.5;
+
+export function tileTextColor(backgroundColor: string): string {
+  const preferred = higherContrast(
     higherContrast(colors.text, colors.textBright, backgroundColor),
     colors.selectedText,
     backgroundColor,
   );
+  const fallback = higherContrast("#000000", "#ffffff", backgroundColor);
+  return blendForContrast(preferred, backgroundColor, fallback, TILE_TEXT_MIN_CONTRAST);
 }
 
 function Tile({ tile, selected, currency, marketCap, onSelect }: {
