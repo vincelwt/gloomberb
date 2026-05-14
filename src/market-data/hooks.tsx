@@ -283,6 +283,7 @@ export function useFxRatesMap(currencies: Array<string | null | undefined>): Map
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator) return;
     for (const currency of normalizedCurrencies) {
+      if (currency === "USD") continue;
       void coordinator.loadFxRate(currency);
     }
   }, [normalizedCurrencyKey]);

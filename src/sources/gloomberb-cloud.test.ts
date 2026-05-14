@@ -20,6 +20,7 @@ const originalGetCloudQuote = apiClient.getCloudQuote.bind(apiClient);
 const originalGetCloudHolders = apiClient.getCloudHolders.bind(apiClient);
 const originalGetCloudAnalystResearch = apiClient.getCloudAnalystResearch.bind(apiClient);
 const originalGetCloudCorporateActions = apiClient.getCloudCorporateActions.bind(apiClient);
+const originalGetCloudOptionsChain = apiClient.getCloudOptionsChain.bind(apiClient);
 const originalGetCloudNews = apiClient.getCloudNews.bind(apiClient);
 const originalGetCloudNewsStory = apiClient.getCloudNewsStory.bind(apiClient);
 const originalSubscribeQuotes = apiClient.subscribeQuotes.bind(apiClient);
@@ -78,6 +79,7 @@ afterEach(() => {
   apiClient.getCloudHolders = originalGetCloudHolders;
   apiClient.getCloudAnalystResearch = originalGetCloudAnalystResearch;
   apiClient.getCloudCorporateActions = originalGetCloudCorporateActions;
+  apiClient.getCloudOptionsChain = originalGetCloudOptionsChain;
   apiClient.getCloudNews = originalGetCloudNews;
   apiClient.getCloudNewsStory = originalGetCloudNewsStory;
   apiClient.subscribeQuotes = originalSubscribeQuotes;
@@ -171,6 +173,11 @@ describe("GloomberbCloudProvider", () => {
     expect(requestArgs.current?.startDate).toBeDefined();
     expect(requestArgs.current?.endDate).toBeDefined();
     expect(history[0]?.close).toBe(250.12);
+  });
+
+  test("does not advertise unsupported 45 minute chart resolution", () => {
+    const provider = new GloomberbCloudProvider();
+    expect(provider.getChartResolutionCapabilities()).not.toContain("45m");
   });
 
   test("normalizes sub-unit cloud quotes to their main currency", async () => {
@@ -317,6 +324,51 @@ describe("GloomberbCloudProvider", () => {
     expect(requestArgs.current).toEqual({ symbol: "AAPL", exchange: "NASDAQ" });
     expect(actions.dividends[0]?.amount).toBe(0.26);
     expect(actions.earnings[0]?.surprisePercent).toBe(6.37);
+  });
+
+  test("fetches options chains from the cloud market endpoint", async () => {
+    apiClient.ensureVerifiedSession = async () => verifiedUser;
+
+    const requestArgs: { current: { symbol: string; exchange?: string; expirationDate?: number } | null } = { current: null };
+    apiClient.getCloudOptionsChain = async (symbol, exchange, expirationDate) => {
+      requestArgs.current = { symbol, exchange, expirationDate };
+      return {
+        status: "success",
+        data: {
+          providerId: "gloomberb-cloud",
+          underlyingSymbol: "AMD",
+          expirationDates: [1_800_000_000],
+          calls: [{
+            contractSymbol: "AMD270917C00230000",
+            strike: 230,
+            currency: "USD",
+            lastPrice: 11,
+            change: 1,
+            percentChange: 10,
+            volume: 10,
+            openInterest: 20,
+            bid: 10,
+            ask: 12,
+            impliedVolatility: 0.4,
+            inTheMoney: false,
+            expiration: 1_800_000_000,
+            lastTradeDate: 1_799_000_000,
+          }],
+          puts: [],
+        },
+      };
+    };
+
+    const provider = new GloomberbCloudProvider();
+    const chain = await provider.getOptionsChain("AMD", "NASDAQ", 1_800_000_000);
+
+    expect(requestArgs.current).toEqual({
+      symbol: "AMD",
+      exchange: "NASDAQ",
+      expirationDate: 1_800_000_000,
+    });
+    expect(chain.underlyingSymbol).toBe("AMD");
+    expect(chain.calls[0]?.contractSymbol).toBe("AMD270917C00230000");
   });
 
   test("preserves original target context when streaming quotes", () => {

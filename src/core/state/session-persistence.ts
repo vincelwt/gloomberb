@@ -73,6 +73,23 @@ function targetFromTicker(ticker: TickerRecord): HydrationTarget {
   });
 }
 
+function resolvePortfolioPaneCollectionId(
+  config: AppConfig,
+  paneState: Record<string, unknown> | undefined,
+  instance: AppConfig["layout"]["instances"][number],
+): string | null {
+  const stateCollectionId = typeof paneState?.collectionId === "string" ? paneState.collectionId : null;
+  if (stateCollectionId) return stateCollectionId;
+  if (typeof instance.params?.collectionId === "string") return instance.params.collectionId;
+  return config.portfolios[0]?.id ?? config.watchlists[0]?.id ?? null;
+}
+
+function tickerInCollection(ticker: TickerRecord, collectionId: string | null): boolean {
+  if (!collectionId) return false;
+  return ticker.metadata.portfolios.includes(collectionId)
+    || ticker.metadata.watchlists.includes(collectionId);
+}
+
 export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSnapshot {
   const seen = new Set<string>();
   const hydrationTargets: HydrationTarget[] = [];
@@ -103,6 +120,14 @@ export function buildAppSessionSnapshot(state: SessionStateInput): AppSessionSna
     }
     if (instance.binding?.kind === "fixed") {
       pushTarget(state.tickers.get(instance.binding.symbol));
+    }
+    if (instance.paneId === "portfolio-list") {
+      const collectionId = resolvePortfolioPaneCollectionId(state.config, paneState, instance);
+      for (const ticker of state.tickers.values()) {
+        if (tickerInCollection(ticker, collectionId)) {
+          pushTarget(ticker);
+        }
+      }
     }
   }
 

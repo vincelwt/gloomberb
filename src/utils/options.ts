@@ -23,7 +23,7 @@ export function parseOptionSymbol(symbol: string): { underlying: string; expTs: 
   const year = 2000 + parseInt(yy!, 10);
   const month = parseInt(mm!, 10) - 1;
   const day = parseInt(dd!, 10);
-  const expTs = Math.floor(new Date(year, month, day).getTime() / 1000);
+  const expTs = Math.floor(Date.UTC(year, month, day) / 1000);
   return { underlying: underlying!, expTs, strike, side: side as "C" | "P" };
 }
 

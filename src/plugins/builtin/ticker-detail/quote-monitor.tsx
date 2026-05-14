@@ -371,7 +371,10 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
     symbols
       .map((symbol) => {
         const ticker = tickersBySymbol.get(symbol) ?? (fallbackTicker?.metadata.ticker === symbol ? fallbackTicker : null);
-        return quoteSubscriptionTargetFromTicker(ticker, symbol, "provider");
+        const target = quoteSubscriptionTargetFromTicker(ticker, symbol, "provider");
+        return target
+          ? { ...target, surface: "monitor" as const, visible: true, selected: symbol === fallbackSymbol, weight: symbol === fallbackSymbol ? 100 : 90 }
+          : null;
       })
       .filter((target): target is QuoteSubscriptionTarget => target != null)
   ), [fallbackTicker, symbols, tickersBySymbol]);

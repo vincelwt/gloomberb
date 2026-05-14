@@ -216,26 +216,39 @@ function buildCachedFinancialTarget(ticker: TickerRecord): CachedFinancialsTarge
 async function resolveCachedFinancialPrimeEntries(
   refreshPlan: RefreshPlanEntry[],
   sessionSnapshot: AppSessionSnapshot | null | undefined,
+  tickerMap: Map<string, TickerRecord>,
   dataProvider: DataProvider,
 ): Promise<Array<{ ticker: TickerRecord; financials: TickerFinancials }>> {
   if (!dataProvider.getCachedFinancialsForTargets) return [];
 
-  const sessionTargetsBySymbol = new Map<string, CachedFinancialsTarget>();
+  const targetEntriesBySymbol = new Map<string, { ticker: TickerRecord; target: CachedFinancialsTarget }>();
   for (const target of sessionSnapshot?.hydrationTargets ?? []) {
-    sessionTargetsBySymbol.set(target.symbol.trim().toUpperCase(), target);
+    const symbol = target.symbol.trim().toUpperCase();
+    const ticker = tickerMap.get(symbol);
+    if (ticker) {
+      targetEntriesBySymbol.set(symbol, { ticker, target });
+    }
   }
 
-  const financialEntries = refreshPlan.filter((entry) => entry.mode === "financials");
-  if (financialEntries.length === 0) return [];
+  for (const entry of refreshPlan.filter((entry) => entry.mode === "financials")) {
+    const symbol = entry.ticker.metadata.ticker.trim().toUpperCase();
+    if (!targetEntriesBySymbol.has(symbol)) {
+      targetEntriesBySymbol.set(symbol, {
+        ticker: entry.ticker,
+        target: buildCachedFinancialTarget(entry.ticker),
+      });
+    }
+  }
 
+  const targetEntries = [...targetEntriesBySymbol.values()];
+  if (targetEntries.length === 0) return [];
   const cachedFinancials = await dataProvider.getCachedFinancialsForTargets(
-    financialEntries.map(({ ticker }) => (
-      sessionTargetsBySymbol.get(ticker.metadata.ticker.trim().toUpperCase()) ?? buildCachedFinancialTarget(ticker)
-    )),
+    targetEntries.map((entry) => entry.target),
+    { includeStaleQuotes: true },
   );
   const primedEntries: Array<{ ticker: TickerRecord; financials: TickerFinancials }> = [];
 
-  for (const entry of financialEntries) {
+  for (const entry of targetEntries) {
     const cached = cachedFinancials.get(entry.ticker.metadata.ticker.trim().toUpperCase());
     if (cached) {
       primedEntries.push({ ticker: entry.ticker, financials: cached });
@@ -347,8 +360,11 @@ export async function initializeAppState({
   if (primeCachedFinancials) {
     const cachedPrimeEntries = await measurePerfAsync(
       "startup.resolve-cached-financial-prime",
-      () => resolveCachedFinancialPrimeEntries(refreshPlan, sessionSnapshot, dataProvider),
-      { financialRefreshCount: refreshPlan.filter((entry) => entry.mode === "financials").length },
+      () => resolveCachedFinancialPrimeEntries(refreshPlan, sessionSnapshot, tickerMap, dataProvider),
+      {
+        financialRefreshCount: refreshPlan.filter((entry) => entry.mode === "financials").length,
+        sessionHydrationTargetCount: sessionSnapshot?.hydrationTargets.length ?? 0,
+      },
     );
     if (cachedPrimeEntries.length > 0) {
       measurePerf("startup.prime-cached-financials", () => {

@@ -127,6 +127,23 @@ describe("MarketDataCoordinator", () => {
     expect(calls).toBe(2);
   });
 
+  it("serves USD exchange rates without hitting the provider", async () => {
+    let calls = 0;
+    const provider = createProvider({
+      getExchangeRate: async () => {
+        calls += 1;
+        return 1;
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+
+    const entry = await coordinator.loadFxRate("usd");
+
+    expect(entry.data).toBe(1);
+    expect(entry.source).toBe("static");
+    expect(calls).toBe(0);
+  });
+
   it("reuses fresh empty tab query results instead of refetching on reopen", async () => {
     let newsCalls = 0;
     let optionsCalls = 0;
@@ -553,6 +570,50 @@ describe("MarketDataCoordinator", () => {
     }
   });
 
+  it("drops a stale stream quote when there is no fresh quote to preserve", () => {
+    const fixedNow = Date.parse("2026-05-13T21:00:00Z");
+    const realDateNow = Date.now;
+    Date.now = () => fixedNow;
+    try {
+      let streamed: ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null = null;
+      const provider = createProvider({
+        subscribeQuotes: (_targets, onQuote) => {
+          streamed = onQuote as typeof streamed;
+          return () => {};
+        },
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const instrument = { symbol: "2337", exchange: "TWSE" };
+
+      coordinator.subscribeQuotes([{ instrument }]);
+      const onStreamed = streamed as ((target: QuoteSubscriptionTarget, quote: Quote) => void) | null;
+      if (!onStreamed) throw new Error("expected streaming callback");
+      onStreamed(
+        { symbol: "2337", exchange: "TWSE" },
+        {
+          symbol: "2337",
+          providerId: "gloomberb-cloud",
+          dataSource: "delayed",
+          price: 150,
+          currency: "TWD",
+          change: 0,
+          changePercent: 0,
+          lastUpdated: Date.parse("2026-05-08T06:00:00Z"),
+          listingExchangeName: "TWSE",
+          marketState: "CLOSED",
+          sessionConfidence: "explicit",
+        },
+      );
+
+      const entry = coordinator.getQuoteEntry(instrument);
+      expect(entry.data).toBeNull();
+      expect(entry.lastGoodData).toBeNull();
+      expect(coordinator.getTickerFinancialsSync(instrument)?.quote).toBeUndefined();
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
   it("hydrates ticker financials synchronously from primed cached data", () => {
     const coordinator = new MarketDataCoordinator(createProvider());
     const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
@@ -642,7 +703,7 @@ describe("MarketDataCoordinator", () => {
         currency: "USD",
         change: 0,
         changePercent: 0,
-        lastUpdated: 1_700_000_000_000,
+        lastUpdated: Date.now(),
       }),
       getQuotesBatch: async (targets) => {
         batchTargets.push(targets);
@@ -654,7 +715,7 @@ describe("MarketDataCoordinator", () => {
             currency: "USD",
             change: 0,
             changePercent: 0,
-            lastUpdated: 1_700_000_000_000,
+            lastUpdated: Date.now(),
           },
         }));
       },
@@ -670,6 +731,65 @@ describe("MarketDataCoordinator", () => {
     expect(batchTargets[0]?.map((target) => target.symbol)).toEqual(["MSFT"]);
     expect(coordinator.getQuoteEntry(aapl).data?.price).toBe(100);
     expect(coordinator.getQuoteEntry(msft).data?.price).toBe(200);
+  });
+
+  it("refreshes primed quote cache when the quote is stale for the current session", async () => {
+    const fixedNow = Date.parse("2026-05-13T21:00:00Z");
+    const realDateNow = Date.now;
+    Date.now = () => fixedNow;
+    try {
+      const batchTargets: QuoteSubscriptionTarget[][] = [];
+      const provider = createProvider({
+        getQuotesBatch: async (targets) => {
+          batchTargets.push(targets);
+          return targets.map((target) => ({
+            target,
+            quote: {
+              symbol: target.symbol,
+              price: 6970,
+              currency: "JPY",
+              change: 370,
+              changePercent: 5.61,
+              lastUpdated: Date.parse("2026-05-13T06:24:00Z"),
+              marketState: "CLOSED",
+              listingExchangeName: "JPX",
+              providerId: "yahoo",
+            },
+          }));
+        },
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const instrument = { symbol: "6324.T", exchange: "JPX" };
+
+      coordinator.primeCachedFinancials([{
+        instrument,
+        financials: {
+          quote: {
+            symbol: "6324.T",
+            price: 6230,
+            currency: "JPY",
+            change: 520,
+            changePercent: 9.11,
+            lastUpdated: Date.parse("2026-05-08T06:24:00Z"),
+            marketState: "CLOSED",
+            listingExchangeName: "JPX",
+            providerId: "gloomberb-cloud",
+          },
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [],
+        },
+      }]);
+
+      await coordinator.loadQuotesBatch([instrument]);
+
+      expect(batchTargets).toHaveLength(1);
+      expect(batchTargets[0]?.map((target) => target.symbol)).toEqual(["6324.T"]);
+      expect(coordinator.getQuoteEntry(instrument).data?.price).toBe(6970);
+      expect(coordinator.getQuoteEntry(instrument).data?.changePercent).toBe(5.61);
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 
   it("batch loads snapshots through provider batch support", async () => {

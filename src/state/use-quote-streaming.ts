@@ -22,6 +22,7 @@ export function buildQuoteStreamSubscriptionKey(target: QuoteSubscriptionTarget)
     ?? target.context?.instrument?.localSymbol
     ?? target.context?.instrument?.symbol
     ?? "";
+  const weight = Number.isFinite(target.weight) ? String(target.weight) : "";
   return [
     target.symbol,
     target.exchange ?? "",
@@ -29,6 +30,10 @@ export function buildQuoteStreamSubscriptionKey(target: QuoteSubscriptionTarget)
     target.context?.brokerInstanceId ?? "",
     contractKey,
     target.route ?? "auto",
+    target.surface ?? "",
+    target.visible ? "visible" : "",
+    target.selected ? "selected" : "",
+    weight,
   ].join("|");
 }
 
@@ -67,6 +72,12 @@ export function useQuoteStreaming(targets: QuoteSubscriptionTarget[]): void {
         brokerId: target.context?.brokerId,
         brokerInstanceId: target.context?.brokerInstanceId,
         instrument: target.context?.instrument ?? null,
+      },
+      priority: {
+        surface: target.surface,
+        visible: target.visible,
+        selected: target.selected,
+        weight: target.weight,
       },
     })));
     return () => {

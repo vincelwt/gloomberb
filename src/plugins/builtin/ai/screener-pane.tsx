@@ -432,6 +432,9 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
   const quoteTargets = useMemo(() => (
     sortedTickers
       .map((ticker) => quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker))
+      .map((target) => target
+        ? { ...target, surface: "screener" as const, visible: true, weight: 70 }
+        : null)
       .filter((target): target is NonNullable<ReturnType<typeof quoteSubscriptionTargetFromTicker>> => target != null)
   ), [sortedTickers]);
 

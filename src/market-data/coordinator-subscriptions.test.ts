@@ -43,6 +43,79 @@ async function flushCoordinator(): Promise<void> {
 }
 
 describe("MarketDataCoordinator key subscriptions", () => {
+  test("subscribes active quote targets as one provider batch", () => {
+    const subscriptions: QuoteSubscriptionTarget[][] = [];
+    const provider = createTestDataProvider({
+      id: "test-provider",
+      subscribeQuotes: (targets) => {
+        subscriptions.push(targets);
+        return () => {};
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+
+    coordinator.subscribeQuotes([
+      {
+        instrument: { symbol: "AAPL", exchange: "NASDAQ" },
+        priority: { surface: "portfolio", visible: true, selected: true, weight: 100 },
+      },
+      { instrument: { symbol: "MSFT", exchange: "NASDAQ" } },
+    ]);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]?.map((target) => target.symbol).sort()).toEqual(["AAPL", "MSFT"]);
+    expect(subscriptions[0]?.find((target) => target.symbol === "AAPL")).toMatchObject({
+      surface: "portfolio",
+      visible: true,
+      selected: true,
+      weight: 100,
+    });
+  });
+
+  test("keeps the highest-priority target when duplicate surfaces subscribe", () => {
+    const subscriptions: QuoteSubscriptionTarget[][] = [];
+    let disposals = 0;
+    const provider = createTestDataProvider({
+      id: "test-provider",
+      subscribeQuotes: (targets) => {
+        subscriptions.push(targets);
+        return () => {
+          disposals += 1;
+        };
+      },
+    });
+    const coordinator = new MarketDataCoordinator(provider);
+    const instrument = { symbol: "AAPL", exchange: "NASDAQ" };
+
+    const unsubscribeDetail = coordinator.subscribeQuotes([{
+      instrument,
+      priority: { surface: "detail", visible: true, selected: true, weight: 100 },
+    }]);
+    coordinator.subscribeQuotes([{
+      instrument,
+      priority: { surface: "portfolio", visible: false, selected: false, weight: 10 },
+    }]);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]?.[0]).toMatchObject({
+      surface: "detail",
+      visible: true,
+      selected: true,
+      weight: 100,
+    });
+
+    unsubscribeDetail();
+
+    expect(subscriptions).toHaveLength(2);
+    expect(disposals).toBe(1);
+    expect(subscriptions[1]?.[0]).toMatchObject({
+      surface: "portfolio",
+      visible: false,
+      selected: false,
+      weight: 10,
+    });
+  });
+
   test("notifies listeners for changed keys only", async () => {
     const { provider, emitQuote } = createProvider();
     const coordinator = new MarketDataCoordinator(provider);

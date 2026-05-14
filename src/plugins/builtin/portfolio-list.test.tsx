@@ -1122,10 +1122,11 @@ describe("PortfolioListPane cash and margin UI", () => {
           quote: makeQuote({
             symbol: "AAPL",
             price: 125,
-            marketCap: undefined,
+            marketCap: 2_000_000_000,
           }),
           fundamentals: {
             trailingPE: 25,
+            forwardPE: 22,
           },
           profile: {
             sector: "Technology",

@@ -158,6 +158,39 @@ function createRows(quotes: ScreenerQuote[]): MarketMoverRow[] {
   }));
 }
 
+function summaryQuoteFromQuote(
+  symbol: string,
+  quote: { name?: string; price: number; change: number; changePercent: number },
+): MarketSummaryQuote {
+  return {
+    symbol,
+    name: quote.name ?? symbol,
+    price: quote.price,
+    change: quote.change,
+    changePercent: quote.changePercent,
+  };
+}
+
+function screenerQuoteFromQuote(symbol: string, quote: { name?: string; price?: number; change?: number; changePercent?: number; volume?: number; currency?: string }): ScreenerQuote {
+  return {
+    symbol,
+    name: quote.name ?? symbol,
+    price: quote.price ?? 0,
+    change: quote.change ?? 0,
+    changePercent: quote.changePercent ?? 0,
+    volume: quote.volume ?? 0,
+    avgVolume: 0,
+    volumeRatio: 0,
+    marketCap: undefined,
+    currency: quote.currency ?? "USD",
+    fiftyTwoWeekHigh: undefined,
+    fiftyTwoWeekLow: undefined,
+    dayHigh: undefined,
+    dayLow: undefined,
+    exchange: "",
+  };
+}
+
 function buildColumns(width: number): MarketMoverColumn[] {
   const rankWidth = 3;
   const tickerWidth = 8;
@@ -227,28 +260,34 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     if (!dataProvider) return;
     const loadSummary = async () => {
-      const results: MarketSummaryQuote[] = [];
-      await Promise.allSettled(
-        MARKET_SUMMARY_SYMBOLS.map(async (symbol) => {
-          try {
-            const q = await dataProvider.getQuote(symbol, "");
-            if (q) {
-              results.push({
-                symbol,
-                name: q.name ?? symbol,
-                price: q.price,
-                change: q.change,
-                changePercent: q.changePercent,
-              });
-            }
-          } catch { /* skip */ }
-        }),
-      );
-      // Preserve the original symbol order
+      if (dataProvider.getQuotesBatch) {
+        const batchResults = await dataProvider.getQuotesBatch(
+          MARKET_SUMMARY_SYMBOLS.map((symbol) => ({ symbol, exchange: "" })),
+        ).catch(() => []);
+        const bySymbol = new Map(batchResults.map((result) => [result.target.symbol, result]));
+        setSummaryQuotes(
+          MARKET_SUMMARY_SYMBOLS
+            .map((symbol) => {
+              const result = bySymbol.get(symbol);
+              return result?.quote ? summaryQuoteFromQuote(symbol, result.quote) : null;
+            })
+            .filter((quote): quote is MarketSummaryQuote => !!quote),
+        );
+        return;
+      }
+
+      const results = await Promise.all(MARKET_SUMMARY_SYMBOLS.map(async (symbol) => {
+        try {
+          const quote = await dataProvider.getQuote(symbol, "");
+          return quote ? summaryQuoteFromQuote(symbol, quote) : null;
+        } catch {
+          return null;
+        }
+      }));
       setSummaryQuotes(
         MARKET_SUMMARY_SYMBOLS
           .map((s) => results.find((r) => r.symbol === s))
-          .filter((r): r is MarketSummaryQuote => r !== undefined),
+          .filter((r): r is MarketSummaryQuote => !!r),
       );
     };
     loadSummary();
@@ -280,33 +319,26 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         const resolved: ScreenerQuote[] = [];
 
         if (dataProvider) {
-          await Promise.allSettled(
-            trending.slice(0, 25).map(async ({ symbol }) => {
+          const targets = trending.slice(0, 25).map(({ symbol }) => ({ symbol, exchange: "" }));
+          if (dataProvider.getQuotesBatch) {
+            const batchResults = await dataProvider.getQuotesBatch(targets).catch(() => []);
+            for (const result of batchResults) {
+              if (fetchGenRef.current !== gen) return;
+              if (result.quote) {
+                resolved.push(screenerQuoteFromQuote(result.target.symbol, result.quote));
+              }
+            }
+          } else {
+            await Promise.allSettled(targets.map(async ({ symbol }) => {
               try {
                 const q = await dataProvider.getQuote(symbol, "");
                 if (fetchGenRef.current !== gen) return;
                 if (q) {
-                  resolved.push({
-                    symbol,
-                    name: q.name ?? symbol,
-                    price: q.price ?? 0,
-                    change: q.change ?? 0,
-                    changePercent: q.changePercent ?? 0,
-                    volume: q.volume ?? 0,
-                    avgVolume: 0,
-                    volumeRatio: 0,
-                    marketCap: undefined,
-                    currency: q.currency ?? "USD",
-                    fiftyTwoWeekHigh: undefined,
-                    fiftyTwoWeekLow: undefined,
-                    dayHigh: undefined,
-                    dayLow: undefined,
-                    exchange: "",
-                  });
+                  resolved.push(screenerQuoteFromQuote(symbol, q));
                 }
               } catch { /* skip */ }
-            }),
-          );
+            }));
+          }
         }
 
         if (fetchGenRef.current !== gen) return;

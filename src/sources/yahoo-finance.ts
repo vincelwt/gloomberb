@@ -7,6 +7,7 @@ import {
   type ManualChartResolution,
 } from "../components/chart/chart-resolution";
 import type { InstrumentSearchResult } from "../types/instrument";
+import { parseOptionSymbol } from "../utils/options";
 import { SecEdgarClient } from "./sec-edgar";
 
 // Exchange suffix mapping for Yahoo Finance ticker symbols
@@ -755,7 +756,7 @@ export class YahooFinanceClient implements DataProvider {
     const history: PricePoint[] = [];
     for (let i = 0; i < result.timestamp.length; i++) {
       const close = quote.close?.[i];
-      if (close == null || Number.isNaN(close)) continue;
+      if (close == null || !Number.isFinite(close) || close <= 0) continue;
       history.push({
         date: new Date((result.timestamp[i]!) * 1000),
         open: quote.open?.[i] ?? undefined,
@@ -1047,8 +1048,53 @@ export class YahooFinanceClient implements DataProvider {
     };
   }
 
+  private async getOptionQuote(ticker: string, context?: MarketDataRequestContext): Promise<Quote> {
+    const parsed = parseOptionSymbol(ticker);
+    if (!parsed) throw new Error(`Unsupported option symbol ${ticker}`);
+    const chain = await this.getOptionsChain(parsed.underlying, "", parsed.expTs, context);
+    const contracts = parsed.side === "C" ? chain.calls : chain.puts;
+    const contract = contracts.find((candidate) =>
+      Math.abs(candidate.strike - parsed.strike) < 0.001 &&
+      candidate.expiration === parsed.expTs
+    );
+    if (!contract) throw new Error(`No option contract for ${ticker}`);
+
+    const mark = contract.bid > 0 && contract.ask > 0
+      ? (contract.bid + contract.ask) / 2
+      : contract.bid > 0
+        ? contract.bid
+        : contract.ask > 0
+          ? contract.ask
+          : undefined;
+    return {
+      symbol: ticker,
+      providerId: this.id,
+      price: mark ?? contract.lastPrice,
+      currency: contract.currency || "USD",
+      change: contract.change,
+      changePercent: contract.percentChange,
+      volume: contract.volume,
+      bid: contract.bid,
+      ask: contract.ask,
+      mark,
+      name: contract.contractSymbol,
+      lastUpdated: contract.lastTradeDate > 0
+        ? contract.lastTradeDate * 1000
+        : Date.now(),
+      exchangeName: "OPTIONS",
+      fullExchangeName: "OPTIONS",
+      listingExchangeName: "OPTIONS",
+      listingExchangeFullName: "OPTIONS",
+      dataSource: "delayed",
+    };
+  }
+
   /** Fetch just a quote (lighter weight) */
-  async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
+  async getQuote(ticker: string, exchange = "", context?: MarketDataRequestContext): Promise<Quote> {
+    if (parseOptionSymbol(ticker)) {
+      return this.getOptionQuote(ticker, context);
+    }
+
     const symbolsToTry = this.getSymbolsToTry(ticker, exchange);
     let lastError: any;
 

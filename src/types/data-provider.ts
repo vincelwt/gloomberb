@@ -90,6 +90,10 @@ export interface QuoteSubscriptionTarget {
   exchange?: string;
   context?: MarketDataRequestContext;
   route?: "auto" | "provider" | "broker";
+  surface?: "portfolio" | "watchlist" | "detail" | "monitor" | "inline" | "screener" | "unknown";
+  visible?: boolean;
+  selected?: boolean;
+  weight?: number;
 }
 
 export interface QuoteBatchResult {
@@ -111,7 +115,7 @@ export interface AssetDataProvider {
   readonly cachePolicy?: CachePolicyMap;
 
   canProvide?(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<boolean> | boolean;
-  getCachedFinancialsForTargets?(targets: CachedFinancialsTarget[], options?: { allowExpired?: boolean }): Map<string, TickerFinancials> | Promise<Map<string, TickerFinancials>>;
+  getCachedFinancialsForTargets?(targets: CachedFinancialsTarget[], options?: { allowExpired?: boolean; includeStaleQuotes?: boolean }): Map<string, TickerFinancials> | Promise<Map<string, TickerFinancials>>;
   getQuotesBatch?(targets: QuoteSubscriptionTarget[], options?: { forceRefresh?: boolean }): Promise<QuoteBatchResult[]>;
   getTickerFinancialsBatch?(targets: CachedFinancialsTarget[], options?: { forceRefresh?: boolean }): Promise<TickerFinancialsBatchResult[]>;
   getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials>;

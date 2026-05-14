@@ -43,6 +43,7 @@ import {
 } from "./settings";
 import { formatPercentRaw } from "../../../utils/format";
 import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
+import { isQuoteStaleForCurrentSession } from "../../../utils/quote-freshness";
 import { priceColor } from "../../../theme/colors";
 import { PortfolioTickerTable, type QuoteFlashDirection } from "./table";
 import { useThrottledCursorSymbol } from "./use-throttled-cursor-symbol";
@@ -73,9 +74,8 @@ function visibleWarmupKey(kind: "quote" | "snapshot", ticker: TickerRecord): str
   return `${kind}:${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
 }
 
-function needsVisibleQuoteWarmup(ticker: TickerRecord, financials: TickerFinancials | undefined): boolean {
-  if (ticker.metadata.assetCategory === "OPT") return false;
-  return !financials?.quote;
+function needsVisibleQuoteWarmup(ticker: TickerRecord, financials: TickerFinancials | undefined, now = Date.now()): boolean {
+  return !financials?.quote || isQuoteStaleForCurrentSession(financials.quote, now);
 }
 
 function needsVisibleSnapshotWarmup(
@@ -280,12 +280,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const marketFinancialsMap = useTickerFinancialsMap(tickers);
   const sharedCoordinator = getSharedMarketDataCoordinator();
   const financialsMap = useMemo(() => {
-    const merged = sharedCoordinator ? new Map<string, TickerFinancials>() : new Map(cachedFinancials);
+    const merged = new Map(cachedFinancials);
     for (const [symbol, financials] of marketFinancialsMap) {
       merged.set(symbol, financials);
     }
     return merged;
-  }, [cachedFinancials, marketFinancialsMap, sharedCoordinator]);
+  }, [cachedFinancials, marketFinancialsMap]);
 
   const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
   const accountState = usePortfolioAccountState(currentPortfolio, accountStateInput);
@@ -464,11 +464,28 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     () => selectStreamTickers(sortedTickers, streamWindow, cursorSymbol),
     [cursorSymbol, sortedTickers, streamWindow],
   );
+  const priorityStreamSymbols = useMemo(
+    () => new Set(streamTickers.map((ticker) => ticker.metadata.ticker)),
+    [streamTickers],
+  );
+  const streamSurface = isPortfolioTab ? "portfolio" : "watchlist";
   const streamTargets = useMemo(() => (
-    streamTickers
-      .map((ticker) => quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker, "provider"))
+    sortedTickers
+      .map((ticker) => {
+        const target = quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker, "provider");
+        if (!target) return null;
+        const selected = ticker.metadata.ticker === cursorSymbol;
+        const visible = priorityStreamSymbols.has(ticker.metadata.ticker);
+        return {
+          ...target,
+          surface: streamSurface,
+          visible,
+          selected,
+          weight: selected ? 100 : visible ? 80 : 10,
+        };
+      })
       .filter((target): target is NonNullable<typeof target> => target != null)
-  ), [streamTickers]);
+  ), [cursorSymbol, priorityStreamSymbols, sortedTickers, streamSurface]);
   const visibleFinancialTickers = useMemo(
     () => sortedTickers.slice(streamWindow.start, streamWindow.end),
     [sortedTickers, streamWindow.end, streamWindow.start],
@@ -486,7 +503,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       const financials = financialsMap.get(ticker.metadata.ticker);
       const quoteKey = visibleWarmupKey("quote", ticker);
       if (
-        needsVisibleQuoteWarmup(ticker, financials)
+        needsVisibleQuoteWarmup(ticker, financials, nowTimestamp)
         && !warmupInFlightRef.current.has(quoteKey)
         && nowTimestamp - (warmupAttemptRef.current.get(quoteKey) ?? 0) >= VISIBLE_FINANCIAL_REFRESH_COOLDOWN_MS
       ) {

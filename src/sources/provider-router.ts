@@ -30,7 +30,8 @@ import {
 import { hasLikelyQuoteUnitMismatch } from "../utils/currency-units";
 import { debugLog } from "../utils/debug-log";
 import { canonicalExchange } from "../utils/exchanges";
-import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
+import { isPriceHistoryStaleForCurrentWindow, normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
+import { parseOptionSymbol } from "../utils/options";
 import { isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
 import {
   mergeQuoteContributionMaps,
@@ -45,6 +46,8 @@ const providerLog = debugLog.createLogger("asset-data-router");
 const BROKER_ATTEMPT_TIMEOUT = 10_000;
 const EXPECTED_PROVIDER_MISS = /No data found|symbol may be delisted|"code":"Not Found"|No history for /i;
 const MARKET_NAMESPACE = "market";
+const SEARCH_CACHE_TTL_MS = 30_000;
+const SEARCH_PROVIDER_TIMEOUT_MS = 5_000;
 
 const DEFAULT_CACHE_POLICIES: Record<string, CachePolicy> = {
   brokerQuote: { staleMs: 15_000, expireMs: 15 * 60_000 },
@@ -73,6 +76,16 @@ function withBrokerTimeout<T>(promise: Promise<T>): Promise<T | null> {
   });
 }
 
+function withSearchTimeout<T>(promise: Promise<T>): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    const timer = setTimeout(() => resolve(null), SEARCH_PROVIDER_TIMEOUT_MS);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(null); },
+    );
+  });
+}
+
 function shouldLogProviderError(error: unknown): boolean {
   if (isProviderMiss(error)) return false;
   const message = error instanceof Error ? error.message : String(error);
@@ -83,12 +96,63 @@ function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
 }
 
-function sanitizeCachedFinancials(financials: TickerFinancials): TickerFinancials {
-  if (!isQuoteStaleForCurrentSession(financials.quote)) return financials;
+function deriveMarketCapFromShares(
+  financials: TickerFinancials,
+  options: { replaceExisting?: boolean } = {},
+): TickerFinancials {
+  const quote = financials.quote;
+  const sharesOutstanding = financials.fundamentals?.sharesOutstanding;
+  if (
+    !quote
+    || (quote.marketCap != null && !options.replaceExisting)
+    || !Number.isFinite(quote.price)
+    || !Number.isFinite(sharesOutstanding)
+    || quote.price <= 0
+    || !sharesOutstanding
+    || sharesOutstanding <= 0
+  ) {
+    return financials;
+  }
+
   return {
     ...financials,
+    quote: {
+      ...quote,
+      marketCap: quote.price * sharesOutstanding,
+    },
+  };
+}
+
+function sanitizeCachedFinancials(
+  financials: TickerFinancials,
+  options: { includeStaleQuotes?: boolean } = {},
+): TickerFinancials {
+  const enriched = deriveMarketCapFromShares(financials);
+  if (options.includeStaleQuotes || !isQuoteStaleForCurrentSession(enriched.quote)) return enriched;
+  return {
+    ...enriched,
     quote: undefined,
     quoteContributions: undefined,
+  };
+}
+
+function sanitizeCachedQuote(
+  quote: Quote,
+  exchange: string | undefined,
+  options: { includeStaleQuotes?: boolean } = {},
+): Quote | null {
+  const normalized = quoteWithFreshnessExchange(quote, exchange);
+  return options.includeStaleQuotes || !isQuoteStaleForCurrentSession(normalized)
+    ? normalized
+    : null;
+}
+
+function quoteWithFreshnessExchange(quote: Quote, exchange?: string): Quote {
+  if (!exchange || quote.listingExchangeName || quote.exchangeName) return quote;
+  return {
+    ...quote,
+    listingExchangeName: exchange,
+    exchangeName: exchange,
   };
 }
 
@@ -134,6 +198,16 @@ function buildVariantKey(parts: Array<[string, string | number | undefined | nul
 
 function isIntradayRange(range: TimeRange): boolean {
   return range === "1D" || range === "1W" || range === "1M" || range === "3M";
+}
+
+function isStaleIntradayHistory(points: PricePoint[], enabled: boolean): boolean {
+  return enabled && isPriceHistoryStaleForCurrentWindow(points);
+}
+
+function isCurrentHistoryWindow(endDate?: Date): boolean {
+  if (!endDate) return true;
+  const endMs = endDate.getTime();
+  return Number.isFinite(endMs) && Date.now() - endMs < 60 * 60_000;
 }
 
 function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolean {
@@ -191,7 +265,8 @@ function mergeDefinedObject<T extends object>(preferred: T | null | undefined, f
 function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinancials | null): TickerFinancials | null {
   if (!primary || !fallback) {
     const single = primary ?? fallback;
-    return single ? resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(single)) : null;
+    const resolved = single ? resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(single)) : null;
+    return resolved ? deriveMarketCapFromShares(resolved) : null;
   }
 
   const preferFallbackPriceData = hasLikelyPriceUnitMismatch(primary, fallback);
@@ -203,7 +278,7 @@ function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinan
   );
   const resolvedQuote = resolveCanonicalQuote(quoteContributions).quote;
 
-  return {
+  return deriveMarketCapFromShares({
     ...fallback,
     ...primary,
     quote: resolvedQuote,
@@ -213,10 +288,13 @@ function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinan
     priceHistory: normalizePriceHistory(dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory),
     annualStatements: primary.annualStatements.length > 0 ? primary.annualStatements : fallback.annualStatements,
     quarterlyStatements: primary.quarterlyStatements.length > 0 ? primary.quarterlyStatements : fallback.quarterlyStatements,
-  };
+  });
 }
 
-function mergeCachedFinancialRecords(records: CachedResourceRecord<TickerFinancials>[]): {
+function mergeCachedFinancialRecords(
+  records: CachedResourceRecord<TickerFinancials>[],
+  options: { includeStaleQuotes?: boolean } = {},
+): {
   value: TickerFinancials | null;
   stale: boolean;
 } {
@@ -227,17 +305,43 @@ function mergeCachedFinancialRecords(records: CachedResourceRecord<TickerFinanci
   for (const record of records) {
     if (seenSources.has(record.sourceKey)) continue;
     seenSources.add(record.sourceKey);
-    merged = mergeFinancials(merged, sanitizeCachedFinancials(record.value));
-    stale = stale || record.stale;
+    merged = mergeFinancials(merged, sanitizeCachedFinancials(record.value, options));
+    stale = stale || record.stale === true;
   }
 
   return { value: merged, stale };
+}
+
+function selectCachedQuoteRecord(
+  records: CachedResourceRecord<Quote>[],
+  exchange: string | undefined,
+  options: { includeStaleQuotes?: boolean } = {},
+): CachedQuoteSelection {
+  let stale = false;
+
+  for (const record of records) {
+    stale ||= record.stale === true;
+    const quote = sanitizeCachedQuote(record.value, exchange, options);
+    if (quote) return { quote, stale };
+  }
+
+  return { quote: null, stale };
 }
 
 interface CachedFinancialsSelection {
   brokerRecord: CachedResourceRecord<TickerFinancials> | null;
   providerValue: TickerFinancials | null;
   value: TickerFinancials | null;
+  stale: boolean;
+}
+
+interface CachedFinancialsReadOptions {
+  includeStaleQuotes?: boolean;
+  includeSymbolProviderFallback?: boolean;
+}
+
+interface CachedQuoteSelection {
+  quote: Quote | null;
   stale: boolean;
 }
 
@@ -299,6 +403,8 @@ export class AssetDataRouter implements DataProvider {
 
   private registry: PluginRegistry | null = null;
   private readonly revalidationInFlight = new Map<string, Promise<unknown>>();
+  private readonly searchCache = new Map<string, { expiresAt: number; results: InstrumentSearchResult[] }>();
+  private readonly searchInFlight = new Map<string, Promise<InstrumentSearchResult[]>>();
   private getConfigFn: () => AppConfig = () => createDefaultConfig("");
   private readonly fallbackSource: CapabilityRouteSource | null;
   private readonly extraSources: CapabilityRouteSource[];
@@ -335,14 +441,20 @@ export class AssetDataRouter implements DataProvider {
     return false;
   }
 
-  getCachedFinancialsForTargets(targets: CachedFinancialsTarget[], options: { allowExpired?: boolean } = {}): Map<string, TickerFinancials> {
+  getCachedFinancialsForTargets(
+    targets: CachedFinancialsTarget[],
+    options: { allowExpired?: boolean; includeStaleQuotes?: boolean } = {},
+  ): Map<string, TickerFinancials> {
     const results = new Map<string, TickerFinancials>();
     for (const target of targets) {
       const cached = this.readCachedMergedFinancials(target.symbol, target.exchange, {
         brokerId: target.brokerId,
         brokerInstanceId: target.brokerInstanceId,
         instrument: target.instrument ?? undefined,
-      }, options.allowExpired ?? true);
+      }, options.allowExpired ?? true, {
+        includeStaleQuotes: options.includeStaleQuotes,
+        includeSymbolProviderFallback: true,
+      });
       if (cached) results.set(target.symbol.toUpperCase(), cached);
     }
     return results;
@@ -374,7 +486,7 @@ export class AssetDataRouter implements DataProvider {
         ...this.getProviderSourceKeys(),
       ];
       const rawCached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
-      const cached = rawCached && !isQuoteStaleForCurrentSession(rawCached.value)
+      const cached = rawCached && !isQuoteStaleForCurrentSession(quoteWithFreshnessExchange(rawCached.value, target.exchange))
         ? rawCached
         : null;
       if (cached && !forceRefresh && !cached.stale) {
@@ -397,7 +509,7 @@ export class AssetDataRouter implements DataProvider {
       const uniqueTargets = [...providerIndexes.values()].map((bucket) => bucket[0]!.target);
       const batchResults = await batchProvider.getQuotesBatch!(uniqueTargets, options).catch(() => []);
       for (const item of batchResults) {
-        if (!item.quote) continue;
+        if (!item.quote || isQuoteStaleForCurrentSession(item.quote)) continue;
         const key = this.quoteBatchKey(item.target);
         const sourceKey = this.providerSourceKey(batchProvider);
         for (const entry of providerIndexes.get(key) ?? []) {
@@ -487,9 +599,23 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getTickerFinancials(ticker: string, exchange?: string, context?: MarketDataRequestContext): Promise<TickerFinancials> {
+    const isOptionTicker =
+      parseOptionSymbol(ticker) != null ||
+      parseOptionSymbol(context?.instrument?.localSymbol ?? "") != null ||
+      context?.instrument?.secType === "OPT";
+    const quoteOnlyFinancials = async (base?: TickerFinancials | null): Promise<TickerFinancials> => ({
+      ...base,
+      quote: await this.getQuote(ticker, exchange, context),
+      annualStatements: base?.annualStatements ?? [],
+      quarterlyStatements: base?.quarterlyStatements ?? [],
+      priceHistory: base?.priceHistory ?? [],
+    });
     const cached = this.readCachedMergedFinancialsSelection(ticker, exchange, context, false);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cached.value && !forceRefresh) {
+      if (isOptionTicker && !cached.value.quote) {
+        return quoteOnlyFinancials(cached.value);
+      }
       if (!cached.stale && hasMeaningfulProfile(cached.value)) {
         return cached.value;
       }
@@ -502,15 +628,22 @@ export class AssetDataRouter implements DataProvider {
     if (cached.value) {
       const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
       const providerResult = await this.fetchProviderFinancials(ticker, exchange, context);
-      return mergeFinancials(
+      const merged = mergeFinancials(
         brokerResult?.value ?? cached.brokerRecord?.value ?? null,
         providerResult?.value ?? cached.providerValue ?? null,
-      ) ?? cached.value;
+      );
+      if (isOptionTicker && !merged?.quote) {
+        return quoteOnlyFinancials(merged ?? cached.value);
+      }
+      return merged ?? cached.value;
     }
 
     const brokerResult = await withBrokerTimeout(this.fetchBrokerFinancials(ticker, exchange, context));
     const fallback = await this.fetchProviderFinancials(ticker, exchange, context);
     const merged = mergeFinancials(brokerResult?.value ?? null, fallback?.value ?? null);
+    if (isOptionTicker && !merged?.quote) {
+      return quoteOnlyFinancials(merged);
+    }
     if (!merged) {
       throw new Error(`No provider available for ${ticker}`);
     }
@@ -525,7 +658,7 @@ export class AssetDataRouter implements DataProvider {
       ...this.getProviderSourceKeys(),
     ];
     const rawCached = this.selectCachedResource<Quote>("quote", entityKey, variantKeys, sourceKeys, false);
-    const cached = rawCached && !isQuoteStaleForCurrentSession(rawCached.value)
+    const cached = rawCached && !isQuoteStaleForCurrentSession(quoteWithFreshnessExchange(rawCached.value, exchange))
       ? rawCached
       : null;
     const forceRefresh = context?.cacheMode === "refresh";
@@ -534,7 +667,9 @@ export class AssetDataRouter implements DataProvider {
     }
 
     const brokerQuote = await withBrokerTimeout(this.fetchBrokerQuote(ticker, exchange, context));
-    if (brokerQuote) return brokerQuote.value;
+    if (brokerQuote && !isQuoteStaleForCurrentSession(quoteWithFreshnessExchange(brokerQuote.value, exchange))) {
+      return brokerQuote.value;
+    }
 
     const providerQuote = await this.fetchProviderQuote(ticker, exchange, context);
     if (providerQuote) {
@@ -545,73 +680,114 @@ export class AssetDataRouter implements DataProvider {
   }
 
   async getExchangeRate(fromCurrency: string): Promise<number> {
-    const cached = this.readCachedExchangeRate(fromCurrency, false);
+    const normalizedCurrency = fromCurrency.trim().toUpperCase();
+    if (normalizedCurrency === "USD") return 1;
+
+    const cached = this.readCachedExchangeRate(normalizedCurrency, false);
     if (cached != null) {
-      this.scheduleRevalidation(`exchange-rate:${fromCurrency.toUpperCase()}`, async () => {
-        await this.revalidateExchangeRate(fromCurrency);
+      this.scheduleRevalidation(`exchange-rate:${normalizedCurrency}`, async () => {
+        await this.revalidateExchangeRate(normalizedCurrency);
       });
       return cached;
     }
 
     const result = await this.firstProvider(async (provider) => {
-      const rate = await provider.getExchangeRate(fromCurrency);
+      const rate = await provider.getExchangeRate(normalizedCurrency);
       return { provider, rate };
     });
     if (!result) {
-      throw new Error(`No exchange rate provider available for ${fromCurrency}`);
+      throw new Error(`No exchange rate provider available for ${normalizedCurrency}`);
     }
-    this.cacheExchangeRate(fromCurrency, result.value.rate, result.value.provider);
+    this.cacheExchangeRate(normalizedCurrency, result.value.rate, result.value.provider);
     return result.value.rate;
   }
 
   async search(query: string, context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
-    const results: InstrumentSearchResult[] = [];
-    const resultIndexByKey = new Map<string, number>();
+    const cacheKey = JSON.stringify([
+      query.trim().toUpperCase(),
+      context?.preferBroker ?? true,
+      context?.brokerInstanceId ?? "",
+      context?.brokerId ?? "",
+    ]);
+    const cached = this.searchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.results;
+    const inFlight = this.searchInFlight.get(cacheKey);
+    if (inFlight) return inFlight;
 
-    const push = (items: InstrumentSearchResult[]) => {
-      for (const item of items) {
-        const key = buildSearchResultKey(item);
-        const existingIndex = resultIndexByKey.get(key);
-        if (existingIndex == null) {
-          resultIndexByKey.set(key, results.length);
-          results.push(item);
-          continue;
+    const task = (async () => {
+      const results: InstrumentSearchResult[] = [];
+      const resultIndexByKey = new Map<string, number>();
+
+      const push = (items: InstrumentSearchResult[]) => {
+        for (const item of items) {
+          const key = buildSearchResultKey(item);
+          const existingIndex = resultIndexByKey.get(key);
+          if (existingIndex == null) {
+            resultIndexByKey.set(key, results.length);
+            results.push(item);
+            continue;
+          }
+
+          const existing = results[existingIndex]!;
+          if (getSearchResultRichness(item, context) > getSearchResultRichness(existing, context)) {
+            results[existingIndex] = item;
+          }
         }
+      };
 
-        const existing = results[existingIndex]!;
-        if (getSearchResultRichness(item, context) > getSearchResultRichness(existing, context)) {
-          results[existingIndex] = item;
+      if (context?.preferBroker !== false) {
+        for (const candidate of this.getBrokerCandidates(
+          context?.brokerInstanceId,
+          context?.brokerId,
+        )) {
+          if (!candidate.broker.searchInstruments) continue;
+          try {
+            const items = await withSearchTimeout(candidate.broker.searchInstruments(query, candidate.instance));
+            if (!items) continue;
+            push(this.annotateSearchResults(items, candidate));
+            if (results.length > 0) {
+              this.searchCache.set(cacheKey, {
+                expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
+                results,
+              });
+              return results;
+            }
+          } catch {
+            // continue through broker candidates
+          }
         }
       }
-    };
 
-    const searchPromises: Promise<void>[] = [];
-
-    if (context?.preferBroker !== false) {
-      for (const candidate of this.getBrokerCandidates(
-        context?.brokerInstanceId,
-        context?.brokerId,
-      )) {
-        if (!candidate.broker.searchInstruments) continue;
-        searchPromises.push(
-          candidate.broker.searchInstruments(query, candidate.instance)
-            .then((items) => push(this.annotateSearchResults(items, candidate)))
-            .catch(() => {}),
-        );
+      for (const provider of this.providersInPriorityOrder()) {
+        try {
+          const items = await withSearchTimeout(provider.search(query, context));
+          if (!items) continue;
+          push(items);
+          if (results.length > 0) {
+            this.searchCache.set(cacheKey, {
+              expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
+              results,
+            });
+            return results;
+          }
+        } catch (error) {
+          if (shouldLogProviderError(error)) {
+            providerLog.error(`${provider.id} failed: ${error}`);
+          }
+        }
       }
-    }
 
-    for (const provider of this.providersInPriorityOrder()) {
-      searchPromises.push(
-        provider.search(query, context)
-          .then((items) => push(items))
-          .catch(() => {}),
-      );
-    }
+      this.searchCache.set(cacheKey, {
+        expiresAt: Date.now() + Math.min(SEARCH_CACHE_TTL_MS, 5_000),
+        results,
+      });
+      return results;
+    })().finally(() => {
+      this.searchInFlight.delete(cacheKey);
+    });
 
-    const deadline = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
-    await Promise.race([Promise.all(searchPromises), deadline]);
-    return results;
+    this.searchInFlight.set(cacheKey, task);
+    return task;
   }
 
   async getNews(query: NewsQuery): Promise<NewsArticle[]> {
@@ -764,8 +940,9 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
     const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
+    const cachedHistoryStale = isStaleIntradayHistory(cachedValue, isIntradayRange(range));
     const forceRefresh = context?.cacheMode === "refresh";
-    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale) {
+    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
       return cachedValue;
     }
 
@@ -776,7 +953,7 @@ export class AssetDataRouter implements DataProvider {
     if (providerHistory && providerHistory.value.length > 0) {
       return providerHistory.value;
     }
-    if (cachedValue.length > 0) return cachedValue;
+    if (cachedValue.length > 0 && !cachedHistoryStale) return cachedValue;
     if (!providerHistory) {
       throw new Error(`No history provider available for ${ticker}`);
     }
@@ -801,8 +978,9 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
     const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
+    const cachedHistoryStale = isStaleIntradayHistory(cachedValue, isIntradayResolution(resolution));
     const forceRefresh = context?.cacheMode === "refresh";
-    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale) {
+    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
       return cachedValue;
     }
 
@@ -813,7 +991,7 @@ export class AssetDataRouter implements DataProvider {
     if (providerHistory && providerHistory.value.length > 0) {
       return providerHistory.value;
     }
-    if (cachedValue.length > 0) return cachedValue;
+    if (cachedValue.length > 0 && !cachedHistoryStale) return cachedValue;
     if (!providerHistory) {
       throw new Error(`No resolution-aware history provider available for ${ticker}`);
     }
@@ -861,8 +1039,10 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
     const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
+    const isCurrentWindow = isCurrentHistoryWindow(endDate);
+    const cachedHistoryStale = isCurrentWindow && isPriceHistoryStaleForCurrentWindow(cachedValue);
     const forceRefresh = context?.cacheMode === "refresh";
-    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale) {
+    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
       return cachedValue;
     }
 
@@ -873,7 +1053,7 @@ export class AssetDataRouter implements DataProvider {
     if (providerResult && providerResult.value.length > 0) {
       return providerResult.value;
     }
-    return cachedValue.length > 0 ? cachedValue : (providerResult?.value ?? []);
+    return cachedValue.length > 0 && !cachedHistoryStale ? cachedValue : (providerResult?.value ?? []);
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, context?: MarketDataRequestContext): Promise<OptionsChain> {
@@ -997,6 +1177,14 @@ export class AssetDataRouter implements DataProvider {
     });
     if (records.length === 0) return [];
 
+    return this.sortCachedRecords(records, variantKeys, sourceKeys);
+  }
+
+  private sortCachedRecords<T>(
+    records: CachedResourceRecord<T>[],
+    variantKeys: string[],
+    sourceKeys: string[],
+  ): CachedResourceRecord<T>[] {
     const sourceRank = new Map(sourceKeys.map((sourceKey, index) => [sourceKey, index]));
     const variantRank = new Map(variantKeys.map((variantKey, index) => [variantKey, index]));
     return [...records].sort((a, b) => {
@@ -1046,8 +1234,9 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
     allowExpired = false,
+    options: CachedFinancialsReadOptions = {},
   ): TickerFinancials | null {
-    return this.readCachedMergedFinancialsSelection(ticker, exchange, context, allowExpired).value;
+    return this.readCachedMergedFinancialsSelection(ticker, exchange, context, allowExpired, options).value;
   }
 
   private readCachedMergedFinancialsSelection(
@@ -1055,6 +1244,7 @@ export class AssetDataRouter implements DataProvider {
     exchange?: string,
     context?: MarketDataRequestContext,
     allowExpired = false,
+    options: CachedFinancialsReadOptions = {},
   ): CachedFinancialsSelection {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKeys = this.getTickerVariantCandidates(exchange);
@@ -1063,22 +1253,51 @@ export class AssetDataRouter implements DataProvider {
       ? this.selectCachedResource<TickerFinancials>("financials", entityKey, variantKeys, brokerSourceKeys, allowExpired)
       : null;
     const sanitizedBrokerRecord = brokerRecord
-      ? { ...brokerRecord, value: sanitizeCachedFinancials(brokerRecord.value) }
+      ? { ...brokerRecord, value: sanitizeCachedFinancials(brokerRecord.value, options) }
       : null;
-    const providerSelection = mergeCachedFinancialRecords(
-      this.listCachedResources<TickerFinancials>(
+    const providerSourceKeys = this.getProviderSourceKeys();
+    const providerEntityKeys = options.includeSymbolProviderFallback
+      ? [...new Set([entityKey, normalizeTicker(ticker)])]
+      : [entityKey];
+    const providerRecords = this.sortCachedRecords(
+      providerEntityKeys.flatMap((providerEntityKey) => this.listCachedResources<TickerFinancials>(
         "financials",
-        entityKey,
+        providerEntityKey,
         variantKeys,
-        this.getProviderSourceKeys(),
+        providerSourceKeys,
         allowExpired,
-      ),
+      )),
+      variantKeys,
+      providerSourceKeys,
     );
+    const providerSelection = mergeCachedFinancialRecords(
+      providerRecords,
+      options,
+    );
+    const quoteSourceKeys = [...brokerSourceKeys, ...providerSourceKeys];
+    const quoteRecords = this.sortCachedRecords(
+      providerEntityKeys.flatMap((quoteEntityKey) => this.listCachedResources<Quote>(
+        "quote",
+        quoteEntityKey,
+        variantKeys,
+        quoteSourceKeys,
+        allowExpired,
+      )),
+      variantKeys,
+      quoteSourceKeys,
+    );
+    const quoteSelection = selectCachedQuoteRecord(quoteRecords, exchange, options);
+    const mergedValue = mergeFinancials(sanitizedBrokerRecord?.value ?? null, providerSelection.value);
+    const value = quoteSelection.quote
+      ? resolveTickerFinancialsQuoteState(mergedValue, quoteSelection.quote)
+      : mergedValue;
     return {
       brokerRecord: sanitizedBrokerRecord,
       providerValue: providerSelection.value,
-      value: mergeFinancials(sanitizedBrokerRecord?.value ?? null, providerSelection.value),
-      stale: (sanitizedBrokerRecord?.stale ?? false) || providerSelection.stale,
+      value: value
+        ? deriveMarketCapFromShares(value, { replaceExisting: !!quoteSelection.quote && quoteSelection.quote.marketCap == null })
+        : null,
+      stale: (sanitizedBrokerRecord?.stale ?? false) || providerSelection.stale || quoteSelection.stale,
     };
   }
 
@@ -1308,8 +1527,6 @@ export class AssetDataRouter implements DataProvider {
   ): Promise<SourceResult<TickerFinancials> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
-    let merged: TickerFinancials | null = null;
-    let firstSourceKey: string | null = null;
 
     for (const provider of this.providersInPriorityOrder()) {
       try {
@@ -1325,8 +1542,7 @@ export class AssetDataRouter implements DataProvider {
           value,
           this.resolveProviderPolicy("financials", provider),
         );
-        merged = mergeFinancials(merged, value);
-        firstSourceKey ??= sourceKey;
+        return { sourceKey, value };
       } catch (error) {
         if (shouldLogProviderError(error)) {
           providerLog.error(`${provider.id} failed: ${error}`);
@@ -1334,9 +1550,7 @@ export class AssetDataRouter implements DataProvider {
       }
     }
 
-    return merged && firstSourceKey
-      ? { sourceKey: firstSourceKey, value: merged }
-      : null;
+    return null;
   }
 
   private async fetchBrokerQuote(
@@ -1378,13 +1592,20 @@ export class AssetDataRouter implements DataProvider {
   ): Promise<SourceResult<Quote> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
-    const result = await this.firstProvider((provider) => provider.getQuote(ticker, exchange, context));
-    if (!result) return null;
-    const provider = this.resolveProviderBySourceKey(result.sourceKey);
-    if (provider) {
-      this.cacheResource("quote", entityKey, variantKey, result.sourceKey, result.value, this.resolveProviderPolicy("quote", provider));
+    for (const provider of this.providersInPriorityOrder()) {
+      try {
+        const quote = await provider.getQuote(ticker, exchange, context);
+        if (quote == null || isQuoteStaleForCurrentSession(quote)) continue;
+        const sourceKey = this.providerSourceKey(provider);
+        this.cacheResource("quote", entityKey, variantKey, sourceKey, quote, this.resolveProviderPolicy("quote", provider));
+        return { sourceKey, value: quote };
+      } catch (err) {
+        if (shouldLogProviderError(err)) {
+          providerLog.error(`${provider.id} failed: ${err}`);
+        }
+      }
     }
-    return result;
+    return null;
   }
 
   private async fetchBrokerPriceHistory(
@@ -1405,6 +1626,7 @@ export class AssetDataRouter implements DataProvider {
           range,
           context?.instrument ?? null,
         ));
+        if (isStaleIntradayHistory(result, isIntradayRange(range))) continue;
         this.cacheResource(
           "price-history",
           entityKey,
@@ -1441,6 +1663,7 @@ export class AssetDataRouter implements DataProvider {
           resolution,
           context?.instrument ?? null,
         ));
+        if (isStaleIntradayHistory(result, isIntradayResolution(resolution))) continue;
         this.cacheResource(
           "price-history",
           entityKey,
@@ -1470,6 +1693,7 @@ export class AssetDataRouter implements DataProvider {
     for (const provider of this.providersInPriorityOrder()) {
       try {
         const value = normalizePriceHistory(await provider.getPriceHistory(ticker, exchange, range, context));
+        if (isStaleIntradayHistory(value, isIntradayRange(range))) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "price-history",
@@ -1508,6 +1732,7 @@ export class AssetDataRouter implements DataProvider {
       if (!provider.getPriceHistoryForResolution) continue;
       try {
         const value = normalizePriceHistory(await provider.getPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context));
+        if (isStaleIntradayHistory(value, isIntradayResolution(resolution))) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "price-history",
@@ -1610,6 +1835,7 @@ export class AssetDataRouter implements DataProvider {
           barSize,
           context?.instrument ?? null,
         ));
+        if (isCurrentHistoryWindow(endDate) && isPriceHistoryStaleForCurrentWindow(result)) continue;
         this.cacheResource(
           "detailed-price-history",
           entityKey,
@@ -1642,6 +1868,7 @@ export class AssetDataRouter implements DataProvider {
       if (!provider.getDetailedPriceHistory) continue;
       try {
         const value = normalizePriceHistory(await provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
+        if (isCurrentHistoryWindow(endDate) && isPriceHistoryStaleForCurrentWindow(value)) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "detailed-price-history",
@@ -1880,12 +2107,15 @@ export class AssetDataRouter implements DataProvider {
   }
 
   private async revalidateExchangeRate(fromCurrency: string): Promise<void> {
+    const normalizedCurrency = fromCurrency.trim().toUpperCase();
+    if (normalizedCurrency === "USD") return;
+
     const result = await this.firstProvider(async (provider) => {
-      const rate = await provider.getExchangeRate(fromCurrency);
+      const rate = await provider.getExchangeRate(normalizedCurrency);
       return { provider, rate };
     });
     if (!result) return;
-    this.cacheExchangeRate(fromCurrency, result.value.rate, result.value.provider);
+    this.cacheExchangeRate(normalizedCurrency, result.value.rate, result.value.provider);
   }
 
   private async revalidateSecFilings(ticker: string, count = 15, exchange?: string, context?: MarketDataRequestContext): Promise<void> {

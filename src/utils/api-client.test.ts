@@ -210,6 +210,126 @@ describe("apiClient auth cookies", () => {
 
     unsubscribe();
   });
+
+  test("opens an anonymous market websocket and sends quote priority hints", () => {
+    const sent: unknown[] = [];
+    const sockets: Array<{
+      url: string;
+      readyState: number;
+      onopen: ((event: unknown) => void) | null;
+      close: () => void;
+    }> = [];
+
+    class FakeWebSocket {
+      static OPEN = 1;
+      readyState = 1;
+      onopen: ((event: unknown) => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+
+      constructor(readonly url: string) {
+        sockets.push(this);
+      }
+
+      send(payload: string): void {
+        sent.push(JSON.parse(payload));
+      }
+
+      close(): void {
+        this.readyState = 3;
+      }
+    }
+
+    globalThis.WebSocket = FakeWebSocket as any;
+
+    const unsubscribe = apiClient.subscribeQuotes([{
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      surface: "portfolio",
+      visible: true,
+      selected: true,
+      weight: 100,
+    }], () => {});
+    sockets[0]!.onopen?.({});
+
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]!.url).toBe("wss://api.gloom.sh/cloud/ws");
+    expect(sent).toContainEqual({
+      type: "market.subscribe",
+      symbols: [{
+        symbol: "AAPL",
+        exchange: "NASDAQ",
+        surface: "portfolio",
+        visible: true,
+        selected: true,
+        weight: 100,
+      }],
+    });
+
+    unsubscribe();
+  });
+
+  test("keeps an anonymous market websocket open after auth rejection", () => {
+    const seenPrices: number[] = [];
+    let closeCalls = 0;
+    const sockets: Array<{
+      readyState: number;
+      onopen: ((event: unknown) => void) | null;
+      onmessage: ((event: { data: string }) => void) | null;
+      close: () => void;
+    }> = [];
+
+    class FakeWebSocket {
+      static OPEN = 1;
+      readyState = 1;
+      onopen: ((event: unknown) => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+
+      constructor(readonly _url: string) {
+        sockets.push(this);
+      }
+
+      send(): void {}
+
+      close(): void {
+        closeCalls += 1;
+        this.readyState = 3;
+      }
+    }
+
+    globalThis.WebSocket = FakeWebSocket as any;
+
+    const unsubscribe = apiClient.subscribeQuotes([{ symbol: "AAPL" }], (_target, quote) => {
+      seenPrices.push(quote.price);
+    });
+    sockets[0]!.onopen?.({});
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ type: "auth.unverified" }) });
+    sockets[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: "market.quote",
+        symbol: "AAPL",
+        exchange: "",
+        quote: {
+          symbol: "AAPL",
+          price: 123,
+          currency: "USD",
+          change: 0,
+          changePercent: 0,
+          lastUpdated: 1,
+          providerId: "gloomberb-cloud",
+          dataSource: "live",
+        },
+      }),
+    });
+
+    expect(closeCalls).toBe(0);
+    expect(seenPrices).toEqual([123]);
+
+    unsubscribe();
+  });
 });
 
 describe("apiClient chat timestamps", () => {

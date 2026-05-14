@@ -27,6 +27,7 @@ import {
   type CloudMarketResponse,
   type CloudNewsPayload,
   type CloudNewsStoryItemPayload,
+  type CloudOptionsChainPayload,
   type CloudPricePointPayload,
   type CloudQuotePayload,
 } from "../utils/api-client";
@@ -42,7 +43,6 @@ const CLOUD_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
   { resolution: "5m", maxRange: "1M" },
   { resolution: "15m", maxRange: "3M" },
   { resolution: "30m", maxRange: "6M" },
-  { resolution: "45m", maxRange: "6M" },
   { resolution: "1h", maxRange: "1Y" },
   { resolution: "1d", maxRange: "ALL" },
   { resolution: "1wk", maxRange: "ALL" },
@@ -54,6 +54,7 @@ const CLOUD_PROVIDER_MISS_PATTERNS = [
   /figi.*missing or invalid/i,
   /error in the query/i,
 ];
+type CloudProviderMeta = NonNullable<CloudMarketResponse<unknown>["providerMeta"]>;
 
 function isCloudProviderMiss(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -71,10 +72,20 @@ async function withCloudFallback<T>(load: () => Promise<T>, message: string): Pr
   }
 }
 
-function mapQuote(quote: CloudQuotePayload): Quote {
+function cloudInternalProviderId(providerMeta?: CloudProviderMeta): string | null {
+  const upstream = providerMeta?.provider ?? providerMeta?.upstream;
+  return upstream ? `${providerId}:${upstream}` : null;
+}
+
+function isStaleCloudResponse(response: CloudMarketResponse<unknown>): boolean {
+  return response.stale === true || response.providerMeta?.stale === true;
+}
+
+function mapQuote(quote: CloudQuotePayload, providerMeta?: CloudProviderMeta): Quote {
   const { currency, divisor } = resolveCurrencyUnit(quote.currency);
   const listingExchangeName = quote.listingExchangeName ?? quote.exchangeName;
   const listingExchangeFullName = quote.listingExchangeFullName ?? quote.fullExchangeName ?? listingExchangeName;
+  const internalProviderId = cloudInternalProviderId(providerMeta);
   return {
     ...quote,
     currency: currency || quote.currency,
@@ -98,6 +109,30 @@ function mapQuote(quote: CloudQuotePayload): Quote {
     exchangeName: listingExchangeName,
     fullExchangeName: listingExchangeFullName,
     providerId,
+    provenance: internalProviderId
+      ? {
+        ...quote.provenance,
+        price: {
+          providerId: internalProviderId,
+          dataSource: quote.dataSource,
+        },
+        session: {
+          providerId: internalProviderId,
+          dataSource: quote.dataSource,
+        },
+        routing: {
+          providerId,
+          dataSource: quote.dataSource,
+        },
+        fields: {
+          ...quote.provenance?.fields,
+          cloudProvider: { providerId: internalProviderId, dataSource: quote.dataSource },
+          ...(providerMeta?.fallbackReason
+            ? { fallbackReason: { providerId: providerMeta.fallbackReason } }
+            : {}),
+        },
+      }
+      : quote.provenance,
   };
 }
 
@@ -112,8 +147,8 @@ function mapPricePoint(point: CloudPricePointPayload, divisor = 1): PricePoint {
   };
 }
 
-function mapCloudFinancials(financials: TickerFinancials): TickerFinancials {
-  const quote = financials.quote ? mapQuote(financials.quote as CloudQuotePayload) : undefined;
+function mapCloudFinancials(financials: TickerFinancials, providerMeta?: CloudProviderMeta): TickerFinancials {
+  const quote = financials.quote ? mapQuote(financials.quote as CloudQuotePayload, providerMeta) : undefined;
   const divisor = quote ? resolveCurrencyUnit(quote.currency).divisor : 1;
   return {
     quote,
@@ -127,6 +162,15 @@ function mapCloudFinancials(financials: TickerFinancials): TickerFinancials {
         ? point
         : mapPricePoint(point as unknown as CloudPricePointPayload, divisor)
     ),
+  };
+}
+
+function mapOptionsChain(chain: CloudOptionsChainPayload): OptionsChain {
+  return {
+    underlyingSymbol: chain.underlyingSymbol,
+    expirationDates: chain.expirationDates ?? [],
+    calls: chain.calls ?? [],
+    puts: chain.puts ?? [],
   };
 }
 
@@ -396,7 +440,13 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancials(ticker, exchange);
-      return mapCloudFinancials(unwrapRequiredCloudResponse(response, `Cloud financials are unavailable for ${ticker}`));
+      if (isStaleCloudResponse(response)) {
+        throw createProviderMiss(`Cloud financials are stale for ${ticker}`);
+      }
+      return mapCloudFinancials(
+        unwrapRequiredCloudResponse(response, `Cloud financials are unavailable for ${ticker}`),
+        response.providerMeta,
+      );
     }, `Cloud financials are unavailable for ${ticker}`);
   }
 
@@ -437,10 +487,16 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
     await requireVerifiedSession();
     return withCloudFallback(
-      async () => mapQuote(unwrapRequiredCloudResponse(
-        await apiClient.getCloudQuote(ticker, exchange),
-        `Cloud quotes are unavailable for ${ticker}`,
-      )),
+      async () => {
+        const response = await apiClient.getCloudQuote(ticker, exchange);
+        if (isStaleCloudResponse(response)) {
+          throw createProviderMiss(`Cloud quotes are stale for ${ticker}`);
+        }
+        return mapQuote(
+          unwrapRequiredCloudResponse(response, `Cloud quotes are unavailable for ${ticker}`),
+          response.providerMeta,
+        );
+      },
       `Cloud quotes are unavailable for ${ticker}`,
     );
   }
@@ -550,7 +606,10 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       () => apiClient.getCloudHistory(ticker, exchange, request),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);
+    if (isStaleCloudResponse(response)) {
+      throw createProviderMiss(`Cloud chart data is stale for ${ticker}`);
+    }
+    const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
     return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
       .map((point) => mapPricePoint(point, divisor));
   }
@@ -575,7 +634,10 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       }),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);
+    if (isStaleCloudResponse(response)) {
+      throw createProviderMiss(`Cloud chart data is stale for ${ticker}`);
+    }
+    const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
     return unwrapRequiredCloudResponse(response, `Cloud chart data is unavailable for ${ticker}`)
       .map((point) => mapPricePoint(point, divisor));
   }
@@ -599,20 +661,33 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       }),
       `Cloud detailed chart history is unavailable for ${ticker}`,
     );
-    const { divisor } = resolveCurrencyUnit(response.providerMeta?.currency);
+    if (isStaleCloudResponse(response)) {
+      throw createProviderMiss(`Cloud detailed chart history is stale for ${ticker}`);
+    }
+    const { divisor } = resolveCurrencyUnit(response.currency ?? response.providerMeta?.currency);
     return unwrapRequiredCloudResponse(response, `Cloud detailed chart history is unavailable for ${ticker}`)
       .map((point) => mapPricePoint(point, divisor));
   }
 
-  async getOptionsChain(_ticker: string, _exchange?: string, _expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
-    throw createProviderMiss("Cloud options chains are not available");
+  async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudOptionsChain(ticker, exchange, expirationDate);
+      const chain = unwrapRequiredCloudResponse(
+        response,
+        `Cloud options chains are unavailable for ${ticker}`,
+      );
+      return mapOptionsChain(chain);
+    }, `Cloud options chains are unavailable for ${ticker}`);
   }
 
   subscribeQuotes(
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    void apiClient.ensureVerifiedSession().catch(() => {});
+    if (apiClient.getSessionToken()) {
+      void apiClient.ensureVerifiedSession().catch(() => {});
+    }
     const targetMap = new Map<string, QuoteSubscriptionTarget[]>();
     for (const target of targets) {
       const key = quoteTargetKey(target.symbol, target.exchange);
@@ -625,6 +700,10 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       targets.map((target) => ({
         symbol: target.symbol,
         exchange: target.exchange,
+        surface: target.surface,
+        visible: target.visible,
+        selected: target.selected,
+        weight: target.weight,
       })),
       (target, quote) => {
         const key = quoteTargetKey(target.symbol, target.exchange);

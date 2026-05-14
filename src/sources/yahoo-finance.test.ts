@@ -33,6 +33,43 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(history[0]?.close).toBe(200);
   });
 
+  test("maps IBKR option symbols to Yahoo option quote marks", async () => {
+    const provider = new YahooFinanceClient() as any;
+    provider.getOptionsChain = async (ticker: string, _exchange: string, expirationDate: number) => ({
+      underlyingSymbol: ticker,
+      expirationDates: [expirationDate],
+      calls: [{
+        contractSymbol: "AMD270917C00230000",
+        strike: 230,
+        currency: "USD",
+        lastPrice: 251,
+        change: 1.5,
+        percentChange: 0.6,
+        volume: 10,
+        openInterest: 20,
+        bid: 250.25,
+        ask: 254.5,
+        impliedVolatility: 0.4,
+        inTheMoney: false,
+        expiration: expirationDate,
+        lastTradeDate: 1_800_000_000,
+      }],
+      puts: [],
+    });
+
+    const quote = await provider.getQuote("AMD   270917C00230000");
+
+    expect(quote).toMatchObject({
+      symbol: "AMD   270917C00230000",
+      price: 252.375,
+      mark: 252.375,
+      bid: 250.25,
+      ask: 254.5,
+      providerId: "yahoo",
+    });
+    expect(quote.lastUpdated).toBe(1_800_000_000_000);
+  });
+
   test("preserves analyst rating price targets from upgrade history", async () => {
     const provider = new YahooFinanceClient() as any;
     let requestUrl = "";

@@ -1,10 +1,16 @@
 import type { PricePoint, TickerFinancials } from "../types/financials";
 
+const MAX_CURRENT_INTRADAY_HISTORY_LAG_MS = 18 * 60 * 60 * 1000;
+
 function getPointTimestamp(point: PricePoint): number {
   const value = point.date as Date | string | number | null | undefined;
   if (value instanceof Date) return value.getTime();
   if (value == null) return Number.NaN;
   return new Date(value).getTime();
+}
+
+function hasValidClose(point: PricePoint): boolean {
+  return Number.isFinite(point.close) && point.close > 0;
 }
 
 function comparePricePointsByDate(left: PricePoint, right: PricePoint): number {
@@ -31,6 +37,7 @@ export function normalizePriceHistory(points: PricePoint[]): PricePoint[] {
   for (const point of points) {
     const time = getPointTimestamp(point);
     if (!Number.isFinite(time)) continue;
+    if (!hasValidClose(point)) continue;
 
     if (firstTimestamp === null) {
       firstTimestamp = time;
@@ -53,6 +60,15 @@ export function normalizePriceHistory(points: PricePoint[]): PricePoint[] {
     return [...validPoints].sort(comparePricePointsByDate);
   }
   return validPoints.length === points.length ? points : validPoints;
+}
+
+export function isPriceHistoryStaleForCurrentWindow(points: PricePoint[], now = Date.now()): boolean {
+  const normalized = normalizePriceHistory(points);
+  const latest = normalized.at(-1);
+  if (!latest) return false;
+
+  const latestTime = getPointTimestamp(latest);
+  return Number.isFinite(latestTime) && now - latestTime > MAX_CURRENT_INTRADAY_HISTORY_LAG_MS;
 }
 
 export function normalizeTickerFinancialsPriceHistory(financials: TickerFinancials): TickerFinancials {

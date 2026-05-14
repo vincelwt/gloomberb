@@ -62,7 +62,24 @@ export function TickerDetailPane({ focused, width, height }: PaneProps) {
   const paneInstance = usePaneInstance();
   const { symbol, ticker, financials } = usePaneTicker();
   const streamingTarget = quoteSubscriptionTargetFromTicker(ticker, ticker?.metadata.ticker, "provider");
-  const streamingTargets = useMemo(() => (streamingTarget ? [streamingTarget] : []), [streamingTarget]);
+  const streamingTargets = useMemo(() => (
+    streamingTarget
+      ? [{
+        ...streamingTarget,
+        surface: "detail" as const,
+        visible: true,
+        selected: true,
+        weight: 100,
+      }]
+      : []
+  ), [
+    streamingTarget?.symbol,
+    streamingTarget?.exchange,
+    streamingTarget?.route,
+    streamingTarget?.context?.brokerId,
+    streamingTarget?.context?.brokerInstanceId,
+    streamingTarget?.context?.instrument,
+  ]);
   useQuoteStreaming(streamingTargets);
 
   const { collectionId } = usePaneCollection();

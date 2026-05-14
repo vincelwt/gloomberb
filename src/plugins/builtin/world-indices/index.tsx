@@ -183,31 +183,70 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
 
-    for (const entry of WORLD_INDICES) {
-      setQuotes((prev) => {
-        const next = new Map(prev);
+    setQuotes((prev) => {
+      const next = new Map(prev);
+      for (const entry of WORLD_INDICES) {
         const existing = next.get(entry.symbol);
         next.set(entry.symbol, { quote: existing?.quote ?? null, loading: true, error: null });
+      }
+      return next;
+    });
+
+    const loadQuotes = async (): Promise<QuoteMap> => {
+      const next = new Map<string, IndexQuoteState>();
+      if (dataProvider.getQuotesBatch) {
+        const results = await dataProvider.getQuotesBatch(
+          WORLD_INDICES.map((entry) => ({ symbol: entry.symbol, exchange: "" })),
+        );
+        const bySymbol = new Map(results.map((result) => [result.target.symbol, result]));
+        for (const entry of WORLD_INDICES) {
+          const result = bySymbol.get(entry.symbol);
+          next.set(entry.symbol, {
+            quote: result?.quote ?? null,
+            loading: false,
+            error: result?.error
+              ? result.error instanceof Error ? result.error.message : String(result.error)
+              : null,
+          });
+        }
+        return next;
+      }
+
+      await Promise.all(WORLD_INDICES.map(async (entry) => {
+        try {
+          const quote = await dataProvider.getQuote(entry.symbol, "");
+          next.set(entry.symbol, { quote, loading: false, error: null });
+        } catch (err: unknown) {
+          next.set(entry.symbol, {
+            quote: null,
+            loading: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }));
+      return next;
+    };
+
+    loadQuotes().then((nextQuotes) => {
+      if (fetchGenRef.current !== gen) return;
+      setQuotes((prev) => {
+        const next = new Map(prev);
+        for (const [symbol, state] of nextQuotes) {
+          next.set(symbol, state);
+        }
         return next;
       });
-
-      dataProvider.getQuote(entry.symbol, "").then((quote) => {
-        if (fetchGenRef.current !== gen) return;
-        setQuotes((prev) => {
-          const next = new Map(prev);
-          next.set(entry.symbol, { quote, loading: false, error: null });
-          return next;
-        });
-      }).catch((err: unknown) => {
-        if (fetchGenRef.current !== gen) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        setQuotes((prev) => {
-          const next = new Map(prev);
-          next.set(entry.symbol, { quote: null, loading: false, error: msg });
-          return next;
-        });
+    }).catch((err: unknown) => {
+      if (fetchGenRef.current !== gen) return;
+      const message = err instanceof Error ? err.message : String(err);
+      setQuotes((prev) => {
+        const next = new Map(prev);
+        for (const entry of WORLD_INDICES) {
+          next.set(entry.symbol, { quote: null, loading: false, error: message });
+        }
+        return next;
       });
-    }
+    });
   }, [dataProvider]);
 
   useEffect(() => {

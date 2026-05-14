@@ -3,6 +3,8 @@ import { canonicalExchange, EXCHANGE_TIME_ZONES } from "./exchanges";
 
 const US_EXTENDED_HOURS_EXCHANGES = new Set(["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"]);
 const exchangeLocalDateFormatters = new Map<string, Intl.DateTimeFormat>();
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const OVERNIGHT_CLOSE_MAX_AGE_MS = 20 * 60 * 60 * 1000;
 const usSessionFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
   weekday: "short",
@@ -41,6 +43,38 @@ function exchangeLocalDate(exchange: string, timestampMs: number): string | null
   const day = parts.find((part) => part.type === "day")?.value;
   if (!year || !month || !day) return null;
   return `${year}-${month}-${day}`;
+}
+
+function isoLocalDateToUtcDay(date: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+  return Math.floor(Date.UTC(year, month - 1, day) / MS_PER_DAY);
+}
+
+function localWeekdaysBetween(earlierDate: string, laterDate: string): number {
+  const earlierDay = isoLocalDateToUtcDay(earlierDate);
+  const laterDay = isoLocalDateToUtcDay(laterDate);
+  if (earlierDay == null || laterDay == null || laterDay <= earlierDay) return 0;
+
+  let weekdays = 0;
+  for (let day = earlierDay + 1; day <= laterDay; day += 1) {
+    const weekday = new Date(day * MS_PER_DAY).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) {
+      weekdays += 1;
+    }
+  }
+  return weekdays;
+}
+
+function localWeekday(date: string): number | null {
+  const day = isoLocalDateToUtcDay(date);
+  return day == null ? null : new Date(day * MS_PER_DAY).getUTCDay();
 }
 
 function usSessionState(timestampMs: number): UsSessionState {
@@ -85,9 +119,16 @@ export function isQuoteStaleForCurrentSession(quote: Quote | null | undefined, n
 
   if (isUsExtendedHoursExchange(exchange)) {
     const session = usSessionState(now);
-    return session === "PRE" || session === "REGULAR" || session === "POST";
+    if (session === "PRE" || session === "REGULAR" || session === "POST") {
+      return true;
+    }
   }
 
+  const weekdaysBehind = localWeekdaysBetween(quoteDate, currentDate);
+  if (weekdaysBehind > 1) return true;
+  if (weekdaysBehind === 1 && now - quote.lastUpdated > OVERNIGHT_CLOSE_MAX_AGE_MS) {
+    return localWeekday(currentDate) !== 1;
+  }
   return false;
 }
 

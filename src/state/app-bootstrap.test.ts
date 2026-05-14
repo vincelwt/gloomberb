@@ -408,8 +408,28 @@ describe("initializeAppState", () => {
       custom: {},
       tags: [],
     });
+    const hydrationSymbols = [
+      "AAPL",
+      ...Array.from({ length: 13 }, (_, index) => `T${String(index + 1).padStart(2, "0")}`),
+    ];
+    for (const symbol of hydrationSymbols.slice(1)) {
+      await tickerRepository.createTicker({
+        ticker: symbol,
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: symbol,
+        portfolios: [],
+        watchlists: ["main"],
+        positions: [],
+        broker_contracts: [],
+        custom: {},
+        tags: [],
+      });
+    }
 
     const events: string[] = [];
+    const cachedTargetRequests: string[] = [];
+    const financialRefreshes: string[] = [];
 
     await initializeAppState({
       config: quoteOnlyConfig,
@@ -417,23 +437,26 @@ describe("initializeAppState", () => {
       dataProvider: {
         id: "test-provider",
         name: "Test Provider",
-        getCachedFinancialsForTargets: () => new Map([["AAPL", {
-          annualStatements: [],
-          quarterlyStatements: [],
-          priceHistory: [],
-          quote: {
-            symbol: "AAPL",
-            price: 200,
-            currency: "USD",
-            change: 1,
-            changePercent: 0.5,
-            marketCap: 2_000_000_000,
-            lastUpdated: Date.now(),
-          },
-          fundamentals: {
-            trailingPE: 25,
-          },
-        }]]),
+        getCachedFinancialsForTargets: (targets: Array<{ symbol: string }>) => {
+          cachedTargetRequests.push(...targets.map((target) => target.symbol));
+          return new Map(targets.map((target) => [target.symbol, {
+            annualStatements: [],
+            quarterlyStatements: [],
+            priceHistory: [],
+            quote: {
+              symbol: target.symbol,
+              price: 200,
+              currency: "USD",
+              change: 1,
+              changePercent: 0.5,
+              marketCap: 2_000_000_000,
+              lastUpdated: Date.now(),
+            },
+            fundamentals: {
+              trailingPE: 25,
+            },
+          }]));
+        },
       } as any,
       sessionSnapshot: {
         paneState: {
@@ -446,11 +469,11 @@ describe("initializeAppState", () => {
         activePanel: "left",
         statusBarVisible: true,
         openPaneIds: ["portfolio-list:main"],
-        hydrationTargets: [{
-          symbol: "AAPL",
+        hydrationTargets: hydrationSymbols.map((symbol) => ({
+          symbol,
           exchange: "NASDAQ",
           instrument: null,
-        }],
+        })),
         exchangeCurrencies: [],
         savedAt: Date.now(),
       },
@@ -458,13 +481,17 @@ describe("initializeAppState", () => {
       primeCachedFinancials: (entries) => {
         events.push(`prime:${entries.map((entry) => entry.ticker.metadata.ticker).join(",")}`);
       },
-      refreshTicker: () => {},
+      refreshTicker: (symbol) => { financialRefreshes.push(symbol); },
       refreshQuote: () => {},
       autoImportBrokerPositions: async () => {},
     });
 
-    expect(events).toContain("prime:AAPL");
-    expect(events.indexOf("prime:AAPL")).toBeLessThan(events.indexOf("SET_INITIALIZED"));
+    const primeEvent = events.find((event) => event.startsWith("prime:"));
+    expect(primeEvent).toContain("AAPL");
+    expect(primeEvent).toContain("T13");
+    expect(cachedTargetRequests).toContain("T13");
+    expect(financialRefreshes).not.toContain("T13");
+    expect(events.indexOf(primeEvent!)).toBeLessThan(events.indexOf("SET_INITIALIZED"));
 
     persistence.close();
   });

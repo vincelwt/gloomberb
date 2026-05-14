@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizePriceHistory } from "./price-history";
+import { isPriceHistoryStaleForCurrentWindow, normalizePriceHistory } from "./price-history";
 
 describe("normalizePriceHistory", () => {
   test("drops poisoned cached history when every timestamp collapses to the same value", () => {
@@ -21,5 +21,32 @@ describe("normalizePriceHistory", () => {
     ]);
 
     expect(history.map((point) => point.close)).toEqual([101, 102, 103]);
+  });
+
+  test("drops zero-price bars instead of treating missing upstream prices as real data", () => {
+    const history = normalizePriceHistory([
+      { date: new Date("2026-05-13T13:30:00Z"), close: 64 },
+      { date: new Date("2026-05-13T13:45:00Z"), close: 0 },
+      { date: new Date("2026-05-13T14:00:00Z"), close: Number.NaN },
+      { date: new Date("2026-05-13T14:15:00Z"), close: 65 },
+    ]);
+
+    expect(history.map((point) => point.close)).toEqual([64, 65]);
+  });
+
+  test("detects intraday history that is old even when the cache record is fresh", () => {
+    expect(
+      isPriceHistoryStaleForCurrentWindow(
+        [{ date: new Date("2026-04-17T20:00:00Z"), close: 67 }],
+        Date.parse("2026-05-13T23:00:00Z"),
+      ),
+    ).toBe(true);
+
+    expect(
+      isPriceHistoryStaleForCurrentWindow(
+        [{ date: new Date("2026-05-13T22:45:00Z"), close: 67 }],
+        Date.parse("2026-05-13T23:00:00Z"),
+      ),
+    ).toBe(false);
   });
 });

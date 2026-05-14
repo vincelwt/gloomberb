@@ -5,6 +5,7 @@ import type {
   Fundamentals,
   HolderData,
   HolderRecord,
+  OptionsChain,
   PricePoint,
   Quote,
   TickerFinancials,
@@ -98,6 +99,10 @@ export type PersistedAuthUser = Pick<AuthUser, "id" | "emailVerified"> & Partial
 export interface CloudQuotePayload extends Quote {
   providerId: "gloomberb-cloud";
   dataSource: "live" | "delayed";
+}
+
+export interface CloudOptionsChainPayload extends OptionsChain {
+  providerId: "gloomberb-cloud";
 }
 
 export interface CloudCompanyProfile extends CompanyProfile {}
@@ -317,10 +322,19 @@ export interface CloudMarketResponse<T> {
   reasonCode?: string;
   asOf?: string;
   staleAt?: string;
+  stale?: boolean;
+  currency?: string;
   providerMeta?: {
+    provider?: string;
     upstream?: string;
+    status?: CloudMarketStatus;
+    reasonCode?: string;
     normalizedSymbol?: string;
     normalizedExchange?: string;
+    stale?: boolean;
+    fallbackReason?: string;
+    requestedResolution?: string;
+    servedResolution?: string;
     latencyMs?: number;
     range?: string;
     granularity?: string;
@@ -356,6 +370,10 @@ export interface CloudVerificationResponse {
 export interface QuoteStreamTarget {
   symbol: string;
   exchange?: string;
+  surface?: "portfolio" | "watchlist" | "detail" | "monitor" | "inline" | "screener" | "unknown";
+  visible?: boolean;
+  selected?: boolean;
+  weight?: number;
 }
 
 function marketKey(symbol: string, exchange?: string): string {
@@ -602,18 +620,20 @@ class GloomApiClient {
   }
 
   private shouldKeepSocketOpen(): boolean {
+    if (this.quoteTargets.size > 0) return true;
     return !!this.getSocketAuthToken()
       && !!this.currentUser?.emailVerified
-      && (this.channelListeners.size > 0 || this.quoteTargets.size > 0);
+      && this.channelListeners.size > 0;
   }
 
   private ensureSocket(): void {
     if (!this.shouldKeepSocketOpen() || this.ws || this.reconnectTimer) return;
 
     const socketToken = this.getSocketAuthToken();
-    if (!socketToken) return;
     const usingWebSocketToken = !!this.websocketToken;
-    const url = `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`;
+    const url = socketToken
+      ? `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`
+      : `${this.getWebSocketBaseUrl()}/cloud/ws`;
     cloudApiLog.info("open websocket", {
       hasToken: !!socketToken,
       tokenSource: usingWebSocketToken ? "websocket" : "session",
@@ -714,10 +734,7 @@ class GloomApiClient {
     if (this.quoteTargets.size > 0) {
       this.sendSocketMessage({
         type: "market.subscribe",
-        symbols: [...this.quoteTargets.values()].map((target) => ({
-          symbol: target.symbol,
-          exchange: target.exchange ?? "",
-        })),
+        symbols: [...this.quoteTargets.values()].map((target) => this.serializeQuoteStreamTarget(target)),
       });
     }
   }
@@ -761,21 +778,26 @@ class GloomApiClient {
     if (subscribes.length > 0) {
       this.sendSocketMessage({
         type: "market.subscribe",
-        symbols: subscribes.map((target) => ({
-          symbol: target.symbol,
-          exchange: target.exchange ?? "",
-        })),
+        symbols: subscribes.map((target) => this.serializeQuoteStreamTarget(target)),
       });
     }
     if (unsubscribes.length > 0) {
       this.sendSocketMessage({
         type: "market.unsubscribe",
-        symbols: unsubscribes.map((target) => ({
-          symbol: target.symbol,
-          exchange: target.exchange ?? "",
-        })),
+        symbols: unsubscribes.map((target) => this.serializeQuoteStreamTarget(target)),
       });
     }
+  }
+
+  private serializeQuoteStreamTarget(target: QuoteStreamTarget): QuoteStreamTarget {
+    return {
+      symbol: target.symbol,
+      exchange: target.exchange ?? "",
+      ...(target.surface ? { surface: target.surface } : {}),
+      ...(target.visible ? { visible: true } : {}),
+      ...(target.selected ? { selected: true } : {}),
+      ...(Number.isFinite(target.weight) ? { weight: target.weight } : {}),
+    };
   }
 
   private async handleSocketMessage(raw: string): Promise<void> {
@@ -807,6 +829,9 @@ class GloomApiClient {
       }
       if (this.currentUser) {
         this.currentUser = { ...this.currentUser, emailVerified: false };
+      }
+      if (this.quoteTargets.size > 0) {
+        return;
       }
       this.teardownSocket();
       return;
@@ -1036,17 +1061,27 @@ class GloomApiClient {
           const normalized = {
             symbol: normalizeSymbol(target.symbol),
             exchange: canonicalExchange(target.exchange),
+            surface: target.surface,
+            visible: target.visible,
+            selected: target.selected,
+            weight: target.weight,
           } satisfies QuoteStreamTarget;
           return [marketKey(normalized.symbol, normalized.exchange), normalized] as const;
         }),
     ).values()];
 
     const newSubscriptions: QuoteStreamTarget[] = [];
+    const updatedSubscriptions: QuoteStreamTarget[] = [];
     for (const target of uniqueTargets) {
       const key = marketKey(target.symbol, target.exchange);
       const listeners = this.quoteListeners.get(key) ?? new Set<QuoteListener>();
       if (listeners.size === 0) {
         newSubscriptions.push(target);
+      } else {
+        const existing = this.quoteTargets.get(key);
+        if (JSON.stringify(this.serializeQuoteStreamTarget(existing ?? target)) !== JSON.stringify(this.serializeQuoteStreamTarget(target))) {
+          updatedSubscriptions.push(target);
+        }
       }
       listeners.add(onQuote);
       this.quoteListeners.set(key, listeners);
@@ -1054,12 +1089,13 @@ class GloomApiClient {
     }
 
     this.ensureSocket();
-    if (newSubscriptions.length > 0) {
+    const subscriptionsToSend = [...newSubscriptions, ...updatedSubscriptions];
+    if (subscriptionsToSend.length > 0) {
       cloudApiLog.info("register quote listeners", {
-        count: newSubscriptions.length,
-        symbols: newSubscriptions.map((target) => marketKey(target.symbol, target.exchange)),
+        count: subscriptionsToSend.length,
+        symbols: subscriptionsToSend.map((target) => marketKey(target.symbol, target.exchange)),
       });
-      this.queueQuoteSubscribes(newSubscriptions);
+      this.queueQuoteSubscribes(subscriptionsToSend);
     }
 
     return () => {
@@ -1137,6 +1173,17 @@ class GloomApiClient {
       method: "POST",
       body: JSON.stringify({ targets, mode }),
     });
+  }
+
+  async getCloudOptionsChain(
+    symbol: string,
+    exchange?: string,
+    expirationDate?: number,
+  ): Promise<CloudMarketResponse<CloudOptionsChainPayload>> {
+    const params = new URLSearchParams({ symbol });
+    if (exchange) params.set("exchange", exchange);
+    if (expirationDate != null) params.set("expirationDate", String(expirationDate));
+    return this.request<CloudMarketResponse<CloudOptionsChainPayload>>(`/market/options?${params.toString()}`);
   }
 
   async getCloudProfile(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCompanyProfile>> {

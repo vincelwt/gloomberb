@@ -8,7 +8,6 @@ import {
   BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
   setupBreakingNewsNotifications,
 } from "./breaking-notifications";
-import { setDigestPersistence } from "./digest-store";
 import {
   addUserNewsFeed,
   getEnabledNewsFeeds,
@@ -56,7 +55,6 @@ const FeedPane = createNewsPresetPane({
 });
 
 export function registerNewsWireFeatures(ctx: GloomPluginContext): () => void {
-  setDigestPersistence(ctx.persistence);
   ctx.registerPane({ id: "news-top", name: "Top News", icon: "T", component: TopPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } });
   ctx.registerPane({ id: "news-feed", name: "News Feed", icon: "N", component: FeedPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } });
   ctx.registerPane({ id: "news-industry", name: "Sector News", icon: "S", component: IndustryPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } });

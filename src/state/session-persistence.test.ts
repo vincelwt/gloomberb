@@ -24,7 +24,10 @@ function createTicker(symbol: string, exchange = "NASDAQ"): TickerRecord {
 describe("session persistence", () => {
   test("builds a working-set snapshot from runtime state", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
-    const tickers = new Map<string, TickerRecord>([["AAPL", createTicker("AAPL")]]);
+    const tickers = new Map<string, TickerRecord>([
+      ["AAPL", createTicker("AAPL")],
+      ["MSFT", createTicker("MSFT")],
+    ]);
     const financials = new Map<string, TickerFinancials>([["AAPL", {
       annualStatements: [],
       quarterlyStatements: [],
@@ -61,8 +64,7 @@ describe("session persistence", () => {
     });
 
     expect(snapshot.focusedPaneId).toBe("ticker-detail:main");
-    expect(snapshot.hydrationTargets).toHaveLength(1);
-    expect(snapshot.hydrationTargets[0]?.symbol).toBe("AAPL");
+    expect(snapshot.hydrationTargets.map((target) => target.symbol)).toEqual(["AAPL", "MSFT"]);
     expect(snapshot.exchangeCurrencies).toContain("JPY");
     expect(snapshot.paneState["portfolio-list:main"]).toEqual({
       cursorSymbol: "AAPL",

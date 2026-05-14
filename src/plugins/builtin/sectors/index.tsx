@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Box } from "../../../ui";
 import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableColumn, type DataTableKeyEvent } from "../../../components";
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
-import type { PricePoint } from "../../../types/financials";
+import type { PricePoint, Quote } from "../../../types/financials";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
@@ -300,14 +300,35 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
       rows.map((row) => ({ ...row, loading: true }))
     )));
 
-    const fetches = sectorDefs.map(async (sector) => {
+    const loadQuotes = async (): Promise<Map<string, Quote | null>> => {
+      const quotes = new Map<string, Quote | null>();
+      if (dataProvider.getQuotesBatch) {
+        const results = await dataProvider.getQuotesBatch(
+          sectorDefs.map((sector) => ({ symbol: sector.etf, exchange: "" })),
+        ).catch(() => []);
+        for (const result of results) {
+          quotes.set(result.target.symbol, result.quote ?? null);
+        }
+        return quotes;
+      }
+
+      await Promise.all(sectorDefs.map(async (sector) => {
+        try {
+          quotes.set(sector.etf, await dataProvider.getQuote(sector.etf, ""));
+        } catch {
+          quotes.set(sector.etf, null);
+        }
+      }));
+      return quotes;
+    };
+
+    const fetches = loadQuotes().then((quotesByEtf) => Promise.allSettled(sectorDefs.map(async (sector) => {
       try {
-        const [quoteResult, historyResult] = await Promise.allSettled([
-          dataProvider.getQuote(sector.etf, ""),
-          dataProvider.getPriceHistory(sector.etf, "", "1Y"),
-        ]);
+        const historyResult = await dataProvider.getPriceHistory(sector.etf, "", "1Y")
+          .then((value) => ({ status: "fulfilled" as const, value }))
+          .catch(() => ({ status: "rejected" as const }));
         if (fetchGenRef.current !== gen) return;
-        const quote = quoteResult.status === "fulfilled" ? quoteResult.value : null;
+        const quote = quotesByEtf.get(sector.etf) ?? null;
         const history = historyResult.status === "fulfilled" ? historyResult.value : [];
         const historyClose = latestHistoryClose(history);
         const price = quote?.price ?? historyClose;
@@ -336,9 +357,9 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
           )
         )));
       }
-    });
+    })));
 
-    Promise.allSettled(fetches).then(() => {
+    fetches.then(() => {
       if (fetchGenRef.current === gen) {
         setLastRefreshByCollection((prev) => ({
           ...prev,

@@ -152,6 +152,9 @@ export function useInlineTickers(texts: readonly string[]): {
       return {
         symbol: ticker.metadata.ticker,
         exchange: ticker.metadata.exchange,
+        surface: "inline" as const,
+        visible: true,
+        weight: 40,
         context: instrument
           ? {
             brokerId: instrument.brokerId,

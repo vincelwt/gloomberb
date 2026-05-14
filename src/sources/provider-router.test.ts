@@ -83,6 +83,23 @@ function makeArticle(id: string): NewsArticle {
 }
 
 describe("AssetDataRouter", () => {
+  test("serves USD exchange rate locally without provider revalidation", async () => {
+    let providerCalls = 0;
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      async getExchangeRate() {
+        providerCalls += 1;
+        return 1;
+      },
+    });
+
+    const rate = await router.getExchangeRate("usd");
+    await Promise.resolve();
+
+    expect(rate).toBe(1);
+    expect(providerCalls).toBe(0);
+  });
+
   test("routes market calls only through sources with market capability", async () => {
     const newsOnlySource: CapabilityRouteSource = {
       id: "news-only",
@@ -378,6 +395,96 @@ describe("AssetDataRouter", () => {
     expect(quote.price).toBe(123.45);
   });
 
+  test("falls back to provider quotes when a broker mark is stale", async () => {
+    const fixedNow = Date.parse("2026-05-13T21:00:00Z");
+    const realDateNow = Date.now;
+    Date.now = () => fixedNow;
+    try {
+      const yahooProvider: DataProvider = {
+        ...fallbackProvider,
+        id: "yahoo",
+        name: "Yahoo",
+        async getQuote(symbol) {
+          return {
+            symbol,
+            providerId: "yahoo",
+            price: 50_500,
+            currency: "JPY",
+            change: 4400,
+            changePercent: 9.54,
+            lastUpdated: Date.parse("2026-05-13T06:24:00Z"),
+            listingExchangeName: "JPX",
+            marketState: "CLOSED",
+            dataSource: "delayed",
+          };
+        },
+      };
+      const router = new AssetDataRouter(yahooProvider);
+      const broker: BrokerAdapter = {
+        id: "ibkr",
+        name: "IBKR",
+        configSchema: [],
+        async validate() {
+          return true;
+        },
+        async importPositions() {
+          return [];
+        },
+        async getQuote() {
+          return {
+            symbol: "285A.T",
+            providerId: "ibkr",
+            price: 46_100,
+            currency: "JPY",
+            change: 0,
+            changePercent: 0,
+            lastUpdated: Date.parse("2026-05-08T06:00:00Z"),
+            dataSource: "delayed",
+          };
+        },
+      };
+
+      router.attachRegistry({
+        brokers: new Map([["ibkr", broker]]),
+        getEnabledCapabilities: () => [],
+      } as any);
+      router.setConfigAccessor(() => ({
+        dataDir: "",
+        configVersion: CURRENT_CONFIG_VERSION,
+        baseCurrency: "USD",
+        refreshIntervalMinutes: 30,
+        portfolios: [],
+        watchlists: [],
+        columns: [],
+        layout: cloneLayout(DEFAULT_LAYOUT),
+        layouts: [{ name: "Default", layout: cloneLayout(DEFAULT_LAYOUT) }],
+        activeLayoutIndex: 0,
+        brokerInstances: [{
+          id: "ibkr-work",
+          brokerType: "ibkr",
+          label: "Work",
+          connectionMode: "gateway",
+          config: { connectionMode: "gateway", gateway: { host: "127.0.0.1", port: 4002, clientId: 1 } },
+          enabled: true,
+        }],
+        plugins: [],
+        disabledPlugins: [],
+        theme: "amber",
+        chartPreferences: {
+          defaultRenderMode: "area",
+          renderer: "auto",
+        },
+        recentTickers: [],
+      }));
+
+      const quote = await router.getQuote("285A.T", "TSEJ", { brokerId: "ibkr", brokerInstanceId: "ibkr-work" });
+      expect(quote.providerId).toBe("yahoo");
+      expect(quote.price).toBe(50_500);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
   test("prefers the requested broker instance in search results", async () => {
     const router = new AssetDataRouter(fallbackProvider);
     const broker: BrokerAdapter = {
@@ -551,6 +658,38 @@ describe("AssetDataRouter", () => {
     expect(quote.providerId).toBeUndefined();
   });
 
+  test("does not search fallback providers when the preferred provider returns results", async () => {
+    let cloudCalls = 0;
+    let yahooCalls = 0;
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async search() {
+        cloudCalls += 1;
+        return [{ providerId: "cloud", symbol: "SEC0", name: "iShares ETF", exchange: "XETRA", type: "ETF" }];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async search() {
+        yahooCalls += 1;
+        return [{ providerId: "yahoo", symbol: "SEC0", name: "iShares ETF", exchange: "XETRA", type: "ETF" }];
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const results = await router.search("SEC0");
+
+    expect(results[0]?.providerId).toBe("cloud");
+    expect(cloudCalls).toBe(1);
+    expect(yahooCalls).toBe(0);
+  });
+
   test("routes through registered asset-data capabilities", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,
@@ -580,6 +719,81 @@ describe("AssetDataRouter", () => {
     const quote = await router.getQuote("AAPL", "NASDAQ");
     expect(quote.price).toBe(125);
     expect(quote.providerId).toBe("cloud");
+  });
+
+  test("falls back when the preferred provider returns a stale quote", async () => {
+    const fixedNow = Date.parse("2026-05-13T21:00:00Z");
+    const realDateNow = Date.now;
+    Date.now = () => fixedNow;
+    try {
+      const yahooProvider: DataProvider = {
+        ...fallbackProvider,
+        id: "yahoo",
+        name: "Yahoo",
+        async getQuote(symbol) {
+          return {
+            symbol,
+            providerId: "yahoo",
+            price: 168,
+            currency: "TWD",
+            change: 1,
+            changePercent: 0.6,
+            lastUpdated: Date.parse("2026-05-13T05:30:00Z"),
+            listingExchangeName: "TWSE",
+            marketState: "CLOSED",
+            dataSource: "delayed",
+          };
+        },
+      };
+      const cloudProvider: DataProvider = {
+        ...fallbackProvider,
+        id: "gloomberb-cloud",
+        name: "Cloud",
+        priority: 100,
+        async getQuote(symbol) {
+          return {
+            symbol,
+            providerId: "gloomberb-cloud",
+            price: 150,
+            currency: "TWD",
+            change: 0,
+            changePercent: 0,
+            lastUpdated: Date.parse("2026-05-08T06:00:00Z"),
+            listingExchangeName: "TWSE",
+            marketState: "CLOSED",
+            dataSource: "delayed",
+          };
+        },
+        async getQuotesBatch(targets) {
+          return targets.map((target) => ({
+            target,
+            quote: {
+              symbol: target.symbol,
+              providerId: "gloomberb-cloud",
+              price: 150,
+              currency: "TWD",
+              change: 0,
+              changePercent: 0,
+              lastUpdated: Date.parse("2026-05-08T06:00:00Z"),
+              listingExchangeName: "TWSE",
+              marketState: "CLOSED",
+              dataSource: "delayed",
+            },
+          }));
+        },
+      };
+      const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+
+      const quote = await router.getQuote("2337", "TWSE");
+      expect(quote.providerId).toBe("yahoo");
+      expect(quote.price).toBe(168);
+
+      const [batch] = await router.getQuotesBatch([{ symbol: "2337", exchange: "TWSE" }], { forceRefresh: true });
+      expect(batch?.quote?.providerId).toBe("yahoo");
+      expect(batch?.quote?.price).toBe(168);
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 
   test("prefers provider quote streams when one is available", () => {
@@ -792,6 +1006,37 @@ describe("AssetDataRouter", () => {
     }]);
 
     unsubscribe();
+  });
+
+  test("returns quote-only financials for option tickers when snapshots are unavailable", async () => {
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      async getTickerFinancials() {
+        return { annualStatements: [], quarterlyStatements: [], priceHistory: [] };
+      },
+      async getQuote(ticker) {
+        return {
+          symbol: ticker,
+          price: 252.375,
+          currency: "USD",
+          change: 1.5,
+          changePercent: 0.6,
+          bid: 250.25,
+          ask: 254.5,
+          mark: 252.375,
+          lastUpdated: Date.now(),
+          providerId: "gloomberb-cloud",
+          dataSource: "delayed",
+        };
+      },
+    });
+
+    const financials = await router.getTickerFinancials("AMD   270917C00230000");
+
+    expect(financials.quote?.symbol).toBe("AMD   270917C00230000");
+    expect(financials.quote?.mark).toBe(252.375);
+    expect(financials.annualStatements).toEqual([]);
+    expect(financials.priceHistory).toEqual([]);
   });
 
   test("merges cached broker financials with cached fallback fundamentals", async () => {
@@ -1066,7 +1311,7 @@ describe("AssetDataRouter", () => {
     expect(merged.profile?.sector).toBe("Technology");
   });
 
-  test("backfills quote and fundamental fields from fallback providers", async () => {
+  test("uses the preferred provider financials without merging fallback providers", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,
       id: "cloud",
@@ -1091,12 +1336,14 @@ describe("AssetDataRouter", () => {
         };
       },
     };
+    let yahooCalls = 0;
     const yahooProvider: DataProvider = {
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
       priority: 1000,
       async getTickerFinancials() {
+        yahooCalls += 1;
         return {
           annualStatements: [],
           quarterlyStatements: [],
@@ -1121,14 +1368,15 @@ describe("AssetDataRouter", () => {
     const merged = await router.getTickerFinancials("AAPL", "NASDAQ");
 
     expect(merged.quote?.price).toBe(125);
-    expect(merged.quote?.marketCap).toBe(2_000_000_000);
+    expect(merged.quote?.marketCap).toBeUndefined();
     expect(merged.fundamentals?.trailingPE).toBe(25);
-    expect(merged.fundamentals?.forwardPE).toBe(22);
-    expect(merged.priceHistory[0]?.close).toBe(124);
+    expect(merged.fundamentals?.forwardPE).toBeUndefined();
+    expect(merged.priceHistory).toEqual([]);
+    expect(yahooCalls).toBe(0);
   });
 
-  test("merges cached financial snapshots across multiple providers", async () => {
-    const dbPath = createTempDbPath("cached-provider-financial-merge");
+  test("caches the preferred provider financial snapshot without merging fallback snapshots", async () => {
+    const dbPath = createTempDbPath("cached-provider-financial-preferred");
     const persistence = new AppPersistence(dbPath);
 
     const cloudProvider: DataProvider = {
@@ -1186,7 +1434,8 @@ describe("AssetDataRouter", () => {
 
     const seedRouter = new AssetDataRouter(yahooProvider, [cloudProvider], persistence.resources);
     const seeded = await seedRouter.getTickerFinancials("AAPL", "NASDAQ");
-    expect(seeded.quote?.marketCap).toBe(2_000_000_000);
+    expect(seeded.quote?.price).toBe(125);
+    expect(seeded.quote?.marketCap).toBeUndefined();
 
     let cloudCalls = 0;
     let yahooCalls = 0;
@@ -1209,11 +1458,11 @@ describe("AssetDataRouter", () => {
     expect(cloudCalls).toBe(0);
     expect(yahooCalls).toBe(0);
     expect(cached.quote?.price).toBe(125);
-    expect(cached.quote?.marketCap).toBe(2_000_000_000);
+    expect(cached.quote?.marketCap).toBeUndefined();
     expect(cached.fundamentals?.trailingPE).toBe(25);
-    expect(cached.fundamentals?.forwardPE).toBe(22);
+    expect(cached.fundamentals?.forwardPE).toBeUndefined();
     expect(cached.profile?.sector).toBe("Technology");
-    expect(cached.priceHistory[0]?.close).toBe(124);
+    expect(cached.priceHistory).toEqual([]);
 
     persistence.close();
   });
@@ -1751,6 +2000,314 @@ describe("AssetDataRouter", () => {
 
     expect(cached.get("AMD")?.quote?.providerId).toBe("yahoo");
     expect(cached.get("AMD")?.quote?.preMarketPrice).toBe(231);
+
+    persistence.close();
+  });
+
+  test("keeps stale cached quotes only for startup cache priming", () => {
+    const dbPath = createTempDbPath("startup-stale-quote-prime");
+    const persistence = new AppPersistence(dbPath);
+    const now = Date.now();
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "OLD",
+        variantKey: "exchange=NASDAQ",
+        sourceKey: "provider:gloomberb-cloud",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "OLD",
+          price: 42,
+          currency: "USD",
+          change: -1,
+          changePercent: -2.33,
+          lastUpdated: Date.UTC(2020, 0, 2),
+          marketState: "REGULAR",
+          exchangeName: "NASDAQ",
+          listingExchangeName: "NASDAQ",
+          providerId: "gloomberb-cloud",
+          dataSource: "delayed",
+        },
+        fundamentals: {
+          trailingPE: 12,
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
+        fetchedAt: now,
+      },
+    );
+
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      async getTickerFinancials() {
+        throw new Error("should not fetch financials");
+      },
+    }, [], persistence.resources);
+
+    const normal = router.getCachedFinancialsForTargets([{ symbol: "OLD", exchange: "NASDAQ" }], { allowExpired: true });
+    expect(normal.get("OLD")?.quote).toBeUndefined();
+    expect(normal.get("OLD")?.fundamentals?.trailingPE).toBe(12);
+
+    const startup = router.getCachedFinancialsForTargets(
+      [{ symbol: "OLD", exchange: "NASDAQ" }],
+      { allowExpired: true, includeStaleQuotes: true },
+    );
+    expect(startup.get("OLD")?.quote?.changePercent).toBe(-2.33);
+    expect(startup.get("OLD")?.fundamentals?.trailingPE).toBe(12);
+
+    persistence.close();
+  });
+
+  test("derives cached market cap from quote price and shares outstanding", () => {
+    const dbPath = createTempDbPath("cached-derived-market-cap");
+    const persistence = new AppPersistence(dbPath);
+    const now = Date.now();
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "AMD",
+        variantKey: "exchange=NASDAQ",
+        sourceKey: "provider:gloomberb-cloud",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "AMD",
+          price: 445.38,
+          currency: "USD",
+          change: -2.91,
+          changePercent: -0.65,
+          lastUpdated: now,
+          marketState: "REGULAR",
+          exchangeName: "NASDAQ",
+          listingExchangeName: "NASDAQ",
+          providerId: "gloomberb-cloud",
+          dataSource: "delayed",
+        },
+        fundamentals: {
+          sharesOutstanding: 1_630_000_000,
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 60_000 },
+        fetchedAt: now,
+      },
+    );
+
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      async getTickerFinancials() {
+        throw new Error("should not fetch financials");
+      },
+    }, [], persistence.resources);
+
+    const cached = router.getCachedFinancialsForTargets([{ symbol: "AMD", exchange: "NASDAQ" }], {
+      allowExpired: true,
+      includeStaleQuotes: true,
+    });
+    expect(cached.get("AMD")?.quote?.marketCap).toBeCloseTo(725_969_400_000);
+
+    persistence.close();
+  });
+
+  test("uses symbol provider cache for broker-linked startup targets", () => {
+    const dbPath = createTempDbPath("cached-symbol-fallback-for-contract");
+    const persistence = new AppPersistence(dbPath);
+    const now = Date.now();
+    const old = now - 3 * 24 * 60 * 60_000;
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "contract:14015423",
+        variantKey: "exchange=JPX",
+        sourceKey: "provider:yahoo",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "4092.T",
+          providerId: "yahoo",
+          price: 3770,
+          currency: "JPY",
+          change: 145,
+          changePercent: 4,
+          lastUpdated: old,
+          marketState: "CLOSED",
+          exchangeName: "JPX",
+          listingExchangeName: "JPX",
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+        fetchedAt: old,
+      },
+    );
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "4092.T",
+        variantKey: "exchange=JPX",
+        sourceKey: "provider:yahoo",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "4092.T",
+          providerId: "yahoo",
+          price: 3925,
+          currency: "JPY",
+          change: 20,
+          changePercent: 0.51,
+          lastUpdated: now,
+          marketState: "CLOSED",
+          exchangeName: "JPX",
+          listingExchangeName: "JPX",
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+        fetchedAt: now,
+      },
+    );
+
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async getTickerFinancials() {
+        throw new Error("should not fetch financials");
+      },
+    }, [], persistence.resources);
+
+    const cached = router.getCachedFinancialsForTargets([{
+      symbol: "4092.T",
+      exchange: "JPX",
+      instrument: {
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-live",
+        conId: 14015423,
+        symbol: "4092.T",
+      },
+    }], { allowExpired: true, includeStaleQuotes: true });
+
+    expect(cached.get("4092.T")?.quote?.price).toBe(3925);
+    expect(cached.get("4092.T")?.quote?.changePercent).toBe(0.51);
+
+    persistence.close();
+  });
+
+  test("overlays standalone quote cache on stale financial snapshots during startup priming", () => {
+    const dbPath = createTempDbPath("cached-quote-over-financial-snapshot");
+    const persistence = new AppPersistence(dbPath);
+    const now = Date.parse("2026-05-13T21:00:00Z");
+    const old = Date.parse("2026-05-09T14:13:30Z");
+
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "financials",
+        entityKey: "contract:14016494",
+        variantKey: "exchange=JPX",
+        sourceKey: "provider:yahoo",
+      },
+      {
+        annualStatements: [],
+        quarterlyStatements: [],
+        priceHistory: [],
+        quote: {
+          symbol: "6315.T",
+          providerId: "yahoo",
+          price: 3380,
+          currency: "JPY",
+          change: 75,
+          changePercent: 2.27,
+          lastUpdated: old,
+          marketState: "CLOSED",
+          exchangeName: "JPX",
+          listingExchangeName: "JPX",
+        },
+        fundamentals: {
+          sharesOutstanding: 75_000_462,
+          trailingPE: 37.2,
+        },
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+        fetchedAt: old,
+      },
+    );
+    persistence.resources.set(
+      {
+        namespace: "market",
+        kind: "quote",
+        entityKey: "contract:14016494",
+        variantKey: "exchange=JPX",
+        sourceKey: "provider:yahoo",
+      },
+      {
+        symbol: "6315.T",
+        providerId: "yahoo",
+        price: 2688,
+        currency: "JPY",
+        change: 13,
+        changePercent: 0.49,
+        lastUpdated: now,
+        marketState: "CLOSED",
+        exchangeName: "JPX",
+        listingExchangeName: "JPX",
+      },
+      {
+        cachePolicy: { staleMs: 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+        fetchedAt: now,
+      },
+    );
+
+    const router = new AssetDataRouter({
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async getTickerFinancials() {
+        throw new Error("should not fetch financials");
+      },
+    }, [], persistence.resources);
+
+    const cached = router.getCachedFinancialsForTargets([{
+      symbol: "6315.T",
+      exchange: "JPX",
+      instrument: {
+        brokerId: "ibkr",
+        brokerInstanceId: "ibkr-live",
+        conId: 14016494,
+        symbol: "6315.T",
+      },
+    }], { allowExpired: true, includeStaleQuotes: true });
+
+    expect(cached.get("6315.T")?.quote?.price).toBe(2688);
+    expect(cached.get("6315.T")?.quote?.changePercent).toBe(0.49);
+    expect(cached.get("6315.T")?.quote?.marketCap).toBe(201_601_241_856);
+    expect(cached.get("6315.T")?.fundamentals?.trailingPE).toBe(37.2);
 
     persistence.close();
   });

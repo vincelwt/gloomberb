@@ -23,9 +23,9 @@ import {
   toMarketDataContext,
 } from "./selectors";
 import { traceMarketData } from "./trace";
-import { normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
+import { isPriceHistoryStaleForCurrentWindow, normalizePriceHistory, normalizeTickerFinancialsPriceHistory } from "../utils/price-history";
 import { hasFreshQuoteForCurrentSession, isQuoteStaleForCurrentSession } from "../utils/quote-freshness";
-import { TIME_RANGE_ORDER } from "../components/chart/chart-resolution";
+import { isIntradayResolution, TIME_RANGE_ORDER } from "../components/chart/chart-resolution";
 import { measurePerf } from "../utils/perf-marks";
 
 const EMPTY_MESSAGE = "No data available";
@@ -57,6 +57,29 @@ function getTimeRangeIndex(range: ChartRequest["bufferRange"]): number {
   return TIME_RANGE_INDEX.get(range) ?? 0;
 }
 
+function isCurrentHistoryWindow(endDate?: Date): boolean {
+  if (!endDate) return true;
+  const endMs = endDate.getTime();
+  return Number.isFinite(endMs) && Date.now() - endMs < 60 * 60_000;
+}
+
+function isIntradayChartRequest(request: ChartRequest): boolean {
+  const granularity = getChartGranularity(request);
+  if (granularity === "detail") return isCurrentHistoryWindow(request.endDate);
+  if (granularity === "resolution") {
+    return request.resolution ? isIntradayResolution(request.resolution) : false;
+  }
+  return request.bufferRange === "1D" || request.bufferRange === "1W" || request.bufferRange === "1M" || request.bufferRange === "3M";
+}
+
+function normalizeFreshChartData(points: PricePoint[] | null | undefined, request: ChartRequest): PricePoint[] {
+  const normalized = normalizePriceHistory(points ?? []);
+  if (isIntradayChartRequest(request) && isPriceHistoryStaleForCurrentWindow(normalized)) {
+    return [];
+  }
+  return normalized;
+}
+
 function isSeedableChartRequest(
   target: ChartRequest,
   candidate: ChartRequest,
@@ -86,6 +109,20 @@ function hasFreshEntryData<T>(entry: QueryEntry<T>, ttlMs: number, now = Date.no
 
 function hasFreshReadyEntry<T>(entry: QueryEntry<T>, ttlMs: number, now = Date.now()): boolean {
   return entry.phase === "ready" && entry.fetchedAt != null && now - entry.fetchedAt < ttlMs;
+}
+
+function hasFreshQuoteEntry(
+  entry: QueryEntry<Quote>,
+  instrument: InstrumentRef,
+  ttlMs: number,
+  now = Date.now(),
+): boolean {
+  const quote = resolveEntryData(entry);
+  if (!quote || entry.fetchedAt == null || now - entry.fetchedAt >= ttlMs) return false;
+  const quoteForFreshness = instrument.exchange && !quote.listingExchangeName && !quote.exchangeName
+    ? { ...quote, listingExchangeName: instrument.exchange }
+    : quote;
+  return !isQuoteStaleForCurrentSession(quoteForFreshness, now);
 }
 
 function createAttempt(
@@ -142,11 +179,9 @@ function readyQuoteEntry(
   source: string,
   attempts: ProviderAttempt[],
 ): QueryEntry<Quote> {
-  if (
-    isQuoteStaleForCurrentSession(quote)
-    && hasFreshQuoteForCurrentSession([current.data, current.lastGoodData])
-  ) {
-    return readyEntry(current, null, current.source ?? source, attempts, { keepLastGoodOnEmpty: true });
+  if (isQuoteStaleForCurrentSession(quote)) {
+    const keepFreshQuote = hasFreshQuoteForCurrentSession([current.data, current.lastGoodData]);
+    return readyEntry(current, null, current.source ?? source, attempts, { keepLastGoodOnEmpty: keepFreshQuote });
   }
   return readyEntry(current, quote, source, attempts, { keepLastGoodOnEmpty: true });
 }
@@ -209,6 +244,53 @@ function hasCachedSnapshotData(financials: TickerFinancials): boolean {
     || financials.quarterlyStatements.length > 0;
 }
 
+type QuoteSubscriptionPriority = Pick<QuoteSubscriptionTarget, "surface" | "visible" | "selected" | "weight">;
+
+interface QuoteSubscriptionEntry {
+  target: QuoteSubscriptionTarget;
+  targets: Map<number, QuoteSubscriptionTarget>;
+  removeTimer: ReturnType<typeof setTimeout> | null;
+}
+
+function quoteSubscriptionPriorityScore(target: QuoteSubscriptionTarget): number {
+  let score = Number.isFinite(target.weight) ? Math.max(0, target.weight ?? 0) : 0;
+  if (target.selected) score += 10_000;
+  if (target.visible) score += 5_000;
+  if (target.surface === "detail" || target.surface === "monitor") score += 4_000;
+  if (target.surface === "portfolio" || target.surface === "watchlist") score += 1_000;
+  if (target.surface === "screener") score += 700;
+  if (target.surface === "inline") score += 200;
+  return score;
+}
+
+function mergeQuoteSubscriptionTargets(targets: Iterable<QuoteSubscriptionTarget>): QuoteSubscriptionTarget | null {
+  let selectedTarget: QuoteSubscriptionTarget | null = null;
+  let selectedScore = -1;
+  let visible = false;
+  let selected = false;
+  let weight = 0;
+
+  for (const target of targets) {
+    const score = quoteSubscriptionPriorityScore(target);
+    if (!selectedTarget || score > selectedScore) {
+      selectedTarget = target;
+      selectedScore = score;
+    }
+    visible ||= target.visible === true;
+    selected ||= target.selected === true;
+    weight = Math.max(weight, Number.isFinite(target.weight) ? Math.max(0, target.weight ?? 0) : 0);
+  }
+
+  return selectedTarget
+    ? {
+      ...selectedTarget,
+      visible,
+      selected,
+      weight,
+    }
+    : null;
+}
+
 function errorEntry<T>(current: QueryEntry<T>, attempt: ProviderAttempt): QueryEntry<T> {
   return {
     ...current,
@@ -231,12 +313,10 @@ export class MarketDataCoordinator {
   private readonly keyVersions = new Map<string, number>();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly chartRequests = new Map<string, ChartRequest>();
-  private readonly quoteSubscriptions = new Map<string, {
-    target: QuoteSubscriptionTarget;
-    refCount: number;
-    unsubscribe: (() => void) | null;
-    removeTimer: ReturnType<typeof setTimeout> | null;
-  }>();
+  private readonly quoteSubscriptions = new Map<string, QuoteSubscriptionEntry>();
+  private nextQuoteSubscriptionId = 1;
+  private quoteSubscriptionDispose: (() => void) | null = null;
+  private quoteSubscriptionSignature = "";
   private pendingQuoteSubscriptionKeys = new Set<string>();
 
   private readonly quoteStore = new QueryStore<Quote>((key) => this.bump(key));
@@ -452,11 +532,15 @@ export class MarketDataCoordinator {
     };
   }
 
-  private quoteTargetFromInstrument(instrument: InstrumentRef): QuoteSubscriptionTarget {
+  private quoteTargetFromInstrument(
+    instrument: InstrumentRef,
+    priority: QuoteSubscriptionPriority = {},
+  ): QuoteSubscriptionTarget {
     return {
       symbol: instrument.symbol,
       exchange: instrument.exchange ?? "",
       context: toMarketDataContext(instrument),
+      ...priority,
     };
   }
 
@@ -523,19 +607,37 @@ export class MarketDataCoordinator {
     request: ChartRequest,
     current: QueryEntry<PricePoint[]>,
   ): QueryEntry<PricePoint[]> {
-    if (resolveEntryData(current)?.length) {
-      return loadingEntry(current);
+    const currentData = normalizeFreshChartData(resolveEntryData(current), request);
+    if (currentData.length) {
+      return loadingEntry({
+        ...current,
+        data: currentData,
+        lastGoodData: currentData,
+      });
     }
 
     const seed = this.findChartSeedEntry(key, request);
     if (!seed) {
-      return loadingEntry(current);
+      return loadingEntry({
+        ...current,
+        data: null,
+        lastGoodData: null,
+      });
+    }
+
+    const seedData = normalizeFreshChartData(seed.data, request);
+    if (!seedData.length) {
+      return loadingEntry({
+        ...current,
+        data: null,
+        lastGoodData: null,
+      });
     }
 
     return loadingEntry({
       ...current,
-      data: seed.data,
-      lastGoodData: seed.entry.lastGoodData?.length ? seed.entry.lastGoodData : seed.data,
+      data: seedData,
+      lastGoodData: seedData,
       source: seed.entry.source,
       fetchedAt: seed.entry.fetchedAt,
       staleAt: seed.entry.staleAt,
@@ -668,7 +770,7 @@ export class MarketDataCoordinator {
     for (const instrument of uniqueInstruments) {
       const key = buildQuoteKey(instrument);
       const current = this.quoteStore.get(key);
-      if (!options.forceRefresh && hasFreshEntryData(current, SNAPSHOT_CACHE_TTL_MS)) {
+      if (!options.forceRefresh && hasFreshQuoteEntry(current, instrument, SNAPSHOT_CACHE_TTL_MS)) {
         results.set(key, current);
       } else {
         misses.push(instrument);
@@ -706,7 +808,13 @@ export class MarketDataCoordinator {
     const key = buildChartKey(request);
     this.chartRequests.set(key, request);
     const current = this.chartStore.get(key);
-    if (!options.forceRefresh && hasFreshEntryData(current, CHART_CACHE_TTL_MS)) {
+    const currentData = normalizeFreshChartData(resolveEntryData(current), request);
+    if (!options.forceRefresh && currentData.length > 0 && hasFreshEntryData(current, CHART_CACHE_TTL_MS)) {
+      if (currentData !== resolveEntryData(current)) {
+        return this.chartStore.update(key, (entry) =>
+          readyEntry(entry, currentData, entry.source ?? this.dataProvider.id, entry.attempts, { keepLastGoodOnEmpty: true })
+        );
+      }
       return current;
     }
     const flightKey = options.forceRefresh ? `${key}|refresh` : key;
@@ -905,16 +1013,22 @@ export class MarketDataCoordinator {
   }
 
   async loadFxRate(currency: string): Promise<QueryEntry<number>> {
-    const key = buildFxKey(currency);
+    const normalizedCurrency = currency.trim().toUpperCase();
+    const key = buildFxKey(normalizedCurrency);
     const current = this.fxStore.get(key);
     if (hasFreshEntryData(current, FX_CACHE_TTL_MS)) {
       return current;
+    }
+    if (normalizedCurrency === "USD") {
+      const startedAt = Date.now();
+      const attempts = [createAttempt("static", startedAt, "success")];
+      return this.fxStore.update(key, (current) => readyEntry(current, 1, "static", attempts, { keepLastGoodOnEmpty: true }));
     }
     return this.runSingleFlight(key, async () => {
       this.fxStore.update(key, loadingEntry);
       const startedAt = Date.now();
       try {
-        const rate = await this.dataProvider.getExchangeRate(currency);
+        const rate = await this.dataProvider.getExchangeRate(normalizedCurrency);
         const attempts = [createAttempt(this.dataProvider.id, startedAt, "success")];
         return this.fxStore.update(key, (current) => readyEntry(current, rate, this.dataProvider.id, attempts, { keepLastGoodOnEmpty: true }));
       } catch (error) {
@@ -925,18 +1039,22 @@ export class MarketDataCoordinator {
     });
   }
 
-  subscribeQuotes(targets: Array<{ instrument: InstrumentRef }>): () => void {
+  subscribeQuotes(targets: Array<{ instrument: InstrumentRef; priority?: QuoteSubscriptionPriority }>): () => void {
     if (!this.dataProvider.subscribeQuotes || targets.length === 0) {
       return () => {};
     }
 
+    const subscriptionId = this.nextQuoteSubscriptionId++;
     const subscribedKeys = new Set<string>();
-    for (const { instrument } of targets) {
+    for (const { instrument, priority } of targets) {
       const key = buildQuoteKey(instrument);
       subscribedKeys.add(key);
+      const target = this.quoteTargetFromInstrument(instrument, priority);
       const existing = this.quoteSubscriptions.get(key);
       if (existing) {
-        existing.refCount += 1;
+        existing.targets.set(subscriptionId, target);
+        existing.target = mergeQuoteSubscriptionTargets(existing.targets.values()) ?? target;
+        this.pendingQuoteSubscriptionKeys.add(key);
         if (existing.removeTimer) {
           clearTimeout(existing.removeTimer);
           existing.removeTimer = null;
@@ -944,9 +1062,8 @@ export class MarketDataCoordinator {
         continue;
       }
       this.quoteSubscriptions.set(key, {
-        target: this.quoteTargetFromInstrument(instrument),
-        refCount: 1,
-        unsubscribe: null,
+        target,
+        targets: new Map([[subscriptionId, target]]),
         removeTimer: null,
       });
       this.pendingQuoteSubscriptionKeys.add(key);
@@ -957,36 +1074,59 @@ export class MarketDataCoordinator {
       for (const key of subscribedKeys) {
         const existing = this.quoteSubscriptions.get(key);
         if (!existing) continue;
-        existing.refCount = Math.max(0, existing.refCount - 1);
-        if (existing.refCount > 0 || existing.removeTimer) continue;
+        existing.targets.delete(subscriptionId);
+        const mergedTarget = mergeQuoteSubscriptionTargets(existing.targets.values());
+        if (mergedTarget) {
+          existing.target = mergedTarget;
+          this.pendingQuoteSubscriptionKeys.add(key);
+          this.flushQuoteSubscriptions();
+          continue;
+        }
+        if (existing.removeTimer) continue;
         existing.removeTimer = setTimeout(() => {
           const current = this.quoteSubscriptions.get(key);
-          if (!current || current.refCount > 0) return;
-          current.unsubscribe?.();
+          if (!current || current.targets.size > 0) return;
           this.quoteSubscriptions.delete(key);
           this.pendingQuoteSubscriptionKeys.delete(key);
+          this.flushQuoteSubscriptions();
         }, QUOTE_SUBSCRIPTION_REMOVE_GRACE_MS);
       }
     };
   }
 
   private flushQuoteSubscriptions(): void {
-    const keys = this.pendingQuoteSubscriptionKeys;
+    if (!this.dataProvider.subscribeQuotes) return;
     this.pendingQuoteSubscriptionKeys = new Set();
-    for (const key of keys) {
-      const entry = this.quoteSubscriptions.get(key);
-      if (!entry || entry.refCount === 0 || entry.unsubscribe) continue;
-      entry.unsubscribe = this.dataProvider.subscribeQuotes?.([entry.target], (target, quote) => {
-        const instrument: InstrumentRef = {
-          symbol: target.symbol,
-          exchange: target.exchange ?? "",
-          brokerId: target.context?.brokerId,
-          brokerInstanceId: target.context?.brokerInstanceId,
-          instrument: target.context?.instrument ?? null,
-        };
-        this.applyStreamQuote(instrument, quote);
-      }) ?? null;
-    }
+
+    const activeEntries = [...this.quoteSubscriptions.entries()]
+      .filter(([, entry]) => entry.targets.size > 0 || entry.removeTimer)
+      .sort(([left], [right]) => left.localeCompare(right));
+    const nextSignature = activeEntries.map(([key, entry]) => [
+      key,
+      entry.target.surface ?? "",
+      entry.target.visible ? "visible" : "",
+      entry.target.selected ? "selected" : "",
+      Number.isFinite(entry.target.weight) ? entry.target.weight : "",
+    ].join(":")).join("|");
+    if (nextSignature === this.quoteSubscriptionSignature) return;
+
+    this.quoteSubscriptionDispose?.();
+    this.quoteSubscriptionDispose = null;
+    this.quoteSubscriptionSignature = nextSignature;
+
+    const targets = activeEntries.map(([, entry]) => entry.target);
+    if (targets.length === 0) return;
+
+    this.quoteSubscriptionDispose = this.dataProvider.subscribeQuotes(targets, (target, quote) => {
+      const instrument: InstrumentRef = {
+        symbol: target.symbol,
+        exchange: target.exchange ?? "",
+        brokerId: target.context?.brokerId,
+        brokerInstanceId: target.context?.brokerInstanceId,
+        instrument: target.context?.instrument ?? null,
+      };
+      this.applyStreamQuote(instrument, quote);
+    });
   }
 
   private applyStreamQuote(instrument: InstrumentRef, quote: Quote): void {
