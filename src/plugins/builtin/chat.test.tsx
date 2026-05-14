@@ -1465,6 +1465,61 @@ describe("ChatContent", () => {
     expect(sentMessages).toEqual(["first line\nsecond line"]);
   });
 
+  test("clears the composer locally after an accepted send", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    const sentMessages: string[] = [];
+    (controller as any).send = (content: string) => {
+      sentMessages.push(content);
+      return true;
+    };
+    (controller as any).setDraft = () => {};
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller), {
+        width: 60,
+        height: 12,
+      });
+    });
+
+    await flushFrame();
+
+    const frameBeforeClick = testSetup.captureCharFrame().split("\n");
+    const inputRow = frameBeforeClick.findIndex((line) => line.includes("Type a message..."));
+    const inputCol = frameBeforeClick[inputRow]?.indexOf("Type a message...") ?? -1;
+
+    expect(inputRow).toBeGreaterThanOrEqual(0);
+    expect(inputCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(inputCol + 1, inputRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      await testSetup!.mockInput.typeText("hello");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(sentMessages).toEqual(["hello"]);
+    expect(testSetup.captureCharFrame()).not.toContain("> hello");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(sentMessages).toEqual(["hello"]);
+  });
+
   test("keeps typed shortcut letters in the composer instead of moving message selection", async () => {
     const controller = createController({
       messages: Array.from({ length: 18 }, (_, index) => makeMessage(index + 1)),

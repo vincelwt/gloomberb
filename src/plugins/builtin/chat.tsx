@@ -1248,17 +1248,31 @@ export function ChatContent({
     return textarea.visualCursor.visualRow >= visualLineCount - 1;
   }, []);
 
+  const clearLocalComposer = useCallback(() => {
+    inputValueRef.current = "";
+    updateComposerRows("");
+    const textarea = inputRef.current;
+    if (textarea && textarea.editBuffer.getText() !== "") {
+      applyingExternalDraftRef.current = true;
+      try {
+        textarea.setText("");
+      } finally {
+        applyingExternalDraftRef.current = false;
+      }
+    }
+  }, [updateComposerRows]);
+
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
-    if (useDefaultControllerChannel) {
-      controller.send(content, replyToRef.current?.id);
-    } else {
-      controller.sendToChannel(channelId, content, replyToRef.current?.id);
-    }
+    const accepted = useDefaultControllerChannel
+      ? controller.send(content, replyToRef.current?.id)
+      : controller.sendToChannel(channelId, content, replyToRef.current?.id);
+    if (!accepted) return;
+    clearLocalComposer();
     setSelectedIdx(-1);
     setFollowMessages(true);
-  }, [channelId, controller, useDefaultControllerChannel]);
+  }, [channelId, clearLocalComposer, controller, useDefaultControllerChannel]);
 
   const requestOlderMessages = useCallback(() => {
     const scrollBox = scrollRef.current;

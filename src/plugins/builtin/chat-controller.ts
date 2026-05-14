@@ -752,24 +752,24 @@ export class ChatController {
     this.notifiedMessageIds.clear();
   }
 
-  send(content: string, replyToId?: string): void {
-    this.sendToChannel(DEFAULT_CHAT_CHANNEL_ID, content, replyToId);
+  send(content: string, replyToId?: string): boolean {
+    return this.sendToChannel(DEFAULT_CHAT_CHANNEL_ID, content, replyToId);
   }
 
-  sendToChannel(channelId: string, content: string, replyToId?: string): void {
+  sendToChannel(channelId: string, content: string, replyToId?: string): boolean {
     const normalizedChannelId = normalizeChannelId(channelId);
     const channel = this.ensureChannelState(normalizedChannelId);
     const messageContent = content.trim();
-    if (!messageContent) return;
-    if (!this.user?.emailVerified || !this.sessionToken) return;
-    if (this.hasPendingSend(channel, messageContent, replyToId)) return;
+    if (!messageContent) return false;
+    if (!this.user?.emailVerified || !this.sessionToken) return false;
+    if (this.hasPendingSend(channel, messageContent, replyToId)) return true;
     if (!channel.wsConnection && this.user?.emailVerified && this.sessionToken) {
       this.ensureConnection(normalizedChannelId);
     }
     const connection = channel.wsConnection;
     if (!connection) {
       this.notifyFn({ body: "Unable to send message right now.", type: "error" });
-      return;
+      return false;
     }
 
     const clientMessageId = channel.draftClientMessageId ?? createClientMessageId();
@@ -794,6 +794,7 @@ export class ChatController {
       this.emit(normalizedChannelId);
       this.notifyFn({ body: errorMessage, type: "error" });
     });
+    return true;
   }
 
   private hasPendingSend(channel: ChannelRuntimeState, content: string, replyToId?: string): boolean {
