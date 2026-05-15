@@ -3036,6 +3036,7 @@ export function CommandBar({
       category: options?.category ?? (pluginName ? `${pluginName} Panes` : "Panes"),
       kind: "action",
       right: options?.showShortcut ? template.shortcut?.prefix : undefined,
+      shortcutQuery: template.shortcut?.prefix,
       searchText: `${displayLabel} ${template.label} ${template.paneId} ${template.keywords?.join(" ") || ""} ${shortcutLabel || ""} ${pluginName || ""}`,
       action,
     };
@@ -3110,6 +3111,7 @@ export function CommandBar({
       category: pluginName || "Plugin Commands",
       kind: "command",
       right: shortcut,
+      shortcutQuery: shortcut,
       searchText: `${command.label} ${command.description || ""} ${(command.keywords ?? []).join(" ")} ${shortcut || ""}`,
       action: () => {
         if (shortcutArg && command.wizard && command.wizard.length > 0) {
@@ -3636,6 +3638,7 @@ export function CommandBar({
         category: command.category,
         kind: "command",
         right: command.prefix || undefined,
+        shortcutQuery: command.prefix || undefined,
         searchText: smartSearchText(command),
         disabled: command.id === "check-for-updates" && (state.updateCheckInProgress || !!state.updateProgress),
         action: () => runDirectCommand(command, ""),
@@ -3671,6 +3674,7 @@ export function CommandBar({
             category: "Search",
             kind: "action",
             right: command.prefix,
+            shortcutQuery: command.prefix,
             action: () => { void runSecurityDescriptionShortcut(inferredSymbol); },
           };
         }
@@ -3726,6 +3730,7 @@ export function CommandBar({
           category: command.category,
           kind: "command",
           right: command.prefix,
+          shortcutQuery: command.prefix,
           action: () => { void executeCollectionCommand(commandId, rootShortcutIntent.argText || undefined); },
         };
       }
@@ -4177,6 +4182,18 @@ export function CommandBar({
     setRootQuery,
   ]);
 
+  const acceptSelectedShortcutTab = useCallback((): boolean => {
+    const listState = visibleListStateRef.current;
+    if (listState?.kind !== "root") return false;
+
+    const selected = listState.results[listState.selectedIdx];
+    const shortcutQuery = selected?.shortcutQuery?.trim();
+    if (!shortcutQuery) return false;
+
+    setRootQuery(`${shortcutQuery} `);
+    return true;
+  }, [setRootQuery]);
+
   const resolveImmediateRootSelection = useCallback((query: string): ResultItem | null => {
     const intent = parseRootShortcutIntent({
       query,
@@ -4216,6 +4233,7 @@ export function CommandBar({
             category: "Search",
             kind: "action",
             right: match.command.prefix,
+            shortcutQuery: match.command.prefix,
             action: () => { void runSecurityDescriptionShortcut(inferredTicker); },
           };
         }
@@ -4235,6 +4253,7 @@ export function CommandBar({
         category: "Search",
         kind: "command",
         right: match.command.prefix,
+        shortcutQuery: match.command.prefix,
         action: () => { void runSecurityDescriptionShortcut(match.arg); },
       };
     }
@@ -4287,6 +4306,7 @@ export function CommandBar({
         category: match.command.category,
         kind: "command",
         right: match.command.prefix,
+        shortcutQuery: match.command.prefix,
         action: () => { void executeCollectionCommand(commandId, match.arg || undefined); },
       };
     }
@@ -4299,6 +4319,7 @@ export function CommandBar({
         category: match.command.category,
         kind: "command",
         right: match.command.prefix || undefined,
+        shortcutQuery: match.command.prefix || undefined,
         action: () => runDirectCommand(match.command, ""),
       };
     }
@@ -5276,7 +5297,7 @@ export function CommandBar({
     if (!activeListState) return;
 
     if (!currentRoute && event.name === "tab") {
-      if (acceptRootShortcutTab()) {
+      if (acceptRootShortcutTab() || acceptSelectedShortcutTab()) {
         event.stopPropagation();
         event.preventDefault();
         return;

@@ -7,6 +7,7 @@ export interface ResultItem {
   category: string;
   kind: "command" | "ticker" | "search" | "plugin" | "action" | "info";
   right?: string;
+  shortcutQuery?: string;
   searchText?: string;
   pluginToggle?: () => void | Promise<void>;
   secondaryAction?: () => void | Promise<void>;
