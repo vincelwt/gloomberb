@@ -136,12 +136,13 @@ export function truncateText(text: string, width: number): string {
 function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOrder = "default"): number {
   const normalized = category.trim().toLowerCase();
   if (normalized === "exact match") return -50;
-  if (normalized === "saved") return -40;
   if (sectionOrder === "app-first") {
-    if (normalized === "primary listing") return 100;
-    if (normalized === "other listings") return 110;
-    if (normalized === "funds & derivatives") return 120;
+    if (normalized === "saved") return 100;
+    if (normalized === "primary listing") return 110;
+    if (normalized === "other listings") return 120;
+    if (normalized === "funds & derivatives") return 130;
   }
+  if (normalized === "saved") return -40;
   if (normalized === "primary listing") return -30;
   if (normalized === "other listings") return -20;
   if (normalized === "funds & derivatives") return -10;
