@@ -38,7 +38,7 @@ interface NewsArticleStackBaseProps {
   titleForArticle?: (article: MarketNewsItem) => string;
 }
 
-export function formatRelativeTime(date: Date): string {
+function formatRelativeTime(date: Date): string {
   const ms = Date.now() - date.getTime();
   if (ms < 60_000) return "<1m";
   const min = Math.floor(ms / 60_000);
@@ -74,7 +74,7 @@ function compareArticle(a: MarketNewsItem, b: MarketNewsItem, columnId: NewsColu
   }
 }
 
-export function sortNewsArticles(
+function sortNewsArticles(
   articles: MarketNewsItem[],
   preference: NewsSortPreference,
 ): MarketNewsItem[] {

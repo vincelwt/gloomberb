@@ -34,7 +34,7 @@ function titleCase(value: string): string {
     .join(" ");
 }
 
-export function formatBrokerMode(value: unknown): string {
+function formatBrokerMode(value: unknown): string {
   const text = typeof value === "string" ? value.trim() : "";
   return text ? titleCase(text) : "Configured";
 }
@@ -48,7 +48,7 @@ export function formatBrokerUpdatedAt(updatedAt: number | undefined, now = Date.
   return `${Math.floor(ageMs / (24 * 60 * 60_000))}d ago`;
 }
 
-export function summarizeBrokerAccounts(accounts: BrokerAccount[]): string {
+function summarizeBrokerAccounts(accounts: BrokerAccount[]): string {
   if (accounts.length === 0) return "0 acct";
   const currencies = new Set(accounts.map((account) => account.currency || "USD"));
   const canSum = currencies.size === 1 && accounts.every((account) => typeof account.netLiquidation === "number");

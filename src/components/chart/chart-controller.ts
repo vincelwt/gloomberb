@@ -351,53 +351,6 @@ export function getVisibleWindowForDateRange(
   };
 }
 
-export function formatVisibleSpanLabel(window: Pick<VisibleDateWindow, "start" | "end">): string {
-  if (!window.start || !window.end) return "view: --";
-  const sameYear = window.start.getFullYear() === window.end.getFullYear();
-  const sameMonth = sameYear && window.start.getMonth() === window.end.getMonth();
-  const sameDay = sameMonth && window.start.getDate() === window.end.getDate();
-  const spanMs = Math.max(window.end.getTime() - window.start.getTime(), 0);
-  const showTime = sameDay || spanMs <= 2 * 24 * 60 * 60_000;
-
-  if (showTime) {
-    const startLabel = window.start.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      ...(sameYear ? {} : { year: "numeric" }),
-    });
-    const startTime = window.start.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    const endLabel = sameDay
-      ? window.end.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      })
-      : `${window.end.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: sameYear ? undefined : "numeric",
-      })} ${window.end.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      })}`;
-    return `view:${startLabel} ${startTime}-${endLabel}`;
-  }
-
-  const startLabel = window.start.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
-  const endLabel = window.end.toLocaleDateString("en-US", {
-    month: sameMonth ? undefined : "short",
-    day: "numeric",
-    year: sameYear ? undefined : "numeric",
-  });
-  return `view:${startLabel}-${endLabel}`;
-}
-
 function isCanonicalPresetViewport(
   dates: readonly Date[],
   state: Pick<ViewStateWithViewport, "activePreset" | "panOffset" | "zoomLevel" | "resolution">,

@@ -16,10 +16,10 @@ import {
   type DockSplitNode,
 } from "../types/config";
 
-export const MIN_PANE_WIDTH = 20;
+const MIN_PANE_WIDTH = 20;
 export const MIN_FLOAT_WIDTH = 15;
 export const MIN_FLOAT_HEIGHT = 6;
-export const MIN_DOCKED_HEIGHT = 5;
+const MIN_DOCKED_HEIGHT = 5;
 
 export interface ResolvedPane {
   instance: PaneInstanceConfig;
@@ -33,8 +33,7 @@ export interface DockTarget {
   position: "left" | "right" | "above" | "below";
 }
 
-export type GlobalDockRegion = "left" | "right" | "top" | "bottom" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
-export type LeafDropPosition =
+type LeafDropPosition =
   | "left"
   | "right"
   | "top"
@@ -641,7 +640,7 @@ function inferDockTreeFromRects(rects: GridlockRect[], bounds?: LayoutBounds): D
   };
 }
 
-export function traverseDockLeaves(layout: LayoutConfig): DockLeafRef[] {
+function traverseDockLeaves(layout: LayoutConfig): DockLeafRef[] {
   return collectDockLeafRefs(layout.dockRoot);
 }
 
@@ -751,7 +750,7 @@ export function floatPane(
   return floatAtRect(layout, instanceId, rect);
 }
 
-export function insertRelativeToLeaf(layout: LayoutConfig, instanceId: string, targetId: string, position: DockTarget["position"]): LayoutConfig {
+function insertRelativeToLeaf(layout: LayoutConfig, instanceId: string, targetId: string, position: DockTarget["position"]): LayoutConfig {
   if (instanceId === targetId) return layout;
   const base = detachPane(layout, instanceId);
   const targetLeaf = findDockLeaf(base, targetId);
@@ -775,7 +774,7 @@ export function insertAtRootEdge(layout: LayoutConfig, instanceId: string, edge:
   });
 }
 
-export function dockAtTarget(layout: LayoutConfig, instanceId: string, target: DockTarget): LayoutConfig {
+function dockAtTarget(layout: LayoutConfig, instanceId: string, target: DockTarget): LayoutConfig {
   return insertRelativeToLeaf(layout, instanceId, target.relativeTo, target.position);
 }
 
@@ -794,28 +793,6 @@ export function dockPane(layout: LayoutConfig, instanceId: string, target?: Dock
     return finalizeLayout({ ...detachPane(layout, instanceId), dockRoot: { kind: "pane", instanceId } });
   }
   return insertAtRootEdge(layout, instanceId, "right");
-}
-
-export function dockPaneToRegion(layout: LayoutConfig, instanceId: string, region: GlobalDockRegion): LayoutConfig {
-  switch (region) {
-    case "left":
-      return insertAtRootEdge(layout, instanceId, "left");
-    case "right":
-      return insertAtRootEdge(layout, instanceId, "right");
-    case "top":
-    case "top-left":
-    case "top-right":
-      return insertAtRootEdge(layout, instanceId, "top");
-    case "bottom":
-    case "bottom-left":
-    case "bottom-right":
-      return insertAtRootEdge(layout, instanceId, "bottom");
-  }
-}
-
-export function insertIntoQuadrant(layout: LayoutConfig, instanceId: string, targetId: string, quadrant: Exclude<LeafDropPosition, "left" | "right" | "top" | "bottom" | "center">): LayoutConfig {
-  const normalized = normalizeDropPosition(quadrant);
-  return insertRelativeToLeaf(layout, instanceId, targetId, normalized === "top" ? "above" : normalized === "bottom" ? "below" : normalized);
 }
 
 export function applyDrop(layout: LayoutConfig, draggedId: string, dropTarget: DropTarget): LayoutConfig {
@@ -864,10 +841,6 @@ export function movePaneRelative(
   const target = candidates[0]?.entry;
   if (!target) return layout;
   return insertRelativeToLeaf(layout, instanceId, target.instanceId, position);
-}
-
-export function swapLeaves(layout: LayoutConfig, firstId: string, secondId: string): LayoutConfig {
-  return swapPanes(layout, firstId, secondId);
 }
 
 export function swapPanes(layout: LayoutConfig, firstId: string, secondId: string): LayoutConfig {
@@ -924,10 +897,6 @@ export function swapPanes(layout: LayoutConfig, firstId: string, secondId: strin
   });
 }
 
-export function removeLeafAndCollapse(layout: LayoutConfig, instanceId: string): LayoutConfig {
-  return finalizeLayout(removeDockedLeaf(layout, instanceId));
-}
-
 export function resizeSplitAtPath(layout: LayoutConfig, path: Array<0 | 1>, ratio: number): LayoutConfig {
   const target = getNodeAtPath(layout.dockRoot, path);
   if (!target || target.kind !== "split" || !layout.dockRoot) return layout;
@@ -938,18 +907,6 @@ export function resizeSplitAtPath(layout: LayoutConfig, path: Array<0 | 1>, rati
       ratio: clampRatio(ratio),
     }),
   });
-}
-
-export function restorePlacementMemory(
-  layout: LayoutConfig,
-  instanceId: string,
-  termWidth: number,
-  termHeight: number,
-  def?: PaneDef,
-): LayoutConfig {
-  const isFloating = layout.floating.some((entry) => entry.instanceId === instanceId);
-  if (isFloating) return dockPane(layout, instanceId);
-  return floatPane(layout, instanceId, termWidth, termHeight, def);
 }
 
 export function addPaneToLayout(layout: LayoutConfig, instance: PaneInstanceConfig, target: DockTarget): LayoutConfig {
@@ -1001,7 +958,7 @@ export function isPaneDocked(layout: LayoutConfig, instanceId: string): boolean 
   return !!findDockLeaf(layout, instanceId);
 }
 
-export function updateFloatingPane(
+function updateFloatingPane(
   layout: LayoutConfig,
   instanceId: string,
   updates: Partial<Pick<FloatingPaneEntry, "x" | "y" | "width" | "height" | "zIndex">>,

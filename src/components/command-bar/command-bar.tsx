@@ -5,6 +5,12 @@ import { TextAttributes, type InputRenderable, type ScrollBoxRenderable, type Te
 import { useShortcut, useViewport } from "../../react/input";
 import { Button, NumberField, Spinner, TextField } from "../ui";
 import { NativeSelect, openNativeSelect, type NativeSelectElement } from "../ui/native-select";
+import {
+  moveMultiSelectValue,
+  toggleMultiSelectValue,
+  toggleOrderedMultiSelectValue,
+  type MultiSelectOption,
+} from "../ui/multi-select";
 import { ToggleList } from "../toggle-list";
 import {
   applyTheme,
@@ -140,7 +146,6 @@ import {
   isRouteCommandId,
   isWorkflowTextField,
   looksDestructiveCommand,
-  moveSelectedValue,
   normalizeFieldOptions,
   normalizeWizardFields,
   routeCommandIdToScreen,
@@ -148,7 +153,6 @@ import {
   summarizeError,
   summarizePaneSettingValue,
   summarizeWorkflowFieldValue,
-  toggleSelectedValue,
 } from "./helpers";
 import {
   buildAddToPortfolioWorkflow,
@@ -336,6 +340,15 @@ function getVisibleMultiSelectPickerOptions(
       description,
     };
   });
+}
+
+function toMultiSelectOptions(options: CommandBarPickerOption[]): MultiSelectOption[] {
+  return options.map((option) => ({
+    value: option.id,
+    label: option.label,
+    description: option.description,
+    disabled: option.disabled,
+  }));
 }
 
 type CommandBarListScrollEvent = {
@@ -4972,7 +4985,10 @@ export function CommandBar({
     updateTopRoute((route) => {
       if (route.kind !== "picker" || route.pickerId !== "field-multi-select") return route;
       const selectedValues = coerceFieldValues(route.payload?.selectedValues as CommandBarFieldValue | undefined);
-      const nextSelectedValues = toggleSelectedValue(selectedValues, optionId);
+      const options = toMultiSelectOptions(route.options);
+      const nextSelectedValues = route.payload?.fieldType === "ordered-multi-select"
+        ? toggleOrderedMultiSelectValue(options, selectedValues, optionId)
+        : toggleMultiSelectValue(options, selectedValues, optionId);
       const nextRoute = {
         ...route,
         payload: {
@@ -4999,18 +5015,13 @@ export function CommandBar({
       if (route.kind !== "picker" || route.pickerId !== "field-multi-select") return route;
       const fieldType = String(route.payload?.fieldType ?? "");
       if (fieldType !== "ordered-multi-select") return route;
-      const workflowField: CommandBarWorkflowField = {
-        id: "selectedValues",
-        label: route.title,
-        type: "ordered-multi-select",
-        options: route.options.map((option) => ({
-          label: option.label,
-          value: option.id,
-          description: option.description,
-        })),
-      };
       const selectedValues = coerceFieldValues(route.payload?.selectedValues as CommandBarFieldValue | undefined);
-      const nextSelectedValues = moveSelectedValue(workflowField, selectedValues, selectedItem.id, direction);
+      const nextSelectedValues = moveMultiSelectValue(
+        toMultiSelectOptions(route.options),
+        selectedValues,
+        selectedItem.id,
+        direction,
+      );
       const nextRoute = {
         ...route,
         payload: {

@@ -248,7 +248,7 @@ function nextSectorSortPreference(current: SectorSortPreference, columnId: strin
   return { columnId: null, direction: "asc" };
 }
 
-export function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
+function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const focusedCollectionId = useAppSelector((state) => getFocusedCollectionId(state));
   const portfolios = useAppSelector((state) => state.config.portfolios);
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);

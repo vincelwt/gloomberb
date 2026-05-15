@@ -18,7 +18,7 @@ export interface CollectionEntry {
   kind: "portfolio" | "watchlist";
 }
 
-export const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
+const PORTFOLIO_COLUMN_DEFS: ColumnConfig[] = [
   ...DEFAULT_COLUMNS,
   { id: PRICE_SPARKLINE_COLUMN_ID, label: PRICE_SPARKLINE_PERIOD_LABEL, width: 6, align: "left" },
   { id: "bid", label: "BID", width: 10, align: "right", format: "currency" },

@@ -12,7 +12,6 @@ import { formatTickerListInput } from "../../../utils/ticker-list";
 
 export { FinancialsTab } from "./financials-tab";
 export { QuoteMonitorPane } from "./quote-monitor";
-export { buildVisibleDetailTabs } from "./settings";
 
 export const tickerDetailPlugin: GloomPlugin = {
   id: "ticker-detail",

@@ -21,7 +21,7 @@ export interface TickerSurfacePaneTemplateOptions {
   ) => boolean;
 }
 
-export function resolveTickerSurfaceSymbol(
+function resolveTickerSurfaceSymbol(
   context: Pick<PaneTemplateContext, "activeTicker">,
   options?: Pick<PaneTemplateCreateOptions, "arg" | "symbol">,
 ): string | null {
@@ -29,7 +29,7 @@ export function resolveTickerSurfaceSymbol(
   return explicitSymbol || normalizeTickerInput(context.activeTicker, options?.arg);
 }
 
-export function createTickerSurfacePaneInstance(
+function createTickerSurfacePaneInstance(
   context: Pick<PaneTemplateContext, "activeTicker">,
   options: Pick<PaneTemplateCreateOptions, "arg" | "symbol"> | undefined,
   titlePrefix: string,

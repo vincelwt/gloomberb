@@ -18,14 +18,12 @@ import {
   isRouteCommandId,
   isWorkflowTextField,
   looksDestructiveCommand,
-  moveSelectedValue,
   normalizeWizardFields,
   routeCommandIdToScreen,
   slugifyName,
   summarizeError,
   summarizePaneSettingValue,
   summarizeWorkflowFieldValue,
-  toggleSelectedValue,
 } from "./helpers";
 
 const workflowFields: CommandBarWorkflowField[] = [
@@ -99,24 +97,6 @@ describe("command-bar helpers", () => {
         { label: "Volume", value: "volume" },
       ],
     }, ["symbol", "price", "pnl", "volume"])).toBe("Symbol, Price, P&L +1");
-  });
-
-  test("toggles and reorders selected values while preserving unknown entries", () => {
-    expect(toggleSelectedValue(["symbol", "price"], "price")).toEqual(["symbol"]);
-    expect(toggleSelectedValue(["symbol"], "price")).toEqual(["symbol", "price"]);
-
-    expect(moveSelectedValue(
-      {
-        options: [
-          { label: "Symbol", value: "symbol" },
-          { label: "Price", value: "price" },
-          { label: "P&L", value: "pnl" },
-        ],
-      },
-      ["symbol", "price", "custom"],
-      "price",
-      "up",
-    )).toEqual(["price", "symbol", "custom"]);
   });
 
   test("normalizes wizard fields and derives defaults from steps", () => {

@@ -11,7 +11,7 @@ export interface PluginCatalogEntry {
   error?: string;
 }
 
-export const builtinPlugins: GloomPlugin[] = [
+const builtinPlugins: GloomPlugin[] = [
   yahooPlugin,
   ...uiBuiltinPlugins,
   debugPlugin,

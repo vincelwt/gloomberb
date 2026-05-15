@@ -105,7 +105,7 @@ export function computeWeightedPortfolioReturns(series: WeightedReturnSeries[]):
     .sort((left, right) => left.dateKey.localeCompare(right.dateKey));
 }
 
-export function alignReturnSeries(
+function alignReturnSeries(
   assetReturns: DatedReturn[],
   marketReturns: DatedReturn[],
 ): { asset: number[]; market: number[] } {

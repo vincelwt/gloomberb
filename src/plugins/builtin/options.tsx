@@ -395,7 +395,7 @@ function mostReadableColor(surface: string, candidates: readonly string[]): stri
   );
 }
 
-export function optionRoleColor(role: OptionColorRole, surface: string): string {
+function optionRoleColor(role: OptionColorRole, surface: string): string {
   const preferred = optionRoleThemeColor(role);
   const fallback = mostReadableColor(surface, [
     preferred,

@@ -23,7 +23,7 @@ function normalizeFormValue(value: unknown): string {
   return "";
 }
 
-export function flattenBrokerConfigValues(
+function flattenBrokerConfigValues(
   adapter: BrokerAdapter,
   instance?: BrokerInstanceConfig,
 ): Record<string, string> {
@@ -66,7 +66,7 @@ function getPreviousPasswordValue(
   return normalizeFormValue((adapter.toConfigValues?.(previous) ?? previous.config)[key]);
 }
 
-export function withPreservedBrokerPasswords(
+function withPreservedBrokerPasswords(
   adapter: BrokerAdapter,
   values: Record<string, string>,
   previous?: BrokerInstanceConfig,

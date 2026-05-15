@@ -1,21 +1,17 @@
 import { Box, ScrollBox, Text } from "../../../ui";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import type { AppState } from "../../../state/app-context";
-import { colors, priceColor } from "../../../theme/colors";
+import { colors } from "../../../theme/colors";
 import type { BrokerConnectionStatus } from "../../../types/broker";
-import type { TickerFinancials } from "../../../types/financials";
-import type { Portfolio, TickerRecord } from "../../../types/ticker";
+import type { Portfolio } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
-import { formatCompact, formatPercentRaw, padTo } from "../../../utils/format";
+import { formatCompact, padTo } from "../../../utils/format";
 import { formatMarketQuantity } from "../../../utils/market-format";
-import { getMostRecentQuoteUpdate } from "../../../utils/quote-time";
 import { getBrokerInstance } from "../../../utils/broker-instances";
 import { usePluginBrokerActions } from "../../plugin-runtime";
-import { calculatePortfolioSummaryTotals } from "./metrics";
 import {
   buildDrawerMetricSegments,
-  buildPortfolioSummarySegments,
   renderSummarySegments,
   resolvePortfolioAccountState,
   type ResolvedPortfolioAccountState,
@@ -156,90 +152,3 @@ export function PortfolioCashMarginDrawer({
     </Box>
   );
 }
-
-export const PortfolioSummaryBar = memo(function PortfolioSummaryBar({
-  tickers,
-  financialsMap,
-  baseCurrency,
-  exchangeRates,
-  refreshingCount,
-  isPortfolio,
-  collectionId,
-  width,
-  accountState,
-}: {
-  tickers: TickerRecord[];
-  financialsMap: Map<string, TickerFinancials>;
-  baseCurrency: string;
-  exchangeRates: Map<string, number>;
-  refreshingCount: number;
-  isPortfolio: boolean;
-  collectionId: string | null;
-  width: number;
-  accountState: ResolvedPortfolioAccountState | null;
-}) {
-  const lastRefreshTimestamp = useMemo(() => getMostRecentQuoteUpdate(
-    tickers.map((ticker) => financialsMap.get(ticker.metadata.ticker)?.quote),
-  ), [financialsMap, tickers]);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const wasRefreshing = useRef(false);
-
-  useEffect(() => {
-    if (refreshingCount > 0) {
-      wasRefreshing.current = true;
-      return;
-    }
-    if (wasRefreshing.current) {
-      wasRefreshing.current = false;
-      setLastRefresh(new Date());
-    }
-  }, [refreshingCount]);
-
-  useEffect(() => {
-    if (financialsMap.size > 0 && !lastRefresh) {
-      setLastRefresh(new Date());
-    }
-  }, [financialsMap.size, lastRefresh]);
-
-  const totals = useMemo(
-    () => calculatePortfolioSummaryTotals(
-      tickers,
-      financialsMap,
-      baseCurrency,
-      exchangeRates,
-      isPortfolio,
-      collectionId,
-    ),
-    [baseCurrency, collectionId, exchangeRates, financialsMap, isPortfolio, tickers],
-  );
-
-  const refreshTimestamp = lastRefreshTimestamp ?? lastRefresh?.getTime() ?? null;
-  const refreshText = refreshTimestamp != null
-    ? new Date(refreshTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    : "—";
-  const isRefreshing = refreshingCount > 0;
-
-  if (!isPortfolio) {
-    if (totals.watchlistCount === 0) return null;
-    return (
-      <Box flexDirection="row" height={1} width={width} justifyContent="flex-start" overflow="hidden">
-        <Text fg={colors.textDim}>{"Avg Day "}</Text>
-        <Text fg={priceColor(totals.avgWatchlistChange)} attributes={TextAttributes.BOLD}>
-          {formatPercentRaw(totals.avgWatchlistChange)}
-        </Text>
-        <Text fg={colors.textDim}>{`  ${refreshText}`}</Text>
-      </Box>
-    );
-  }
-
-  if (!totals.hasPositions && !accountState) return null;
-
-  const segments = buildPortfolioSummarySegments({
-    totals,
-    accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,
-    widthBudget: width,
-    refreshText: isRefreshing ? "Refreshing…" : refreshText,
-  });
-
-  return <Box height={1}>{renderSummarySegments(segments, width)}</Box>;
-});

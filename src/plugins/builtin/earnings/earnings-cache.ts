@@ -35,7 +35,7 @@ export function resetEarningsCalendarPersistence(): void {
   activeFetches.clear();
 }
 
-export function normalizeEarningsSymbols(symbols: string[]): string[] {
+function normalizeEarningsSymbols(symbols: string[]): string[] {
   return Array.from(
     new Set(
       symbols

@@ -8,7 +8,7 @@ class YahooPluginProvider extends YahooFinanceClient {
   readonly priority = 1000;
 }
 
-export function createYahooProvider() {
+function createYahooProvider() {
   return new YahooPluginProvider();
 }
 

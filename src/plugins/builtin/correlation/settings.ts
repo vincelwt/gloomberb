@@ -3,8 +3,8 @@ import type { PaneSettingsDef } from "../../../types/plugin";
 import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../utils/ticker-list";
 
 export const MAX_CORRELATION_TICKERS = MAX_TICKER_LIST_SIZE;
-export const DEFAULT_CORRELATION_RANGE: CorrelationRangePreset = "1Y";
-export const CORRELATION_RANGE_OPTIONS = ["1M", "3M", "6M", "1Y", "5Y"] as const;
+const DEFAULT_CORRELATION_RANGE: CorrelationRangePreset = "1Y";
+const CORRELATION_RANGE_OPTIONS = ["1M", "3M", "6M", "1Y", "5Y"] as const;
 export const DEFAULT_CORRELATION_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMD"];
 
 export type CorrelationRangePreset = Extract<TimeRange, typeof CORRELATION_RANGE_OPTIONS[number]>;
@@ -16,11 +16,11 @@ export interface CorrelationPaneSettings {
   symbolsError: string | null;
 }
 
-export function isCorrelationRangePreset(value: unknown): value is CorrelationRangePreset {
+function isCorrelationRangePreset(value: unknown): value is CorrelationRangePreset {
   return CORRELATION_RANGE_OPTIONS.includes(value as CorrelationRangePreset);
 }
 
-export function normalizeCorrelationRange(value: unknown): CorrelationRangePreset {
+function normalizeCorrelationRange(value: unknown): CorrelationRangePreset {
   return isCorrelationRangePreset(value) ? value : DEFAULT_CORRELATION_RANGE;
 }
 

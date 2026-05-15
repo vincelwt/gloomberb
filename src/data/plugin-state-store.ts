@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { safeParseJson, serializeJson } from "./sqlite-json";
 import { withSqliteBusyRetry } from "./sqlite-retry";
 
-export const DEFAULT_PLUGIN_STATE_SCHEMA_VERSION = 1;
+const DEFAULT_PLUGIN_STATE_SCHEMA_VERSION = 1;
 
 export interface PluginStateRecord<T = unknown> {
   value: T;

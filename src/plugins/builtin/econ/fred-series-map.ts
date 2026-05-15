@@ -83,7 +83,3 @@ export function resolveFredMapping(eventTitle: string, country: string): FredMap
 export function getRelatedTickers(eventTitle: string, country: string): string[] {
   return resolveFredMapping(eventTitle, country)?.relatedTickers ?? [];
 }
-
-export function getFredSeriesId(eventTitle: string, country: string): string | null {
-  return resolveFredMapping(eventTitle, country)?.seriesId ?? null;
-}

@@ -60,7 +60,7 @@ function normalizeAuthority(value: unknown, fallback: number): number {
   return Math.max(0, Math.min(100, Math.round(parsed)));
 }
 
-export function createUserFeedId(url: string, name: string): string {
+function createUserFeedId(url: string, name: string): string {
   return `user-${hashString(`${url}|${name}`)}`;
 }
 

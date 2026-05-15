@@ -5,7 +5,7 @@ export interface NewsReadState {
   articleIds: string[];
 }
 
-export const NEWS_READ_STATE_SCHEMA_VERSION = 1;
+const NEWS_READ_STATE_SCHEMA_VERSION = 1;
 export const MAX_READ_ARTICLE_IDS = 2_000;
 
 const READ_STATE_KEY = "read-articles";

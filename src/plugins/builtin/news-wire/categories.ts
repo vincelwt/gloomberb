@@ -18,7 +18,7 @@ const KNOWN_TICKERS = new Set([
   "WFC", "C", "DIS", "PYPL", "SQ", "COIN", "PLTR", "SNOW", "CRWD",
 ]);
 
-export function classifyArticle(item: MarketNewsItem): string[] {
+function classifyArticle(item: MarketNewsItem): string[] {
   const text = `${item.title} ${item.summary ?? ""}`.toLowerCase();
   const matched: string[] = [];
 
@@ -34,7 +34,7 @@ export function classifyArticle(item: MarketNewsItem): string[] {
   return matched;
 }
 
-export function extractTickers(text: string, knownTickers?: Set<string>): string[] {
+function extractTickers(text: string, knownTickers?: Set<string>): string[] {
   const combined = new Set([...KNOWN_TICKERS, ...(knownTickers ?? [])]);
   const matches = text.match(/\b[A-Z]{1,5}\b/g) ?? [];
   const seen = new Set<string>();
@@ -58,7 +58,7 @@ const BREAKING_PATTERNS = [
   /\burgent\b/i,
 ];
 
-export function detectBreaking(title: string, publishedAt: Date, authority: number): boolean {
+function detectBreaking(title: string, publishedAt: Date, authority: number): boolean {
   for (const re of BREAKING_PATTERNS) {
     if (re.test(title)) return true;
   }
@@ -69,7 +69,7 @@ export function detectBreaking(title: string, publishedAt: Date, authority: numb
   return false;
 }
 
-export function scoreImportance(authority: number, publishedAt: Date, isBreaking: boolean): number {
+function scoreImportance(authority: number, publishedAt: Date, isBreaking: boolean): number {
   const ageMs = Date.now() - publishedAt.getTime();
   let score = authority;
 

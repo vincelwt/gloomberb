@@ -85,7 +85,7 @@ export interface FearGreedData {
   indicators: FearGreedIndicator[];
 }
 
-export const FEAR_GREED_INDICATORS: FearGreedIndicatorDefinition[] = [
+const FEAR_GREED_INDICATORS: FearGreedIndicatorDefinition[] = [
   {
     id: "market-momentum",
     title: "Market Momentum",

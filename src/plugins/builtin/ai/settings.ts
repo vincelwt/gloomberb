@@ -5,14 +5,14 @@ export interface AiScreenerPaneSettings {
   columnIds: string[];
 }
 
-export const AI_REASON_COLUMN: ColumnConfig = {
+const AI_REASON_COLUMN: ColumnConfig = {
   id: "reason",
   label: "REASON",
   width: 34,
   align: "left",
 };
 
-export const AI_SCREENER_COLUMN_DEFS: ColumnConfig[] = [
+const AI_SCREENER_COLUMN_DEFS: ColumnConfig[] = [
   ...DEFAULT_COLUMNS,
   { id: "bid", label: "BID", width: 10, align: "right", format: "currency" },
   { id: "ask", label: "ASK", width: 10, align: "right", format: "currency" },
@@ -23,7 +23,7 @@ export const AI_SCREENER_COLUMN_DEFS: ColumnConfig[] = [
   AI_REASON_COLUMN,
 ];
 
-export const DEFAULT_AI_SCREENER_COLUMN_IDS = [
+const DEFAULT_AI_SCREENER_COLUMN_IDS = [
   "ticker",
   "price",
   "change_pct",

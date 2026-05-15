@@ -136,37 +136,6 @@ export function summarizePaneSettingValue(field: PaneSettingField, value: unknow
   }
 }
 
-export function toggleSelectedValue(currentValues: string[], value: string): string[] {
-  return currentValues.includes(value)
-    ? currentValues.filter((entry) => entry !== value)
-    : [...currentValues, value];
-}
-
-export function moveSelectedValue(
-  field: { options: CommandBarFieldOption[] },
-  currentValues: string[],
-  selectedOption: string,
-  direction: "up" | "down",
-): string[] {
-  if (!currentValues.includes(selectedOption)) return currentValues;
-
-  const optionValueSet = new Set(field.options.map((option) => option.value));
-  const ordered = currentValues.filter((value) => optionValueSet.has(value));
-  const index = ordered.indexOf(selectedOption);
-  if (index < 0) return currentValues;
-
-  const targetIndex = direction === "up"
-    ? Math.max(0, index - 1)
-    : Math.min(ordered.length - 1, index + 1);
-  if (targetIndex === index) return currentValues;
-
-  const next = [...ordered];
-  const [entry] = next.splice(index, 1);
-  next.splice(targetIndex, 0, entry!);
-  const unknownValues = currentValues.filter((value) => !optionValueSet.has(value));
-  return [...next, ...unknownValues];
-}
-
 export function normalizeWizardFields(steps: WizardStep[]): {
   fields: CommandBarWorkflowField[];
   description: string[];

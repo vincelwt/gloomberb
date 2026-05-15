@@ -1,4 +1,4 @@
-export function newsDisplayTickerSymbol(value: string | null | undefined): string | null {
+function newsDisplayTickerSymbol(value: string | null | undefined): string | null {
   const normalized = value?.trim().toUpperCase();
   if (!normalized) return null;
   return normalized.split(":")[0] || null;

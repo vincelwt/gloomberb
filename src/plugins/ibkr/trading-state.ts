@@ -127,7 +127,7 @@ export function updateTradeTicketState(
   updateTicketState(symbol, ticker, updater);
 }
 
-export function subscribeTradingPane(listener: () => void): () => void {
+function subscribeTradingPane(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
@@ -276,10 +276,6 @@ export function setTradeTicketPreview(
   ticker?: TickerRecord | null,
 ): void {
   updateTicketState(symbol, ticker, (current) => ({ ...current, preview, lastError: undefined }));
-}
-
-export function clearTradeTicketPreview(symbol: string, ticker?: TickerRecord | null): void {
-  updateTicketState(symbol, ticker, (current) => ({ ...current, preview: null }));
 }
 
 export function clearTradingDraft(symbol?: string): void {

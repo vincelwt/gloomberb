@@ -130,7 +130,7 @@ function latestHistoryClose(history: readonly PricePoint[]): number | null {
   return getSortedHistory(history).at(-1)?.point.close ?? null;
 }
 
-export function computeTrailingReturn(
+function computeTrailingReturn(
   history: readonly PricePoint[],
   days: number,
   latestPrice?: number | null,

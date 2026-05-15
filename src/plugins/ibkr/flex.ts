@@ -136,7 +136,7 @@ export async function requestFlexStatement(config: FlexQueryConfig): Promise<str
   return codeMatch[1]!;
 }
 
-export async function getFlexStatement(
+async function getFlexStatement(
   token: string,
   referenceCode: string,
   context: Pick<FlexQueryConfig, "endpoint" | "queryId"> = {},

@@ -106,10 +106,3 @@ export function formatCorrelation(r: number | null): string {
   if (r === null) return "  —  ";
   return r >= 0 ? ` ${r.toFixed(2)}` : r.toFixed(2);
 }
-
-export function correlationColor(r: number | null, positive: string, negative: string, neutral: string): string {
-  if (r === null) return neutral;
-  if (r > 0.7) return positive;
-  if (r < -0.7) return negative;
-  return neutral;
-}

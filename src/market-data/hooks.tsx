@@ -69,7 +69,7 @@ function buildTickerFinancialsMapKey(tickers: TickerRecord[]): string {
   }).join("::");
 }
 
-export function useTickerInstrument(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): InstrumentRef | null {
+function useTickerInstrument(symbol: string | null | undefined, ticker: TickerRecord | null | undefined): InstrumentRef | null {
   return useMemo(() => instrumentFromTicker(ticker, symbol ?? null), [symbol, ticker]);
 }
 

@@ -52,8 +52,6 @@ export const SECTOR_COLLECTIONS: SectorCollection[] = [
   { id: "industries", label: "Industries", items: INDUSTRIES },
 ];
 
-export const SECTORS = CORE_SECTORS;
-
 export function getSectorCollection(id: SectorCollectionId): SectorCollection {
   return SECTOR_COLLECTIONS.find((collection) => collection.id === id) ?? SECTOR_COLLECTIONS[0]!;
 }

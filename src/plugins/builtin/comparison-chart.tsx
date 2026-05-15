@@ -15,7 +15,7 @@ import type { GloomPlugin, PaneProps, PaneSettingsDef } from "../../types/plugin
 import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../utils/ticker-list";
 
 export const COMPARISON_CHART_PANE_ID = "comparison-chart";
-export const COMPARISON_CHART_TEMPLATE_ID = "comparison-chart-pane";
+const COMPARISON_CHART_TEMPLATE_ID = "comparison-chart-pane";
 export const MIN_COMPARISON_CHART_SYMBOLS = 2;
 
 interface ComparisonChartPaneSettings {

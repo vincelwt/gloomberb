@@ -25,9 +25,9 @@ const DEFAULT_FLEX_CONFIG: FlexQueryConfig = {
   endpoint: IBKR_STATEMENT_URL,
 };
 
-export const DEFAULT_GATEWAY_HOST = "127.0.0.1";
+const DEFAULT_GATEWAY_HOST = "127.0.0.1";
 
-export const DEFAULT_GATEWAY_CONFIG: IbkrGatewayConfig = {
+const DEFAULT_GATEWAY_CONFIG: IbkrGatewayConfig = {
   host: DEFAULT_GATEWAY_HOST,
   marketDataType: "auto",
 };
@@ -196,10 +196,6 @@ export function getGatewayConfig(raw?: Record<string, unknown>): IbkrGatewayConf
   return normalizeIbkrConfig(raw).gateway;
 }
 
-export function getFlexConfig(raw?: Record<string, unknown>): FlexQueryConfig {
-  return normalizeIbkrConfig(raw).flex;
-}
-
 export function isGatewayConfigured(raw?: Record<string, unknown>): boolean {
   const config = normalizeIbkrConfig(raw);
   return config.connectionMode === "gateway"
@@ -244,19 +240,4 @@ export function buildPersistedIbkrGatewayConfig(
     flex: normalized.flex,
     gateway,
   };
-}
-
-export function getIbkrConfigIdentity(raw?: Record<string, unknown>): string {
-  const normalized = normalizeIbkrConfig(raw);
-  return JSON.stringify({
-    connectionMode: normalized.connectionMode,
-    gatewaySetupMode: normalized.gatewaySetupMode,
-    flex: normalized.flex,
-    gateway: {
-      host: normalized.gateway.host,
-      port: normalized.gateway.port ?? null,
-      clientId: normalized.gateway.clientId ?? null,
-      marketDataType: normalized.gateway.marketDataType ?? "auto",
-    },
-  });
 }

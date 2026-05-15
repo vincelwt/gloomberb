@@ -2,7 +2,7 @@ import type { AppConfig, BrokerInstanceConfig } from "../../types/config";
 import { getBrokerInstance, getBrokerInstancesByType } from "../../utils/broker-instances";
 import { isGatewayConfigured, normalizeIbkrConfig } from "./config";
 
-export function isIbkrGatewayInstance(instance?: BrokerInstanceConfig): instance is BrokerInstanceConfig {
+function isIbkrGatewayInstance(instance?: BrokerInstanceConfig): instance is BrokerInstanceConfig {
   if (!instance || instance.brokerType !== "ibkr" || instance.enabled === false) return false;
   const normalized = normalizeIbkrConfig(instance.config);
   return normalized.connectionMode === "gateway" && isGatewayConfigured(instance.config);

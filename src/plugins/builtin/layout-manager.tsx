@@ -24,7 +24,7 @@ export function setLayoutManagerDispatch(
   getStateRef = getState;
 }
 
-export function clearLayoutManagerDispatch() {
+function clearLayoutManagerDispatch() {
   dispatchRef = null;
   getStateRef = null;
 }
