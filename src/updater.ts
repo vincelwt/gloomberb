@@ -1,5 +1,4 @@
-const REPO = "vincelwt/gloomberb";
-const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+import { GITHUB_LATEST_RELEASE_API_URL } from "./updater/github-releases";
 
 function getRuntimeProcess(): Pick<NodeJS.Process, "platform" | "arch" | "argv" | "execPath"> | null {
   return (globalThis as { process?: NodeJS.Process }).process ?? null;
@@ -179,7 +178,7 @@ export async function checkForUpdateDetailed(
     const controller = new AbortController();
     timeout = setTimeout(() => controller.abort(), 5000);
 
-    const res = await fetch(API_URL, {
+    const res = await fetch(GITHUB_LATEST_RELEASE_API_URL, {
       signal: controller.signal,
       headers: { Accept: "application/vnd.github+json" },
     });
