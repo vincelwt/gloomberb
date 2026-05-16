@@ -1520,8 +1520,6 @@ function AppInner({
 
   // Check if a dialog is currently open (wizard, confirm, etc.)
   const dialogOpen = useDialogState((s) => s.isOpen);
-  const focusedPane = state.focusedPaneId ? findPaneInstance(state.config.layout, state.focusedPaneId) : null;
-  const focusedDetailTab = state.focusedPaneId ? state.paneState[state.focusedPaneId]?.activeTabId : undefined;
 
   // Global keyboard shortcuts
   useShortcut((event) => {
@@ -1585,7 +1583,7 @@ function AppInner({
       }
       event.preventDefault();
       event.stopPropagation();
-    } else if (!isDetachedWindow && event.name === "q" && !(focusedPane?.paneId === "ticker-detail" && focusedDetailTab === "financials")) {
+    } else if (!isDetachedWindow && event.name === "q") {
       rendererHost.requestExit();
     } else if (event.name === "r") {
       // Refresh focused ticker context.
@@ -1597,13 +1595,6 @@ function AppInner({
       // Refresh all
       for (const t of state.tickers.values()) {
         refreshTicker(t.metadata.ticker, t.metadata.exchange, t, 1);
-      }
-    } else if (!isDetachedWindow && event.name === "a" && focusedTickerSymbol) {
-      // Open ticker actions
-      const actions = [...pluginRegistry.tickerActions.values()];
-      const ticker = state.tickers.get(focusedTickerSymbol);
-      if (actions.length > 0 && ticker) {
-        dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
       }
     } else if (event.name === "u" && state.updateAvailable && !state.updateProgress && !state.updateCheckInProgress && canSelfUpdate(state.updateAvailable)) {
       startUpdate(state.updateAvailable);

@@ -16,7 +16,7 @@ import type {
 } from "../types/data-provider";
 import type { CapabilityRouteSource } from "../types/capability-route-source";
 import { routeSourcePriority } from "../types/capability-route-source";
-import type { AnalystResearchData, CorporateActionsData, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
+import type { AnalystResearchData, CorporateActionsData, FinancialStatement, HolderData, OptionsChain, PricePoint, Quote, TickerFinancials } from "../types/financials";
 import type { NewsArticle, NewsQuery } from "../news/types";
 import type { BrokerContractRef, InstrumentSearchResult } from "../types/instrument";
 import type { CachePolicy, CachePolicyMap } from "../types/persistence";
@@ -218,6 +218,63 @@ function hasMeaningfulProfile(data: TickerFinancials | null | undefined): boolea
   );
 }
 
+function hasStatementRows(data: TickerFinancials | null | undefined): boolean {
+  return !!data && (
+    data.annualStatements.length > 0 ||
+    data.quarterlyStatements.length > 0
+  );
+}
+
+const DETAILED_STATEMENT_KEYS: Array<keyof FinancialStatement> = [
+  "accountsReceivable",
+  "inventory",
+  "stockBasedCompensation",
+  "purchaseOfPPE",
+  "cashFlowFromContinuingOperatingActivities",
+  "interestPaidSupplementalData",
+  "accountsPayable",
+  "currentDeferredRevenue",
+  "additionalPaidInCapital",
+  "totalNonCurrentAssets",
+  "totalNonCurrentLiabilities",
+];
+
+function hasDetailedStatementRows(data: TickerFinancials | null | undefined): boolean {
+  if (!data) return false;
+  const rows = [...data.annualStatements, ...data.quarterlyStatements];
+  return rows.some((row) => DETAILED_STATEMENT_KEYS.some((key) => typeof row[key] === "number"));
+}
+
+function mergeStatementRows(
+  primaryRows: FinancialStatement[],
+  fallbackRows: FinancialStatement[],
+): FinancialStatement[] {
+  if (primaryRows.length === 0) return fallbackRows;
+  if (fallbackRows.length === 0) return primaryRows;
+
+  const fallbackByDate = new Map(fallbackRows.map((row) => [row.date, row]));
+  const primaryDates = new Set(primaryRows.map((row) => row.date));
+  const mergedRows = primaryRows.map((row) => ({
+    ...fallbackByDate.get(row.date),
+    ...row,
+    date: row.date,
+  }));
+
+  for (const row of fallbackRows) {
+    if (!primaryDates.has(row.date)) mergedRows.push(row);
+  }
+
+  return mergedRows.sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mergeMissingStatementArrays(primary: TickerFinancials, fallback: TickerFinancials): TickerFinancials {
+  return {
+    ...primary,
+    annualStatements: mergeStatementRows(primary.annualStatements, fallback.annualStatements),
+    quarterlyStatements: mergeStatementRows(primary.quarterlyStatements, fallback.quarterlyStatements),
+  };
+}
+
 function hasAnalystResearchValue(data: AnalystResearchData): boolean {
   return !!data.priceTarget
     || data.recommendations.length > 0
@@ -286,8 +343,8 @@ function mergeFinancials(primary: TickerFinancials | null, fallback: TickerFinan
     profile: mergeDefinedObject(primary.profile, fallback.profile),
     fundamentals: mergeDefinedObject(primary.fundamentals, fallback.fundamentals),
     priceHistory: normalizePriceHistory(dominant.priceHistory.length > 0 ? dominant.priceHistory : secondary.priceHistory),
-    annualStatements: primary.annualStatements.length > 0 ? primary.annualStatements : fallback.annualStatements,
-    quarterlyStatements: primary.quarterlyStatements.length > 0 ? primary.quarterlyStatements : fallback.quarterlyStatements,
+    annualStatements: mergeStatementRows(primary.annualStatements, fallback.annualStatements),
+    quarterlyStatements: mergeStatementRows(primary.quarterlyStatements, fallback.quarterlyStatements),
   });
 }
 
@@ -1527,6 +1584,7 @@ export class AssetDataRouter implements DataProvider {
   ): Promise<SourceResult<TickerFinancials> | null> {
     const entityKey = this.getEntityKey(ticker, exchange, context?.instrument);
     const variantKey = this.getTickerVariantCandidates(exchange)[0] ?? "";
+    let primaryResult: SourceResult<TickerFinancials> | null = null;
 
     for (const provider of this.providersInPriorityOrder()) {
       try {
@@ -1534,15 +1592,33 @@ export class AssetDataRouter implements DataProvider {
         const value = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(rawValue));
         if (!value) continue;
         const sourceKey = this.providerSourceKey(provider);
+        const cacheValue = primaryResult
+          ? {
+            annualStatements: value.annualStatements,
+            quarterlyStatements: value.quarterlyStatements,
+            priceHistory: [],
+          }
+          : value;
         this.cacheResource(
           "financials",
           entityKey,
           variantKey,
           sourceKey,
-          value,
+          cacheValue,
           this.resolveProviderPolicy("financials", provider),
         );
-        return { sourceKey, value };
+        if (!primaryResult) {
+          primaryResult = { sourceKey, value };
+          if (hasDetailedStatementRows(value)) return primaryResult;
+          continue;
+        }
+        if (hasStatementRows(value)) {
+          primaryResult = {
+            sourceKey: primaryResult.sourceKey,
+            value: mergeMissingStatementArrays(primaryResult.value, value),
+          };
+          if (hasDetailedStatementRows(primaryResult.value)) return primaryResult;
+        }
       } catch (error) {
         if (shouldLogProviderError(error)) {
           providerLog.error(`${provider.id} failed: ${error}`);
@@ -1550,7 +1626,7 @@ export class AssetDataRouter implements DataProvider {
       }
     }
 
-    return null;
+    return primaryResult;
   }
 
   private async fetchBrokerQuote(

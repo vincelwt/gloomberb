@@ -47,6 +47,9 @@ function makeTicker(symbol: string, currency: string): TickerRecord {
 }
 
 function makeFinancials(symbol: string, currency: string, closes: number[]): TickerFinancials {
+  const lastHistoryDate = closes.length > 0
+    ? new Date(2024, 0, closes.length + 1).getTime()
+    : Date.now();
   return {
     annualStatements: [],
     quarterlyStatements: [],
@@ -56,7 +59,7 @@ function makeFinancials(symbol: string, currency: string, closes: number[]): Tic
       currency,
       change: (closes[closes.length - 1] ?? 0) - (closes[0] ?? 0),
       changePercent: closes[0] ? (((closes[closes.length - 1] ?? 0) - closes[0]!) / closes[0]!) * 100 : 0,
-      lastUpdated: Date.now(),
+      lastUpdated: lastHistoryDate,
     },
     priceHistory: closes.map((close, index) => ({
       date: new Date(2024, 0, index + 2),
@@ -352,6 +355,116 @@ describe("comparisonChartPlugin", () => {
     frame = testSetup!.captureCharFrame();
     expect(frame).toContain("AAPL $100.00 0.00%");
     expect(frame).toContain("MSFT $200.00 0.00%");
+  });
+
+  test("extends lagging comparison histories with the latest quote", async () => {
+    const provider = createProvider({
+      AAPL: [100, 102],
+      MSFT: [200, 202],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    const aaplFinancials = makeFinancials("AAPL", "USD", [100, 102]);
+    const msftFinancials = makeFinancials("MSFT", "USD", [200, 202]);
+    aaplFinancials.quote = {
+      ...aaplFinancials.quote!,
+      price: 150,
+      change: 50,
+      changePercent: 50,
+      lastUpdated: Date.now(),
+      listingExchangeName: "NASDAQ",
+      marketState: "REGULAR",
+    };
+    msftFinancials.quote = {
+      ...msftFinancials.quote!,
+      price: 250,
+      change: 50,
+      changePercent: 25,
+      lastUpdated: Date.now(),
+      listingExchangeName: "NASDAQ",
+      marketState: "REGULAR",
+    };
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", aaplFinancials],
+      ["MSFT", msftFinancials],
+    ]);
+
+    await flushFrames();
+
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("AAPL $150.00 +");
+    expect(frame).toContain("MSFT $250.00 +");
+  });
+
+  test("updates comparison legends from chart-owned quote streams", async () => {
+    let emitQuote: ((symbol: string, price: number) => void) | null = null;
+    const provider = createProvider({
+      AAPL: [100, 102],
+      MSFT: [200, 202],
+    }, {
+      AAPL: "USD",
+      MSFT: "USD",
+    });
+    provider.subscribeQuotes = (targets, onQuote) => {
+      emitQuote = (symbol, price) => {
+        const target = targets.find((entry) => entry.symbol === symbol) ?? {
+          symbol,
+          exchange: "NASDAQ",
+        };
+        onQuote(target, {
+          symbol,
+          price,
+          currency: "USD",
+          change: price - (symbol === "AAPL" ? 100 : 200),
+          changePercent: symbol === "AAPL" ? price - 100 : (price - 200) / 2,
+          lastUpdated: Date.now(),
+          listingExchangeName: "NASDAQ",
+          marketState: "REGULAR",
+        });
+      };
+      return () => {};
+    };
+    setSharedMarketDataForTests(provider);
+    sharedCoordinator = new MarketDataCoordinator(provider);
+    setSharedMarketDataCoordinator(sharedCoordinator);
+    setSharedRegistryForTests(createRegistrySpy({ selected: [], focused: [] }));
+
+    await mountComparisonHarness({
+      axisMode: "percent",
+      symbols: ["AAPL", "MSFT"],
+      symbolsText: "AAPL, MSFT",
+    }, [
+      makeTicker("AAPL", "USD"),
+      makeTicker("MSFT", "USD"),
+    ], [
+      ["AAPL", makeFinancials("AAPL", "USD", [100, 102])],
+      ["MSFT", makeFinancials("MSFT", "USD", [200, 202])],
+    ]);
+    await flushFrames();
+
+    await act(async () => {
+      emitQuote?.("AAPL", 155);
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+    await flushFrames();
+
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("AAPL $155.00 +");
   });
 
   test("does not refetch resolution support when only comparison prices update", async () => {

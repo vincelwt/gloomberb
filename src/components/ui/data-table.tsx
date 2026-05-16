@@ -61,6 +61,8 @@ export interface DataTableProps<
   onBodyScrollActivity: () => void;
   hoveredIdx: number | null;
   setHoveredIdx: (index: number | null) => void;
+  headerScrollId?: string;
+  bodyScrollId?: string;
   getItemKey: (item: T, index: number) => string;
   isSelected: (item: T, index: number) => boolean;
   onSelect: (item: T, index: number) => void;
@@ -139,6 +141,8 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   onBodyScrollActivity,
   hoveredIdx,
   setHoveredIdx,
+  headerScrollId,
+  bodyScrollId,
   getItemKey,
   isSelected,
   onSelect,
@@ -322,6 +326,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
       overflow="hidden"
     >
       <ScrollBox
+        id={headerScrollId}
         ref={headerScrollRef}
         width="100%"
         height={1}
@@ -373,6 +378,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
       </ScrollBox>
 
       <ScrollBox
+        id={bodyScrollId}
         ref={scrollRef}
         width="100%"
         flexGrow={1}

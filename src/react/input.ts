@@ -20,6 +20,7 @@ export interface ShortcutOptions {
   enabled?: boolean;
   scope?: string;
   phase?: "before" | "normal" | "after";
+  allowEditable?: boolean;
 }
 
 export interface InputHost {
@@ -55,6 +56,14 @@ export function useShortcut(
   options?: ShortcutOptions,
 ): void {
   useInputHost().useShortcut(handler, options);
+}
+
+export function shouldDeliverShortcut(
+  event: KeyEventLike,
+  allowEditable: boolean,
+): boolean {
+  if (allowEditable || event.targetEditable !== true) return true;
+  return event.ctrl || event.meta || event.super === true;
 }
 
 export function useViewport(): { width: number; height: number } {

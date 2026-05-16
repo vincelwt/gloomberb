@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  appendLiveQuotePoint,
   bucketOhlcSeries,
   projectChartData,
   resolveRenderMode,
@@ -10,7 +11,7 @@ import { buildChartScene, buildCursorTimeAxisSegments, buildTimeAxis, formatAxis
 import { buildCursorTimeAxisOverlay, resolveCursorDateFromAxis } from "./time-axis-label";
 import { buildCursorPriceAxisOverlay } from "./price-axis-labels";
 import { resolveChartMarketSession, resolveExtendedHoursBackgroundSpans } from "./market-session";
-import type { PricePoint } from "../../types/financials";
+import type { PricePoint, Quote } from "../../types/financials";
 import type { ChartRenderMode } from "./chart-types";
 
 const aggregationFixture: PricePoint[] = [
@@ -44,6 +45,20 @@ const palette = resolveChartPalette({
   positive: "#00ff00",
   negative: "#ff0000",
 }, "positive");
+
+function quoteFixture(overrides: Partial<Quote> = {}): Quote {
+  return {
+    symbol: "INTC",
+    price: 129,
+    currency: "USD",
+    change: 0,
+    changePercent: 0,
+    lastUpdated: Date.parse("2026-05-15T20:30:00Z"),
+    listingExchangeName: "NASDAQ",
+    marketState: "REGULAR",
+    ...overrides,
+  };
+}
 
 function textLines(result: ReturnType<typeof renderChart>): string[] {
   return result.lines.map((line) => line.chunks.map((chunk) => chunk.text).join(""));
@@ -175,6 +190,64 @@ describe("bucketOhlcSeries", () => {
       ohlcSourceBucketSize: 3,
       ohlcTargetBucketCount: 28,
     });
+  });
+});
+
+describe("appendLiveQuotePoint", () => {
+  test("extends coarse chart histories with a fresh quote tail", () => {
+    const history: PricePoint[] = [
+      { date: new Date("2026-05-04T00:00:00Z"), close: 56 },
+      { date: new Date("2026-05-11T00:00:00Z"), close: 68 },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture(),
+      Date.parse("2026-05-15T21:00:00Z"),
+    );
+
+    expect(extended).toHaveLength(3);
+    expect(extended.at(-1)).toMatchObject({
+      date: new Date("2026-05-15T20:30:00Z"),
+      open: 68,
+      high: 129,
+      low: 68,
+      close: 129,
+    });
+  });
+
+  test("uses the active extended-hours price for the live tail", () => {
+    const history: PricePoint[] = [
+      { date: new Date("2026-05-15T19:30:00Z"), close: 128 },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture({
+        marketState: "POST",
+        postMarketPrice: 131,
+        lastUpdated: Date.parse("2026-05-15T21:10:00Z"),
+      }),
+      Date.parse("2026-05-15T21:15:00Z"),
+    );
+
+    expect(extended.at(-1)?.close).toBe(131);
+  });
+
+  test("does not append stale quotes from an older active session", () => {
+    const history: PricePoint[] = [
+      { date: new Date("2026-05-11T00:00:00Z"), close: 68 },
+    ];
+
+    const extended = appendLiveQuotePoint(
+      history,
+      quoteFixture({
+        lastUpdated: Date.parse("2026-05-08T20:00:00Z"),
+      }),
+      Date.parse("2026-05-15T15:00:00Z"),
+    );
+
+    expect(extended).toBe(history);
   });
 });
 

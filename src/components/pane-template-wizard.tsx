@@ -93,7 +93,7 @@ export function PaneTemplateTextareaStep({
       const submitted = textareaRef.current?.editBuffer.getText().trim() || step.defaultValue || "";
       if (submitted) resolve(submitted);
     }
-  }, dialogId);
+  }, { scope: dialogId, allowEditable: true });
 
   const commit = () => {
     const submitted = textareaRef.current?.editBuffer.getText().trim() || step.defaultValue || "";

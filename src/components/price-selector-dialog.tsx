@@ -128,7 +128,7 @@ export function PriceSelectorDialog({
         resolve(customValue.trim());
       }
     }
-  }, dialogId);
+  }, { scope: dialogId, allowEditable: true });
 
   const presetWidth = 12;
 

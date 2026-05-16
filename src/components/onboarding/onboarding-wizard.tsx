@@ -551,7 +551,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         }
       }
     }
-  });
+  }, { allowEditable: true });
 
   const contentWidth = Math.min(60, termWidth - 4);
   const contentLeft = Math.floor((termWidth - contentWidth) / 2);

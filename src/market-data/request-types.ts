@@ -58,6 +58,13 @@ export function quoteSubscriptionTargetFromTicker(
   route: QuoteSubscriptionTarget["route"] = "auto",
 ): QuoteSubscriptionTarget | null {
   const instrument = instrumentFromTicker(ticker, fallbackSymbol);
+  return quoteSubscriptionTargetFromInstrument(instrument, route);
+}
+
+export function quoteSubscriptionTargetFromInstrument(
+  instrument: InstrumentRef | null | undefined,
+  route: QuoteSubscriptionTarget["route"] = "auto",
+): QuoteSubscriptionTarget | null {
   if (!instrument) return null;
   return {
     symbol: instrument.symbol,

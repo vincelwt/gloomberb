@@ -82,13 +82,15 @@ function FxRatesHarness() {
 function ChartQueriesHarness({
   initialRequests,
   debounceMs,
+  refreshIntervalMs = 0,
 }: {
   initialRequests: readonly ChartRequest[];
   debounceMs: number;
+  refreshIntervalMs?: number;
 }) {
   const [requests, setRequests] = useState<readonly ChartRequest[]>(initialRequests);
   replaceChartRequests = setRequests;
-  useChartQueries(requests, { debounceMs });
+  useChartQueries(requests, { debounceMs, refreshIntervalMs });
 
   return <text>{String(requests.length)}</text>;
 }
@@ -218,5 +220,44 @@ describe("market-data hooks", () => {
     });
 
     expect(loadedRanges).toEqual(["1M"]);
+  });
+
+  test("refreshes chart query batches on an active interval", async () => {
+    const calls: Array<{ range: string; forceRefresh: boolean }> = [];
+    const idleChartEntry = createIdleEntry<PricePoint[]>();
+    const coordinator = {
+      subscribe: () => () => {},
+      getVersion: () => 1,
+      getChartEntry: () => idleChartEntry,
+      loadChart: async (request: ChartRequest, options?: { forceRefresh?: boolean }) => {
+        calls.push({
+          range: request.bufferRange,
+          forceRefresh: options?.forceRefresh === true,
+        });
+        return idleChartEntry;
+      },
+    };
+    setSharedMarketDataCoordinator(coordinator as unknown as MarketDataCoordinator);
+
+    testSetup = await testRender(
+      <ChartQueriesHarness
+        initialRequests={[makeChartRequest("1D")]}
+        debounceMs={0}
+        refreshIntervalMs={20}
+      />,
+      {
+        width: 20,
+        height: 1,
+      },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await new Promise((resolve) => setTimeout(resolve, 45));
+      await testSetup!.renderOnce();
+    });
+
+    expect(calls[0]).toEqual({ range: "1D", forceRefresh: false });
+    expect(calls.some((call) => call.forceRefresh)).toBe(true);
   });
 });

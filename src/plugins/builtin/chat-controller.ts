@@ -138,6 +138,7 @@ function normalizeChannels(channels: ChatChannel[]): ChatChannel[] {
       ...channel,
       id,
       name: channel.name.trim() || id,
+      kind: channel.kind ?? "public",
     });
   }
   return [...byId.values()];
@@ -386,6 +387,26 @@ export class ChatController {
     }
     this.ensureOpenChannelConnections();
     this.emit();
+  }
+
+  async openDirectChannel(target: { userId?: string; username?: string }): Promise<ChatChannel> {
+    const channel = await apiClient.openDirectChannel(target);
+    this.channels = normalizeChannels([...this.channels, channel]);
+    this.ensureChannelState(channel.id);
+    this.ensureOpenChannelConnections();
+    this.emit(channel.id);
+    this.emit();
+    return channel;
+  }
+
+  async openGroupChannel(body: { userIds?: string[]; usernames?: string[]; name?: string }): Promise<ChatChannel> {
+    const channel = await apiClient.openGroupChannel(body);
+    this.channels = normalizeChannels([...this.channels, channel]);
+    this.ensureChannelState(channel.id);
+    this.ensureOpenChannelConnections();
+    this.emit(channel.id);
+    this.emit();
+    return channel;
   }
 
   async resolveRequiredChannelId(channelId: string): Promise<string> {

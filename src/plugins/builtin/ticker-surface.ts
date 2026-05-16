@@ -14,6 +14,11 @@ export interface TickerSurfacePaneTemplateOptions {
   keywords: string[];
   shortcut: string;
   titlePrefix?: string;
+  settings?: (
+    symbol: string,
+    context: PaneTemplateContext,
+    options: PaneTemplateCreateOptions | undefined,
+  ) => Record<string, unknown>;
   canCreate?: (
     context: PaneTemplateContext,
     options: PaneTemplateCreateOptions | undefined,
@@ -33,6 +38,7 @@ function createTickerSurfacePaneInstance(
   context: Pick<PaneTemplateContext, "activeTicker">,
   options: Pick<PaneTemplateCreateOptions, "arg" | "symbol"> | undefined,
   titlePrefix: string,
+  settings?: Record<string, unknown>,
 ): PaneTemplateInstanceConfig | null {
   const ticker = resolveTickerSurfaceSymbol(context, options);
   return ticker
@@ -40,6 +46,7 @@ function createTickerSurfacePaneInstance(
       title: `${titlePrefix} ${ticker}`,
       binding: { kind: "fixed", symbol: ticker },
       placement: "floating",
+      settings,
     }
     : null;
 }
@@ -63,6 +70,15 @@ export function createTickerSurfacePaneTemplate(
       const symbol = resolveTickerSurfaceSymbol(context, createOptions);
       return symbol !== null && (templateOptions.canCreate?.(context, createOptions, symbol) ?? true);
     },
-    createInstance: (context, createOptions) => createTickerSurfacePaneInstance(context, createOptions, titlePrefix),
+    createInstance: (context, createOptions) => {
+      const symbol = resolveTickerSurfaceSymbol(context, createOptions);
+      if (!symbol) return null;
+      return createTickerSurfacePaneInstance(
+        context,
+        createOptions,
+        titlePrefix,
+        templateOptions.settings?.(symbol, context, createOptions),
+      );
+    },
   };
 }

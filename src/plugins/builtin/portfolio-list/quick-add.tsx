@@ -367,7 +367,7 @@ export function QuickAddTickerInput({
       event.stopPropagation?.();
       focusInput();
     }
-  }, { phase: "before" });
+  }, { phase: "before", allowEditable: true });
 
   const inputWidth = useMemo(() => {
     const queryWidth = normalizeQuickAddQuery(inputValue).length;

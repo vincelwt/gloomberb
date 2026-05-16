@@ -4,9 +4,10 @@ import { DataTableView, usePaneFooter, type DataTableCell, type DataTableColumn,
 import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import type { EarningsEvent } from "../../../types/data-provider";
 import { colors } from "../../../theme/colors";
-import { useAppSelector, getFocusedCollectionId } from "../../../state/app-context";
+import { useAppSelector, getFocusedCollectionId, usePaneInstance } from "../../../state/app-context";
 import { getCollectionTickers } from "../../../state/selectors";
 import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
+import { parseTickerListInput, formatTickerListInput } from "../../../utils/ticker-list";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../plugin-runtime";
 import {
   attachEarningsCalendarPersistence,
@@ -34,6 +35,26 @@ type EarningsColumnId =
   | "revenueGrowth"
   | "analysts";
 type EarningsColumn = DataTableColumn & { id: EarningsColumnId };
+
+export function resolveEarningsMonitorSymbols(scopedSymbols: string[], fallbackSymbols: string[]): string[] {
+  return scopedSymbols.length > 0 ? scopedSymbols : fallbackSymbols;
+}
+
+function scopedSymbolsFromSettings(settings: Record<string, unknown> | undefined): string[] {
+  const symbols = settings?.symbols;
+  if (Array.isArray(symbols)) {
+    return symbols
+      .filter((symbol): symbol is string => typeof symbol === "string" && symbol.trim().length > 0)
+      .map((symbol) => symbol.trim().toUpperCase());
+  }
+  const symbolsText = settings?.symbolsText;
+  if (typeof symbolsText !== "string" || !symbolsText.trim()) return [];
+  try {
+    return parseTickerListInput(symbolsText);
+  } catch {
+    return [];
+  }
+}
 
 function groupByRelativeDate(events: EarningsEvent[]): DisplayRow[] {
   const now = new Date();
@@ -175,6 +196,7 @@ function buildColumns(width: number): EarningsColumn[] {
 function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
+  const pane = usePaneInstance();
   const [events, setEvents] = useState<EarningsEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,12 +204,17 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
 
   const state = useAppSelector((current) => current);
   const collectionId = getFocusedCollectionId(state);
-  const tickerSymbols = useMemo(() => {
+  const scopedSymbols = useMemo(() => scopedSymbolsFromSettings(pane?.settings), [pane?.settings]);
+  const fallbackTickerSymbols = useMemo(() => {
     if (collectionId) {
       return getCollectionTickers(state, collectionId).map((ticker) => ticker.metadata.ticker);
     }
     return [...state.tickers.values()].map((ticker) => ticker.metadata.ticker);
   }, [state.tickers, collectionId]);
+  const tickerSymbols = useMemo(
+    () => resolveEarningsMonitorSymbols(scopedSymbols, fallbackTickerSymbols),
+    [fallbackTickerSymbols, scopedSymbols],
+  );
 
   const rows = useMemo(() => groupByRelativeDate(events), [events]);
   const eventRows = useMemo(
@@ -399,6 +426,24 @@ export const earningsPlugin: GloomPlugin = {
 
   setup(ctx) {
     attachEarningsCalendarPersistence(ctx.persistence);
+    ctx.registerCommand({
+      id: "earnings-monitor-shortcut",
+      label: "Earnings Monitor",
+      keywords: ["earnings", "monitor", "calendar", "em", "eps"],
+      shortcut: "EM",
+      shortcutArg: {
+        placeholder: "tickers",
+        kind: "text",
+        parse: (arg) => ({ tickers: arg.trim() }),
+      },
+      category: "data",
+      description: "Open upcoming earnings, optionally scoped to tickers.",
+      execute: (values) => {
+        ctx.createPaneFromTemplate("earnings-monitor-pane", {
+          arg: values?.tickers ?? "",
+        });
+      },
+    });
   },
 
   dispose() {
@@ -425,6 +470,28 @@ export const earningsPlugin: GloomPlugin = {
       description: "Upcoming earnings dates and estimates for your tickers.",
       keywords: ["earn", "earnings", "calendar", "eps", "revenue", "quarterly"],
       shortcut: { prefix: "ERN" },
+    },
+    {
+      id: "earnings-monitor-pane",
+      paneId: "earnings-calendar",
+      label: "Earnings Monitor",
+      description: "Upcoming earnings dates and estimates, optionally scoped to tickers.",
+      keywords: ["earn", "earnings", "monitor", "em", "eps", "revenue"],
+      canCreate: () => true,
+      createInstance: (_context, options) => {
+        const raw = options?.arg?.trim() ?? "";
+        const symbols = raw ? parseTickerListInput(raw) : [];
+        return {
+          title: symbols.length > 0 ? `EM ${formatTickerListInput(symbols)}` : "Earnings Monitor",
+          placement: "floating",
+          settings: symbols.length > 0
+            ? {
+              symbols,
+              symbolsText: formatTickerListInput(symbols),
+            }
+            : undefined,
+        };
+      },
     },
   ],
 };

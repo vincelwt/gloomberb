@@ -6,10 +6,9 @@ import type { GloomPlugin, PaneProps } from "../../types/plugin";
 import { syncConfigActiveLayoutState, useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
 import { useInlineTickers, type InlineTickerCatalogEntry } from "../../state/use-inline-tickers";
 import { ExternalLinkText, getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
-import { TickerBadgeText } from "../../components/ticker-badge-text";
 import { TickerBadge } from "../../components/ticker-badge";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
-import { apiClient, type ChatChannel, type ChatMessage } from "../../utils/api-client";
+import { apiClient, type ChatChannel, type ChatMessage, type ChatUserSummary } from "../../utils/api-client";
 import { formatTimeAgo } from "../../utils/format";
 import { tokenizeInlineContent } from "../../utils/inline-content-tokenizer";
 import { isPlainKey } from "../../utils/keyboard";
@@ -21,6 +20,7 @@ import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 import { InlineAuthActions } from "./cloud-auth-actions";
 import { TwitterFeedPane, TwitterTickerTab } from "./cloud-tweets";
+import { AccountManagementPane } from "./account-management";
 
 interface ChatContentProps {
   width: number;
@@ -44,6 +44,8 @@ interface ChatContentProps {
     | "refreshSession"
     | "send"
     | "sendToChannel"
+    | "openDirectChannel"
+    | "openGroupChannel"
     | "setDraft"
     | "setChannelDraft"
     | "setChannelNotificationsEnabled"
@@ -76,6 +78,7 @@ const DEFAULT_CHAT_CHANNEL_ID = "everyone";
 const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 const SCROLL_BOTTOM_THRESHOLD_PX = 2;
+const USERNAME_MENTION_TOKEN = /@([A-Za-z][A-Za-z0-9_]{2,29})/g;
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   if (index === 0) return false;
@@ -266,7 +269,20 @@ function getLastVisitedChatChannelId(config: { pluginConfig: Record<string, Reco
 }
 
 function formatChannelLabel(channel: ChatChannel | undefined, fallbackId: string) {
-  return channel?.name?.trim() || fallbackId;
+  if (!channel) return fallbackId;
+  if (channel.kind === "direct") {
+    return channel.dmUser?.username ? `@${channel.dmUser.username}` : channel.dmUser?.displayName ?? "DM";
+  }
+  if (channel.kind === "group") {
+    return channel.name?.trim() || "Group";
+  }
+  return channel.name?.trim() || fallbackId;
+}
+
+function channelPrefix(channel: ChatChannel | undefined, active: boolean) {
+  if (channel?.kind === "direct") return active ? "@" : " ";
+  if (channel?.kind === "group") return active ? "+" : " ";
+  return active ? "#" : " ";
 }
 
 function truncateChannelLabel(label: string, width: number) {
@@ -502,14 +518,74 @@ function ResponsiveTickerBadgeText({
   catalog,
   textColor,
   openTicker,
+  userByUsername,
+  onUserHover,
 }: {
   text: string;
   catalog: Record<string, InlineTickerCatalogEntry>;
   textColor: string;
   openTicker: (symbol: string) => void;
+  userByUsername?: Map<string, ChatUserSummary>;
+  onUserHover?: (user: ChatUserSummary) => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const tokens = useMemo(() => tokenizeInlineContent(text), [text]);
+  const renderTextToken = (value: string, tokenIndex: number) => {
+    if (!value) return null;
+    const parts: Array<{ kind: "text"; value: string } | { kind: "mention"; username: string; value: string }> = [];
+    let lastIndex = 0;
+    USERNAME_MENTION_TOKEN.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = USERNAME_MENTION_TOKEN.exec(value)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ kind: "text", value: value.slice(lastIndex, match.index) });
+      }
+      const username = match[1] ?? "";
+      parts.push({ kind: "mention", username, value: match[0] ?? `@${username}` });
+      lastIndex = match.index + (match[0]?.length ?? 0);
+    }
+    if (lastIndex < value.length) {
+      parts.push({ kind: "text", value: value.slice(lastIndex) });
+    }
+    if (parts.length === 0) {
+      parts.push({ kind: "text", value });
+    }
+
+    return parts.map((part, partIndex) => {
+      if (part.kind === "text") {
+        return (
+          <Text
+            key={`text:${tokenIndex}:${partIndex}`}
+            fg={textColor}
+            wrapText
+            style={{
+              minWidth: 0,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {part.value}
+          </Text>
+        );
+      }
+      const user = userByUsername?.get(part.username.toLowerCase()) ?? null;
+      return (
+        <Box
+          key={`mention:${tokenIndex}:${partIndex}:${part.username}`}
+          height={1}
+          flexDirection="row"
+          backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
+          onMouseMove={() => {
+            if (user) onUserHover?.(user);
+          }}
+        >
+          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+            {part.value}
+          </Text>
+        </Box>
+      );
+    });
+  };
 
   return (
     <Box
@@ -520,21 +596,7 @@ function ResponsiveTickerBadgeText({
     >
       {tokens.map((token, index) => {
         if (token.kind === "text") {
-          if (!token.value) return null;
-          return (
-            <Text
-              key={`text:${index}`}
-              fg={textColor}
-              wrapText
-              style={{
-                minWidth: 0,
-                whiteSpace: "pre-wrap",
-                overflowWrap: "anywhere",
-              }}
-            >
-              {token.value}
-            </Text>
-          );
+          return renderTextToken(token.value, index);
         }
 
         if (token.kind === "link") {
@@ -580,7 +642,9 @@ interface ChatMessageBaseProps {
   hoveredIdx: number | null;
   canSend: boolean;
   catalog: Record<string, InlineTickerCatalogEntry>;
+  userByUsername: Map<string, ChatUserSummary>;
   openTicker: (symbol: string) => void;
+  onUserHover: (user: ChatUserSummary) => void;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
   jumpToMessage: (messageId: string) => void;
 }
@@ -601,7 +665,9 @@ function TerminalChatMessage({
   contentWidth,
   messageBodyWidth,
   catalog,
+  userByUsername,
   openTicker,
+  onUserHover,
   beginReplyTo,
   jumpToMessage,
   setHoveredIdx,
@@ -648,7 +714,11 @@ function TerminalChatMessage({
           height={1}
           paddingLeft={1}
         >
-          <Text fg={state.authorColor} attributes={state.authorAttributes}>
+          <Text
+            fg={state.authorColor}
+            attributes={state.authorAttributes}
+            onMouseMove={() => onUserHover(msg.user)}
+          >
             {msg.user.username ?? "anon"}
           </Text>
           <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
@@ -677,12 +747,13 @@ function TerminalChatMessage({
           position={state.grouped ? "relative" : undefined}
         >
           <Box width={messageBodyWidth} height={1}>
-            <TickerBadgeText
+            <ResponsiveTickerBadgeText
               text={line}
-              lineWidth={messageBodyWidth}
               catalog={catalog}
               textColor={state.bodyColor}
               openTicker={openTicker}
+              userByUsername={userByUsername}
+              onUserHover={onUserHover}
             />
           </Box>
           {lineIndex === 0 && showGroupedReplyAction && (
@@ -709,7 +780,9 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
   hoveredIdx,
   canSend,
   catalog,
+  userByUsername,
   openTicker,
+  onUserHover,
   beginReplyTo,
   jumpToMessage,
   registerMessageElement,
@@ -777,7 +850,12 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
           height={1}
           paddingLeft={1}
         >
-          <Text fg={state.authorColor} attributes={state.authorAttributes}>
+          <Text
+            fg={state.authorColor}
+            attributes={state.authorAttributes}
+            onMouseMove={() => onUserHover(msg.user)}
+            style={{ cursor: "default" }}
+          >
             {msg.user.username ?? "anon"}
           </Text>
           <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
@@ -813,6 +891,8 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
             catalog={catalog}
             textColor={state.bodyColor}
             openTicker={openTicker}
+            userByUsername={userByUsername}
+            onUserHover={onUserHover}
           />
         </Box>
         {showGroupedReplyAction && (
@@ -837,6 +917,59 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
   );
 });
 
+function UserProfilePopover({
+  user,
+  width,
+  currentUserId,
+  onDirectMessage,
+  onClose,
+}: {
+  user: ChatUserSummary;
+  width: number;
+  currentUserId?: string | null;
+  onDirectMessage: (user: ChatUserSummary) => void;
+  onClose: () => void;
+}) {
+  const popoverWidth = Math.max(24, Math.min(38, width - 4));
+  const meta = [user.title, user.company].filter(Boolean).join(" · ");
+  const canDm = user.id === currentUserId || user.acceptUnknownDms !== false;
+
+  return (
+    <Box
+      position="absolute"
+      top={1}
+      right={2}
+      width={popoverWidth}
+      flexDirection="column"
+      backgroundColor={colors.panel}
+      border
+      borderColor={colors.borderFocused}
+      paddingX={1}
+      onMouseOut={onClose}
+      style={{ zIndex: 4 }}
+    >
+      <Box height={1} flexDirection="row">
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+          {truncateChannelLabel(user.username ? `@${user.username}` : user.displayName, Math.max(popoverWidth - 10, 1))}
+        </Text>
+        <Box flexGrow={1} />
+        <ChatActionChip
+          label={canDm ? "DM" : "Closed"}
+          width={canDm ? 5 : 9}
+          emphasized
+          onPress={() => {
+            if (canDm) onDirectMessage(user);
+          }}
+        />
+      </Box>
+      {meta ? <Text fg={colors.textDim}>{truncateChannelLabel(meta, popoverWidth - 2)}</Text> : null}
+      <Text fg={colors.text} wrapText width={popoverWidth - 2}>
+        {user.bio?.trim() || "No public bio."}
+      </Text>
+    </Box>
+  );
+}
+
 function ChannelSidebar({
   channels,
   channelStates,
@@ -848,9 +981,11 @@ function ChannelSidebar({
   keyboardFocused,
   loading,
   canManageNotifications,
+  directExpanded,
   onSelect,
   onFocusRequest,
   onToggleNotifications,
+  onToggleDirectExpanded,
 }: {
   channels: ChatChannel[];
   channelStates: ReturnType<ChatController["getSnapshot"]>["channelStates"];
@@ -862,9 +997,11 @@ function ChannelSidebar({
   keyboardFocused: boolean;
   loading: boolean;
   canManageNotifications: boolean;
+  directExpanded: boolean;
   onSelect?: (channelId: string) => void;
   onFocusRequest?: () => void;
   onToggleNotifications?: (channelId: string, enabled: boolean) => void;
+  onToggleDirectExpanded?: () => void;
 }) {
   const { nativePaneChrome } = useUiCapabilities();
   const borderWidth = nativePaneChrome ? 0 : width > 1 ? 1 : 0;
@@ -879,6 +1016,14 @@ function ChannelSidebar({
     : blendHex(colors.panel, colors.selected, 0.35);
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null);
   const channelStateById = useMemo(() => new Map(channelStates.map((state) => [state.channelId, state])), [channelStates]);
+  const publicChannels = useMemo(() => channels.filter((channel) => (channel.kind ?? "public") === "public"), [channels]);
+  const conversationChannels = useMemo(() => channels.filter((channel) => channel.kind === "direct" || channel.kind === "group"), [channels]);
+  const conversationUnread = conversationChannels.some((channel) => (channelStateById.get(channel.id)?.unreadCount ?? 0) > 0);
+  const sidebarRows = useMemo(() => [
+    ...publicChannels.map((channel) => ({ kind: "channel" as const, channel })),
+    ...(conversationChannels.length > 0 ? [{ kind: "direct-header" as const }] : []),
+    ...(directExpanded ? conversationChannels.map((channel) => ({ kind: "channel" as const, channel })) : []),
+  ], [conversationChannels, directExpanded, publicChannels]);
   const sidebarLayoutHeight = nativePaneChrome ? "100%" : height;
   const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
   const sidebarBorder = borderWidth > 0
@@ -906,7 +1051,32 @@ function ChannelSidebar({
         backgroundColor={sidebarBg}
         style={nativeFillStyle}
       >
-        {channels.map((channel) => {
+        {sidebarRows.map((row) => {
+          if (row.kind === "direct-header") {
+            return (
+              <Box
+                key="direct-header"
+                height={1}
+                width={listWidth}
+                flexDirection="row"
+                backgroundColor={sidebarBg}
+                onMouseDown={(event: any) => {
+                  event?.preventDefault?.();
+                  event?.stopPropagation?.();
+                  onToggleDirectExpanded?.();
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <Text
+                  fg={conversationUnread ? colors.text : colors.textDim}
+                  attributes={conversationUnread ? TextAttributes.BOLD : 0}
+                >
+                  {` ${directExpanded ? "▾" : "▸"} DMs`}
+                </Text>
+              </Box>
+            );
+          }
+          const channel = row.channel;
           const active = channel.id === activeChannelId;
           const channelState = channelStateById.get(channel.id);
           const notificationsEnabled = channelState?.notificationsEnabled === true;
@@ -946,7 +1116,7 @@ function ChannelSidebar({
               style={{ cursor: "pointer" }}
             >
               <Text fg={fg} selectable={false} onMouseDown={selectChannel}> </Text>
-              <Text fg={fg} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={selectChannel}>{active ? "#" : " "}</Text>
+              <Text fg={fg} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={selectChannel}>{channelPrefix(channel, active)}</Text>
               <Text fg={fg} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={selectChannel}>{truncateChannelLabel(label, labelWidth)}</Text>
               <Box flexGrow={1} onMouseDown={selectChannel} />
               {canManageNotifications && (
@@ -1039,6 +1209,7 @@ export function ChatContent({
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [sidebarFocused, setSidebarFocusedState] = useState(false);
+  const [directExpanded, setDirectExpanded] = useState(true);
   const sidebarFocusedRef = useRef(false);
   const setSidebarFocused = useCallback((nextFocused: boolean) => {
     sidebarFocusedRef.current = nextFocused;
@@ -1059,6 +1230,11 @@ export function ChatContent({
     selectedMessageId: string | null;
   } | null>(null);
   const canSend = !!user?.emailVerified;
+  const sidebarNavigationChannels = useMemo(() => {
+    const publicChannels = channels.filter((channel) => (channel.kind ?? "public") === "public");
+    const conversationChannels = channels.filter((channel) => channel.kind === "direct" || channel.kind === "group");
+    return directExpanded ? [...publicChannels, ...conversationChannels] : publicChannels;
+  }, [channels, directExpanded]);
   const useDefaultControllerChannel = channelId === DEFAULT_CHAT_CHANNEL_ID && !onChannelChange;
   const messageBodyWidth = Math.max(contentWidth - 4, 1);
   const composerHeight = canSend
@@ -1151,6 +1327,23 @@ export function ChatContent({
 
   const messageContents = useMemo(() => messages.map((message) => message.content), [messages]);
   const { catalog, openTicker } = useInlineTickers(messageContents);
+  const userByUsername = useMemo(() => {
+    const map = new Map<string, ChatUserSummary>();
+    for (const message of messages) {
+      const username = message.user.username?.toLowerCase();
+      if (username) map.set(username, message.user);
+    }
+    for (const channel of channels) {
+      for (const member of channel.members ?? []) {
+        const username = member.username?.toLowerCase();
+        if (username) map.set(username, member);
+      }
+      const dmUsername = channel.dmUser?.username?.toLowerCase();
+      if (dmUsername && channel.dmUser) map.set(dmUsername, channel.dmUser);
+    }
+    return map;
+  }, [channels, messages]);
+  const [profilePopoverUser, setProfilePopoverUser] = useState<ChatUserSummary | null>(null);
 
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
@@ -1265,6 +1458,37 @@ export function ChatContent({
   const sendMessage = useCallback(() => {
     const content = inputValueRef.current.trim();
     if (!content) return;
+    const directCommand = content.match(/^\/dm\s+@?([A-Za-z][A-Za-z0-9_]{2,29})(?:\s+([\s\S]+))?$/i);
+    if (directCommand) {
+      void controller.openDirectChannel({ username: directCommand[1]?.toLowerCase() }).then((channel) => {
+        setDirectExpanded(true);
+        channelIdRef.current = channel.id;
+        onChannelChange?.(channel.id);
+        clearLocalComposer();
+        const nextDraft = directCommand[2]?.trim() ?? "";
+        if (nextDraft) {
+          controller.setChannelDraft(channel.id, nextDraft);
+        }
+      }).catch(() => {});
+      return;
+    }
+    const groupCommand = content.match(/^\/group\s+(.+)$/i);
+    if (groupCommand) {
+      const body = groupCommand[1] ?? "";
+      const usernames = [...body.matchAll(/@([A-Za-z][A-Za-z0-9_]{2,29})/g)]
+        .map((entry) => entry[1]?.toLowerCase())
+        .filter((entry): entry is string => !!entry);
+      if (usernames.length > 0) {
+        const name = body.replace(/@([A-Za-z][A-Za-z0-9_]{2,29})/g, "").trim() || undefined;
+        void controller.openGroupChannel({ usernames, name }).then((channel) => {
+          setDirectExpanded(true);
+          channelIdRef.current = channel.id;
+          onChannelChange?.(channel.id);
+          clearLocalComposer();
+        }).catch(() => {});
+        return;
+      }
+    }
     const accepted = useDefaultControllerChannel
       ? controller.send(content, replyToRef.current?.id)
       : controller.sendToChannel(channelId, content, replyToRef.current?.id);
@@ -1272,7 +1496,7 @@ export function ChatContent({
     clearLocalComposer();
     setSelectedIdx(-1);
     setFollowMessages(true);
-  }, [channelId, clearLocalComposer, controller, useDefaultControllerChannel]);
+  }, [channelId, clearLocalComposer, controller, onChannelChange, useDefaultControllerChannel]);
 
   const requestOlderMessages = useCallback(() => {
     const scrollBox = scrollRef.current;
@@ -1367,6 +1591,19 @@ export function ChatContent({
     onChannelChange?.(normalized);
   }, [onChannelChange]);
 
+  const openDirectMessage = useCallback(async (target: ChatUserSummary) => {
+    if (!target.id && !target.username) return;
+    try {
+      const channel = await controller.openDirectChannel({
+        userId: target.id,
+        username: target.username ?? undefined,
+      });
+      setDirectExpanded(true);
+      changeChannel(channel.id);
+      setProfilePopoverUser(null);
+    } catch {}
+  }, [changeChannel, controller]);
+
   useEffect(() => {
     if (!onChannelChange || channelsLoading || channels.length === 0) return;
     if (channels.some((channel) => channel.id === channelId)) return;
@@ -1376,6 +1613,13 @@ export function ChatContent({
       changeChannel(fallbackChannelId);
     }
   }, [changeChannel, channelId, channels, channelsLoading, onChannelChange]);
+
+  useEffect(() => {
+    const activeChannel = channels.find((channel) => channel.id === channelId);
+    if (activeChannel?.kind === "direct" || activeChannel?.kind === "group") {
+      setDirectExpanded(true);
+    }
+  }, [channelId, channels]);
 
   const cycleChannel = useCallback((direction: 1 | -1) => {
     if (channels.length <= 1 || !onChannelChange) return false;
@@ -1404,17 +1648,17 @@ export function ChatContent({
   }, [setSidebarFocused, showChannelSidebar]);
 
   const moveSidebarChannelSelection = useCallback((direction: "up" | "down") => {
-    if (!showChannelSidebar || channels.length <= 1 || !onChannelChange) return false;
-    const currentIndex = channels.findIndex((channel) => channel.id === channelIdRef.current);
+    if (!showChannelSidebar || sidebarNavigationChannels.length <= 1 || !onChannelChange) return false;
+    const currentIndex = sidebarNavigationChannels.findIndex((channel) => channel.id === channelIdRef.current);
     const baseIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = direction === "down"
-      ? Math.min(baseIndex + 1, channels.length - 1)
+      ? Math.min(baseIndex + 1, sidebarNavigationChannels.length - 1)
       : Math.max(baseIndex - 1, 0);
-    const nextChannel = channels[nextIndex];
+    const nextChannel = sidebarNavigationChannels[nextIndex];
     if (!nextChannel || nextIndex === baseIndex) return true;
     changeChannel(nextChannel.id);
     return true;
-  }, [changeChannel, channels, onChannelChange, showChannelSidebar]);
+  }, [changeChannel, onChannelChange, showChannelSidebar, sidebarNavigationChannels]);
 
   useEffect(() => {
     if (focused && showChannelSidebar) return;
@@ -1612,7 +1856,7 @@ export function ChatContent({
       queueMicrotask(() => scrollToBottom(scrollRef.current, nativePaneChrome));
       return;
     }
-  });
+  }, { allowEditable: true });
 
   const inputMetaHeight = canSend && replyTo ? 1 : 0;
   const composerBlockHeight = canSend
@@ -1728,11 +1972,13 @@ export function ChatContent({
           keyboardFocused={sidebarFocused}
           loading={channelsLoading}
           canManageNotifications={!!user?.emailVerified}
+          directExpanded={directExpanded}
           onSelect={changeChannel}
           onFocusRequest={() => setSidebarFocused(true)}
           onToggleNotifications={(nextChannelId, enabled) => {
             controller.setChannelNotificationsEnabled(nextChannelId, enabled);
           }}
+          onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
         />
       )}
 
@@ -1742,6 +1988,7 @@ export function ChatContent({
         height={chatLayoutHeight}
         flexGrow={nativePaneChrome ? 1 : undefined}
         backgroundColor={chatContentBg}
+        position="relative"
         onMouseDown={() => setSidebarFocused(false)}
         style={nativeFillStyle}
       >
@@ -1787,7 +2034,9 @@ export function ChatContent({
               hoveredIdx={hoveredIdx}
               canSend={canSend}
               catalog={catalog}
+              userByUsername={userByUsername}
               openTicker={openTicker}
+              onUserHover={setProfilePopoverUser}
               beginReplyTo={beginReplyTo}
               jumpToMessage={jumpToMessage}
               registerMessageElement={registerMessageElement}
@@ -1804,7 +2053,9 @@ export function ChatContent({
               contentWidth={contentWidth}
               messageBodyWidth={messageBodyWidth}
               catalog={catalog}
+              userByUsername={userByUsername}
               openTicker={openTicker}
+              onUserHover={setProfilePopoverUser}
               beginReplyTo={beginReplyTo}
               jumpToMessage={jumpToMessage}
               setHoveredIdx={setHoveredIdx}
@@ -1812,6 +2063,16 @@ export function ChatContent({
           )
         ))}
       </ScrollBox>
+
+      {profilePopoverUser && (
+        <UserProfilePopover
+          user={profilePopoverUser}
+          width={chatWidth}
+          currentUserId={user?.id}
+          onDirectMessage={openDirectMessage}
+          onClose={() => setProfilePopoverUser(null)}
+        />
+      )}
 
       {!nativePaneChrome && !canSend && (
         <Box height={1} width={contentWidth}>
@@ -2057,6 +2318,17 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         };
       },
     },
+    {
+      id: "account-management-pane",
+      paneId: "account-management",
+      label: "Account Management",
+      description: "Edit your Gloomberb Cloud profile, password, and public portfolio sharing settings",
+      keywords: ["account", "profile", "cloud", "acm", "password", "settings"],
+      shortcut: { prefix: "ACM" },
+      createInstance: () => ({
+        placement: "floating",
+      }),
+    },
   ],
 
   slots: {
@@ -2075,6 +2347,16 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+    });
+
+    ctx.registerPane({
+      id: "account-management",
+      name: "ACM",
+      icon: "A",
+      component: AccountManagementPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 72, height: 36 },
     });
 
     ctx.registerDetailTab({

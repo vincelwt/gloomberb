@@ -5,6 +5,7 @@ import {
   computeProjectedIndicatorOverlays,
   projectCellCursorToLocalPixels,
   resolveAutoDisplayState,
+  resolveAutoPlanningWindow,
   resolveAutoZoomWindow,
   resolveAdjacentSelectionCursorX,
   resolveChartKeyboardKey,
@@ -212,6 +213,42 @@ describe("stock chart auto helpers", () => {
     });
     expect(nextState.resolution).toBe("1d");
     expect(nextState.window).toEqual(renderedAutoView.window);
+  });
+
+  test("plans the auto view from the latest canonical window when no custom window is active", () => {
+    const renderedAutoView = {
+      window: {
+        start: new Date("2026-01-01T00:00:00Z"),
+        end: new Date("2026-01-08T00:00:00Z"),
+      },
+    };
+    const canonicalAutoWindow = {
+      start: new Date("2026-01-02T00:00:00Z"),
+      end: new Date("2026-01-09T00:00:00Z"),
+    };
+
+    expect(resolveAutoPlanningWindow({
+      pendingAutoWindowOverride: null,
+      renderedAutoView,
+      canonicalAutoWindow,
+    })).toBe(canonicalAutoWindow);
+  });
+
+  test("keeps a custom auto window from snapping to the latest data", () => {
+    const customWindow = {
+      start: new Date("2026-01-03T00:00:00Z"),
+      end: new Date("2026-01-04T00:00:00Z"),
+    };
+    const canonicalAutoWindow = {
+      start: new Date("2026-01-02T00:00:00Z"),
+      end: new Date("2026-01-09T00:00:00Z"),
+    };
+
+    expect(resolveAutoPlanningWindow({
+      pendingAutoWindowOverride: customWindow,
+      renderedAutoView: null,
+      canonicalAutoWindow,
+    })).toBe(customWindow);
   });
 
   test("zooms in by at least one visible point on every auto step when more detail is available", () => {
