@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const SHIM = `#!/bin/sh
@@ -23,6 +23,8 @@ const bundlePaths = [
 ].filter((value): value is string => Boolean(value));
 
 const uniqueBundlePaths = [...new Set(bundlePaths)];
+const nativeCorePackageName = `core-${process.platform}-${process.arch}`;
+const nativeCorePackagePath = join(process.cwd(), "node_modules", "@opentui", nativeCorePackageName);
 
 for (const bundlePath of uniqueBundlePaths) {
   const resourcesPath = join(bundlePath, "Contents", "Resources");
@@ -47,6 +49,11 @@ for (const bundlePath of uniqueBundlePaths) {
   if (build.exitCode !== 0) {
     process.exit(1);
   }
+
+  const nativeCoreDestPath = join(tuiBundleDir, "node_modules", "@opentui", nativeCorePackageName);
+  rmSync(nativeCoreDestPath, { recursive: true, force: true });
+  mkdirSync(join(tuiBundleDir, "node_modules", "@opentui"), { recursive: true });
+  cpSync(nativeCorePackagePath, nativeCoreDestPath, { recursive: true, dereference: true });
 
   const shimPath = join(resourcesPath, "gloomberb");
   writeFileSync(shimPath, SHIM);
