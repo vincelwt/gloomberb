@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const SHIM = `#!/bin/sh
@@ -15,6 +15,37 @@ function appBundlesIn(dir: string): string[] {
   return readdirSync(dir)
     .filter((entry) => entry.endsWith(".app"))
     .map((entry) => join(dir, entry));
+}
+
+function nativeFilesIn(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return nativeFilesIn(path);
+    if (entry.isFile() && (entry.name.endsWith(".dylib") || entry.name.endsWith(".node"))) return [path];
+    return [];
+  });
+}
+
+function signNativeFiles(dir: string): void {
+  const developerId = process.env.ELECTROBUN_DEVELOPER_ID;
+  if (process.platform !== "darwin" || !developerId) return;
+
+  for (const file of nativeFilesIn(dir)) {
+    const mode = statSync(file).mode;
+    chmodSync(file, mode | 0o755);
+
+    const signed = Bun.spawnSync({
+      cmd: ["codesign", "--force", "--timestamp", "--options", "runtime", "--sign", developerId, file],
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+
+    if (signed.exitCode !== 0) {
+      process.exit(signed.exitCode ?? 1);
+    }
+  }
 }
 
 const bundlePaths = [
@@ -54,6 +85,7 @@ for (const bundlePath of uniqueBundlePaths) {
   rmSync(nativeCoreDestPath, { recursive: true, force: true });
   mkdirSync(join(tuiBundleDir, "node_modules", "@opentui"), { recursive: true });
   cpSync(nativeCorePackagePath, nativeCoreDestPath, { recursive: true, dereference: true });
+  signNativeFiles(nativeCoreDestPath);
 
   const shimPath = join(resourcesPath, "gloomberb");
   writeFileSync(shimPath, SHIM);
