@@ -45,7 +45,7 @@ function withoutScrollbar(line: string) {
 
 describe("HelpPane", () => {
   test("puts section spacing before headings instead of after them", async () => {
-    await renderHelpPane();
+    await renderHelpPane(createTestPluginRuntime(), { width: 88, height: 80 });
 
     const lines = testSetup!.captureCharFrame().split("\n").map(withoutScrollbar);
     const commandBarRow = lines.findIndex((line) => line.includes("Command Bar"));
@@ -123,6 +123,7 @@ describe("HelpPane", () => {
     expect(frame).not.toContain("Cmd+K");
     expect(frame).not.toContain("Cmd/Ctrl");
     expect(frame).not.toContain("CmdOrCtrl");
+    expect(frame).not.toContain("Open ticker actions for the focused ticker.");
   });
 
   test("keeps shortcuts and descriptions on the same row when narrow", async () => {
@@ -149,7 +150,7 @@ describe("HelpPane", () => {
 
     await renderHelpPane(runtime);
 
-    const lines = testSetup.captureCharFrame().split("\n");
+    const lines = testSetup!.captureCharFrame().split("\n");
     const row = lines.findIndex((line) => line.includes("Open Debug Log"));
     const col = lines[row]?.indexOf("Open Debug Log") ?? -1;
 

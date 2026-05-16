@@ -51,6 +51,7 @@ interface HelpShortcutEntry {
   id: string;
   badges: string[];
   description: string;
+  category: string;
 }
 
 function ActionButton({
@@ -105,10 +106,12 @@ function resolveWindowTemplates(registry: ReturnType<typeof getSharedRegistry>) 
           shortcut.argPlaceholder ? `<${shortcut.argPlaceholder}>` : null,
         ].filter((value): value is string => !!value),
         description: pluginName ? `${template.label} (${pluginName})` : template.label,
+        category: pluginName ?? "Core Panes",
       };
     })
     .sort((left, right) => (
-      left.badges.join(" ").localeCompare(right.badges.join(" "))
+      left.category.localeCompare(right.category)
+      || left.badges.join(" ").localeCompare(right.badges.join(" "))
       || left.description.localeCompare(right.description)
     ));
 }
@@ -140,6 +143,7 @@ function resolveCommandShortcuts(registry: ReturnType<typeof getSharedRegistry>)
         formatPlaceholder(command.argPlaceholder),
       ].filter((value): value is string => !!value),
       description: command.description,
+      category: command.category,
     }));
 
   if (!registry || !registry.commands) return coreRows;
@@ -163,10 +167,12 @@ function resolveCommandShortcuts(registry: ReturnType<typeof getSharedRegistry>)
           formatPlaceholder(command.shortcutArg?.placeholder),
         ].filter((value): value is string => !!value),
         description: withPluginName(command.label, pluginName),
+        category: pluginName ?? command.category,
       };
     })
     .sort((left, right) => (
-      left.badges.join(" ").localeCompare(right.badges.join(" "))
+      left.category.localeCompare(right.category)
+      || left.badges.join(" ").localeCompare(right.badges.join(" "))
       || left.description.localeCompare(right.description)
     ));
 
@@ -201,12 +207,40 @@ function resolvePluginShortcuts(registry: ReturnType<typeof getSharedRegistry>):
         id: `plugin-shortcut:${shortcut.id}`,
         badges: [formatShortcutKey(shortcut)],
         description: withPluginName(shortcut.description, pluginName),
+        category: pluginName ?? "Plugin Shortcuts",
       };
     })
     .sort((left, right) => (
-      left.badges.join(" ").localeCompare(right.badges.join(" "))
+      left.category.localeCompare(right.category)
+      || left.badges.join(" ").localeCompare(right.badges.join(" "))
       || left.description.localeCompare(right.description)
     ));
+}
+
+function groupShortcutEntries(entries: HelpShortcutEntry[]): Array<{ title: string; entries: HelpShortcutEntry[] }> {
+  const groups = new Map<string, HelpShortcutEntry[]>();
+  for (const entry of entries) {
+    const category = entry.category || "Other";
+    groups.set(category, [...(groups.get(category) ?? []), entry]);
+  }
+  return [...groups.entries()]
+    .map(([title, groupedEntries]) => ({ title, entries: groupedEntries }))
+    .sort((left, right) => left.title.localeCompare(right.title));
+}
+
+function ShortcutGroup({ title, entries }: { title: string; entries: HelpShortcutEntry[] }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>{title}</Text>
+      {entries.map((entry) => (
+        <ShortcutRow
+          key={entry.id}
+          badges={entry.badges}
+          description={entry.description}
+        />
+      ))}
+    </Box>
+  );
 }
 
 export function HelpPane({ width, height }: PaneProps) {
@@ -307,21 +341,21 @@ export function HelpPane({ width, height }: PaneProps) {
           </HelpSection>
 
           <HelpSection title="Command Prefixes">
-            {commandShortcuts.map((shortcut) => (
-              <ShortcutRow
-                key={shortcut.id}
-                badges={shortcut.badges}
-                description={shortcut.description}
+            {groupShortcutEntries(commandShortcuts).map((group) => (
+              <ShortcutGroup
+                key={group.title}
+                title={group.title}
+                entries={group.entries}
               />
             ))}
           </HelpSection>
 
           <HelpSection title="Window Templates">
-            {windowTemplates.length > 0 ? windowTemplates.map((template) => (
-              <ShortcutRow
-                key={template.id}
-                badges={template.badges}
-                description={template.description}
+            {windowTemplates.length > 0 ? groupShortcutEntries(windowTemplates).map((group) => (
+              <ShortcutGroup
+                key={group.title}
+                title={group.title}
+                entries={group.entries}
               />
             )) : (
               <Text fg={colors.textDim}>No shortcut window templates are currently registered.</Text>
@@ -330,11 +364,11 @@ export function HelpPane({ width, height }: PaneProps) {
 
           {pluginShortcuts.length > 0 && (
             <HelpSection title="Plugin Shortcuts">
-              {pluginShortcuts.map((shortcut) => (
-                <ShortcutRow
-                  key={shortcut.id}
-                  badges={shortcut.badges}
-                  description={shortcut.description}
+              {groupShortcutEntries(pluginShortcuts).map((group) => (
+                <ShortcutGroup
+                  key={group.title}
+                  title={group.title}
+                  entries={group.entries}
                 />
               ))}
             </HelpSection>
@@ -352,10 +386,6 @@ export function HelpPane({ width, height }: PaneProps) {
             <ShortcutRow
               badges={["r", "Shift+R"]}
               description="Refresh the focused ticker or refresh everything."
-            />
-            <ShortcutRow
-              badges={["a"]}
-              description="Open ticker actions for the focused ticker."
             />
             <ShortcutRow
               badges={["q"]}

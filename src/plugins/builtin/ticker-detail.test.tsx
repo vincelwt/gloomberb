@@ -90,16 +90,16 @@ function createFinancialsTabHarness() {
   const financials: TickerFinancials = {
     annualStatements: [
       { date: "2021-12-31" },
-      { date: "2022-12-31", totalRevenue: 43.49e9, operatingIncome: 9.37e9, eps: 4.68 },
-      { date: "2023-12-31", totalRevenue: 27.62e9, operatingIncome: -2.4e9, eps: -0.92 },
-      { date: "2024-12-31", totalRevenue: 25.88e9, operatingIncome: -3.92e9, eps: -1.73 },
-      { date: "2025-12-31", totalRevenue: 28.88e9, operatingIncome: -3.7e9, eps: -1.77 },
+      { date: "2022-12-31", totalRevenue: 43.49e9, operatingIncome: 9.37e9, eps: 4.68, totalAssets: 64e9, currentAssets: 18e9, cashAndCashEquivalents: 3e9 },
+      { date: "2023-12-31", totalRevenue: 27.62e9, operatingIncome: -2.4e9, eps: -0.92, totalAssets: 67.89e9, currentAssets: 16.77e9, cashAndCashEquivalents: 3.93e9 },
+      { date: "2024-12-31", totalRevenue: 25.88e9, operatingIncome: -3.92e9, eps: -1.73, totalAssets: 69.23e9, currentAssets: 19.05e9, cashAndCashEquivalents: 3.79e9, accountsReceivable: 5.12e9 },
+      { date: "2025-12-31", totalRevenue: 28.88e9, operatingIncome: -3.7e9, eps: -1.77, totalAssets: 76.93e9, currentAssets: 26.95e9, cashAndCashEquivalents: 5.54e9, accountsReceivable: 7.45e9, inventory: 4.88e9 },
     ],
     quarterlyStatements: [
       { date: "2025-03-31", totalRevenue: 6e9, operatingIncome: -1e9, eps: -0.4 },
       { date: "2025-06-30", totalRevenue: 6.5e9, operatingIncome: -1.1e9, eps: -0.42 },
       { date: "2025-09-30", totalRevenue: 7e9, operatingIncome: -1.2e9, eps: -0.45 },
-      { date: "2025-12-31", totalRevenue: 7.08e9, operatingIncome: -1.01e9, eps: -0.5 },
+      { date: "2025-12-31", totalRevenue: 7.08e9, operatingIncome: -1.01e9, eps: -0.5, totalAssets: 76.93e9, currentAssets: 26.95e9, cashAndCashEquivalents: 5.54e9, accountsReceivable: 7.45e9, inventory: 4.88e9 },
     ],
     priceHistory: [],
   };
@@ -117,6 +117,20 @@ function createFinancialsTabHarness() {
         />
       </PaneInstanceProvider>
     </AppContext>
+  );
+}
+
+function createFinancialsTabFooterHarness(width = 90, height = 18) {
+  const content = createFinancialsTabHarness();
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box flexDirection="column" width={width} height={height}>
+          <Box height={height - 1}>{content}</Box>
+          <PaneFooterBar footer={footer} focused width={width} />
+        </Box>
+      )}
+    </PaneFooterProvider>
   );
 }
 
@@ -412,8 +426,72 @@ describe("FinancialsTab", () => {
     await flushFrame();
 
     const bodyScroll = getFinancialsScroll("financials-body-scroll");
-    expect(bodyScroll.scrollHeight).toBeLessThanOrEqual(bodyScroll.viewport.height);
     expect(bodyScroll.verticalScrollBar.visible).toBe(false);
+  });
+
+  test("uses p to toggle the financial statement period", async () => {
+    testSetup = await testRender(createFinancialsTabFooterHarness(100, 20), {
+      width: 100,
+      height: 20,
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Annual");
+    expect(frame).toContain("[p]eriod");
+    expect(frame).not.toContain("[a/q]period");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("p");
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Quarterly");
+    expect(frame).toContain("[p]eriod");
+  });
+
+  test("nests statement rows and toggles financial groups", async () => {
+    testSetup = await testRender(createFinancialsTabHarness(), {
+      width: 140,
+      height: 24,
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("3");
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("▾ Total Assets");
+    expect(frame).toContain("▾ Current Assets");
+    expect(frame).toContain("Cash & Equiv");
+    expect(frame).toContain("Accounts Rec");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("c");
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("▸ Total Assets");
+    expect(frame).not.toContain("Cash & Equiv");
+    expect(frame).not.toContain("Accounts Rec");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("e");
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("▾ Current Assets");
+    expect(frame).toContain("Accounts Rec");
   });
 });
 

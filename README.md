@@ -24,6 +24,16 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 | Shortcut | Function |
 |----------|----------|
 | `DES <ticker>` | Security details for a ticker |
+| `FA <ticker>` | Financial statement view |
+| `GP <ticker>` | Price chart |
+| `GIP <ticker>` | Intraday price chart |
+| `HP <ticker>` | Historical OHLCV prices |
+| `GF <tickers>` | Fundamental statement graph |
+| `GE <tickers>` | Valuation multiple graph |
+| `GR <tickers>` | Security relationship graph |
+| `EE <ticker>` | Earnings and revenue estimates |
+| `EM [tickers]` | Earnings monitor |
+| `SRCH <query>` | Provider symbol search |
 | `QQ <tickers>` | Ticker quote monitor |
 | `PM <query>` | Polymarket and Kalshi prediction data |
 | `TOP` | Ranked market stories |

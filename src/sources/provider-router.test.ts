@@ -1311,7 +1311,7 @@ describe("AssetDataRouter", () => {
     expect(merged.profile?.sector).toBe("Technology");
   });
 
-  test("uses the preferred provider financials without merging fallback providers", async () => {
+  test("merges fallback provider statement arrays without taking over preferred financials", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,
       id: "cloud",
@@ -1345,8 +1345,8 @@ describe("AssetDataRouter", () => {
       async getTickerFinancials() {
         yahooCalls += 1;
         return {
-          annualStatements: [],
-          quarterlyStatements: [],
+          annualStatements: [{ date: "2025-12-31", totalRevenue: 391035000000 }],
+          quarterlyStatements: [{ date: "2026-03-31", totalRevenue: 95359000000 }],
           priceHistory: [{ date: new Date("2026-03-28T00:00:00Z"), close: 124 }],
           quote: {
             symbol: "AAPL",
@@ -1372,7 +1372,65 @@ describe("AssetDataRouter", () => {
     expect(merged.fundamentals?.trailingPE).toBe(25);
     expect(merged.fundamentals?.forwardPE).toBeUndefined();
     expect(merged.priceHistory).toEqual([]);
-    expect(yahooCalls).toBe(0);
+    expect(merged.annualStatements).toEqual([{ date: "2025-12-31", totalRevenue: 391035000000 }]);
+    expect(merged.quarterlyStatements).toEqual([{ date: "2026-03-31", totalRevenue: 95359000000 }]);
+    expect(yahooCalls).toBe(1);
+  });
+
+  test("fills missing preferred statement fields from richer fallback rows", async () => {
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "cloud",
+      name: "Cloud",
+      priority: 100,
+      async getTickerFinancials() {
+        return {
+          annualStatements: [{ date: "2025-12-31", totalRevenue: 1000 }],
+          quarterlyStatements: [],
+          priceHistory: [],
+          quote: {
+            symbol: "AMD",
+            price: 125,
+            currency: "USD",
+            change: 2,
+            changePercent: 1.6,
+            lastUpdated: Date.now(),
+          },
+        };
+      },
+    };
+    let yahooCalls = 0;
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async getTickerFinancials() {
+        yahooCalls += 1;
+        return {
+          annualStatements: [{
+            date: "2025-12-31",
+            totalRevenue: 900,
+            accountsReceivable: 250,
+            inventory: 125,
+          }],
+          quarterlyStatements: [],
+          priceHistory: [],
+        };
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+    const merged = await router.getTickerFinancials("AMD", "NASDAQ");
+
+    expect(merged.quote?.price).toBe(125);
+    expect(merged.annualStatements).toEqual([{
+      date: "2025-12-31",
+      totalRevenue: 1000,
+      accountsReceivable: 250,
+      inventory: 125,
+    }]);
+    expect(yahooCalls).toBe(1);
   });
 
   test("caches the preferred provider financial snapshot without merging fallback snapshots", async () => {

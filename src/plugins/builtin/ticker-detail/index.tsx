@@ -1,5 +1,6 @@
 import type { GloomPlugin } from "../../../types/plugin";
 import { normalizeTickerInput } from "../../../utils/ticker-search";
+import { createTickerSurfacePaneTemplate } from "../ticker-surface";
 import { TickerDetailPane } from "./pane";
 import { QuoteMonitorPane } from "./quote-monitor";
 import {
@@ -95,5 +96,45 @@ export const tickerDetailPlugin: GloomPlugin = {
           : null;
       },
     },
+    createTickerSurfacePaneTemplate({
+      id: "financial-analysis-pane",
+      paneId: "ticker-detail",
+      label: "Financial Analysis",
+      description: "Open a ticker detail pane locked to financial statements.",
+      keywords: ["fa", "financial", "analysis", "statements"],
+      shortcut: "FA",
+      settings: () => ({
+        hideTabs: true,
+        lockedTabId: "financials",
+      }),
+    }),
+    createTickerSurfacePaneTemplate({
+      id: "graph-price-pane",
+      paneId: "ticker-detail",
+      label: "Graph Price",
+      description: "Open a ticker detail pane locked to a price chart.",
+      keywords: ["gp", "graph", "price", "chart"],
+      shortcut: "GP",
+      settings: () => ({
+        hideTabs: true,
+        lockedTabId: "chart",
+        chartRangePreset: "5Y",
+        chartResolution: "auto",
+      }),
+    }),
+    createTickerSurfacePaneTemplate({
+      id: "graph-intraday-price-pane",
+      paneId: "ticker-detail",
+      label: "Intraday Price Graph",
+      description: "Open a ticker detail pane locked to an intraday chart.",
+      keywords: ["gip", "intraday", "graph", "chart"],
+      shortcut: "GIP",
+      settings: () => ({
+        hideTabs: true,
+        lockedTabId: "chart",
+        chartRangePreset: "1D",
+        chartResolution: "1m",
+      }),
+    }),
   ],
 };

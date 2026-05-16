@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { useShortcut, type KeyEventLike } from "../react/input";
+import { useShortcut, type KeyEventLike, type ShortcutOptions } from "../react/input";
 
 export interface AlertContext {
   dialogId?: string;
@@ -50,6 +50,9 @@ export function useDialogState<T>(selector: (state: { isOpen: boolean }) => T): 
   return selector({ isOpen: context.isOpen });
 }
 
-export function useDialogKeyboard(handler: (event: KeyEventLike) => void): void {
-  useShortcut(handler);
+export function useDialogKeyboard(
+  handler: (event: KeyEventLike) => void,
+  options?: ShortcutOptions | string,
+): void {
+  useShortcut(handler, typeof options === "string" ? { scope: options } : options);
 }

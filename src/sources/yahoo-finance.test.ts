@@ -2,6 +2,56 @@ import { describe, expect, test } from "bun:test";
 import { YahooFinanceClient } from "./yahoo-finance";
 
 describe("YahooFinanceClient exchange aliases", () => {
+  test("maps detailed statement sub-lines from fundamentals timeseries", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const point = (type: string, value: number) => ({
+      meta: { type: [type] },
+      [type]: [{ asOfDate: "2025-12-31", reportedValue: { raw: value } }],
+    });
+
+    provider.getSymbolsToTry = () => ["AMD"];
+    provider.fetchChart = async () => ({
+      meta: { currency: "USD", regularMarketPrice: 100, shortName: "AMD" },
+      history: [{ date: new Date("2025-12-31T00:00:00Z"), close: 100 }],
+    });
+    provider.fetchAssetProfile = async () => undefined;
+    provider.fetchQuoteSupplement = async () => ({});
+    provider.fetchExtendedHoursData = async () => ({});
+    provider.fetchTimeseries = async () => [
+      point("annualAccountsReceivable", 7_450_000_000),
+      point("annualInventory", 4_880_000_000),
+      point("annualStockBasedCompensation", 1_230_000_000),
+      point("annualCashFlowFromContinuingOperatingActivities", 6_490_000_000),
+      point("annualInterestPaidSupplementalData", 91_000_000),
+      point("annualCurrentDeferredRevenue", 544_000_000),
+      point("annualPurchaseOfPPE", -900_000_000),
+      point("annualAdditionalPaidInCapital", 44_000_000_000),
+      point("quarterlyAccountsPayable", 2_100_000_000),
+      point("quarterlyOtherNonCashItems", 91_000_000),
+      point("quarterlyCashFlowFromContinuingFinancingActivities", -328_000_000),
+      point("quarterlyEndCashPosition", 5_540_000_000),
+    ];
+
+    const financials = await provider.getTickerFinancials("AMD", "NASDAQ");
+
+    expect(financials.annualStatements[0]).toMatchObject({
+      accountsReceivable: 7_450_000_000,
+      inventory: 4_880_000_000,
+      stockBasedCompensation: 1_230_000_000,
+      cashFlowFromContinuingOperatingActivities: 6_490_000_000,
+      interestPaidSupplementalData: 91_000_000,
+      currentDeferredRevenue: 544_000_000,
+      purchaseOfPPE: -900_000_000,
+      additionalPaidInCapital: 44_000_000_000,
+    });
+    expect(financials.quarterlyStatements[0]).toMatchObject({
+      accountsPayable: 2_100_000_000,
+      otherNonCashItems: 91_000_000,
+      cashFlowFromContinuingFinancingActivities: -328_000_000,
+      endCashPosition: 5_540_000_000,
+    });
+  });
+
   test("tries the Taipei Exchange suffix for TPEX tickers", () => {
     const provider = new YahooFinanceClient() as any;
     expect(provider.getSymbolsToTry("3105", "TPEX")).toEqual(["3105.TWO", "3105.TW"]);
