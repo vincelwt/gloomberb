@@ -2,9 +2,6 @@ name: Verify Desktop Homebrew Package
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - vincelwt/macos-tui-desktop-install
 
 permissions:
   contents: read
