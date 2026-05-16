@@ -109,6 +109,7 @@ jobs:
           sha256="$(shasum -a 256 artifacts/stable-macos-arm64-Gloomberb.app.zip | awk '{print $1}')"
           tap_dir="$RUNNER_TEMP/homebrew-tap"
           gh repo clone vincelwt/homebrew-tap "$tap_dir"
+          git -C "$tap_dir" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/vincelwt/homebrew-tap.git"
           bun run scripts/write-homebrew-cask.ts \
             --version "0.0.0" \
             --sha256 "$sha256" \

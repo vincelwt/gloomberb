@@ -171,6 +171,7 @@ jobs:
           git config --global user.name "gloomberb-release"
           git config --global user.email "actions@users.noreply.github.com"
           gh repo clone vincelwt/homebrew-tap "$TAP_DIR"
+          git -C "$TAP_DIR" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/vincelwt/homebrew-tap.git"
           bun run scripts/write-homebrew-cask.ts \
             --version "$VERSION" \
             --sha256 "$SHA256" \
