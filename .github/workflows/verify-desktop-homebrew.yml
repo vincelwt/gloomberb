@@ -1,46 +1,16 @@
-name: Release
+name: Verify Desktop Homebrew Package
 
 on:
+  workflow_dispatch:
   push:
-    tags:
-      - "v*"
+    branches:
+      - vincelwt/macos-tui-desktop-install
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            asset: gloomberb-darwin-arm64
-          - os: ubuntu-latest
-            asset: gloomberb-linux-x64
-          - os: ubuntu-24.04-arm
-            asset: gloomberb-linux-arm64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - run: bun install
-
-      - name: Build
-        run: |
-          mkdir -p dist
-          bun run scripts/build.ts
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset }}
-          path: dist/*
-
-  desktop-macos:
+  verify:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,21 +66,26 @@ jobs:
 
           echo "ELECTROBUN_APPLEAPIKEYPATH=$NOTARY_KEY_PATH" >> "$GITHUB_ENV"
 
-      - name: Build signed desktop DMG
+      - name: Build signed desktop artifacts
         env:
           ELECTROBUN_APPLEAPIISSUER: ${{ secrets.ELECTROBUN_APPLEAPIISSUER }}
           ELECTROBUN_APPLEAPIKEY: ${{ secrets.ELECTROBUN_APPLEAPIKEY }}
           ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
         run: bun run desktop:release
 
-      - name: Build Homebrew app archive
+      - name: Build and verify Homebrew archive
         run: |
           set -euo pipefail
           brew install zstd
           tmp_dir="$(mktemp -d)"
           zstd -d -o "$tmp_dir/Gloomberb.app.tar" artifacts/stable-macos-arm64-Gloomberb.app.tar.zst
           tar -xf "$tmp_dir/Gloomberb.app.tar" -C "$tmp_dir"
+
           test -x "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb"
+          test -f "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb-tui/tui-entry.js"
+          "$tmp_dir/Gloomberb.app/Contents/Resources/gloomberb" help
+
+          codesign --verify --verbose=4 "$tmp_dir/Gloomberb.app"
           ditto -c -k --keepParent "$tmp_dir/Gloomberb.app" artifacts/stable-macos-arm64-Gloomberb.app.zip
 
       - name: Verify desktop artifacts
@@ -123,75 +98,26 @@ jobs:
           codesign --verify --verbose=4 artifacts/stable-macos-arm64-Gloomberb.dmg
           xcrun stapler validate -v artifacts/stable-macos-arm64-Gloomberb.dmg
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gloomberb-desktop-macos-arm64
-          path: artifacts/*
-
-  release:
-    needs:
-      - build
-      - desktop-macos
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Upload assets to GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Update Homebrew tap
+      - name: Verify cask generation and tap access
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "HOMEBREW_TAP_TOKEN is not configured; skipping Homebrew tap update."
-            exit 0
-          fi
+          : "${GH_TOKEN:?missing HOMEBREW_TAP_TOKEN secret}"
 
-          VERSION="${GITHUB_REF_NAME#v}"
-          ZIP_PATH="dist/stable-macos-arm64-Gloomberb.app.zip"
-          SHA256="$(sha256sum "$ZIP_PATH" | awk '{print $1}')"
-          TAP_DIR="$RUNNER_TEMP/homebrew-tap"
-
-          git config --global user.name "gloomberb-release"
-          git config --global user.email "actions@users.noreply.github.com"
-          gh repo clone vincelwt/homebrew-tap "$TAP_DIR"
+          sha256="$(shasum -a 256 artifacts/stable-macos-arm64-Gloomberb.app.zip | awk '{print $1}')"
+          tap_dir="$RUNNER_TEMP/homebrew-tap"
+          gh repo clone vincelwt/homebrew-tap "$tap_dir"
           bun run scripts/write-homebrew-cask.ts \
-            --version "$VERSION" \
-            --sha256 "$SHA256" \
-            --output "$TAP_DIR/Casks/gloomberb.rb"
+            --version "0.0.0" \
+            --sha256 "$sha256" \
+            --output "$tap_dir/Casks/gloomberb.rb"
 
-          cd "$TAP_DIR"
-          if git diff --quiet; then
-            echo "Homebrew tap already up to date."
-            exit 0
-          fi
+          ruby -c "$tap_dir/Casks/gloomberb.rb"
+          grep -q 'stable-macos-arm64-Gloomberb.app.zip' "$tap_dir/Casks/gloomberb.rb"
+          grep -q 'binary "#{appdir}/Gloomberb.app/Contents/Resources/gloomberb", target: "gloomberb"' "$tap_dir/Casks/gloomberb.rb"
+
+          cd "$tap_dir"
           git add Casks/gloomberb.rb
-          git commit -m "Update Gloomberb to $VERSION"
-          git push
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-
-      - name: Install npm 11 (required for trusted publishing)
-        run: npm install -g npm@11
-
-      - name: Publish to npm
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          node -e "const p=require('./package.json'); p.version='$VERSION'; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2)+'\n')"
-          npm publish --access public --provenance
+          git commit -m "Verify cask update" --allow-empty
+          git push --dry-run origin HEAD:homebrew-verify-${GITHUB_RUN_ID}

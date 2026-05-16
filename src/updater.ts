@@ -100,12 +100,18 @@ function isSourceEntrypoint(entrypoint: string): boolean {
   return sourceEntrypointPattern.test(entrypoint) || tsEntrypointPattern.test(entrypoint);
 }
 
+function isMacAppBundleExecutable(execPath: string): boolean {
+  return normalizePath(execPath).includes(".app/contents/macos/");
+}
+
 export function resolveSelfUpdateTargetPath(
   execPath = getRuntimeProcess()?.execPath ?? "",
   argv = getRuntimeProcess()?.argv ?? [],
 ): string | null {
   const resolvedExecPath = tryRealpath(execPath);
   const normalizedExecPath = normalizePath(resolvedExecPath);
+  if (isMacAppBundleExecutable(resolvedExecPath)) return null;
+
   const execBase = basename(normalizedExecPath);
   const runtimeExecutables = new Set(["bun", "bunx", "node", "nodejs", "npm", "npx", "pnpm", "yarn"]);
   if (runtimeExecutables.has(execBase)) return null;
@@ -121,6 +127,8 @@ export function detectUpdateAction(
   execPath = getRuntimeProcess()?.execPath ?? "",
   argv = getRuntimeProcess()?.argv ?? [],
 ): UpdateAction | null {
+  if (isMacAppBundleExecutable(execPath)) return null;
+
   if (resolveSelfUpdateTargetPath(execPath, argv)) {
     return { kind: "self" };
   }
