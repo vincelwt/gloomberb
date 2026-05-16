@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text } from "../../../ui";
+import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -119,43 +119,67 @@ function truncateText(text: string, maxWidth: number): string {
   return `${text.slice(0, maxWidth - 3)}...`;
 }
 
+const NATIVE_STRETCH_STYLE = { minWidth: 0 };
+const NATIVE_TEXT_STYLE = { display: "block" };
+
+function TextLines({
+  text,
+  width,
+  color,
+  attributes,
+  nativePaneChrome,
+}: {
+  text: string | undefined;
+  width: number;
+  color: string;
+  attributes?: number;
+  nativePaneChrome: boolean;
+}) {
+  if (!text) return null;
+  if (nativePaneChrome) {
+    return (
+      <Text fg={color} attributes={attributes} wrapText width="100%" style={NATIVE_TEXT_STYLE}>
+        {text}
+      </Text>
+    );
+  }
+
+  return wrapText(text, width).map((line, index) => (
+    <Box key={index} height={1}>
+      <Text fg={color} attributes={attributes}>{line}</Text>
+    </Box>
+  ));
+}
+
 function NewsStoryTimelineItemView({
   item,
   index,
   total,
   width,
+  nativePaneChrome,
 }: {
   item: NewsStoryItem;
   index: number;
   total: number;
   width: number;
+  nativePaneChrome: boolean;
 }) {
   const marker = total <= 1 ? "*" : index === 0 || index === total - 1 ? "+" : "|";
   const time = formatDetailDate(storyItemDate(item.publishedAt));
-  const sourceLabel = truncateText(item.sourceName || item.sourceKey, Math.max(4, width - time.length - 4));
-  const titleLines = wrapText(item.title, Math.max(10, width - 2));
   const summary = item.summary && item.summary.trim() !== item.title.trim() ? item.summary : "";
-  const summaryLines = summary ? wrapText(summary, Math.max(10, width - 2)) : [];
+  const source = item.sourceName || item.sourceKey;
+  const contentWidth = Math.max(10, width - 2);
+  const sourceLabel = nativePaneChrome ? source : truncateText(source, Math.max(4, width - time.length - 4));
 
   return (
-    <Box flexDirection="column" width={width}>
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>{marker} </Text>
-        <Text fg={colors.textDim}>{time}</Text>
-        <Text fg={colors.textDim}>  </Text>
+    <Box flexDirection="column" width={nativePaneChrome ? "100%" : width} style={nativePaneChrome ? NATIVE_STRETCH_STYLE : undefined}>
+      <Box height={nativePaneChrome ? undefined : 1} flexDirection="row" flexWrap={nativePaneChrome ? "wrap" : undefined} gap={nativePaneChrome ? 1 : undefined} width={nativePaneChrome ? "100%" : undefined} style={nativePaneChrome ? NATIVE_STRETCH_STYLE : undefined}>
+        <Text fg={colors.textDim}>{nativePaneChrome ? `${marker} ${time}` : `${marker} ${time}  `}</Text>
         <ExternalLinkText url={item.url} label={sourceLabel} color={colors.textBright} />
       </Box>
-      <Box flexDirection="column" paddingLeft={2}>
-        {titleLines.map((line, lineIndex) => (
-          <Box key={`title-${lineIndex}`} height={1}>
-            <Text fg={colors.text}>{line}</Text>
-          </Box>
-        ))}
-        {summaryLines.map((line, lineIndex) => (
-          <Box key={`summary-${lineIndex}`} height={1}>
-            <Text fg={colors.textDim}>{line}</Text>
-          </Box>
-        ))}
+      <Box flexDirection="column" paddingLeft={2} width={nativePaneChrome ? "100%" : undefined} style={nativePaneChrome ? NATIVE_STRETCH_STYLE : undefined}>
+        <TextLines text={item.title} width={contentWidth} color={colors.text} nativePaneChrome={nativePaneChrome} />
+        <TextLines text={summary} width={contentWidth} color={colors.textDim} nativePaneChrome={nativePaneChrome} />
       </Box>
     </Box>
   );
@@ -168,10 +192,11 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   showTitle?: boolean;
 }) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const { nativePaneChrome } = useUiCapabilities();
 
-  const innerW = Math.max(10, width - 2);
-  const titleLines = wrapText(item.title, innerW);
-  const summaryLines = item.summary ? wrapText(item.summary, innerW) : [];
+  const innerW = Math.max(10, Math.floor(width) - 2);
+  const contentWidth = nativePaneChrome ? "100%" : innerW;
+  const contentStyle = nativePaneChrome ? NATIVE_STRETCH_STYLE : undefined;
   const tickers = useMemo(
     () => collectNewsDisplayTickers(item.tickers),
     [item.tickers],
@@ -211,35 +236,26 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   });
 
   return (
-    <Box flexDirection="column" width={width} flexGrow={1} flexBasis={0} minHeight={0} overflow="hidden">
+    <Box flexDirection="column" width={nativePaneChrome ? "100%" : width} flexGrow={1} flexBasis={0} minHeight={0} overflow="hidden">
       <ScrollBox ref={scrollRef} flexGrow={1} flexBasis={0} minHeight={0} scrollY focusable={false}>
-        <Box flexDirection="column" paddingX={1} paddingY={1} gap={1}>
+        <Box flexDirection="column" paddingX={1} paddingY={1} gap={1} width={nativePaneChrome ? "100%" : undefined} style={contentStyle}>
           {showTitle && (
             <Box flexDirection="column">
-              {titleLines.map((line, i) => (
-                <Box key={i} height={1}>
-                  <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{line}</Text>
-                </Box>
-              ))}
+              <TextLines
+                text={item.title}
+                width={innerW}
+                color={colors.textBright}
+                attributes={TextAttributes.BOLD}
+                nativePaneChrome={nativePaneChrome === true}
+              />
             </Box>
           )}
-          {/* Last updated */}
           <Box height={1} flexDirection="row">
             <Text fg={colors.textDim}>Last updated at {lastUpdatedStr}</Text>
           </Box>
-          {/* Summary */}
-          {summaryLines.length > 0 && (
-            <Box flexDirection="column">
-              {summaryLines.map((line, i) => (
-                <Box key={i} height={1}>
-                  <Text fg={colors.text}>{line}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-          {/* Tickers */}
+          <TextLines text={item.summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
           {tickers.length > 0 && (
-            <Box flexDirection="row" flexWrap="wrap" width={innerW}>
+            <Box flexDirection="row" flexWrap="wrap" width={contentWidth} style={contentStyle}>
               {tickers.map((ticker) => {
                 const entry = catalog[ticker];
                 if (!entry || entry.status === "missing") {
@@ -269,16 +285,19 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               })}
             </Box>
           )}
-          {/* Categories */}
           {item.categories.length > 0 && (
-            <Box height={1} flexDirection="row">
-              <Text fg={colors.textMuted}>
-                {item.categories.join(" · ")}
-              </Text>
-            </Box>
+            nativePaneChrome ? (
+              <TextLines text={item.categories.join(" · ")} width={innerW} color={colors.textMuted} nativePaneChrome />
+            ) : (
+              <Box height={1} flexDirection="row">
+                <Text fg={colors.textMuted}>
+                  {item.categories.join(" · ")}
+                </Text>
+              </Box>
+            )
           )}
           {timelineItems.length > 0 && (
-            <Box flexDirection="column" gap={1} width={innerW}>
+            <Box flexDirection="column" gap={1} width={contentWidth} style={contentStyle}>
               {timelineItems.map((timelineItem, index) => (
                 <NewsStoryTimelineItemView
                   key={timelineItem.id}
@@ -286,11 +305,11 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
                   index={index}
                   total={timelineItems.length}
                   width={innerW}
+                  nativePaneChrome={nativePaneChrome === true}
                 />
               ))}
             </Box>
           )}
-          {/* URL */}
           <ExternalLink url={item.url} color={colors.textDim} />
         </Box>
       </ScrollBox>
