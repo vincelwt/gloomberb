@@ -1,7 +1,13 @@
 /// <reference lib="dom" />
 /** @jsxImportSource react */
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { InputHostProvider, type InputHost, type KeyEventLike, type ShortcutOptions } from "../../../react/input";
+import {
+  InputHostProvider,
+  shouldDeliverShortcut,
+  type InputHost,
+  type KeyEventLike,
+  type ShortcutOptions,
+} from "../../../react/input";
 import {
   isMouseBackNavigationButton,
   MOUSE_BACK_NAVIGATION_EVENT_NAME,
@@ -73,6 +79,7 @@ function toMouseBackKeyEventLike(event: MouseEvent): KeyEventLike {
 interface ShortcutEntry {
   handlerRef: { current: (event: KeyEventLike) => void };
   enabledRef: { current: boolean };
+  allowEditableRef: { current: boolean };
   phase: NonNullable<ShortcutOptions["phase"]>;
   order: number;
 }
@@ -103,6 +110,7 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
       if (phase === "after" && (shortcutEvent.defaultPrevented || shortcutEvent.propagationStopped)) break;
       for (const entry of shortcutsRef.current) {
         if (entry.phase !== phase || !entry.enabledRef.current) continue;
+        if (!shouldDeliverShortcut(shortcutEvent, entry.allowEditableRef.current)) continue;
         entry.handlerRef.current(shortcutEvent);
         if (shortcutEvent.propagationStopped) break;
       }
@@ -147,13 +155,16 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
     useShortcut(handler, options) {
       const handlerRef = useRef(handler);
       const enabledRef = useRef(options?.enabled !== false);
+      const allowEditableRef = useRef(options?.allowEditable === true);
       handlerRef.current = handler;
       enabledRef.current = options?.enabled !== false;
+      allowEditableRef.current = options?.allowEditable === true;
 
       useLayoutEffect(() => {
         const entry: ShortcutEntry = {
           handlerRef,
           enabledRef,
+          allowEditableRef,
           phase: options?.phase ?? "normal",
           order: nextShortcutOrder++,
         };

@@ -785,7 +785,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     if (event.name === "e") {
       editActiveTab();
     }
-  });
+  }, { allowEditable: true });
 
   useEffect(() => () => {
     runRef.current?.cancel();

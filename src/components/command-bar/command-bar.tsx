@@ -244,7 +244,7 @@ function getPaneTemplateArgKind(template: PaneTemplateDef): string | undefined {
 
 function canPromptForPaneTemplateArg(template: PaneTemplateDef): boolean {
   const argKind = getPaneTemplateArgKind(template);
-  return argKind === "ticker" || argKind === "ticker-list" || argKind === "tickers";
+  return argKind === "ticker" || argKind === "ticker-list" || argKind === "tickers" || argKind === "text" || argKind === "query";
 }
 
 function getDefaultConfigBackupPath(): string {
@@ -747,7 +747,8 @@ export function CommandBar({
   }, []);
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const { width: termWidth, height: termHeight } = useViewport();
-  const { nativePaneChrome = false, cellWidthPx = 8, cellHeightPx = 18, titleBarOverlay } = useUiCapabilities();
+  const { nativePaneChrome: nativePaneChromeCapability, cellWidthPx = 8, cellHeightPx = 18, titleBarOverlay } = useUiCapabilities();
+  const nativePaneChrome = nativePaneChromeCapability === true;
   const availableCommands = useMemo(
     () => nativePaneChrome
       ? commands.filter((command) => command.id !== "cycle-chart-renderer")
@@ -5401,7 +5402,7 @@ export function CommandBar({
       }
       activateListSelection();
     }
-  }, { phase: "before" });
+  }, { phase: "before", allowEditable: true });
 
   const barWidth = nativePaneChrome
     ? Math.max(46, Math.min(78, termWidth - 10, Math.floor(termWidth * 0.64)))

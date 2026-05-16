@@ -793,7 +793,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       event.stopPropagation?.();
       cycleFeeds(1);
     }
-  });
+  }, { allowEditable: true });
 
   const activeFeedIdValue = activeFeed?.id ?? null;
   const activeFeedQuery = activeFeed?.query ?? null;

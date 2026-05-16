@@ -252,7 +252,7 @@ export function AskAiDetailTab({ width, height, focused, onCapture }: DetailTabP
     if (event.name === "escape") {
       blurInput();
     }
-  });
+  }, { allowEditable: true });
 
   useEffect(() => () => {
     runRef.current?.cancel();

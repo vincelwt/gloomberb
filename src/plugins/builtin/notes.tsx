@@ -151,7 +151,7 @@ function createNotesTab(notesFiles: NotesFiles) {
         setNotesFocusedAndCapture(false);
         return;
       }
-    });
+    }, { allowEditable: true });
 
     usePaneFooter("ticker-notes", () => ({
       info: [
@@ -438,7 +438,7 @@ function createQuickNotesPane(notesFiles: NotesFiles) {
           return;
         }
       }
-    });
+    }, { allowEditable: true });
 
     usePaneFooter("quick-notes", () => ({
       info: [

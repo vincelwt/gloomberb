@@ -3,14 +3,16 @@ import { TextAttributes, type BoxRenderable, type NativeRendererHost as CliRende
 import { useNativeRenderer, useUiCapabilities } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { useChartQueries } from "../../market-data/hooks";
+import { DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS, useChartQueries, useTickerFinancialsMap } from "../../market-data/hooks";
 import { buildChartKey } from "../../market-data/selectors";
 import { useAppSelector, usePaneSettingValue } from "../../state/app-context";
+import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { usePaneFooter, type PaneHint } from "../layout/pane-footer";
 import { blendHex, colors, getComparisonSeriesColor } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
+import type { QuoteSubscriptionTarget } from "../../types/data-provider";
 import type { BrokerContractRef } from "../../types/instrument";
-import type { PricePoint } from "../../types/financials";
+import type { PricePoint, Quote } from "../../types/financials";
 import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../utils/market-format";
 import { getSharedMarketData } from "../../plugins/registry";
@@ -99,6 +101,7 @@ import { resolveChartAxisWidth, type StyledContent } from "./chart-renderer";
 import { TimeAxisLabel } from "./time-axis-label";
 import { PriceAxisLabels } from "./price-axis-labels";
 import { getChartMarketSessionKey, resolveChartMarketSession } from "./market-session";
+import { appendLiveQuotePoint } from "./chart-data";
 
 const MODE_CHIPS: Record<ComparisonChartRenderMode, string> = {
   area: "A",
@@ -119,6 +122,7 @@ interface ComparisonStockChartProps {
 interface ComparisonChartSymbolSource {
   symbol: string;
   currency: string | undefined;
+  quote: Quote | undefined;
   exchange: string;
   brokerId: string | undefined;
   brokerInstanceId: string | undefined;
@@ -611,6 +615,23 @@ function ComparisonStockChartView({
     assetCategory: source.instrument?.secType,
   }))), [symbolSources]);
   const marketSessionKey = useMemo(() => getChartMarketSessionKey(marketSession), [marketSession]);
+  const streamingTargets = useMemo<QuoteSubscriptionTarget[]>(() => (
+    symbolSources.map((source) => ({
+      symbol: source.symbol,
+      exchange: source.exchange,
+      route: "provider" as const,
+      context: {
+        brokerId: source.brokerId,
+        brokerInstanceId: source.brokerInstanceId,
+        instrument: source.instrument ?? null,
+      },
+      surface: "monitor" as const,
+      visible: true,
+      selected: source.symbol === viewState.selectedSymbol,
+      weight: source.symbol === viewState.selectedSymbol ? 120 : 80,
+    }))
+  ), [symbolSources, viewState.selectedSymbol]);
+  useQuoteStreaming(streamingTargets);
 
   const setSelectedSymbol = (symbol: string) => {
     setViewState((current) => (
@@ -837,7 +858,9 @@ function ComparisonStockChartView({
       resolution: effectiveResolution === "auto" ? undefined : effectiveResolution,
     }))
   ), [effectiveResolution, symbolSources, viewState.bufferRange]);
-  const chartEntries = useChartQueries(chartRequests);
+  const chartEntries = useChartQueries(chartRequests, {
+    refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
+  });
   const entryStates = useMemo(() => chartRequests.map((request) => (
     resolveChartBodyState(chartEntries.get(buildChartKey(request)), (value) => Array.isArray(value) && value.length > 0, "No chart data yet.")
   )), [chartEntries, chartRequests]);
@@ -852,13 +875,14 @@ function ComparisonStockChartView({
   const series = useMemo(() => symbolSources.map((source, index) => {
     const request = chartRequests[index];
     const history = request ? (chartEntries.get(buildChartKey(request))?.data ?? []) : [];
+    const points = appendLiveQuotePoint(history, source.quote);
     const color = getComparisonSeriesColor(index);
     return {
       symbol: source.symbol,
       color,
       fillColor: blendHex(colors.bg, color, 0.22),
       currency: source.currency,
-      points: history,
+      points,
     };
   }), [chartEntries, chartRequests, colors.bg, symbolSources]);
   const axisWidth = useMemo(() => {
@@ -2013,20 +2037,28 @@ export function ComparisonStockChart(props: ComparisonStockChartProps) {
   const chartPreferences = useAppSelector((state) => state.config.chartPreferences);
   const symbolsKey = props.symbols.join("|");
   const stableSymbols = useMemo(() => props.symbols, [symbolsKey]);
+  const stableTickers = useMemo(() => (
+    stableSymbols.flatMap((symbol) => {
+      const ticker = tickers.get(symbol);
+      return ticker ? [ticker] : [];
+    })
+  ), [stableSymbols, tickers]);
+  const marketFinancials = useTickerFinancialsMap(stableTickers);
   const symbolSources = useMemo<ComparisonChartSymbolSource[]>(() => stableSymbols.map((symbol) => {
     const ticker = tickers.get(symbol) ?? null;
-    const financial = financials.get(symbol) ?? null;
+    const financial = marketFinancials.get(symbol) ?? financials.get(symbol) ?? null;
     const instrument = ticker?.metadata.broker_contracts?.[0] ?? null;
     return {
       symbol,
       currency: financial?.quote?.currency ?? ticker?.metadata.currency,
+      quote: financial?.quote,
       exchange: ticker?.metadata.exchange ?? "",
       brokerId: instrument?.brokerId,
       brokerInstanceId: instrument?.brokerInstanceId,
       instrument,
       priceHistory: financial?.priceHistory ?? [],
     };
-  }), [financials, stableSymbols, tickers]);
+  }), [financials, marketFinancials, stableSymbols, tickers]);
 
   return (
     <MemoizedComparisonStockChartView

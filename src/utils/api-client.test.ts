@@ -532,6 +532,78 @@ describe("apiClient chat timestamps", () => {
   });
 });
 
+describe("apiClient account profile", () => {
+  test("updates profile fields through the account endpoint", async () => {
+    let requestedUrl = "";
+    let requestedBody = "";
+    apiClient.setSessionToken("session-token");
+    apiClient.restoreCachedUser(verifiedUser);
+    globalThis.fetch = mockFetch(async (input: Request | string | URL, init?: RequestInit) => {
+      requestedUrl = String(input);
+      requestedBody = String(init?.body ?? "");
+      return createResponse({
+        profile: {
+          id: verifiedUser.id,
+          email: verifiedUser.email,
+          emailVerified: true,
+          plan: "pro",
+          username: "renamed",
+          name: "Renamed User",
+          company: "Gloomberb",
+          title: "Founder",
+          bio: "Markets.",
+          profilePublic: true,
+          publicEmail: "public@example.com",
+          xAccount: "vincelwt",
+          sharedPortfolioId: "main",
+          acceptUnknownDms: true,
+          updatedAt: "2026-04-01T00:00:00.000Z",
+        },
+      });
+    });
+
+    const profile = await apiClient.updateAccountProfile({
+      username: "renamed",
+      name: "Renamed User",
+      profilePublic: true,
+      sharedPortfolioId: "main",
+      acceptUnknownDms: true,
+    });
+
+    expect(new URL(requestedUrl).pathname).toBe("/account/profile");
+    expect(JSON.parse(requestedBody)).toEqual({
+      username: "renamed",
+      name: "Renamed User",
+      profilePublic: true,
+      sharedPortfolioId: "main",
+      acceptUnknownDms: true,
+    });
+    expect(profile.username).toBe("renamed");
+    expect(apiClient.getCurrentUser()?.username).toBe("renamed");
+    expect(apiClient.getCurrentUser()?.plan).toBe("pro");
+  });
+
+  test("changes password through Better Auth", async () => {
+    let requestedUrl = "";
+    let requestedBody = "";
+    apiClient.setSessionToken("session-token");
+    globalThis.fetch = mockFetch(async (input: Request | string | URL, init?: RequestInit) => {
+      requestedUrl = String(input);
+      requestedBody = String(init?.body ?? "");
+      return createResponse({ status: true });
+    });
+
+    await apiClient.changePassword("old-password", "new-password");
+
+    expect(new URL(requestedUrl).pathname).toBe("/auth/change-password");
+    expect(JSON.parse(requestedBody)).toEqual({
+      currentPassword: "old-password",
+      newPassword: "new-password",
+      revokeOtherSessions: false,
+    });
+  });
+});
+
 describe("apiClient cloud news", () => {
   test("uses the existing /news route with backend ticker filters", async () => {
     let seenUrl = "";

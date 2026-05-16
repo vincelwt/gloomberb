@@ -1,5 +1,6 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
 import { comparisonChartPlugin } from "./comparison-chart";
+import { bloombergFunctionsPlugin } from "./bloomberg-functions";
 import { correlationPlugin } from "./correlation";
 import { earningsPlugin } from "./earnings";
 import { registerEconCalendarFeature } from "./econ";
@@ -57,6 +58,7 @@ export const companyResearchPlugin = createPluginGroup({
   description: "Options, SEC filings, ownership, insider activity, analyst research, and corporate actions.",
   toggleable: true,
   plugins: [
+    bloombergFunctionsPlugin,
     optionsPlugin,
     researchPlugin,
     holdersPlugin,

@@ -42,13 +42,24 @@ function getCloudApiBaseUrl(): string {
   return process.env.GLOOMBERB_API_URL ?? DEFAULT_API_URL;
 }
 
+export interface ChatUserSummary {
+  id: string;
+  username: string | null;
+  displayName: string;
+  bio?: string | null;
+  company?: string | null;
+  title?: string | null;
+  profilePublic?: boolean;
+  acceptUnknownDms?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   channelId: string;
   content: string;
   replyToId: string | null;
   createdAt: string;
-  user: { id: string; username: string; displayName: string };
+  user: ChatUserSummary;
   replyTo?: { content: string; user: { id?: string; username: string } } | null;
   clientStatus?: "sending" | "failed";
   clientError?: string | null;
@@ -57,7 +68,10 @@ export interface ChatMessage {
 export interface ChatChannel {
   id: string;
   name: string;
+  kind?: "public" | "direct" | "group";
   created_at: string;
+  dmUser?: ChatUserSummary | null;
+  members?: ChatUserSummary[];
 }
 
 export interface ChatChannelState {
@@ -90,11 +104,51 @@ export interface AuthUser {
   username: string | null;
   emailVerified: boolean;
   image: string | null;
+  plan?: "free" | "pro";
+  company?: string | null;
+  title?: string | null;
+  bio?: string | null;
+  profilePublic?: boolean;
+  publicEmail?: string | null;
+  xAccount?: string | null;
+  sharedPortfolioId?: string | null;
+  acceptUnknownDms?: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 export type PersistedAuthUser = Pick<AuthUser, "id" | "emailVerified"> & Partial<AuthUser>;
+
+export interface AccountProfile {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  plan: "free" | "pro";
+  username: string | null;
+  name: string;
+  company: string | null;
+  title: string | null;
+  bio: string | null;
+  profilePublic: boolean;
+  publicEmail: string | null;
+  xAccount: string | null;
+  sharedPortfolioId: string | null;
+  acceptUnknownDms: boolean;
+  updatedAt: string | null;
+}
+
+export type AccountProfileUpdate = Partial<{
+  username: string;
+  name: string;
+  company: string | null;
+  title: string | null;
+  bio: string | null;
+  profilePublic: boolean;
+  publicEmail: string | null;
+  xAccount: string | null;
+  sharedPortfolioId: string | null;
+  acceptUnknownDms: boolean;
+}>;
 
 export interface CloudQuotePayload extends Quote {
   providerId: "gloomberb-cloud";
@@ -404,6 +458,11 @@ function normalizeChatNotification(notification: ChatNotification): ChatNotifica
 function normalizeChatState(response: ChatStateResponse): ChatStateResponse {
   return {
     ...response,
+    channels: response.channels.map((channel) => ({
+      ...channel,
+      kind: channel.kind ?? "public",
+      created_at: normalizeTimestamp(channel.created_at),
+    })),
     notifications: response.notifications.map(normalizeChatNotification),
   };
 }
@@ -936,8 +995,57 @@ class GloomApiClient {
     });
   }
 
+  async getAccountProfile(): Promise<AccountProfile> {
+    const result = await this.request<{ profile: AccountProfile }>("/account/profile", {
+      method: "GET",
+    });
+    return result.profile;
+  }
+
+  async updateAccountProfile(update: AccountProfileUpdate): Promise<AccountProfile> {
+    const result = await this.request<{ profile: AccountProfile }>("/account/profile", {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+    const profile = result.profile;
+    if (this.currentUser?.id === profile.id) {
+      this.currentUser = {
+        ...this.currentUser,
+        name: profile.name,
+        username: profile.username,
+        plan: profile.plan,
+        company: profile.company,
+        title: profile.title,
+        bio: profile.bio,
+        profilePublic: profile.profilePublic,
+        publicEmail: profile.publicEmail,
+        xAccount: profile.xAccount,
+        sharedPortfolioId: profile.sharedPortfolioId,
+        acceptUnknownDms: profile.acceptUnknownDms,
+        updatedAt: profile.updatedAt ?? this.currentUser.updatedAt,
+      };
+    }
+    return profile;
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: false,
+      }),
+    });
+  }
+
   async getChannels(): Promise<ChatChannel[]> {
-    return this.request<ChatChannel[]>("/chat/channels");
+    const channels = await this.request<ChatChannel[]>("/chat/channels");
+    return channels.map((channel) => ({
+      ...channel,
+      kind: channel.kind ?? "public",
+      created_at: normalizeTimestamp(channel.created_at),
+    }));
   }
 
   async getChatPresence(): Promise<{ onlineCount: number }> {
@@ -964,6 +1072,30 @@ class GloomApiClient {
       method: "POST",
       body: JSON.stringify({ notificationIds }),
     });
+  }
+
+  async openDirectChannel(target: { userId?: string; username?: string }): Promise<ChatChannel> {
+    const channel = await this.request<ChatChannel>("/chat/direct", {
+      method: "POST",
+      body: JSON.stringify(target),
+    });
+    return {
+      ...channel,
+      kind: channel.kind ?? "direct",
+      created_at: normalizeTimestamp(channel.created_at),
+    };
+  }
+
+  async openGroupChannel(body: { userIds?: string[]; usernames?: string[]; name?: string }): Promise<ChatChannel> {
+    const channel = await this.request<ChatChannel>("/chat/groups", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return {
+      ...channel,
+      kind: channel.kind ?? "group",
+      created_at: normalizeTimestamp(channel.created_at),
+    };
   }
 
   async getMessages(

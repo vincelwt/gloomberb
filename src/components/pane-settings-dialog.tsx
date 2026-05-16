@@ -394,7 +394,7 @@ function useTextFieldDialogController({
       event.stopPropagation();
       dismiss();
     }
-  });
+  }, { allowEditable: true });
 
   const submit = async () => {
     try {

@@ -11,9 +11,10 @@ import { colors } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { formatCompact } from "../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../utils/market-format";
-import { useChartQueries, useChartQuery } from "../../market-data/hooks";
-import { instrumentFromTicker, type ChartRequest } from "../../market-data/request-types";
+import { DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS, useChartQueries, useChartQuery } from "../../market-data/hooks";
+import { instrumentFromTicker, quoteSubscriptionTargetFromInstrument, type ChartRequest } from "../../market-data/request-types";
 import { buildChartKey } from "../../market-data/selectors";
+import { useQuoteStreaming } from "../../state/use-quote-streaming";
 import { usePersistChartControlSelection } from "./chart-pane-settings";
 import { computeSMA, computeEMA } from "./indicators/moving-averages";
 import { computeRSI, computeMACD } from "./indicators/oscillators";
@@ -27,7 +28,7 @@ import {
   getKeyboardPanCellCount,
   resolveDragPanOffset,
 } from "./chart-scroll";
-import { projectChartData, resolveBarSize, resolveStableOhlcProjectionOptions, type ProjectedChartPoint } from "./chart-data";
+import { appendLiveQuotePoint, projectChartData, resolveBarSize, resolveStableOhlcProjectionOptions, type ProjectedChartPoint } from "./chart-data";
 import {
   buildPresetDateWindow,
   buildVisibleDateWindow,
@@ -765,6 +766,17 @@ export function resolveAutoDisplayState(options: {
     resolution: plannedResolvedManualResolution,
     window: plannedDateWindow,
   };
+}
+
+export function resolveAutoPlanningWindow(options: {
+  pendingAutoWindowOverride: DateWindowRange | null;
+  renderedAutoView: { window: DateWindowRange } | null;
+  canonicalAutoWindow: DateWindowRange | null;
+}): DateWindowRange | null {
+  return options.pendingAutoWindowOverride
+    ?? options.canonicalAutoWindow
+    ?? options.renderedAutoView?.window
+    ?? null;
 }
 
 function buildDateWindowFromIndices(dates: readonly Date[], startIdx: number, endIdx: number): DateWindowRange | null {
@@ -1607,6 +1619,29 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     () => instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null),
     [ticker],
   );
+  const streamingTargets = useMemo(() => {
+    if (historyOverride || compact) return [];
+    const target = quoteSubscriptionTargetFromInstrument(instrumentRef, "provider");
+    return target
+      ? [{
+        ...target,
+        surface: "detail" as const,
+        visible: true,
+        selected: focused,
+        weight: focused ? 120 : 80,
+      }]
+      : [];
+  }, [
+    compact,
+    focused,
+    historyOverride,
+    instrumentRef?.brokerId,
+    instrumentRef?.brokerInstanceId,
+    instrumentRef?.exchange,
+    instrumentRef?.instrument,
+    instrumentRef?.symbol,
+  ]);
+  useQuoteStreaming(streamingTargets);
   const dataProvider = getSharedMarketData();
   const capabilityKey = instrumentRef ? [
     instrumentRef.symbol,
@@ -1721,8 +1756,13 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         granularity: "range",
       }
       : null,
+    { refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS },
   );
-  const fallbackPriceHistory = historyOverride ?? financials?.priceHistory ?? [];
+  const rawFallbackPriceHistory = historyOverride ?? financials?.priceHistory ?? [];
+  const fallbackPriceHistory = useMemo(
+    () => appendLiveQuotePoint(rawFallbackPriceHistory, financials?.quote),
+    [financials?.quote, rawFallbackPriceHistory],
+  );
   const rawBoundsBodyState = resolveChartBodyState(
     boundsChartEntry,
     (value) => Array.isArray(value) && value.length > 0,
@@ -1758,9 +1798,13 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const chartHeight = Math.max(height - headerRows - helpRow - timeAxisRow - nativeSurfaceGuardRow, 4);
   const chartCurrency = currencyOverride ?? financials?.quote?.currency ?? ticker?.metadata.currency ?? "USD";
   const chartAssetCategory = ticker?.metadata.assetCategory;
-  const boundsHistory = compact
+  const rawBoundsHistory = compact
     ? fallbackPriceHistory
     : (boundsBodyState.data ?? []);
+  const boundsHistory = useMemo(
+    () => appendLiveQuotePoint(rawBoundsHistory, financials?.quote),
+    [financials?.quote, rawBoundsHistory],
+  );
   const boundsHistoryDates = useMemo(() => getPointDates(boundsHistory), [boundsHistory]);
   const baseDateBounds = useMemo(() => getDateWindowBounds(boundsHistoryDates), [boundsHistoryDates]);
   const manualVisibleDateWindow = useMemo(
@@ -1777,26 +1821,28 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
       ? CHART_RESOLUTION_STEP_MS[finestSupportedResolution]
       : getMinimumDateStepMs(boundsHistoryDates);
   }, [boundsHistoryDates, effectiveResolutionSupport]);
-  const renderedAutoWindow = useMemo(() => (
+  const autoPlanningWindow = useMemo(() => (
     effectiveResolution !== "auto"
       ? null
-      : clampDateWindowToBounds(renderedAutoView?.window ?? canonicalAutoWindow, baseDateBounds, autoMinimumSpanMs)
-  ), [autoMinimumSpanMs, baseDateBounds, canonicalAutoWindow, effectiveResolution, renderedAutoView]);
+      : resolveAutoPlanningWindow({
+        pendingAutoWindowOverride,
+        renderedAutoView,
+        canonicalAutoWindow,
+      })
+  ), [canonicalAutoWindow, effectiveResolution, pendingAutoWindowOverride, renderedAutoView]);
   const plannedAutoWindow = useMemo(() => (
     effectiveResolution !== "auto"
       ? null
       : clampDateWindowToBounds(
-        pendingAutoWindowOverride ?? renderedAutoWindow ?? canonicalAutoWindow,
+        autoPlanningWindow,
         baseDateBounds,
         autoMinimumSpanMs,
       )
   ), [
     autoMinimumSpanMs,
+    autoPlanningWindow,
     baseDateBounds,
-    canonicalAutoWindow,
     effectiveResolution,
-    pendingAutoWindowOverride,
-    renderedAutoWindow,
   ]);
   const hasResolutionSupportApi = !!dataProvider?.getChartResolutionSupport || !!dataProvider?.getChartResolutionCapabilities;
   const plannedAutoResolution = useMemo<ManualChartResolution | null>(() => {
@@ -1869,7 +1915,9 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     () => dedupeChartRequests(renderCandidates.map((candidate) => candidate.plan.resolutionRequest)),
     [renderCandidates],
   );
-  const candidateResolutionEntries = useChartQueries(candidateResolutionRequests);
+  const candidateResolutionEntries = useChartQueries(candidateResolutionRequests, {
+    refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
+  });
   const candidateDetailRequests = useMemo(() => (
     dedupeChartRequests(renderCandidates.flatMap((candidate) => {
       if (!candidate.plan.detailRequest) return [];
@@ -1897,6 +1945,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   ), [candidateResolutionEntries, effectiveResolution, plannedDateWindow, plannedManualResolution, renderCandidates]);
   const candidateDetailEntries = useChartQueries(candidateDetailRequests, {
     debounceMs: CHART_DETAIL_REQUEST_DEBOUNCE_MS,
+    refreshIntervalMs: DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
   });
   const boundsHistoryCompatible = useMemo(() => (
     isSeriesAcceptedForRequest(boundsHistory, plannedDateWindow, plannedManualResolution, {
@@ -2158,7 +2207,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
     candidateResolutionEntries,
     compact,
     effectiveResolution,
-    financials?.priceHistory,
+    fallbackPriceHistory,
     historyOverride,
     plannedDateWindow,
     plannedManualResolution,
@@ -2319,9 +2368,13 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const fallbackResolutionLabel = selectedResolution !== "auto" && renderedResolution !== selectedResolution
     ? `showing ${getChartResolutionLabel(renderedResolution)}`
     : null;
-  const history = compact
+  const rawHistory = compact
     ? fallbackPriceHistory
     : (renderBodyState.data ?? []);
+  const history = useMemo(
+    () => appendLiveQuotePoint(rawHistory, financials?.quote),
+    [financials?.quote, rawHistory],
+  );
   const visibleDateWindow = displayedDateWindow;
   const navigableDateWindow = effectiveResolution === "auto"
     ? (pendingAutoWindowOverride ?? displayedDateWindow ?? plannedDateWindow)

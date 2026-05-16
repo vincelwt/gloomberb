@@ -43,6 +43,7 @@ interface SparklineSample {
 
 interface SparklineBitmapOptions {
   area?: boolean;
+  compact?: boolean;
 }
 
 function closeValue(point: PricePoint): number | null {
@@ -188,6 +189,18 @@ function drawSegment(
   }
 }
 
+function snapSampleToPixelCenter(value: number, limit: number): number {
+  return Math.max(0.5, Math.min(limit - 0.5, Math.round(value) + 0.5));
+}
+
+function snapSamplesToPixelCenters(samples: SparklineSample[], width: number, height: number): SparklineSample[] {
+  if (width <= 1 || height <= 1) return samples;
+  return samples.map((sample) => ({
+    x: snapSampleToPixelCenter(sample.x, width),
+    y: snapSampleToPixelCenter(sample.y, height),
+  }));
+}
+
 function drawAreaFill(
   pixels: Uint8Array,
   width: number,
@@ -235,11 +248,27 @@ function renderSparklineBitmap(
 ): BitmapSurface | null {
   if (values.length < 2 || width <= 0 || height <= 0) return null;
   const pixels = new Uint8Array(width * height * 4);
-  const padding = options.area ? Math.max(1, Math.round(height * 0.06)) : Math.max(1, Math.round(height * 0.18));
-  const samples = buildSamples(values, width - 1, height - 1, padding);
+  const compact = options.compact && !options.area;
+  const padding = options.area
+    ? Math.max(1, Math.round(height * 0.06))
+    : compact
+      ? Math.max(1, Math.round(height * 0.12))
+      : Math.max(1, Math.round(height * 0.18));
+  const rawSamples = buildSamples(values, width - 1, height - 1, padding);
+  const samples = compact ? snapSamplesToPixelCenters(rawSamples, width - 1, height - 1) : rawSamples;
   const fillColor = parseHex(color, 0.18);
-  const glowColor = parseHex(color, options.area ? 0.06 : 0.18);
+  const glowColor = parseHex(color, options.area ? 0.06 : compact ? 0.04 : 0.18);
   const lineColor = parseHex(color, 0.96);
+  const glowThickness = options.area
+    ? Math.max(1.2, height * 0.08)
+    : compact
+      ? Math.max(1.2, height * 0.09)
+      : Math.max(2, height * 0.24);
+  const lineThickness = options.area
+    ? Math.max(1.1, height * 0.055)
+    : compact
+      ? Math.max(1.8, height * 0.13)
+      : Math.max(1.25, height * 0.1);
 
   if (options.area) {
     drawAreaFill(pixels, width, height, samples, height - 1, fillColor);
@@ -252,7 +281,7 @@ function renderSparklineBitmap(
       samples[index]!,
       samples[index + 1]!,
       glowColor,
-      options.area ? Math.max(1.2, height * 0.08) : Math.max(2, height * 0.24),
+      glowThickness,
     );
   }
   for (let index = 0; index < samples.length - 1; index++) {
@@ -263,7 +292,7 @@ function renderSparklineBitmap(
       samples[index]!,
       samples[index + 1]!,
       lineColor,
-      options.area ? Math.max(1.1, height * 0.055) : Math.max(1.25, height * 0.1),
+      lineThickness,
     );
   }
 
@@ -344,7 +373,7 @@ function TerminalPriceSparkline({
           pixelWidth: Math.max(1, Math.round(width * cellWidthPx * scale)),
           pixelHeight: Math.max(1, Math.round(height * cellHeightPx * scale)),
         };
-    return renderSparklineBitmap(values, bitmapSize.pixelWidth, bitmapSize.pixelHeight, color, { area });
+    return renderSparklineBitmap(values, bitmapSize.pixelWidth, bitmapSize.pixelHeight, color, { area, compact: height <= 1 });
   }, [
     area,
     cellHeightPx,

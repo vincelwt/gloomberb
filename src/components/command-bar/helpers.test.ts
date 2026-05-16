@@ -174,18 +174,30 @@ describe("command-bar helpers", () => {
     };
     const workflowRoute: CommandBarRoute = {
       kind: "workflow",
+      workflowId: "create-pane",
       title: "Create Pane",
       fields: [],
       values: {},
       activeFieldId: null,
+      submitLabel: "Create",
+      pending: false,
+      error: null,
+      payload: {
+        kind: "builtin",
+        actionId: "create-pane",
+      },
     };
     const confirmRoute: CommandBarRoute = {
       kind: "confirm",
+      confirmId: "delete",
       title: "Delete",
       body: ["Delete item?"],
       confirmLabel: "Delete",
       cancelLabel: "Back",
       tone: "danger",
+      onConfirm: () => {},
+      pending: false,
+      error: null,
     };
 
     expect(getScreenFooterLeft(null)).toBe("up/down move  enter select");
