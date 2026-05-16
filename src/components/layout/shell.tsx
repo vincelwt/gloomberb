@@ -13,22 +13,29 @@ import {
   floatPane,
   getDockDividerLayouts,
   getDockLeafLayouts,
+  getDockResizeTargets,
   getRememberedFloatingRect,
   gridlockAllPanes,
   isPaneInLayout,
+  moveFloatingPane,
+  movePaneRelative,
   removePane,
+  resizeFloatingPaneFromCorner,
   resizeSplitAtPath,
   resolveDocked,
   resolveFloating,
   simulateDrop,
+  type DockResizeTarget,
   type DockDividerLayout,
+  type DockGeometryOptions,
   type DockLeafLayout,
   type DropTarget,
+  type FloatingResizeCorner,
   type FloatingRect,
   type LayoutBounds,
   type ResolvedPane,
 } from "../../plugins/pane-manager";
-import type { PluginRegistry } from "../../plugins/registry";
+import type { PluginRegistry, WindowEditMode } from "../../plugins/registry";
 import { removePaneInstances, type LayoutConfig } from "../../types/config";
 import { contextMenuDivider, type ContextMenuItem } from "../../types/context-menu";
 import {
@@ -204,6 +211,7 @@ const PANE_MANAGEMENT_ACCELERATORS = {
   close: "CmdOrCtrl+W",
   layoutActions: "CmdOrCtrl+Shift+L",
   gridlockAll: "CmdOrCtrl+Shift+G",
+  windowMode: "CmdOrCtrl+Shift+M",
 } as const;
 
 type PaneManagementShortcut =
@@ -213,7 +221,27 @@ type PaneManagementShortcut =
   | "copy-screenshot"
   | "close"
   | "layout-actions"
-  | "gridlock-all";
+  | "gridlock-all"
+  | "window-mode";
+
+type WindowModeFocus =
+  | { kind: "move" }
+  | { kind: "floating-resize"; corner: FloatingResizeCorner }
+  | { kind: "dock-resize"; pathKey: string };
+
+interface WindowModeState {
+  paneId: string;
+  previewLayout: LayoutConfig;
+  mode: WindowEditMode;
+  focus: WindowModeFocus;
+  dirty: boolean;
+}
+
+type WindowModeDirection = "left" | "right" | "up" | "down";
+
+const FLOATING_RESIZE_CORNERS: FloatingResizeCorner[] = ["top-left", "bottom-right"];
+const WINDOW_MODE_MOVE_STEP = { x: 2, y: 1 };
+const WINDOW_MODE_FAST_STEP = { x: 10, y: 5 };
 
 export function resolvePaneManagementShortcut(
   event: Pick<KeyEventLike, "name" | "key" | "ctrl" | "meta" | "super" | "shift" | "alt">,
@@ -228,6 +256,7 @@ export function resolvePaneManagementShortcut(
   if (name === "o") return "pop-out";
   if (name === "l") return "layout-actions";
   if (name === "g") return "gridlock-all";
+  if (name === "m") return "window-mode";
   return null;
 }
 
@@ -657,6 +686,221 @@ function resolveHeaderHitAreas(
   return { actionStart, closeStart };
 }
 
+function directionFromKey(event: Pick<KeyEventLike, "name" | "key">): WindowModeDirection | null {
+  const name = (event.name ?? event.key ?? "").toLowerCase();
+  if (name === "left" || name === "h") return "left";
+  if (name === "right" || name === "l") return "right";
+  if (name === "up" || name === "k") return "up";
+  if (name === "down" || name === "j") return "down";
+  return null;
+}
+
+function positionFromDirection(direction: WindowModeDirection): "left" | "right" | "above" | "below" {
+  switch (direction) {
+    case "left":
+      return "left";
+    case "right":
+      return "right";
+    case "up":
+      return "above";
+    case "down":
+      return "below";
+  }
+}
+
+function pathKey(path: Array<0 | 1>): string {
+  return path.join(".");
+}
+
+function getWindowModeFocusTargets(
+  layout: LayoutConfig,
+  paneId: string,
+  mode: WindowEditMode,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): WindowModeFocus[] {
+  if (mode === "move") return [{ kind: "move" }];
+
+  if (layout.floating.some((entry) => entry.instanceId === paneId)) {
+    return FLOATING_RESIZE_CORNERS.map((corner) => ({ kind: "floating-resize" as const, corner }));
+  }
+
+  const resizeTargets = getDockResizeTargets(layout, paneId, bounds, dockGeometryOptions);
+  return resizeTargets.map((target) => ({ kind: "dock-resize" as const, pathKey: pathKey(target.path) }));
+}
+
+function sameWindowModeFocus(left: WindowModeFocus, right: WindowModeFocus): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "move" || right.kind === "move") return true;
+  if (left.kind === "floating-resize" && right.kind === "floating-resize") return left.corner === right.corner;
+  if (left.kind === "dock-resize" && right.kind === "dock-resize") return left.pathKey === right.pathKey;
+  return false;
+}
+
+function normalizeWindowModeFocus(
+  focus: WindowModeFocus,
+  layout: LayoutConfig,
+  paneId: string,
+  mode: WindowEditMode,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): WindowModeFocus {
+  const targets = getWindowModeFocusTargets(layout, paneId, mode, bounds, dockGeometryOptions);
+  return targets.find((target) => sameWindowModeFocus(target, focus)) ?? targets[0] ?? { kind: "move" };
+}
+
+function cycleWindowModeFocus(
+  focus: WindowModeFocus,
+  layout: LayoutConfig,
+  paneId: string,
+  mode: WindowEditMode,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+  delta: 1 | -1,
+): WindowModeFocus {
+  const targets = getWindowModeFocusTargets(layout, paneId, mode, bounds, dockGeometryOptions);
+  if (targets.length === 0) return { kind: "move" };
+  const currentIndex = Math.max(0, targets.findIndex((target) => sameWindowModeFocus(target, focus)));
+  return targets[(currentIndex + delta + targets.length) % targets.length] ?? targets[0]!;
+}
+
+function getWindowModePaneIds(layout: LayoutConfig): string[] {
+  const dockedIds = getDockLeafLayouts(layout, { x: 0, y: 0, width: 120, height: 40 }).map((entry) => entry.instanceId);
+  const floatingIds = [...layout.floating]
+    .sort((left, right) => (left.zIndex ?? 50) - (right.zIndex ?? 50))
+    .map((entry) => entry.instanceId);
+  return [...dockedIds, ...floatingIds];
+}
+
+function cycleWindowModePane(
+  mode: WindowModeState,
+  paneIds: string[],
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+  delta: 1 | -1,
+): WindowModeState {
+  if (paneIds.length === 0) return mode;
+  const currentIndex = Math.max(0, paneIds.indexOf(mode.paneId));
+  const paneId = paneIds[(currentIndex + delta + paneIds.length) % paneIds.length] ?? mode.paneId;
+  return {
+    ...mode,
+    paneId,
+    focus: normalizeWindowModeFocus(mode.focus, mode.previewLayout, paneId, mode.mode, bounds, dockGeometryOptions),
+  };
+}
+
+function setWindowModeEditMode(
+  state: WindowModeState,
+  mode: WindowEditMode,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): WindowModeState {
+  const preferredFocus: WindowModeFocus = mode === "move" ? { kind: "move" } : state.focus;
+  return {
+    ...state,
+    mode,
+    focus: normalizeWindowModeFocus(preferredFocus, state.previewLayout, state.paneId, mode, bounds, dockGeometryOptions),
+  };
+}
+
+function getDockResizeTargetForFocus(
+  focus: WindowModeFocus,
+  layout: LayoutConfig,
+  paneId: string,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): DockResizeTarget | null {
+  if (focus.kind !== "dock-resize") return null;
+  return getDockResizeTargets(layout, paneId, bounds, dockGeometryOptions)
+    .find((target) => pathKey(target.path) === focus.pathKey) ?? null;
+}
+
+function resizeDockTargetByDirection(
+  layout: LayoutConfig,
+  target: DockResizeTarget,
+  direction: WindowModeDirection,
+  step: { x: number; y: number },
+): LayoutConfig {
+  if (target.axis === "horizontal") {
+    if (direction !== "left" && direction !== "right") return layout;
+    const delta = (direction === "right" ? step.x : -step.x) / Math.max(1, target.bounds.width);
+    return resizeSplitAtPath(layout, target.path, target.ratio + delta);
+  }
+
+  if (direction !== "up" && direction !== "down") return layout;
+  const delta = (direction === "down" ? step.y : -step.y) / Math.max(1, target.bounds.height);
+  return resizeSplitAtPath(layout, target.path, target.ratio + delta);
+}
+
+function applyWindowModeDirection(
+  mode: WindowModeState,
+  direction: WindowModeDirection,
+  fast: boolean,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): WindowModeState {
+  const step = fast ? WINDOW_MODE_FAST_STEP : WINDOW_MODE_MOVE_STEP;
+  const focus = normalizeWindowModeFocus(mode.focus, mode.previewLayout, mode.paneId, mode.mode, bounds, dockGeometryOptions);
+  let nextLayout = mode.previewLayout;
+
+  if (mode.mode === "move") {
+    if (nextLayout.floating.some((entry) => entry.instanceId === mode.paneId)) {
+      const deltaX = direction === "left" ? -step.x : direction === "right" ? step.x : 0;
+      const deltaY = direction === "up" ? -step.y : direction === "down" ? step.y : 0;
+      nextLayout = moveFloatingPane(nextLayout, mode.paneId, deltaX, deltaY, bounds);
+    } else {
+      nextLayout = movePaneRelative(nextLayout, mode.paneId, positionFromDirection(direction));
+    }
+  } else if (focus.kind === "floating-resize") {
+    const deltaX = direction === "left" ? -step.x : direction === "right" ? step.x : 0;
+    const deltaY = direction === "up" ? -step.y : direction === "down" ? step.y : 0;
+    nextLayout = resizeFloatingPaneFromCorner(nextLayout, mode.paneId, focus.corner, deltaX, deltaY, bounds);
+  } else if (focus.kind === "dock-resize") {
+    const target = getDockResizeTargetForFocus(focus, nextLayout, mode.paneId, bounds, dockGeometryOptions);
+    if (target) {
+      nextLayout = resizeDockTargetByDirection(nextLayout, target, direction, step);
+    }
+  }
+
+  const nextFocus = normalizeWindowModeFocus(focus, nextLayout, mode.paneId, mode.mode, bounds, dockGeometryOptions);
+  return {
+    ...mode,
+    previewLayout: nextLayout,
+    focus: nextFocus,
+    dirty: mode.dirty || nextLayout !== mode.previewLayout,
+  };
+}
+
+function windowModeLabel(mode: WindowModeState, bounds: LayoutBounds, dockGeometryOptions: DockGeometryOptions): string {
+  const focus = normalizeWindowModeFocus(mode.focus, mode.previewLayout, mode.paneId, mode.mode, bounds, dockGeometryOptions);
+  if (mode.mode === "move") return "WINDOW MOVE";
+  if (focus.kind === "floating-resize") return `WINDOW RESIZE ${focus.corner}`;
+  if (focus.kind === "move") return "WINDOW RESIZE no handles";
+  const targets = getDockResizeTargets(mode.previewLayout, mode.paneId, bounds, dockGeometryOptions);
+  const index = targets.findIndex((target) => pathKey(target.path) === focus.pathKey);
+  return `WINDOW RESIZE divider ${Math.max(1, index + 1)}/${Math.max(1, targets.length)}`;
+}
+
+function windowModeHelpText(mode: WindowModeState): string {
+  if (mode.mode === "move") {
+    return "Tab window  r resize  arrows/hjkl move  Shift fast  Enter commit  Esc cancel";
+  }
+  return "Tab handle  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc cancel";
+}
+
+function getFloatingCornerPosition(rect: FloatingRect, corner: FloatingResizeCorner): { x: number; y: number; marker: string } {
+  switch (corner) {
+    case "top-left":
+      return { x: rect.x, y: rect.y, marker: "◤" };
+    case "top-right":
+      return { x: rect.x + rect.width - 1, y: rect.y, marker: "◥" };
+    case "bottom-left":
+      return { x: rect.x, y: rect.y + rect.height - 1, marker: "◣" };
+    case "bottom-right":
+      return { x: rect.x + rect.width - 1, y: rect.y + rect.height - 1, marker: "◢" };
+  }
+}
+
 function menuForPane(
   pane: ResolvedPane,
   layout: LayoutConfig,
@@ -729,6 +973,18 @@ function menuForPane(
 
   baseActions.push(
     contextMenuDivider("pane:layout-divider"),
+    {
+      id: "window-move-mode",
+      label: "Move Window...",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.windowMode,
+      onSelect: () => pluginRegistry.openWindowMode(pane.instance.instanceId, "move"),
+    },
+    {
+      id: "window-resize-mode",
+      label: "Resize Window...",
+      accelerator: "WIN resize",
+      onSelect: () => pluginRegistry.openWindowMode(pane.instance.instanceId, "resize"),
+    },
     {
       id: "layout-actions",
       label: "Layout Actions...",
@@ -843,7 +1099,7 @@ export function Shell({
   const rendererHost = useRendererHost();
   const uiKind = useUiHost().kind;
   const shortcutDisplayMode = getShortcutDisplayMode(uiKind);
-  const { nativePaneChrome, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
+  const { nativePaneChrome = false, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
   const nativeSurfaceManager = useMemo(() => getNativeSurfaceManager(renderer), [renderer]);
@@ -916,6 +1172,12 @@ export function Shell({
     () => (hiddenInstanceIds.length > 0 ? removePaneInstances(layout, hiddenInstanceIds) : layout),
     [hiddenInstanceIds, layout],
   );
+  const dockGeometryOptions = useMemo<DockGeometryOptions>(() => (
+    nativePaneChrome ? { precise: true } : { reserveDividerGutters: true }
+  ), [nativePaneChrome]);
+  const bounds = useMemo<LayoutBounds>(() => ({ x: 0, y: 0, width, height: contentHeight }), [contentHeight, width]);
+  const [windowMode, setWindowMode] = useState<WindowModeState | null>(null);
+  const activeLayout = windowMode?.previewLayout ?? visibleLayout;
 
   const persistLayout = useCallback((nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => {
     if (options?.pushHistory !== false) {
@@ -939,6 +1201,47 @@ export function Shell({
   const focusPane = useCallback((paneId: string) => {
     dispatch({ type: "FOCUS_PANE", paneId });
   }, [dispatch]);
+
+  const startWindowMode = useCallback((paneId?: string, mode: WindowEditMode = "move") => {
+    if (dragRef.current) cancelActiveDrag();
+    const targetPaneId = paneId ?? focusedPaneId;
+    if (!targetPaneId || !isPaneInLayout(visibleLayout, targetPaneId)) {
+      pluginRegistry.notify({ body: "Focus a window to move or resize it", type: "info" });
+      return;
+    }
+    setMenuState(null);
+    setHoveredMenuItemId(null);
+    focusPane(targetPaneId);
+    setWindowMode({
+      paneId: targetPaneId,
+      previewLayout: visibleLayout,
+      mode,
+      focus: normalizeWindowModeFocus({ kind: "move" }, visibleLayout, targetPaneId, mode, bounds, dockGeometryOptions),
+      dirty: false,
+    });
+  }, [bounds, cancelActiveDrag, dockGeometryOptions, focusPane, focusedPaneId, pluginRegistry, visibleLayout]);
+
+  useEffect(() => {
+    pluginRegistry.openWindowModeFn = startWindowMode;
+    return () => {
+      if (pluginRegistry.openWindowModeFn === startWindowMode) {
+        pluginRegistry.openWindowModeFn = () => {};
+      }
+    };
+  }, [pluginRegistry, startWindowMode]);
+
+  const cancelWindowMode = useCallback(() => {
+    setWindowMode(null);
+  }, []);
+
+  const commitWindowMode = useCallback(() => {
+    if (!windowMode) return;
+    if (windowMode.dirty) {
+      persistLayout(windowMode.previewLayout);
+      focusPane(windowMode.paneId);
+    }
+    setWindowMode(null);
+  }, [focusPane, persistLayout, windowMode]);
 
   const openLayoutMenu = useCallback(() => {
     pluginRegistry.openCommandBar("LAY ");
@@ -967,14 +1270,13 @@ export function Shell({
     }
   }, [pluginRegistry, rendererHost]);
 
-  const bounds = useMemo<LayoutBounds>(() => ({ x: 0, y: 0, width, height: contentHeight }), [contentHeight, width]);
   const dockedPanes = useMemo(
-    () => resolveDocked(visibleLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
-    [disabledPaneIds, pluginRegistry.panes, visibleLayout],
+    () => resolveDocked(activeLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
+    [activeLayout, disabledPaneIds, pluginRegistry.panes],
   );
   const floatingPanes = useMemo(
-    () => resolveFloating(visibleLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
-    [disabledPaneIds, pluginRegistry.panes, visibleLayout],
+    () => resolveFloating(activeLayout, pluginRegistry.panes).filter((pane) => !disabledPaneIds.has(pane.def.id)),
+    [activeLayout, disabledPaneIds, pluginRegistry.panes],
   );
   const visibleFloatingPanes = useMemo(
     () => floatingPanes.map((pane) => ({
@@ -984,6 +1286,7 @@ export function Shell({
     [contentHeight, floatingPanes, width],
   );
   const paneMap = useMemo(() => new Map([...dockedPanes, ...floatingPanes].map((pane) => [pane.instance.instanceId, pane])), [dockedPanes, floatingPanes]);
+  const windowModePaneIds = useMemo(() => getWindowModePaneIds(activeLayout), [activeLayout]);
 
   const copyFocusedPaneScreenshot = useCallback(() => {
     if (!focusedPaneId || !nativePaneChrome || !rendererHost.copyPngImage) return false;
@@ -1027,6 +1330,57 @@ export function Shell({
       resetDoubleEscapeClose(doubleEscapeCloseRef.current);
     }
   }, [overlayOpen]);
+
+  useShortcut((event) => {
+    if (!windowMode) return;
+    const name = (event.name ?? event.key ?? "").toLowerCase();
+    let handled = true;
+
+    if (name === "escape" || name === "esc") {
+      cancelWindowMode();
+    } else if (name === "enter" || name === "return") {
+      commitWindowMode();
+    } else if (name === "m") {
+      setWindowMode((current) => current
+        ? setWindowModeEditMode(current, "move", bounds, dockGeometryOptions)
+        : current);
+    } else if (name === "r") {
+      setWindowMode((current) => current
+        ? setWindowModeEditMode(current, "resize", bounds, dockGeometryOptions)
+        : current);
+    } else if (name === "tab") {
+      setWindowMode((current) => current
+        ? current.mode === "move"
+          ? cycleWindowModePane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
+          : {
+              ...current,
+              focus: cycleWindowModeFocus(
+                current.focus,
+                current.previewLayout,
+                current.paneId,
+                current.mode,
+                bounds,
+                dockGeometryOptions,
+                event.shift ? -1 : 1,
+              ),
+            }
+        : current);
+    } else {
+      const direction = directionFromKey(event);
+      if (direction) {
+        setWindowMode((current) => current
+          ? applyWindowModeDirection(current, direction, event.shift, bounds, dockGeometryOptions)
+          : current);
+      } else {
+        handled = false;
+      }
+    }
+
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, { phase: "before", enabled: !!windowMode });
 
   useShortcut((event) => {
     const isEscape = event.name === "escape" || event.name === "esc";
@@ -1080,6 +1434,10 @@ export function Shell({
       case "gridlock-all":
         handled = gridlockVisiblePanes();
         break;
+      case "window-mode":
+        startWindowMode();
+        handled = true;
+        break;
     }
 
     if (!handled) return;
@@ -1087,11 +1445,8 @@ export function Shell({
     event.stopPropagation();
   });
 
-  const dockGeometryOptions = useMemo(() => (
-    nativePaneChrome ? { precise: true } : { reserveDividerGutters: true }
-  ), [nativePaneChrome]);
-  const dockLeafLayouts = useMemo(() => getDockLeafLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
-  const dockDividerLayouts = useMemo(() => getDockDividerLayouts(visibleLayout, bounds, dockGeometryOptions), [bounds, dockGeometryOptions, visibleLayout]);
+  const dockLeafLayouts = useMemo(() => getDockLeafLayouts(activeLayout, bounds, dockGeometryOptions), [activeLayout, bounds, dockGeometryOptions]);
+  const dockDividerLayouts = useMemo(() => getDockDividerLayouts(activeLayout, bounds, dockGeometryOptions), [activeLayout, bounds, dockGeometryOptions]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
   const externalDockPreview = useMemo(
     () => resolveExternalDockPreview(desktopDockPreview, bounds),
@@ -1257,7 +1612,7 @@ export function Shell({
         const total = drag.axis === "horizontal" ? drag.bounds.width : drag.bounds.height;
         const delta = drag.axis === "horizontal" ? preciseX - drag.startX : preciseShellY - drag.startY;
         const nextRatio = Math.max(0.1, Math.min(0.9, drag.startRatio + (delta / Math.max(1, total))));
-        const nextRect = resolveDividerPreviewRect(drag.axis, drag.bounds, nextRatio, nativePaneChrome);
+        const nextRect = resolveDividerPreviewRect(drag.axis, drag.bounds, nextRatio, nativePaneChrome === true);
         updateDividerPreview({ pathKey: drag.path.join("."), rect: nextRect, ratio: nextRatio });
       } else if (drag.type === "pane-drag") {
         if (!isMeaningfulPaneDrag(drag.startX, drag.startY, preciseX, preciseShellY, dragThreshold)) {
@@ -1371,6 +1726,11 @@ export function Shell({
     const preciseX = event.preciseX ?? event.x;
     const preciseShellY = (event.preciseY ?? event.y) - appHeaderHeight;
     if (shellY < 0) return;
+    if (windowMode) {
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
 
     if (event.type === "down") {
       if (menuState) {
@@ -1536,6 +1896,7 @@ export function Shell({
     updateDragFloatingRect,
     visibleFloatingPanes,
     visibleLayout,
+    windowMode,
     width,
   ]);
 
@@ -1554,6 +1915,7 @@ export function Shell({
 
   const startNativeFloatingDrag = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (windowMode) return;
     if (event.button === 2) {
       return;
     }
@@ -1569,10 +1931,11 @@ export function Shell({
     };
     updateDragFloatingRect({ paneId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
     event.preventDefault();
-  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect]);
+  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect, windowMode]);
 
   const startNativeDockedDrag = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (windowMode) return;
     if (event.button === 2) {
       return;
     }
@@ -1587,10 +1950,11 @@ export function Shell({
       origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     };
     event.preventDefault();
-  }, [focusNativePane, getShellPointer, nativePaneChrome]);
+  }, [focusNativePane, getShellPointer, nativePaneChrome, windowMode]);
 
   const startNativeFloatResize = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (windowMode) return;
     const pointer = getShellPointer(event);
     focusNativePane(paneId);
     dragRef.current = {
@@ -1602,10 +1966,11 @@ export function Shell({
     };
     updateDragFloatingRect({ paneId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
     event.preventDefault();
-  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect]);
+  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect, windowMode]);
 
   const startNativeDividerDrag = useCallback((divider: DockDividerLayout, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (windowMode) return;
     const pointer = getShellPointer(event);
     if (menuState) {
       setMenuState(null);
@@ -1626,28 +1991,31 @@ export function Shell({
       ratio: divider.ratio,
     });
     event.preventDefault();
-  }, [getShellPointer, menuState, nativePaneChrome, updateDividerPreview]);
+  }, [getShellPointer, menuState, nativePaneChrome, updateDividerPreview, windowMode]);
 
   const handleNativeDrag = useCallback((event: ShellMouseEvent) => {
     handleActiveDrag(event);
   }, [handleActiveDrag]);
 
   const handlePaneAction = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    if (windowMode) return;
     if (event.button === 2) return;
     event.stopPropagation();
     event.preventDefault();
     openPaneMenu(paneId, rect, event);
-  }, [openPaneMenu]);
+  }, [openPaneMenu, windowMode]);
 
   const handleNativePaneContextMenu = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    if (windowMode) return;
     openPaneMenu(paneId, rect, event);
-  }, [openPaneMenu]);
+  }, [openPaneMenu, windowMode]);
 
   const handleFloatingCloseMouseDown = useCallback((paneId: string, event: ShellMouseEvent) => {
+    if (windowMode) return;
     event.stopPropagation();
     event.preventDefault();
     handleFloatingClose(paneId);
-  }, [handleFloatingClose]);
+  }, [handleFloatingClose, windowMode]);
 
   return (
     <Box
@@ -1783,8 +2151,11 @@ export function Shell({
       })}
 
       {dockDividerLayouts.map((divider) => {
-        const active = dividerPreview?.pathKey === divider.path.join(".");
-        const rect = active ? dividerPreview.rect : divider.rect;
+        const dividerPathKey = pathKey(divider.path);
+        const previewActive = dividerPreview?.pathKey === dividerPathKey;
+        const active = previewActive
+          || windowMode?.focus.kind === "dock-resize" && windowMode.focus.pathKey === dividerPathKey;
+        const rect = previewActive ? dividerPreview.rect : divider.rect;
         return (
           <Box
             key={`divider:${divider.path.join(".")}`}
@@ -1810,14 +2181,15 @@ export function Shell({
 
       {/* Focus border overlay — rendered on top of the focused pane */}
       {(() => {
-        if (!focusedPaneId) return null;
+        const highlightedPaneId = windowMode?.paneId ?? focusedPaneId;
+        if (!highlightedPaneId) return null;
         if (nativePaneChrome) return null;
         // Hide border when command bar or dialog is open, but keep it when just the pane menu is open
         if (overlayOpen && !menuState) return null;
         let rect: { x: number; y: number; width: number; height: number } | null = null;
         let z = 3;
         // Check floating panes first (they render on top of docked panes)
-        const floatingPane = visibleFloatingPanes.find((entry) => entry.pane.instance.instanceId === focusedPaneId);
+        const floatingPane = visibleFloatingPanes.find((entry) => entry.pane.instance.instanceId === highlightedPaneId);
         if (floatingPane) {
           rect = dragFloatingRect?.paneId === floatingPane.pane.instance.instanceId
             ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
@@ -1825,7 +2197,7 @@ export function Shell({
           z = (floatingPane.pane.floating?.zIndex ?? 50) + 1;
         } else {
           // Check docked panes
-          const dockedLeaf = dockLeafLayouts.find((l) => l.instanceId === focusedPaneId);
+          const dockedLeaf = dockLeafLayouts.find((l) => l.instanceId === highlightedPaneId);
           if (dockedLeaf) {
             rect = dockedLeaf.rect;
           }
@@ -1849,6 +2221,50 @@ export function Shell({
               </Box>
             )}
           </>
+        );
+      })()}
+
+      {(() => {
+        if (!windowMode || nativePaneChrome || windowMode.focus.kind !== "floating-resize") return null;
+        const floatingPane = visibleFloatingPanes.find((entry) => entry.pane.instance.instanceId === windowMode.paneId);
+        if (!floatingPane) return null;
+        const position = getFloatingCornerPosition(floatingPane.rect, windowMode.focus.corner);
+        return (
+          <Box
+            position="absolute"
+            left={position.x}
+            top={position.y}
+            width={1}
+            height={1}
+            zIndex={(floatingPane.pane.floating?.zIndex ?? 50) + 2}
+            backgroundColor={colors.borderFocused}
+          >
+            <Text fg={colors.bg} selectable={false}>{position.marker}</Text>
+          </Box>
+        );
+      })()}
+
+      {(() => {
+        if (!windowMode || nativePaneChrome) return null;
+        const pane = paneMap.get(windowMode.paneId);
+        const title = pane ? getPaneTitle(pane) : "Window";
+        const text = `${windowModeLabel(windowMode, bounds, dockGeometryOptions)} · ${title} · ${windowModeHelpText(windowMode)}`;
+        const bannerWidth = Math.max(1, width);
+        const bannerText = truncateMenuText(text, bannerWidth).padEnd(bannerWidth, " ");
+        return (
+          <Box
+            position="absolute"
+            left={0}
+            top={0}
+            width={bannerWidth}
+            height={1}
+            zIndex={MENU_Z_INDEX - 1}
+            backgroundColor={colors.borderFocused}
+          >
+            <Text fg={colors.bg} selectable={false}>
+              {bannerText}
+            </Text>
+          </Box>
         );
       })()}
 

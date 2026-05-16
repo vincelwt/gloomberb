@@ -76,6 +76,8 @@ function createShellPluginRegistry(options?: {
     hasPaneSettings: (paneId: string) => paneId === "portfolio-list:main",
     openPaneSettingsFn: () => {},
     openCommandBar: () => {},
+    openWindowMode: () => {},
+    openWindowModeFn: () => {},
     updateLayoutFn: () => {},
     hidePane: () => {},
   } as unknown as PluginRegistry;
@@ -114,6 +116,8 @@ function createBrokerPortfolioRegistry(): PluginRegistry {
     hasPaneSettings: () => true,
     openPaneSettingsFn: () => {},
     openCommandBar: () => {},
+    openWindowMode: () => {},
+    openWindowModeFn: () => {},
     updateLayoutFn: () => {},
     hidePane: () => {},
     focusPaneFn: () => {},
@@ -213,7 +217,7 @@ function createChartShellDataProvider(historyBySymbol: Record<string, PricePoint
   };
 }
 
-async function emitKeypress(event: { name?: string; sequence?: string }) {
+async function emitKeypress(event: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) {
   await act(async () => {
     const keyEvent = {
       ctrl: false,
@@ -941,9 +945,123 @@ describe("Shell", () => {
     expect(resolvePaneManagementShortcut({ ...base, name: "c", key: "c" })).toBe("copy-screenshot");
     expect(resolvePaneManagementShortcut({ ...base, name: "l", key: "l" })).toBe("layout-actions");
     expect(resolvePaneManagementShortcut({ ...base, name: "g", key: "g" })).toBe("gridlock-all");
+    expect(resolvePaneManagementShortcut({ ...base, name: "m", key: "m" })).toBe("window-mode");
     expect(resolvePaneManagementShortcut({ ...base, name: "n", key: "n" })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", alt: true })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", meta: false, super: false })).toBeNull();
+  });
+
+  test("moves a floating pane in window mode and commits once", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    floatingLayout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: floatingLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(floatingLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(actions.filter((action) => action.type === "PUSH_LAYOUT_HISTORY")).toHaveLength(1);
+    expect(updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
+      x: 12,
+      y: 2,
+    }));
+  });
+
+  test("cycles windows with Tab while staying in window move mode", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-cycle-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    floatingLayout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: floatingLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(floatingLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "tab" });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
+      x: 10,
+      y: 2,
+    }));
+  });
+
+  test("cycles resize handles with Tab inside window resize mode", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-resize-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    floatingLayout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: floatingLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(floatingLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "r" });
+    await emitKeypress({ name: "tab" });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
+      x: 8,
+      width: 34,
+    }));
   });
 
   test("closes the focused docked pane with Ctrl+W", async () => {

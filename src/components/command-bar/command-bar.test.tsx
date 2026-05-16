@@ -219,6 +219,8 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     hidePane: () => {},
     pinTicker: () => {},
     showPane: () => {},
+    openWindowMode: () => {},
+    openWindowModeFn: () => {},
     updateLayoutFn: () => {},
     getTermSizeFn: () => ({ width: 80, height: 24 }),
     notify: () => {},
@@ -461,6 +463,30 @@ describe("CommandBar", () => {
     });
 
     expect(calls).toEqual(["gridlock-all"]);
+  });
+
+  test("starts focused window resize mode from WIN argument", async () => {
+    const opened: Array<{ paneId: string | undefined; mode: string | undefined }> = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="WIN resize"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.openWindowMode = (paneId?: string, mode?: string) => { opened.push({ paneId, mode }); };
+      }}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Resize Window");
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await testSetup!.renderOnce();
+    });
+
+    expect(opened).toEqual([{ paneId: "portfolio-list:main", mode: "resize" }]);
   });
 
   test("surfaces plugin commands by add-style search terms", async () => {

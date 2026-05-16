@@ -56,6 +56,8 @@ export interface FloatingRect {
   zIndex?: number;
 }
 
+export type FloatingResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 export interface LayoutBounds {
   x: number;
   y: number;
@@ -78,6 +80,10 @@ export interface DockDividerLayout {
   rect: LayoutBounds;
   bounds: LayoutBounds;
   ratio: number;
+}
+
+export interface DockResizeTarget extends DockDividerLayout {
+  leafBranch: 0 | 1;
 }
 
 export interface DockGeometryOptions {
@@ -109,6 +115,20 @@ function clampFloatingRect(rect: FloatingRect, termWidth?: number, termHeight?: 
   return {
     x: Math.max(0, Math.min(Math.round(rect.x), maxX)),
     y: Math.max(0, Math.min(Math.round(rect.y), maxY)),
+    width,
+    height,
+    zIndex: rect.zIndex,
+  };
+}
+
+function clampFloatingRectWithinBounds(rect: FloatingRect, bounds: LayoutBounds): FloatingRect {
+  const width = Math.min(Math.max(MIN_FLOAT_WIDTH, Math.round(rect.width)), Math.max(1, bounds.width));
+  const height = Math.min(Math.max(MIN_FLOAT_HEIGHT, Math.round(rect.height)), Math.max(1, bounds.height));
+  const maxX = bounds.x + Math.max(0, bounds.width - width);
+  const maxY = bounds.y + Math.max(0, bounds.height - height);
+  return {
+    x: Math.max(bounds.x, Math.min(Math.round(rect.x), maxX)),
+    y: Math.max(bounds.y, Math.min(Math.round(rect.y), maxY)),
     width,
     height,
     zIndex: rect.zIndex,
@@ -660,6 +680,28 @@ export function getDockDividerLayouts(layout: LayoutConfig, bounds: LayoutBounds
   return collectDockGeometry(layout.dockRoot, bounds, [], [], [], options).dividers;
 }
 
+function isPathPrefix(prefix: Array<0 | 1>, path: Array<0 | 1>): boolean {
+  return prefix.length <= path.length && prefix.every((segment, index) => path[index] === segment);
+}
+
+export function getDockResizeTargets(
+  layout: LayoutConfig,
+  instanceId: string,
+  bounds: LayoutBounds,
+  options?: DockGeometryOptions,
+): DockResizeTarget[] {
+  const leaf = getDockLeafLayouts(layout, bounds, options).find((entry) => entry.instanceId === instanceId);
+  if (!leaf || leaf.path.length === 0) return [];
+
+  return getDockDividerLayouts(layout, bounds, options)
+    .filter((divider) => isPathPrefix(divider.path, leaf.path) && divider.path.length < leaf.path.length)
+    .map((divider) => ({
+      ...divider,
+      leafBranch: leaf.path[divider.path.length]!,
+    }))
+    .sort((left, right) => right.path.length - left.path.length);
+}
+
 export function getLeafRect(layout: LayoutConfig, instanceId: string, bounds: LayoutBounds): LayoutBounds | null {
   return getDockLeafLayouts(layout, bounds).find((entry) => entry.instanceId === instanceId)?.rect ?? null;
 }
@@ -668,15 +710,15 @@ export function resolveDocked(
   layout: LayoutConfig,
   registeredPanes: ReadonlyMap<string, PaneDef>,
 ): ResolvedPane[] {
-  return traverseDockLeaves(layout)
-    .map((leaf) => {
-      const instance = findPaneInstance(layout, leaf.instanceId);
-      if (!instance) return null;
-      const def = registeredPanes.get(instance.paneId);
-      if (!def) return null;
-      return { instance, def, path: leaf.path };
-    })
-    .filter((pane): pane is ResolvedPane => pane !== null);
+  const result: ResolvedPane[] = [];
+  for (const leaf of traverseDockLeaves(layout)) {
+    const instance = findPaneInstance(layout, leaf.instanceId);
+    if (!instance) continue;
+    const def = registeredPanes.get(instance.paneId);
+    if (!def) continue;
+    result.push({ instance, def, path: leaf.path });
+  }
+  return result;
 }
 
 export function resolveFloating(
@@ -732,6 +774,59 @@ export function floatAtRect(layout: LayoutConfig, instanceId: string, rect: Floa
       },
     ],
   });
+}
+
+export function moveFloatingPane(
+  layout: LayoutConfig,
+  instanceId: string,
+  deltaX: number,
+  deltaY: number,
+  bounds: LayoutBounds,
+): LayoutConfig {
+  const floating = layout.floating.find((entry) => entry.instanceId === instanceId);
+  if (!floating) return layout;
+  const rect = clampFloatingRectWithinBounds({
+    ...floating,
+    x: floating.x + deltaX,
+    y: floating.y + deltaY,
+  }, bounds);
+  return finalizeLayout(updateFloatingPane(layout, instanceId, rect));
+}
+
+export function resizeFloatingPaneFromCorner(
+  layout: LayoutConfig,
+  instanceId: string,
+  corner: FloatingResizeCorner,
+  deltaX: number,
+  deltaY: number,
+  bounds: LayoutBounds,
+): LayoutConfig {
+  const floating = layout.floating.find((entry) => entry.instanceId === instanceId);
+  if (!floating) return layout;
+
+  let left = floating.x;
+  let top = floating.y;
+  let right = floating.x + floating.width;
+  let bottom = floating.y + floating.height;
+
+  if (corner === "top-left" || corner === "bottom-left") {
+    left = Math.max(bounds.x, Math.min(left + deltaX, right - MIN_FLOAT_WIDTH));
+  } else {
+    right = Math.min(bounds.x + bounds.width, Math.max(right + deltaX, left + MIN_FLOAT_WIDTH));
+  }
+
+  if (corner === "top-left" || corner === "top-right") {
+    top = Math.max(bounds.y, Math.min(top + deltaY, bottom - MIN_FLOAT_HEIGHT));
+  } else {
+    bottom = Math.min(bounds.y + bounds.height, Math.max(bottom + deltaY, top + MIN_FLOAT_HEIGHT));
+  }
+
+  return finalizeLayout(updateFloatingPane(layout, instanceId, {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  }));
 }
 
 export function floatPane(

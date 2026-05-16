@@ -161,6 +161,17 @@ export const commands: Command[] = [
     execute: () => {}, // handled by command bar
   },
   {
+    id: "window-mode",
+    prefix: "WIN",
+    aliases: ["WM"],
+    label: "Window Mode",
+    description: "Move or resize the focused window",
+    hasArg: true,
+    argPlaceholder: "move|resize",
+    category: "Config",
+    execute: () => {}, // handled by command bar
+  },
+  {
     id: "toggle-status-bar",
     prefix: "SB",
     label: "Toggle Status Bar",

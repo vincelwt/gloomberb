@@ -45,7 +45,7 @@ import { ThemePicker, type ThemePickerHandle } from "./theme-picker";
 import { exportConfig, importConfig, resetAllData } from "../../data/config-store";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRepository } from "../../data/ticker-repository";
-import type { PluginRegistry } from "../../plugins/registry";
+import type { PluginRegistry, WindowEditMode } from "../../plugins/registry";
 import type { TickerRecord } from "../../types/ticker";
 import type { Quote } from "../../types/financials";
 import type {
@@ -76,7 +76,6 @@ import {
   getLayoutPreview,
   gridlockAllPanes,
   isPaneDocked,
-  movePaneRelative,
   removePane,
   swapPanes,
   type LayoutBounds,
@@ -179,14 +178,36 @@ interface CommandBarProps {
 
 type WorkflowStringValues = Record<string, string>;
 
-const LAYOUT_MOVE_ACTIONS = [
-  { id: "layout-move-left", label: "Move Left", direction: "left", unavailableDetail: "No column to the left" },
-  { id: "layout-move-right", label: "Move Right", direction: "right", unavailableDetail: "No column to the right" },
-  { id: "layout-move-up", label: "Move Up", direction: "above", unavailableDetail: "No pane above" },
-  { id: "layout-move-down", label: "Move Down", direction: "below", unavailableDetail: "No pane below" },
-] as const;
+const WINDOW_MODE_COMMAND_OPTIONS: Array<{
+  mode: WindowEditMode;
+  label: string;
+  detail: string;
+  query: string;
+  searchText: string;
+}> = [
+  {
+    mode: "move",
+    label: "Move Window",
+    detail: "Enter window edit mode with Tab cycling windows",
+    query: "WIN move",
+    searchText: "window mode move reposition",
+  },
+  {
+    mode: "resize",
+    label: "Resize Window",
+    detail: "Enter window edit mode with Tab cycling resize handles",
+    query: "WIN resize",
+    searchText: "window mode resize size corner divider",
+  },
+];
 
-type LayoutMoveDirection = (typeof LAYOUT_MOVE_ACTIONS)[number]["direction"];
+function parseWindowModeCommandArg(arg: string): WindowEditMode | null {
+  const normalized = arg.trim().toLowerCase();
+  if (!normalized) return null;
+  if ("move".startsWith(normalized) || normalized === "m") return "move";
+  if ("resize".startsWith(normalized) || normalized === "r") return "resize";
+  return null;
+}
 
 const commandBarLog = debugLog.createLogger("command-bar");
 const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
@@ -726,7 +747,7 @@ export function CommandBar({
   }, []);
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const { width: termWidth, height: termHeight } = useViewport();
-  const { nativePaneChrome, cellWidthPx = 8, cellHeightPx = 18, titleBarOverlay } = useUiCapabilities();
+  const { nativePaneChrome = false, cellWidthPx = 8, cellHeightPx = 18, titleBarOverlay } = useUiCapabilities();
   const availableCommands = useMemo(
     () => nativePaneChrome
       ? commands.filter((command) => command.id !== "cycle-chart-renderer")
@@ -1582,6 +1603,33 @@ export function CommandBar({
     });
   }, [dispatch, persistConfig, pluginRegistry, state.config]);
 
+  const buildWindowModeItems = useCallback((arg: string): ResultItem[] => {
+    const normalized = arg.trim().toLowerCase();
+    const exactMode = parseWindowModeCommandArg(arg);
+    const options = normalized
+      ? WINDOW_MODE_COMMAND_OPTIONS.filter((option) => (
+        option.mode === exactMode
+        || option.mode.startsWith(normalized)
+        || fuzzyFilter([option], normalized, (item) => `${item.label} ${item.detail} ${item.searchText}`).length > 0
+      ))
+      : WINDOW_MODE_COMMAND_OPTIONS;
+
+    const visibleOptions = options.length > 0 ? options : WINDOW_MODE_COMMAND_OPTIONS;
+    return visibleOptions.map((option) => ({
+      id: `window-mode:${option.mode}`,
+      label: option.label,
+      detail: option.detail,
+      category: "Config",
+      kind: "action" as const,
+      right: option.query,
+      shortcutQuery: option.query,
+      action: () => {
+        closeAll({ revertThemePreview: false });
+        pluginRegistry.openWindowMode(state.focusedPaneId ?? undefined, option.mode);
+      },
+    }));
+  }, [closeAll, pluginRegistry, state.focusedPaneId]);
+
   const buildLayoutItems = useCallback((
     query: string,
     options?: { confirmDangerousActions?: boolean },
@@ -1591,10 +1639,6 @@ export function CommandBar({
     const focusedPaneDef = focusedPane ? pluginRegistry.panes.get(focusedPane.paneId) : null;
     const dockedPaneIds = getDockedPaneIds(currentLayout);
     const layoutHistory = state.layoutHistory[state.config.activeLayoutIndex];
-    const layoutSnapshot = JSON.stringify(currentLayout);
-    const canMove = (direction: LayoutMoveDirection) => (
-      !!focusedPane && JSON.stringify(movePaneRelative(currentLayout, focusedPane.instanceId, direction)) !== layoutSnapshot
-    );
     const layoutItems: ResultItem[] = [];
 
     if (focusedPane && focusedPaneDef) {
@@ -1615,23 +1659,18 @@ export function CommandBar({
         },
       });
 
-      LAYOUT_MOVE_ACTIONS.forEach((entry) => {
-        const available = canMove(entry.direction);
-        layoutItems.push({
-          id: entry.id,
-          label: entry.label,
-          detail: available ? "Reposition the focused pane" : entry.unavailableDetail,
-          category: "Focused Pane",
-          kind: available ? "action" : "info",
-          disabled: !available,
-          action: available
-            ? () => {
-              persistLayoutChange(movePaneRelative(currentLayout, focusedPane.instanceId, entry.direction));
-              closeAll({ revertThemePreview: false });
-            }
-            : () => {},
-        });
-      });
+      layoutItems.push(...WINDOW_MODE_COMMAND_OPTIONS.map((option) => ({
+        id: `layout-window-mode:${option.mode}`,
+        label: option.label,
+        detail: option.detail,
+        category: "Focused Pane",
+        kind: "action" as const,
+        right: option.query,
+        action: () => {
+          closeAll({ revertThemePreview: false });
+          pluginRegistry.openWindowMode(focusedPane.instanceId, option.mode);
+        },
+      })));
 
       layoutItems.push({
         id: "layout-swap",
@@ -3204,6 +3243,10 @@ export function CommandBar({
       case "pane-settings":
         if (state.focusedPaneId) openPaneSettingsRoute(state.focusedPaneId);
         return;
+      case "window-mode":
+        closeAll({ revertThemePreview: false });
+        pluginRegistry.openWindowMode(state.focusedPaneId ?? undefined, parseWindowModeCommandArg(arg) ?? "move");
+        return;
       case "add-broker-account":
       case "new-portfolio":
       case "new-watchlist":
@@ -3769,6 +3812,8 @@ export function CommandBar({
       items.push(...buildPluginItems(match.arg));
     } else if (match && match.command.id === "layout") {
       items.push(...buildLayoutItems(match.arg, { confirmDangerousActions: true }));
+    } else if (match && match.command.id === "window-mode") {
+      items.push(...buildWindowModeItems(match.arg));
     } else if (match && match.command.id === "theme") {
       initialIdx = 0;
     } else if (match && match.command.id === "security-description") {
@@ -3849,6 +3894,7 @@ export function CommandBar({
     activeTickerSymbol,
     availableCommands,
     buildLayoutItems,
+    buildWindowModeItems,
     buildPaneSettingItems,
     buildPluginItems,
     createQuickLookLocalTickerCandidates,

@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { cloneLayout, createDefaultConfig, createPaneInstance } from "../types/config";
+import { cloneLayout, createDefaultConfig, createPaneInstance, type LayoutConfig } from "../types/config";
 import {
   addPaneFloating,
   applyDrop,
   floatAtRect,
+  getDockResizeTargets,
   gridlockAllPanes,
   getDockDividerLayouts,
   getDockLeafLayouts,
   getDockedPaneIds,
   getLeafRect,
+  moveFloatingPane,
+  resizeFloatingPaneFromCorner,
   simulateDrop,
 } from "./pane-manager";
 
@@ -89,8 +92,8 @@ describe("pane-manager split-tree drops", () => {
     expect(notesRect).toEqual(simulation.previewRect);
     expect(notesRect).not.toBeNull();
     expect(tickerRect).not.toBeNull();
-    expect(notesRect?.x).toBe(tickerRect?.x);
-    expect(notesRect?.width).toBe(tickerRect?.width);
+    expect(notesRect!.x).toBe(tickerRect!.x);
+    expect(notesRect!.width).toBe(tickerRect!.width);
     expect(notesRect?.y).toBeLessThan(tickerRect!.y);
   });
 
@@ -108,7 +111,7 @@ describe("pane-manager split-tree drops", () => {
 
   test("gridlock infers a matching tiled layout from arranged windows", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
-    let layout = {
+    let layout: LayoutConfig = {
       ...cloneLayout(config.layout),
       dockRoot: null,
       floating: [],
@@ -132,5 +135,77 @@ describe("pane-manager split-tree drops", () => {
     expect(getLeafRect(next, leftPane.instanceId, BOUNDS)).toEqual({ x: 0, y: 0, width: 60, height: 40 });
     expect(getLeafRect(next, topRightPane.instanceId, BOUNDS)).toEqual({ x: 60, y: 0, width: 60, height: 20 });
     expect(getLeafRect(next, bottomRightPane.instanceId, BOUNDS)).toEqual({ x: 60, y: 20, width: 60, height: 20 });
+  });
+
+  test("moves floating panes repeatedly within the terminal bounds", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const pane = createPaneInstance("chat");
+    let layout = addPaneFloating(cloneLayout(config.layout), pane, 120, 40);
+    layout = floatAtRect(layout, pane.instanceId, { x: 8, y: 4, width: 30, height: 10 });
+
+    layout = moveFloatingPane(layout, pane.instanceId, 12, 3, BOUNDS);
+    layout = moveFloatingPane(layout, pane.instanceId, 200, 200, BOUNDS);
+
+    expect(layout.floating.find((entry) => entry.instanceId === pane.instanceId)).toEqual(expect.objectContaining({
+      x: 90,
+      y: 30,
+      width: 30,
+      height: 10,
+    }));
+  });
+
+  test("resizes a floating pane from the focused corner", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
+    const pane = createPaneInstance("chat");
+    let layout = addPaneFloating(cloneLayout(config.layout), pane, 120, 40);
+    layout = floatAtRect(layout, pane.instanceId, { x: 20, y: 8, width: 40, height: 14 });
+
+    layout = resizeFloatingPaneFromCorner(layout, pane.instanceId, "top-left", -5, -2, BOUNDS);
+    expect(layout.floating.find((entry) => entry.instanceId === pane.instanceId)).toEqual(expect.objectContaining({
+      x: 15,
+      y: 6,
+      width: 45,
+      height: 16,
+    }));
+
+    layout = resizeFloatingPaneFromCorner(layout, pane.instanceId, "bottom-right", 100, 100, BOUNDS);
+    expect(layout.floating.find((entry) => entry.instanceId === pane.instanceId)).toEqual(expect.objectContaining({
+      x: 15,
+      y: 6,
+      width: 105,
+      height: 34,
+    }));
+  });
+
+  test("finds dock resize targets from the focused pane ancestors", () => {
+    const layout: LayoutConfig = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "left:main" },
+        second: {
+          kind: "split" as const,
+          axis: "vertical" as const,
+          ratio: 0.5,
+          first: { kind: "pane" as const, instanceId: "top:main" },
+          second: { kind: "pane" as const, instanceId: "bottom:main" },
+        },
+      },
+      instances: [
+        createPaneInstance("left", { instanceId: "left:main" }),
+        createPaneInstance("top", { instanceId: "top:main" }),
+        createPaneInstance("bottom", { instanceId: "bottom:main" }),
+      ],
+      floating: [],
+      detached: [],
+    };
+
+    const targets = getDockResizeTargets(layout, "bottom:main", BOUNDS);
+
+    expect(targets.map((target) => ({ path: target.path, axis: target.axis, leafBranch: target.leafBranch }))).toEqual([
+      { path: [1], axis: "vertical", leafBranch: 1 },
+      { path: [], axis: "horizontal", leafBranch: 1 },
+    ]);
   });
 });
