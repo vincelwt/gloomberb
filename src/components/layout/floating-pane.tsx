@@ -19,6 +19,7 @@ interface FloatingPaneWrapperProps {
   height: number;
   zIndex: number;
   focused: boolean;
+  windowModeSelected?: boolean;
   showActions?: boolean;
   onMouseDown?: (event: any) => void;
   onMouseMove?: (event: any) => void;
@@ -63,6 +64,7 @@ export function FloatingPaneWrapper({
   height,
   zIndex,
   focused,
+  windowModeSelected = false,
   showActions = false,
   onMouseDown,
   onMouseMove,
@@ -105,7 +107,8 @@ export function FloatingPaneWrapper({
         "data-gloom-pane-id": paneId,
         "data-floating": "true",
         "data-focused": focused ? "true" : "false",
-        style: { "--pane-border-color": focused ? colors.borderFocused : colors.border },
+        "data-window-mode-selected": windowModeSelected ? "true" : "false",
+        style: { "--pane-border-color": focused || windowModeSelected ? colors.borderFocused : colors.border },
       } : {})}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}

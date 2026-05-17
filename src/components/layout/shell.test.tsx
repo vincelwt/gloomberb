@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { TextAttributes } from "@opentui/core";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
+import { openTuiUiHost } from "../../renderers/opentui/ui-host";
 import type { ReactNode } from "react";
 import { act, createElement, useReducer } from "react";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
@@ -1024,6 +1025,63 @@ describe("Shell", () => {
       x: 10,
       y: 2,
     }));
+  });
+
+  test("shows desktop window mode status and selected window title", async () => {
+    const previousCapabilities = openTuiUiHost.capabilities;
+    openTuiUiHost.capabilities = {
+      ...previousCapabilities,
+      nativePaneChrome: true,
+      titleBarOverlay: false,
+      precisePointer: true,
+      cellWidthPx: 8,
+      cellHeightPx: 18,
+    };
+
+    try {
+      const config = createDefaultConfig("/tmp/gloomberb-shell-native-window-mode-test");
+      const desktopLayout = cloneLayout(config.layout);
+      desktopLayout.dockRoot = {
+        kind: "split",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "portfolio-list:main" },
+        second: { kind: "pane", instanceId: "ticker-detail:main" },
+      };
+      desktopLayout.floating = [];
+      const state = {
+        ...createInitialState({
+          ...config,
+          layout: desktopLayout,
+          layouts: [{ name: "Default", layout: cloneLayout(desktopLayout) }],
+        }),
+        focusedPaneId: null,
+      };
+      const registry = createShellPluginRegistry();
+
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <TestDialogProvider>
+            <Shell pluginRegistry={registry} />
+          </TestDialogProvider>
+        </AppContext>,
+        { width: 100, height: 26 },
+      );
+
+      await testSetup.renderOnce();
+      await act(async () => {
+        registry.openWindowModeFn("portfolio-list:main", "move");
+        await testSetup!.renderOnce();
+        await testSetup!.renderOnce();
+      });
+
+      const frame = testSetup.captureCharFrame();
+      expect(frame).toContain("WINDOW MOVE");
+      expect(frame).toContain("Selected: Main Portfolio");
+      expect(frame).toContain("Tab window");
+    } finally {
+      openTuiUiHost.capabilities = previousCapabilities;
+    }
   });
 
   test("cycles resize handles with Tab inside window resize mode", async () => {

@@ -51,6 +51,7 @@ import {
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
 import { colors } from "../../theme/colors";
+import { higherContrast } from "../../theme/color-utils";
 import { useThemeColors } from "../../theme/theme-context";
 import { PANE_HEADER_ACTION, PANE_HEADER_CLOSE } from "./pane-header";
 import { getNativeSurfaceManager, type NativeOccluder, type NativePaneLayer } from "../chart/native/surface-manager";
@@ -200,6 +201,9 @@ const DEFAULT_HEADER_HEIGHT = 1;
 const MENU_MIN_WIDTH = 18;
 const MENU_MAX_WIDTH = 44;
 const MENU_Z_INDEX = 10_000;
+const NATIVE_WINDOW_MODE_PANEL_MAX_WIDTH = 78;
+const NATIVE_WINDOW_MODE_PANEL_HEIGHT = 3;
+const NATIVE_WINDOW_MODE_CORNER_SIZE = 2;
 const DOCK_DIVIDER_SIZE = 1;
 const PANE_DRAG_THRESHOLD = 2;
 const PRECISE_PANE_DRAG_THRESHOLD = 0.15;
@@ -242,6 +246,32 @@ type WindowModeDirection = "left" | "right" | "up" | "down";
 const FLOATING_RESIZE_CORNERS: FloatingResizeCorner[] = ["top-left", "bottom-right"];
 const WINDOW_MODE_MOVE_STEP = { x: 2, y: 1 };
 const WINDOW_MODE_FAST_STEP = { x: 10, y: 5 };
+
+function resolveNativeWindowModePanelRect(width: number, contentHeight: number): LayoutBounds | null {
+  const availableWidth = Math.max(0, Math.floor(width));
+  const availableHeight = Math.max(0, Math.floor(contentHeight));
+  if (availableWidth <= 0 || availableHeight <= 0) return null;
+
+  const panelWidth = Math.max(1, Math.min(NATIVE_WINDOW_MODE_PANEL_MAX_WIDTH, availableWidth - 2));
+  const panelHeight = Math.min(NATIVE_WINDOW_MODE_PANEL_HEIGHT, availableHeight);
+  return {
+    x: Math.max(0, Math.floor((availableWidth - panelWidth) / 2)),
+    y: availableHeight <= panelHeight ? 0 : 1,
+    width: panelWidth,
+    height: panelHeight,
+  };
+}
+
+function resolveNativeFloatingCornerRect(rect: FloatingRect, corner: FloatingResizeCorner): LayoutBounds {
+  const size = Math.max(1, Math.min(NATIVE_WINDOW_MODE_CORNER_SIZE, rect.width, rect.height));
+  const x = corner === "top-left" || corner === "bottom-left"
+    ? rect.x
+    : Math.max(rect.x, rect.x + rect.width - size);
+  const y = corner === "top-left" || corner === "top-right"
+    ? rect.y
+    : Math.max(rect.y, rect.y + rect.height - size);
+  return { x, y, width: size, height: size };
+}
 
 export function resolvePaneManagementShortcut(
   event: Pick<KeyEventLike, "name" | "key" | "ctrl" | "meta" | "super" | "shift" | "alt">,
@@ -888,6 +918,55 @@ function windowModeHelpText(mode: WindowModeState): string {
   return "Tab handle  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc cancel";
 }
 
+function NativeWindowModeStatus({
+  mode,
+  title,
+  rect,
+  bounds,
+  dockGeometryOptions,
+}: {
+  mode: WindowModeState;
+  title: string;
+  rect: LayoutBounds;
+  bounds: LayoutBounds;
+  dockGeometryOptions: DockGeometryOptions;
+}) {
+  const lineWidth = Math.max(1, rect.width - 2);
+  const status = windowModeLabel(mode, bounds, dockGeometryOptions);
+  const pending = mode.dirty ? " - pending" : "";
+  const selected = `Selected: ${title}`;
+  const help = windowModeHelpText(mode);
+  const textColor = higherContrast("#ffffff", "#000000", colors.borderFocused);
+
+  return (
+    <Box
+      position="absolute"
+      left={rect.x}
+      top={rect.y}
+      width={rect.width}
+      height={rect.height}
+      zIndex={MENU_Z_INDEX - 1}
+      flexDirection="column"
+      paddingX={1}
+      data-gloom-role="window-mode-status"
+    >
+      <Text fg={textColor} bold selectable={false} width={lineWidth}>
+        {truncateMenuText(`${status}${pending}`, lineWidth)}
+      </Text>
+      {rect.height > 1 && (
+        <Text fg={textColor} selectable={false} width={lineWidth}>
+          {truncateMenuText(selected, lineWidth)}
+        </Text>
+      )}
+      {rect.height > 2 && (
+        <Text fg={textColor} selectable={false} width={lineWidth}>
+          {truncateMenuText(help, lineWidth)}
+        </Text>
+      )}
+    </Box>
+  );
+}
+
 function getFloatingCornerPosition(rect: FloatingRect, corner: FloatingResizeCorner): { x: number; y: number; marker: string } {
   switch (corner) {
     case "top-left":
@@ -1177,6 +1256,10 @@ export function Shell({
   ), [nativePaneChrome]);
   const bounds = useMemo<LayoutBounds>(() => ({ x: 0, y: 0, width, height: contentHeight }), [contentHeight, width]);
   const [windowMode, setWindowMode] = useState<WindowModeState | null>(null);
+  const nativeWindowModePanelRect = useMemo(
+    () => (nativePaneChrome && windowMode ? resolveNativeWindowModePanelRect(width, contentHeight) : null),
+    [contentHeight, nativePaneChrome, width, windowMode],
+  );
   const activeLayout = windowMode?.previewLayout ?? visibleLayout;
 
   const persistLayout = useCallback((nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => {
@@ -1502,6 +1585,14 @@ export function Shell({
       });
     }
 
+    if (nativeWindowModePanelRect) {
+      occluders.push({
+        id: "window-mode:status",
+        rect: nativeWindowModePanelRect,
+        zIndex: MENU_Z_INDEX - 1,
+      });
+    }
+
     if (commandBarNativeOccluder) {
       occluders.push({
         id: "command-bar:panel",
@@ -1511,7 +1602,7 @@ export function Shell({
     }
 
     return occluders;
-  }, [activeHoverOverlay, activePaneDrag, commandBarNativeOccluder, dragFloatingRect, effectiveDockPreview, menuState]);
+  }, [activeHoverOverlay, activePaneDrag, commandBarNativeOccluder, dragFloatingRect, effectiveDockPreview, menuState, nativeWindowModePanelRect]);
   const nativeDockDividers = useMemo(
     () => resolveNativeDockDividers(dockDividerLayouts, dividerPreview),
     [dividerPreview, dockDividerLayouts],
@@ -1913,6 +2004,27 @@ export function Shell({
     focusPane(paneId);
   }, [focusPane, menuState]);
 
+  const selectWindowModePane = useCallback((paneId: string) => {
+    setWindowMode((current) => {
+      if (!current || current.paneId === paneId) return current;
+      return {
+        ...current,
+        paneId,
+        focus: normalizeWindowModeFocus(current.focus, current.previewLayout, paneId, current.mode, bounds, dockGeometryOptions),
+      };
+    });
+  }, [bounds, dockGeometryOptions]);
+
+  const handleNativePaneMouseDown = useCallback((paneId: string, event: ShellMouseEvent) => {
+    if (windowMode) {
+      selectWindowModePane(paneId);
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
+    focusNativePane(paneId);
+  }, [focusNativePane, selectWindowModePane, windowMode]);
+
   const startNativeFloatingDrag = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
     if (windowMode) return;
@@ -2046,6 +2158,7 @@ export function Shell({
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) return null;
         const focused = focusedPaneId === leaf.instanceId && (!overlayOpen || menuState?.paneId === leaf.instanceId);
+        const windowModeSelected = windowMode?.paneId === leaf.instanceId;
         const showActions = focused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId;
         const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(leaf.rect.width) : getPaneBodyWidth(leaf.rect.width);
         return (
@@ -2071,8 +2184,9 @@ export function Shell({
                     width={leaf.rect.width}
                     height={leaf.rect.height}
                     showActions={showActions}
+                    windowModeSelected={windowModeSelected}
                     footer={footer}
-                    onMouseDown={nativePaneChrome ? () => focusNativePane(leaf.instanceId) : undefined}
+                    onMouseDown={nativePaneChrome ? (event) => handleNativePaneMouseDown(leaf.instanceId, event) : undefined}
                     onMouseMove={() => setHoveredPaneIfChanged(leaf.instanceId)}
                     onHeaderMouseDown={nativePaneChrome ? (event) => startNativeDockedDrag(leaf.instanceId, leaf.rect, event) : undefined}
                     onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
@@ -2101,6 +2215,7 @@ export function Shell({
           ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
           : rect;
         const focused = focusedPaneId === pane.instance.instanceId && (!overlayOpen || menuState?.paneId === pane.instance.instanceId);
+        const windowModeSelected = windowMode?.paneId === pane.instance.instanceId;
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuState?.paneId === pane.instance.instanceId;
         const bodyWidth = nativePaneChrome ? getNativePaneBodyWidth(preview.width) : getPaneBodyWidth(preview.width);
         return (
@@ -2120,9 +2235,10 @@ export function Shell({
                   height={preview.height}
                   zIndex={pane.floating?.zIndex ?? 50}
                   focused={focused}
+                  windowModeSelected={windowModeSelected}
                   showActions={showActions}
                   footer={footer}
-                  onMouseDown={nativePaneChrome ? () => focusNativePane(pane.instance.instanceId) : undefined}
+                  onMouseDown={nativePaneChrome ? (event) => handleNativePaneMouseDown(pane.instance.instanceId, event) : undefined}
                   onMouseMove={() => setHoveredPaneIfChanged(pane.instance.instanceId)}
                   onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
                   onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
@@ -2265,6 +2381,40 @@ export function Shell({
               {bannerText}
             </Text>
           </Box>
+        );
+      })()}
+
+      {(() => {
+        if (!windowMode || !nativePaneChrome || windowMode.focus.kind !== "floating-resize") return null;
+        const floatingPane = visibleFloatingPanes.find((entry) => entry.pane.instance.instanceId === windowMode.paneId);
+        if (!floatingPane) return null;
+        const cornerRect = resolveNativeFloatingCornerRect(floatingPane.rect, windowMode.focus.corner);
+        return (
+          <Box
+            position="absolute"
+            left={cornerRect.x}
+            top={cornerRect.y}
+            width={cornerRect.width}
+            height={cornerRect.height}
+            zIndex={(floatingPane.pane.floating?.zIndex ?? 50) + 3}
+            backgroundColor={colors.borderFocused}
+            data-gloom-role="window-mode-corner"
+            data-corner={windowMode.focus.corner}
+          />
+        );
+      })()}
+
+      {(() => {
+        if (!windowMode || !nativePaneChrome || !nativeWindowModePanelRect) return null;
+        const pane = paneMap.get(windowMode.paneId);
+        return (
+          <NativeWindowModeStatus
+            mode={windowMode}
+            title={pane ? getPaneTitle(pane) : "Window"}
+            rect={nativeWindowModePanelRect}
+            bounds={bounds}
+            dockGeometryOptions={dockGeometryOptions}
+          />
         );
       })()}
 
