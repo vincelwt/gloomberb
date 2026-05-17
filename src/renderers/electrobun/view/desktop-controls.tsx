@@ -610,7 +610,7 @@ export function WebPageStackView({
     <Box flexDirection="column" flexGrow={1} overflow="hidden">
       <Box
         flexDirection="row"
-        alignItems="center"
+        alignItems="flex-start"
         paddingX={1}
         gap={1}
         flexShrink={0}
@@ -645,12 +645,13 @@ export function WebPageStackView({
             <Text
               fg={colors.textBright}
               attributes={TextAttributes.BOLD}
+              wrapText
               style={{
                 display: "block",
                 fontWeight: 700,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                overflow: "visible",
+                overflowWrap: "break-word",
+                whiteSpace: "normal",
               }}
             >
               {detailTitle}
