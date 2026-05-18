@@ -37,7 +37,7 @@ function loadChartRequests(
   options: { forceRefresh?: boolean } = {},
 ): void {
   for (const request of requests) {
-    void coordinator.loadChart(request, options);
+    void coordinator.loadChart(request, options).catch(() => {});
   }
 }
 
@@ -113,7 +113,7 @@ export function useTickerFinancials(symbol: string | null | undefined, ticker: T
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !instrument) return;
     const timeoutId = setTimeout(() => {
-      void coordinator.loadSnapshot(instrument);
+      void coordinator.loadSnapshot(instrument).catch(() => {});
     }, TICKER_FINANCIALS_LOAD_DELAY_MS);
     return () => clearTimeout(timeoutId);
   }, [instrument?.brokerId, instrument?.brokerInstanceId, instrument?.exchange, instrument?.instrument?.conId, instrument?.symbol]);
@@ -169,7 +169,7 @@ export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerR
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !instrument) return;
-    void coordinator.loadQuote(instrument);
+    void coordinator.loadQuote(instrument).catch(() => {});
   }, [instrument?.brokerId, instrument?.brokerInstanceId, instrument?.exchange, instrument?.instrument?.conId, instrument?.symbol]);
 
   return entry;
@@ -200,7 +200,7 @@ export function useChartQuery(
 
     const forceRefresh = refreshIntervalMs > 0 && !wasActiveRef.current;
     wasActiveRef.current = true;
-    void coordinator.loadChart(request, { forceRefresh });
+    void coordinator.loadChart(request, { forceRefresh }).catch(() => {});
   }, [appActive, key, refreshIntervalMs]);
 
   useEffect(() => {
@@ -208,7 +208,7 @@ export function useChartQuery(
     if (!coordinator || !request || !appActive || refreshIntervalMs <= 0) return;
 
     const interval = setInterval(() => {
-      void coordinator.loadChart(request, { forceRefresh: true });
+      void coordinator.loadChart(request, { forceRefresh: true }).catch(() => {});
     }, refreshIntervalMs);
     return () => clearInterval(interval);
   }, [appActive, key, refreshIntervalMs]);
@@ -279,7 +279,7 @@ export function useOptionsQuery(request: OptionsRequest | null | undefined): Que
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
-    void coordinator.loadOptions(request);
+    void coordinator.loadOptions(request).catch(() => {});
   }, [requestKey]);
 
   return entry;
@@ -294,7 +294,7 @@ export function useSecFilingsQuery(request: SecFilingsRequest | null | undefined
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !request) return;
-    void coordinator.loadSecFilings(request);
+    void coordinator.loadSecFilings(request).catch(() => {});
   }, [requestKey]);
 
   return entry;
@@ -309,7 +309,7 @@ export function useSecFilingContent(filing: SecFilingItem | null | undefined): Q
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !filing) return;
-    void coordinator.loadSecFilingContent(filing);
+    void coordinator.loadSecFilingContent(filing).catch(() => {});
   }, [key]);
 
   return entry;
@@ -324,7 +324,7 @@ export function useArticleSummary(url: string | null | undefined): QueryEntry<st
   useEffect(() => {
     const coordinator = getSharedMarketDataCoordinator();
     if (!coordinator || !url) return;
-    void coordinator.loadArticleSummary(url);
+    void coordinator.loadArticleSummary(url).catch(() => {});
   }, [url]);
 
   return entry;

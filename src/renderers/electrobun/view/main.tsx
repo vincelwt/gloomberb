@@ -32,6 +32,7 @@ const appRootElement = rootElement;
 
 const root = createRoot(appRootElement);
 const bootLog = debugLog.createLogger("electrobun-web-boot");
+let appMounted = false;
 
 appRootElement.tabIndex = -1;
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
@@ -47,7 +48,10 @@ function renderFatalError(error: unknown, details?: string, title = "Gloomberb f
   );
 }
 
-window.__gloomRenderFatalError = (error, details) => {
+window.__gloomRenderFatalError = (error, details, source) => {
+  if (appMounted && source === "unhandledrejection") {
+    return;
+  }
   renderFatalError(error, details, "Gloomberb crashed");
 };
 
@@ -104,6 +108,7 @@ async function boot() {
         </UiHostProvider>
       </ElectrobunErrorBoundary>,
     );
+    appMounted = true;
   });
   requestStartupFocus();
   bootLog.info("root render scheduled", {

@@ -85,9 +85,9 @@ function renderElectrobunViewHtml(entrySrc: string, stylesheet: string): string 
         '<pre></pre>',
         '</div>',
       ].join("");
-      const renderBootstrapError = (error, details = "") => {
+      const renderBootstrapError = (error, details = "", source = "bootstrap-error") => {
         if (typeof window.__gloomRenderFatalError === "function") {
-          window.__gloomRenderFatalError(error, details);
+          window.__gloomRenderFatalError(error, details, source);
           return;
         }
         const root = document.getElementById("root");
@@ -111,8 +111,9 @@ function renderElectrobunViewHtml(entrySrc: string, stylesheet: string): string 
       window.addEventListener("error", (event) => renderBootstrapError(
         event.error || event.message,
         [event.filename, event.lineno, event.colno].filter(Boolean).join(":"),
+        "error",
       ));
-      window.addEventListener("unhandledrejection", (event) => renderBootstrapError(event.reason));
+      window.addEventListener("unhandledrejection", (event) => renderBootstrapError(event.reason, "", "unhandledrejection"));
       document.getElementById("root").innerHTML = '<div class="gloom-loading">Booting Gloomberb renderer...</div>';
     </script>
     <script type="module" src="${entrySrc}"></script>

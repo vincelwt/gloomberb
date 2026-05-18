@@ -49,4 +49,24 @@ describe("normalizePriceHistory", () => {
       ),
     ).toBe(false);
   });
+
+  test("keeps Friday short-range history usable while the exchange is closed", () => {
+    expect(
+      isPriceHistoryStaleForCurrentWindow(
+        [{ date: new Date("2026-05-15T15:30:00Z"), close: 67 }],
+        Date.parse("2026-05-17T12:00:00Z"),
+        { exchange: "NASDAQ" },
+      ),
+    ).toBe(false);
+  });
+
+  test("still treats old always-open market history as stale", () => {
+    expect(
+      isPriceHistoryStaleForCurrentWindow(
+        [{ date: new Date("2026-05-15T15:30:00Z"), close: 67 }],
+        Date.parse("2026-05-17T12:00:00Z"),
+        { exchange: "CCC" },
+      ),
+    ).toBe(true);
+  });
 });

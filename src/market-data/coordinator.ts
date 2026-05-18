@@ -74,7 +74,10 @@ function isIntradayChartRequest(request: ChartRequest): boolean {
 
 function normalizeFreshChartData(points: PricePoint[] | null | undefined, request: ChartRequest): PricePoint[] {
   const normalized = normalizePriceHistory(points ?? []);
-  if (isIntradayChartRequest(request) && isPriceHistoryStaleForCurrentWindow(normalized)) {
+  if (
+    isIntradayChartRequest(request)
+    && isPriceHistoryStaleForCurrentWindow(normalized, Date.now(), { exchange: request.instrument.exchange })
+  ) {
     return [];
   }
   return normalized;
@@ -502,8 +505,8 @@ export class MarketDataCoordinator {
 
   prefetchTicker(instrument: InstrumentRef | null | undefined): void {
     if (!instrument) return;
-    void this.loadSnapshot(instrument);
-    void this.loadChart(createBaselineChartRequest(instrument));
+    void this.loadSnapshot(instrument).catch(() => {});
+    void this.loadChart(createBaselineChartRequest(instrument)).catch(() => {});
   }
 
   private runSingleFlight<T>(key: string, task: () => Promise<T>): Promise<T> {
