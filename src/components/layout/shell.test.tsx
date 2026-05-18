@@ -990,6 +990,60 @@ describe("Shell", () => {
     }));
   });
 
+  test("returns to window selection after commit for editing another window", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-repeat-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = null;
+    floatingLayout.floating = [
+      { instanceId: "portfolio-list:main", x: 2, y: 1, width: 32, height: 10, zIndex: 50 },
+      { instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 },
+    ];
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: floatingLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(floatingLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "enter" });
+
+    expect(testSetup.captureCharFrame()).toContain("WINDOW MOVE");
+
+    await emitKeypress({ name: "tab" });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "enter" });
+
+    const updates = actions.filter((action) => action.type === "UPDATE_LAYOUT");
+    expect(updates).toHaveLength(2);
+    expect(updates[0]?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
+      x: 10,
+      y: 2,
+    }));
+    expect(updates[1]?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
+      x: 10,
+      y: 2,
+    }));
+    expect(updates[1]?.layout.floating.find((entry: any) => entry.instanceId === "portfolio-list:main")).toEqual(expect.objectContaining({
+      x: 4,
+      y: 1,
+    }));
+  });
+
   test("cycles windows with Tab while staying in window move mode", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-cycle-test");
     const floatingLayout = cloneLayout(config.layout);

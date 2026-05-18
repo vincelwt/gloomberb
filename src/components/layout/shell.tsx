@@ -913,9 +913,9 @@ function windowModeLabel(mode: WindowModeState, bounds: LayoutBounds, dockGeomet
 
 function windowModeHelpText(mode: WindowModeState): string {
   if (mode.mode === "move") {
-    return "Tab window  r resize  arrows/hjkl move  Shift fast  Enter commit  Esc cancel";
+    return "Tab window  r resize  arrows/hjkl move  Shift fast  Enter commit  Esc exit/cancel";
   }
-  return "Tab handle  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc cancel";
+  return "Tab handle  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
 }
 
 function NativeWindowModeStatus({
@@ -1319,12 +1319,19 @@ export function Shell({
 
   const commitWindowMode = useCallback(() => {
     if (!windowMode) return;
+    const committedLayout = windowMode.previewLayout;
     if (windowMode.dirty) {
-      persistLayout(windowMode.previewLayout);
-      focusPane(windowMode.paneId);
+      persistLayout(committedLayout);
     }
-    setWindowMode(null);
-  }, [focusPane, persistLayout, windowMode]);
+    focusPane(windowMode.paneId);
+    setWindowMode({
+      paneId: windowMode.paneId,
+      previewLayout: committedLayout,
+      mode: "move",
+      focus: normalizeWindowModeFocus({ kind: "move" }, committedLayout, windowMode.paneId, "move", bounds, dockGeometryOptions),
+      dirty: false,
+    });
+  }, [bounds, dockGeometryOptions, focusPane, persistLayout, windowMode]);
 
   const openLayoutMenu = useCallback(() => {
     pluginRegistry.openCommandBar("LAY ");
