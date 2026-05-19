@@ -1193,7 +1193,7 @@ describe("Shell", () => {
       const frame = testSetup.captureCharFrame();
       expect(frame).toContain("WINDOW MOVE");
       expect(frame).toContain("WINDOW MOVE · Main Portfolio");
-      expect(frame).toContain("Tab/n window");
+      expect(frame).toContain("Tab/w window");
     } finally {
       openTuiUiHost.capabilities = previousCapabilities;
     }
@@ -1221,7 +1221,7 @@ describe("Shell", () => {
     }));
   });
 
-  test("cycles windows with n while Tab stays on resize handles", async () => {
+  test("cycles windows with w while Tab stays on resize handles", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-shell-window-resize-window-cycle-test");
     const floatingLayout = cloneLayout(config.layout);
     floatingLayout.dockRoot = null;
@@ -1236,7 +1236,7 @@ describe("Shell", () => {
     await emitKeypress({ name: "m", ctrl: true, shift: true });
     await emitKeypress({ name: "r" });
     await emitKeypress({ name: "tab" });
-    await emitKeypress({ name: "n" });
+    await emitKeypress({ name: "w" });
     await emitKeypress({ name: "right" });
     await emitKeypress({ name: "enter" });
 

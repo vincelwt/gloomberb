@@ -457,14 +457,14 @@ export function windowEditStatusLine(
 export function windowEditHelpText(state: WindowEditState): string {
   if (state.mode === "move") {
     if (state.focus.kind === "dock-move") {
-      return "arrows/hjkl choose side  m retarget  Tab/n window  d float  r resize  Enter commit  Esc exit/cancel";
+      return "arrows/hjkl choose side  m retarget  Tab/w window  d float  r resize  Enter commit  Esc exit/cancel";
     }
-    return "Tab/n window  d dock/float  r resize  arrows/hjkl target/move  Shift fast  Enter commit  Esc exit/cancel";
+    return "Tab/w window  d dock/float  r resize  arrows/hjkl target/move  Shift fast  Enter commit  Esc exit/cancel";
   }
   if (state.focus.kind === "floating-resize") {
-    return "Tab corner  n window  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
+    return "Tab corner  w window  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
   }
-  return "arrows/hjkl move divider  Tab divider  n window  m move  Shift fast  Enter commit  Esc exit/cancel";
+  return "arrows/hjkl move divider  Tab divider  w window  m move  Shift fast  Enter commit  Esc exit/cancel";
 }
 
 export function resolveWindowEditDockMovePreview(

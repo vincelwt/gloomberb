@@ -1188,7 +1188,7 @@ export function Shell({
           };
         });
       }
-    } else if (name === "n") {
+    } else if (name === "w") {
       setWindowMode((current) => current
         ? cycleWindowEditPane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
         : current);
