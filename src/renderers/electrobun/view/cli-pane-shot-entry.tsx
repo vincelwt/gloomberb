@@ -7,7 +7,9 @@ import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { UiHostProvider, type RendererHost } from "../../../ui/host";
 import { WebInputHostProvider } from "./input-host";
+import { WebDialogHostProvider } from "./dialog-host";
 import { webNativeRenderer } from "./native-renderer";
+import { WebToastHostProvider } from "./toast-host";
 import { webUiHost } from "./ui-host";
 import { getLoadablePlugins } from "../../../plugins/catalog";
 import { setSharedMarketDataForTests } from "../../../plugins/registry";
@@ -364,17 +366,21 @@ function render() {
   createRoot(rootElement).render(
     <UiHostProvider ui={webUiHost} renderer={rendererHost} nativeRenderer={webNativeRenderer}>
       <WebInputHostProvider>
-        <AppProvider config={payload.config} desktopSnapshot={{
-          config: payload.config,
-          paneState: payload.paneState,
-          focusedPaneId: payload.paneId,
-          activePanel: "right",
-          statusBarVisible: false,
-        }}>
-          <HydratePayload payload={payload}>
-            <ShotPane payload={payload} />
-          </HydratePayload>
-        </AppProvider>
+        <WebToastHostProvider>
+          <WebDialogHostProvider>
+            <AppProvider config={payload.config} desktopSnapshot={{
+              config: payload.config,
+              paneState: payload.paneState,
+              focusedPaneId: payload.paneId,
+              activePanel: "right",
+              statusBarVisible: false,
+            }}>
+              <HydratePayload payload={payload}>
+                <ShotPane payload={payload} />
+              </HydratePayload>
+            </AppProvider>
+          </WebDialogHostProvider>
+        </WebToastHostProvider>
       </WebInputHostProvider>
     </UiHostProvider>,
   );

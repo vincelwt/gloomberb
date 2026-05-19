@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { paneFunctionTestInternals } from "./pane-functions";
 
-const { parsePaneFunctionArgs, normalizeLookupToken, parseArgumentsOption } = paneFunctionTestInternals;
+const { parsePaneFunctionArgs, normalizeLookupToken, parseArgumentsOption, optionPaneState } = paneFunctionTestInternals;
 
 describe("pane function CLI args", () => {
   test("parses target, argument, output, size, and pane options", () => {
@@ -39,6 +39,27 @@ describe("pane function CLI args", () => {
     expect(parseArgumentsOption("range-preset=1Y, axis_mode=percent")).toEqual({
       rangePreset: "1Y",
       axisMode: "percent",
+    });
+  });
+
+  test("maps generic screenshot options into pane runtime state", () => {
+    expect(optionPaneState({
+      activeTab: "chart",
+      state: "cursorSymbol=NVDA,customFlag=true",
+    })).toEqual({
+      activeTabId: "chart",
+      cursorSymbol: "NVDA",
+      customFlag: true,
+    });
+  });
+
+  test("maps financial statement options into reusable pane state", () => {
+    expect(optionPaneState({
+      statement: "balance sheet",
+      period: "quarterly",
+    })).toEqual({
+      financialSubTab: "balance",
+      financialPeriod: "quarterly",
     });
   });
 });

@@ -2,7 +2,7 @@ import { Box, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePaneTicker } from "../../../state/app-context";
+import { usePaneStateValue, usePaneTicker } from "../../../state/app-context";
 import {
   DataTableView,
   Tabs,
@@ -29,6 +29,8 @@ import {
   formatFinancialHeader,
   formatFinancialValue,
   resolveFinancialPeriod,
+  resolveFinancialPeriodOption,
+  resolveFinancialSubTabKey,
   statementMetricValue,
   type FinancialPeriod,
   type FinancialTableRow,
@@ -74,8 +76,12 @@ export function ResolvedFinancialsTab({
   const quarterlyStatements = financials?.quarterlyStatements ?? [];
   const hasAnnualStatements = annualStatements.length > 0;
   const hasQuarterlyStatements = quarterlyStatements.length > 0;
-  const [period, setPeriod] = useState<FinancialPeriod>(hasAnnualStatements ? "annual" : "quarterly");
-  const [subTabIdx, setSubTabIdx] = useState(0);
+  const fallbackPeriod: FinancialPeriod = hasAnnualStatements ? "annual" : "quarterly";
+  const [storedPeriod, setStoredPeriod] = usePaneStateValue<FinancialPeriod>("financialPeriod", fallbackPeriod);
+  const period = resolveFinancialPeriodOption(storedPeriod) ?? fallbackPeriod;
+  const [storedSubTab, setStoredSubTab] = usePaneStateValue<string>("financialSubTab", FINANCIAL_SUB_TABS[0]!.key);
+  const resolvedSubTabKey = resolveFinancialSubTabKey(storedSubTab);
+  const subTabIdx = Math.max(0, FINANCIAL_SUB_TABS.findIndex((tab) => tab.key === resolvedSubTabKey));
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     () => new Set(collectDefaultCollapsedGroupIds(FINANCIAL_SUB_TABS.flatMap((tab) => tab.rows))),
   );
@@ -87,6 +93,15 @@ export function ResolvedFinancialsTab({
   const currentGroupIds = useMemo(() => collectGroupIds(subTab.rows), [subTab]);
   const hasCollapsedCurrentGroup = currentGroupIds.some((id) => collapsedGroups.has(id));
   const hasExpandedCurrentGroup = currentGroupIds.some((id) => !collapsedGroups.has(id));
+  const setPeriod = useCallback((next: FinancialPeriod | ((current: FinancialPeriod) => FinancialPeriod)) => {
+    const value = typeof next === "function" ? next(period) : next;
+    setStoredPeriod(value);
+  }, [period, setStoredPeriod]);
+  const setSubTabIdx = useCallback((next: number | ((current: number) => number)) => {
+    const rawIndex = typeof next === "function" ? next(subTabIdx) : next;
+    const boundedIndex = ((rawIndex % FINANCIAL_SUB_TABS.length) + FINANCIAL_SUB_TABS.length) % FINANCIAL_SUB_TABS.length;
+    setStoredSubTab(FINANCIAL_SUB_TABS[boundedIndex]?.key ?? FINANCIAL_SUB_TABS[0]!.key);
+  }, [setStoredSubTab, subTabIdx]);
   const togglePeriod = useCallback(() => {
     if (!hasAnnualStatements && !hasQuarterlyStatements) return;
     setPeriod((current) => {

@@ -15,7 +15,9 @@ import { slugifyName } from "../utils/slugify";
 import {
   buildFinancialTableModel,
   formatFinancialHeader,
+  FINANCIAL_SUB_TABS,
   resolveFinancialPeriodOption,
+  resolveFinancialSubTabKey,
 } from "../plugins/builtin/ticker-detail/financials-model";
 import { renderDesktopPaneScreenshot, type DesktopPaneShotPayload } from "./desktop-pane-shot";
 import type { PaneRuntimeState } from "../core/state/app-state";
@@ -47,8 +49,8 @@ interface PaneFunctionCatalog {
   destroy(): void;
 }
 
-const DEFAULT_SHOT_WIDTH = 1440;
-const DEFAULT_SHOT_HEIGHT = 900;
+const DEFAULT_SHOT_WIDTH = 1280;
+const DEFAULT_SHOT_HEIGHT = 720;
 const MAX_SHOT_WIDTH = 2400;
 const MIN_SHOT_WIDTH = 720;
 const MAX_SHOT_HEIGHT = 1800;
@@ -137,11 +139,12 @@ function optionString(options: Record<string, string | true>, key: string): stri
   return value === true ? undefined : value;
 }
 
+const RESERVED_OPTION_KEYS = new Set(["output", "out", "o", "width", "height", "arguments", "state"]);
+
 function optionSettings(options: Record<string, string | true>): Record<string, unknown> {
-  const ignored = new Set(["output", "out", "o", "width", "height", "arguments"]);
   const settings: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(options)) {
-    if (ignored.has(key)) continue;
+    if (RESERVED_OPTION_KEYS.has(key) || key.startsWith("state.")) continue;
     settings[key] = value === true ? true : coerceSettingValue(value);
   }
   return settings;
@@ -183,6 +186,55 @@ function buildCreateOptions(
 
   if (Object.keys(values).length > 0) createOptions.values = values;
   return createOptions;
+}
+
+function normalizeFinancialSubTabOption(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (!normalized) return undefined;
+  if (normalized === "cf" || normalized === "cashflows") return "cashflow";
+  if (normalized === "bs" || normalized === "balancesheet") return "balance";
+  return FINANCIAL_SUB_TABS.find((tab) => (
+    tab.key.toLowerCase() === normalized
+    || tab.name.toLowerCase().replace(/[\s_-]+/g, "") === normalized
+  ))?.key;
+}
+
+function optionPaneState(options: Record<string, string | true>): PaneRuntimeState {
+  const state: PaneRuntimeState = {};
+  const rawState = optionString(options, "state");
+  if (rawState) {
+    for (const [key, value] of Object.entries(parseArgumentsOption(rawState))) {
+      state[key] = coerceSettingValue(value);
+    }
+  }
+
+  for (const [key, value] of Object.entries(options)) {
+    if (!key.startsWith("state.") || value === true) continue;
+    state[key.slice("state.".length)] = coerceSettingValue(value);
+  }
+
+  const activeTab = optionString(options, "activeTabId")
+    ?? optionString(options, "activeTab")
+    ?? optionString(options, "paneTab");
+  if (activeTab) state.activeTabId = activeTab;
+
+  const tab = optionString(options, "tab");
+  const financialTab = normalizeFinancialSubTabOption(
+    optionString(options, "statement")
+      ?? optionString(options, "financialStatement")
+      ?? tab,
+  );
+  if (financialTab) {
+    state.financialSubTab = financialTab;
+  } else if (tab) {
+    state.activeTabId = tab;
+  }
+
+  const period = resolveFinancialPeriodOption(optionString(options, "period") ?? optionString(options, "financialPeriod"));
+  if (period) state.financialPeriod = period;
+
+  return state;
 }
 
 function buildTemplateContext(context: MarketContext, symbol: string | null) {
@@ -646,15 +698,18 @@ async function buildDesktopShotPayload(
   resolved: ResolvedPaneFunction,
   context: MarketContext,
   rawArg: string,
+  options: Record<string, string | true>,
   widthPx: number,
   heightPx: number,
 ): Promise<DesktopPaneShotPayload> {
   const widthCells = Math.max(1, Math.round(widthPx / DESKTOP_CELL_WIDTH_PX));
   const heightCells = Math.max(1, Math.round(heightPx / DESKTOP_CELL_HEIGHT_PX));
+  const initialPaneState = optionPaneState(options);
+  if (isFinancialAnalysisFunction(resolved) && !initialPaneState.activeTabId) {
+    initialPaneState.activeTabId = "financials";
+  }
   const paneState: Record<string, PaneRuntimeState> = {
-    [resolved.instance.instanceId]: {
-      ...(isFinancialAnalysisFunction(resolved) ? { activeTabId: "financials" } : {}),
-    },
+    [resolved.instance.instanceId]: initialPaneState,
   };
   const layout = {
     dockRoot: null,
@@ -712,6 +767,7 @@ async function renderDesktopShot({
   outputPath,
   width,
   height,
+  options,
 }: {
   resolved: ResolvedPaneFunction;
   context: MarketContext;
@@ -719,9 +775,10 @@ async function renderDesktopShot({
   outputPath: string;
   width: number;
   height: number;
+  options: Record<string, string | true>;
 }): Promise<void> {
   await mkdir(dirname(outputPath), { recursive: true });
-  const payload = await buildDesktopShotPayload(resolved, context, rawArg, width, height);
+  const payload = await buildDesktopShotPayload(resolved, context, rawArg, options, width, height);
   await renderDesktopPaneScreenshot(payload, outputPath);
 }
 
@@ -769,6 +826,7 @@ export async function runPaneScreenshot(args: string[], ctx: CliCommandContext) 
         outputPath,
         width: parsed.width,
         height: parsed.height,
+        options: parsed.options,
       });
       console.log(`Saved screenshot to ${outputPath}`);
     });
@@ -792,4 +850,5 @@ export const paneFunctionTestInternals = {
   parsePaneFunctionArgs,
   normalizeLookupToken,
   parseArgumentsOption,
+  optionPaneState,
 };
