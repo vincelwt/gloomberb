@@ -81,9 +81,10 @@ function trackShotWork<T>(promise: Promise<T>): Promise<T> {
 
 function wrapTrackedResponse(response: Response): Response {
   return new Proxy(response, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (!TRACKED_RESPONSE_METHODS.has(property) || typeof value !== "function") return value;
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (!TRACKED_RESPONSE_METHODS.has(property)) return value.bind(target);
       return (...args: unknown[]) => trackShotWork(Promise.resolve(value.apply(target, args)));
     },
   });
