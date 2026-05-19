@@ -78,6 +78,7 @@ const DEFAULT_CHAT_CHANNEL_ID = "everyone";
 const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 const SCROLL_BOTTOM_THRESHOLD_PX = 2;
+const PROFILE_POPOVER_CLOSE_DELAY_MS = 40;
 const USERNAME_MENTION_TOKEN = /@([A-Za-z][A-Za-z0-9_]{2,29})/g;
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
@@ -513,6 +514,11 @@ function getChatMessageRenderState({
   };
 }
 
+function hasPublicChatProfileInfo(user: ChatUserSummary): boolean {
+  if (user.profilePublic === false) return false;
+  return Boolean(user.bio?.trim() || user.title?.trim() || user.company?.trim());
+}
+
 function ResponsiveTickerBadgeText({
   text,
   catalog,
@@ -520,6 +526,7 @@ function ResponsiveTickerBadgeText({
   openTicker,
   userByUsername,
   onUserHover,
+  onUserHoverEnd,
 }: {
   text: string;
   catalog: Record<string, InlineTickerCatalogEntry>;
@@ -527,6 +534,7 @@ function ResponsiveTickerBadgeText({
   openTicker: (symbol: string) => void;
   userByUsername?: Map<string, ChatUserSummary>;
   onUserHover?: (user: ChatUserSummary) => void;
+  onUserHoverEnd?: () => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const tokens = useMemo(() => tokenizeInlineContent(text), [text]);
@@ -577,6 +585,9 @@ function ResponsiveTickerBadgeText({
           backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
           onMouseMove={() => {
             if (user) onUserHover?.(user);
+          }}
+          onMouseOut={() => {
+            if (user) onUserHoverEnd?.();
           }}
         >
           <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
@@ -645,6 +656,7 @@ interface ChatMessageBaseProps {
   userByUsername: Map<string, ChatUserSummary>;
   openTicker: (symbol: string) => void;
   onUserHover: (user: ChatUserSummary) => void;
+  onUserHoverEnd: () => void;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
   jumpToMessage: (messageId: string) => void;
 }
@@ -668,6 +680,7 @@ function TerminalChatMessage({
   userByUsername,
   openTicker,
   onUserHover,
+  onUserHoverEnd,
   beginReplyTo,
   jumpToMessage,
   setHoveredIdx,
@@ -718,6 +731,7 @@ function TerminalChatMessage({
             fg={state.authorColor}
             attributes={state.authorAttributes}
             onMouseMove={() => onUserHover(msg.user)}
+            onMouseOut={onUserHoverEnd}
           >
             {msg.user.username ?? "anon"}
           </Text>
@@ -754,6 +768,7 @@ function TerminalChatMessage({
               openTicker={openTicker}
               userByUsername={userByUsername}
               onUserHover={onUserHover}
+              onUserHoverEnd={onUserHoverEnd}
             />
           </Box>
           {lineIndex === 0 && showGroupedReplyAction && (
@@ -783,6 +798,7 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
   userByUsername,
   openTicker,
   onUserHover,
+  onUserHoverEnd,
   beginReplyTo,
   jumpToMessage,
   registerMessageElement,
@@ -854,6 +870,7 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
             fg={state.authorColor}
             attributes={state.authorAttributes}
             onMouseMove={() => onUserHover(msg.user)}
+            onMouseOut={onUserHoverEnd}
             style={{ cursor: "default" }}
           >
             {msg.user.username ?? "anon"}
@@ -893,6 +910,7 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
             openTicker={openTicker}
             userByUsername={userByUsername}
             onUserHover={onUserHover}
+            onUserHoverEnd={onUserHoverEnd}
           />
         </Box>
         {showGroupedReplyAction && (
@@ -923,15 +941,18 @@ function UserProfilePopover({
   currentUserId,
   onDirectMessage,
   onClose,
+  onKeepOpen,
 }: {
   user: ChatUserSummary;
   width: number;
   currentUserId?: string | null;
   onDirectMessage: (user: ChatUserSummary) => void;
   onClose: () => void;
+  onKeepOpen: () => void;
 }) {
   const popoverWidth = Math.max(24, Math.min(38, width - 4));
   const meta = [user.title, user.company].filter(Boolean).join(" · ");
+  const bio = user.bio?.trim();
   const canDm = user.id === currentUserId || user.acceptUnknownDms !== false;
 
   return (
@@ -945,6 +966,7 @@ function UserProfilePopover({
       border
       borderColor={colors.borderFocused}
       paddingX={1}
+      onMouseMove={onKeepOpen}
       onMouseOut={onClose}
       style={{ zIndex: 4 }}
     >
@@ -963,9 +985,11 @@ function UserProfilePopover({
         />
       </Box>
       {meta ? <Text fg={colors.textDim}>{truncateChannelLabel(meta, popoverWidth - 2)}</Text> : null}
-      <Text fg={colors.text} wrapText width={popoverWidth - 2}>
-        {user.bio?.trim() || "No public bio."}
-      </Text>
+      {bio ? (
+        <Text fg={colors.text} wrapText width={popoverWidth - 2}>
+          {bio}
+        </Text>
+      ) : null}
     </Box>
   );
 }
@@ -1344,6 +1368,37 @@ export function ChatContent({
     return map;
   }, [channels, messages]);
   const [profilePopoverUser, setProfilePopoverUser] = useState<ChatUserSummary | null>(null);
+  const profilePopoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelProfilePopoverClose = useCallback(() => {
+    if (profilePopoverCloseTimerRef.current == null) return;
+    clearTimeout(profilePopoverCloseTimerRef.current);
+    profilePopoverCloseTimerRef.current = null;
+  }, []);
+
+  const closeProfilePopover = useCallback(() => {
+    cancelProfilePopoverClose();
+    setProfilePopoverUser(null);
+  }, [cancelProfilePopoverClose]);
+
+  const scheduleProfilePopoverClose = useCallback(() => {
+    cancelProfilePopoverClose();
+    profilePopoverCloseTimerRef.current = setTimeout(() => {
+      profilePopoverCloseTimerRef.current = null;
+      setProfilePopoverUser(null);
+    }, PROFILE_POPOVER_CLOSE_DELAY_MS);
+  }, [cancelProfilePopoverClose]);
+
+  const showProfilePopover = useCallback((targetUser: ChatUserSummary) => {
+    if (!hasPublicChatProfileInfo(targetUser)) {
+      closeProfilePopover();
+      return;
+    }
+    cancelProfilePopoverClose();
+    setProfilePopoverUser(targetUser);
+  }, [cancelProfilePopoverClose, closeProfilePopover]);
+
+  useEffect(() => () => cancelProfilePopoverClose(), [cancelProfilePopoverClose]);
 
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
@@ -2036,7 +2091,8 @@ export function ChatContent({
               catalog={catalog}
               userByUsername={userByUsername}
               openTicker={openTicker}
-              onUserHover={setProfilePopoverUser}
+              onUserHover={showProfilePopover}
+              onUserHoverEnd={scheduleProfilePopoverClose}
               beginReplyTo={beginReplyTo}
               jumpToMessage={jumpToMessage}
               registerMessageElement={registerMessageElement}
@@ -2055,7 +2111,8 @@ export function ChatContent({
               catalog={catalog}
               userByUsername={userByUsername}
               openTicker={openTicker}
-              onUserHover={setProfilePopoverUser}
+              onUserHover={showProfilePopover}
+              onUserHoverEnd={scheduleProfilePopoverClose}
               beginReplyTo={beginReplyTo}
               jumpToMessage={jumpToMessage}
               setHoveredIdx={setHoveredIdx}
@@ -2070,7 +2127,8 @@ export function ChatContent({
           width={chatWidth}
           currentUserId={user?.id}
           onDirectMessage={openDirectMessage}
-          onClose={() => setProfilePopoverUser(null)}
+          onClose={scheduleProfilePopoverClose}
+          onKeepOpen={cancelProfilePopoverClose}
         />
       )}
 
