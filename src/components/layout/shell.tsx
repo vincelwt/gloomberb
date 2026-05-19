@@ -9,6 +9,7 @@ import {
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
   applyDrop,
+  dockPane,
   floatAtRect,
   floatPane,
   getDockDividerLayouts,
@@ -819,6 +820,19 @@ function cycleWindowModePane(
   };
 }
 
+function setWindowModePane(
+  mode: WindowModeState,
+  paneId: string,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): WindowModeState {
+  return {
+    ...mode,
+    paneId,
+    focus: normalizeWindowModeFocus(mode.focus, mode.previewLayout, paneId, mode.mode, bounds, dockGeometryOptions),
+  };
+}
+
 function setWindowModeEditMode(
   state: WindowModeState,
   mode: WindowEditMode,
@@ -911,9 +925,18 @@ function windowModeLabel(mode: WindowModeState, bounds: LayoutBounds, dockGeomet
   return `WINDOW RESIZE divider ${Math.max(1, index + 1)}/${Math.max(1, targets.length)}`;
 }
 
+function windowModeStatusLine(
+  mode: WindowModeState,
+  title: string,
+  bounds: LayoutBounds,
+  dockGeometryOptions: DockGeometryOptions,
+): string {
+  return `${windowModeLabel(mode, bounds, dockGeometryOptions)} · ${title}`;
+}
+
 function windowModeHelpText(mode: WindowModeState): string {
   if (mode.mode === "move") {
-    return "Tab window  r resize  arrows/hjkl move  Shift fast  Enter commit  Esc exit/cancel";
+    return "Tab window  d dock/float  r resize  arrows/hjkl move  Shift fast  Enter commit  Esc exit/cancel";
   }
   return "Tab handle  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
 }
@@ -932,9 +955,8 @@ function NativeWindowModeStatus({
   dockGeometryOptions: DockGeometryOptions;
 }) {
   const lineWidth = Math.max(1, rect.width - 2);
-  const status = windowModeLabel(mode, bounds, dockGeometryOptions);
+  const status = windowModeStatusLine(mode, title, bounds, dockGeometryOptions);
   const pending = mode.dirty ? " - pending" : "";
-  const selected = `Selected: ${title}`;
   const help = windowModeHelpText(mode);
   const textColor = higherContrast("#ffffff", "#000000", colors.borderFocused);
 
@@ -955,12 +977,12 @@ function NativeWindowModeStatus({
       </Text>
       {rect.height > 1 && (
         <Text fg={textColor} selectable={false} width={lineWidth}>
-          {truncateMenuText(selected, lineWidth)}
+          {truncateMenuText(help, lineWidth)}
         </Text>
       )}
       {rect.height > 2 && (
         <Text fg={textColor} selectable={false} width={lineWidth}>
-          {truncateMenuText(help, lineWidth)}
+          {truncateMenuText("Click a window to select it, drag dividers or handles to resize", lineWidth)}
         </Text>
       )}
     </Box>
@@ -1333,6 +1355,20 @@ export function Shell({
     });
   }, [bounds, dockGeometryOptions, focusPane, persistLayout, windowMode]);
 
+  const updateWindowModePreviewLayout = useCallback((nextLayout: LayoutConfig, paneId?: string) => {
+    setWindowMode((current) => {
+      if (!current) return current;
+      const nextPaneId = paneId ?? current.paneId;
+      return {
+        ...current,
+        paneId: nextPaneId,
+        previewLayout: nextLayout,
+        focus: normalizeWindowModeFocus(current.focus, nextLayout, nextPaneId, current.mode, bounds, dockGeometryOptions),
+        dirty: true,
+      };
+    });
+  }, [bounds, dockGeometryOptions]);
+
   const openLayoutMenu = useCallback(() => {
     pluginRegistry.openCommandBar("LAY ");
   }, [pluginRegistry]);
@@ -1438,6 +1474,26 @@ export function Shell({
       setWindowMode((current) => current
         ? setWindowModeEditMode(current, "resize", bounds, dockGeometryOptions)
         : current);
+    } else if (name === "d") {
+      if (windowMode.mode !== "move") {
+        handled = false;
+      } else {
+        setWindowMode((current) => {
+          if (!current || current.mode !== "move") return current;
+          const pane = paneMap.get(current.paneId);
+          if (!pane) return current;
+          const isFloating = current.previewLayout.floating.some((entry) => entry.instanceId === current.paneId);
+          const nextLayout = isFloating
+            ? dockPane(current.previewLayout, current.paneId)
+            : floatPane(current.previewLayout, current.paneId, width, contentHeight, pane.def);
+          return {
+            ...current,
+            previewLayout: nextLayout,
+            focus: normalizeWindowModeFocus({ kind: "move" }, nextLayout, current.paneId, "move", bounds, dockGeometryOptions),
+            dirty: current.dirty || nextLayout !== current.previewLayout,
+          };
+        });
+      }
     } else if (name === "tab") {
       setWindowMode((current) => current
         ? current.mode === "move"
@@ -1704,6 +1760,7 @@ export function Shell({
     const dragThreshold = precisePointer ? PRECISE_PANE_DRAG_THRESHOLD : PANE_DRAG_THRESHOLD;
     const drag = dragRef.current;
     if (!drag) return;
+    const baseLayout = windowMode?.previewLayout ?? visibleLayout;
 
     if (event.type === "drag") {
       if (drag.type === "divider") {
@@ -1726,7 +1783,7 @@ export function Shell({
 
         const pane = paneMap.get(drag.paneId);
         const baseRect = drag.mode === "docked"
-          ? getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def)
+          ? getRememberedFloatingRect(baseLayout, drag.paneId, width, contentHeight, pane?.def)
           : drag.origRect;
         const nextRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
         updateDragFloatingRect({ paneId: drag.paneId, rect: nextRect });
@@ -1737,7 +1794,7 @@ export function Shell({
           const hoveredCell = hoveredOverlay.cells.find((cell) => pointInRect(cell.rect, hitX, hitShellY));
           if (hoveredCell) {
             const target: DropTarget = { kind: "leaf", targetId: hoveredOverlay.targetId, position: hoveredCell.position };
-            const simulation = simulateDrop(visibleLayout, drag.paneId, target, bounds);
+            const simulation = simulateDrop(baseLayout, drag.paneId, target, bounds);
             if (simulation.previewRect) {
               updateDockPreview({ kind: "dock", target, rect: simulation.previewRect });
             } else {
@@ -1765,7 +1822,12 @@ export function Shell({
       if (drag.type === "divider") {
         const preview = dividerPreviewRef.current;
         if (preview) {
-          persistLayout(resizeSplitAtPath(visibleLayout, drag.path, preview.ratio));
+          const nextLayout = resizeSplitAtPath(baseLayout, drag.path, preview.ratio);
+          if (windowMode) {
+            updateWindowModePreviewLayout(nextLayout);
+          } else {
+            persistLayout(nextLayout);
+          }
         }
         updateDividerPreview(null);
       } else if (drag.type === "pane-drag") {
@@ -1777,13 +1839,17 @@ export function Shell({
         } else {
           const pane = paneMap.get(drag.paneId);
           const baseRect = drag.mode === "docked"
-            ? getRememberedFloatingRect(visibleLayout, drag.paneId, width, contentHeight, pane?.def)
+            ? getRememberedFloatingRect(baseLayout, drag.paneId, width, contentHeight, pane?.def)
             : drag.origRect;
           const releaseRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
-          const releaseResult = finalizePaneDragRelease(visibleLayout, drag.paneId, releaseRect, dockPreviewRef.current);
-          persistLayout(releaseResult.nextLayout);
+          const releaseResult = finalizePaneDragRelease(baseLayout, drag.paneId, releaseRect, dockPreviewRef.current);
+          if (windowMode) {
+            updateWindowModePreviewLayout(releaseResult.nextLayout, drag.paneId);
+          } else {
+            persistLayout(releaseResult.nextLayout);
+          }
           focusPane(drag.paneId);
-          if (releaseResult.shouldShowGridlockTip) {
+          if (!windowMode && releaseResult.shouldShowGridlockTip) {
             dispatch({ type: "SHOW_GRIDLOCK_TIP" });
           }
           updateDockPreview(null);
@@ -1792,7 +1858,12 @@ export function Shell({
         }
       } else if (drag.type === "float-resize") {
         const releaseRect = resolveFloatResizeRect(drag, preciseX, preciseShellY, width, contentHeight);
-        persistLayout(floatAtRect(visibleLayout, drag.paneId, releaseRect));
+        const nextLayout = floatAtRect(baseLayout, drag.paneId, releaseRect);
+        if (windowMode) {
+          updateWindowModePreviewLayout(nextLayout, drag.paneId);
+        } else {
+          persistLayout(nextLayout);
+        }
         updateDragFloatingRect(null);
         setDragCursor(null);
       }
@@ -1815,7 +1886,9 @@ export function Shell({
     updateDividerPreview,
     updateDockPreview,
     updateDragFloatingRect,
+    updateWindowModePreviewLayout,
     visibleLayout,
+    windowMode,
     width,
   ]);
 
@@ -1825,6 +1898,80 @@ export function Shell({
     const preciseShellY = (event.preciseY ?? event.y) - appHeaderHeight;
     if (shellY < 0) return;
     if (windowMode) {
+      if (event.type !== "down") {
+        handleActiveDrag(event);
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
+      if (menuState) {
+        setMenuState(null);
+        setHoveredMenuItemId(null);
+      }
+
+      const selectPreviewPane = (paneId: string) => {
+        setWindowMode((current) => current
+          ? setWindowModePane(current, paneId, bounds, dockGeometryOptions)
+          : current);
+      };
+
+      for (const { pane, rect: visibleRect } of [...visibleFloatingPanes].sort((a, b) => (b.pane.floating?.zIndex ?? 50) - (a.pane.floating?.zIndex ?? 50))) {
+        const rect = dragFloatingRect?.paneId === pane.instance.instanceId
+          ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)
+          : visibleRect;
+        if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
+
+        const paneId = pane.instance.instanceId;
+        const relativeX = event.x - rect.x;
+        const relativeY = shellY - rect.y;
+        selectPreviewPane(paneId);
+
+        if (relativeX >= rect.width - 2 && relativeY >= rect.height - 1) {
+          dragRef.current = {
+            type: "float-resize",
+            paneId,
+            startX: preciseX,
+            startY: preciseShellY,
+            origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          };
+          updateDragFloatingRect({ paneId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+        }
+
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
+      for (const divider of dockDividerLayouts) {
+        if (!pointInRect(divider.rect, event.x, shellY)) continue;
+        dragRef.current = {
+          type: "divider",
+          path: divider.path,
+          axis: divider.axis,
+          startX: preciseX,
+          startY: preciseShellY,
+          startRatio: divider.ratio,
+          bounds: divider.bounds,
+        };
+        updateDividerPreview({
+          pathKey: divider.path.join("."),
+          rect: divider.rect,
+          ratio: divider.ratio,
+        });
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
+      for (const leaf of dockLeafLayouts) {
+        if (!pointInRect(leaf.rect, event.x, shellY)) continue;
+        selectPreviewPane(leaf.instanceId);
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+      }
+
       event.stopPropagation();
       event.preventDefault();
       return;
@@ -1975,6 +2122,7 @@ export function Shell({
     contentHeight,
     dividerPreview,
     dockDividerLayouts,
+    dockGeometryOptions,
     dockLeafLayouts,
     effectiveDockPreview,
     dragFloatingRect,
@@ -2014,11 +2162,7 @@ export function Shell({
   const selectWindowModePane = useCallback((paneId: string) => {
     setWindowMode((current) => {
       if (!current || current.paneId === paneId) return current;
-      return {
-        ...current,
-        paneId,
-        focus: normalizeWindowModeFocus(current.focus, current.previewLayout, paneId, current.mode, bounds, dockGeometryOptions),
-      };
+      return setWindowModePane(current, paneId, bounds, dockGeometryOptions);
     });
   }, [bounds, dockGeometryOptions]);
 
@@ -2073,9 +2217,12 @@ export function Shell({
 
   const startNativeFloatResize = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
-    if (windowMode) return;
     const pointer = getShellPointer(event);
-    focusNativePane(paneId);
+    if (windowMode) {
+      selectWindowModePane(paneId);
+    } else {
+      focusNativePane(paneId);
+    }
     dragRef.current = {
       type: "float-resize",
       paneId,
@@ -2084,12 +2231,12 @@ export function Shell({
       origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     };
     updateDragFloatingRect({ paneId, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    event.stopPropagation();
     event.preventDefault();
-  }, [focusNativePane, getShellPointer, nativePaneChrome, updateDragFloatingRect, windowMode]);
+  }, [focusNativePane, getShellPointer, nativePaneChrome, selectWindowModePane, updateDragFloatingRect, windowMode]);
 
   const startNativeDividerDrag = useCallback((divider: DockDividerLayout, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
-    if (windowMode) return;
     const pointer = getShellPointer(event);
     if (menuState) {
       setMenuState(null);
@@ -2109,8 +2256,9 @@ export function Shell({
       rect: divider.rect,
       ratio: divider.ratio,
     });
+    event.stopPropagation();
     event.preventDefault();
-  }, [getShellPointer, menuState, nativePaneChrome, updateDividerPreview, windowMode]);
+  }, [getShellPointer, menuState, nativePaneChrome, updateDividerPreview]);
 
   const handleNativeDrag = useCallback((event: ShellMouseEvent) => {
     handleActiveDrag(event);
@@ -2371,7 +2519,7 @@ export function Shell({
         if (!windowMode || nativePaneChrome) return null;
         const pane = paneMap.get(windowMode.paneId);
         const title = pane ? getPaneTitle(pane) : "Window";
-        const text = `${windowModeLabel(windowMode, bounds, dockGeometryOptions)} · ${title} · ${windowModeHelpText(windowMode)}`;
+        const text = `${windowModeStatusLine(windowMode, title, bounds, dockGeometryOptions)} · ${windowModeHelpText(windowMode)}`;
         const bannerWidth = Math.max(1, width);
         const bannerText = truncateMenuText(text, bannerWidth).padEnd(bannerWidth, " ");
         return (

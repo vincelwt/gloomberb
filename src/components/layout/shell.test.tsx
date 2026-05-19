@@ -1081,6 +1081,50 @@ describe("Shell", () => {
     }));
   });
 
+  test("toggles the selected window between docked and floating in window move mode", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-dock-toggle-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    if (!mainPane) throw new Error("missing default portfolio pane");
+    const dockedLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+      instances: [{ ...mainPane }],
+      floating: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: dockedLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(dockedLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    expect(testSetup.captureCharFrame()).toContain("d dock/float");
+
+    await emitKeypress({ name: "d" });
+    await emitKeypress({ name: "enter" });
+    await emitKeypress({ name: "d" });
+    await emitKeypress({ name: "enter" });
+
+    const updates = actions.filter((action) => action.type === "UPDATE_LAYOUT");
+    expect(updates).toHaveLength(2);
+    expect(updates[0]?.layout.floating.some((entry: any) => entry.instanceId === "portfolio-list:main")).toBe(true);
+    expect(updates[1]?.layout.floating.some((entry: any) => entry.instanceId === "portfolio-list:main")).toBe(false);
+    expect(updates[1]?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "portfolio-list:main" });
+  });
+
   test("shows desktop window mode status and selected window title", async () => {
     const previousCapabilities = openTuiUiHost.capabilities;
     openTuiUiHost.capabilities = {
@@ -1131,7 +1175,7 @@ describe("Shell", () => {
 
       const frame = testSetup.captureCharFrame();
       expect(frame).toContain("WINDOW MOVE");
-      expect(frame).toContain("Selected: Main Portfolio");
+      expect(frame).toContain("WINDOW MOVE · Main Portfolio");
       expect(frame).toContain("Tab window");
     } finally {
       openTuiUiHost.capabilities = previousCapabilities;
@@ -1173,6 +1217,49 @@ describe("Shell", () => {
     expect(updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
       x: 8,
       width: 34,
+    }));
+  });
+
+  test("lets the mouse resize handle edit the window mode preview before commit", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-mouse-resize-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = { kind: "pane", instanceId: "portfolio-list:main" };
+    floatingLayout.floating = [{ instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 }];
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: floatingLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(floatingLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await act(async () => {
+      await testSetup!.mockMouse.drag(39, 12, 43, 14);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({
+      width: 36,
+      height: 12,
     }));
   });
 

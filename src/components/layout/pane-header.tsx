@@ -11,6 +11,7 @@ interface PaneHeaderProps {
   title: string;
   width: number;
   focused: boolean;
+  windowModeSelected?: boolean;
   floating?: boolean;
   showActions?: boolean;
   onHeaderMouseDown?: (event: any) => void;
@@ -95,6 +96,7 @@ export function PaneHeader({
   title,
   width,
   focused,
+  windowModeSelected = false,
   floating = false,
   showActions = false,
   onHeaderMouseDown,
@@ -105,10 +107,11 @@ export function PaneHeader({
   onCloseMouseDown,
 }: PaneHeaderProps) {
   const { nativePaneChrome } = useUiCapabilities();
-  const backgroundColor = floating ? floatingPaneTitleBg(focused) : paneTitleBg(focused);
+  const visuallyFocused = focused || windowModeSelected;
+  const backgroundColor = floating ? floatingPaneTitleBg(visuallyFocused) : paneTitleBg(visuallyFocused);
   const actionText = showActions ? PANE_HEADER_ACTION : "     ";
   const closeText = floating ? PANE_HEADER_CLOSE : "";
-  const textColor = paneTitleText(focused, floating);
+  const textColor = paneTitleText(visuallyFocused, floating);
 
   if (nativePaneChrome) {
     return (
@@ -120,19 +123,20 @@ export function PaneHeader({
         data-gloom-role="pane-header"
         data-floating={floating ? "true" : "false"}
         data-focused={focused ? "true" : "false"}
+        data-window-mode-selected={windowModeSelected ? "true" : "false"}
         onMouseDown={onHeaderMouseDown}
         onMouseDrag={onHeaderMouseDrag}
         onMouseDragEnd={onHeaderMouseDragEnd}
         onContextMenu={onHeaderContextMenu}
         style={{
-          borderBottom: `1px solid ${focused ? colors.borderFocused : colors.border}`,
+          borderBottom: `1px solid ${visuallyFocused ? colors.borderFocused : colors.border}`,
           paddingInline: 6,
-          boxShadow: focused
-            ? `inset 0 -1px 0 ${blendHex(paneTitleBg(focused), colors.borderFocused, 0.18)}`
-            : `inset 0 -1px 0 ${blendHex(paneTitleBg(focused), colors.textBright, 0.04)}`,
+          boxShadow: visuallyFocused
+            ? `inset 0 -1px 0 ${blendHex(paneTitleBg(visuallyFocused), colors.borderFocused, 0.18)}`
+            : `inset 0 -1px 0 ${blendHex(paneTitleBg(visuallyFocused), colors.textBright, 0.04)}`,
         }}
       >
-        <Text fg={focused ? colors.borderFocused : colors.textMuted} selectable={false} data-gloom-role="pane-grip">
+        <Text fg={visuallyFocused ? colors.borderFocused : colors.textMuted} selectable={false} data-gloom-role="pane-grip">
           {PANE_HEADER_GRIP}
         </Text>
         <Box flexGrow={1} minWidth={0} overflow="hidden">
@@ -141,7 +145,7 @@ export function PaneHeader({
             selectable={false}
             data-gloom-role="pane-title"
             style={{
-              fontWeight: focused ? 700 : 600,
+              fontWeight: visuallyFocused ? 700 : 600,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -185,10 +189,10 @@ export function PaneHeader({
     );
   }
 
-  if (focused || floating) {
+  if (visuallyFocused || floating) {
     // Build: ┌─:: Title ─────────── ... x─┐
     // Reserve 2 for corners, 1 for ─ after ┌, 1 for ─ before ┐
-    const borderColor = focused ? colors.borderFocused : colors.border;
+    const borderColor = visuallyFocused ? colors.borderFocused : colors.border;
     const innerWidth = Math.max(0, width - 4);
     const contentWidth = PANE_HEADER_GRIP.length + closeText.length + actionText.length;
     const titleWidth = Math.max(0, innerWidth - contentWidth);

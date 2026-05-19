@@ -117,6 +117,7 @@ export function FloatingPaneWrapper({
         title={title}
         width={width}
         focused={focused}
+        windowModeSelected={windowModeSelected}
         floating
         showActions={showActions}
         onHeaderMouseDown={onHeaderMouseDown}

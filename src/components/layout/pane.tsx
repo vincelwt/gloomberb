@@ -105,6 +105,7 @@ export function PaneWrapper({
           title={title}
           width={width}
           focused={focused}
+          windowModeSelected={windowModeSelected}
           showActions={showActions}
           onHeaderMouseDown={onHeaderMouseDown}
           onHeaderMouseDrag={onHeaderMouseDrag}
