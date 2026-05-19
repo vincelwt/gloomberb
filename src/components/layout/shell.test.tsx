@@ -1015,7 +1015,11 @@ describe("Shell", () => {
     await emitKeypress({ name: "right" });
     await emitKeypress({ name: "right" });
     await emitKeypress({ name: "enter" });
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
 
+    expect(testSetup.captureCharFrame()).toContain("Committed");
     const updateLayout = findUpdateLayout(actions);
     expect(actions.filter((action) => action.type === "PUSH_LAYOUT_HISTORY")).toHaveLength(1);
     expect(updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main")).toEqual(expect.objectContaining({

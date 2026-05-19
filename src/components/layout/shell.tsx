@@ -86,6 +86,7 @@ import {
   resolveWindowEditDockMovePreview,
   setWindowEditMode,
   setWindowEditPane,
+  windowEditHasPendingCommit,
   windowEditHelpText,
   windowEditStatusLine,
   type WindowEditState,
@@ -1024,7 +1025,8 @@ export function Shell({
   const commitWindowMode = useCallback(() => {
     if (!windowMode) return;
     const committedLayout = resolveWindowEditCommitLayout(windowMode, bounds, dockGeometryOptions);
-    if (windowMode.dirty || committedLayout !== windowMode.previewLayout) {
+    const hasPendingCommit = windowEditHasPendingCommit(windowMode, bounds, dockGeometryOptions);
+    if (hasPendingCommit) {
       persistLayout(committedLayout);
     }
     focusPane(windowMode.paneId);
@@ -1034,7 +1036,7 @@ export function Shell({
       mode: "move",
       focus: normalizeWindowEditFocus({ kind: "move" }, committedLayout, windowMode.paneId, "move", bounds, dockGeometryOptions),
       dirty: false,
-      notice: undefined,
+      notice: hasPendingCommit ? "Committed" : "No changes",
     });
   }, [bounds, dockGeometryOptions, focusPane, persistLayout, windowMode]);
 
@@ -2165,7 +2167,7 @@ export function Shell({
         />
       )}
 
-      {/* Focus border overlay — rendered on top of the focused pane */}
+      {/* Selection outline overlay — strongest only while window edit mode is active. */}
       {(() => {
         const highlightedPaneId = windowMode?.paneId ?? focusedPaneId;
         if (!highlightedPaneId) return null;
@@ -2189,9 +2191,11 @@ export function Shell({
           }
         }
         if (!rect || rect.height < 2) return null;
-        const bc = colors.borderFocused;
+        const selectedInWindowMode = !!windowMode;
+        const bc = selectedInWindowMode ? colors.borderFocused : colors.border;
         const bodyTop = rect.y + 1; // below header (header renders its own border edges)
-        const bodyH = rect.height - 2; // rows between header and footer
+        const bodyH = selectedInWindowMode ? rect.height - 1 : rect.height - 2;
+        const bottomW = Math.max(0, rect.width - 2);
         return (
           <>
             {/* Left edge — body only */}
@@ -2201,6 +2205,11 @@ export function Shell({
             {/* Right edge — body only */}
             {bodyH > 0 && (
               <Box key={`focus-r:${highlightedPaneId}`} position="absolute" left={rect.x + rect.width - 1} top={bodyTop} width={1} height={bodyH} zIndex={z} backgroundColor={bc} />
+            )}
+            {selectedInWindowMode && bottomW > 0 && (
+              <Box key={`focus-b:${highlightedPaneId}`} position="absolute" left={rect.x + 1} top={rect.y + rect.height - 1} width={bottomW} height={1} zIndex={z} backgroundColor={bc}>
+                <Text fg={bc} selectable={false}>{"─".repeat(bottomW)}</Text>
+              </Box>
             )}
           </>
         );

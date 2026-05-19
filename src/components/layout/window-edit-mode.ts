@@ -440,7 +440,7 @@ export function windowEditStatusLine(
     ? ` -> ${targetTitle} ${dockMovePositionLabel(state.focus.position)}`
     : "";
   const notice = state.notice ? ` · ${state.notice}` : "";
-  return `${windowEditLabel(state, bounds, dockGeometryOptions)} · ${title}${target}${notice}`;
+  return `${windowEditLabel(state, bounds, dockGeometryOptions)}${notice} · ${title}${target}`;
 }
 
 export function windowEditHelpText(state: WindowEditState): string {
