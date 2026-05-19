@@ -29,7 +29,7 @@ export type InlineContentToken =
   | InlineContentTickerToken
   | InlineContentUsernameToken;
 
-const INLINE_SYMBOL_TOKEN_RE = /\$[A-Z][A-Z0-9.-]{0,9}|@[A-Za-z0-9_]{1,15}/g;
+const INLINE_SYMBOL_TOKEN_RE = /\$[A-Z][A-Z0-9.-]{0,9}|@[A-Za-z][A-Za-z0-9_]{2,29}/g;
 const SYMBOL_CHAR_RE = /[A-Za-z0-9.-]/;
 const USERNAME_CHAR_RE = /[A-Za-z0-9_]/;
 
@@ -42,14 +42,14 @@ function trimTrailingTickerPunctuation(value: string): string {
 }
 
 function isValidTickerBoundary(text: string, start: number, end: number): boolean {
-  const prev = start > 0 ? text[start - 1] : "";
-  const next = end < text.length ? text[end] : "";
+  const prev = start > 0 ? text[start - 1] ?? "" : "";
+  const next = end < text.length ? text[end] ?? "" : "";
   return !SYMBOL_CHAR_RE.test(prev) && !SYMBOL_CHAR_RE.test(next);
 }
 
 function isValidUsernameBoundary(text: string, start: number, end: number): boolean {
-  const prev = start > 0 ? text[start - 1] : "";
-  const next = end < text.length ? text[end] : "";
+  const prev = start > 0 ? text[start - 1] ?? "" : "";
+  const next = end < text.length ? text[end] ?? "" : "";
   return !USERNAME_CHAR_RE.test(prev) && !USERNAME_CHAR_RE.test(next);
 }
 

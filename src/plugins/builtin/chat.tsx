@@ -87,7 +87,6 @@ const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 const SCROLL_BOTTOM_THRESHOLD_PX = 2;
 const PROFILE_POPOVER_CLOSE_DELAY_MS = 40;
-const USERNAME_MENTION_TOKEN = /@([A-Za-z][A-Za-z0-9_]{2,29})/g;
 
 function openTwitterFeed(ctx: GloomPluginContext, query = "") {
   const targetPaneId = ctx.getConfig().layout.instances.find((instance) => (
@@ -568,62 +567,41 @@ function ResponsiveTickerBadgeText({
   const tokens = useMemo(() => tokenizeInlineContent(text), [text]);
   const renderTextToken = (value: string, tokenIndex: number) => {
     if (!value) return null;
-    const parts: Array<{ kind: "text"; value: string } | { kind: "mention"; username: string; value: string }> = [];
-    let lastIndex = 0;
-    USERNAME_MENTION_TOKEN.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = USERNAME_MENTION_TOKEN.exec(value)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ kind: "text", value: value.slice(lastIndex, match.index) });
-      }
-      const username = match[1] ?? "";
-      parts.push({ kind: "mention", username, value: match[0] ?? `@${username}` });
-      lastIndex = match.index + (match[0]?.length ?? 0);
-    }
-    if (lastIndex < value.length) {
-      parts.push({ kind: "text", value: value.slice(lastIndex) });
-    }
-    if (parts.length === 0) {
-      parts.push({ kind: "text", value });
-    }
-
-    return parts.map((part, partIndex) => {
-      if (part.kind === "text") {
-        return (
-          <Text
-            key={`text:${tokenIndex}:${partIndex}`}
-            fg={textColor}
-            wrapText
-            style={{
-              minWidth: 0,
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
-          >
-            {part.value}
-          </Text>
-        );
-      }
-      const user = userByUsername?.get(part.username.toLowerCase()) ?? null;
-      return (
-        <Box
-          key={`mention:${tokenIndex}:${partIndex}:${part.username}`}
-          height={1}
-          flexDirection="row"
-          backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
-          onMouseMove={() => {
-            if (user) onUserHover?.(user);
-          }}
-          onMouseOut={() => {
-            if (user) onUserHoverEnd?.();
-          }}
-        >
-          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-            {part.value}
-          </Text>
-        </Box>
-      );
-    });
+    return (
+      <Text
+        key={`text:${tokenIndex}`}
+        fg={textColor}
+        wrapText
+        style={{
+          minWidth: 0,
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </Text>
+    );
+  };
+  const renderUsernameToken = (username: string, value: string, tokenIndex: number) => {
+    const user = userByUsername?.get(username.toLowerCase()) ?? null;
+    return (
+      <Box
+        key={`mention:${tokenIndex}:${username}`}
+        height={1}
+        flexDirection="row"
+        backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
+        onMouseMove={() => {
+          if (user) onUserHover?.(user);
+        }}
+        onMouseOut={() => {
+          if (user) onUserHoverEnd?.();
+        }}
+      >
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+          {value}
+        </Text>
+      </Box>
+    );
   };
 
   return (
@@ -647,6 +625,10 @@ function ResponsiveTickerBadgeText({
               color={textColor}
             />
           );
+        }
+
+        if (token.kind === "username") {
+          return renderUsernameToken(token.username, token.value, index);
         }
 
         const entry = catalog[token.symbol];
