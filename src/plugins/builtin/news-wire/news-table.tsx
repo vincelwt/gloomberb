@@ -13,6 +13,7 @@ import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
+import { formatRelativeTime } from "../../../utils/datetime-format";
 
 export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
 
@@ -36,17 +37,6 @@ interface NewsArticleStackBaseProps {
   emptyStateTitle: string;
   emptyStateHint?: string;
   titleForArticle?: (article: MarketNewsItem) => string;
-}
-
-function formatRelativeTime(date: Date): string {
-  const ms = Date.now() - date.getTime();
-  if (ms < 60_000) return "<1m";
-  const min = Math.floor(ms / 60_000);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h`;
-  const days = Math.floor(hr / 24);
-  return `${days}d`;
 }
 
 function compareText(a: string, b: string): number {

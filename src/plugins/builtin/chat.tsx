@@ -2421,8 +2421,8 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     {
       id: "buildout-pane",
       paneId: "buildout",
-      label: "TheBuildout.ai",
-      description: "Open TheBuildout.ai infrastructure intelligence.",
+      label: "TheBuildout",
+      description: "Open TheBuildout infrastructure intelligence.",
       keywords: ["tbo", "buildout", "thebuildout", "infrastructure", "sites", "intel"],
       shortcut: { prefix: "TBO" },
       createInstance: () => ({
@@ -2461,7 +2461,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
 
     ctx.registerPane({
       id: "buildout",
-      name: "TBO",
+      name: "TheBuildout",
       icon: "T",
       component: BuildoutPane,
       defaultPosition: "right",

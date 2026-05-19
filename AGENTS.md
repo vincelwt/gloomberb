@@ -9,6 +9,8 @@ Tests:
 - When touching a test file, trim nearby low-value tests if the cleanup is clear and low-risk.
 
 Use tmux to test terminal TUI changes (see the `tui-testing` skill). Always kill the tmux session when done.
+Pane footers/status bars should only show status that can change, such as loading, error, live/delayed, stale, or auth state. Do not use them for fixed pane labels, row counts, or generic keyboard hints.
+Information density matters: never repeat the same information in a pane title/header and again in the body. If a stack/detail title already names the item, start the body with metadata or content.
 For Electrobun/desktop-web-only work, do not load the OpenTUI or tui-testing skills unless the change also touches terminal OpenTUI behavior or explicitly needs tmux coverage.
 Add mouse/cursor interactivity for everything interactive.
 Never fix chart issues by disabling / turning off the kitty renderer; preserve kitty support and fix the root cause.
