@@ -115,6 +115,37 @@ describe("TickerBadgeText", () => {
     expect(frame).toContain("TSLA -5%");
   });
 
+  test("renders usernames as clickable tags when a username opener is provided", async () => {
+    const opened: string[] = [];
+    testSetup = await testRender(
+      <TickerBadgeText
+        text="Watching @markets and $TSLA"
+        lineWidth={60}
+        catalog={{ TSLA: makeCatalogEntry() }}
+        textColor="#ffffff"
+        openTicker={() => {}}
+        openUsername={(username) => opened.push(username)}
+      />,
+      { width: 60, height: 4 },
+    );
+
+    await testSetup.renderOnce();
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("@markets"));
+    const col = lines[row]?.indexOf("@markets") ?? -1;
+
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, row);
+      await testSetup!.renderOnce();
+    });
+
+    expect(opened).toEqual(["markets"]);
+  });
+
   test("wraps long text chunks at word boundaries", async () => {
     testSetup = await testRender(
       <TickerBadgeText

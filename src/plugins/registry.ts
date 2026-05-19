@@ -179,6 +179,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
   showPane = (paneId: string) => {
     this.showPaneFn(paneId);
   };
+  createPaneFromTemplate = (templateId: string, options?: PaneTemplateCreateOptions) => {
+    this.createPaneFromTemplateFn(templateId, options);
+  };
   hidePane = (paneId: string) => {
     this.hidePaneFn(paneId);
   };

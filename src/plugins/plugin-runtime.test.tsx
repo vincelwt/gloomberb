@@ -203,6 +203,9 @@ describe("plugin runtime hooks", () => {
       showPane(paneId: string) {
         calls.push(`show:${paneId}`);
       },
+      createPaneFromTemplate(templateId: string) {
+        calls.push(`create:${templateId}`);
+      },
       hidePane(paneId: string) {
         calls.push(`hide:${paneId}`);
       },
@@ -232,6 +235,7 @@ describe("plugin runtime hooks", () => {
 
     actions?.openCommandBar("PL ");
     actions?.showPane("debug");
+    actions?.createPaneFromTemplate("twitter-feed-pane");
     actions?.hidePane("chat");
     actions?.openPluginCommandWorkflow("set-alert");
     actions?.notify({ body: "Saved", type: "success" });
@@ -239,6 +243,7 @@ describe("plugin runtime hooks", () => {
     expect(calls).toEqual([
       "command:PL ",
       "show:debug",
+      "create:twitter-feed-pane",
       "hide:chat",
       "workflow:set-alert",
       "notify:Saved",

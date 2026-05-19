@@ -2,7 +2,7 @@ import { Box, ScrollBox, Span, Text, useUiCapabilities } from "../../ui";
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
-import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plugin";
 import { syncConfigActiveLayoutState, useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
 import { useInlineTickers, type InlineTickerCatalogEntry } from "../../state/use-inline-tickers";
 import { ExternalLinkText, getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
@@ -19,7 +19,14 @@ import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 import { InlineAuthActions } from "./cloud-auth-actions";
-import { TwitterFeedPane, TwitterTickerTab } from "./cloud-tweets";
+import {
+  TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
+  TWITTER_FEED_LAUNCH_STATE_KEY,
+  TWITTER_FEED_PANE_ID,
+  TwitterFeedPane,
+  TwitterTickerTab,
+  type TwitterFeedLaunchRequest,
+} from "./cloud-tweets";
 import { AccountManagementPane } from "./account-management";
 
 interface ChatContentProps {
@@ -79,6 +86,26 @@ const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 const SCROLL_BOTTOM_THRESHOLD_PX = 2;
 const USERNAME_MENTION_TOKEN = /@([A-Za-z][A-Za-z0-9_]{2,29})/g;
+
+function openTwitterFeed(ctx: GloomPluginContext, query = "") {
+  const targetPaneId = ctx.getConfig().layout.instances.find((instance) => (
+    instance.paneId === TWITTER_FEED_PANE_ID
+  ))?.instanceId ?? null;
+  const now = Date.now();
+  const launchRequest: TwitterFeedLaunchRequest = {
+    query: query.trim(),
+    targetPaneId,
+    nonce: `${now}-${Math.random().toString(36).slice(2)}`,
+    createdAt: now,
+  };
+
+  ctx.resume.setState(
+    TWITTER_FEED_LAUNCH_STATE_KEY,
+    launchRequest,
+    { schemaVersion: TWITTER_FEED_LAUNCH_SCHEMA_VERSION },
+  );
+  ctx.focusPane(TWITTER_FEED_PANE_ID);
+}
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   if (index === 0) return false;
@@ -2368,7 +2395,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     });
 
     ctx.registerPane({
-      id: "twitter-feed",
+      id: TWITTER_FEED_PANE_ID,
       name: "X Feed",
       icon: "X",
       component: TwitterFeedPane,
@@ -2379,32 +2406,12 @@ export const gloomberbCloudPlugin: GloomPlugin = {
 
     ctx.registerPaneTemplate({
       id: "twitter-feed-pane",
-      paneId: "twitter-feed",
+      paneId: TWITTER_FEED_PANE_ID,
       label: "X Feed",
-      description: "Create a reusable X advanced-search feed.",
+      description: "Open an X advanced-search feed.",
       keywords: ["twitter", "x", "tweet", "tweets", "feed", "social"],
-      shortcut: { prefix: "TWIT", argPlaceholder: "query", argKind: "text" },
-      wizard: [
-        {
-          key: "query",
-          label: "Search Query",
-          type: "textarea",
-          placeholder: "$AAPL -filter:replies",
-        },
-        {
-          key: "queryType",
-          label: "Mode",
-          type: "select",
-          defaultValue: "Latest",
-          options: [
-            { label: "Latest", value: "Latest" },
-            { label: "Top", value: "Top" },
-          ],
-        },
-      ],
       createInstance: (_context, options) => {
         const query = options?.values?.query?.trim() || options?.arg?.trim() || "";
-        if (!query) return null;
         return {
           title: "X Feed",
           placement: "floating",
@@ -2413,6 +2420,23 @@ export const gloomberbCloudPlugin: GloomPlugin = {
             queryType: options?.values?.queryType === "Top" ? "Top" : "Latest",
           },
         };
+      },
+    });
+
+    ctx.registerCommand({
+      id: "twitter-feed-open",
+      label: "X Feed",
+      description: "Open an X advanced-search feed.",
+      keywords: ["twitter", "x", "tweet", "tweets", "feed", "social", "twit"],
+      category: "navigation",
+      shortcut: "TWIT",
+      shortcutArg: {
+        placeholder: "query",
+        kind: "text",
+        parse: (arg) => ({ query: arg.trim() }),
+      },
+      execute: (values) => {
+        openTwitterFeed(ctx, values?.query ?? values?.shortcut ?? "");
       },
     });
 

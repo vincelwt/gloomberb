@@ -1,10 +1,11 @@
-import { Box, Text } from "../ui";
+import { Box, Text, TextAttributes } from "../ui";
 import { useState } from "react";
 import { TickerBadge } from "./ticker-badge";
 import { ExternalLinkText, openUrl } from "./ui";
 import { tokenizeInlineContent } from "../utils/inline-content-tokenizer";
 import type { InlineTickerCatalogEntry } from "../state/use-inline-tickers";
 import { displayWidth } from "../utils/format";
+import { blendHex, colors } from "../theme/colors";
 
 export interface TickerBadgeTextProps {
   text: string;
@@ -13,6 +14,44 @@ export interface TickerBadgeTextProps {
   textColor: string;
   openTicker: (symbol: string) => void;
   openLink?: (url: string) => void;
+  openUsername?: (username: string) => void;
+}
+
+function UsernameBadge({
+  username,
+  hovered,
+  onHoverStart,
+  onHoverEnd,
+  onOpen,
+}: {
+  username: string;
+  hovered: boolean;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
+  onOpen: (username: string) => void;
+}) {
+  const backgroundColor = hovered
+    ? blendHex(colors.bg, colors.borderFocused, 0.34)
+    : blendHex(colors.bg, colors.borderFocused, 0.16);
+  const color = hovered ? colors.textBright : colors.borderFocused;
+
+  return (
+    <Box paddingRight={1} flexShrink={0}>
+      <Box
+        paddingX={1}
+        backgroundColor={backgroundColor}
+        onMouseOver={onHoverStart}
+        onMouseOut={onHoverEnd}
+        onMouseDown={(event: any) => {
+          event.stopPropagation?.();
+          event.preventDefault?.();
+          onOpen(username);
+        }}
+      >
+        <Text fg={color} attributes={TextAttributes.BOLD}>{`@${username}`}</Text>
+      </Box>
+    </Box>
+  );
 }
 
 function splitLongTextSegment(value: string, lineWidth: number): string[] {
@@ -46,8 +85,10 @@ export function TickerBadgeText({
   textColor,
   openTicker,
   openLink = openUrl,
+  openUsername,
 }: TickerBadgeTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
+  const [hoveredUsername, setHoveredUsername] = useState<string | null>(null);
   const lines = text.split("\n");
 
   return (
@@ -81,6 +122,25 @@ export function TickerBadgeText({
                     label={token.value}
                     color={textColor}
                     onOpen={openLink}
+                  />
+                );
+              }
+
+              if (token.kind === "username") {
+                if (!openUsername) {
+                  return <Text key={`raw-username:${lineIndex}:${index}`} fg={textColor}>{token.value}</Text>;
+                }
+
+                return (
+                  <UsernameBadge
+                    key={`username:${lineIndex}:${index}:${token.username}`}
+                    username={token.username}
+                    hovered={hoveredUsername === token.username}
+                    onHoverStart={() => setHoveredUsername(token.username)}
+                    onHoverEnd={() => {
+                      setHoveredUsername((current) => (current === token.username ? null : current));
+                    }}
+                    onOpen={openUsername}
                   />
                 );
               }

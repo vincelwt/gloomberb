@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Box, ScrollBox, Text, TextAttributes, Textarea, useRendererHost, type TextareaRenderable } from "../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Box, Input, ScrollBox, Text, TextAttributes, useRendererHost, type InputRenderable } from "../../ui";
 import { useShortcut } from "../../react/input";
 import {
   DataTableStackView,
   EmptyState,
-  SegmentedControl,
   Tabs,
   TickerBadgeList,
   usePaneFooter,
@@ -14,9 +13,9 @@ import {
 } from "../../components";
 import type { DetailTabProps, PaneProps } from "../../types/plugin";
 import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../state/app-context";
-import { usePluginPaneState, usePluginState } from "../plugin-runtime";
+import { usePluginAppActions, usePluginPaneState, usePluginState } from "../plugin-runtime";
 import { TickerBadgeText } from "../../components/ticker-badge-text";
-import { ExternalLinkText, RemoteImage } from "../../components/ui";
+import { RemoteImage } from "../../components/ui";
 import { useInlineTickers } from "../../state/use-inline-tickers";
 import { apiClient, type CloudTweetPayload, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../utils/api-client";
 import { collectUniqueTickerSymbols } from "../../utils/ticker-tokenizer";
@@ -30,6 +29,12 @@ import { CloudAuthNotice } from "./cloud-auth-actions";
 const DEFAULT_TWEET_HOURS = 6;
 const DEFAULT_TWEET_LIMIT = 50;
 const TWEET_SEARCH_SCHEMA_VERSION = 1;
+const TWEET_SEARCH_DEBOUNCE_MS = 450;
+const TWITTER_USERNAME_RE = /^[A-Za-z0-9_]{1,15}$/;
+
+export const TWITTER_FEED_PANE_ID = "twitter-feed";
+export const TWITTER_FEED_LAUNCH_STATE_KEY = "twitter-feed-launch";
+export const TWITTER_FEED_LAUNCH_SCHEMA_VERSION = 1;
 
 type TweetColumnId = "time" | "author" | "text" | "tickers" | "likes" | "views";
 type TweetColumn = DataTableColumn & { id: TweetColumnId };
@@ -57,25 +62,19 @@ interface PersistedTwitterFeedState {
   feeds: TwitterFeed[];
 }
 
-interface FeedEditorState {
-  mode: "create" | "edit";
-  feedId: string | null;
+export interface TwitterFeedLaunchRequest {
   query: string;
-  queryType: CloudTweetQueryType;
-  key: string;
-  error: string | null;
+  targetPaneId: string | null;
+  nonce: string;
+  createdAt: number;
+  queryType?: CloudTweetQueryType;
 }
 
 const EMPTY_FEED_STATE: PersistedTwitterFeedState = { feeds: [] };
 let nextTwitterFeedId = 1;
-let nextTwitterEditorId = 1;
 
 function generateFeedId(): string {
   return `${Date.now()}-${nextTwitterFeedId++}`;
-}
-
-function generateEditorKey(): string {
-  return `twitter-editor-${Date.now()}-${nextTwitterEditorId++}`;
 }
 
 function truncateWithEllipsis(text: string, width: number): string {
@@ -88,7 +87,7 @@ function truncateWithEllipsis(text: string, width: number): string {
 function deriveFeedTitle(query: string): string {
   const tickers = collectUniqueTickerSymbols([query]);
   if (tickers.length > 0) return tickers.slice(0, 3).map((ticker) => `$${ticker}`).join(" ");
-  return truncateWithEllipsis(query.replace(/\s+/g, " ").trim(), 24) || "X Feed";
+  return truncateWithEllipsis(query.replace(/\s+/g, " ").trim(), 24) || "New";
 }
 
 function createFeed(query: string, queryType: CloudTweetQueryType): TwitterFeed {
@@ -103,6 +102,19 @@ function createFeed(query: string, queryType: CloudTweetQueryType): TwitterFeed 
     lastSuccessAt: null,
     lastError: null,
   };
+}
+
+function normalizeFeedQuery(query: string): string {
+  return query.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeTwitterUsername(username: string): string | null {
+  const normalized = username.trim().replace(/^@/, "");
+  return TWITTER_USERNAME_RE.test(normalized) ? normalized : null;
+}
+
+function twitterUserSearchQuery(username: string): string {
+  return `from:${username}`;
 }
 
 function normalizeFeeds(value: unknown): TwitterFeed[] {
@@ -272,9 +284,11 @@ function isAuthError(error: string | null): boolean {
 function TweetDetail({
   tweet,
   width,
+  onOpenUsername,
 }: {
   tweet: CloudTweetPayload;
   width: number;
+  onOpenUsername: (username: string) => void;
 }) {
   const lineWidth = Math.max(1, width - 2);
   const tweetText = normalizeTweetDisplayText(tweet.text);
@@ -282,21 +296,17 @@ function TweetDetail({
   const imageWidth = Math.min(lineWidth, 72);
   const imageHeight = Math.max(6, Math.min(14, Math.floor(imageWidth * 0.35)));
   const { catalog, openTicker } = useInlineTickers([tweetText]);
-  const author = tweet.author.userName ? `@${tweet.author.userName}` : tweet.author.name;
 
   return (
     <ScrollBox scrollY focusable={false} flexGrow={1} paddingX={1}>
       <Box flexDirection="column" width={lineWidth} gap={1}>
-        <Box flexDirection="row" height={1}>
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{author}</Text>
-          <Text fg={colors.textDim}> - {formatTimeAgo(tweet.createdAt)}</Text>
-        </Box>
         <TickerBadgeText
           text={tweetText}
           lineWidth={lineWidth}
           catalog={catalog}
           textColor={colors.text}
           openTicker={openTicker}
+          openUsername={onOpenUsername}
         />
         {imageUrls.length > 0 ? (
           <Box flexDirection="column" gap={1}>
@@ -317,11 +327,6 @@ function TweetDetail({
             {`likes ${formatMetric(tweet.metrics.likes)}  reposts ${formatMetric(tweet.metrics.retweets)}  replies ${formatMetric(tweet.metrics.replies)}  views ${formatMetric(tweet.metrics.views)}`}
           </Text>
         </Box>
-        {tweet.url ? (
-          <Box height={1}>
-            <ExternalLinkText url={tweet.url} label="Open on X" color={colors.textBright} />
-          </Box>
-        ) : null}
       </Box>
     </ScrollBox>
   );
@@ -332,6 +337,7 @@ function useTweetSearchData(
   load: () => Promise<CloudTweetSearchResponse>,
   onResult?: (result: CloudTweetSearchResponse) => void,
   onError?: (message: string) => void,
+  enabled = true,
 ) {
   const [state, setState] = useState<TweetLoadState>({
     data: null,
@@ -345,6 +351,16 @@ function useTweetSearchData(
   onErrorRef.current = onError;
 
   const reload = useCallback(() => {
+    if (!enabled) {
+      fetchGenRef.current += 1;
+      setState((current) => (
+        current.data || current.loading || current.error
+          ? { data: null, loading: false, error: null }
+          : current
+      ));
+      return;
+    }
+
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -360,7 +376,7 @@ function useTweetSearchData(
         setState({ data: null, loading: false, error: message });
         onErrorRef.current?.(message);
       });
-  }, [load]);
+  }, [enabled, load]);
 
   useEffect(() => {
     reload();
@@ -375,21 +391,30 @@ function TweetSearchTable({
   height,
   requestKey,
   footerId,
+  rootBefore,
+  enabled = true,
   load,
   onResult,
   onError,
+  emptyStateTitle,
+  emptyStateHint,
 }: {
   focused: boolean;
   width: number;
   height: number;
   requestKey: string;
   footerId: string;
+  rootBefore?: ReactNode;
+  enabled?: boolean;
   load: () => Promise<CloudTweetSearchResponse>;
   onResult?: (result: CloudTweetSearchResponse) => void;
   onError?: (message: string) => void;
+  emptyStateTitle?: string;
+  emptyStateHint?: string;
 }) {
   const rendererHost = useRendererHost();
-  const { data, loading, error, reload } = useTweetSearchData(requestKey, load, onResult, onError);
+  const { createPaneFromTemplate } = usePluginAppActions();
+  const { data, loading, error, reload } = useTweetSearchData(requestKey, load, onResult, onError, enabled);
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>({
@@ -429,6 +454,18 @@ function TweetSearchTable({
   const openSelectedTweet = useCallback(() => {
     if (selectedTweet?.url) void rendererHost.openExternal(selectedTweet.url);
   }, [rendererHost, selectedTweet]);
+  const openUsernameFeed = useCallback((username: string) => {
+    const normalizedUsername = normalizeTwitterUsername(username);
+    if (!normalizedUsername) return;
+    const query = twitterUserSearchQuery(normalizedUsername);
+    createPaneFromTemplate("twitter-feed-pane", {
+      arg: query,
+      values: {
+        query,
+        queryType: "Latest",
+      },
+    });
+  }, [createPaneFromTemplate]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     if (!isTweetSortColumnId(columnId)) return;
@@ -516,8 +553,8 @@ function TweetSearchTable({
       focused={focused}
       detailOpen={detailOpen}
       onBack={() => setDetailOpen(false)}
-      detailTitle={selectedTweet ? `@${selectedTweet.author.userName || selectedTweet.author.name}` : "Tweet"}
-      detailContent={selectedTweet ? <TweetDetail tweet={selectedTweet} width={width} /> : null}
+      detailTitle={selectedTweet ? `@${selectedTweet.author.userName || selectedTweet.author.name} - ${formatTimeAgo(selectedTweet.createdAt)}` : "Tweet"}
+      detailContent={selectedTweet ? <TweetDetail tweet={selectedTweet} width={width} onOpenUsername={openUsernameFeed} /> : null}
       selectedIndex={activeIndex}
       onSelectIndex={(index) => setSelectedTweetId(rows[index]?.id ?? null)}
       onActivateIndex={(index) => {
@@ -528,6 +565,7 @@ function TweetSearchTable({
       }}
       onRootKeyDown={handleRootKeyDown}
       onDetailKeyDown={handleDetailKeyDown}
+      rootBefore={rootBefore}
       rootWidth={width}
       rootHeight={height}
       columns={columns}
@@ -544,8 +582,8 @@ function TweetSearchTable({
       }}
       renderCell={renderCell}
       emptyContent={emptyContent}
-      emptyStateTitle={loading ? "Loading tweets..." : error ?? "No tweets"}
-      emptyStateHint={data?.query}
+      emptyStateTitle={loading ? "Loading tweets..." : error ?? emptyStateTitle ?? "No tweets"}
+      emptyStateHint={emptyStateHint ?? data?.query}
     />
   );
 }
@@ -578,55 +616,82 @@ export function TwitterTickerTab({ focused, width, height }: DetailTabProps) {
   );
 }
 
-function TwitterFeedEditor({
-  editor,
+function TwitterFeedSearchBar({
+  feed,
   focused,
+  active,
   width,
-  textareaRef,
-  onChange,
+  focusToken,
+  inputRef,
+  onFocus,
+  onBlur,
+  onQueryChange,
 }: {
-  editor: FeedEditorState;
+  feed: TwitterFeed;
   focused: boolean;
+  active: boolean;
   width: number;
-  textareaRef: RefObject<TextareaRenderable | null>;
-  onChange: (patch: Partial<FeedEditorState>) => void;
+  focusToken: number;
+  inputRef: RefObject<InputRenderable | null>;
+  onFocus: () => void;
+  onBlur: () => void;
+  onQueryChange: (feedId: string, query: string) => void;
 }) {
+  const [draft, setDraft] = useState(feed.query);
+
   useEffect(() => {
-    if (focused) textareaRef.current?.focus?.();
-  }, [editor.key, focused, textareaRef]);
+    setDraft(feed.query);
+  }, [feed.id, feed.query]);
+
+  useEffect(() => {
+    if (focused && active) inputRef.current?.focus?.();
+  }, [active, feed.id, focused, focusToken, inputRef]);
+
+  useEffect(() => {
+    if (draft === feed.query) return;
+    const timer = setTimeout(() => {
+      onQueryChange(feed.id, draft);
+    }, TWEET_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [draft, feed.id, feed.query, onQueryChange]);
+
+  const commitNow = useCallback((value: string) => {
+    onQueryChange(feed.id, value);
+    onBlur();
+  }, [feed.id, onBlur, onQueryChange]);
 
   return (
-    <Box flexDirection="column" flexGrow={1} padding={1} gap={1}>
-      <Box height={1} flexDirection="row" gap={1}>
-        <Text fg={colors.textDim}>Mode</Text>
-        <SegmentedControl
-          value={editor.queryType}
-          options={[
-            { label: "Latest", value: "Latest" },
-            { label: "Top", value: "Top" },
-          ]}
-          onChange={(value) => onChange({ queryType: value === "Top" ? "Top" : "Latest" })}
-        />
-      </Box>
-      <Box flexGrow={1} minHeight={5} border borderColor={colors.border} backgroundColor={colors.panel}>
-        <Textarea
-          key={editor.key}
-          ref={textareaRef}
-          initialValue={editor.query}
-          placeholder="$AAPL -filter:replies"
-          focused={focused}
-          textColor={colors.text}
-          placeholderColor={colors.textDim}
-          backgroundColor={colors.panel}
-          flexGrow={1}
-          wrapText
-        />
-      </Box>
-      {editor.error ? (
-        <Text fg={colors.negative}>{editor.error}</Text>
-      ) : (
-        <Text fg={colors.textDim}>{truncateWithEllipsis("Use X advanced search syntax. Example: $AAPL OR $MSFT -filter:replies", Math.max(1, width - 2))}</Text>
-      )}
+    <Box
+      height={1}
+      width={width}
+      flexDirection="row"
+      backgroundColor={colors.panel}
+      onMouseDown={(event) => {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        onFocus();
+        inputRef.current?.focus?.();
+      }}
+    >
+      <Text fg={active ? colors.textBright : colors.textDim}>/</Text>
+      <Box width={1} />
+      <Input
+        ref={inputRef}
+        value={draft}
+        focused={focused && active}
+        placeholder="$AAPL -filter:replies"
+        placeholderColor={colors.textDim}
+        textColor={colors.text}
+        focusedTextColor={colors.text}
+        backgroundColor={colors.panel}
+        focusedBackgroundColor={colors.panel}
+        cursorColor={colors.textBright}
+        flexGrow={1}
+        onFocus={onFocus}
+        onInput={setDraft}
+        onChange={setDraft}
+        onSubmit={commitNow}
+      />
     </Box>
   );
 }
@@ -639,27 +704,104 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     EMPTY_FEED_STATE,
     { schemaVersion: TWEET_SEARCH_SCHEMA_VERSION },
   );
+  const [launchRequest, setLaunchRequest] = usePluginState<TwitterFeedLaunchRequest | null>(
+    TWITTER_FEED_LAUNCH_STATE_KEY,
+    null,
+    { schemaVersion: TWITTER_FEED_LAUNCH_SCHEMA_VERSION },
+  );
   const [activeFeedId, setActiveFeedId] = usePluginPaneState<string | null>("activeFeedId", null);
-  const [editorState, setEditorState] = useState<FeedEditorState | null>(null);
-  const textareaRef = useRef<TextareaRenderable | null>(null);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const initializedRef = useRef(false);
   const feeds = useMemo(() => normalizeFeeds(persistedState), [persistedState]);
+
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((current) => current + 1);
+  }, []);
+
+  const blurSearch = useCallback(() => {
+    setSearchFocused(false);
+  }, []);
 
   const updateFeeds = useCallback((updater: (feeds: TwitterFeed[]) => TwitterFeed[]) => {
     setPersistedState((current) => ({ feeds: updater(normalizeFeeds(current)) }));
   }, [setPersistedState]);
 
+  const addFeed = useCallback((query = "", queryType: CloudTweetQueryType = "Latest") => {
+    const feed = createFeed(query, queryType);
+    updateFeeds((current) => [...current, feed]);
+    setActiveFeedId(feed.id);
+    focusSearch();
+    return feed.id;
+  }, [focusSearch, setActiveFeedId, updateFeeds]);
+
+  const openOrCreateFeed = useCallback((
+    query: string,
+    queryType: CloudTweetQueryType = "Latest",
+    options?: { focusSearch?: boolean },
+  ) => {
+    const normalizedQuery = normalizeFeedQuery(query);
+    if (!normalizedQuery) {
+      if (feeds.length === 0) addFeed("", queryType);
+      return;
+    }
+
+    let nextActiveId: string | null = null;
+    updateFeeds((current) => {
+      const existing = current.find((feed) => normalizeFeedQuery(feed.query) === normalizedQuery);
+      if (existing) {
+        nextActiveId = existing.id;
+        return current;
+      }
+      const feed = createFeed(query, queryType);
+      nextActiveId = feed.id;
+      return [...current, feed];
+    });
+    if (nextActiveId) setActiveFeedId(nextActiveId);
+    if (options?.focusSearch) focusSearch();
+  }, [addFeed, feeds.length, focusSearch, setActiveFeedId, updateFeeds]);
+
+  const updateFeedQuery = useCallback((feedId: string, query: string) => {
+    const now = Date.now();
+    updateFeeds((current) => current.map((feed) => (
+      feed.id === feedId
+        ? {
+          ...feed,
+          query,
+          title: deriveFeedTitle(query),
+          updatedAt: now,
+          lastError: null,
+        }
+        : feed
+    )));
+  }, [updateFeeds]);
+
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
     if (feeds.length > 0) return;
-    const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
-    if (!seedQuery) return;
+    const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query : "";
     const seedType = paneInstance?.params?.queryType === "Top" ? "Top" : "Latest";
     const feed = createFeed(seedQuery, seedType);
     setPersistedState({ feeds: [feed] });
     setActiveFeedId(feed.id);
-  }, [feeds.length, paneInstance?.params?.query, paneInstance?.params?.queryType, setActiveFeedId, setPersistedState]);
+    if (!seedQuery.trim()) focusSearch();
+  }, [feeds.length, focusSearch, paneInstance?.params?.query, paneInstance?.params?.queryType, setActiveFeedId, setPersistedState]);
+
+  useEffect(() => {
+    if (!launchRequest) return;
+    if (launchRequest.targetPaneId && launchRequest.targetPaneId !== paneId) return;
+
+    const queryType = launchRequest.queryType === "Top" ? "Top" : "Latest";
+    if (launchRequest.query.trim()) {
+      openOrCreateFeed(launchRequest.query, queryType);
+    } else if (feeds.length === 0) {
+      addFeed("", queryType);
+    }
+    setLaunchRequest(null);
+  }, [addFeed, feeds.length, launchRequest, openOrCreateFeed, paneId, setLaunchRequest]);
 
   useEffect(() => {
     if (feeds.length === 0) {
@@ -673,72 +815,27 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
 
   const activeFeed = feeds.find((feed) => feed.id === activeFeedId) ?? feeds[0] ?? null;
 
-  const openCreateEditor = useCallback(() => {
-    setEditorState({
-      mode: "create",
-      feedId: null,
-      query: "",
-      queryType: "Latest",
-      key: generateEditorKey(),
-      error: null,
-    });
-  }, []);
-
-  const openEditEditor = useCallback((feed: TwitterFeed | null) => {
-    if (!feed) return;
-    setEditorState({
-      mode: "edit",
-      feedId: feed.id,
-      query: feed.query,
-      queryType: feed.queryType,
-      key: generateEditorKey(),
-      error: null,
-    });
-  }, []);
-
-  const closeEditor = useCallback(() => {
-    textareaRef.current = null;
-    setEditorState(null);
-  }, []);
-
-  const saveEditor = useCallback(() => {
-    if (!editorState) return;
-    const query = textareaRef.current?.editBuffer.getText().trim() || editorState.query.trim();
-    if (!query) {
-      setEditorState((current) => current ? { ...current, error: "Query is required." } : current);
-      return;
-    }
-
-    if (editorState.mode === "create") {
-      const feed = createFeed(query, editorState.queryType);
-      updateFeeds((current) => [...current, feed]);
-      setActiveFeedId(feed.id);
-    } else if (editorState.feedId) {
-      const now = Date.now();
-      updateFeeds((current) => current.map((feed) => (
-        feed.id === editorState.feedId
-          ? {
-            ...feed,
-            query,
-            queryType: editorState.queryType,
-            title: deriveFeedTitle(query),
-            updatedAt: now,
-            lastError: null,
-          }
-          : feed
-      )));
-    }
-
-    closeEditor();
-  }, [closeEditor, editorState, setActiveFeedId, updateFeeds]);
-
   const removeFeed = useCallback((feedId: string) => {
-    updateFeeds((current) => current.filter((feed) => feed.id !== feedId));
-    if (activeFeedId === feedId) {
-      const next = feeds.filter((feed) => feed.id !== feedId)[0] ?? null;
-      setActiveFeedId(next?.id ?? null);
-    }
-  }, [activeFeedId, feeds, setActiveFeedId, updateFeeds]);
+    let nextActiveId: string | null = null;
+    let createdEmpty = false;
+    updateFeeds((current) => {
+      const next = current.filter((feed) => feed.id !== feedId);
+      if (next.length === 0) {
+        const feed = createFeed("", "Latest");
+        nextActiveId = feed.id;
+        createdEmpty = true;
+        return [feed];
+      }
+      nextActiveId = activeFeedId === feedId
+        ? next[0]!.id
+        : activeFeedId && next.some((feed) => feed.id === activeFeedId)
+          ? activeFeedId
+          : next[0]!.id;
+      return next;
+    });
+    if (nextActiveId) setActiveFeedId(nextActiveId);
+    if (createdEmpty) focusSearch();
+  }, [activeFeedId, focusSearch, setActiveFeedId, updateFeeds]);
 
   const cycleFeeds = useCallback((direction: -1 | 1) => {
     if (!activeFeed || feeds.length <= 1) return;
@@ -750,16 +847,11 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   useShortcut((event) => {
     if (!focused) return;
 
-    if (editorState) {
+    if (searchFocused) {
       if (event.name === "escape") {
         event.preventDefault?.();
         event.stopPropagation?.();
-        closeEditor();
-      }
-      if (event.ctrl && event.name === "s") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        saveEditor();
+        blurSearch();
       }
       return;
     }
@@ -767,13 +859,13 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     if (event.name === "n") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      openCreateEditor();
+      addFeed();
       return;
     }
-    if (event.name === "e") {
+    if (event.name === "/" || event.sequence === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      openEditEditor(activeFeed);
+      focusSearch();
       return;
     }
     if (event.name === "d" && activeFeed) {
@@ -796,8 +888,9 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   }, { allowEditable: true });
 
   const activeFeedIdValue = activeFeed?.id ?? null;
-  const activeFeedQuery = activeFeed?.query ?? null;
+  const activeFeedQuery = activeFeed?.query.trim() ?? "";
   const activeFeedQueryType = activeFeed?.queryType ?? "Latest";
+  const searchEnabled = activeFeedQuery.length > 0;
   const loadActiveFeed = useCallback(() => {
     if (!activeFeedQuery) throw new Error("No X feed selected");
     return apiClient.searchCloudTweets({
@@ -825,24 +918,37 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     )));
   }, [activeFeedIdValue, updateFeeds]);
 
-  usePaneFooter("twitter-feed", () => ({
+  usePaneFooter(TWITTER_FEED_PANE_ID, () => ({
     info: activeFeed
       ? [
         { id: "mode", parts: [{ text: activeFeed.queryType, tone: "value" }] },
         ...(activeFeed.lastSuccessAt ? [{ id: "last", parts: [{ text: `ran ${formatTimeAgo(new Date(activeFeed.lastSuccessAt))}`, tone: "muted" as const }] }] : []),
       ]
       : [],
-    hints: editorState
+    hints: searchFocused
       ? [
-        { id: "save", key: "Ctrl+S", label: "save", onPress: saveEditor },
-        { id: "cancel", key: "Esc", label: "cancel", onPress: closeEditor },
+        { id: "done", key: "Esc", label: "done", onPress: blurSearch },
       ]
       : [
-        { id: "new", key: "n", label: "ew", onPress: openCreateEditor },
-        { id: "edit", key: "e", label: "dit", onPress: () => openEditEditor(activeFeed), disabled: !activeFeed },
+        { id: "new", key: "n", label: "ew", onPress: () => addFeed() },
+        { id: "search", key: "/", label: "search", onPress: focusSearch, disabled: !activeFeed },
         { id: "delete", key: "d", label: "elete", onPress: activeFeed ? () => removeFeed(activeFeed.id) : undefined, disabled: !activeFeed },
       ],
-  }), [activeFeed, closeEditor, editorState, openCreateEditor, openEditEditor, removeFeed, saveEditor]);
+  }), [activeFeed, addFeed, blurSearch, focusSearch, removeFeed, searchFocused]);
+
+  const searchBar = activeFeed ? (
+    <TwitterFeedSearchBar
+      feed={activeFeed}
+      focused={focused}
+      active={searchFocused}
+      width={width}
+      focusToken={searchFocusToken}
+      inputRef={searchInputRef}
+      onFocus={focusSearch}
+      onBlur={blurSearch}
+      onQueryChange={updateFeedQuery}
+    />
+  ) : null;
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -851,44 +957,39 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
           tabs={feeds.map((feed) => ({
             label: truncateWithEllipsis(feed.title, 18),
             value: feed.id,
-            onClose: editorState ? undefined : removeFeed,
-            onDoubleClick: (id) => openEditEditor(feeds.find((feed) => feed.id === id) ?? null),
+            onClose: removeFeed,
+            onDoubleClick: focusSearch,
           }))}
           activeValue={activeFeed?.id ?? null}
           onSelect={(id) => {
-            if (editorState) return;
             setActiveFeedId(id);
           }}
           compact
           variant="pill"
           closeMode="active"
-          onAdd={editorState ? undefined : openCreateEditor}
-          focused={focused && !editorState}
+          onAdd={() => addFeed()}
+          focused={focused && !searchFocused}
         />
       </Box>
 
-      {editorState ? (
-        <TwitterFeedEditor
-          editor={editorState}
-          focused={focused}
-          width={width}
-          textareaRef={textareaRef}
-          onChange={(patch) => setEditorState((current) => current ? { ...current, ...patch, error: null } : current)}
-        />
-      ) : !activeFeed ? (
+      {!activeFeed ? (
         <Box padding={1} flexGrow={1}>
-          <EmptyState title="No X feeds yet." hint="Use + or TWIT <query>." />
+          <EmptyState title="No X feeds yet." />
         </Box>
       ) : (
         <TweetSearchTable
-          focused={focused}
+          focused={focused && !searchFocused}
           width={width}
           height={Math.max(1, height - 1)}
           requestKey={`feed:${activeFeed.id}:${activeFeed.query}:${activeFeed.queryType}`}
           footerId="twitter-feed-search"
+          rootBefore={searchBar}
+          enabled={searchEnabled}
           load={loadActiveFeed}
           onResult={markFeedResult}
           onError={markFeedError}
+          emptyStateTitle={searchEnabled ? "No tweets" : "Enter a search query"}
+          emptyStateHint={searchEnabled ? activeFeedQuery : undefined}
         />
       )}
     </Box>
