@@ -116,8 +116,7 @@ import {
   type NativeChartBitmap,
   type NativeCrosshairOverlay,
 } from "./native/chart-rasterizer";
-import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-support";
-import { resolveChartRendererState } from "./native/renderer-selection";
+import { useResolvedChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
 import { syncCachedNativeSurface } from "./native/surface-sync";
 import {
@@ -1501,8 +1500,7 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
   const [pendingAutoWindowOverride, setPendingAutoWindowOverride] = useState<DateWindowRange | null>(null);
   const [lastReadyRenderView, setLastReadyRenderView] = useState<CachedRenderedView | null>(null);
   const showVolume = showVolumeOverride ?? !compact;
-  const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
-  const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
+  const rendererState = useResolvedChartRendererState(preferredRenderer, renderer);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
   const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
   const showNativeUnavailable = rendererState.nativeUnavailable && !useCanvasChart;
@@ -2593,30 +2591,6 @@ export const ResolvedStockChart = memo(function ResolvedStockChart({
         : current));
     }
   }, [interactive, chartWidth]);
-
-  useEffect(() => {
-    const refreshSupport = () => setKittySupport(getCachedKittySupport(renderer));
-    refreshSupport();
-    renderer.on("capabilities", refreshSupport);
-    return () => {
-      renderer.off("capabilities", refreshSupport);
-    };
-  }, [renderer]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const known = getCachedKittySupport(renderer);
-    setKittySupport(known);
-    if (preferredRenderer === "braille" || known !== null) return;
-    ensureKittySupport(renderer).then((supported) => {
-      if (!cancelled) setKittySupport(supported);
-    }).catch(() => {
-      if (!cancelled) setKittySupport(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [preferredRenderer, renderer]);
 
   const persistRenderMode = useCallback((nextMode: ChartRenderMode) => {
     if (!compact && nextMode !== storedRenderMode) {

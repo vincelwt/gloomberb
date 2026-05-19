@@ -14,6 +14,7 @@ import {
 } from "./chart-rasterizer";
 import { KittyImageManager } from "./kitty-manager";
 import { chunkBase64Payload, encodeKittyTransmitRgba } from "./kitty-protocol";
+import { ensureKittySupport, getCachedKittySupport } from "./kitty-support";
 import { resolveChartRendererState } from "./renderer-selection";
 import { computeSurfaceVisibleFragments, NativeSurfaceManager } from "./surface-manager";
 import { syncCachedNativeSurface } from "./surface-sync";
@@ -41,6 +42,29 @@ describe("resolveChartRendererState", () => {
       nativeReady: true,
       nativeUnavailable: false,
     });
+  });
+});
+
+describe("getCachedKittySupport", () => {
+  test("prefers later renderer capabilities over a failed query cache", async () => {
+    let capabilities: { kitty_graphics?: boolean } | null = null;
+    const renderer = {
+      isDestroyed: false,
+      get capabilities() {
+        return capabilities;
+      },
+      on() {},
+      off() {},
+      write() {
+        return false;
+      },
+    } as unknown as CliRenderer;
+
+    expect(await ensureKittySupport(renderer)).toBe(false);
+    expect(getCachedKittySupport(renderer)).toBe(false);
+
+    capabilities = { kitty_graphics: true };
+    expect(getCachedKittySupport(renderer)).toBe(true);
   });
 });
 
