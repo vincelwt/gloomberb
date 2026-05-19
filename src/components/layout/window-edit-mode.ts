@@ -1,5 +1,6 @@
 import {
   applyDrop,
+  bringToFront,
   getDockLeafLayouts,
   getDockResizeTargets,
   moveFloatingPane,
@@ -85,17 +86,8 @@ function dockMovePositionLabel(position: WindowEditDockMovePosition): string {
   }
 }
 
-function resizeEdgeLabel(direction: WindowEditDirection): string {
-  switch (direction) {
-    case "left":
-      return "left";
-    case "right":
-      return "right";
-    case "up":
-      return "top";
-    case "down":
-      return "bottom";
-  }
+function dockResizeAxisLabel(axis: DockResizeTarget["axis"]): string {
+  return axis === "horizontal" ? "left/right" : "up/down";
 }
 
 export function pathKey(path: Array<0 | 1>): string {
@@ -250,6 +242,14 @@ export function getWindowEditPaneIds(layout: LayoutConfig): string[] {
   return [...dockedIds, ...floatingIds];
 }
 
+export function raiseWindowEditPane(layout: LayoutConfig, paneId: string): LayoutConfig {
+  const floating = layout.floating.find((entry) => entry.instanceId === paneId);
+  if (!floating) return layout;
+  const currentZ = floating.zIndex ?? 50;
+  const covered = layout.floating.some((entry) => entry.instanceId !== paneId && (entry.zIndex ?? 50) >= currentZ);
+  return covered ? bringToFront(layout, paneId) : layout;
+}
+
 export function cycleWindowEditPane(
   state: WindowEditState,
   paneIds: string[],
@@ -260,11 +260,14 @@ export function cycleWindowEditPane(
   if (paneIds.length === 0) return state;
   const currentIndex = Math.max(0, paneIds.indexOf(state.paneId));
   const paneId = paneIds[(currentIndex + delta + paneIds.length) % paneIds.length] ?? state.paneId;
+  const previewLayout = raiseWindowEditPane(state.previewLayout, paneId);
   const preferredFocus: WindowEditFocus = state.mode === "move" ? { kind: "move" } : state.focus;
   return {
     ...state,
     paneId,
-    focus: normalizeWindowEditFocus(preferredFocus, state.previewLayout, paneId, state.mode, bounds, dockGeometryOptions),
+    previewLayout,
+    focus: normalizeWindowEditFocus(preferredFocus, previewLayout, paneId, state.mode, bounds, dockGeometryOptions),
+    dirty: state.dirty || previewLayout !== state.previewLayout,
     notice: undefined,
   };
 }
@@ -275,10 +278,13 @@ export function setWindowEditPane(
   bounds: LayoutBounds,
   dockGeometryOptions: DockGeometryOptions,
 ): WindowEditState {
+  const previewLayout = raiseWindowEditPane(state.previewLayout, paneId);
   return {
     ...state,
     paneId,
-    focus: normalizeWindowEditFocus(state.mode === "move" ? { kind: "move" } : state.focus, state.previewLayout, paneId, state.mode, bounds, dockGeometryOptions),
+    previewLayout,
+    focus: normalizeWindowEditFocus(state.mode === "move" ? { kind: "move" } : state.focus, previewLayout, paneId, state.mode, bounds, dockGeometryOptions),
+    dirty: state.dirty || previewLayout !== state.previewLayout,
     notice: undefined,
   };
 }
@@ -298,36 +304,33 @@ export function setWindowEditMode(
   };
 }
 
-function getDockResizeTargetForDirection(
+function getDockResizeTargetForFocus(
   layout: LayoutConfig,
   paneId: string,
-  direction: WindowEditDirection,
+  focus: WindowEditFocus,
   bounds: LayoutBounds,
   dockGeometryOptions: DockGeometryOptions,
 ): DockResizeTarget | null {
-  return getDockResizeTargets(layout, paneId, bounds, dockGeometryOptions).find((target) => {
-    if (target.axis === "horizontal") {
-      return direction === "right" && target.leafBranch === 0
-        || direction === "left" && target.leafBranch === 1;
-    }
-
-    return direction === "down" && target.leafBranch === 0
-      || direction === "up" && target.leafBranch === 1;
-  }) ?? null;
+  const targets = getDockResizeTargets(layout, paneId, bounds, dockGeometryOptions);
+  if (focus.kind !== "dock-resize") return targets[0] ?? null;
+  return targets.find((target) => pathKey(target.path) === focus.pathKey) ?? targets[0] ?? null;
 }
 
-function resizeDockPaneEdgeByDirection(
+function resizeDockPaneDividerByDirection(
   layout: LayoutConfig,
   target: DockResizeTarget,
+  direction: WindowEditDirection,
   step: { x: number; y: number },
-): LayoutConfig {
+): LayoutConfig | null {
   if (target.axis === "horizontal") {
+    if (direction !== "left" && direction !== "right") return null;
     const delta = step.x / Math.max(1, target.bounds.width);
-    return resizeSplitAtPath(layout, target.path, target.ratio + (target.leafBranch === 0 ? delta : -delta));
+    return resizeSplitAtPath(layout, target.path, target.ratio + (direction === "right" ? delta : -delta));
   }
 
+  if (direction !== "up" && direction !== "down") return null;
   const delta = step.y / Math.max(1, target.bounds.height);
-  return resizeSplitAtPath(layout, target.path, target.ratio + (target.leafBranch === 0 ? delta : -delta));
+  return resizeSplitAtPath(layout, target.path, target.ratio + (direction === "down" ? delta : -delta));
 }
 
 export function resolveWindowEditCommitLayout(
@@ -389,9 +392,17 @@ export function applyWindowEditDirection(
     const deltaY = direction === "up" ? -step.y : direction === "down" ? step.y : 0;
     nextLayout = resizeFloatingPaneFromCorner(nextLayout, state.paneId, focus.corner, deltaX, deltaY, bounds);
   } else {
-    const target = getDockResizeTargetForDirection(nextLayout, state.paneId, direction, bounds, dockGeometryOptions);
+    const target = getDockResizeTargetForFocus(nextLayout, state.paneId, focus, bounds, dockGeometryOptions);
     if (target) {
-      nextLayout = resizeDockPaneEdgeByDirection(nextLayout, target, step);
+      const resizedLayout = resizeDockPaneDividerByDirection(nextLayout, target, direction, step);
+      if (!resizedLayout) {
+        return {
+          ...state,
+          focus: normalizeWindowEditFocus({ kind: "dock-resize", pathKey: pathKey(target.path) }, nextLayout, state.paneId, state.mode, bounds, dockGeometryOptions),
+          notice: `Use ${dockResizeAxisLabel(target.axis)} for selected divider`,
+        };
+      }
+      nextLayout = resizedLayout;
       const nextFocus = normalizeWindowEditFocus({ kind: "dock-resize", pathKey: pathKey(target.path) }, nextLayout, state.paneId, state.mode, bounds, dockGeometryOptions);
       return {
         ...state,
@@ -405,7 +416,7 @@ export function applyWindowEditDirection(
     return {
       ...state,
       focus,
-      notice: `No ${resizeEdgeLabel(direction)} edge to resize`,
+      notice: "No divider to resize",
     };
   }
 
@@ -446,14 +457,14 @@ export function windowEditStatusLine(
 export function windowEditHelpText(state: WindowEditState): string {
   if (state.mode === "move") {
     if (state.focus.kind === "dock-move") {
-      return "arrows/hjkl choose side  m retarget  Tab window  d float  r resize  Enter commit  Esc exit/cancel";
+      return "arrows/hjkl choose side  m retarget  Tab/n window  d float  r resize  Enter commit  Esc exit/cancel";
     }
-    return "Tab window  d dock/float  r resize  arrows/hjkl target/move  Shift fast  Enter commit  Esc exit/cancel";
+    return "Tab/n window  d dock/float  r resize  arrows/hjkl target/move  Shift fast  Enter commit  Esc exit/cancel";
   }
   if (state.focus.kind === "floating-resize") {
-    return "Tab corner  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
+    return "Tab corner  n window  m move  arrows/hjkl resize  Shift fast  Enter commit  Esc exit/cancel";
   }
-  return "arrows/hjkl resize edge  Tab divider  m move  Shift fast  Enter commit  Esc exit/cancel";
+  return "arrows/hjkl move divider  Tab divider  n window  m move  Shift fast  Enter commit  Esc exit/cancel";
 }
 
 export function resolveWindowEditDockMovePreview(

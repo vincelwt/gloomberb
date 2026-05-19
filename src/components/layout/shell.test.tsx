@@ -1064,6 +1064,9 @@ describe("Shell", () => {
       x: 4,
       y: 1,
     }));
+    const movedPortfolio = updates[1]?.layout.floating.find((entry: any) => entry.instanceId === "portfolio-list:main");
+    const movedTicker = updates[1]?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main");
+    expect(movedPortfolio?.zIndex).toBeGreaterThan(movedTicker?.zIndex ?? 0);
   });
 
   test("cycles windows with Tab while staying in window move mode", async () => {
@@ -1190,7 +1193,7 @@ describe("Shell", () => {
       const frame = testSetup.captureCharFrame();
       expect(frame).toContain("WINDOW MOVE");
       expect(frame).toContain("WINDOW MOVE · Main Portfolio");
-      expect(frame).toContain("Tab window");
+      expect(frame).toContain("Tab/n window");
     } finally {
       openTuiUiHost.capabilities = previousCapabilities;
     }
@@ -1218,28 +1221,50 @@ describe("Shell", () => {
     }));
   });
 
-  test("resizes the selected docked pane edge instead of the currently cycled divider", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-shell-window-resize-edge-test");
+  test("cycles windows with n while Tab stays on resize handles", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-resize-window-cycle-test");
+    const floatingLayout = cloneLayout(config.layout);
+    floatingLayout.dockRoot = null;
+    floatingLayout.floating = [
+      { instanceId: "portfolio-list:main", x: 2, y: 1, width: 32, height: 10, zIndex: 50 },
+      { instanceId: "ticker-detail:main", x: 8, y: 2, width: 32, height: 10, zIndex: 75 },
+    ];
+    const { actions } = await renderShellForWindowModeTest(
+      createShellStateWithLayout(config, floatingLayout, "ticker-detail:main"),
+    );
+
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "r" });
+    await emitKeypress({ name: "tab" });
+    await emitKeypress({ name: "n" });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = findUpdateLayout(actions);
+    const resizedPortfolio = updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "portfolio-list:main");
+    const ticker = updateLayout?.layout.floating.find((entry: any) => entry.instanceId === "ticker-detail:main");
+    expect(resizedPortfolio).toEqual(expect.objectContaining({
+      x: 2,
+      width: 34,
+    }));
+    expect(resizedPortfolio?.zIndex).toBeGreaterThan(ticker?.zIndex ?? 0);
+  });
+
+  test("moves the selected docked resize divider in either direction", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-resize-divider-test");
     const mainPane = requireLayoutInstance(config, "portfolio-list:main");
     const detailPane = requireLayoutInstance(config, "ticker-detail:main");
     const dockedLayout = {
       dockRoot: {
         kind: "split" as const,
-        axis: "vertical" as const,
+        axis: "horizontal" as const,
         ratio: 0.5,
-        first: {
-          kind: "split" as const,
-          axis: "horizontal" as const,
-          ratio: 0.5,
-          first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
-          second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
-        },
-        second: { kind: "pane" as const, instanceId: "ticker-detail:secondary" },
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
       },
       instances: [
         { ...mainPane },
         { ...detailPane },
-        { ...detailPane, instanceId: "ticker-detail:secondary" },
       ],
       floating: [],
       detached: [],
@@ -1250,9 +1275,12 @@ describe("Shell", () => {
 
     await emitKeypress({ name: "m", ctrl: true, shift: true });
     await emitKeypress({ name: "r" });
-    await emitKeypress({ name: "down" });
+    await emitKeypress({ name: "left" });
+    await emitKeypress({ name: "right" });
+    await emitKeypress({ name: "right" });
 
     expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+    expect(testSetup.captureCharFrame()).not.toContain("No right edge");
 
     await emitKeypress({ name: "enter" });
 

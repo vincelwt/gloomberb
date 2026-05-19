@@ -82,6 +82,7 @@ import {
   getWindowEditPaneIds,
   normalizeWindowEditFocus,
   pathKey,
+  raiseWindowEditPane,
   resolveWindowEditCommitLayout,
   resolveWindowEditDockMovePreview,
   setWindowEditMode,
@@ -965,6 +966,7 @@ export function Shell({
     () => (nativePaneChrome && windowMode ? resolveNativeWindowEditPanelRect(width, contentHeight) : null),
     [contentHeight, nativePaneChrome, width, windowMode],
   );
+  const windowModePaneId = windowMode?.paneId;
   const activeLayout = windowMode?.previewLayout ?? visibleLayout;
 
   const persistLayout = useCallback((nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => {
@@ -999,15 +1001,20 @@ export function Shell({
     }
     setMenuState(null);
     setHoveredMenuItemId(null);
+    const previewLayout = raiseWindowEditPane(visibleLayout, targetPaneId);
     focusPane(targetPaneId);
     setWindowMode({
       paneId: targetPaneId,
-      previewLayout: visibleLayout,
+      previewLayout,
       mode,
-      focus: normalizeWindowEditFocus({ kind: "move" }, visibleLayout, targetPaneId, mode, bounds, dockGeometryOptions),
-      dirty: false,
+      focus: normalizeWindowEditFocus({ kind: "move" }, previewLayout, targetPaneId, mode, bounds, dockGeometryOptions),
+      dirty: previewLayout !== visibleLayout,
     });
   }, [bounds, cancelActiveDrag, dockGeometryOptions, focusPane, focusedPaneId, pluginRegistry, visibleLayout]);
+
+  useEffect(() => {
+    if (windowModePaneId) focusPane(windowModePaneId);
+  }, [focusPane, windowModePaneId]);
 
   useEffect(() => {
     pluginRegistry.openWindowModeFn = startWindowMode;
@@ -1181,6 +1188,10 @@ export function Shell({
           };
         });
       }
+    } else if (name === "n") {
+      setWindowMode((current) => current
+        ? cycleWindowEditPane(current, windowModePaneIds, bounds, dockGeometryOptions, event.shift ? -1 : 1)
+        : current);
     } else if (name === "tab") {
       setWindowMode((current) => current
         ? current.mode === "move"
