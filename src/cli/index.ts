@@ -19,7 +19,7 @@ import {
   removePlugin,
   updatePlugins,
 } from "./commands/plugins";
-import { runPaneFunction, runPaneScreenshot } from "./pane-functions";
+import { runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
 
 function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
   return [
@@ -85,6 +85,17 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
       },
       execute: async (args, ctx) => {
         await runPaneScreenshot(args, ctx);
+      },
+    },
+    {
+      name: "catalog",
+      aliases: ["functions", "capabilities"],
+      description: "List searchable pane-backed market functions and screenshots",
+      help: {
+        usage: ["catalog [query] [--limit n] [--all]"],
+      },
+      execute: async (args, ctx) => {
+        await runPaneCatalog(args, ctx);
       },
     },
     {

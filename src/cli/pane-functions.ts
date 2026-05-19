@@ -31,6 +31,11 @@ interface ParsedPaneFunctionArgs {
   height: number;
 }
 
+interface ParsedPaneCatalogArgs {
+  query: string;
+  limit: number;
+}
+
 interface ResolvedPaneFunction {
   token: string;
   label: string;
@@ -49,12 +54,27 @@ interface PaneFunctionCatalog {
   destroy(): void;
 }
 
+interface PaneCatalogEntry {
+  token: string;
+  label: string;
+  description: string;
+  paneId: string;
+  paneName: string;
+  templateId?: string;
+  shortcut?: string;
+  argKind?: string;
+  argPlaceholder?: string;
+  keywords: string[];
+  defaultSettings: Record<string, unknown>;
+}
+
 const DEFAULT_SHOT_WIDTH = 1280;
 const DEFAULT_SHOT_HEIGHT = 720;
 const MAX_SHOT_WIDTH = 2400;
 const MIN_SHOT_WIDTH = 720;
 const MAX_SHOT_HEIGHT = 1800;
 const MIN_SHOT_HEIGHT = 360;
+const DEFAULT_CATALOG_LIMIT = 25;
 const DESKTOP_CELL_WIDTH_PX = 8;
 const DESKTOP_CELL_HEIGHT_PX = 18;
 const SHOT_PRICE_HISTORY_RANGE = "5Y" as const;
@@ -108,6 +128,47 @@ function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
   const target = positionals[0]?.trim() ?? "";
   const arg = positionals.slice(1).join(" ").trim();
   return { target, arg, options, outputPath, width, height };
+}
+
+function parsePaneCatalogArgs(args: string[]): ParsedPaneCatalogArgs {
+  const queryParts: string[] = [];
+  let limit = DEFAULT_CATALOG_LIMIT;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index]!;
+    if (token === "--") {
+      queryParts.push(...args.slice(index + 1));
+      break;
+    }
+
+    if (token === "--all") {
+      limit = Number.POSITIVE_INFINITY;
+      continue;
+    }
+
+    if (token === "--limit") {
+      const parsed = Number(args[++index]);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        limit = Math.max(1, Math.round(parsed));
+      }
+      continue;
+    }
+
+    if (token.startsWith("--limit=")) {
+      const parsed = Number(token.slice("--limit=".length));
+      if (Number.isFinite(parsed) && parsed > 0) {
+        limit = Math.max(1, Math.round(parsed));
+      }
+      continue;
+    }
+
+    queryParts.push(token);
+  }
+
+  return {
+    query: queryParts.join(" ").trim(),
+    limit,
+  };
 }
 
 function parseArgumentsOption(value: string): Record<string, string> {
@@ -414,6 +475,177 @@ function buildPaneFunctionLookup(registry: PaneFunctionCatalog): Map<string, Pan
   }
 
   return lookup;
+}
+
+function sampleArgForTemplate(template: PaneTemplateDef): string {
+  switch (template.shortcut?.argKind) {
+    case "ticker":
+      return "AAPL";
+    case "ticker-list":
+      return "AAPL,MSFT";
+    case "text":
+      return "sample";
+    default:
+      return "";
+  }
+}
+
+function formatCatalogSettings(settings: Record<string, unknown>): string {
+  const entries = Object.entries(settings)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${String(value)}`);
+  return entries.length > 0 ? entries.join(", ") : "none";
+}
+
+async function buildTemplateCatalogEntry(
+  template: PaneTemplateDef,
+  pane: PaneDef,
+  context: MarketContext,
+): Promise<PaneCatalogEntry> {
+  const sampleArg = sampleArgForTemplate(template);
+  const createOptions = buildCreateOptions(template, sampleArg);
+  const primarySymbol = createOptions?.symbol ?? createOptions?.symbols?.[0] ?? null;
+  let defaultSettings: Record<string, unknown> = {};
+
+  if (template.createInstance) {
+    try {
+      const spec = await template.createInstance(buildTemplateContext(context, primarySymbol), createOptions);
+      defaultSettings = spec?.settings ?? {};
+    } catch {
+      defaultSettings = {};
+    }
+  }
+
+  return {
+    token: template.shortcut?.prefix ?? template.id,
+    label: template.label,
+    description: template.description,
+    paneId: pane.id,
+    paneName: pane.name,
+    templateId: template.id,
+    shortcut: template.shortcut?.prefix,
+    argKind: template.shortcut?.argKind,
+    argPlaceholder: template.shortcut?.argPlaceholder,
+    keywords: template.keywords ?? [],
+    defaultSettings,
+  };
+}
+
+async function buildPaneCatalogEntries(
+  registry: PaneFunctionCatalog,
+  context: MarketContext,
+): Promise<PaneCatalogEntry[]> {
+  const entries: PaneCatalogEntry[] = [];
+  const templatedPaneIds = new Set<string>();
+
+  for (const template of registry.paneTemplates.values()) {
+    const pane = registry.panes.get(template.paneId);
+    if (!pane) continue;
+    templatedPaneIds.add(pane.id);
+    entries.push(await buildTemplateCatalogEntry(template, pane, context));
+  }
+
+  for (const pane of registry.panes.values()) {
+    if (templatedPaneIds.has(pane.id)) continue;
+    entries.push({
+      token: pane.id,
+      label: pane.name,
+      description: `Open the ${pane.name} pane.`,
+      paneId: pane.id,
+      paneName: pane.name,
+      keywords: [],
+      defaultSettings: {},
+    });
+  }
+
+  return entries.sort((left, right) => left.token.localeCompare(right.token));
+}
+
+function paneCatalogSearchScore(entry: PaneCatalogEntry, query: string): number {
+  const terms = query.toLowerCase().split(/\s+/).map((term) => term.trim()).filter(Boolean);
+  if (terms.length === 0) return 1;
+
+  const exactTokens = [
+    entry.token,
+    entry.shortcut,
+    entry.templateId,
+    entry.paneId,
+  ].filter((value): value is string => !!value).map((value) => normalizeLookupToken(value));
+  const searchable = [
+    entry.token,
+    entry.label,
+    entry.description,
+    entry.paneId,
+    entry.paneName,
+    entry.templateId,
+    entry.shortcut,
+    entry.argKind,
+    entry.argPlaceholder,
+    ...entry.keywords,
+    ...Object.keys(entry.defaultSettings),
+  ].filter((value): value is string => !!value).join(" ").toLowerCase();
+
+  let score = searchable.includes(query.toLowerCase()) ? 4 : 0;
+  for (const term of terms) {
+    const normalized = normalizeLookupToken(term);
+    if (exactTokens.includes(normalized)) {
+      score += 8;
+    } else if (searchable.includes(term)) {
+      score += 2;
+    } else if (searchable.includes(normalized)) {
+      score += 1;
+    } else {
+      return 0;
+    }
+  }
+
+  return score;
+}
+
+function filterPaneCatalogEntries(entries: PaneCatalogEntry[], query: string): PaneCatalogEntry[] {
+  return entries
+    .map((entry) => ({ entry, score: paneCatalogSearchScore(entry, query) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.entry.token.localeCompare(right.entry.token))
+    .map(({ entry }) => entry);
+}
+
+function renderPaneCatalogReport(entries: PaneCatalogEntry[], args: ParsedPaneCatalogArgs): string {
+  const shown = entries.slice(0, args.limit);
+  const lines = [
+    "Gloomberb Function Catalog",
+    "",
+    "Use:",
+    "  gloomberb fn <shortcut-or-pane> [argument] [--key value]",
+    "  gloomberb shot <shortcut-or-pane> [argument] [--output path] [--key value]",
+    "",
+    args.query
+      ? `Matches for "${args.query}" (${shown.length}${entries.length > shown.length ? ` of ${entries.length}` : ""})`
+      : `Available pane functions (${shown.length}${entries.length > shown.length ? ` of ${entries.length}` : ""})`,
+    "",
+  ];
+
+  if (shown.length === 0) {
+    lines.push("No matching pane functions.");
+    return lines.join("\n");
+  }
+
+  for (const entry of shown) {
+    const arg = entry.argPlaceholder ? `<${entry.argPlaceholder}>` : entry.argKind ? `<${entry.argKind}>` : "[argument]";
+    lines.push(`${entry.token} | ${entry.label}`);
+    lines.push(`  Description: ${entry.description}`);
+    lines.push(`  Pane: ${entry.paneId} (${entry.paneName})`);
+    if (entry.templateId) lines.push(`  Template: ${entry.templateId}`);
+    if (entry.shortcut) lines.push(`  Shortcut: ${entry.shortcut}`);
+    if (entry.argKind) lines.push(`  Argument: ${entry.argKind}${entry.argPlaceholder ? ` (${entry.argPlaceholder})` : ""}`);
+    if (entry.keywords.length > 0) lines.push(`  Keywords: ${entry.keywords.join(", ")}`);
+    lines.push(`  Defaults: ${formatCatalogSettings(entry.defaultSettings)}`);
+    lines.push(`  Examples: gloomberb fn ${entry.token} ${arg} | gloomberb shot ${entry.token} ${arg} --output /tmp/${entry.token.toLowerCase()}.png`);
+    lines.push("");
+  }
+
+  lines.push("Generic screenshot state options: --tab <id>, --activeTabId <id>, --state key=value, --state.<key> value.");
+  return lines.join("\n").trimEnd();
 }
 
 async function resolvePaneFunction(
@@ -833,6 +1065,21 @@ export async function runPaneScreenshot(args: string[], ctx: CliCommandContext) 
   });
 }
 
+export async function runPaneCatalog(args: string[], ctx: CliCommandContext) {
+  await runPaneCliCommand(ctx, async () => {
+    const parsed = parsePaneCatalogArgs(args);
+    const context = await ctx.initMarketData();
+    const registry = await createPaneCatalog(context, ctx.plugins);
+    try {
+      const entries = await buildPaneCatalogEntries(registry, context);
+      console.log(renderPaneCatalogReport(filterPaneCatalogEntries(entries, parsed.query), parsed));
+    } finally {
+      registry.destroy();
+      context.persistence.close();
+    }
+  });
+}
+
 async function runPaneCliCommand(ctx: CliCommandContext, run: () => Promise<void>) {
   try {
     await run();
@@ -848,7 +1095,10 @@ function ensurePngExtension(path: string): string {
 
 export const paneFunctionTestInternals = {
   parsePaneFunctionArgs,
+  parsePaneCatalogArgs,
   normalizeLookupToken,
   parseArgumentsOption,
   optionPaneState,
+  filterPaneCatalogEntries,
+  renderPaneCatalogReport,
 };

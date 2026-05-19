@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { paneFunctionTestInternals } from "./pane-functions";
 
-const { parsePaneFunctionArgs, normalizeLookupToken, parseArgumentsOption, optionPaneState } = paneFunctionTestInternals;
+const {
+  parsePaneFunctionArgs,
+  parsePaneCatalogArgs,
+  normalizeLookupToken,
+  parseArgumentsOption,
+  optionPaneState,
+  filterPaneCatalogEntries,
+  renderPaneCatalogReport,
+} = paneFunctionTestInternals;
 
 describe("pane function CLI args", () => {
   test("parses target, argument, output, size, and pane options", () => {
@@ -61,5 +69,46 @@ describe("pane function CLI args", () => {
       financialSubTab: "balance",
       financialPeriod: "quarterly",
     });
+  });
+
+  test("parses catalog queries and limit options", () => {
+    expect(parsePaneCatalogArgs(["chart", "price", "--limit", "3"])).toEqual({
+      query: "chart price",
+      limit: 3,
+    });
+  });
+
+  test("searches and renders pane catalog entries", () => {
+    const matches = filterPaneCatalogEntries([
+      {
+        token: "GP",
+        label: "Graph Price",
+        description: "Open a ticker detail pane locked to a price chart.",
+        paneId: "ticker-detail",
+        paneName: "Detail",
+        templateId: "graph-price-pane",
+        shortcut: "GP",
+        argKind: "ticker",
+        argPlaceholder: "ticker",
+        keywords: ["gp", "graph", "price", "chart"],
+        defaultSettings: { lockedTabId: "chart", chartRangePreset: "5Y" },
+      },
+      {
+        token: "FA",
+        label: "Financial Analysis",
+        description: "Open a ticker detail pane locked to financial statements.",
+        paneId: "ticker-detail",
+        paneName: "Detail",
+        templateId: "financial-analysis-pane",
+        shortcut: "FA",
+        argKind: "ticker",
+        argPlaceholder: "ticker",
+        keywords: ["fa", "financial", "analysis", "statements"],
+        defaultSettings: { lockedTabId: "financials" },
+      },
+    ], "price chart");
+
+    expect(matches.map((entry) => entry.token)).toEqual(["GP"]);
+    expect(renderPaneCatalogReport(matches, { query: "price chart", limit: 10 })).toContain("gloomberb shot GP <ticker>");
   });
 });
