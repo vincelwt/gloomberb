@@ -710,15 +710,15 @@ export function resolveDocked(
   layout: LayoutConfig,
   registeredPanes: ReadonlyMap<string, PaneDef>,
 ): ResolvedPane[] {
-  const result: ResolvedPane[] = [];
-  for (const leaf of traverseDockLeaves(layout)) {
-    const instance = findPaneInstance(layout, leaf.instanceId);
-    if (!instance) continue;
-    const def = registeredPanes.get(instance.paneId);
-    if (!def) continue;
-    result.push({ instance, def, path: leaf.path });
-  }
-  return result;
+  return traverseDockLeaves(layout)
+    .map((leaf) => {
+      const instance = findPaneInstance(layout, leaf.instanceId);
+      if (!instance) return null;
+      const def = registeredPanes.get(instance.paneId);
+      if (!def) return null;
+      return { instance, def, path: leaf.path };
+    })
+    .filter((pane): pane is ResolvedPane => pane !== null);
 }
 
 export function resolveFloating(
