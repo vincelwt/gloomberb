@@ -138,6 +138,7 @@ See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface availa
 | `Ctrl+P` or `` ` `` | Open command bar |
 | `Ctrl+,` | Open focused pane settings |
 | `Ctrl+W` | Close focused pane |
+| `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
 | `Ctrl+Shift+D` | Dock or float focused pane |
 | `Ctrl+Shift+L` | Layout actions |
 | `Ctrl+Shift+G` | Gridlock all windows |

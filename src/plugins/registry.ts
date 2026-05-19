@@ -63,6 +63,8 @@ interface PluginRegistryOptions {
   wrapBrokerAdapter?: (broker: BrokerAdapter, pluginId: string) => BrokerAdapter;
 }
 
+export type WindowEditMode = "move" | "resize";
+
 export function getSharedMarketData(): DataProvider | undefined { return sharedMarketData; }
 export function getSharedRegistry(): PluginRegistry | undefined { return sharedRegistry; }
 export function setSharedMarketDataForTests(provider: DataProvider | undefined): void {
@@ -136,6 +138,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   openCommandBarFn: ((query?: string) => void) = () => {};
   openPluginCommandWorkflowFn: ((commandId: string) => void) = () => {};
   openPaneSettingsFn: ((paneId?: string) => void) = () => {};
+  openWindowModeFn: ((paneId?: string, mode?: WindowEditMode) => void) = () => {};
   showPaneFn: ((paneId: string) => void) = () => {};
   createPaneFromTemplateFn: ((templateId: string, options?: PaneTemplateCreateOptions) => void) = () => {};
   createPaneFromTemplateAsyncFn: ((templateId: string, options?: PaneTemplateCreateOptions) => Promise<void>) = async () => {};
@@ -173,6 +176,9 @@ export class PluginRegistry implements PluginRuntimeAccess {
   openPaneSettings = (paneId?: string) => {
     this.openPaneSettingsFn(paneId);
   };
+  openWindowMode = (paneId?: string, mode?: WindowEditMode) => {
+    this.openWindowModeFn(paneId, mode);
+  };
   openPluginCommandWorkflow = (commandId: string) => {
     this.openPluginCommandWorkflowFn(commandId);
   };
@@ -200,7 +206,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   getPaneRuntimeStateFn: ((paneId: string) => PaneRuntimeState | null) = () => null;
   updatePaneRuntimeStateFn: ((paneId: string, patch: Partial<PaneRuntimeState>) => void) = () => {};
   applyPaneSettingValueFn: ((paneId: string, field: import("../types/plugin").PaneSettingField, value: unknown) => Promise<void>) = async () => {};
-  getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = (pluginId, key) => (
+  getPluginConfigValueFn: (<T = unknown>(pluginId: string, key: string) => T | null) = <T = unknown>(pluginId: string, key: string): T | null => (
     (this.getConfigFn().pluginConfig[pluginId]?.[key] as T | undefined) ?? null
   );
   setPluginConfigValueFn: ((pluginId: string, key: string, value: unknown) => Promise<void>) = async () => {};
