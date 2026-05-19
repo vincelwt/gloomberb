@@ -34,6 +34,7 @@ type PendingCdpCall = {
 const CHROME_POLL_ATTEMPTS = 80;
 const SHOT_READY_TIMEOUT_MS = 10_000;
 const CDP_CALL_TIMEOUT_MS = 10_000;
+const SHOT_DEVICE_SCALE_FACTOR = 2;
 
 export async function renderDesktopPaneScreenshot(
   payload: DesktopPaneShotPayload,
@@ -205,7 +206,7 @@ async function capturePageScreenshot({
     await session.send("Emulation.setDeviceMetricsOverride", {
       width: widthPx,
       height: heightPx,
-      deviceScaleFactor: 1,
+      deviceScaleFactor: SHOT_DEVICE_SCALE_FACTOR,
       mobile: false,
     });
     await waitForShotReady(session);
