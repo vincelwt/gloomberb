@@ -88,8 +88,7 @@ import {
   type NativeChartBitmap,
   type NativeCrosshairOverlay,
 } from "./native/chart-rasterizer";
-import { ensureKittySupport, getCachedKittySupport } from "./native/kitty-support";
-import { resolveChartRendererState } from "./native/renderer-selection";
+import { useResolvedChartRendererState } from "./native/renderer-selection";
 import { getNativeSurfaceManager } from "./native/surface-manager";
 import { syncCachedNativeSurface } from "./native/surface-sync";
 import {
@@ -562,7 +561,6 @@ function ComparisonStockChartView({
   });
   const [resolutionSupport, setResolutionSupport] = useState<ChartResolutionSupport[] | null>(null);
   const supportMap = useMemo(() => buildChartResolutionSupportMap(resolutionSupport ?? []), [resolutionSupport]);
-  const [kittySupport, setKittySupport] = useState<boolean | null>(() => getCachedKittySupport(renderer));
   const [displayCursor, setDisplayCursor] = useState<DisplayCursorState>(EMPTY_DISPLAY_CURSOR);
   const [canvasBaseBitmapState, setCanvasBaseBitmapState] = useState<{ key: string; bitmap: NativeChartBitmap } | null>(null);
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -999,30 +997,6 @@ function ComparisonStockChartView({
     viewState.zoomLevel,
   ]);
 
-  useEffect(() => {
-    const refreshSupport = () => setKittySupport(getCachedKittySupport(renderer));
-    refreshSupport();
-    renderer.on("capabilities", refreshSupport);
-    return () => {
-      renderer.off("capabilities", refreshSupport);
-    };
-  }, [renderer]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const known = getCachedKittySupport(renderer);
-    setKittySupport(known);
-    if (preferredRenderer === "braille" || known !== null) return;
-    ensureKittySupport(renderer).then((supported) => {
-      if (!cancelled) setKittySupport(supported);
-    }).catch(() => {
-      if (!cancelled) setKittySupport(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [preferredRenderer, renderer]);
-
   const expandBufferRange = (action: PendingExpansionAction): boolean => {
     const nextCandidate = getNextBufferRange(viewState.bufferRange);
     const nextBufferRange = effectiveResolution === "auto"
@@ -1112,7 +1086,7 @@ function ComparisonStockChartView({
     );
   }, [cursorX, cursorY, renderer]);
 
-  const rendererState = resolveChartRendererState(preferredRenderer, kittySupport, renderer.resolution);
+  const rendererState = useResolvedChartRendererState(preferredRenderer, renderer);
   const effectiveRenderer: ResolvedChartRenderer = rendererState.renderer;
   const useCanvasChart = canvasCharts && effectiveRenderer !== "kitty";
   const showNativeUnavailable = rendererState.nativeUnavailable && !useCanvasChart;

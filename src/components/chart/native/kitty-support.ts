@@ -20,9 +20,9 @@ function readKnownSupport(renderer: CliRenderer): boolean | null {
 }
 
 export function getCachedKittySupport(renderer: CliRenderer): boolean | null {
-  const cached = supportCache.get(renderer)?.value ?? null;
-  if (cached !== null) return cached;
-  return readKnownSupport(renderer);
+  const known = readKnownSupport(renderer);
+  if (known !== null) return known;
+  return supportCache.get(renderer)?.value ?? null;
 }
 
 export function ensureKittySupport(renderer: CliRenderer): Promise<boolean> {
@@ -68,4 +68,3 @@ export function ensureKittySupport(renderer: CliRenderer): Promise<boolean> {
   supportCache.set(renderer, nextEntry);
   return promise;
 }
-

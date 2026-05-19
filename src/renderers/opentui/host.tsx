@@ -3,7 +3,7 @@ import { createRoot, useKeyboard, useRenderer, useTerminalDimensions } from "@op
 import type { ReactNode } from "react";
 import { resetTerminalInputState } from "../../utils/terminal-input-reset";
 import type { KeyEventLike } from "../../react/input";
-import type { NativeRendererHost, RendererHost } from "../../ui/host";
+import type { NativeRendererHost, PixelResolution, RendererHost } from "../../ui/host";
 import { colors } from "../../theme/colors";
 
 export { useKeyboard, useRenderer, useTerminalDimensions };
@@ -50,6 +50,30 @@ export function toKeyEventLike(event: {
   };
 }
 
+function samePixelResolution(left: PixelResolution | null, right: PixelResolution | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.width === right.width && left.height === right.height;
+}
+
+function installResolutionEventBridge(renderer: CliRenderer): void {
+  let lastResolution = renderer.resolution ?? null;
+  const emitIfChanged = () => {
+    const nextResolution = renderer.resolution ?? null;
+    if (samePixelResolution(lastResolution, nextResolution)) return;
+    lastResolution = nextResolution;
+    renderer.emit("resolution", nextResolution);
+  };
+
+  renderer.prependInputHandler(() => {
+    queueMicrotask(emitIfChanged);
+    return false;
+  });
+  renderer.on("resize", () => {
+    queueMicrotask(emitIfChanged);
+  });
+}
+
 export async function createOpenTuiHost(): Promise<OpenTuiHost> {
   resetTerminalInputState();
 
@@ -59,6 +83,7 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
     enableMouseMovement: true,
   });
   const root = createRoot(renderer);
+  installResolutionEventBridge(renderer);
 
   const rendererHost: RendererHost = {
     requestExit: () => renderer.destroy(),
