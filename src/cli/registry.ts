@@ -187,6 +187,7 @@ export function createCliCommandContext(ownerId: string, plugins: GloomPlugin[])
   return {
     initConfigData,
     initMarketData: () => initMarketData({ plugins }),
+    plugins,
     fail,
     closeAndFail,
     output: {

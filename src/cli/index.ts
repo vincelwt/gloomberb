@@ -19,6 +19,7 @@ import {
   removePlugin,
   updatePlugins,
 } from "./commands/plugins";
+import { runPaneFunction, runPaneScreenshot } from "./pane-functions";
 
 function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
   return [
@@ -62,6 +63,28 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
           initMarketData: ctx.initMarketData,
           closeAndFail: ctx.closeAndFail,
         });
+      },
+    },
+    {
+      name: "fn",
+      aliases: ["function"],
+      description: "Run a pane-backed market function and print a human-readable report",
+      help: {
+        usage: ["fn <function-or-pane> [argument] [--key value]"],
+      },
+      execute: async (args, ctx) => {
+        await runPaneFunction(args, ctx);
+      },
+    },
+    {
+      name: "shot",
+      aliases: ["screenshot"],
+      description: "Render a desktop-style screenshot for a pane-backed market function",
+      help: {
+        usage: ["shot <function-or-pane> [argument] [--output path] [--width px] [--height px] [--key value]"],
+      },
+      execute: async (args, ctx) => {
+        await runPaneScreenshot(args, ctx);
       },
     },
     {
