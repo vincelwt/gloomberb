@@ -2432,6 +2432,18 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     });
 
     ctx.registerCommand({
+      id: "open-chat",
+      label: "Chat",
+      description: "Open chat",
+      keywords: ["chat", "message", "messages"],
+      category: "navigation",
+      shortcut: "CHAT",
+      execute: () => {
+        ctx.showPane("chat");
+      },
+    });
+
+    ctx.registerCommand({
       id: "auth-login",
       label: "Log In",
       description: "Log in to your Gloomberb account",
