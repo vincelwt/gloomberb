@@ -1125,6 +1125,62 @@ describe("Shell", () => {
     expect(updates[1]?.layout.dockRoot).toEqual({ kind: "pane", instanceId: "portfolio-list:main" });
   });
 
+  test("previews a directional docked window move before committing it", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-mode-docked-move-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!mainPane || !detailPane) throw new Error("missing default panes");
+    const dockedLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+      },
+      instances: [{ ...mainPane }, { ...detailPane, binding: { kind: "fixed" as const, symbol: "MSFT" } }],
+      floating: [],
+      detached: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: dockedLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(dockedLayout) }],
+      }),
+      focusedPaneId: "portfolio-list:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "right" });
+    await testSetup.renderOnce();
+
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+    expect(testSetup.captureCharFrame()).toContain("-> MSFT right");
+
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    const root = updateLayout?.layout.dockRoot;
+    expect(root).toEqual(expect.objectContaining({
+      kind: "split",
+      axis: "horizontal",
+    }));
+    expect(root?.first).toEqual({ kind: "pane", instanceId: "ticker-detail:main" });
+    expect(root?.second).toEqual({ kind: "pane", instanceId: "portfolio-list:main" });
+  });
+
   test("shows desktop window mode status and selected window title", async () => {
     const previousCapabilities = openTuiUiHost.capabilities;
     openTuiUiHost.capabilities = {
@@ -1218,6 +1274,65 @@ describe("Shell", () => {
       x: 8,
       width: 34,
     }));
+  });
+
+  test("resizes the selected docked pane edge instead of the currently cycled divider", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-window-resize-edge-test");
+    const mainPane = config.layout.instances.find((instance) => instance.instanceId === "portfolio-list:main");
+    const detailPane = config.layout.instances.find((instance) => instance.instanceId === "ticker-detail:main");
+    if (!mainPane || !detailPane) throw new Error("missing default panes");
+    const dockedLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "vertical" as const,
+        ratio: 0.5,
+        first: {
+          kind: "split" as const,
+          axis: "horizontal" as const,
+          ratio: 0.5,
+          first: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+          second: { kind: "pane" as const, instanceId: "ticker-detail:main" },
+        },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:secondary" },
+      },
+      instances: [
+        { ...mainPane },
+        { ...detailPane },
+        { ...detailPane, instanceId: "ticker-detail:secondary" },
+      ],
+      floating: [],
+      detached: [],
+    };
+    const state = {
+      ...createInitialState({
+        ...config,
+        layout: dockedLayout,
+        layouts: [{ name: "Default", layout: cloneLayout(dockedLayout) }],
+      }),
+      focusedPaneId: "ticker-detail:main",
+    };
+    const actions: Array<any> = [];
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
+        <TestDialogProvider>
+          <Shell pluginRegistry={createShellPluginRegistry()} />
+        </TestDialogProvider>
+      </AppContext>,
+      { width: 80, height: 24 },
+    );
+
+    await testSetup.renderOnce();
+    await emitKeypress({ name: "m", ctrl: true, shift: true });
+    await emitKeypress({ name: "r" });
+    await emitKeypress({ name: "down" });
+
+    expect(actions.some((action) => action.type === "UPDATE_LAYOUT")).toBe(false);
+
+    await emitKeypress({ name: "enter" });
+
+    const updateLayout = actions.find((action) => action.type === "UPDATE_LAYOUT");
+    expect(updateLayout?.layout.dockRoot?.ratio).toBeGreaterThan(0.5);
   });
 
   test("lets the mouse resize handle edit the window mode preview before commit", async () => {
