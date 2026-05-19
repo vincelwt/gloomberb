@@ -2,7 +2,7 @@ import { Box, ScrollBox, Span, Text, useUiCapabilities } from "../../ui";
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
-import type { GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plugin";
+import type { CommandResultDef, GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plugin";
 import { syncConfigActiveLayoutState, useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
 import { useInlineTickers, type InlineTickerCatalogEntry } from "../../state/use-inline-tickers";
 import { ExternalLinkText, getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
@@ -88,6 +88,7 @@ const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 const SCROLL_BOTTOM_THRESHOLD_PX = 2;
 const PROFILE_POPOVER_CLOSE_DELAY_MS = 40;
 const USERNAME_MENTION_TOKEN = /@([A-Za-z][A-Za-z0-9_]{2,29})/g;
+const CHAT_USERNAME_ARG = /^@?([A-Za-z][A-Za-z0-9_]{2,29})$/;
 
 function openTwitterFeed(ctx: GloomPluginContext, query = "") {
   const targetPaneId = ctx.getConfig().layout.instances.find((instance) => (
@@ -306,6 +307,104 @@ function formatChannelLabel(channel: ChatChannel | undefined, fallbackId: string
     return channel.name?.trim() || "Group";
   }
   return channel.name?.trim() || fallbackId;
+}
+
+function conversationDetail(channel: ChatChannel): string {
+  if (channel.kind === "direct") {
+    const displayName = channel.dmUser?.displayName?.trim();
+    const username = channel.dmUser?.username?.trim();
+    return [displayName && username ? displayName : null, "Direct message"].filter(Boolean).join(" - ");
+  }
+  const members = (channel.members ?? [])
+    .map((member) => member.username ? `@${member.username}` : member.displayName)
+    .filter(Boolean)
+    .slice(0, 4);
+  const suffix = (channel.members?.length ?? 0) > members.length ? ` +${(channel.members?.length ?? 0) - members.length}` : "";
+  return members.length > 0 ? `Group chat - ${members.join(", ")}${suffix}` : "Group chat";
+}
+
+function parseDmUsernames(value: string): string[] {
+  const usernames = new Set<string>();
+  for (const rawPart of value.split(/[\s,]+/)) {
+    const part = rawPart.trim();
+    if (!part) continue;
+    const match = part.match(CHAT_USERNAME_ARG);
+    if (!match?.[1]) continue;
+    usernames.add(match[1].toLowerCase());
+  }
+  return [...usernames];
+}
+
+function hasOnlyDmUsernameArgs(value: string): boolean {
+  const parts = value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 && parts.every((part) => CHAT_USERNAME_ARG.test(part));
+}
+
+function openChatChannelFromCommand(ctx: GloomPluginContext, channelId: string): void {
+  ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId });
+}
+
+async function openDmTargetFromCommand(ctx: GloomPluginContext, usernames: string[]): Promise<void> {
+  if (usernames.length === 0) {
+    ctx.showPane("chat");
+    return;
+  }
+  const channel = usernames.length === 1
+    ? await chatController.openDirectChannel({ username: usernames[0] })
+    : await chatController.openGroupChannel({ usernames });
+  openChatChannelFromCommand(ctx, channel.id);
+}
+
+function buildDmCommandResults(ctx: GloomPluginContext, arg: string): CommandResultDef[] {
+  const trimmed = arg.trim();
+  if (trimmed) {
+    const usernames = parseDmUsernames(trimmed);
+    const valid = hasOnlyDmUsernameArgs(trimmed) && usernames.length > 0;
+    const label = usernames.length <= 1
+      ? `DM ${usernames[0] ? `@${usernames[0]}` : trimmed}`
+      : `Group ${usernames.map((username) => `@${username}`).join(", ")}`;
+    return [{
+      id: `start:${valid ? usernames.join(",") : trimmed}`,
+      label,
+      detail: valid
+        ? usernames.length === 1
+          ? "Start or open direct message"
+          : "Start group chat"
+        : "Use @username, or multiple usernames for a group chat",
+      category: "Chat",
+      right: "DM",
+      disabled: !valid,
+      execute: () => openDmTargetFromCommand(ctx, usernames),
+    }];
+  }
+
+  const conversations = chatController.getSnapshot().channels
+    .filter((channel) => channel.kind === "direct" || channel.kind === "group");
+  if (conversations.length === 0) {
+    return [{
+      id: "empty",
+      label: "No DMs yet",
+      detail: "Type DM @username to start one",
+      category: "Chat",
+      right: "DM",
+      disabled: true,
+      execute: () => {},
+    }];
+  }
+
+  return conversations.map((channel) => ({
+    id: `channel:${channel.id}`,
+    label: formatChannelLabel(channel, channel.id),
+    detail: conversationDetail(channel),
+    category: "Conversations",
+    right: channel.kind === "group" ? "Group" : "DM",
+    keywords: [
+      channel.name,
+      channel.dmUser?.username ?? "",
+      ...(channel.members ?? []).map((member) => member.username ?? member.displayName),
+    ],
+    execute: () => openChatChannelFromCommand(ctx, channel.id),
+  }));
 }
 
 function channelPrefix(channel: ChatChannel | undefined, active: boolean) {
@@ -2547,6 +2646,29 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       shortcut: "CHAT",
       execute: () => {
         ctx.showPane("chat");
+      },
+    });
+
+    ctx.registerCommand({
+      id: "direct-message",
+      label: "DM",
+      description: "Open an existing DM or start a direct/group chat",
+      keywords: ["dm", "direct", "message", "group", "chat"],
+      category: "navigation",
+      shortcut: "DM",
+      shortcutArg: {
+        placeholder: "@username [@username...]",
+        kind: "text",
+        parse: (arg) => ({ participants: arg.trim() }),
+      },
+      buildResults: (arg) => buildDmCommandResults(ctx, arg),
+      execute: async (values) => {
+        const participants = values?.participants ?? values?.shortcut ?? "";
+        const usernames = parseDmUsernames(participants);
+        if (participants.trim() && !hasOnlyDmUsernameArgs(participants)) {
+          throw new Error("Use @username, or multiple usernames for a group chat.");
+        }
+        await openDmTargetFromCommand(ctx, usernames);
       },
     });
 
