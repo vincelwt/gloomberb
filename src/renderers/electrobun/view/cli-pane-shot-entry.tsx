@@ -226,6 +226,12 @@ function installShotMarketData(payload: CliPaneShotPayload): void {
 
 function createRuntime(payload: CliPaneShotPayload): PluginRuntimeAccess {
   const resumeState = new Map<string, unknown>();
+  function getResumeState<T = unknown>(_pluginId: string, key: string): T | null {
+    return (resumeState.get(key) as T | undefined) ?? null;
+  }
+  function getConfigState<T = unknown>(pluginId: string, key: string): T | null {
+    return (payload.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? null;
+  }
   return {
     getMarketData: () => null,
     getCapability: () => null,
@@ -246,16 +252,14 @@ function createRuntime(payload: CliPaneShotPayload): PluginRuntimeAccess {
     openPluginCommandWorkflow: () => {},
     notify: () => {},
     subscribeResumeState: () => () => {},
-    getResumeState: <T = unknown>(_pluginId: string, key: string) => (resumeState.get(key) as T | undefined) ?? null,
+    getResumeState,
     setResumeState: (_pluginId, key, value) => {
       resumeState.set(key, value);
     },
     deleteResumeState: (_pluginId, key) => {
       resumeState.delete(key);
     },
-    getConfigState: <T = unknown>(pluginId: string, key: string) => (
-      (payload.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? null
-    ),
+    getConfigState,
     setConfigState: async () => {},
     setConfigStates: async () => {},
     deleteConfigState: async () => {},
