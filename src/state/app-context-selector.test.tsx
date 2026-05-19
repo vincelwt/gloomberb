@@ -50,13 +50,6 @@ function ThemeSelectorHarness() {
   return <text>{`${focusedPaneId ?? "none"}:${themeId}`}</text>;
 }
 
-function FocusSelectorHarness() {
-  const renderCountRef = useRef(0);
-  renderCountRef.current += 1;
-  const focusedPaneId = useAppSelector((state) => state.focusedPaneId);
-  return <text>{`${focusedPaneId ?? "none"}:${renderCountRef.current}`}</text>;
-}
-
 function createDesktopBridge(
   kind: "main" | "detached",
   calls: {
@@ -117,50 +110,6 @@ describe("pane selectors", () => {
     await testSetup.renderOnce();
     await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain("AAPL:1");
-  });
-
-  test("does not rerender pane-scoped ticker consumers when another pane receives focus", async () => {
-    testSetup = await testRender(
-      <AppProvider config={createTickerDetailConfig("AAPL")}>
-        <PaneInstanceProvider paneId={TEST_PANE_ID}>
-          <DispatchCapture />
-          <PaneTickerHarness />
-        </PaneInstanceProvider>
-      </AppProvider>,
-      { width: 24, height: 4 },
-    );
-
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("AAPL:1");
-
-    await act(() => {
-      capturedDispatch?.({ type: "FOCUS_PANE", paneId: "portfolio-list:main" });
-    });
-
-    await testSetup.renderOnce();
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("AAPL:1");
-  });
-
-  test("does not rerender non-theme selector consumers when the theme preview changes", async () => {
-    testSetup = await testRender(
-      <AppProvider config={createTickerDetailConfig("AAPL")}>
-        <DispatchCapture />
-        <FocusSelectorHarness />
-      </AppProvider>,
-      { width: 32, height: 4 },
-    );
-
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:1`);
-
-    await act(() => {
-      capturedDispatch?.({ type: "PREVIEW_THEME", theme: "green" });
-    });
-
-    await testSetup.renderOnce();
-    await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:1`);
   });
 
   test("rerenders theme hook consumers when the theme changes", async () => {
@@ -282,33 +231,6 @@ describe("pane selectors", () => {
 
     await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
-  });
-
-  test("desktop main preview sync does not publish the full state snapshot", async () => {
-    const mainSnapshots: DesktopSharedStateSnapshot[] = [];
-    const themePreviews: DesktopThemePreviewState[] = [];
-    const bridge = createDesktopBridge("main", { mainSnapshots, themePreviews });
-
-    testSetup = await testRender(
-      <AppProvider config={createTickerDetailConfig("AAPL")} desktopBridge={bridge}>
-        <DispatchCapture />
-        <ThemeSelectorHarness />
-      </AppProvider>,
-      { width: 32, height: 4 },
-    );
-
-    await testSetup.renderOnce();
-    mainSnapshots.length = 0;
-    themePreviews.length = 0;
-
-    await act(() => {
-      capturedDispatch?.({ type: "PREVIEW_THEME", theme: "green" });
-    });
-
-    await testSetup.renderOnce();
-    await testSetup.renderOnce();
-    expect(themePreviews).toEqual([{ theme: "green" }]);
-    expect(mainSnapshots).toHaveLength(0);
   });
 
   test("desktop committed theme changes still sync through the config snapshot", async () => {

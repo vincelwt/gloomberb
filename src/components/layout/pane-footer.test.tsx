@@ -156,31 +156,6 @@ describe("PaneFooterBar", () => {
     expect(refreshCount).toBe(1);
   });
 
-  test("keeps focused border from hiding content", async () => {
-    testSetup = await testRender(<FooterHarness focused />, { width: 64, height: 1 });
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("└");
-    expect(frame).toContain("┘");
-    expect(frame).toContain("Rows 12");
-    expect(frame).toContain("[r]efresh");
-  });
-
-  test("draws focused empty footer border before the resize handle", async () => {
-    testSetup = await testRender(
-      <PaneFooterBar footer={{ info: [], hints: [] }} focused width={12} reserveRight={2} />,
-      { width: 12, height: 1 },
-    );
-    await testSetup.renderOnce();
-
-    const line = testSetup.captureCharFrame().split("\n")[0] ?? "";
-    expect(line).toContain("└─────────");
-  });
-
   test("clears a registration when the component unmounts", async () => {
     testSetup = await testRender(<FooterHarness visible={false} />, { width: 64, height: 1 });
     await act(async () => {

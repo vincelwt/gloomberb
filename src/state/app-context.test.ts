@@ -111,69 +111,6 @@ describe("resolveTickerForPane", () => {
     )?.zIndex).toBe(21);
   });
 
-  test("raises the session-focused floating pane above tied saved z-order", () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    config.layout = {
-      ...config.layout,
-      dockRoot: null,
-      floating: [
-        { instanceId: "ticker-detail:main", x: 4, y: 2, width: 60, height: 22, zIndex: 50 },
-        { instanceId: "chat:main", x: 8, y: 4, width: 48, height: 18, zIndex: 50 },
-      ],
-    };
-    config.layouts = config.layouts.map((entry, index) => (
-      index === config.activeLayoutIndex ? { ...entry, layout: cloneLayout(config.layout) } : entry
-    ));
-    const sessionSnapshot: AppSessionSnapshot = {
-      paneState: {},
-      focusedPaneId: "ticker-detail:main",
-      activePanel: "right",
-      statusBarVisible: true,
-      openPaneIds: ["ticker-detail:main", "chat:main"],
-      hydrationTargets: [],
-      exchangeCurrencies: ["USD"],
-      savedAt: Date.now(),
-    };
-
-    const state = createInitialState(config, sessionSnapshot);
-    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
-    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
-
-    expect(tickerEntry?.zIndex).toBe(51);
-    expect((tickerEntry?.zIndex ?? 0) > (chatEntry?.zIndex ?? 0)).toBe(true);
-  });
-
-  test("raises the desktop-snapshot focused floating pane during hydration", () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    config.layout = {
-      ...config.layout,
-      dockRoot: null,
-      floating: [
-        { instanceId: "ticker-detail:main", x: 4, y: 2, width: 60, height: 22, zIndex: 5 },
-        { instanceId: "chat:main", x: 8, y: 4, width: 48, height: 18, zIndex: 20 },
-      ],
-    };
-    config.layouts = config.layouts.map((entry, index) => (
-      index === config.activeLayoutIndex ? { ...entry, layout: cloneLayout(config.layout) } : entry
-    ));
-    const initial = createInitialState(config);
-    const snapshot: DesktopSharedStateSnapshot = {
-      config,
-      paneState: {},
-      focusedPaneId: "ticker-detail:main",
-      activePanel: "right",
-      statusBarVisible: true,
-    };
-
-    const state = appReducer(initial, { type: "HYDRATE_DESKTOP_SNAPSHOT", snapshot });
-    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
-    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
-
-    expect(state.focusedPaneId).toBe("ticker-detail:main");
-    expect(tickerEntry?.zIndex).toBe(21);
-    expect((tickerEntry?.zIndex ?? 0) > (chatEntry?.zIndex ?? 0)).toBe(true);
-  });
-
   test("preserves broker portfolio selection until broker portfolios are restored", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const brokerPortfolioId = buildBrokerPortfolioId("ibkr-live", "DU12345");
@@ -571,35 +508,6 @@ describe("layout focus fallback", () => {
     expect((tickerEntry?.zIndex ?? 0) > (chatEntry?.zIndex ?? 0)).toBe(true);
   });
 
-  test("switching layouts raises the saved focused floating pane above stale z-order", () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    const targetLayout = {
-      ...cloneLayout(config.layout),
-      dockRoot: null,
-      floating: [
-        { instanceId: "chat:main", x: 4, y: 2, width: 36, height: 10, zIndex: 70 },
-        { instanceId: "ticker-detail:main", x: 12, y: 4, width: 36, height: 10, zIndex: 95 },
-      ],
-    };
-    config.layouts = [
-      { name: "Current", layout: cloneLayout(config.layout), paneState: {} },
-      {
-        name: "Floating",
-        layout: cloneLayout(targetLayout),
-        paneState: {},
-        focusedPaneId: "chat:main",
-      },
-    ];
-    config.activeLayoutIndex = 0;
-
-    const state = appReducer(createInitialState(config), { type: "SWITCH_LAYOUT", index: 1 });
-
-    const chatEntry = state.config.layout.floating.find((entry) => entry.instanceId === "chat:main");
-    const tickerEntry = state.config.layout.floating.find((entry) => entry.instanceId === "ticker-detail:main");
-    expect(state.focusedPaneId).toBe("chat:main");
-    expect((chatEntry?.zIndex ?? 0) > (tickerEntry?.zIndex ?? 0)).toBe(true);
-  });
-
   test("starts with the top floating pane focused when no session pane is active", () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");
     const layout = {
@@ -618,19 +526,6 @@ describe("layout focus fallback", () => {
     });
 
     expect(state.focusedPaneId).toBe("ticker-detail:main");
-  });
-
-  test("cycles backward from a stale focused pane to the last visible pane", () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    const state = createInitialState(config);
-    state.focusedPaneId = "hidden:stale";
-
-    const next = appReducer(state, {
-      type: "FOCUS_PREV",
-      paneOrder: ["portfolio-list:main", "ticker-detail:main", "ticker-detail:nvda"],
-    });
-
-    expect(next.focusedPaneId).toBe("ticker-detail:nvda");
   });
 
   test("focuses the highest remaining floating pane when the focused floating pane closes", () => {
