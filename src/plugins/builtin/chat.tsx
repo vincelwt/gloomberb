@@ -21,6 +21,7 @@ import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "
 import { InlineAuthActions } from "./cloud-auth-actions";
 import { TwitterFeedPane, TwitterTickerTab } from "./cloud-tweets";
 import { AccountManagementPane } from "./account-management";
+import { BuildoutPane } from "./buildout-pane";
 
 interface ChatContentProps {
   width: number;
@@ -1790,7 +1791,9 @@ export function ChatContent({
       if (isPlainKey(event, "up", "down")) {
         event.preventDefault?.();
         event.stopPropagation?.();
-        moveSidebarChannelSelection(event.name);
+        if (event.name === "up" || event.name === "down") {
+          moveSidebarChannelSelection(event.name);
+        }
         return;
       }
     }
@@ -1818,8 +1821,9 @@ export function ChatContent({
         return;
       }
 
-      if (isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(event.name)) {
-        const moved = moveMessageSelection(event.name);
+      const verticalDirection = event.name === "up" || event.name === "down" ? event.name : null;
+      if (verticalDirection && isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(verticalDirection)) {
+        const moved = moveMessageSelection(verticalDirection);
         if (moved) {
           event.preventDefault?.();
           event.stopPropagation?.();
@@ -2387,6 +2391,17 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         placement: "floating",
       }),
     },
+    {
+      id: "buildout-pane",
+      paneId: "buildout",
+      label: "TheBuildout.ai",
+      description: "Open TheBuildout.ai infrastructure intelligence.",
+      keywords: ["tbo", "buildout", "thebuildout", "infrastructure", "sites", "intel"],
+      shortcut: { prefix: "TBO" },
+      createInstance: () => ({
+        placement: "floating",
+      }),
+    },
   ],
 
   slots: {
@@ -2415,6 +2430,16 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 72, height: 36 },
+    });
+
+    ctx.registerPane({
+      id: "buildout",
+      name: "TBO",
+      icon: "T",
+      component: BuildoutPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 110, height: 34 },
     });
 
     ctx.registerDetailTab({

@@ -137,6 +137,39 @@ export interface AccountProfile {
   updatedAt: string | null;
 }
 
+export interface BuildoutAccountResponse {
+  user: {
+    id: string;
+    email: string;
+    emailVerified: boolean;
+  };
+  subscription: {
+    product: "buildout";
+    plan: "free" | "pro";
+    active: boolean;
+    billingInterval: "month" | "year" | null;
+    stripeSubscriptionId: string | null;
+    stripeSubscriptionStatus: string | null;
+  };
+  prices: {
+    monthly: {
+      priceId: string;
+      amountUsd: number;
+      interval: "month";
+    };
+    yearly: {
+      priceId: string;
+      amountUsd: number;
+      interval: "year";
+    };
+  };
+}
+
+export interface BuildoutTokenResponse {
+  token: string;
+  expiresAt: string;
+}
+
 export type AccountProfileUpdate = Partial<{
   username: string;
   name: string;
@@ -1000,6 +1033,19 @@ class GloomApiClient {
       method: "GET",
     });
     return result.profile;
+  }
+
+  async getBuildoutAccount(): Promise<BuildoutAccountResponse> {
+    return this.request<BuildoutAccountResponse>("/account/buildout", {
+      method: "GET",
+    });
+  }
+
+  async getBuildoutToken(): Promise<BuildoutTokenResponse> {
+    return this.request<BuildoutTokenResponse>("/account/buildout/token", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
   }
 
   async updateAccountProfile(update: AccountProfileUpdate): Promise<AccountProfile> {
