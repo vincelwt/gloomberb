@@ -186,6 +186,18 @@ export interface CommandShortcutArgDef {
   ) => Record<string, string>;
 }
 
+export interface CommandResultDef {
+  id: string;
+  label: string;
+  detail?: string;
+  category?: string;
+  right?: string;
+  keywords?: string[];
+  current?: boolean;
+  disabled?: boolean;
+  execute: () => void | Promise<void>;
+}
+
 export interface CliHelpColumn {
   header: string;
   align?: "left" | "right" | "center";
@@ -261,6 +273,7 @@ export interface CommandDef {
   keywords: string[];
   shortcut?: string;
   shortcutArg?: CommandShortcutArgDef;
+  buildResults?: (arg: string) => CommandResultDef[];
   execute: (values?: Record<string, string>) => void | Promise<void>;
   category: "navigation" | "data" | "portfolio" | "config";
   description?: string;

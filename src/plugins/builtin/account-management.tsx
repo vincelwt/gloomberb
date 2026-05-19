@@ -769,7 +769,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               onChange={(checked) => setDraftValue("profilePublic", checked)}
             />
             <CheckboxRow
-              label="Unknown DMs"
+              label="Incoming DMs"
               checked={draft.acceptUnknownDms}
               active={activeField === "acceptUnknownDms"}
               width={fieldWidth}

@@ -2,7 +2,7 @@ import { Box, ScrollBox, Span, Text, useUiCapabilities } from "../../ui";
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShortcut } from "../../react/input";
 import { TextAttributes, type ScrollBoxRenderable, type TextareaRenderable } from "../../ui";
-import type { GloomPlugin, PaneProps } from "../../types/plugin";
+import type { CommandResultDef, GloomPlugin, GloomPluginContext, PaneProps } from "../../types/plugin";
 import { syncConfigActiveLayoutState, useAppDispatch, useAppSelector, useAppStateRef, usePaneInstance, usePaneInstanceId } from "../../state/app-context";
 import { useInlineTickers, type InlineTickerCatalogEntry } from "../../state/use-inline-tickers";
 import { ExternalLinkText, getMessageComposerBlockHeight, MessageComposer } from "../../components/ui";
@@ -19,8 +19,16 @@ import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import { chatController, type ChatController } from "./chat-controller";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../sources/gloomberb-cloud";
 import { InlineAuthActions } from "./cloud-auth-actions";
-import { TwitterFeedPane, TwitterTickerTab } from "./cloud-tweets";
+import {
+  TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
+  TWITTER_FEED_LAUNCH_STATE_KEY,
+  TWITTER_FEED_PANE_ID,
+  TwitterFeedPane,
+  TwitterTickerTab,
+  type TwitterFeedLaunchRequest,
+} from "./cloud-tweets";
 import { AccountManagementPane } from "./account-management";
+import { BuildoutPane } from "./buildout-pane";
 
 interface ChatContentProps {
   width: number;
@@ -78,7 +86,28 @@ const DEFAULT_CHAT_CHANNEL_ID = "everyone";
 const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 const CHAT_CHANNEL_MOUSE_HANDLED = "__gloomberbChatChannelHandled";
 const SCROLL_BOTTOM_THRESHOLD_PX = 2;
-const USERNAME_MENTION_TOKEN = /@([A-Za-z][A-Za-z0-9_]{2,29})/g;
+const PROFILE_POPOVER_CLOSE_DELAY_MS = 40;
+const CHAT_USERNAME_ARG = /^@?([A-Za-z][A-Za-z0-9_]{2,29})$/;
+
+function openTwitterFeed(ctx: GloomPluginContext, query = "") {
+  const targetPaneId = ctx.getConfig().layout.instances.find((instance) => (
+    instance.paneId === TWITTER_FEED_PANE_ID
+  ))?.instanceId ?? null;
+  const now = Date.now();
+  const launchRequest: TwitterFeedLaunchRequest = {
+    query: query.trim(),
+    targetPaneId,
+    nonce: `${now}-${Math.random().toString(36).slice(2)}`,
+    createdAt: now,
+  };
+
+  ctx.resume.setState(
+    TWITTER_FEED_LAUNCH_STATE_KEY,
+    launchRequest,
+    { schemaVersion: TWITTER_FEED_LAUNCH_SCHEMA_VERSION },
+  );
+  ctx.focusPane(TWITTER_FEED_PANE_ID);
+}
 
 function isGroupedWithPrevious(messages: ChatMessage[], index: number) {
   if (index === 0) return false;
@@ -277,6 +306,104 @@ function formatChannelLabel(channel: ChatChannel | undefined, fallbackId: string
     return channel.name?.trim() || "Group";
   }
   return channel.name?.trim() || fallbackId;
+}
+
+function conversationDetail(channel: ChatChannel): string {
+  if (channel.kind === "direct") {
+    const displayName = channel.dmUser?.displayName?.trim();
+    const username = channel.dmUser?.username?.trim();
+    return [displayName && username ? displayName : null, "Direct message"].filter(Boolean).join(" - ");
+  }
+  const members = (channel.members ?? [])
+    .map((member) => member.username ? `@${member.username}` : member.displayName)
+    .filter(Boolean)
+    .slice(0, 4);
+  const suffix = (channel.members?.length ?? 0) > members.length ? ` +${(channel.members?.length ?? 0) - members.length}` : "";
+  return members.length > 0 ? `Group chat - ${members.join(", ")}${suffix}` : "Group chat";
+}
+
+function parseDmUsernames(value: string): string[] {
+  const usernames = new Set<string>();
+  for (const rawPart of value.split(/[\s,]+/)) {
+    const part = rawPart.trim();
+    if (!part) continue;
+    const match = part.match(CHAT_USERNAME_ARG);
+    if (!match?.[1]) continue;
+    usernames.add(match[1].toLowerCase());
+  }
+  return [...usernames];
+}
+
+function hasOnlyDmUsernameArgs(value: string): boolean {
+  const parts = value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 && parts.every((part) => CHAT_USERNAME_ARG.test(part));
+}
+
+function openChatChannelFromCommand(ctx: GloomPluginContext, channelId: string): void {
+  ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId });
+}
+
+async function openDmTargetFromCommand(ctx: GloomPluginContext, usernames: string[]): Promise<void> {
+  if (usernames.length === 0) {
+    ctx.showPane("chat");
+    return;
+  }
+  const channel = usernames.length === 1
+    ? await chatController.openDirectChannel({ username: usernames[0] })
+    : await chatController.openGroupChannel({ usernames });
+  openChatChannelFromCommand(ctx, channel.id);
+}
+
+function buildDmCommandResults(ctx: GloomPluginContext, arg: string): CommandResultDef[] {
+  const trimmed = arg.trim();
+  if (trimmed) {
+    const usernames = parseDmUsernames(trimmed);
+    const valid = hasOnlyDmUsernameArgs(trimmed) && usernames.length > 0;
+    const label = usernames.length <= 1
+      ? `DM ${usernames[0] ? `@${usernames[0]}` : trimmed}`
+      : `Group ${usernames.map((username) => `@${username}`).join(", ")}`;
+    return [{
+      id: `start:${valid ? usernames.join(",") : trimmed}`,
+      label,
+      detail: valid
+        ? usernames.length === 1
+          ? "Start or open direct message"
+          : "Start group chat"
+        : "Use @username, or multiple usernames for a group chat",
+      category: "Chat",
+      right: "DM",
+      disabled: !valid,
+      execute: () => openDmTargetFromCommand(ctx, usernames),
+    }];
+  }
+
+  const conversations = chatController.getSnapshot().channels
+    .filter((channel) => channel.kind === "direct" || channel.kind === "group");
+  if (conversations.length === 0) {
+    return [{
+      id: "empty",
+      label: "No DMs yet",
+      detail: "Type DM @username to start one",
+      category: "Chat",
+      right: "DM",
+      disabled: true,
+      execute: () => {},
+    }];
+  }
+
+  return conversations.map((channel) => ({
+    id: `channel:${channel.id}`,
+    label: formatChannelLabel(channel, channel.id),
+    detail: conversationDetail(channel),
+    category: "Conversations",
+    right: channel.kind === "group" ? "Group" : "DM",
+    keywords: [
+      channel.name,
+      channel.dmUser?.username ?? "",
+      ...(channel.members ?? []).map((member) => member.username ?? member.displayName),
+    ],
+    execute: () => openChatChannelFromCommand(ctx, channel.id),
+  }));
 }
 
 function channelPrefix(channel: ChatChannel | undefined, active: boolean) {
@@ -513,6 +640,11 @@ function getChatMessageRenderState({
   };
 }
 
+function hasPublicChatProfileInfo(user: ChatUserSummary): boolean {
+  if (user.profilePublic === false) return false;
+  return Boolean(user.bio?.trim() || user.title?.trim() || user.company?.trim());
+}
+
 function ResponsiveTickerBadgeText({
   text,
   catalog,
@@ -520,6 +652,7 @@ function ResponsiveTickerBadgeText({
   openTicker,
   userByUsername,
   onUserHover,
+  onUserHoverEnd,
 }: {
   text: string;
   catalog: Record<string, InlineTickerCatalogEntry>;
@@ -527,64 +660,47 @@ function ResponsiveTickerBadgeText({
   openTicker: (symbol: string) => void;
   userByUsername?: Map<string, ChatUserSummary>;
   onUserHover?: (user: ChatUserSummary) => void;
+  onUserHoverEnd?: () => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const tokens = useMemo(() => tokenizeInlineContent(text), [text]);
   const renderTextToken = (value: string, tokenIndex: number) => {
     if (!value) return null;
-    const parts: Array<{ kind: "text"; value: string } | { kind: "mention"; username: string; value: string }> = [];
-    let lastIndex = 0;
-    USERNAME_MENTION_TOKEN.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = USERNAME_MENTION_TOKEN.exec(value)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ kind: "text", value: value.slice(lastIndex, match.index) });
-      }
-      const username = match[1] ?? "";
-      parts.push({ kind: "mention", username, value: match[0] ?? `@${username}` });
-      lastIndex = match.index + (match[0]?.length ?? 0);
-    }
-    if (lastIndex < value.length) {
-      parts.push({ kind: "text", value: value.slice(lastIndex) });
-    }
-    if (parts.length === 0) {
-      parts.push({ kind: "text", value });
-    }
-
-    return parts.map((part, partIndex) => {
-      if (part.kind === "text") {
-        return (
-          <Text
-            key={`text:${tokenIndex}:${partIndex}`}
-            fg={textColor}
-            wrapText
-            style={{
-              minWidth: 0,
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
-          >
-            {part.value}
-          </Text>
-        );
-      }
-      const user = userByUsername?.get(part.username.toLowerCase()) ?? null;
-      return (
-        <Box
-          key={`mention:${tokenIndex}:${partIndex}:${part.username}`}
-          height={1}
-          flexDirection="row"
-          backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
-          onMouseMove={() => {
-            if (user) onUserHover?.(user);
-          }}
-        >
-          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-            {part.value}
-          </Text>
-        </Box>
-      );
-    });
+    return (
+      <Text
+        key={`text:${tokenIndex}`}
+        fg={textColor}
+        wrapText
+        style={{
+          minWidth: 0,
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </Text>
+    );
+  };
+  const renderUsernameToken = (username: string, value: string, tokenIndex: number) => {
+    const user = userByUsername?.get(username.toLowerCase()) ?? null;
+    return (
+      <Box
+        key={`mention:${tokenIndex}:${username}`}
+        height={1}
+        flexDirection="row"
+        backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
+        onMouseMove={() => {
+          if (user) onUserHover?.(user);
+        }}
+        onMouseOut={() => {
+          if (user) onUserHoverEnd?.();
+        }}
+      >
+        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+          {value}
+        </Text>
+      </Box>
+    );
   };
 
   return (
@@ -608,6 +724,10 @@ function ResponsiveTickerBadgeText({
               color={textColor}
             />
           );
+        }
+
+        if (token.kind === "username") {
+          return renderUsernameToken(token.username, token.value, index);
         }
 
         const entry = catalog[token.symbol];
@@ -645,6 +765,7 @@ interface ChatMessageBaseProps {
   userByUsername: Map<string, ChatUserSummary>;
   openTicker: (symbol: string) => void;
   onUserHover: (user: ChatUserSummary) => void;
+  onUserHoverEnd: () => void;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
   jumpToMessage: (messageId: string) => void;
 }
@@ -668,6 +789,7 @@ function TerminalChatMessage({
   userByUsername,
   openTicker,
   onUserHover,
+  onUserHoverEnd,
   beginReplyTo,
   jumpToMessage,
   setHoveredIdx,
@@ -718,6 +840,7 @@ function TerminalChatMessage({
             fg={state.authorColor}
             attributes={state.authorAttributes}
             onMouseMove={() => onUserHover(msg.user)}
+            onMouseOut={onUserHoverEnd}
           >
             {msg.user.username ?? "anon"}
           </Text>
@@ -754,6 +877,7 @@ function TerminalChatMessage({
               openTicker={openTicker}
               userByUsername={userByUsername}
               onUserHover={onUserHover}
+              onUserHoverEnd={onUserHoverEnd}
             />
           </Box>
           {lineIndex === 0 && showGroupedReplyAction && (
@@ -783,6 +907,7 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
   userByUsername,
   openTicker,
   onUserHover,
+  onUserHoverEnd,
   beginReplyTo,
   jumpToMessage,
   registerMessageElement,
@@ -854,6 +979,7 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
             fg={state.authorColor}
             attributes={state.authorAttributes}
             onMouseMove={() => onUserHover(msg.user)}
+            onMouseOut={onUserHoverEnd}
             style={{ cursor: "default" }}
           >
             {msg.user.username ?? "anon"}
@@ -893,6 +1019,7 @@ const DesktopChatMessage = memo(function DesktopChatMessage({
             openTicker={openTicker}
             userByUsername={userByUsername}
             onUserHover={onUserHover}
+            onUserHoverEnd={onUserHoverEnd}
           />
         </Box>
         {showGroupedReplyAction && (
@@ -923,15 +1050,18 @@ function UserProfilePopover({
   currentUserId,
   onDirectMessage,
   onClose,
+  onKeepOpen,
 }: {
   user: ChatUserSummary;
   width: number;
   currentUserId?: string | null;
   onDirectMessage: (user: ChatUserSummary) => void;
   onClose: () => void;
+  onKeepOpen: () => void;
 }) {
   const popoverWidth = Math.max(24, Math.min(38, width - 4));
   const meta = [user.title, user.company].filter(Boolean).join(" · ");
+  const bio = user.bio?.trim();
   const canDm = user.id === currentUserId || user.acceptUnknownDms !== false;
 
   return (
@@ -945,6 +1075,7 @@ function UserProfilePopover({
       border
       borderColor={colors.borderFocused}
       paddingX={1}
+      onMouseMove={onKeepOpen}
       onMouseOut={onClose}
       style={{ zIndex: 4 }}
     >
@@ -963,9 +1094,11 @@ function UserProfilePopover({
         />
       </Box>
       {meta ? <Text fg={colors.textDim}>{truncateChannelLabel(meta, popoverWidth - 2)}</Text> : null}
-      <Text fg={colors.text} wrapText width={popoverWidth - 2}>
-        {user.bio?.trim() || "No public bio."}
-      </Text>
+      {bio ? (
+        <Text fg={colors.text} wrapText width={popoverWidth - 2}>
+          {bio}
+        </Text>
+      ) : null}
     </Box>
   );
 }
@@ -1344,6 +1477,37 @@ export function ChatContent({
     return map;
   }, [channels, messages]);
   const [profilePopoverUser, setProfilePopoverUser] = useState<ChatUserSummary | null>(null);
+  const profilePopoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelProfilePopoverClose = useCallback(() => {
+    if (profilePopoverCloseTimerRef.current == null) return;
+    clearTimeout(profilePopoverCloseTimerRef.current);
+    profilePopoverCloseTimerRef.current = null;
+  }, []);
+
+  const closeProfilePopover = useCallback(() => {
+    cancelProfilePopoverClose();
+    setProfilePopoverUser(null);
+  }, [cancelProfilePopoverClose]);
+
+  const scheduleProfilePopoverClose = useCallback(() => {
+    cancelProfilePopoverClose();
+    profilePopoverCloseTimerRef.current = setTimeout(() => {
+      profilePopoverCloseTimerRef.current = null;
+      setProfilePopoverUser(null);
+    }, PROFILE_POPOVER_CLOSE_DELAY_MS);
+  }, [cancelProfilePopoverClose]);
+
+  const showProfilePopover = useCallback((targetUser: ChatUserSummary) => {
+    if (!hasPublicChatProfileInfo(targetUser)) {
+      closeProfilePopover();
+      return;
+    }
+    cancelProfilePopoverClose();
+    setProfilePopoverUser(targetUser);
+  }, [cancelProfilePopoverClose, closeProfilePopover]);
+
+  useEffect(() => () => cancelProfilePopoverClose(), [cancelProfilePopoverClose]);
 
   const replyToRef = useRef(replyTo);
   replyToRef.current = replyTo;
@@ -1735,7 +1899,9 @@ export function ChatContent({
       if (isPlainKey(event, "up", "down")) {
         event.preventDefault?.();
         event.stopPropagation?.();
-        moveSidebarChannelSelection(event.name);
+        if (event.name === "up" || event.name === "down") {
+          moveSidebarChannelSelection(event.name);
+        }
         return;
       }
     }
@@ -1763,8 +1929,9 @@ export function ChatContent({
         return;
       }
 
-      if (isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(event.name)) {
-        const moved = moveMessageSelection(event.name);
+      const verticalDirection = event.name === "up" || event.name === "down" ? event.name : null;
+      if (verticalDirection && isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(verticalDirection)) {
+        const moved = moveMessageSelection(verticalDirection);
         if (moved) {
           event.preventDefault?.();
           event.stopPropagation?.();
@@ -2036,7 +2203,8 @@ export function ChatContent({
               catalog={catalog}
               userByUsername={userByUsername}
               openTicker={openTicker}
-              onUserHover={setProfilePopoverUser}
+              onUserHover={showProfilePopover}
+              onUserHoverEnd={scheduleProfilePopoverClose}
               beginReplyTo={beginReplyTo}
               jumpToMessage={jumpToMessage}
               registerMessageElement={registerMessageElement}
@@ -2055,7 +2223,8 @@ export function ChatContent({
               catalog={catalog}
               userByUsername={userByUsername}
               openTicker={openTicker}
-              onUserHover={setProfilePopoverUser}
+              onUserHover={showProfilePopover}
+              onUserHoverEnd={scheduleProfilePopoverClose}
               beginReplyTo={beginReplyTo}
               jumpToMessage={jumpToMessage}
               setHoveredIdx={setHoveredIdx}
@@ -2070,7 +2239,8 @@ export function ChatContent({
           width={chatWidth}
           currentUserId={user?.id}
           onDirectMessage={openDirectMessage}
-          onClose={() => setProfilePopoverUser(null)}
+          onClose={scheduleProfilePopoverClose}
+          onKeepOpen={cancelProfilePopoverClose}
         />
       )}
 
@@ -2329,6 +2499,17 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         placement: "floating",
       }),
     },
+    {
+      id: "buildout-pane",
+      paneId: "buildout",
+      label: "TheBuildout.ai",
+      description: "Open TheBuildout.ai infrastructure intelligence.",
+      keywords: ["tbo", "buildout", "thebuildout", "infrastructure", "sites", "intel"],
+      shortcut: { prefix: "TBO" },
+      createInstance: () => ({
+        placement: "floating",
+      }),
+    },
   ],
 
   slots: {
@@ -2359,6 +2540,16 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       defaultFloatingSize: { width: 72, height: 36 },
     });
 
+    ctx.registerPane({
+      id: "buildout",
+      name: "TBO",
+      icon: "T",
+      component: BuildoutPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 110, height: 34 },
+    });
+
     ctx.registerDetailTab({
       id: "ticker-tweets",
       name: "Tweets",
@@ -2368,7 +2559,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     });
 
     ctx.registerPane({
-      id: "twitter-feed",
+      id: TWITTER_FEED_PANE_ID,
       name: "X Feed",
       icon: "X",
       component: TwitterFeedPane,
@@ -2379,32 +2570,12 @@ export const gloomberbCloudPlugin: GloomPlugin = {
 
     ctx.registerPaneTemplate({
       id: "twitter-feed-pane",
-      paneId: "twitter-feed",
+      paneId: TWITTER_FEED_PANE_ID,
       label: "X Feed",
-      description: "Create a reusable X advanced-search feed.",
+      description: "Open an X advanced-search feed.",
       keywords: ["twitter", "x", "tweet", "tweets", "feed", "social"],
-      shortcut: { prefix: "TWIT", argPlaceholder: "query", argKind: "text" },
-      wizard: [
-        {
-          key: "query",
-          label: "Search Query",
-          type: "textarea",
-          placeholder: "$AAPL -filter:replies",
-        },
-        {
-          key: "queryType",
-          label: "Mode",
-          type: "select",
-          defaultValue: "Latest",
-          options: [
-            { label: "Latest", value: "Latest" },
-            { label: "Top", value: "Top" },
-          ],
-        },
-      ],
       createInstance: (_context, options) => {
         const query = options?.values?.query?.trim() || options?.arg?.trim() || "";
-        if (!query) return null;
         return {
           title: "X Feed",
           placement: "floating",
@@ -2413,6 +2584,23 @@ export const gloomberbCloudPlugin: GloomPlugin = {
             queryType: options?.values?.queryType === "Top" ? "Top" : "Latest",
           },
         };
+      },
+    });
+
+    ctx.registerCommand({
+      id: "twitter-feed-open",
+      label: "X Feed",
+      description: "Open an X advanced-search feed.",
+      keywords: ["twitter", "x", "tweet", "tweets", "feed", "social", "twit"],
+      category: "navigation",
+      shortcut: "TWIT",
+      shortcutArg: {
+        placeholder: "query",
+        kind: "text",
+        parse: (arg) => ({ query: arg.trim() }),
+      },
+      execute: (values) => {
+        openTwitterFeed(ctx, values?.query ?? values?.shortcut ?? "");
       },
     });
 
@@ -2428,6 +2616,41 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         } else {
           ctx.showPane("chat");
         }
+      },
+    });
+
+    ctx.registerCommand({
+      id: "open-chat",
+      label: "Chat",
+      description: "Open chat",
+      keywords: ["chat", "message", "messages"],
+      category: "navigation",
+      shortcut: "CHAT",
+      execute: () => {
+        ctx.showPane("chat");
+      },
+    });
+
+    ctx.registerCommand({
+      id: "direct-message",
+      label: "DM",
+      description: "Open an existing DM or start a direct/group chat",
+      keywords: ["dm", "direct", "message", "group", "chat"],
+      category: "navigation",
+      shortcut: "DM",
+      shortcutArg: {
+        placeholder: "@username [@username...]",
+        kind: "text",
+        parse: (arg) => ({ participants: arg.trim() }),
+      },
+      buildResults: (arg) => buildDmCommandResults(ctx, arg),
+      execute: async (values) => {
+        const participants = values?.participants ?? values?.shortcut ?? "";
+        const usernames = parseDmUsernames(participants);
+        if (participants.trim() && !hasOnlyDmUsernameArgs(participants)) {
+          throw new Error("Use @username, or multiple usernames for a group chat.");
+        }
+        await openDmTargetFromCommand(ctx, usernames);
       },
     });
 

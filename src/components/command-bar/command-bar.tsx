@@ -50,6 +50,7 @@ import type { TickerRecord } from "../../types/ticker";
 import type { Quote } from "../../types/financials";
 import type {
   CommandDef,
+  CommandResultDef,
   PaneSettingField,
   PaneTemplateCreateOptions,
   PaneTemplateDef,
@@ -3211,6 +3212,45 @@ export function CommandBar({
     runPluginCommandDirect,
   ]);
 
+  const createPluginCommandResultItem = useCallback((
+    command: CommandDef,
+    result: CommandResultDef,
+  ): ResultItem => {
+    const pluginId = pluginRegistry.getCommandPluginId(command.id);
+    const pluginName = pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : null;
+    const category = result.category ?? pluginName ?? command.label;
+    return {
+      id: `plugin-command-result:${command.id}:${result.id}`,
+      label: result.label,
+      detail: result.detail ?? command.description ?? "",
+      category,
+      kind: "command",
+      right: (result.right ?? command.shortcut?.trim()) || undefined,
+      searchText: `${result.label} ${result.detail || ""} ${(result.keywords ?? []).join(" ")} ${command.label} ${command.description || ""} ${(command.keywords ?? []).join(" ")}`,
+      disabled: result.disabled,
+      current: result.current,
+      action: async () => {
+        try {
+          await result.execute();
+          closeAll({ revertThemePreview: false });
+        } catch (error) {
+          notify(
+            error instanceof Error ? error.message : `Could not run ${command.label.toLowerCase()}.`,
+            { type: "error" },
+          );
+        }
+      },
+    };
+  }, [closeAll, notify, pluginRegistry]);
+
+  const pluginCommandResultItems = useCallback((
+    command: CommandDef,
+    shortcutArg: string,
+  ): ResultItem[] => {
+    const results = command.buildResults?.(shortcutArg) ?? [];
+    return results.map((result) => createPluginCommandResultItem(command, result));
+  }, [createPluginCommandResultItem]);
+
   const pluginCommandItems = useCallback((): ResultItem[] => {
     return getAvailablePluginCommands().map((command) => createPluginCommandItem(command));
   }, [createPluginCommandItem, getAvailablePluginCommands]);
@@ -3808,7 +3848,8 @@ export function CommandBar({
       && rootShortcutIntent.source === "plugin-command"
       && shortcutItem
     ) {
-      items.push(shortcutItem);
+      const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
+      items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
     } else if (match && match.command.id === "plugins") {
       items.push(...buildPluginItems(match.arg));
     } else if (match && match.command.id === "layout") {
@@ -3906,6 +3947,7 @@ export function CommandBar({
     nonShortcutPaneTemplateItems,
     paneShortcutItems,
     pluginCommandItems,
+    pluginCommandResultItems,
     pluginRegistry,
     rootModeInfo.kind,
     rootQuery,
@@ -4259,6 +4301,8 @@ export function CommandBar({
     }
 
     if (intent.kind !== "none" && intent.source === "plugin-command") {
+      const dynamicItems = pluginCommandResultItems(intent.command, intent.argText);
+      if (dynamicItems.length > 0) return dynamicItems[0] ?? null;
       return createPluginCommandItem(intent.command, {
         shortcutArg: intent.argText,
       });
@@ -4381,6 +4425,7 @@ export function CommandBar({
     getAvailablePluginCommands,
     getAvailablePaneShortcutTemplates,
     openModeRoute,
+    pluginCommandResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     setRootQuery,

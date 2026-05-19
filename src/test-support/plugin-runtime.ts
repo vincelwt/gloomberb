@@ -24,6 +24,7 @@ export function createTestPluginRuntime(
     switchPanel() {},
     openCommandBar() {},
     showPane() {},
+    createPaneFromTemplate() {},
     hidePane() {},
     openPaneSettings() {},
     openPluginCommandWorkflow() {},

@@ -2242,4 +2242,93 @@ describe("ChatContent", () => {
       installServerChannels(chatController, []);
     }
   });
+
+  test("TWIT opens the feed pane directly and seeds a search tab request", async () => {
+    const registeredCommands: any[] = [];
+    const registeredTemplates: any[] = [];
+    const stateWrites: Array<{ key: string; value: unknown; schemaVersion?: number }> = [];
+    let focusedPaneId: string | null = null;
+    const config = createDefaultConfig("/tmp/gloomberb-twit-command");
+    config.layout.instances.push({
+      instanceId: "twitter-feed:test",
+      paneId: "twitter-feed",
+      binding: { kind: "none" },
+    });
+
+    gloomberbCloudPlugin.setup({
+      persistence: new MemoryPersistence(),
+      resume: {
+        getState: () => null,
+        setState: (key: string, value: unknown, options?: { schemaVersion?: number }) => {
+          stateWrites.push({ key, value, schemaVersion: options?.schemaVersion });
+        },
+        deleteState: () => {},
+        getPaneState: () => null,
+        setPaneState: () => {},
+        deletePaneState: () => {},
+      },
+      registerPane: () => {},
+      registerPaneTemplate: (template: any) => registeredTemplates.push(template),
+      registerCommand: (command: any) => registeredCommands.push(command),
+      registerColumn: () => {},
+      registerBroker: () => {},
+      registerCapability: () => {},
+      registerDetailTab: () => {},
+      registerShortcut: () => {},
+      registerTickerAction: () => {},
+      registerContextMenuProvider: () => {},
+      getData: () => null,
+      getTicker: () => null,
+      getConfig: () => config,
+      getPaneDef: () => undefined,
+      marketData: null,
+      tickerRepository: null,
+      log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      configState: { get: () => null, set: async () => {}, delete: async () => {}, keys: () => [] },
+      paneSettings: { get: () => null, set: async () => {}, delete: async () => {} },
+      createBrokerInstance: async () => ({}),
+      updateBrokerInstance: async () => {},
+      syncBrokerInstance: async () => {},
+      removeBrokerInstance: async () => {},
+      selectTicker: () => {},
+      switchPanel: () => {},
+      switchTab: () => {},
+      openCommandBar: () => {},
+      showPane: () => {},
+      createPaneFromTemplate: () => {},
+      hidePane: () => {},
+      focusPane: (paneId: string) => { focusedPaneId = paneId; },
+      pinTicker: () => {},
+      navigateTicker: () => {},
+      openPaneSettings: () => {},
+      on: () => () => {},
+      emit: () => {},
+      notify: () => {},
+    } as any);
+
+    const template = registeredTemplates.find((entry) => entry.id === "twitter-feed-pane");
+    expect(template?.wizard).toBeUndefined();
+    expect(template?.shortcut).toBeUndefined();
+    await expect(Promise.resolve(template?.createInstance?.({ config } as any, { arg: "" }))).resolves.toMatchObject({
+      placement: "floating",
+      params: { query: "" },
+    });
+
+    const command = registeredCommands.find((entry) => entry.id === "twitter-feed-open");
+    expect(command?.shortcut).toBe("TWIT");
+    expect(command?.shortcutArg?.parse("$NVDA")).toEqual({ query: "$NVDA" });
+
+    await command.execute({ query: "$NVDA" });
+
+    expect(focusedPaneId).toBe("twitter-feed");
+    expect(stateWrites).toHaveLength(1);
+    expect(stateWrites[0]).toMatchObject({
+      key: "twitter-feed-launch",
+      schemaVersion: 1,
+      value: {
+        query: "$NVDA",
+        targetPaneId: "twitter-feed:test",
+      },
+    });
+  });
 });

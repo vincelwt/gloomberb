@@ -70,15 +70,23 @@ Open the command bar with `Ctrl+P` or `` ` ``, then type a shortcut or command n
 
 ## Install
 
-Desktop:
+macOS desktop app + terminal command:
+
+```bash
+brew install --cask vincelwt/tap/gloomberb
+# or
+curl -fsSL gloomberb.com/install | bash
+```
+
+Both install `Gloomberb.app` and a `gloomberb` terminal command that runs the TUI through the app bundle, so the Bun runtime is stored once.
+
+Desktop-only download:
 
 - [Download Gloomberb for Mac](https://gloomberb.com/download/desktop)
 
-Terminal UI:
+Terminal-only install:
 
 ```bash
-curl -fsSL gloomberb.com/install | bash
-# or
 bun install -g gloomberb
 ```
 
@@ -87,6 +95,8 @@ Then run:
 ```bash
 gloomberb
 ```
+
+On macOS, app updates replace the app bundle in place and keep the terminal command pointing at the updated bundle. Homebrew users can also update through `brew upgrade --cask gloomberb`.
 
 For the best terminal experience, use a [Kitty](https://sw.kovidgoyal.net/kitty/)-compatible terminal such as Ghostty, Kitty, or WezTerm.
 

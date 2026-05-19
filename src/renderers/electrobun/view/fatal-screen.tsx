@@ -5,7 +5,7 @@ import { backendRequest, requestElectrobunRestart } from "./backend-rpc";
 
 declare global {
   interface Window {
-    __gloomRenderFatalError?: (error: unknown, details?: string) => void;
+    __gloomRenderFatalError?: (error: unknown, details?: string, source?: string) => void;
   }
 }
 

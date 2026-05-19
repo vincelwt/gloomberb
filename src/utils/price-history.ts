@@ -1,6 +1,12 @@
 import type { PricePoint, TickerFinancials } from "../types/financials";
+import { resolveExchangeTimeZone } from "./exchanges";
+import { isTimestampStaleForExchangeSession } from "./market-freshness";
 
 const MAX_CURRENT_INTRADAY_HISTORY_LAG_MS = 18 * 60 * 60 * 1000;
+
+interface PriceHistoryFreshnessOptions {
+  exchange?: string;
+}
 
 function getPointTimestamp(point: PricePoint): number {
   const value = point.date as Date | string | number | null | undefined;
@@ -62,13 +68,29 @@ export function normalizePriceHistory(points: PricePoint[]): PricePoint[] {
   return validPoints.length === points.length ? points : validPoints;
 }
 
-export function isPriceHistoryStaleForCurrentWindow(points: PricePoint[], now = Date.now()): boolean {
+export function isPriceHistoryStaleForCurrentWindow(
+  points: PricePoint[],
+  now = Date.now(),
+  options: PriceHistoryFreshnessOptions = {},
+): boolean {
   const normalized = normalizePriceHistory(points);
   const latest = normalized.at(-1);
   if (!latest) return false;
 
   const latestTime = getPointTimestamp(latest);
-  return Number.isFinite(latestTime) && now - latestTime > MAX_CURRENT_INTRADAY_HISTORY_LAG_MS;
+  if (!Number.isFinite(latestTime) || now - latestTime <= MAX_CURRENT_INTRADAY_HISTORY_LAG_MS) {
+    return false;
+  }
+
+  if (
+    options.exchange
+    && resolveExchangeTimeZone(options.exchange)
+    && !isTimestampStaleForExchangeSession(latestTime, options.exchange, now)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function normalizeTickerFinancialsPriceHistory(financials: TickerFinancials): TickerFinancials {

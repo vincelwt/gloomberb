@@ -20,7 +20,7 @@ import {
 import type { BrokerAdapter } from "../types/broker";
 import type { PluginCapability } from "../capabilities";
 import type { DataProvider } from "../types/data-provider";
-import type { AppNotificationRequest, BrokerInstanceUpdateOptions, PinTickerOptions } from "../types/plugin";
+import type { AppNotificationRequest, BrokerInstanceUpdateOptions, PaneTemplateCreateOptions, PinTickerOptions } from "../types/plugin";
 
 export interface PluginRuntimeAccess {
   getMarketData(): DataProvider | null;
@@ -37,6 +37,7 @@ export interface PluginRuntimeAccess {
   switchPanel(panel: "left" | "right"): void;
   openCommandBar(query?: string): void;
   showPane(paneId: string): void;
+  createPaneFromTemplate(templateId: string, options?: PaneTemplateCreateOptions): void;
   hidePane(paneId: string): void;
   openPaneSettings(paneId?: string): void;
   openPluginCommandWorkflow(commandId: string): void;
@@ -123,6 +124,9 @@ export function usePluginAppActions() {
   const showPane = useCallback((paneId: string) => {
     runtime.showPane(paneId);
   }, [runtime]);
+  const createPaneFromTemplate = useCallback((templateId: string, options?: PaneTemplateCreateOptions) => {
+    runtime.createPaneFromTemplate(templateId, options);
+  }, [runtime]);
   const hidePane = useCallback((paneId: string) => {
     runtime.hidePane(paneId);
   }, [runtime]);
@@ -139,6 +143,7 @@ export function usePluginAppActions() {
   return {
     openCommandBar,
     showPane,
+    createPaneFromTemplate,
     hidePane,
     openPaneSettings,
     openPluginCommandWorkflow,

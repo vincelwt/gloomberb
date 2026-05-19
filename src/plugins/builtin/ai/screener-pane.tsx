@@ -446,7 +446,7 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     for (const ticker of sortedTickers) {
       const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
       if (instrument) {
-        void coordinator.loadSnapshot(instrument);
+        void coordinator.loadSnapshot(instrument).catch(() => {});
       }
     }
   }, [sortedTickers]);

@@ -44,6 +44,7 @@ function makeRuntime(options: {
     switchPanel: () => {},
     openCommandBar: () => {},
     showPane: () => {},
+    createPaneFromTemplate: () => {},
     hidePane: () => {},
     openPaneSettings: (paneId) => {
       options.settingsCalls?.push(paneId);

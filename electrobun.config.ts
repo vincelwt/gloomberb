@@ -42,7 +42,7 @@ const config: ElectrobunConfig = {
   },
   scripts: {
     preBuild: "scripts/build-electrobun-view.ts",
-    postBuild: "",
+    postBuild: "scripts/install-electrobun-tui-shim.ts",
     postWrap: "",
     postPackage: "",
   },

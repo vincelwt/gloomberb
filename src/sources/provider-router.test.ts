@@ -2600,6 +2600,42 @@ describe("AssetDataRouter", () => {
     expect(history[0]?.close).toBe(102);
   });
 
+  test("accepts previous-session short-range chart history while the exchange is closed", async () => {
+    const originalDateNow = Date.now;
+    Date.now = () => Date.parse("2026-05-17T12:00:00Z");
+
+    try {
+      const cloudProvider: DataProvider = {
+        ...fallbackProvider,
+        id: "cloud",
+        name: "Cloud",
+        priority: 100,
+        async getPriceHistoryForResolution() {
+          return [];
+        },
+      };
+      const yahooProvider: DataProvider = {
+        ...fallbackProvider,
+        id: "yahoo",
+        name: "Yahoo",
+        priority: 1000,
+        async getPriceHistoryForResolution() {
+          return [
+            { date: new Date("2026-05-15T15:15:00Z"), close: 101 },
+            { date: new Date("2026-05-15T15:30:00Z"), close: 102 },
+          ];
+        },
+      };
+
+      const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
+      const history = await router.getPriceHistoryForResolution("AAPL", "NASDAQ", "1M", "15m");
+
+      expect(history.map((point) => point.close)).toEqual([101, 102]);
+    } finally {
+      Date.now = originalDateNow;
+    }
+  });
+
   test("returns normalized manual chart resolution capabilities", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,

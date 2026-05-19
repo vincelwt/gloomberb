@@ -62,6 +62,20 @@ describe("detectUpdateAction", () => {
       ["/opt/homebrew/bin/bun", "src/index.tsx"],
     )).toBeNull();
   });
+
+  test("does not treat a macOS app bundle launcher as a standalone CLI binary", () => {
+    expect(detectUpdateAction(
+      "/Applications/Gloomberb.app/Contents/MacOS/launcher",
+      ["/Applications/Gloomberb.app/Contents/MacOS/launcher"],
+    )).toBeNull();
+  });
+
+  test("does not suggest Bun-managed updates for the bundled macOS app runtime", () => {
+    expect(detectUpdateAction(
+      "/Applications/Gloomberb.app/Contents/MacOS/bun",
+      ["/Applications/Gloomberb.app/Contents/MacOS/bun", "/Applications/Gloomberb.app/Contents/Resources/gloomberb-tui/tui-entry.js"],
+    )).toBeNull();
+  });
 });
 
 describe("resolveSelfUpdateTargetPath", () => {
@@ -84,6 +98,13 @@ describe("resolveSelfUpdateTargetPath", () => {
       "/Applications/gloomberb",
       ["/Applications/gloomberb"],
     )).toBe("/Applications/gloomberb");
+  });
+
+  it("rejects launchers inside macOS app bundles", () => {
+    expect(resolveSelfUpdateTargetPath(
+      "/Applications/Gloomberb.app/Contents/MacOS/launcher",
+      ["/Applications/Gloomberb.app/Contents/MacOS/launcher"],
+    )).toBeNull();
   });
 });
 

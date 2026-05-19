@@ -200,8 +200,8 @@ function isIntradayRange(range: TimeRange): boolean {
   return range === "1D" || range === "1W" || range === "1M" || range === "3M";
 }
 
-function isStaleIntradayHistory(points: PricePoint[], enabled: boolean): boolean {
-  return enabled && isPriceHistoryStaleForCurrentWindow(points);
+function isStaleIntradayHistory(points: PricePoint[], enabled: boolean, exchange?: string): boolean {
+  return enabled && isPriceHistoryStaleForCurrentWindow(points, Date.now(), { exchange });
 }
 
 function isCurrentHistoryWindow(endDate?: Date): boolean {
@@ -997,7 +997,7 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
     const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
-    const cachedHistoryStale = isStaleIntradayHistory(cachedValue, isIntradayRange(range));
+    const cachedHistoryStale = isStaleIntradayHistory(cachedValue, isIntradayRange(range), exchange);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
       return cachedValue;
@@ -1035,7 +1035,7 @@ export class AssetDataRouter implements DataProvider {
     ];
     const cached = this.selectCachedArrayResource<PricePoint>("price-history", entityKey, variantKeys, sourceKeys, false);
     const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
-    const cachedHistoryStale = isStaleIntradayHistory(cachedValue, isIntradayResolution(resolution));
+    const cachedHistoryStale = isStaleIntradayHistory(cachedValue, isIntradayResolution(resolution), exchange);
     const forceRefresh = context?.cacheMode === "refresh";
     if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
       return cachedValue;
@@ -1097,7 +1097,7 @@ export class AssetDataRouter implements DataProvider {
     const cached = this.selectCachedArrayResource<PricePoint>("detailed-price-history", entityKey, variantKeys, sourceKeys, false);
     const cachedValue = cached ? normalizePriceHistory(cached.value) : [];
     const isCurrentWindow = isCurrentHistoryWindow(endDate);
-    const cachedHistoryStale = isCurrentWindow && isPriceHistoryStaleForCurrentWindow(cachedValue);
+    const cachedHistoryStale = isCurrentWindow && isPriceHistoryStaleForCurrentWindow(cachedValue, Date.now(), { exchange });
     const forceRefresh = context?.cacheMode === "refresh";
     if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
       return cachedValue;
@@ -1702,7 +1702,7 @@ export class AssetDataRouter implements DataProvider {
           range,
           context?.instrument ?? null,
         ));
-        if (isStaleIntradayHistory(result, isIntradayRange(range))) continue;
+        if (isStaleIntradayHistory(result, isIntradayRange(range), exchange)) continue;
         this.cacheResource(
           "price-history",
           entityKey,
@@ -1739,7 +1739,7 @@ export class AssetDataRouter implements DataProvider {
           resolution,
           context?.instrument ?? null,
         ));
-        if (isStaleIntradayHistory(result, isIntradayResolution(resolution))) continue;
+        if (isStaleIntradayHistory(result, isIntradayResolution(resolution), exchange)) continue;
         this.cacheResource(
           "price-history",
           entityKey,
@@ -1769,7 +1769,7 @@ export class AssetDataRouter implements DataProvider {
     for (const provider of this.providersInPriorityOrder()) {
       try {
         const value = normalizePriceHistory(await provider.getPriceHistory(ticker, exchange, range, context));
-        if (isStaleIntradayHistory(value, isIntradayRange(range))) continue;
+        if (isStaleIntradayHistory(value, isIntradayRange(range), exchange)) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "price-history",
@@ -1808,7 +1808,7 @@ export class AssetDataRouter implements DataProvider {
       if (!provider.getPriceHistoryForResolution) continue;
       try {
         const value = normalizePriceHistory(await provider.getPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context));
-        if (isStaleIntradayHistory(value, isIntradayResolution(resolution))) continue;
+        if (isStaleIntradayHistory(value, isIntradayResolution(resolution), exchange)) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "price-history",
@@ -1911,7 +1911,7 @@ export class AssetDataRouter implements DataProvider {
           barSize,
           context?.instrument ?? null,
         ));
-        if (isCurrentHistoryWindow(endDate) && isPriceHistoryStaleForCurrentWindow(result)) continue;
+        if (isCurrentHistoryWindow(endDate) && isPriceHistoryStaleForCurrentWindow(result, Date.now(), { exchange })) continue;
         this.cacheResource(
           "detailed-price-history",
           entityKey,
@@ -1944,7 +1944,7 @@ export class AssetDataRouter implements DataProvider {
       if (!provider.getDetailedPriceHistory) continue;
       try {
         const value = normalizePriceHistory(await provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context));
-        if (isCurrentHistoryWindow(endDate) && isPriceHistoryStaleForCurrentWindow(value)) continue;
+        if (isCurrentHistoryWindow(endDate) && isPriceHistoryStaleForCurrentWindow(value, Date.now(), { exchange })) continue;
         const sourceKey = this.providerSourceKey(provider);
         this.cacheResource(
           "detailed-price-history",
