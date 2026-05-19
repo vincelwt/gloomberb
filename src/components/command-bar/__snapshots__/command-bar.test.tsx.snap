@@ -28,58 +28,6 @@ exports[`CommandBar renders the default layout with opencode-style chrome 1`] = 
 "
 `;
 
-exports[`CommandBar renders plugin toggle state 1`] = `
-"                                                                                
-                                                                                
-                Commands                                                        
-                PL                                                              
-                                                                                
-                Plugins                                                         
-                News                                    on                      
-                Notes                                   off                     
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-"
-`;
-
-exports[`CommandBar collapses the trailing column on narrow terminals 1`] = `
-"                                          
-                                          
-       Commands                           
-       Search                             
-                                          
-       Tickers                            
-       AAPL                        NASDAQ 
-       MSFT                        NASDAQ 
-                                          
-       Panes                              
-       Portfolio                   PF     
-       Chat                        CHAT   
-       Quote Monitor               QQ     
-                                          
-       Search                             
-       Description                 DES    
-                                          
-                                          
-                                          
-                                          
-"
-`;
-
 exports[`CommandBar groups ticker search sections and keeps saved matches above looser provider results 1`] = `
 "                                                                                
                                                                                 

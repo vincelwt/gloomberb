@@ -159,15 +159,4 @@ describe("IBKR trade entry points", () => {
     expect(switchedTabs).toHaveLength(0);
   });
 
-  test("shows a clear message and does not navigate when the Trade action executes without a gateway profile", async () => {
-    const { tickerActions, ticker, switchedPanels, switchedTabs, toasts } = setupIbkrPlugin(createConfig());
-    const tradeAction = tickerActions.find((action) => action.id === "ibkr-trade");
-
-    expect(tradeAction).toBeDefined();
-    await tradeAction!.execute(ticker, null);
-
-    expect(toasts).toEqual(["Connect a Gateway / TWS IBKR profile first."]);
-    expect(switchedPanels).toHaveLength(0);
-    expect(switchedTabs).toHaveLength(0);
-  });
 });

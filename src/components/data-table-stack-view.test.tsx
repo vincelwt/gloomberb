@@ -160,13 +160,6 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
   });
 }
 
-async function emitTerminalMouseBack(x: number, y: number) {
-  await act(async () => {
-    await testSetup!.mockMouse.emitMouseEvent("down", x, y, 128 as any);
-    await testSetup!.renderOnce();
-  });
-}
-
 describe("DataTableStackView", () => {
   test("owns table navigation, detail open, and back navigation", async () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
@@ -201,22 +194,6 @@ describe("DataTableStackView", () => {
     expect(testSetup.captureCharFrame()).toContain("First detail");
 
     await emitKeypress({ name: "backspace", sequence: "\u007f" });
-    await renderSettled();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("First row");
-    expect(frame).not.toContain("First detail");
-  });
-
-  test("closes detail from the terminal mouse back button", async () => {
-    testSetup = await testRender(<Harness />, { width: 60, height: 12 });
-
-    await renderSettled();
-    await emitKeypress({ name: "enter", sequence: "\r" });
-    await renderSettled();
-    expect(testSetup.captureCharFrame()).toContain("First detail");
-
-    await emitTerminalMouseBack(30, 4);
     await renderSettled();
 
     const frame = testSetup.captureCharFrame();

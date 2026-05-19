@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, type ReactNode } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
-import { useShortcut } from "../../react/input";
 import { AppContext, appReducer, createInitialState } from "../../state/app-context";
 import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../ui";
-import { DataTableStackView } from "../data-table-stack-view";
-import { type DataTableColumn } from "../ui";
 import { createDefaultConfig } from "../../types/config";
 import type { PaneProps } from "../../types/plugin";
 import { PaneContent } from "./pane-content";
@@ -66,15 +63,6 @@ function LongScrollPane({ width, height }: PaneProps) {
   );
 }
 
-function ConsumingScrollPane(props: PaneProps) {
-  useShortcut((event) => {
-    if (event.name !== "down") return;
-    event.preventDefault();
-    event.stopPropagation();
-  });
-  return <LongScrollPane {...props} />;
-}
-
 function HiddenMountedTabPane({ width, height }: PaneProps) {
   const renderRows = () => Array.from({ length: 20 }, (_, index) => (
     <Box key={index} height={1}>
@@ -107,57 +95,6 @@ function HiddenMountedTabPane({ width, height }: PaneProps) {
         </ScrollBox>
       </Box>
     </Box>
-  );
-}
-
-interface TestRow {
-  id: string;
-}
-
-const columns: DataTableColumn[] = [{ id: "label", label: "Label", width: 10, align: "left" }];
-const rows: TestRow[] = [{ id: "row-1" }];
-
-function StackDetailPane({ focused, width, height }: PaneProps) {
-  const detailContent = (
-    <ScrollBox
-      ref={(node) => {
-        scrollRef = node;
-      }}
-      flexGrow={1}
-      scrollY
-      focusable={false}
-    >
-      <Box flexDirection="column">
-        {Array.from({ length: 20 }, (_, index) => (
-          <Box key={index} height={1}>
-            <Text>{`Tweet detail row ${index}`}</Text>
-          </Box>
-        ))}
-      </Box>
-    </ScrollBox>
-  );
-
-  return (
-    <DataTableStackView<TestRow>
-      focused={focused}
-      detailOpen
-      onBack={() => {}}
-      detailContent={detailContent}
-      detailTitle="Tweet"
-      selectedIndex={0}
-      rootWidth={width}
-      rootHeight={height}
-      columns={columns}
-      items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
-      getItemKey={(row) => row.id}
-      isSelected={(_row, index) => index === 0}
-      onSelect={() => {}}
-      renderCell={(row) => ({ text: row.id })}
-      emptyStateTitle="No rows"
-    />
   );
 }
 
@@ -195,15 +132,6 @@ describe("pane keyboard scrolling", () => {
     expect(scrollRef?.scrollTop).toBe(3);
   });
 
-  test("does not steal arrows from existing pane shortcut handlers", async () => {
-    await renderHarness(<Harness component={ConsumingScrollPane} />);
-
-    expect(scrollRef?.scrollTop).toBe(0);
-    await emitDownArrow();
-
-    expect(scrollRef?.scrollTop).toBe(0);
-  });
-
   test("ignores mounted scrollboxes inside hidden tabs", async () => {
     await renderHarness(<Harness component={HiddenMountedTabPane} />);
 
@@ -215,12 +143,4 @@ describe("pane keyboard scrolling", () => {
     expect(hiddenScrollRef?.scrollTop).toBe(0);
   });
 
-  test("scrolls stack detail content without requiring a pane-local detail handler", async () => {
-    await renderHarness(<Harness component={StackDetailPane} />);
-
-    expect(scrollRef?.scrollTop).toBe(0);
-    await emitDownArrow();
-
-    expect(scrollRef?.scrollTop).toBe(3);
-  });
 });

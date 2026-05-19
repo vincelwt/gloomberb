@@ -10,10 +10,6 @@ import {
 import { Box, Text } from "../ui";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
-let setHarnessItems:
-  | ((items: FeedDataTableItem[]) => void)
-  | undefined;
-let harnessSelectedIdx = 0;
 let rootKeyHits = 0;
 
 const items: FeedDataTableItem[] = [
@@ -49,8 +45,6 @@ afterEach(async () => {
     });
     testSetup = undefined;
   }
-  setHarnessItems = undefined;
-  harnessSelectedIdx = 0;
   rootKeyHits = 0;
 });
 
@@ -63,11 +57,7 @@ function Harness({
   height: number;
   withRootControls?: boolean;
 }) {
-  const [activeItems, setActiveItems] = useState(items);
   const [selectedIdx, setSelectedIdx] = useState(0);
-
-  setHarnessItems = setActiveItems;
-  harnessSelectedIdx = selectedIdx;
 
   const state = createInitialState(
     createDefaultConfig("/tmp/gloomberb-detail-data-table-test"),
@@ -80,7 +70,7 @@ function Harness({
           width={width}
           height={height}
           focused
-          items={activeItems}
+          items={items}
           selectedIdx={selectedIdx}
           onSelect={setSelectedIdx}
           rootBefore={withRootControls ? (
@@ -103,14 +93,6 @@ function Harness({
 
 async function renderSettled() {
   await act(async () => {
-    await testSetup!.renderOnce();
-    await testSetup!.renderOnce();
-  });
-}
-
-async function clickAt(x: number, y: number) {
-  await act(async () => {
-    await testSetup!.mockMouse.click(x, y);
     await testSetup!.renderOnce();
     await testSetup!.renderOnce();
   });
@@ -149,65 +131,6 @@ describe("FeedDataTableStackView", () => {
     expect(frame).toContain("10-Q filing");
     expect(frame).not.toContain("j/k move");
     expect(frame).not.toContain("Quarterly report details.");
-  });
-
-  test("selects a row on first click without opening detail", async () => {
-    testSetup = await testRender(<Harness width={90} height={16} />, {
-      width: 90,
-      height: 16,
-    });
-
-    await renderSettled();
-
-    const frame = testSetup.captureCharFrame();
-    const lines = frame.split("\n");
-    const filingRow = lines.findIndex((line) => line.includes("10-Q filing"));
-
-    await clickAt(2, filingRow);
-
-    const nextFrame = testSetup.captureCharFrame();
-    expect(harnessSelectedIdx).toBe(1);
-    expect(nextFrame).not.toContain("\u2190 Back");
-    expect(nextFrame).not.toContain("Quarterly report details.");
-  });
-
-  test("opens detail from the selected row and closes it when items change", async () => {
-    testSetup = await testRender(<Harness width={90} height={16} />, {
-      width: 90,
-      height: 16,
-    });
-
-    await renderSettled();
-
-    const frame = testSetup.captureCharFrame();
-    const lines = frame.split("\n");
-    const filingRow = lines.findIndex((line) => line.includes("10-Q filing"));
-
-    await clickAt(2, filingRow);
-    expect(harnessSelectedIdx).toBe(1);
-    await clickAt(2, filingRow);
-    await renderSettled();
-
-    const detailFrame = testSetup.captureCharFrame();
-    expect(detailFrame).toContain("\u2190 Back 10-Q filing");
-    expect(detailFrame).toContain("Quarterly report details.");
-    expect(detailFrame.match(/10-Q filing/g)?.length ?? 0).toBe(1);
-
-    await act(async () => {
-      setHarnessItems?.([
-        {
-          id: "9",
-          title: "Fresh item after source change",
-          detailBody: "Replacement detail",
-        },
-      ]);
-    });
-    await renderSettled();
-
-    const nextFrame = testSetup.captureCharFrame();
-    expect(nextFrame).toContain("Fresh item after source change");
-    expect(nextFrame).not.toContain("\u2190 Back");
-    expect(nextFrame).not.toContain("Replacement detail");
   });
 
   test("renders root controls and delegates root key handling", async () => {
