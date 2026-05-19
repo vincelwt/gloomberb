@@ -236,9 +236,7 @@ export function cycleWindowEditFocus(
 
 export function getWindowEditPaneIds(layout: LayoutConfig): string[] {
   const dockedIds = getDockLeafLayouts(layout, { x: 0, y: 0, width: 120, height: 40 }).map((entry) => entry.instanceId);
-  const floatingIds = [...layout.floating]
-    .sort((left, right) => (left.zIndex ?? 50) - (right.zIndex ?? 50))
-    .map((entry) => entry.instanceId);
+  const floatingIds = layout.floating.map((entry) => entry.instanceId);
   return [...dockedIds, ...floatingIds];
 }
 
