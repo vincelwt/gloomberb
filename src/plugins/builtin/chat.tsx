@@ -28,6 +28,10 @@ import {
   type TwitterFeedLaunchRequest,
 } from "./cloud-tweets";
 import { AccountManagementPane } from "./account-management";
+import {
+  CONGRESS_TRADES_PANE_ID,
+  CongressTradesPane,
+} from "./congress-trades";
 import { BuildoutPane } from "./buildout-pane";
 
 interface ChatContentProps {
@@ -2411,6 +2415,17 @@ export const gloomberbCloudPlugin: GloomPlugin = {
         placement: "floating",
       }),
     },
+    {
+      id: "congress-trades-pane",
+      paneId: CONGRESS_TRADES_PANE_ID,
+      label: "Congress Trades",
+      description: "Track newly disclosed House periodic transaction reports.",
+      keywords: ["congress", "house", "trades", "ptr", "stock", "disclosures"],
+      shortcut: { prefix: "CG" },
+      createInstance: () => ({
+        placement: "floating",
+      }),
+    },
   ],
 
   slots: {
@@ -2449,6 +2464,16 @@ export const gloomberbCloudPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 34 },
+    });
+
+    ctx.registerPane({
+      id: CONGRESS_TRADES_PANE_ID,
+      name: "Congress",
+      icon: "G",
+      component: CongressTradesPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 112, height: 30 },
     });
 
     ctx.registerDetailTab({

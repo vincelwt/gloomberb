@@ -263,6 +263,63 @@ export interface CloudYieldPointPayload {
   yield: number | null;
 }
 
+export type CloudCongressTradeSide = "BUY" | "SELL" | "EXCHANGE" | "OTHER";
+
+export interface CloudCongressTradePayload {
+  id: string;
+  chamber: "house";
+  filingId: string;
+  docId: string;
+  memberName: string;
+  stateDistrict: string;
+  filingDate: string;
+  transactionDate: string | null;
+  notificationDate: string | null;
+  lagDays: number | null;
+  side: CloudCongressTradeSide;
+  transactionType: string;
+  ticker: string | null;
+  assetName: string;
+  assetType: string | null;
+  owner: string;
+  rawOwner: string;
+  amount: string;
+  amountLow: number | null;
+  amountHigh: number | null;
+  capGainsOver200: boolean | null;
+  filingStatus: string | null;
+  subholdingOf: string | null;
+  description: string | null;
+  sourceUrl: string;
+}
+
+export interface CloudCongressMemberPayload {
+  id: string;
+  memberName: string;
+  stateDistrict: string;
+  tradeCount: number;
+  buyCount: number;
+  sellCount: number;
+  exchangeCount: number;
+  otherCount: number;
+  estimatedLow: number | null;
+  estimatedHigh: number | null;
+  lastFilingDate: string | null;
+  avgLagDays: number | null;
+}
+
+export interface CloudCongressHousePayload {
+  asOf: string;
+  chamber: "house";
+  source: "house-clerk";
+  year: number;
+  indexUpdatedAt: string | null;
+  filingsScanned: number;
+  filingCount: number;
+  trades: CloudCongressTradePayload[];
+  members: CloudCongressMemberPayload[];
+}
+
 export interface CloudNewsEntityPayload {
   id: string;
   entityType: string;
@@ -1469,6 +1526,25 @@ class GloomApiClient {
 
   async getCloudYieldCurve(): Promise<CloudYieldPointPayload[]> {
     return this.request<CloudYieldPointPayload[]>("/cloud/econ/yield-curve");
+  }
+
+  async getCloudCongressHouse(params: {
+    year?: number;
+    limit?: number;
+    filingLimit?: number;
+    member?: string;
+    ticker?: string;
+    refresh?: boolean;
+  } = {}): Promise<CloudCongressHousePayload> {
+    const search = new URLSearchParams();
+    if (params.year != null) search.set("year", String(params.year));
+    if (params.limit != null) search.set("limit", String(params.limit));
+    if (params.filingLimit != null) search.set("filingLimit", String(params.filingLimit));
+    if (params.member) search.set("member", params.member);
+    if (params.ticker) search.set("ticker", params.ticker);
+    if (params.refresh != null) search.set("refresh", String(params.refresh));
+    const query = search.toString();
+    return this.request<CloudCongressHousePayload>(`/cloud/congress/house${query ? `?${query}` : ""}`);
   }
 
   async getCloudNews(params: {
