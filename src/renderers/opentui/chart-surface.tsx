@@ -147,7 +147,6 @@ export const OpenTuiChartSurface = forwardRef<unknown, ChartSurfaceProps>(functi
         renderable.onLifecyclePass = previousLifecyclePass;
       }
       renderer.unregisterLifecyclePass(renderable);
-      setTarget(null);
     };
   }, [kittySupport, nativeBitmap, nativeBitmapKey, renderer]);
 
