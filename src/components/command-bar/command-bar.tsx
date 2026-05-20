@@ -24,7 +24,6 @@ import {
   commandBarSelectedText,
   commandBarSubtleText,
   commandBarText,
-  blendHex,
   colors,
   getCurrentThemeId,
   previewTheme,
@@ -215,6 +214,7 @@ const COMMAND_BAR_OVERLAY_Z_INDEX = 2_147_483_646;
 const COMMAND_BAR_PANEL_Z_INDEX = 2_147_483_647;
 const NATIVE_COMMAND_BAR_PADDING_X_PX = 14;
 const NATIVE_COMMAND_BAR_PADDING_Y_PX = 14;
+const NATIVE_COMMAND_BAR_SHADOW = "0 10px 18px color-mix(in srgb, var(--gloom-bg) 34%, transparent)";
 const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
 
 function normalizeCommandTickerSearchText(value: string): string {
@@ -5871,7 +5871,7 @@ export function CommandBar({
         data-gloom-role="command-bar-panel"
         style={nativePaneChrome ? {
           borderRadius: 8,
-          boxShadow: `0 14px 32px ${blendHex(commandBarBg(), colors.bg, 0.18)}`,
+          boxShadow: NATIVE_COMMAND_BAR_SHADOW,
           overflow: "hidden",
           padding: `${NATIVE_COMMAND_BAR_PADDING_Y_PX}px ${NATIVE_COMMAND_BAR_PADDING_X_PX}px`,
         } : undefined}
