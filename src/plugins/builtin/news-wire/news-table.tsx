@@ -12,7 +12,6 @@ import {
 import type { MarketNewsItem } from "../../../types/news-source";
 import { colors } from "../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
-import { useInlineTickers } from "../../../state/use-inline-tickers";
 
 export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
 
@@ -175,22 +174,9 @@ export function NewsArticleStackView({
     () => sortNewsArticles(articles, sortPreference),
     [articles, sortPreference],
   );
-  const tableTickerTexts = useMemo(() => {
-    const seen = new Set<string>();
-    const texts: string[] = [];
-    for (const article of sortedArticles) {
-      for (const symbol of collectNewsDisplayTickers(article.tickers)) {
-        if (seen.has(symbol)) continue;
-        seen.add(symbol);
-        texts.push(`$${symbol}`);
-      }
-    }
-    return texts;
-  }, [sortedArticles]);
-  const { catalog: tickerCatalog, openTicker } = useInlineTickers(tableTickerTexts);
-  const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
   const activeIdx = activeStackIndex(sortedArticles.length, selectedIdx);
+  const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
 
   const selectIndex = useCallback((index: number) => {
     setSelectedArticleId(sortedArticles[index]?.id ?? null);
@@ -246,9 +232,8 @@ export function NewsArticleStackView({
             <TickerBadgeList
               symbols={tickers}
               width={column.width}
-              catalog={tickerCatalog}
               fallbackColor={selectedColor ?? colors.textBright}
-              openTicker={openTicker}
+              liveQuote={false}
             />
           ),
           color: selectedColor ?? colors.textBright,
@@ -262,7 +247,7 @@ export function NewsArticleStackView({
           color: selectedColor ?? (item.importance >= 80 ? colors.positive : colors.textDim),
         };
     }
-  }, [openTicker, readArticleIds, tickerCatalog, titleForArticle]);
+  }, [readArticleIds, titleForArticle]);
 
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>

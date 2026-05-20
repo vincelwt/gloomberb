@@ -5,8 +5,20 @@ import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../src/components/layout/titlebar-ov
 const outdir = join(process.cwd(), "dist", "electrobun-view");
 const electrobunViewDir = join(process.cwd(), "src", "renderers", "electrobun", "view");
 
-function aliasImport(args: { path: string }, sourceSuffix: string, target: string) {
+interface ResolveArgs {
+  path: string;
+  importer?: string;
+}
+
+function aliasImport(args: ResolveArgs, sourceSuffix: string, target: string) {
   if (args.path.endsWith(sourceSuffix)) {
+    return { path: join(electrobunViewDir, target) };
+  }
+  return undefined;
+}
+
+function aliasRelativeImport(args: ResolveArgs, importerSuffix: string, sourcePath: string, target: string) {
+  if (args.path === sourcePath && args.importer?.endsWith(importerSuffix)) {
     return { path: join(electrobunViewDir, target) };
   }
   return undefined;
@@ -35,6 +47,7 @@ const result = await Bun.build({
           ?? aliasImport(args, "notes-files", "notes-files.ts")
           ?? aliasImport(args, "core/app-services", "app-services.ts")
           ?? aliasImport(args, "native/kitty-support", "native-stubs/chart-kitty-support.ts")
+          ?? aliasRelativeImport(args, "components/chart/native/renderer-selection.ts", "./kitty-support", "native-stubs/chart-kitty-support.ts")
           ?? aliasImport(args, "native/surface-manager", "native-stubs/chart-surface-manager.ts")
           ?? aliasImport(args, "native/surface-sync", "native-stubs/chart-surface-sync.ts")
         ));

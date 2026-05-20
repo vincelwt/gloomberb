@@ -9,13 +9,17 @@ import { useInlineTickers } from "./use-inline-tickers";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
-function InlineTickerHarness() {
-  const { catalog } = useInlineTickers(["$LGD1L"]);
+function InlineTickerHarness({ liveQuotes = true }: { liveQuotes?: boolean }) {
+  const { catalog } = useInlineTickers(["$LGD1L"], { liveQuotes });
   return <text>{catalog.LGD1L?.status ?? "none"}</text>;
 }
 
-afterEach(() => {
-  testSetup?.renderer.destroy();
+afterEach(async () => {
+  if (testSetup) {
+    await act(async () => {
+      testSetup!.renderer.destroy();
+    });
+  }
   testSetup = undefined;
   setSharedMarketDataCoordinator(null);
   setSharedRegistryForTests(undefined);
@@ -67,7 +71,53 @@ describe("useInlineTickers", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(testSetup.captureCharFrame()).toContain("missing");
+    expect(testSetup!.captureCharFrame()).toContain("missing");
     expect(actions).toEqual([]);
+  });
+
+  test("can resolve inline ticker badges without live quote lookups", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-inline-tickers-static-test");
+    const state = createInitialState(config);
+    state.tickers.set("LGD1L", {
+      metadata: {
+        ticker: "LGD1L",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Static badge",
+        portfolios: [],
+        watchlists: [],
+        positions: [],
+        broker_contracts: [],
+        custom: {},
+        tags: [],
+      },
+    });
+    let quoteCalls = 0;
+    setSharedRegistryForTests({
+      marketData: {
+        getQuote: async () => {
+          quoteCalls += 1;
+          throw new Error("quotes should be disabled");
+        },
+      },
+      pinTicker: () => {},
+    } as unknown as PluginRegistry);
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <InlineTickerHarness liveQuotes={false} />
+        </AppContext>,
+        { width: 20, height: 1 },
+      );
+    });
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await Promise.resolve();
+    });
+
+    expect(testSetup!.captureCharFrame()).toContain("ready");
+    expect(quoteCalls).toBe(0);
   });
 });

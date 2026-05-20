@@ -9,6 +9,7 @@ export interface TickerBadgeProps {
   symbol: string;
   status: "loading" | "ready";
   quote: Quote | null;
+  liveQuote?: boolean;
   hovered?: boolean;
   onHoverStart?: () => void;
   onHoverEnd?: () => void;
@@ -45,6 +46,7 @@ export function TickerBadge({
   symbol,
   status,
   quote,
+  liveQuote = true,
   hovered = false,
   onHoverStart,
   onHoverEnd,
@@ -59,13 +61,18 @@ export function TickerBadge({
     financials,
     onOpen,
   });
-  const tone = status === "ready" && quote ? priceColor(quote.changePercent) : colors.borderFocused;
-  const label = hovered && quote
-    ? `${symbol} ${formatMarketPriceWithCurrency(quote.price, quote.currency, { minimumFractionDigits: 2 })}`
-    : status === "ready" && quote
-    ? formatBadgeChange(quote.changePercent)
-    : "…";
-  const text = hovered && quote ? label : `${symbol} ${label}`;
+  const quoteForDisplay = liveQuote ? quote : null;
+  const tone = status === "ready" && quoteForDisplay
+    ? priceColor(quoteForDisplay.changePercent)
+    : colors.borderFocused;
+  const quoteLabel = hovered && quoteForDisplay
+    ? `${symbol} ${formatMarketPriceWithCurrency(quoteForDisplay.price, quoteForDisplay.currency, { minimumFractionDigits: 2 })}`
+    : status === "ready" && quoteForDisplay
+      ? formatBadgeChange(quoteForDisplay.changePercent)
+      : "…";
+  const text = liveQuote
+    ? hovered && quoteForDisplay ? quoteLabel : `${symbol} ${quoteLabel}`
+    : symbol;
   const color = hovered ? colors.textBright : tone;
   const backgroundColor = hovered
     ? blendHex(colors.bg, tone, 0.42)
