@@ -15,6 +15,10 @@ export interface InlineTickerCatalogEntry {
   quote: Quote | null;
 }
 
+export interface UseInlineTickersOptions {
+  liveQuotes?: boolean;
+}
+
 const resolutionInFlight = new Map<string, Promise<void>>();
 const quoteInFlight = new Map<string, Promise<void>>();
 const missingSymbols = new Set<string>();
@@ -25,10 +29,21 @@ function normalizeSymbols(texts: readonly string[]): string[] {
   return collectUniqueTickerSymbols(texts);
 }
 
-export function useInlineTickers(texts: readonly string[]): {
+export function useInlineTickerOpener(): (symbol: string) => void {
+  const registry = getSharedRegistry();
+  return useCallback((symbol: string) => {
+    registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
+  }, [registry]);
+}
+
+export function useInlineTickers(
+  texts: readonly string[],
+  options: UseInlineTickersOptions = {},
+): {
   catalog: Record<string, InlineTickerCatalogEntry>;
   openTicker: (symbol: string) => void;
 } {
+  const liveQuotes = options.liveQuotes ?? true;
   const dispatch = useAppDispatch();
   const tickers = useAppSelector((state) => state.tickers);
   const financials = useAppSelector((state) => state.financials);
@@ -37,6 +52,7 @@ export function useInlineTickers(texts: readonly string[]): {
   const textsKey = texts.join("\u0000");
   const symbols = useMemo(() => normalizeSymbols(texts), [textsKey]);
   const symbolsKey = symbols.join("|");
+  const financialsEffectTarget = liveQuotes ? financials : null;
   const latestRef = useRef({ tickers, financials, dispatch, registry });
 
   latestRef.current = { tickers, financials, dispatch, registry };
@@ -51,12 +67,16 @@ export function useInlineTickers(texts: readonly string[]): {
     for (const symbol of symbols) {
       const current = latestRef.current;
       const currentTicker = current.tickers.get(symbol) ?? null;
-      const currentQuote = current.financials.get(symbol)?.quote ?? null;
+      const currentQuote = liveQuotes
+        ? current.financials.get(symbol)?.quote ?? null
+        : null;
 
-      if (currentTicker && currentQuote) {
+      if (currentTicker && (!liveQuotes || currentQuote)) {
         missingSymbols.delete(symbol);
-        quoteMissingSymbols.delete(symbol);
-        initialQuoteRequested.delete(symbol);
+        if (liveQuotes) {
+          quoteMissingSymbols.delete(symbol);
+          initialQuoteRequested.delete(symbol);
+        }
         continue;
       }
 
@@ -100,7 +120,7 @@ export function useInlineTickers(texts: readonly string[]): {
         continue;
       }
 
-      if (!currentTicker || currentQuote || initialQuoteRequested.has(symbol)) continue;
+      if (!liveQuotes || !currentTicker || currentQuote || initialQuoteRequested.has(symbol)) continue;
 
       let quoteRequest = quoteInFlight.get(symbol);
       if (!quoteRequest) {
@@ -142,47 +162,50 @@ export function useInlineTickers(texts: readonly string[]): {
     return () => {
       mounted = false;
     };
-  }, [dispatch, financials, registry, symbols, symbolsKey, tickers]);
+  }, [dispatch, financialsEffectTarget, liveQuotes, registry, symbols, symbolsKey, tickers]);
 
-  const streamingTargets = symbols
-    .map((symbol) => tickers.get(symbol))
-    .filter((ticker): ticker is TickerRecord => ticker != null)
-    .map((ticker) => {
-      const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
-      return {
-        symbol: ticker.metadata.ticker,
-        exchange: ticker.metadata.exchange,
-        surface: "inline" as const,
-        visible: true,
-        weight: 40,
-        context: instrument
-          ? {
-            brokerId: instrument.brokerId,
-            brokerInstanceId: instrument.brokerInstanceId,
-            instrument,
-          }
-          : undefined,
-      };
-    });
+  const streamingTargets = useMemo(() => {
+    if (!liveQuotes) return [];
+    return symbols
+      .map((symbol) => tickers.get(symbol))
+      .filter((ticker): ticker is TickerRecord => ticker != null)
+      .map((ticker) => {
+        const instrument = ticker.metadata.broker_contracts?.[0] ?? null;
+        return {
+          symbol: ticker.metadata.ticker,
+          exchange: ticker.metadata.exchange,
+          surface: "inline" as const,
+          visible: true,
+          weight: 40,
+          context: instrument
+            ? {
+              brokerId: instrument.brokerId,
+              brokerInstanceId: instrument.brokerInstanceId,
+              instrument,
+            }
+            : undefined,
+        };
+      });
+  }, [liveQuotes, symbols, tickers]);
 
   useQuoteStreaming(streamingTargets);
 
-  const openTicker = useCallback((symbol: string) => {
-    registry?.pinTicker(symbol, { floating: true, paneType: "ticker-detail" });
-  }, [registry]);
+  const openTicker = useInlineTickerOpener();
 
   const catalog = useMemo(() => {
     const entries: Record<string, InlineTickerCatalogEntry> = {};
     for (const symbol of symbols) {
       const ticker = tickers.get(symbol) ?? null;
-      const quote = financials.get(symbol)?.quote ?? null;
+      const quote = liveQuotes ? financials.get(symbol)?.quote ?? null : null;
       const status: InlineTickerStatus = ticker
-        ? (quote ? "ready" : quoteMissingSymbols.has(symbol) ? "missing" : "loading")
+        ? liveQuotes
+          ? (quote ? "ready" : quoteMissingSymbols.has(symbol) ? "missing" : "loading")
+          : "ready"
         : (missingSymbols.has(symbol) ? "missing" : "loading");
       entries[symbol] = { status, ticker, quote };
     }
     return entries;
-  }, [financials, refreshVersion, symbols, tickers]);
+  }, [financials, liveQuotes, refreshVersion, symbols, tickers]);
 
   return { catalog, openTicker };
 }

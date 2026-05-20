@@ -13,7 +13,7 @@ import {
   type DataTableKeyEvent,
 } from "../../components";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../plugin-runtime";
-import { useInlineTickers } from "../../state/use-inline-tickers";
+import { useInlineTickerOpener } from "../../state/use-inline-tickers";
 import { colors } from "../../theme/colors";
 import { formatCompact, formatTimeAgo, padTo } from "../../utils/format";
 import { isPlainKey } from "../../utils/keyboard";
@@ -455,14 +455,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
       : []
   ), [detailMember, trades]);
 
-  const tableTickerTexts = useMemo(() => {
-    const tickers = new Set<string>();
-    for (const trade of tradeRows) {
-      if (trade.ticker) tickers.add(`$${trade.ticker}`);
-    }
-    return [...tickers];
-  }, [tradeRows]);
-  const { catalog: tickerCatalog, openTicker } = useInlineTickers(tableTickerTexts);
+  const openTicker = useInlineTickerOpener();
 
   useEffect(() => {
     if (tradeRows.length === 0) {
@@ -659,9 +652,8 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
             <TickerBadgeList
               symbols={[trade.ticker]}
               width={column.width}
-              catalog={tickerCatalog}
               fallbackColor={selectedColor ?? colors.positive}
-              openTicker={openTicker}
+              liveQuote={false}
             />
           ) : undefined,
           color: selectedColor ?? (trade.ticker ? colors.positive : colors.textDim),
@@ -675,7 +667,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
       case "owner":
         return { text: trade.owner, color: selectedColor ?? colors.textDim };
     }
-  }, [openTicker, tickerCatalog]);
+  }, []);
 
   const renderMemberCell = useCallback((
     member: CloudCongressMemberPayload,

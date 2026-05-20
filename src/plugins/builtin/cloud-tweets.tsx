@@ -417,19 +417,6 @@ function TweetSearchTable({
   });
   const rows = useMemo(() => sortedTweets(data?.tweets ?? [], sort.columnId, sort.direction), [data?.tweets, sort]);
   const columns = useMemo(() => buildTweetColumns(width), [width]);
-  const tableTickerTexts = useMemo(() => {
-    const seen = new Set<string>();
-    const texts: string[] = [];
-    for (const tweet of rows) {
-      for (const symbol of tweetTickers(tweet)) {
-        if (seen.has(symbol)) continue;
-        seen.add(symbol);
-        texts.push(`$${symbol}`);
-      }
-    }
-    return texts;
-  }, [rows]);
-  const { catalog: tickerCatalog, openTicker } = useInlineTickers(tableTickerTexts);
   const selectedIndex = rows.findIndex((tweet) => tweet.id === selectedTweetId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
   const selectedTweet = rows[activeIndex] ?? null;
@@ -523,9 +510,8 @@ function TweetSearchTable({
             <TickerBadgeList
               symbols={tickers}
               width={column.width}
-              catalog={tickerCatalog}
               fallbackColor={selectedColor ?? colors.positive}
-              openTicker={openTicker}
+              liveQuote={false}
             />
           ),
           color: selectedColor ?? colors.positive,
@@ -536,7 +522,7 @@ function TweetSearchTable({
       case "views":
         return { text: formatMetric(tweet.metrics.views), color: selectedColor ?? colors.textDim };
     }
-  }, [openTicker, tickerCatalog]);
+  }, []);
 
   const emptyContent = error && isAuthError(error)
     ? <CloudAuthNotice message={error} showSignup />
@@ -660,7 +646,7 @@ function TwitterFeedSearchBar({
       width={width}
       flexDirection="row"
       backgroundColor={colors.panel}
-      onMouseDown={(event) => {
+      onMouseDown={(event: any) => {
         event.preventDefault?.();
         event.stopPropagation?.();
         onFocus();
