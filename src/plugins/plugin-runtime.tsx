@@ -160,15 +160,6 @@ export function useAssetData(): DataProvider | null {
   return useMarketData();
 }
 
-export function useCapability(capabilityId: string): PluginCapability | null {
-  const { runtime } = usePluginRenderContext();
-  return runtime.getCapability(capabilityId);
-}
-
-export function useNewsData(): PluginCapability | null {
-  return useCapability("news.core");
-}
-
 export function usePluginBrokerActions() {
   const { runtime } = usePluginRenderContext();
   return {

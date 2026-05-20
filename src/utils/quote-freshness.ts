@@ -1,7 +1,7 @@
 import type { Quote } from "../types/financials";
 import { isTimestampStaleForExchangeSession } from "./market-freshness";
 
-export function isQuoteMissingActiveSessionPrice(quote: Quote): boolean {
+function isQuoteMissingActiveSessionPrice(quote: Quote): boolean {
   if ((quote.marketState === "PRE" || quote.marketState === "PREPRE") && quote.preMarketPrice == null) {
     return true;
   }

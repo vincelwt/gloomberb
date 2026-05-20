@@ -21,6 +21,7 @@ import { apiClient, type CloudTweetPayload, type CloudTweetQueryType, type Cloud
 import { collectUniqueTickerSymbols } from "../../utils/ticker-tokenizer";
 import { formatCompact, formatTimeAgo } from "../../utils/format";
 import { normalizeTweetText } from "../../utils/tweet-text";
+import { truncateWithEllipsis } from "../../utils/text-wrap";
 import { toTimestampMillis } from "../../utils/timestamp";
 import { normalizedHttpUrl } from "../../utils/url";
 import { colors } from "../../theme/colors";
@@ -75,13 +76,6 @@ let nextTwitterFeedId = 1;
 
 function generateFeedId(): string {
   return `${Date.now()}-${nextTwitterFeedId++}`;
-}
-
-function truncateWithEllipsis(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
 }
 
 function deriveFeedTitle(query: string): string {

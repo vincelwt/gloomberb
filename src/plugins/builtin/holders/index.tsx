@@ -329,7 +329,7 @@ function layoutFloatTiles(groups: TreemapGroup[], width: number, height: number,
   return tiles.filter((tile) => tile.width > 0 && tile.height > 0);
 }
 
-export function buildTreemapRects(rows: HolderRow[], width: number, height: number, cellAspect = 1): FloatTileLayout[] {
+function buildTreemapRects(rows: HolderRow[], width: number, height: number, cellAspect = 1): FloatTileLayout[] {
   if (width <= 0 || height <= 0) return [];
   const weightedRows = rows
     .map((row) => ({ row, weight: rowWeight(row) }))
@@ -366,7 +366,7 @@ function allocateLengths(totalLength: number, weights: number[]): number[] {
   });
 }
 
-export function buildTreemap(rows: HolderRow[], width: number, height: number, cellAspect = 1): TileLayout[] {
+function buildTreemap(rows: HolderRow[], width: number, height: number, cellAspect = 1): TileLayout[] {
   if (width <= 0 || height <= 0) return [];
   const weightedRows = rows
     .map((row) => ({ row, weight: rowWeight(row) }))
@@ -449,7 +449,7 @@ function desktopTileColor(row: HolderRow): string {
 
 const TILE_TEXT_MIN_CONTRAST = 4.5;
 
-export function tileTextColor(backgroundColor: string): string {
+function tileTextColor(backgroundColor: string): string {
   const preferred = higherContrast(
     higherContrast(colors.text, colors.textBright, backgroundColor),
     colors.selectedText,

@@ -196,9 +196,9 @@ function AnalystSummary({ data, width }: { data: AnalystResearchData | null; wid
   );
 }
 
-export type RatingColumnId = "date" | "firm" | "action" | "current" | "target" | "prior";
+type RatingColumnId = "date" | "firm" | "action" | "current" | "target" | "prior";
 type RatingColumn = DataTableColumn & { id: RatingColumnId };
-export type SortDirection = "asc" | "desc";
+type SortDirection = "asc" | "desc";
 
 export interface RatingSortPreference {
   columnId: RatingColumnId;

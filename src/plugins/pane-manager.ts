@@ -911,33 +911,6 @@ export function simulateDrop(layout: LayoutConfig, draggedId: string, dropTarget
   };
 }
 
-export function movePaneRelative(
-  layout: LayoutConfig,
-  instanceId: string,
-  position: DockTarget["position"],
-): LayoutConfig {
-  const floating = layout.floating.find((entry) => entry.instanceId === instanceId);
-  if (floating) {
-    const deltaX = position === "left" ? -2 : position === "right" ? 2 : 0;
-    const deltaY = position === "above" ? -1 : position === "below" ? 1 : 0;
-    return finalizeLayout(updateFloatingPane(layout, instanceId, {
-      x: Math.max(0, floating.x + deltaX),
-      y: Math.max(0, floating.y + deltaY),
-    }));
-  }
-
-  const currentRect = getLeafRect(layout, instanceId, { x: 0, y: 0, width: 120, height: 40 });
-  if (!currentRect) return layout;
-  const candidates = getDockLeafLayouts(layout, { x: 0, y: 0, width: 120, height: 40 })
-    .filter((entry) => entry.instanceId !== instanceId)
-    .map((entry) => ({ entry, score: scoreDirectionalCandidate({ instanceId, path: [], rect: currentRect }, entry, position) }))
-    .filter((entry): entry is { entry: DockLeafLayout; score: number } => entry.score !== null)
-    .sort((a, b) => a.score - b.score);
-  const target = candidates[0]?.entry;
-  if (!target) return layout;
-  return insertRelativeToLeaf(layout, instanceId, target.instanceId, position);
-}
-
 export function swapPanes(layout: LayoutConfig, firstId: string, secondId: string): LayoutConfig {
   if (firstId === secondId) return layout;
   const firstLeaf = findDockLeaf(layout, firstId);

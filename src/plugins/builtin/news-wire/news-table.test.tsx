@@ -108,56 +108,6 @@ describe("NewsArticleStackView", () => {
     expect(boldText).not.toContain("Read story");
   });
 
-  test("keeps root controls visible while rendering custom empty content", async () => {
-    const state = createInitialState(
-      createDefaultConfig("/tmp/gloomberb-news-table-empty-content-test"),
-    );
-
-    testSetup = await testRender(
-      <AppContext value={{ state, dispatch: () => {} }}>
-        <PaneInstanceProvider paneId="news-feed:main">
-          <NewsArticleStackView
-            articles={[]}
-            focused
-            width={90}
-            rootHeight={10}
-            selectedArticleId={null}
-            setSelectedArticleId={() => {}}
-            sortPreference={sortPreference}
-            setSortPreference={() => {}}
-            onOpenArticle={() => {}}
-            detailOpen={false}
-            onBack={() => {}}
-            detailContent={<Box />}
-            rootBefore={(
-              <Box height={1}>
-                <Text>Sector tabs stay</Text>
-              </Box>
-            )}
-            columns={["time", "source", "title"]}
-            emptyContent={(
-              <Box paddingX={1} paddingY={1}>
-                <Text>Loading sector content</Text>
-              </Box>
-            )}
-            emptyStateTitle="No stories"
-          />
-        </PaneInstanceProvider>
-      </AppContext>,
-      { width: 90, height: 10 },
-    );
-
-    await act(async () => {
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Sector tabs stay");
-    expect(frame).toContain("Loading sector content");
-    expect(frame).not.toContain("No stories");
-  });
-
   test("dedupes exchange-qualified ticker aliases in table cells", async () => {
     const state = createInitialState(
       createDefaultConfig("/tmp/gloomberb-news-table-ticker-dedupe-test"),

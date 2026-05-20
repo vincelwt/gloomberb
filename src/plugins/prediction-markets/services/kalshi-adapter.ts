@@ -407,7 +407,7 @@ async function loadKalshiEvent(
   }
 }
 
-export async function loadKalshiTrades(
+async function loadKalshiTrades(
   summary: PredictionMarketSummary,
 ): Promise<PredictionTrade[]> {
   return await loadCachedPredictionResource(
@@ -430,7 +430,7 @@ export async function loadKalshiTrades(
   );
 }
 
-export async function loadKalshiBook(
+async function loadKalshiBook(
   summary: PredictionMarketSummary,
 ): Promise<PredictionBookSnapshot> {
   return await loadCachedPredictionResource(

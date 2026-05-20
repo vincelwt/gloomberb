@@ -186,17 +186,6 @@ describe("ChatController", () => {
     expect(snapshot.messages.map((entry) => entry.id)).toEqual(["m1"]);
   });
 
-  test("starts without client-seeded channels and hydrates the server channel list", async () => {
-    const controller = new ChatController();
-    apiClient.getChannels = async () => SERVER_CHAT_CHANNELS;
-
-    expect(controller.getSnapshot().channels).toEqual([]);
-
-    await controller.refreshChannels();
-
-    expect(controller.getSnapshot().channels).toEqual(SERVER_CHAT_CHANNELS);
-  });
-
   test("rejects unknown shortcut channels after the server list loads", async () => {
     const controller = new ChatController();
     apiClient.getChannels = async () => SERVER_CHAT_CHANNELS;

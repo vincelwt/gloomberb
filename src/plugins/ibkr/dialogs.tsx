@@ -7,7 +7,6 @@ import type { WizardStep } from "../../types/plugin";
 import { colors } from "../../theme/colors";
 
 export { ChoiceDialog } from "../../components";
-export type { ChoiceDialogChoice, ChoiceDialogProps } from "../../components";
 
 export function InputDialog({ resolve, step }: PromptContext<string> & { step: WizardStep }) {
   const inputRef = useRef<InputRenderable>(null);

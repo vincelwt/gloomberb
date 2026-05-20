@@ -136,7 +136,7 @@ export function createLocalTickerSearchCandidates(
   });
 }
 
-export function createProviderTickerSearchCandidates(
+function createProviderTickerSearchCandidates(
   searchResults: InstrumentSearchResult[],
   localTickers: ReadonlyMap<string, TickerRecord>,
   options: TickerSearchCandidateOptions = {},

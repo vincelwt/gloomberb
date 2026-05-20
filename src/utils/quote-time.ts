@@ -1,6 +1,6 @@
 import type { Quote } from "../types/financials";
 
-export function clampQuoteTimestamp(lastUpdated: number | undefined, now = Date.now()): number | null {
+function clampQuoteTimestamp(lastUpdated: number | undefined, now = Date.now()): number | null {
   if (typeof lastUpdated !== "number" || !Number.isFinite(lastUpdated) || lastUpdated <= 0) {
     return null;
   }

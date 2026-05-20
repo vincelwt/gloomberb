@@ -102,7 +102,7 @@ export class MemoryPersistence implements PluginPersistence {
 
 attachPredictionMarketsPersistence(new MemoryPersistence());
 
-export function createConfig(options?: {
+function createConfig(options?: {
   initialFocusedPaneId?: string;
 }): AppConfig {
   const config = createDefaultConfig("/tmp/gloomberb-prediction-markets");
@@ -135,7 +135,7 @@ export function createConfig(options?: {
   };
 }
 
-export function createRuntime(): PluginRuntimeAccess {
+function createRuntime(): PluginRuntimeAccess {
   return createStatefulTestPluginRuntime();
 }
 

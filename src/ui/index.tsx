@@ -14,7 +14,6 @@ export {
 } from "./host";
 export {
   ContextMenuProvider,
-  appContextMenuItems,
   compactContextMenuItems,
   editableTextContextMenuItems,
   linkContextMenuItems,
@@ -23,37 +22,19 @@ export {
   useTickerContextMenu,
 } from "./context-menu";
 export { contextMenuDivider } from "../types/context-menu";
-export type { ContextMenuContext, ContextMenuItem } from "../types/context-menu";
 export type {
   BoxRenderable,
-  BoxProps,
   ChartSurfaceProps,
-  HostTabItem,
-  HostTabsPalette,
-  HostTabsProps,
   Highlight,
   ImageSurfaceProps,
   InputRenderable,
-  InputProps,
   NativeRendererHost,
   PixelResolution,
-  RGBA as RGBAColor,
   RendererHost,
-  ScrollBarRenderable,
   ScrollBoxRenderable,
-  ScrollBoxProps,
   SyntaxStyleLike,
-  AsciiTextProps,
-  StyledTextChunk,
-  SpinnerMarkProps,
   TextareaRenderable,
-  TextareaProps,
-  TextAttributeFlags,
-  TextProps,
-  TextEditBuffer,
-  UiHost,
 } from "./host";
-export type { AsciiFontName } from "./ascii-font";
 
 export const Box = forwardRef<any, import("./host").BoxProps>((props, ref) => {
   const { Box: HostBox } = useUiHost();

@@ -293,7 +293,3 @@ export function formatCompactMarketPriceWithCurrency(
 
   return formatMarketPriceWithCurrency(value, currency, options);
 }
-
-export function formatMarketMoney(value: number | undefined, currency = "USD"): string {
-  return formatCurrency(value, currency);
-}

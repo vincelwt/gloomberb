@@ -90,7 +90,7 @@ export function resolveEntryData<T>(entry: QueryEntry<T> | null | undefined): T 
   return entry.data ?? entry.lastGoodData ?? null;
 }
 
-export function hasLikelyPriceUnitMismatch(
+function hasLikelyPriceUnitMismatch(
   left: Quote | null | undefined,
   right: Quote | null | undefined,
 ): boolean {

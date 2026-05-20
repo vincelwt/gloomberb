@@ -175,11 +175,11 @@ function finalizeSessionFields(
   return quote;
 }
 
-export function getQuoteContributionKey(quote: Quote | QuoteContribution): string {
+function getQuoteContributionKey(quote: Quote | QuoteContribution): string {
   return inferQuoteProviderId(quote);
 }
 
-export function normalizeQuoteContribution(
+function normalizeQuoteContribution(
   quote: Quote | QuoteContribution | null | undefined,
 ): QuoteContribution | undefined {
   if (!quote) return undefined;
@@ -201,7 +201,7 @@ export function normalizeQuoteContribution(
   });
 }
 
-export function mergeQuoteContribution(
+function mergeQuoteContribution(
   current: QuoteContribution | undefined,
   nextQuote: Quote | QuoteContribution,
 ): QuoteContribution {

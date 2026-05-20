@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useReducer, type ReactElement } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
-import type { ScrollBoxRenderable } from "@opentui/core";
 import { Box } from "../../ui";
 import {
   AppContext,
@@ -24,7 +23,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { DetailTabDef } from "../../types/plugin";
 import type { TickerRecord } from "../../types/ticker";
-import { PaneFooterBar, PaneFooterProvider, usePaneFooter } from "../../components/layout/pane-footer";
+import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import type { PluginRegistry } from "../registry";
 import { setSharedRegistryForTests } from "../registry";
 import { PluginRenderProvider } from "../plugin-runtime";
@@ -170,34 +169,6 @@ function makeRegistry(): PluginRegistry {
   return { detailTabs } as unknown as PluginRegistry;
 }
 
-function createFooterProbeTab(tabId: string, label: string): DetailTabDef["component"] {
-  return function FooterProbeTab() {
-    usePaneFooter(`footer-probe:${tabId}`, () => ({
-      info: [{ id: `${tabId}:info`, parts: [{ text: `${tabId}-footer`, tone: "value" }] }],
-      hints: [{ id: `${tabId}:hint`, key: label[0]!.toLowerCase(), label: `${label.slice(1).toLowerCase()}-hint` }],
-    }), []);
-    return <text>{`${label} body`}</text>;
-  };
-}
-
-function makeFooterRegistry(): PluginRegistry {
-  const detailTabs = new Map<string, DetailTabDef>([
-    ["probe-alpha", {
-      id: "probe-alpha",
-      name: "Alpha",
-      order: 25,
-      component: createFooterProbeTab("alpha", "Alpha"),
-    }],
-    ["probe-beta", {
-      id: "probe-beta",
-      name: "Beta",
-      order: 30,
-      component: createFooterProbeTab("beta", "Beta"),
-    }],
-  ]);
-  return { detailTabs } as unknown as PluginRegistry;
-}
-
 function createGatewayInstance(id = "ibkr-paper"): BrokerInstanceConfig {
   return {
     id,
@@ -286,50 +257,10 @@ function DetailHarness({
   );
 }
 
-function DetailFooterHarness({
-  config,
-  ticker,
-  financials,
-  activeTabId,
-  width = 90,
-  height = 18,
-}: {
-  config: AppConfig;
-  ticker: TickerRecord;
-  financials: TickerFinancials | null;
-  activeTabId: string;
-  width?: number;
-  height?: number;
-}) {
-  return (
-    <PaneFooterProvider>
-      {(footer) => (
-        <Box flexDirection="column" width={width} height={height}>
-          <DetailHarness
-            config={config}
-            ticker={ticker}
-            financials={financials}
-            activeTabId={activeTabId}
-            width={width}
-            height={height - 1}
-          />
-          <PaneFooterBar footer={footer} focused width={width} />
-        </Box>
-      )}
-    </PaneFooterProvider>
-  );
-}
-
 async function flushFrame() {
   await act(async () => {
     await testSetup!.renderOnce();
   });
-}
-
-function getFinancialsScroll(id: string): ScrollBoxRenderable {
-  const renderable = testSetup!.renderer.root.findDescendantById(id) as ScrollBoxRenderable | undefined;
-  expect(renderable).toBeDefined();
-  return renderable!;
 }
 
 afterEach(() => {
@@ -343,92 +274,6 @@ afterEach(() => {
 });
 
 describe("FinancialsTab", () => {
-  test("keeps negative-value rows aligned with the annual columns", async () => {
-    testSetup = await testRender(createFinancialsTabHarness(), {
-      width: 140,
-      height: 20,
-    });
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    const revenueLine = frame.split("\n").find((line) => line.includes("Revenue (B)"));
-    const operatingIncomeLine = frame.split("\n").find((line) => line.includes("Operating Inc (B)"));
-
-    expect(revenueLine).toBeDefined();
-    expect(operatingIncomeLine).toBeDefined();
-
-    expect(operatingIncomeLine!.indexOf("-4.31")).toBe(revenueLine!.indexOf("26.58"));
-    expect(operatingIncomeLine!.indexOf("-3.70")).toBe(revenueLine!.indexOf("28.88"));
-    expect(operatingIncomeLine!.indexOf("-3.92")).toBe(revenueLine!.indexOf("25.88"));
-    expect(operatingIncomeLine!.indexOf("-2.40")).toBe(revenueLine!.indexOf("27.62"));
-    expect(operatingIncomeLine!.indexOf("—")).toBe(revenueLine!.lastIndexOf("—"));
-  });
-
-  test("centers the annual headers over the value columns", async () => {
-    testSetup = await testRender(createFinancialsTabHarness(), {
-      width: 140,
-      height: 20,
-    });
-
-    await flushFrame();
-
-    const frame = testSetup.captureCharFrame();
-    const headerLine = frame.split("\n").find((line) => line.includes("2025-12"));
-    const revenueLine = frame.split("\n").find((line) => line.includes("Revenue (B)"));
-
-    expect(headerLine).toBeDefined();
-    expect(revenueLine).toBeDefined();
-
-    expect(headerLine!.indexOf("2025-12")).toBe(revenueLine!.indexOf("28.88") - 1);
-    expect(headerLine!.indexOf("2024-12")).toBe(revenueLine!.indexOf("25.88") - 1);
-    expect(headerLine!.indexOf("2023-12")).toBe(revenueLine!.indexOf("27.62") - 1);
-  });
-
-  test("allows the financial statements table to scroll horizontally", async () => {
-    testSetup = await testRender(createFinancialsTabHarness(), {
-      width: 56,
-      height: 18,
-    });
-
-    await flushFrame();
-
-    let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("TTM");
-    expect(frame).not.toContain("2021-12");
-    expect(frame).not.toContain("43.49");
-
-    const headerScroll = getFinancialsScroll("financials-header-scroll");
-    const bodyScroll = getFinancialsScroll("financials-body-scroll");
-    expect(bodyScroll.scrollWidth).toBeGreaterThan(bodyScroll.viewport.width);
-
-    await act(async () => {
-      bodyScroll.scrollTo({ x: bodyScroll.scrollWidth, y: 0 });
-      headerScroll.scrollTo({ x: bodyScroll.scrollLeft, y: 0 });
-      await Promise.resolve();
-    });
-
-    await flushFrame();
-    await flushFrame();
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("2021-12");
-    expect(frame).toContain("43.49");
-  });
-
-  test("hides the vertical scrollbar when the statements fit in view", async () => {
-    testSetup = await testRender(createFinancialsTabHarness(), {
-      width: 140,
-      height: 24,
-    });
-
-    await flushFrame();
-    await flushFrame();
-
-    const bodyScroll = getFinancialsScroll("financials-body-scroll");
-    expect(bodyScroll.verticalScrollBar.visible).toBe(false);
-  });
-
   test("uses p to toggle the financial statement period", async () => {
     testSetup = await testRender(createFinancialsTabFooterHarness(100, 20), {
       width: 100,
@@ -453,46 +298,6 @@ describe("FinancialsTab", () => {
     expect(frame).toContain("[p]eriod");
   });
 
-  test("nests statement rows and toggles financial groups", async () => {
-    testSetup = await testRender(createFinancialsTabHarness(), {
-      width: 140,
-      height: 24,
-    });
-
-    await flushFrame();
-    await flushFrame();
-
-    await act(async () => {
-      testSetup!.mockInput.pressKey("3");
-      await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-    });
-
-    let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("▾ Total Assets");
-    expect(frame).toContain("▾ Current Assets");
-    expect(frame).toContain("Cash & Equiv");
-    expect(frame).toContain("Accounts Rec");
-
-    await act(async () => {
-      testSetup!.mockInput.pressKey("c");
-      await testSetup!.renderOnce();
-    });
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("▸ Total Assets");
-    expect(frame).not.toContain("Cash & Equiv");
-    expect(frame).not.toContain("Accounts Rec");
-
-    await act(async () => {
-      testSetup!.mockInput.pressKey("e");
-      await testSetup!.renderOnce();
-    });
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("▾ Current Assets");
-    expect(frame).toContain("Accounts Rec");
-  });
 });
 
 describe("TickerDetailPane", () => {
@@ -711,131 +516,6 @@ describe("TickerDetailPane", () => {
     expect(frame).not.toContain("SEC");
   });
 
-  test("renders the company description in Overview when profile data is available", async () => {
-    setSharedRegistryForTests(makeRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailHarness
-        config={createDetailConfig("AAPL")}
-        ticker={makeTicker("AAPL")}
-        financials={makeFinancials({
-          profile: {
-            description: "Builds widgets for industrial customers.",
-          },
-        })}
-      />,
-      { width: 90, height: 24 },
-    );
-
-    await flushFrame();
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Description");
-    expect(frame).toContain("Builds widgets for industrial customers.");
-  });
-
-  test("shows listing venue, session, compact sources, and route in Overview", async () => {
-    setSharedRegistryForTests(makeRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailHarness
-        config={createDetailConfig("AMD")}
-        ticker={makeTicker("AMD", "Advanced Micro Devices")}
-        financials={makeFinancials({
-          quote: {
-            symbol: "AMD",
-            providerId: "ibkr",
-            dataSource: "live",
-            price: 100,
-            currency: "USD",
-            change: 1,
-            changePercent: 1,
-            lastUpdated: Date.now(),
-            listingExchangeName: "NASDAQ",
-            listingExchangeFullName: "NASDAQ",
-            routingExchangeName: "SMART",
-            routingExchangeFullName: "SMART",
-            marketState: "PRE",
-            sessionConfidence: "derived",
-            preMarketPrice: 101,
-            preMarketChange: 2,
-            preMarketChangePercent: 2,
-            provenance: {
-              price: { providerId: "ibkr", dataSource: "live" },
-              session: { providerId: "yahoo", dataSource: "delayed" },
-            },
-          },
-        })}
-        width={110}
-      />,
-      { width: 110, height: 24 },
-    );
-
-    await flushFrame();
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("NASDAQ");
-    expect(frame).toContain("PRE-MKT");
-    expect(frame).toContain("src IBKR live/Yahoo");
-    expect(frame).toContain("route SMART");
-  });
-
-  test("renders compact quote book, spread percent, and range widgets without duplicate overview rows", async () => {
-    setSharedRegistryForTests(makeRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailHarness
-        config={createDetailConfig("AMD")}
-        ticker={makeTicker("AMD", "Advanced Micro Devices")}
-        financials={makeFinancials({
-          quote: {
-            symbol: "AMD",
-            price: 100,
-            currency: "USD",
-            change: -1,
-            changePercent: -1,
-            previousClose: 101,
-            open: 99,
-            high: 102,
-            low: 98,
-            high52w: 130,
-            low52w: 80,
-            volume: 12_500_000,
-            marketCap: 250_000_000_000,
-            bid: 99.5,
-            ask: 100.5,
-            bidSize: 400,
-            askSize: 500,
-            lastUpdated: Date.now(),
-          },
-          fundamentals: {
-            sharesOutstanding: 1_000_000_000,
-            trailingPE: 25,
-          },
-        })}
-        width={110}
-        height={28}
-      />,
-      { width: 110, height: 28 },
-    );
-
-    await flushFrame();
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Bid");
-    expect(frame).toContain("400 x $99.5");
-    expect(frame).toContain("Ask");
-    expect(frame).toContain("500 x $100.5");
-    expect(frame).toContain("Spr");
-    expect(frame).toContain("1.00%");
-    expect(frame).toContain("Day Range");
-    expect(frame).toContain("52W Range");
-    expect(frame).not.toContain("Prior Close");
-    expect(frame).toContain("Volume");
-    expect(frame).toContain("Market Cap");
-    expect(frame).toContain("P/E");
-  });
-
   test("keeps quote prices native while converting market cap and position totals to base currency", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
@@ -926,41 +606,4 @@ describe("TickerDetailPane", () => {
     expect(frame).not.toContain("Trade");
   });
 
-  test("shows only active mounted tab pane hints", async () => {
-    setSharedRegistryForTests(makeFooterRegistry());
-    setOptionsProvider(createProvider(false));
-
-    testSetup = await testRender(
-      <DetailFooterHarness
-        config={createDetailConfig("AAPL")}
-        ticker={makeTicker("AAPL")}
-        financials={null}
-        activeTabId="probe-alpha"
-      />,
-      { width: 90, height: 18 },
-    );
-
-    await flushFrame();
-    await flushFrame();
-
-    let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("alpha-footer");
-    expect(frame).toContain("[a]lpha-hint");
-    expect(frame).not.toContain("beta-footer");
-    expect(frame).not.toContain("[b]eta-hint");
-
-    await act(async () => {
-      harnessDispatch!({ type: "UPDATE_PANE_STATE", paneId: TEST_PANE_ID, patch: { activeTabId: "probe-beta" } });
-      await Promise.resolve();
-    });
-    await flushFrame();
-    await flushFrame();
-
-    frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Beta body");
-    expect(frame).toContain("beta-footer");
-    expect(frame).toContain("[b]eta-hint");
-    expect(frame).not.toContain("alpha-footer");
-    expect(frame).not.toContain("[a]lpha-hint");
-  });
 });

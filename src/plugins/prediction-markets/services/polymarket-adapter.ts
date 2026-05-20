@@ -510,7 +510,7 @@ async function resolvePolymarketSummary(
   };
 }
 
-export async function loadPolymarketHistory(
+async function loadPolymarketHistory(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionHistoryPoint[]> {
@@ -545,7 +545,7 @@ export async function loadPolymarketHistory(
   );
 }
 
-export async function loadPolymarketTrades(
+async function loadPolymarketTrades(
   summary: PredictionMarketSummary,
 ): Promise<PredictionTrade[]> {
   if (!summary.conditionId) return [];
@@ -574,7 +574,7 @@ export async function loadPolymarketTrades(
   );
 }
 
-export async function loadPolymarketBook(
+async function loadPolymarketBook(
   summary: PredictionMarketSummary,
 ): Promise<PredictionBookSnapshot> {
   const yesTokenId = summary.yesTokenId;

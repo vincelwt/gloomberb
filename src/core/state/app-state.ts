@@ -27,19 +27,19 @@ export interface PaneRuntimeState {
   [key: string]: unknown;
 }
 
-export interface LayoutHistoryEntry {
+interface LayoutHistoryEntry {
   past: LayoutConfig[];
   future: LayoutConfig[];
 }
 
-export type SortDirection = "asc" | "desc";
+type SortDirection = "asc" | "desc";
 
 export interface CollectionSortPreference {
   columnId: string | null;
   direction: SortDirection;
 }
 
-export interface CommandBarLaunchRequest {
+interface CommandBarLaunchRequest {
   kind: "plugin-command";
   commandId: string;
   sequence: number;
@@ -228,7 +228,7 @@ function resolveTickerFromBinding(
   return resolveTickerForPane(state as AppState, binding.sourceInstanceId, seen);
 }
 
-export function getPaneState(state: Pick<AppState, "paneState">, paneId: string): PaneRuntimeState {
+function getPaneState(state: Pick<AppState, "paneState">, paneId: string): PaneRuntimeState {
   return state.paneState[paneId] ?? {};
 }
 
@@ -263,16 +263,6 @@ export function resolveCollectionForPane(state: AppState, paneId: string, seen =
     return resolveCollectionForPane(state, instance.binding.sourceInstanceId, seen);
   }
   return null;
-}
-
-export function resolveTickerFileForPane(state: AppState, paneId: string): TickerRecord | null {
-  const symbol = resolveTickerForPane(state, paneId);
-  return symbol ? state.tickers.get(symbol) ?? null : null;
-}
-
-export function resolveFinancialsForPane(state: AppState, paneId: string): TickerFinancials | null {
-  const symbol = resolveTickerForPane(state, paneId);
-  return symbol ? state.financials.get(symbol) ?? null : null;
 }
 
 export function getFocusedTickerSymbol(state: AppState): string | null {

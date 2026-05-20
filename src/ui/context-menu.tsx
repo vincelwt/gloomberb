@@ -176,7 +176,7 @@ export function linkContextMenuItems({
   ];
 }
 
-export function appContextMenuItems(registry: Pick<PluginRegistry, "openCommandBar"> | null): ContextMenuItem[] {
+function appContextMenuItems(registry: Pick<PluginRegistry, "openCommandBar"> | null): ContextMenuItem[] {
   return [
     {
       id: "app:command-bar",

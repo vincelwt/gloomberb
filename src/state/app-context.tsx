@@ -48,21 +48,15 @@ export {
   getEffectiveThemeId,
   getFocusedCollectionId,
   getFocusedTickerSymbol,
-  getPaneState,
   resolveCollectionForPane,
-  resolveFinancialsForPane,
   syncConfigActiveLayoutState,
-  resolveTickerFileForPane,
   resolveTickerForPane,
 } from "../core/state/app-state";
 export type {
   AppAction,
   AppState,
   CollectionSortPreference,
-  CommandBarLaunchRequest,
-  LayoutHistoryEntry,
   PaneRuntimeState,
-  SortDirection,
 } from "../core/state/app-state";
 
 interface AppContextStoreValue {
@@ -105,16 +99,6 @@ function materializeDetachedConfig(config: AppConfig): AppConfig {
       layout: materializeDetachedPanesAsFloating(entry.layout),
     })),
   };
-}
-
-export function useAppState(): AppContextLegacyValue {
-  const context = useRequiredAppContext();
-  if (!isAppStoreContextValue(context)) {
-    return context;
-  }
-
-  const state = useSyncExternalStore(context.subscribe, context.getState, context.getState);
-  return useMemo(() => ({ state, dispatch: context.dispatch }), [context.dispatch, state]);
 }
 
 export function useAppStateRef() {
@@ -216,10 +200,6 @@ export function usePaneTicker(paneId?: string) {
       financials: marketFinancials ?? cachedFinancials,
     };
   }, [cachedFinancials, marketFinancials, scopedPaneId, symbol, ticker]);
-}
-
-export function useSelectedTicker(paneId?: string) {
-  return usePaneTicker(paneId);
 }
 
 export function useFocusedTicker() {

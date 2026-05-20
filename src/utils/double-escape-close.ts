@@ -1,4 +1,4 @@
-export const DOUBLE_ESCAPE_CLOSE_MS = 650;
+const DOUBLE_ESCAPE_CLOSE_MS = 650;
 
 export interface DoubleEscapeCloseState {
   lastAt: number;

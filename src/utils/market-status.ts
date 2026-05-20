@@ -74,19 +74,6 @@ export function exchangeShortName(exchangeName?: string, fullExchangeName?: stri
   return map[name] || name;
 }
 
-export function quoteProviderLabel(providerId?: string): string {
-  switch (providerId) {
-    case "ibkr":
-      return "Broker";
-    case "gloomberb-cloud":
-      return "Cloud";
-    case "yahoo":
-      return "Yahoo";
-    default:
-      return providerId || "Unknown";
-  }
-}
-
 export function quoteSourceLabel(
   provenance?: QuoteFieldProvenance,
   kind: "price" | "session" = "price",

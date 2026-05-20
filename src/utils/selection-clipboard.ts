@@ -44,7 +44,7 @@ function copyTextToSystemClipboard(text: string): boolean {
   }
 }
 
-export function copySelectionText(
+function copySelectionText(
   renderer: Pick<CliRenderer, "copyToClipboardOSC52">,
   text: string,
 ): boolean {

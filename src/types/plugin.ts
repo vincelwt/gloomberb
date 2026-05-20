@@ -243,6 +243,7 @@ export type CliDispatchResult =
 export interface CliCommandContext {
   initConfigData(): Promise<import("../cli/types").ConfigContext>;
   initMarketData(): Promise<import("../cli/types").MarketContext>;
+  plugins: GloomPlugin[];
   fail(message: string, details?: string): never;
   closeAndFail(
     persistence: import("../data/app-persistence").AppPersistence,

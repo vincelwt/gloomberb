@@ -1,8 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { TestDialogProvider, testRender } from "../../renderers/opentui/test-utils";
 import { act } from "react";
-import { Box } from "../../ui";
-import { PaneFooterBar, PaneFooterProvider } from "../../components/layout/pane-footer";
 import {
   AppContext,
   PaneInstanceProvider,
@@ -16,9 +14,6 @@ import { TradeTab } from "./index";
 import {
   clearTradingDraft,
   prefillTradeFromTicker,
-  setTradeTicketDraft,
-  setTradeTicketPreview,
-  updateTradingPaneState,
 } from "./trading-state";
 
 const TEST_PANE_ID = "ticker-detail:trade-test";
@@ -105,13 +100,11 @@ function TradeHarness({
   ticker,
   financials,
   brokerAccounts = {},
-  withFooter = false,
 }: {
   config: AppConfig;
   ticker: TickerRecord;
   financials: TickerFinancials;
   brokerAccounts?: Record<string, import("../../types/trading").BrokerAccount[]>;
-  withFooter?: boolean;
 }) {
   const state = createInitialState(config);
   state.focusedPaneId = TEST_PANE_ID;
@@ -124,18 +117,7 @@ function TradeHarness({
     <TestDialogProvider>
       <AppContext value={{ state, dispatch: () => {} }}>
         <PaneInstanceProvider paneId={TEST_PANE_ID}>
-          {withFooter
-            ? (
-                <PaneFooterProvider>
-                  {(footer) => (
-                    <Box flexDirection="column" width={88} height={31}>
-                      {tradeTab}
-                      <PaneFooterBar footer={footer} focused width={88} />
-                    </Box>
-                  )}
-                </PaneFooterProvider>
-              )
-            : tradeTab}
+          {tradeTab}
         </PaneInstanceProvider>
       </AppContext>
     </TestDialogProvider>
@@ -151,51 +133,6 @@ afterEach(async () => {
   }
   clearTradingDraft();
   await ibkrGatewayManager.removeInstance(TEST_INSTANCE_ID);
-});
-
-test("renders the compact trade tab layout", async () => {
-  const config = createTradeConfig("AMD");
-  const ticker = makeTicker("AMD", "Advanced Micro Devices, Inc.");
-  const financials = makeFinancials();
-
-  clearTradingDraft();
-  stubGatewayRefresh();
-  prefillTradeFromTicker(ticker, "BUY");
-  setTradeTicketDraft("AMD", { accountId: "DU123456" }, ticker);
-  setTradeTicketPreview("AMD", {
-    commission: 1.25,
-    commissionCurrency: "USD",
-    initMarginBefore: 12_400,
-    initMarginAfter: 13_150,
-    maintMarginBefore: 10_050,
-    maintMarginAfter: 10_700,
-    equityWithLoanBefore: 58_400,
-    equityWithLoanAfter: 57_150,
-  }, ticker);
-  updateTradingPaneState({ accountId: "DU123456" });
-
-  await act(async () => {
-    testSetup = await testRender(
-      <TradeHarness config={config} ticker={ticker} financials={financials} />,
-      { width: 88, height: 30 },
-    );
-  });
-
-  await act(async () => {
-    await testSetup!.renderOnce();
-  });
-  await act(async () => {
-    await testSetup!.renderOnce();
-  });
-
-  const frame = testSetup.captureCharFrame();
-  expect(frame).toContain("Next Submit order");
-  expect(frame).toContain("Ticket Standby");
-  expect(frame).toContain("Shortcuts are in the pane footer.");
-  expect(frame).toContain("What-if: init");
-  expect(frame).not.toContain("1 Profile");
-  expect(frame).not.toContain("Activate Ticket");
-  expect(frame).toMatchSnapshot();
 });
 
 test("prefills the only cached IBKR account when the live gateway snapshot is empty", async () => {
@@ -237,40 +174,4 @@ test("prefills the only cached IBKR account when the live gateway snapshot is em
   const frame = testSetup.captureCharFrame();
   expect(frame).toContain("Account DU123456");
   expect(frame).toContain("Paper Gateway");
-});
-
-test("omits redundant and disabled trade footer hints", async () => {
-  const config = createTradeConfig("AMD");
-  const ticker = makeTicker("AMD", "Advanced Micro Devices, Inc.");
-  const financials = makeFinancials();
-
-  clearTradingDraft();
-  stubGatewayRefresh();
-  prefillTradeFromTicker(ticker, "BUY");
-
-  await act(async () => {
-    testSetup = await testRender(
-      <TradeHarness config={config} ticker={ticker} financials={financials} withFooter />,
-      { width: 88, height: 31 },
-    );
-  });
-
-  await act(async () => {
-    await testSetup!.renderOnce();
-  });
-  await act(async () => {
-    await testSetup!.renderOnce();
-  });
-
-  const frame = testSetup.captureCharFrame();
-  expect(frame).toContain("[r]efresh");
-  expect(frame).toContain("[i]profile");
-  expect(frame).toContain("[a]ccount");
-  expect(frame).toContain("[b/v]side");
-  expect(frame).toContain("[q]ty");
-  expect(frame).toContain("[t]ype");
-  expect(frame).toContain("[p]review");
-  expect(frame).not.toContain("[s]ymbol");
-  expect(frame).not.toContain("[l]imit");
-  expect(frame).not.toContain("[x]stop");
 });

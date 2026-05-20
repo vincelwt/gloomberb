@@ -12,6 +12,7 @@ import { apiClient, type ChatChannel, type ChatMessage, type ChatUserSummary } f
 import { formatTimeAgo } from "../../utils/format";
 import { tokenizeInlineContent } from "../../utils/inline-content-tokenizer";
 import { isPlainKey } from "../../utils/keyboard";
+import { truncateWithEllipsis } from "../../utils/text-wrap";
 import { getSharedRegistry } from "../../plugins/registry";
 import { usePluginAppActions } from "../../plugins/plugin-runtime";
 import { setPaneSetting } from "../../pane-settings";
@@ -125,15 +126,8 @@ function normalizeInlinePreview(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function truncateInlinePreview(text: string, width: number) {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
-}
-
 function formatInlinePreview(text: string, width: number) {
-  return truncateInlinePreview(normalizeInlinePreview(text), width);
+  return truncateWithEllipsis(normalizeInlinePreview(text), width);
 }
 
 function wrapTextLines(text: string, width: number) {
@@ -2506,8 +2500,8 @@ export const gloomberbCloudPlugin: GloomPlugin = {
     {
       id: "buildout-pane",
       paneId: "buildout",
-      label: "TheBuildout.ai",
-      description: "Open TheBuildout.ai infrastructure intelligence.",
+      label: "TheBuildout",
+      description: "Open TheBuildout infrastructure intelligence.",
       keywords: ["tbo", "buildout", "thebuildout", "infrastructure", "sites", "intel"],
       shortcut: { prefix: "TBO" },
       createInstance: () => ({
@@ -2557,7 +2551,7 @@ export const gloomberbCloudPlugin: GloomPlugin = {
 
     ctx.registerPane({
       id: "buildout",
-      name: "TBO",
+      name: "TheBuildout",
       icon: "T",
       component: BuildoutPane,
       defaultPosition: "right",
