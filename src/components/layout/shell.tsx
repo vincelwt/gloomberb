@@ -776,14 +776,6 @@ function menuForPane(
       accelerator: PANE_MANAGEMENT_ACCELERATORS.layoutActions,
       onSelect: () => pluginRegistry.openCommandBar("LAY "),
     },
-    {
-      id: "gridlock-all",
-      label: "Gridlock All Windows",
-      accelerator: PANE_MANAGEMENT_ACCELERATORS.gridlockAll,
-      onSelect: () => {
-        persistLayout(gridlockAllPanes(layout, { x: 0, y: 0, width, height: contentHeight }));
-      },
-    },
   );
 
   return baseActions;
