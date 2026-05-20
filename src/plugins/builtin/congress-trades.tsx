@@ -12,7 +12,7 @@ import {
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../components";
-import { usePluginPaneState } from "../plugin-runtime";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../plugin-runtime";
 import { useInlineTickerOpener } from "../../state/use-inline-tickers";
 import { colors } from "../../theme/colors";
 import { formatCompact, formatTimeAgo, padTo } from "../../utils/format";
@@ -390,8 +390,8 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = usePluginPaneState<CongressTab>("activeTab", "trades");
-  const [selectedTradeId, setSelectedTradeId] = usePluginPaneState<string | null>("selectedTradeId", null);
-  const [selectedMemberId, setSelectedMemberId] = usePluginPaneState<string | null>("selectedMemberId", null);
+  const [selectedTradeId, setSelectedTradeId] = useDebouncedPluginPaneState<string | null>("selectedTradeId", null);
+  const [selectedMemberId, setSelectedMemberId] = useDebouncedPluginPaneState<string | null>("selectedMemberId", null);
   const [detailMode, setDetailMode] = useState<DetailMode>(null);
   const [tradeSort, setTradeSort] = useState<{ columnId: TradeColumnId; direction: SortDirection }>({
     columnId: "filed",
@@ -509,7 +509,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     if (!trade) return;
     const member = members.find((entry) => entry.memberName === trade.memberName && entry.stateDistrict === trade.stateDistrict);
     if (!member) return;
-    setSelectedMemberId(member.id);
+    setSelectedMemberId(member.id, { immediate: true });
     setDetailMode({ kind: "member", memberId: member.id });
   }, [detailTrade, members, selectedTrade, setSelectedMemberId]);
 
@@ -765,7 +765,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           onActivateIndex={(index) => {
             const trade = tradeRows[index];
             if (!trade) return;
-            setSelectedTradeId(trade.id);
+            setSelectedTradeId(trade.id, { immediate: true });
             setDetailMode({ kind: "trade", tradeId: trade.id });
           }}
           onRootKeyDown={handleRootKeyDown}
@@ -781,7 +781,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           isSelected={(trade) => trade.id === selectedTradeId}
           onSelect={(trade) => setSelectedTradeId(trade.id)}
           onActivate={(trade) => {
-            setSelectedTradeId(trade.id);
+            setSelectedTradeId(trade.id, { immediate: true });
             setDetailMode({ kind: "trade", tradeId: trade.id });
           }}
           renderCell={renderTradeCell}
@@ -800,7 +800,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           onActivateIndex={(index) => {
             const member = memberRows[index];
             if (!member) return;
-            setSelectedMemberId(member.id);
+            setSelectedMemberId(member.id, { immediate: true });
             setDetailMode({ kind: "member", memberId: member.id });
           }}
           onRootKeyDown={handleRootKeyDown}
@@ -816,7 +816,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           isSelected={(member) => member.id === selectedMemberId}
           onSelect={(member) => setSelectedMemberId(member.id)}
           onActivate={(member) => {
-            setSelectedMemberId(member.id);
+            setSelectedMemberId(member.id, { immediate: true });
             setDetailMode({ kind: "member", memberId: member.id });
           }}
           renderCell={renderMemberCell}
