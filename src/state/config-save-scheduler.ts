@@ -21,11 +21,7 @@ export function scheduleConfigSave(config: AppConfig): void {
   configSaveScheduler.schedule(config);
 }
 
-export function flushScheduledConfigSave(): Promise<void> {
-  return configSaveScheduler.flush();
-}
-
-export function cancelScheduledConfigSave(): void {
+function cancelScheduledConfigSave(): void {
   configSaveScheduler.cancel();
 }
 

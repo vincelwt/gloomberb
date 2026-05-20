@@ -15,7 +15,7 @@ export function paneIdFromDetachedRpcKey(rpcKey: string | undefined): string | n
   return rpcKey.slice(DETACHED_WINDOW_RPC_PREFIX.length) || null;
 }
 
-export function resolveWindowForRpcKey<T>(
+function resolveWindowForRpcKey<T>(
   rpcKey: string | undefined,
   mainWindow: T | null,
   detachedWindows: ReadonlyMap<string, T>,

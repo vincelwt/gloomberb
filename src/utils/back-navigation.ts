@@ -12,8 +12,8 @@ export interface BackNavigationMouseEventLike {
 }
 
 export const MOUSE_BACK_NAVIGATION_EVENT_NAME = "mouse-back";
-export const WEB_MOUSE_BACK_NAVIGATION_BUTTON = 3;
-export const TERMINAL_MOUSE_BACK_NAVIGATION_BUTTON = 8;
+const WEB_MOUSE_BACK_NAVIGATION_BUTTON = 3;
+const TERMINAL_MOUSE_BACK_NAVIGATION_BUTTON = 8;
 
 export function isPlainBackspace(event: BackNavigationEventLike): boolean {
   return event.name === "backspace"

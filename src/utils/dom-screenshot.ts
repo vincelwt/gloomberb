@@ -15,7 +15,7 @@ function escapeAttributeValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }
 
-export function findPaneScreenshotTarget(paneId?: string): HTMLElement | null {
+function findPaneScreenshotTarget(paneId?: string): HTMLElement | null {
   if (typeof document === "undefined") return null;
   if (paneId) {
     const escapedPaneId = escapeAttributeValue(paneId);
@@ -290,7 +290,7 @@ async function waitForFonts(): Promise<void> {
   ]).catch(() => {});
 }
 
-export async function captureElementPngBase64(element: HTMLElement): Promise<PngScreenshot> {
+async function captureElementPngBase64(element: HTMLElement): Promise<PngScreenshot> {
   const rect = element.getBoundingClientRect();
   const width = Math.ceil(rect.width);
   const height = Math.ceil(rect.height);

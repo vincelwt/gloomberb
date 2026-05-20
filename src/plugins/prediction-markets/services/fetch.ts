@@ -40,10 +40,6 @@ export function resetPredictionMarketsPersistence(): void {
   predictionMarketsPersistence = null;
 }
 
-export function getPredictionMarketsPersistence(): PluginPersistence | null {
-  return predictionMarketsPersistence;
-}
-
 export async function fetchJson<T>(url: string): Promise<T> {
   const response = await PREDICTION_FETCH.fetch(url);
   if (!response.ok) {
@@ -72,7 +68,7 @@ export function getCachedPredictionResource<T>(
   return record?.value ?? null;
 }
 
-export function setCachedPredictionResource<T>(
+function setCachedPredictionResource<T>(
   kind: string,
   key: string,
   value: T,

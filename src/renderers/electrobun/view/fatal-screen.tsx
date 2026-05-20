@@ -22,7 +22,7 @@ interface ElectrobunErrorBoundaryState {
   details?: string;
 }
 
-export function formatFatalError(error: unknown, details?: string): string {
+function formatFatalError(error: unknown, details?: string): string {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   return [message, details].filter((value): value is string => Boolean(value)).join("\n");
 }

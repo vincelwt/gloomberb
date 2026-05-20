@@ -104,7 +104,7 @@ export function formatPredictionEndsAt(
   });
 }
 
-export function formatPredictionUpdatedAt(
+function formatPredictionUpdatedAt(
   value: string | null | undefined,
 ): string {
   if (!value) return "—";

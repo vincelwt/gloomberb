@@ -8,7 +8,7 @@ export interface KeyboardModifierEventLike {
   name?: string;
 }
 
-export function hasKeyboardModifier(event: KeyboardModifierEventLike): boolean {
+function hasKeyboardModifier(event: KeyboardModifierEventLike): boolean {
   return !!(
     event.ctrl
     || event.meta

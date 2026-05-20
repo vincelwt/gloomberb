@@ -39,7 +39,7 @@ function createTestNativeRendererHost(renderer: any): NativeRendererHost {
   return renderer as NativeRendererHost;
 }
 
-export function OpenTuiTestProviders({ children }: { children: ReactNode }) {
+function OpenTuiTestProviders({ children }: { children: ReactNode }) {
   const renderer = useRenderer();
   const rendererHost = useMemo<RendererHost>(() => ({
     requestExit: () => renderer.destroy?.(),
@@ -67,7 +67,7 @@ export function OpenTuiTestProviders({ children }: { children: ReactNode }) {
   );
 }
 
-export function withOpenTuiTestProviders(node: ReactNode): ReactNode {
+function withOpenTuiTestProviders(node: ReactNode): ReactNode {
   return <OpenTuiTestProviders>{node}</OpenTuiTestProviders>;
 }
 

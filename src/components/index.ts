@@ -20,7 +20,7 @@ export { useExternalLinkFooter } from "./use-external-link-footer";
 export { Button } from "./ui/button";
 export { ConfirmDialog } from "./ui/confirm-dialog";
 export { ChoiceDialog } from "./ui/choice-dialog";
-export type { ChoiceDialogChoice, ChoiceDialogProps } from "./ui/choice-dialog";
+export type { ChoiceDialogChoice } from "./ui/choice-dialog";
 export type { DataTableCell, DataTableColumn } from "./ui/data-table";
 export { EmptyState } from "./ui/status";
 export { getMessageComposerBlockHeight, MessageComposer } from "./ui/message-composer";

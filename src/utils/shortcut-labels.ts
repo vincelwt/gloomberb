@@ -32,7 +32,7 @@ export function detectShortcutPlatform(): ShortcutPlatform {
   return platformFromProcess() ?? platformFromNavigator() ?? "unknown";
 }
 
-export function isMacShortcutPlatform(platform: ShortcutPlatform = detectShortcutPlatform()): boolean {
+function isMacShortcutPlatform(platform: ShortcutPlatform = detectShortcutPlatform()): boolean {
   return platform === "darwin";
 }
 
@@ -40,7 +40,7 @@ export function getShortcutDisplayMode(uiKind: "opentui" | "desktop-web" | undef
   return uiKind === "opentui" ? "terminal" : "platform";
 }
 
-export function getPrimaryShortcutModifier(
+function getPrimaryShortcutModifier(
   platform: ShortcutPlatform = detectShortcutPlatform(),
   mode: ShortcutDisplayMode = "platform",
 ): "Cmd" | "Ctrl" {

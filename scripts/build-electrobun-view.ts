@@ -34,6 +34,7 @@ const result = await Bun.build({
           aliasImport(args, "plugins/builtin/notes-files", "notes-files.ts")
           ?? aliasImport(args, "notes-files", "notes-files.ts")
           ?? aliasImport(args, "core/app-services", "app-services.ts")
+          ?? aliasImport(args, "kitty-support", "native-stubs/chart-kitty-support.ts")
           ?? aliasImport(args, "native/kitty-support", "native-stubs/chart-kitty-support.ts")
           ?? aliasImport(args, "native/surface-manager", "native-stubs/chart-surface-manager.ts")
           ?? aliasImport(args, "native/surface-sync", "native-stubs/chart-surface-sync.ts")

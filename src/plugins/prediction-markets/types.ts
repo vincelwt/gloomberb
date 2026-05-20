@@ -7,7 +7,7 @@ export type PredictionBrowseTab = "top" | "ending" | "new" | "watchlist";
 export type PredictionDetailTab = "overview" | "book" | "trades" | "rules";
 export type PredictionHistoryRange = "1D" | "1W" | "1M" | "ALL";
 export type PredictionVolumeUnit = "usd" | "contracts";
-export type PredictionSortDirection = "asc" | "desc";
+type PredictionSortDirection = "asc" | "desc";
 export type PredictionTransportState =
   | "idle"
   | "loading"
@@ -131,7 +131,7 @@ export interface PredictionColumnDef extends ColumnConfig {
   description: string;
 }
 
-export interface PredictionListRowBase {
+interface PredictionListRowBase {
   key: string;
   kind: "market" | "group";
   venue: PredictionVenue;

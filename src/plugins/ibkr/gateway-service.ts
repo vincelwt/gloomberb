@@ -384,7 +384,7 @@ class IbkrGatewayServiceFacade {
   }
 }
 
-export class IbkrGatewayServiceManager {
+class IbkrGatewayServiceManager {
   private services = new Map<string, IbkrGatewayServiceFacade>();
 
   getService(instanceId: string): IbkrGatewayServiceFacade {

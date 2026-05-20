@@ -86,7 +86,7 @@ export function useNewsArticleDetail(
   };
 }
 
-export function wrapText(text: string, width: number): string[] {
+function wrapText(text: string, width: number): string[] {
   return text ? wrapTextLines(text, width) : [];
 }
 

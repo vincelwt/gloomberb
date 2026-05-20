@@ -292,7 +292,7 @@ function fitFloatingDimension(value: number, min: number, available: number): nu
   return clampFinite(value, boundedMin, max, boundedMin);
 }
 
-export function constrainFloatingRectToBounds(
+function constrainFloatingRectToBounds(
   rect: FloatingRect,
   totalWidth: number,
   totalHeight: number,
@@ -331,7 +331,7 @@ function positionFloatingRectUnderPointer(
   }, totalWidth, totalHeight);
 }
 
-export function resolvePaneDragFloatingRect(
+function resolvePaneDragFloatingRect(
   drag: PaneDragRectState,
   baseRect: FloatingRect,
   pointerX: number,
@@ -517,7 +517,7 @@ export function buildNativeWindowState(
   return { paneLayers, occluders };
 }
 
-export function resolveNativeDockDividers(
+function resolveNativeDockDividers(
   dockDividers: readonly DockDividerLayout[],
   dividerPreview: DividerPreviewState | null,
 ): DockDividerLayout[] {
@@ -562,7 +562,7 @@ function resolveDividerPreviewRect(
   };
 }
 
-export function finalizePaneDragRelease(
+function finalizePaneDragRelease(
   layout: LayoutConfig,
   paneId: string,
   previewRect: FloatingRect,

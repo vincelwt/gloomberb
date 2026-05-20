@@ -865,7 +865,7 @@ export function formatCursorAxisValue(
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export function formatDateShort(date: Date | string | number): string {
+function formatDateShort(date: Date | string | number): string {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return "—";
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;

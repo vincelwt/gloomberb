@@ -362,7 +362,7 @@ function optionContractForColumn(row: OptionTableRow, columnId: OptionColumnId):
   return columnId.startsWith("call") ? row.call : row.put;
 }
 
-export function optionColumnColor(columnId: OptionColumnId, surface = colors.bg): string {
+function optionColumnColor(columnId: OptionColumnId, surface = colors.bg): string {
   return optionRoleColor(optionColumnRole(columnId), surface);
 }
 
@@ -407,7 +407,7 @@ function optionRoleColor(role: OptionColorRole, surface: string): string {
   return blendForContrast(preferred, surface, fallback, OPTION_TEXT_MIN_CONTRAST);
 }
 
-export function optionMutedColor(surface: string): string {
+function optionMutedColor(surface: string): string {
   const fallback = mostReadableColor(surface, [
     colors.textDim,
     colors.text,

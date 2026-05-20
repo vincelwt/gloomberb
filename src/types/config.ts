@@ -167,7 +167,7 @@ export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
   "pnl_pct",
 ];
 
-export const DEFAULT_HOME_LAYOUT: LayoutConfig = {
+const DEFAULT_HOME_LAYOUT: LayoutConfig = {
   dockRoot: {
     kind: "split",
     axis: "horizontal",
@@ -242,7 +242,7 @@ export const DEFAULT_HOME_LAYOUT: LayoutConfig = {
   detached: [],
 };
 
-export const DEFAULT_MONITOR_LAYOUT: LayoutConfig = {
+const DEFAULT_MONITOR_LAYOUT: LayoutConfig = {
   dockRoot: {
     kind: "split",
     axis: "vertical",
@@ -362,7 +362,7 @@ export function createPaneInstanceId(paneId: string): string {
   return `${paneId}:${Date.now().toString(36)}${nextPaneInstanceSeq.toString(36)}`;
 }
 
-export function clonePaneBinding(binding: PaneBinding | undefined): PaneBinding | undefined {
+function clonePaneBinding(binding: PaneBinding | undefined): PaneBinding | undefined {
   if (!binding) return undefined;
   return { ...binding };
 }
@@ -401,12 +401,8 @@ export function isTickerPaneId(paneId: string): boolean {
   return TICKER_PANE_IDS.has(paneId);
 }
 
-export function isTickerPaneInstance(instance: PaneInstanceConfig): boolean {
+function isTickerPaneInstance(instance: PaneInstanceConfig): boolean {
   return isTickerPaneId(instance.paneId);
-}
-
-export function isFollowTickerPane(instance: PaneInstanceConfig): boolean {
-  return isTickerPaneInstance(instance) && instance.binding?.kind === "follow";
 }
 
 export function isFixedTickerPane(instance: PaneInstanceConfig): boolean {

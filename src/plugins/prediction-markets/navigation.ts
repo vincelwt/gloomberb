@@ -75,16 +75,3 @@ export function getAdjacentPredictionVenueScope(
       : Math.min(safeIndex + 1, VENUE_TABS.length - 1);
   return VENUE_TABS[nextIndex]!.value;
 }
-
-export function getAdjacentPredictionDetailTab(
-  current: PredictionDetailTab,
-  direction: "previous" | "next",
-): PredictionDetailTab {
-  const currentIndex = DETAIL_TABS.findIndex((tab) => tab.value === current);
-  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
-  const nextIndex =
-    direction === "previous"
-      ? Math.max(safeIndex - 1, 0)
-      : Math.min(safeIndex + 1, DETAIL_TABS.length - 1);
-  return DETAIL_TABS[nextIndex]!.value;
-}

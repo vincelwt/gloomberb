@@ -122,7 +122,7 @@ export const CANONICAL_EXCHANGE_ALIASES: Record<string, string> = {
   CCC: "CCC",
 };
 
-export const PUBLIC_EXCHANGE_ALIASES: Record<string, string> = {
+const PUBLIC_EXCHANGE_ALIASES: Record<string, string> = {
   NASDAQ: "XNAS",
   NYSE: "XNYS",
   AMEX: "XASE",
@@ -215,7 +215,7 @@ export function normalizeSymbol(value: string): string {
   return value.trim().toUpperCase();
 }
 
-export function normalizeExchange(value?: string): string {
+function normalizeExchange(value?: string): string {
   return (value ?? "").trim().toUpperCase();
 }
 

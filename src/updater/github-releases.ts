@@ -1,5 +1,5 @@
-export const GLOOMBERB_REPO = "vincelwt/gloomberb";
-export const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GLOOMBERB_REPO}/releases`;
+const GLOOMBERB_REPO = "vincelwt/gloomberb";
+const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GLOOMBERB_REPO}/releases`;
 export const GITHUB_LATEST_RELEASE_API_URL = `${GITHUB_RELEASES_API_URL}/latest`;
 
 export interface ChangelogRelease {

@@ -1,4 +1,5 @@
 import type { SecFilingItem } from "../types/data-provider";
+import { truncateWithEllipsis } from "../utils/text-wrap";
 
 const LOOKUP_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
 const SUBMISSIONS_URL = "https://data.sec.gov/submissions";
@@ -37,7 +38,7 @@ const DEFAULT_SEC_FROM =
   || extractEmail(getEnv("SEC_USER_AGENT"))
   || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${sanitizeIdentityPart(`${runtimeHostName}.local`, "localhost.localdomain")}`;
 
-export const DEFAULT_SEC_USER_AGENT =
+const DEFAULT_SEC_USER_AGENT =
   getEnv("SEC_USER_AGENT")?.trim()
   || `Gloomberb/0.1 (${sanitizeIdentityPart(runtimeHostName, "localhost")}; contact=${DEFAULT_SEC_FROM})`;
 
@@ -73,12 +74,6 @@ function parseDate(value: unknown): Date | undefined {
   const text = String(value ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined;
   return new Date(`${text}T00:00:00Z`);
-}
-
-function truncateWithEllipsis(text: string, width: number): string {
-  if (text.length <= width) return text;
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
 }
 
 function stripAccessionDashes(accessionNumber: string): string {

@@ -18,15 +18,15 @@ function applyAnsi(text: string, code: string): string {
   return `\x1b[${code}m${text}\x1b[0m`;
 }
 
-export function stripAnsi(text: string): string {
+function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, "");
 }
 
-export function visibleLength(text: string): number {
+function visibleLength(text: string): number {
   return stripAnsi(text).length;
 }
 
-export function padDisplay(text: string, width: number, align: CliAlign = "left"): string {
+function padDisplay(text: string, width: number, align: CliAlign = "left"): string {
   const padding = Math.max(0, width - visibleLength(text));
   if (padding === 0) return text;
 

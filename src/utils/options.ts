@@ -1,7 +1,7 @@
 import type { BrokerContractRef } from "../types/instrument";
 import type { TickerRecord } from "../types/ticker";
 
-export const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_ABBREV = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Format a unix timestamp (seconds) as "Mon DD 'YY" */
 export function formatExpDate(ts: number): string {
