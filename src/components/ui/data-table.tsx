@@ -83,6 +83,7 @@ export interface DataTableProps<
     rowState: { selected: boolean; hovered: boolean },
   ) => string | undefined;
   emptyContent?: ReactNode;
+  bodyAfter?: ReactNode;
   emptyStateTitle: string;
   emptyStateHint?: string;
   virtualize?: boolean;
@@ -151,6 +152,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   renderSectionHeader,
   getRowBackgroundColor,
   emptyContent,
+  bodyAfter,
   emptyStateTitle,
   emptyStateHint,
   virtualize = true,
@@ -520,6 +522,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
             {virtualize && endIndex < items.length && (
               <Box height={Math.max(items.length - endIndex, 0)} />
             )}
+            {bodyAfter}
           </>
         )}
       </ScrollBox>

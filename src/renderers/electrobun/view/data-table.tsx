@@ -537,6 +537,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   renderSectionHeader,
   getRowBackgroundColor,
   emptyContent,
+  bodyAfter,
   emptyStateTitle,
   emptyStateHint,
   virtualize = true,
@@ -604,6 +605,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const totalHeight = virtualize
     ? rowVirtualizer.getTotalSize()
     : WEB_CELL_HEIGHT + items.length * WEB_CELL_HEIGHT;
+  const bodyAfterHeight = bodyAfter ? WEB_CELL_HEIGHT * 6 : 0;
   const horizontalScrollEnabled = showHorizontalScrollbar
     && hasMeaningfulTableHorizontalOverflow(tableWidth, viewportWidth);
   const scrollContentWidth = horizontalScrollEnabled
@@ -732,7 +734,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
           style={{
             position: "relative",
             width: scrollContentWidth,
-            height: items.length > 0 ? totalHeight : "100%",
+            height: items.length > 0 ? totalHeight + bodyAfterHeight : "100%",
             minHeight: WEB_CELL_HEIGHT,
           }}
         >
@@ -803,6 +805,20 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
               virtualize,
             },
           )}
+          {items.length > 0 && bodyAfter ? (
+            <div
+              data-gloom-role="data-table-body-after"
+              style={{
+                position: "absolute",
+                top: totalHeight,
+                left: 0,
+                width: "100%",
+                minHeight: bodyAfterHeight,
+              }}
+            >
+              {bodyAfter}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

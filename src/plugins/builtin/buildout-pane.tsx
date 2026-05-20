@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, ScrollBox, Text, TextAttributes } from "../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, TextAttributes, type ScrollBoxRenderable, useRendererHost } from "../../ui";
 import {
   DataTableStackView,
   EmptyState,
@@ -7,419 +7,198 @@ import {
   Tabs,
   usePaneFooter,
   type DataTableCell,
-  type DataTableColumn,
   type DataTableKeyEvent,
+  type PaneFooterSegment,
+  type PaneHint,
 } from "../../components";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
-import { apiClient } from "../../utils/api-client";
-import { formatTimeAgo } from "../../utils/format";
-import { httpFetch } from "../../utils/http-transport";
-import { InlineAuthActions } from "./cloud-auth-actions";
+import { useShortcut } from "../../react/input";
+import { useInlineTickers } from "../../state/use-inline-tickers";
+import {
+  BuildoutDetail,
+  CompaniesUpgradeCta,
+  CompanyCell,
+  FavoriteCell,
+  tickerBadges,
+} from "./buildout/detail";
+import type {
+  BuildoutColumn,
+  BuildoutColumnId,
+  BuildoutCompany,
+  BuildoutList,
+  BuildoutLoadState,
+  BuildoutRow,
+  BuildoutTabId,
+  SortDirection,
+} from "./buildout/model";
+import {
+  BUILDOUT_NAME,
+  LOAD_MORE_THRESHOLD,
+  PAGE_SIZE,
+  activeRows,
+  activityColor,
+  activityLabel,
+  appendUniqueById,
+  applyFavoriteToState,
+  buildoutApi,
+  columnsForTab,
+  criticalityColor,
+  defaultSortDirection,
+  emptyPage,
+  favoriteApiPath,
+  favoriteKey,
+  fetchCompaniesPage,
+  fetchIntelPage,
+  fetchSitesPage,
+  formatRelativeTime,
+  getBuildoutProToken,
+  loadBuildoutData,
+  metricColor,
+  rowKey,
+  rowStarred,
+  rowTickerSymbols,
+  rowTitle,
+  rowWithFavorite,
+  sortRows,
+  tabs,
+  text,
+  tickerSearchText,
+  tickerSymbol,
+  truncate,
+} from "./buildout/model";
 
-const BUILDOUT_API_URL = "https://api.thebuildout.ai";
+const BUILDOUT_UPGRADE_URL = "https://thebuildout.ai/pricing";
 
-type BuildoutTabId = "companies" | "sites" | "intel";
-type SortDirection = "asc" | "desc";
-
-type BuildoutCompany = {
-  id: string;
-  name: string;
-  ticker?: string | null;
-  exchange?: string | null;
-  description?: string | null;
-  longDescription?: string | null;
-  primarySector?: string | null;
-  primarySubsector?: string | null;
-  primaryTechnology?: string | null;
-  aiCriticality?: string | null;
-  marketCap?: string | null;
-  revenue?: string | null;
-  revenueGrowthYoy?: string | null;
-  lastQuarterGrowth?: string | null;
-  countryHq?: string | null;
-  sites?: Array<{ name?: string; type?: string; relationship?: string }>;
-};
-
-type BuildoutSite = {
-  id: string;
-  name: string;
-  type?: string | null;
-  ownerName?: string | null;
-  ownerTicker?: string | null;
-  address?: string | null;
-  location?: { city?: string | null; country?: string | null };
-  constructionActivity?: number | null;
-  parkingActivity?: number | null;
-  latestCapture?: string | null;
-  powerCapacity?: string | null;
-  eta?: string | null;
-  description?: string | null;
-  builders?: Array<{ companyName?: string; companyTicker?: string | null; role?: string | null }>;
-};
-
-type BuildoutUpdate = {
-  id: string;
-  headline: string;
-  content?: string | null;
-  context?: string | null;
-  type?: string | null;
-  publishedAt?: string | null;
-  verificationStatus?: string | null;
-  companies?: Array<{ name?: string; ticker?: string | null }>;
-};
-
-type BuildoutRow =
-  | { kind: "company"; item: BuildoutCompany }
-  | { kind: "site"; item: BuildoutSite }
-  | { kind: "intel"; item: BuildoutUpdate };
-
-type BuildoutLoadState =
-  | { status: "loading" }
-  | { status: "auth" }
-  | { status: "inactive" }
-  | { status: "error"; message: string }
-  | {
-    status: "ready";
-    companies: BuildoutCompany[];
-    sites: BuildoutSite[];
-    intel: BuildoutUpdate[];
-    loadedAt: number;
-  };
-
-type BuildoutColumn = DataTableColumn & {
-  id:
-    | "company"
-    | "sector"
-    | "criticality"
-    | "marketCap"
-    | "revenue"
-    | "growth"
-    | "site"
-    | "type"
-    | "owner"
-    | "location"
-    | "construction"
-    | "capture"
-    | "time"
-    | "companies"
-    | "headline";
-};
-
-const tabs: Array<{ label: string; value: BuildoutTabId }> = [
-  { label: "Companies", value: "companies" },
-  { label: "Sites", value: "sites" },
-  { label: "Intel", value: "intel" },
-];
-
-const companyColumns: BuildoutColumn[] = [
-  { id: "company", label: "Company", width: 24, align: "left", flexGrow: 2 },
-  { id: "sector", label: "Sector", width: 18, align: "left", flexGrow: 1 },
-  { id: "criticality", label: "Crit", width: 10, align: "left" },
-  { id: "marketCap", label: "Mkt Cap", width: 10, align: "right" },
-  { id: "revenue", label: "Revenue", width: 10, align: "right" },
-  { id: "growth", label: "Growth", width: 10, align: "right" },
-];
-
-const siteColumns: BuildoutColumn[] = [
-  { id: "site", label: "Site", width: 26, align: "left", flexGrow: 2 },
-  { id: "type", label: "Type", width: 14, align: "left" },
-  { id: "owner", label: "Owner", width: 20, align: "left", flexGrow: 1 },
-  { id: "location", label: "Location", width: 18, align: "left", flexGrow: 1 },
-  { id: "construction", label: "Const", width: 8, align: "right" },
-  { id: "capture", label: "Last Sat", width: 12, align: "left" },
-];
-
-const intelColumns: BuildoutColumn[] = [
-  { id: "time", label: "Time", width: 12, align: "left" },
-  { id: "companies", label: "Companies", width: 22, align: "left", flexGrow: 1 },
-  { id: "headline", label: "Headline", width: 48, align: "left", flexGrow: 3 },
-];
-
-function truncate(text: string, width: number) {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width <= 3) return text.slice(0, width);
-  return `${text.slice(0, width - 3)}...`;
+function activePage(state: BuildoutLoadState, activeTab: BuildoutTabId, selectedList: BuildoutList | null) {
+  if (state.status !== "ready") return null;
+  if (activeTab === "companies") return selectedList ? state.companies : null;
+  if (activeTab === "sites") return state.sites;
+  return state.intel;
 }
 
-function text(value: unknown, fallback = "-") {
-  if (value == null) return fallback;
-  const stringValue = String(value).trim();
-  return stringValue || fallback;
-}
-
-function dateShort(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toISOString().slice(0, 10);
-}
-
-function activityLabel(value: number | null | undefined) {
-  if (value == null) return "-";
-  if (value >= 2) return "High";
-  if (value >= 1) return "Low";
-  return "None";
-}
-
-function rowKey(row: BuildoutRow) {
-  return `${row.kind}:${row.item.id}`;
-}
-
-function activeRows(state: BuildoutLoadState, activeTab: BuildoutTabId): BuildoutRow[] {
-  if (state.status !== "ready") return [];
-  if (activeTab === "companies") {
-    return state.companies.map((item) => ({ kind: "company", item }));
-  }
-  if (activeTab === "sites") {
-    return state.sites.map((item) => ({ kind: "site", item }));
-  }
-  return state.intel.map((item) => ({ kind: "intel", item }));
-}
-
-function columnsForTab(activeTab: BuildoutTabId) {
-  if (activeTab === "companies") return companyColumns;
-  if (activeTab === "sites") return siteColumns;
-  return intelColumns;
-}
-
-function compareStrings(left: string, right: string, direction: SortDirection) {
-  const result = left.localeCompare(right);
-  return direction === "asc" ? result : -result;
-}
-
-function sortValue(row: BuildoutRow, columnId: string) {
-  const item = row.item as Record<string, unknown>;
-  switch (columnId) {
-    case "company":
-    case "site":
-      return text(item.name, "");
-    case "headline":
-      return text((row.item as BuildoutUpdate).headline, "");
-    case "sector":
-      return text((row.item as BuildoutCompany).primarySector, "");
-    case "criticality":
-      return text((row.item as BuildoutCompany).aiCriticality, "");
-    case "owner":
-      return text((row.item as BuildoutSite).ownerTicker ?? (row.item as BuildoutSite).ownerName, "");
-    case "time":
-      return text((row.item as BuildoutUpdate).publishedAt, "");
-    default:
-      return text(item[columnId], "");
-  }
-}
-
-function sortRows(rows: BuildoutRow[], columnId: string | null, direction: SortDirection) {
-  if (!columnId) return rows;
-  return [...rows].sort((left, right) => compareStrings(
-    sortValue(left, columnId),
-    sortValue(right, columnId),
-    direction,
-  ));
-}
-
-async function buildoutApi<T>(path: string, token: string): Promise<T> {
-  const response = await httpFetch(`${BUILDOUT_API_URL}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(body || `TheBuildout.ai request failed (${response.status})`);
-  }
-  return response.json() as Promise<T>;
-}
-
-async function loadBuildoutData(token: string) {
-  const [companiesResponse, sites, intel] = await Promise.all([
-    buildoutApi<{ companies?: BuildoutCompany[] }>("/companies?limit=40&offset=0&detail=true&sort=marketCap&order=desc", token),
-    buildoutApi<BuildoutSite[]>("/sites?limit=40&offset=0&detail=true&sort=activityUpdatedAt&order=desc", token),
-    buildoutApi<BuildoutUpdate[]>("/updates?limit=40&offset=0", token),
-  ]);
-
-  return {
-    companies: companiesResponse.companies ?? [],
-    sites: Array.isArray(sites) ? sites : [],
-    intel: Array.isArray(intel) ? intel : [],
-  };
-}
-
-function renderCell(row: BuildoutRow, column: BuildoutColumn): DataTableCell {
-  if (row.kind === "company") {
-    const company = row.item;
-    switch (column.id) {
-      case "company":
-        return { text: company.ticker ? `${company.ticker} ${company.name}` : company.name };
-      case "sector":
-        return { text: text(company.primarySector ?? company.primaryTechnology) };
-      case "criticality":
-        return { text: text(company.aiCriticality), color: colors.warning };
-      case "marketCap":
-        return { text: text(company.marketCap), color: colors.textDim };
-      case "revenue":
-        return { text: text(company.revenue), color: colors.textDim };
-      case "growth":
-        return { text: text(company.revenueGrowthYoy ?? company.lastQuarterGrowth), color: colors.textDim };
-    }
+function updateFooterInfo(
+  state: BuildoutLoadState,
+  activeTab: BuildoutTabId,
+  selectedList: BuildoutList | null,
+  favoriteMessage: string | null,
+): PaneFooterSegment[] {
+  if (state.status === "loading") {
+    return [{ id: "loading", parts: [{ text: "loading", tone: "value" }] }];
   }
 
-  if (row.kind === "site") {
-    const site = row.item;
-    const location = [site.location?.city, site.location?.country].filter(Boolean).join(", ");
-    switch (column.id) {
-      case "site":
-        return { text: site.name };
-      case "type":
-        return { text: text(site.type) };
-      case "owner":
-        return { text: text(site.ownerTicker ?? site.ownerName) };
-      case "location":
-        return { text: text(location) };
-      case "construction":
-        return { text: activityLabel(site.constructionActivity), color: site.constructionActivity ? colors.warning : colors.textMuted };
-      case "capture":
-        return { text: dateShort(site.latestCapture), color: colors.textDim };
-    }
+  if (state.status === "error") {
+    return [{ id: "error", parts: [{ text: "load failed", tone: "negative" }] }];
   }
 
-  const update = row.item as BuildoutUpdate;
-  switch (column.id) {
-    case "time":
-      return { text: update.publishedAt ? formatTimeAgo(update.publishedAt).replace(" ago", "") : "-" };
-    case "companies":
-      return { text: text(update.companies?.map((company) => company.ticker || company.name).filter(Boolean).join(", ")) };
-    case "headline":
-      return { text: update.headline };
+  const info: PaneFooterSegment[] = [{
+    id: "access",
+    parts: [{
+      text: state.access === "pro"
+        ? "pro access"
+        : activeTab === "intel" ? "delayed 72h" : "upgrade for full data",
+      tone: state.access === "pro" ? "positive" : "warning",
+    }],
+  }];
+
+  const page = activePage(state, activeTab, selectedList);
+  if (page?.loadingMore) {
+    info.push({ id: "loading-more", parts: [{ text: "loading more", tone: "value" }] });
+  }
+  if (page?.error) {
+    info.push({ id: "page-error", parts: [{ text: page.error, tone: "negative" }] });
+  }
+  if (favoriteMessage) {
+    info.push({ id: "favorite-error", parts: [{ text: favoriteMessage, tone: "negative" }] });
   }
 
-  return { text: "" };
+  return info;
 }
 
-function DetailLine({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null;
-  return (
-    <Box flexDirection="row" minHeight={1}>
-      <Text fg={colors.textMuted}>{label}: </Text>
-      <Text fg={colors.text}>{value}</Text>
-    </Box>
-  );
-}
-
-function Paragraph({ children }: { children?: string | null }) {
-  if (!children) return null;
-  return (
-    <Box marginTop={1}>
-      <Text fg={colors.textDim}>{children}</Text>
-    </Box>
-  );
-}
-
-function BuildoutDetail({ row, width, height }: { row: BuildoutRow | null; width: number; height: number }) {
-  if (!row) return <EmptyState title="No row selected." />;
-
-  const bodyWidth = Math.max(width - 2, 20);
-  return (
-    <ScrollBox width={width} height={height}>
-      <Box flexDirection="column" paddingX={1} width={bodyWidth}>
-        {row.kind === "company" && (
-          <>
-            <Text attributes={TextAttributes.BOLD}>{row.item.name}</Text>
-            <DetailLine label="Ticker" value={row.item.ticker ?? null} />
-            <DetailLine label="Sector" value={row.item.primarySector ?? row.item.primaryTechnology ?? null} />
-            <DetailLine label="Criticality" value={row.item.aiCriticality ?? null} />
-            <DetailLine label="Market Cap" value={row.item.marketCap ?? null} />
-            <DetailLine label="Revenue" value={row.item.revenue ?? null} />
-            <Paragraph>{row.item.longDescription ?? row.item.description}</Paragraph>
-            {(row.item.sites?.length ?? 0) > 0 && (
-              <Box marginTop={1} flexDirection="column">
-                <Text fg={colors.textDim}>Sites</Text>
-                {row.item.sites!.slice(0, 8).map((site, index) => (
-                  <Text key={`${site.name}-${index}`} fg={colors.textMuted}>
-                    {truncate(`${site.name ?? "Site"}${site.type ? ` - ${site.type}` : ""}`, bodyWidth)}
-                  </Text>
-                ))}
-              </Box>
-            )}
-          </>
-        )}
-        {row.kind === "site" && (
-          <>
-            <Text attributes={TextAttributes.BOLD}>{row.item.name}</Text>
-            <DetailLine label="Type" value={row.item.type ?? null} />
-            <DetailLine label="Owner" value={row.item.ownerTicker ?? row.item.ownerName ?? null} />
-            <DetailLine label="Location" value={[row.item.location?.city, row.item.location?.country].filter(Boolean).join(", ")} />
-            <DetailLine label="Power" value={row.item.powerCapacity ?? null} />
-            <DetailLine label="ETA" value={row.item.eta ?? null} />
-            <DetailLine label="Latest Satellite" value={dateShort(row.item.latestCapture)} />
-            <Paragraph>{row.item.description}</Paragraph>
-            {(row.item.builders?.length ?? 0) > 0 && (
-              <Box marginTop={1} flexDirection="column">
-                <Text fg={colors.textDim}>Involved Companies</Text>
-                {row.item.builders!.slice(0, 8).map((builder, index) => (
-                  <Text key={`${builder.companyName}-${index}`} fg={colors.textMuted}>
-                    {truncate(`${builder.companyTicker ?? builder.companyName ?? "Company"}${builder.role ? ` - ${builder.role}` : ""}`, bodyWidth)}
-                  </Text>
-                ))}
-              </Box>
-            )}
-          </>
-        )}
-        {row.kind === "intel" && (
-          <>
-            <Text attributes={TextAttributes.BOLD}>{row.item.headline}</Text>
-            <DetailLine label="Published" value={row.item.publishedAt ? new Date(row.item.publishedAt).toLocaleString() : null} />
-            <DetailLine label="Type" value={row.item.type ?? null} />
-            <DetailLine label="Status" value={row.item.verificationStatus ?? null} />
-            <DetailLine label="Companies" value={row.item.companies?.map((company) => company.ticker || company.name).filter(Boolean).join(", ")} />
-            <Paragraph>{row.item.context ?? row.item.content}</Paragraph>
-          </>
-        )}
+function pageStatusContent(
+  state: BuildoutLoadState,
+  activeTab: BuildoutTabId,
+  selectedList: BuildoutList | null,
+) {
+  const page = activePage(state, activeTab, selectedList);
+  if (!page) return null;
+  if (page.loadingMore && page.items.length === 0) {
+    return (
+      <Box width="100%" paddingX={1} paddingY={1}>
+        <Spinner label={`Loading ${selectedList?.name ?? activeTab}...`} />
       </Box>
-    </ScrollBox>
-  );
+    );
+  }
+  if (page.error) {
+    return (
+      <Box width="100%" paddingX={1} paddingY={1}>
+        <EmptyState title="Could not load rows." message={page.error} />
+      </Box>
+    );
+  }
+  return null;
 }
 
 export function BuildoutPane({ focused, width, height }: PaneProps) {
+  const rendererHost = useRendererHost();
+  const tableScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const loadingPageKeysRef = useRef<Set<string>>(new Set());
+  const favoriteBusyKeysRef = useRef<Set<string>>(new Set());
   const [state, setState] = useState<BuildoutLoadState>({ status: "loading" });
   const [activeTab, setActiveTab] = useState<BuildoutTabId>("companies");
+  const [selectedList, setSelectedList] = useState<BuildoutList | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [detailRow, setDetailRow] = useState<BuildoutRow | null>(null);
-  const [sortColumnId, setSortColumnId] = useState<string | null>("company");
+  const [sortColumnId, setSortColumnId] = useState<BuildoutColumnId | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
+  const [favoriteBusyKey, setFavoriteBusyKey] = useState<string | null>(null);
+  const [favoriteMessage, setFavoriteMessage] = useState<string | null>(null);
+  const favoriteToken = state.status === "ready" ? state.token : null;
+  const canFavorite = favoriteToken != null;
 
   const refresh = useCallback(() => {
     setRefreshVersion((version) => version + 1);
   }, []);
 
+  const startUpgrade = useCallback(() => {
+    if (upgradeBusy) return;
+    setUpgradeBusy(true);
+    setUpgradeMessage(null);
+    void rendererHost.openExternal(BUILDOUT_UPGRADE_URL)
+      .catch((error) => {
+        setUpgradeMessage(error instanceof Error ? error.message : "upgrade page failed");
+      })
+      .finally(() => {
+        setUpgradeBusy(false);
+      });
+  }, [rendererHost, upgradeBusy]);
+
+  useShortcut((event) => {
+    const key = (event.name ?? event.key ?? "").toLowerCase();
+    if (!focused || key !== "u" || state.status !== "ready" || state.access === "pro") return;
+    event.preventDefault();
+    event.stopPropagation();
+    startUpgrade();
+  }, { scope: "buildout-upgrade" });
+
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      loadingPageKeysRef.current.clear();
+      favoriteBusyKeysRef.current.clear();
       setState({ status: "loading" });
       setDetailRow(null);
+      setSelectedList(null);
+      setUpgradeMessage(null);
+      setFavoriteMessage(null);
+      setFavoriteBusyKey(null);
 
-      if (!apiClient.getSessionToken()) {
-        if (!cancelled) setState({ status: "auth" });
-        return;
-      }
-
-      const session = await apiClient.getSession().catch(() => null);
-      if (!session) {
-        if (!cancelled) setState({ status: "auth" });
-        return;
-      }
-
-      const account = await apiClient.getBuildoutAccount();
-      if (!account.subscription.active) {
-        if (!cancelled) setState({ status: "inactive" });
-        return;
-      }
-
-      const token = await apiClient.getBuildoutToken();
-      const data = await loadBuildoutData(token.token);
+      const token = await getBuildoutProToken();
+      const data = await loadBuildoutData(token);
       if (!cancelled) {
         setState({
           status: "ready",
@@ -443,85 +222,574 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     setSelectedIndex(0);
     setDetailRow(null);
-    setSortColumnId(activeTab === "companies" ? "company" : activeTab === "sites" ? "site" : "time");
-    setSortDirection(activeTab === "intel" ? "desc" : "asc");
-  }, [activeTab]);
+    setFavoriteMessage(null);
+    const nextColumn: BuildoutColumnId | null = activeTab === "companies"
+      ? selectedList ? "marketCap" : null
+      : activeTab === "sites" ? "capture" : "time";
+    setSortColumnId(nextColumn);
+    setSortDirection(defaultSortDirection(nextColumn));
+  }, [activeTab, selectedList?.slug]);
 
-  const rows = useMemo(() => sortRows(activeRows(state, activeTab), sortColumnId, sortDirection), [activeTab, sortColumnId, sortDirection, state]);
-  const columns = useMemo(() => columnsForTab(activeTab), [activeTab]);
+  const loadCompanies = useCallback(async (list: BuildoutList, offset: number, append: boolean) => {
+    const pageKey = `companies:${list.slug}:${offset}`;
+    if (loadingPageKeysRef.current.has(pageKey)) return;
+    loadingPageKeysRef.current.add(pageKey);
+    const token = state.status === "ready" ? state.token : null;
+    setState((current) => {
+      if (current.status !== "ready") return current;
+      return {
+        ...current,
+        companies: {
+          ...(append ? current.companies : { ...emptyPage<BuildoutCompany>(), blurredCompanyCount: 0 }),
+          loadingMore: true,
+          error: null,
+        },
+      };
+    });
+
+    try {
+      const page = await fetchCompaniesPage(token, list.slug, offset);
+      setState((current) => {
+        if (current.status !== "ready") return current;
+        const previousItems = append ? current.companies.items : [];
+        const items = appendUniqueById(previousItems, page.items);
+        return {
+          ...current,
+          companies: {
+            items,
+            offset: items.length,
+            hasMore: page.items.length >= PAGE_SIZE,
+            loadingMore: false,
+            error: null,
+            blurredCompanyCount: append
+              ? Math.max(current.companies.blurredCompanyCount, page.blurredCompanyCount)
+              : page.blurredCompanyCount,
+          },
+        };
+      });
+    } catch (error) {
+      setState((current) => {
+        if (current.status !== "ready") return current;
+        return {
+          ...current,
+          companies: {
+            ...current.companies,
+            loadingMore: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        };
+      });
+    } finally {
+      loadingPageKeysRef.current.delete(pageKey);
+    }
+  }, [state]);
+
+  const loadSites = useCallback(async (offset: number, append: boolean) => {
+    const pageKey = `sites:${offset}`;
+    if (loadingPageKeysRef.current.has(pageKey)) return;
+    loadingPageKeysRef.current.add(pageKey);
+    const token = state.status === "ready" ? state.token : null;
+    setState((current) => current.status === "ready"
+      ? { ...current, sites: { ...current.sites, loadingMore: true, error: null } }
+      : current);
+
+    try {
+      const page = await fetchSitesPage(token, offset);
+      setState((current) => {
+        if (current.status !== "ready") return current;
+        const previousItems = append ? current.sites.items : [];
+        const items = appendUniqueById(previousItems, page);
+        return {
+          ...current,
+          sites: {
+            items,
+            offset: items.length,
+            hasMore: page.length >= PAGE_SIZE,
+            loadingMore: false,
+            error: null,
+          },
+        };
+      });
+    } catch (error) {
+      setState((current) => current.status === "ready"
+        ? {
+          ...current,
+          sites: {
+            ...current.sites,
+            loadingMore: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }
+        : current);
+    } finally {
+      loadingPageKeysRef.current.delete(pageKey);
+    }
+  }, [state]);
+
+  const loadIntel = useCallback(async (offset: number, append: boolean) => {
+    const pageKey = `intel:${offset}`;
+    if (loadingPageKeysRef.current.has(pageKey)) return;
+    loadingPageKeysRef.current.add(pageKey);
+    const token = state.status === "ready" ? state.token : null;
+    setState((current) => current.status === "ready"
+      ? { ...current, intel: { ...current.intel, loadingMore: true, error: null } }
+      : current);
+
+    try {
+      const page = await fetchIntelPage(token, offset);
+      setState((current) => {
+        if (current.status !== "ready") return current;
+        const previousItems = append ? current.intel.items : [];
+        const items = appendUniqueById(previousItems, page);
+        return {
+          ...current,
+          intel: {
+            items,
+            offset: items.length,
+            hasMore: page.length >= PAGE_SIZE,
+            loadingMore: false,
+            error: null,
+          },
+        };
+      });
+    } catch (error) {
+      setState((current) => current.status === "ready"
+        ? {
+          ...current,
+          intel: {
+            ...current.intel,
+            loadingMore: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }
+        : current);
+    } finally {
+      loadingPageKeysRef.current.delete(pageKey);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (state.status !== "ready" || activeTab !== "companies" || !selectedList) return;
+    if (state.companies.items.length > 0 || state.companies.loadingMore || state.companies.error) return;
+    void loadCompanies(selectedList, 0, false);
+  }, [activeTab, loadCompanies, selectedList, state]);
+
+  const rows = useMemo(
+    () => sortRows(activeRows(state, activeTab, selectedList), sortColumnId, sortDirection),
+    [activeTab, selectedList, sortColumnId, sortDirection, state],
+  );
+  const columns = useMemo(() => columnsForTab(activeTab, selectedList, canFavorite), [activeTab, canFavorite, selectedList]);
   const selectedRow = rows[selectedIndex] ?? rows[0] ?? null;
+  const tickerTexts = useMemo(() => {
+    const symbols = new Set<string>();
+    for (const row of rows) {
+      for (const symbol of rowTickerSymbols(row)) symbols.add(symbol);
+    }
+    if (detailRow) {
+      for (const symbol of rowTickerSymbols(detailRow)) symbols.add(symbol);
+    }
+    return [tickerSearchText([...symbols])];
+  }, [detailRow, rows]);
+  const { catalog: tickerCatalog, openTicker } = useInlineTickers(tickerTexts);
+  const detailCompanyTicker = detailRow?.kind === "company" ? tickerSymbol(detailRow.item.ticker) : null;
+  const openDetailTicker = useCallback(() => {
+    if (!detailCompanyTicker) return;
+    openTicker(detailCompanyTicker);
+  }, [detailCompanyTicker, openTicker]);
+  const footerHints = useMemo<PaneHint[]>(() => {
+    const hints: PaneHint[] = [];
+    if (state.status === "ready" && state.access !== "pro") {
+      hints.push({ id: "upgrade", key: "u", label: "pgrade", onPress: startUpgrade });
+    }
+    if (detailCompanyTicker) {
+      hints.push({ id: "open-ticker", key: "o", label: "pen", onPress: openDetailTicker });
+    }
+    return hints;
+  }, [detailCompanyTicker, openDetailTicker, startUpgrade, state]);
 
   usePaneFooter("buildout", () => ({
-    info: [
-      {
-        id: "state",
-        parts: [
-          { text: "TBO", tone: "label" },
-          { text: state.status === "ready" ? `${rows.length} ${activeTab}` : state.status, tone: state.status === "inactive" ? "warning" : "value" },
-        ],
-      },
-    ],
-    hints: [
-      { id: "refresh", key: "r", label: "refresh", onPress: refresh },
-      ...(detailRow ? [{ id: "back", key: "esc", label: "back", onPress: () => setDetailRow(null) }] : []),
-    ],
-  }), [activeTab, detailRow, refresh, rows.length, state.status]);
+    info: updateFooterInfo(state, activeTab, selectedList, favoriteMessage),
+    hints: footerHints,
+  }), [activeTab, favoriteMessage, footerHints, selectedList, state]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
+    const nextColumnId = columnId as BuildoutColumnId;
     setSortColumnId((current) => {
-      if (current === columnId) {
+      if (current === nextColumnId) {
         setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
         return current;
       }
-      setSortDirection("asc");
-      return columnId;
+      setSortDirection(defaultSortDirection(nextColumnId));
+      return nextColumnId;
     });
   }, []);
 
+  const openCompanyList = useCallback((list: BuildoutList) => {
+    setSelectedList(list);
+    setSelectedIndex(0);
+    setDetailRow(null);
+    setUpgradeMessage(null);
+    setFavoriteMessage(null);
+    setSortColumnId("marketCap");
+    setSortDirection("desc");
+    setState((current) => current.status === "ready"
+      ? {
+        ...current,
+        companies: { ...emptyPage<BuildoutCompany>(), blurredCompanyCount: 0 },
+      }
+      : current);
+  }, []);
+
+  const closeCompanyList = useCallback(() => {
+    setSelectedList(null);
+    setSelectedIndex(0);
+    setDetailRow(null);
+    setUpgradeMessage(null);
+    setFavoriteMessage(null);
+    setSortColumnId(null);
+    setSortDirection("asc");
+  }, []);
+
+  const activateRow = useCallback((row: BuildoutRow) => {
+    if (row.kind === "list") {
+      openCompanyList(row.item);
+      return;
+    }
+    setDetailRow(row);
+  }, [openCompanyList]);
+
+  const updateFavorite = useCallback((key: string, starred: boolean) => {
+    setState((current) => applyFavoriteToState(current, key, starred));
+    setDetailRow((current) => (
+      current && favoriteKey(current) === key ? rowWithFavorite(current, starred) : current
+    ));
+  }, []);
+
+  const toggleFavorite = useCallback(async (row: BuildoutRow) => {
+    if (!favoriteToken) return;
+    const key = favoriteKey(row);
+    const path = favoriteApiPath(row);
+    if (!key || !path || favoriteBusyKeysRef.current.has(key)) return;
+
+    const previous = rowStarred(row);
+    const next = !previous;
+    favoriteBusyKeysRef.current.add(key);
+    setFavoriteBusyKey(key);
+    setFavoriteMessage(null);
+    updateFavorite(key, next);
+
+    try {
+      const response = await buildoutApi<{ starred?: boolean }>(path, favoriteToken, { method: "POST" });
+      updateFavorite(key, typeof response.starred === "boolean" ? response.starred : next);
+    } catch {
+      updateFavorite(key, previous);
+      setFavoriteMessage("favorite failed");
+    } finally {
+      favoriteBusyKeysRef.current.delete(key);
+      setFavoriteBusyKey((current) => current === key ? null : current);
+    }
+  }, [favoriteToken, updateFavorite]);
+
+  const toggleFavoriteRow = useCallback((row: BuildoutRow | null) => {
+    if (!canFavorite || !row || !favoriteKey(row)) return false;
+    void toggleFavorite(row);
+    return true;
+  }, [canFavorite, toggleFavorite]);
+
+  const loadMoreActiveRows = useCallback(() => {
+    if (state.status !== "ready") return;
+    const scrollBox = tableScrollRef.current;
+    if (!scrollBox?.viewport) return;
+    const page = activePage(state, activeTab, selectedList);
+    if (!page || page.loadingMore || !page.hasMore || page.error) return;
+    const visibleBottom = scrollBox.scrollTop + scrollBox.viewport.height;
+    const remaining = page.items.length - visibleBottom;
+    if (remaining > LOAD_MORE_THRESHOLD) return;
+
+    if (activeTab === "companies" && selectedList) {
+      void loadCompanies(selectedList, page.offset, true);
+    } else if (activeTab === "sites") {
+      void loadSites(page.offset, true);
+    } else if (activeTab === "intel") {
+      void loadIntel(page.offset, true);
+    }
+  }, [activeTab, loadCompanies, loadIntel, loadSites, selectedList, state]);
+
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "r") return false;
+    if (event.name === "u" && state.status === "ready" && state.access !== "pro") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void startUpgrade();
+      return true;
+    }
+    if ((event.name === "s" || event.name === "f") && toggleFavoriteRow(selectedRow)) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return true;
+    }
+    if (event.name === "r") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refresh();
+      return true;
+    }
+    if (activeTab === "companies" && selectedList && (event.name === "escape" || event.name === "backspace")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      closeCompanyList();
+      return true;
+    }
+    return false;
+  }, [activeTab, closeCompanyList, refresh, selectedList, selectedRow, startUpgrade, state, toggleFavoriteRow]);
+
+  const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (event.name === "u" && state.status === "ready" && state.access !== "pro") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void startUpgrade();
+      return true;
+    }
+    if ((event.name === "s" || event.name === "f") && toggleFavoriteRow(detailRow)) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return true;
+    }
+    if (event.name !== "o" || !detailCompanyTicker) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
-    refresh();
+    openDetailTicker();
     return true;
-  }, [refresh]);
+  }, [detailCompanyTicker, detailRow, openDetailTicker, startUpgrade, state, toggleFavoriteRow]);
+
+  const renderCell = useCallback((
+    row: BuildoutRow,
+    column: BuildoutColumn,
+    _index: number,
+    rowState: { selected: boolean; hovered: boolean },
+  ): DataTableCell => {
+    const selectedColor = rowState.selected ? colors.selectedText : undefined;
+
+    if (row.kind === "list") {
+      const list = row.item;
+      switch (column.id) {
+        case "listName":
+          return { text: list.name, color: selectedColor ?? colors.text };
+        case "listDescription":
+          return { text: text(list.shortDescription ?? list.description), color: selectedColor ?? colors.textDim };
+        case "companyCount":
+          return { text: list.companyCount == null ? "-" : String(list.companyCount), color: selectedColor ?? colors.textDim };
+        case "totalMarketCap":
+          return { text: text(list.totalMarketCap), color: selectedColor ?? colors.textDim };
+        case "avgSectorGrowth":
+          return { text: text(list.avgSectorGrowth), color: selectedColor ?? metricColor(list.avgSectorGrowth) };
+        case "avgReturn1y":
+          return { text: text(list.avgReturn1y), color: selectedColor ?? metricColor(list.avgReturn1y) };
+        case "avgMargin":
+          return { text: text(list.avgMargin), color: selectedColor ?? metricColor(list.avgMargin) };
+      }
+    }
+
+    if (row.kind === "company") {
+      const company = row.item;
+      switch (column.id) {
+        case "favorite": {
+          const key = favoriteKey(row);
+          const busy = key != null && favoriteBusyKey === key;
+          return {
+            text: company.starred ? "★" : "☆",
+            content: (
+              <FavoriteCell
+                starred={company.starred === true}
+                busy={busy}
+                selected={rowState.selected}
+                interactive
+              />
+            ),
+            onMouseDown: (event) => {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              void toggleFavorite(row);
+            },
+          };
+        }
+        case "company":
+          return {
+            text: company.ticker ? `${company.ticker} ${company.name}` : company.name,
+            content: (
+              <CompanyCell
+                company={company}
+                width={column.width}
+                selected={rowState.selected}
+                catalog={tickerCatalog}
+                openTicker={openTicker}
+              />
+            ),
+          };
+        case "description":
+          return { text: text(company.description), color: selectedColor ?? colors.textDim };
+        case "sectorTech":
+          return { text: text([company.primarySector, company.primaryTechnology].filter(Boolean).join(" / ")), color: selectedColor ?? colors.textDim };
+        case "criticality":
+          return { text: text(company.aiCriticality), color: criticalityColor(company.aiCriticality, rowState.selected), attributes: TextAttributes.BOLD };
+        case "marketCap":
+          return { text: text(company.marketCap), color: selectedColor ?? colors.textDim };
+        case "revenue":
+          return { text: text(company.revenue), color: selectedColor ?? colors.textDim };
+        case "revenueGrowth":
+          return {
+            text: text(company.revenueGrowthYoy ?? company.lastQuarterGrowth),
+            color: selectedColor ?? metricColor(company.revenueGrowthYoy ?? company.lastQuarterGrowth),
+          };
+        case "netIncome":
+          return { text: text(company.netIncome), color: selectedColor ?? metricColor(company.netIncome) };
+        case "margin":
+          return { text: text(company.profitMargins), color: selectedColor ?? metricColor(company.profitMargins) };
+        case "forwardPE":
+          return { text: text(company.forwardPE), color: selectedColor ?? colors.textDim };
+        case "dividendYield":
+          return { text: text(company.dividendYield), color: selectedColor ?? metricColor(company.dividendYield) };
+        case "return1y":
+          return { text: text(company.return1y), color: selectedColor ?? metricColor(company.return1y) };
+        case "employees":
+          return { text: text(company.employeeCount), color: selectedColor ?? colors.textDim };
+      }
+    }
+
+    if (row.kind === "site") {
+      const site = row.item;
+      const location = [site.location?.city, site.location?.country].filter(Boolean).join(", ");
+      switch (column.id) {
+        case "favorite": {
+          const key = favoriteKey(row);
+          const busy = key != null && favoriteBusyKey === key;
+          return {
+            text: site.starred ? "★" : "☆",
+            content: (
+              <FavoriteCell
+                starred={site.starred === true}
+                busy={busy}
+                selected={rowState.selected}
+                interactive
+              />
+            ),
+            onMouseDown: (event) => {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              void toggleFavorite(row);
+            },
+          };
+        }
+        case "site":
+          return { text: site.name, color: selectedColor ?? colors.text };
+        case "type":
+          return { text: text(site.type), color: selectedColor ?? colors.textDim };
+        case "owner": {
+          const ownerTicker = tickerSymbol(site.ownerTicker);
+          if (ownerTicker) {
+            return {
+              text: ownerTicker,
+              content: tickerBadges({
+                symbols: [ownerTicker],
+                width: column.width,
+                catalog: tickerCatalog,
+                openTicker,
+                fallbackColor: selectedColor ?? colors.textBright,
+              }),
+            };
+          }
+          return { text: text(site.ownerName), color: selectedColor ?? colors.textDim };
+        }
+        case "location":
+          return { text: text(location), color: selectedColor ?? colors.textDim };
+        case "park":
+          return { text: text(site.parkName), color: selectedColor ?? colors.textDim };
+        case "power":
+          return { text: text(site.powerCapacity), color: selectedColor ?? colors.textDim };
+        case "construction":
+          return { text: activityLabel(site.constructionActivity), color: activityColor(site.constructionActivity, rowState.selected) };
+        case "parking":
+          return { text: activityLabel(site.parkingActivity), color: activityColor(site.parkingActivity, rowState.selected) };
+        case "capture":
+          return { text: formatRelativeTime(site.latestCapture), color: selectedColor ?? colors.textDim };
+        case "area":
+          return { text: text(site.areaKm2), color: selectedColor ?? colors.textDim };
+      }
+    }
+
+    if (row.kind === "intel") {
+      const update = row.item;
+      switch (column.id) {
+        case "time":
+          return { text: formatRelativeTime(update.publishedAt), color: selectedColor ?? colors.textDim };
+        case "companies": {
+          const symbols = (update.companies ?? [])
+            .map((company) => tickerSymbol(company.ticker))
+            .filter((symbol): symbol is string => symbol != null);
+          return symbols.length > 0
+            ? {
+              text: symbols.join(" "),
+              content: tickerBadges({
+                symbols,
+                width: column.width,
+                catalog: tickerCatalog,
+                openTicker,
+                fallbackColor: selectedColor ?? colors.textBright,
+              }),
+            }
+            : { text: text(update.companies?.map((company) => company.name).filter(Boolean).join(", ")), color: selectedColor ?? colors.textDim };
+        }
+        case "headline":
+          return { text: update.headline, color: selectedColor ?? colors.text };
+      }
+    }
+
+    return { text: "" };
+  }, [favoriteBusyKey, openTicker, tickerCatalog, toggleFavorite]);
 
   if (state.status === "loading") {
-    return <Box padding={1}><Spinner label="Loading TheBuildout.ai..." /></Box>;
-  }
-
-  if (state.status === "auth") {
-    return (
-      <Box flexDirection="column" padding={1} gap={1}>
-        <Text fg={colors.textDim}>Log in with your Gloom account to open TBO.</Text>
-        <InlineAuthActions />
-      </Box>
-    );
-  }
-
-  if (state.status === "inactive") {
-    return <Box padding={1}><EmptyState title="Requires TheBuildout.ai subscription." /></Box>;
+    return <Box padding={1}><Spinner label={`Loading ${BUILDOUT_NAME}...`} /></Box>;
   }
 
   if (state.status === "error") {
     return (
       <Box padding={1}>
-        <EmptyState title="Could not load TheBuildout.ai." message={state.message} hint="Press r to retry." />
+        <EmptyState title={`Could not load ${BUILDOUT_NAME}.`} message={state.message} />
       </Box>
     );
   }
+
+  const beforeHeight = selectedList && activeTab === "companies" ? 2 : 1;
+  const hiddenCompanyCount = state.status === "ready"
+    && activeTab === "companies"
+    && selectedList
+    && !state.companies.loadingMore
+    && !state.companies.hasMore
+    && !state.companies.error
+    ? state.companies.blurredCompanyCount
+    : 0;
 
   return (
     <DataTableStackView<BuildoutRow, BuildoutColumn>
       focused={focused}
       detailOpen={!!detailRow}
       onBack={() => setDetailRow(null)}
-      detailTitle={detailRow ? rowKey(detailRow) : undefined}
-      detailContent={<BuildoutDetail row={detailRow} width={width} height={height} />}
+      detailTitle={detailRow ? rowTitle(detailRow) : undefined}
+      detailContent={(
+        <BuildoutDetail
+          row={detailRow}
+          width={width}
+          height={height}
+          catalog={tickerCatalog}
+          openTicker={openTicker}
+          canFavorite={canFavorite}
+          favoriteBusyKey={favoriteBusyKey}
+          onToggleFavorite={toggleFavorite}
+        />
+      )}
       rootWidth={width}
       rootHeight={height}
       rootBefore={(
-        <Box height={1}>
+        <Box flexDirection="column" height={beforeHeight}>
           <Tabs
             tabs={tabs}
             activeValue={activeTab}
@@ -530,25 +798,51 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
             variant="bare"
             focused={focused && !detailRow}
           />
+          {selectedList && activeTab === "companies" ? (
+            <Box height={1} flexDirection="row" paddingX={1}>
+              <Box
+                onMouseDown={(event: any) => {
+                  event.preventDefault();
+                  closeCompanyList();
+                }}
+              >
+                <Text fg={colors.borderFocused} attributes={TextAttributes.BOLD}>{"< Lists"}</Text>
+              </Box>
+              <Text fg={colors.textMuted}>  /  </Text>
+              <Text fg={colors.text}>{truncate(selectedList.name, Math.max(0, width - 14))}</Text>
+            </Box>
+          ) : null}
         </Box>
       )}
       columns={columns}
       items={rows}
       selectedIndex={selectedIndex}
       onSelectIndex={(index) => setSelectedIndex(index)}
-      onActivateIndex={(_index, row) => setDetailRow(row)}
+      onActivateIndex={(_index, row) => activateRow(row)}
       sortColumnId={sortColumnId}
       sortDirection={sortDirection}
       onHeaderClick={handleHeaderClick}
       getItemKey={rowKey}
       isSelected={(row) => selectedRow ? rowKey(row) === rowKey(selectedRow) : false}
-      onSelect={(row, index) => setSelectedIndex(index)}
-      onActivate={(row) => setDetailRow(row)}
+      onSelect={(_row, index) => setSelectedIndex(index)}
+      onActivate={activateRow}
       renderCell={renderCell}
-      emptyStateTitle="No Buildout rows"
-      emptyStateHint="Press r to refresh."
+      bodyAfter={hiddenCompanyCount > 0 ? (
+        <CompaniesUpgradeCta
+          hiddenCount={hiddenCompanyCount}
+          width={width}
+          busy={upgradeBusy}
+          message={upgradeMessage}
+          onUpgrade={startUpgrade}
+        />
+      ) : null}
+      emptyContent={pageStatusContent(state, activeTab, selectedList)}
+      emptyStateTitle={selectedList ? "No companies" : "No rows"}
       onRootKeyDown={handleRootKeyDown}
-      resetScrollKey={activeTab}
+      onDetailKeyDown={handleDetailKeyDown}
+      onBodyScrollActivity={loadMoreActiveRows}
+      scrollRef={tableScrollRef}
+      resetScrollKey={`${activeTab}:${selectedList?.slug ?? "lists"}`}
     />
   );
 }

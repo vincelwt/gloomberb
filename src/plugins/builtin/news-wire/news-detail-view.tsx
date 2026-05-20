@@ -10,6 +10,7 @@ import { collectNewsDisplayTickers } from "../../../news/ticker-symbols";
 import { useInlineTickers } from "../../../state/use-inline-tickers";
 import { isPlainKey } from "../../../utils/keyboard";
 import { wrapTextLines } from "../../../utils/text-wrap";
+import { formatDetailDate } from "../../../utils/datetime-format";
 
 function hasStoryItems(article: MarketNewsItem | null): boolean {
   return (article?.items?.length ?? 0) > 0;
@@ -92,19 +93,6 @@ export function wrapText(text: string, width: number): string[] {
 function storyItemDate(value: Date | string): Date {
   const date = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(date.getTime()) ? new Date(0) : date;
-}
-
-function formatDetailDate(date: Date): string {
-  const datePart = date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const timePart = date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${datePart} at ${timePart}`;
 }
 
 function sortStoryItems(items: readonly NewsStoryItem[] | undefined): NewsStoryItem[] {
