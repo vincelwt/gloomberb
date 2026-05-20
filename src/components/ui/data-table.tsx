@@ -287,17 +287,25 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   ]);
 
   useEffect(() => {
-    if (headerScrollRef.current) {
-      headerScrollRef.current.horizontalScrollBar.visible = false;
+    const header = headerScrollRef.current;
+    if (header) {
+      if (header.horizontalScrollBar) {
+        header.horizontalScrollBar.visible = false;
+      }
       if (!horizontalScrollbarVisible) {
-        headerScrollRef.current.scrollLeft = 0;
+        header.scrollLeft = 0;
       }
     }
-    if (scrollRef.current) {
-      scrollRef.current.horizontalScrollBar.visible = horizontalScrollbarVisible;
-      scrollRef.current.verticalScrollBar.visible = items.length > scrollRef.current.viewport.height;
+    const body = scrollRef.current;
+    if (body) {
+      if (body.horizontalScrollBar) {
+        body.horizontalScrollBar.visible = horizontalScrollbarVisible;
+      }
+      if (body.verticalScrollBar && body.viewport) {
+        body.verticalScrollBar.visible = items.length > body.viewport.height;
+      }
       if (!horizontalScrollbarVisible) {
-        scrollRef.current.scrollLeft = 0;
+        body.scrollLeft = 0;
       }
     }
   }, [columns.length, headerScrollRef, horizontalScrollbarVisible, items.length, measuredViewportHeight, scrollRef]);
@@ -361,7 +369,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                 key={column.id}
                 width={column.width + 1}
                 backgroundColor={column.headerBackgroundColor ?? colors.panel}
-                onMouseDown={(event) => {
+                onMouseDown={(event: any) => {
                   focusPane();
                   event.preventDefault();
                   onHeaderClick(column.id);
@@ -418,7 +426,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                       {...tableContentWidthProps(measuredContentWidth)}
                       paddingX={1}
                       backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
-                      onMouseDown={(event) => {
+                      onMouseDown={(event: any) => {
                         focusPane();
                         event.preventDefault();
                       }}
@@ -458,7 +466,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                     onMouseMove={() => {
                       if (hoveredIdx !== index) setHoveredIdx(index);
                     }}
-                    onMouseDown={(event) => {
+                    onMouseDown={(event: any) => {
                       focusPane();
                       event.preventDefault();
                       handleRowMouseDown(getItemKey(item, index), {
@@ -474,7 +482,7 @@ function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
                           key={column.id}
                           width={column.width + 1}
                           backgroundColor={cell.backgroundColor ?? rowBg}
-                          onMouseDown={(event) => {
+                          onMouseDown={(event: any) => {
                             focusPane();
                             if (cell.onMouseDown) {
                               cell.onMouseDown(event);

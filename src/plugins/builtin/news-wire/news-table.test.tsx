@@ -20,10 +20,11 @@ const sortPreference: NewsSortPreference = {
 };
 
 function makeArticle(overrides: Partial<MarketNewsItem> & { id: string; title: string }): MarketNewsItem {
+  const { id, title, ...rest } = overrides;
   return {
-    id: overrides.id,
-    title: overrides.title,
-    url: `https://example.com/${overrides.id}`,
+    id,
+    title,
+    url: `https://example.com/${id}`,
     source: "Reuters",
     publishedAt: new Date("2026-04-18T12:00:00Z"),
     summary: "",
@@ -42,7 +43,7 @@ function makeArticle(overrides: Partial<MarketNewsItem> & { id: string; title: s
     isBreaking: false,
     isDeveloping: false,
     importance: 0,
-    ...overrides,
+    ...rest,
   };
 }
 

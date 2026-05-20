@@ -1,25 +1,28 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Box, Text, TextAttributes } from "../ui";
 import { colors } from "../theme/colors";
-import type { InlineTickerCatalogEntry } from "../state/use-inline-tickers";
+import { useInlineTickers } from "../state/use-inline-tickers";
 import { TickerBadge } from "./ticker-badge";
 
 export interface TickerBadgeListProps {
   symbols: readonly string[];
   width: number;
-  catalog: Record<string, InlineTickerCatalogEntry>;
   fallbackColor?: string;
-  openTicker: (symbol: string) => void;
+  liveQuote?: boolean;
 }
 
 export function TickerBadgeList({
   symbols,
   width,
-  catalog,
   fallbackColor = colors.textBright,
-  openTicker,
+  liveQuote = true,
 }: TickerBadgeListProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
+  const tickerTexts = useMemo(
+    () => symbols.map((symbol) => `$${symbol}`),
+    [symbols],
+  );
+  const { catalog, openTicker } = useInlineTickers(tickerTexts, { liveQuotes: liveQuote });
 
   return (
     <Box flexDirection="row" width={width} height={1} overflow="hidden">
@@ -38,7 +41,8 @@ export function TickerBadgeList({
             key={symbol}
             symbol={symbol}
             status="ready"
-            quote={entry?.quote ?? null}
+            quote={liveQuote ? entry?.quote ?? null : null}
+            liveQuote={liveQuote}
             hovered={hoveredSymbol === symbol}
             onHoverStart={() => setHoveredSymbol(symbol)}
             onHoverEnd={() => {
