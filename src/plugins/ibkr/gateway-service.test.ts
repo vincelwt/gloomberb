@@ -58,6 +58,9 @@ describe("summarizeBrokerAccount", () => {
       excessLiquidity: 98321.12,
       initMarginReq: 45678.9,
       maintMarginReq: 34567.8,
+      dailyPnl: undefined,
+      unrealizedPnl: undefined,
+      realizedPnl: undefined,
       cashBalances: [
         { currency: "USD", quantity: -303029.14, baseValue: -303029.14, baseCurrency: "USD" },
         { currency: "EUR", quantity: -351957.02, baseValue: undefined, baseCurrency: "USD" },
@@ -102,6 +105,9 @@ describe("summarizeBrokerAccount", () => {
       excessLiquidity: 129061.51,
       initMarginReq: 328.63,
       maintMarginReq: 298.64,
+      dailyPnl: undefined,
+      unrealizedPnl: undefined,
+      realizedPnl: undefined,
       cashBalances: [
         { currency: "HKD", quantity: 1012836.31, baseValue: 129314.68614829802, baseCurrency: "USD" },
         { currency: "USD", quantity: -1020.86, baseValue: -1020.86, baseCurrency: "USD" },
@@ -144,10 +150,30 @@ describe("summarizeBrokerAccount", () => {
       excessLiquidity: 129061.51,
       initMarginReq: 328.63,
       maintMarginReq: 298.64,
+      dailyPnl: undefined,
+      unrealizedPnl: undefined,
+      realizedPnl: undefined,
       cashBalances: [
         { currency: "HKD", quantity: 1012836.31, baseValue: 129314.68614829802, baseCurrency: "USD" },
         { currency: "USD", quantity: -1020.86, baseValue: -1020.86, baseCurrency: "USD" },
       ],
+    });
+  });
+
+  test("maps account-level P&L into gateway account snapshots", () => {
+    const tags = makeTags({
+      NetLiquidation: { USD: "100000" },
+    });
+
+    expect(summarizeBrokerAccount("DU12345", tags, 1_717_000_000_000, undefined, false, {
+      dailyPnl: 1200.5,
+      unrealizedPnl: 5000,
+      realizedPnl: -250,
+    })).toMatchObject({
+      accountId: "DU12345",
+      dailyPnl: 1200.5,
+      unrealizedPnl: 5000,
+      realizedPnl: -250,
     });
   });
 
@@ -166,6 +192,9 @@ describe("summarizeBrokerAccount", () => {
       excessLiquidity: undefined,
       initMarginReq: undefined,
       maintMarginReq: undefined,
+      dailyPnl: undefined,
+      unrealizedPnl: undefined,
+      realizedPnl: undefined,
       cashBalances: undefined,
     });
   });

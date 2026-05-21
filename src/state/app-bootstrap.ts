@@ -314,6 +314,7 @@ export async function initializeAppState({
     }
     return nextTickerMap;
   }, { tickerCount: tickers.length });
+
   measurePerf("startup.dispatch-set-tickers", () => {
     dispatch({ type: "SET_TICKERS", tickers: tickerMap });
   }, { tickerCount: tickerMap.size });

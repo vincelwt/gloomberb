@@ -5,7 +5,7 @@ import type { BrokerAdapter, BrokerPosition } from "../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../types/config";
 import type { BrokerContractRef } from "../types/instrument";
 import type { BrokerAccount } from "../types/trading";
-import type { TickerMetadata, TickerPosition, TickerRecord } from "../types/ticker";
+import type { Portfolio, TickerMetadata, TickerPosition, TickerRecord } from "../types/ticker";
 import { buildBrokerPortfolioId, getBrokerInstance, isBrokerPortfolioId } from "../utils/broker-instances";
 
 export interface SyncBrokerInstanceArgs {
@@ -54,6 +54,55 @@ function mergeBrokerContracts(existing: BrokerContractRef[], next: BrokerContrac
   return [...merged.values()];
 }
 
+function getInstanceMode(instance: BrokerInstanceConfig): string {
+  return typeof instance.connectionMode === "string"
+    ? instance.connectionMode
+    : typeof instance.config.connectionMode === "string"
+      ? instance.config.connectionMode
+      : "";
+}
+
+function findBrokerInstanceMode(config: AppConfig, instanceId: string | undefined): string {
+  const instance = config.brokerInstances.find((entry) => entry.id === instanceId);
+  return instance ? getInstanceMode(instance) : "";
+}
+
+function shouldPreferBrokerInstance(config: AppConfig, current: Portfolio, next: BrokerInstanceConfig): boolean {
+  if (current.brokerInstanceId === next.id) return false;
+  const currentMode = findBrokerInstanceMode(config, current.brokerInstanceId);
+  const nextMode = getInstanceMode(next);
+  return nextMode === "gateway" && currentMode !== "gateway";
+}
+
+function updateBrokerPortfolioSource(
+  config: AppConfig,
+  portfolio: Portfolio,
+  instance: BrokerInstanceConfig,
+  brokerAccountId?: string,
+  syncedAt?: number,
+): Portfolio {
+  const lastSyncedAt = syncedAt ?? portfolio.lastSyncedAt;
+  if (
+    !shouldPreferBrokerInstance(config, portfolio, instance)
+    && portfolio.brokerId
+    && portfolio.brokerAccountId
+    && portfolio.brokerInstanceId
+    && portfolio.lastSyncedAt === lastSyncedAt
+  ) {
+    return portfolio;
+  }
+
+  return {
+    ...portfolio,
+    brokerId: portfolio.brokerId ?? instance.brokerType,
+    brokerInstanceId: shouldPreferBrokerInstance(config, portfolio, instance)
+      ? instance.id
+      : portfolio.brokerInstanceId ?? instance.id,
+    brokerAccountId: portfolio.brokerAccountId ?? brokerAccountId,
+    lastSyncedAt,
+  };
+}
+
 function ensureBrokerPortfolio(
   config: AppConfig,
   instance: BrokerInstanceConfig,
@@ -61,9 +110,17 @@ function ensureBrokerPortfolio(
   name: string,
   currency: string,
   brokerAccountId?: string,
+  syncedAt?: number,
 ): AppConfig {
-  if (config.portfolios.some((portfolio) => portfolio.id === portfolioId)) {
-    return config;
+  const existing = config.portfolios.find((portfolio) => portfolio.id === portfolioId);
+  if (existing) {
+    const updated = updateBrokerPortfolioSource(config, existing, instance, brokerAccountId, syncedAt);
+    return updated === existing
+      ? config
+      : {
+        ...config,
+        portfolios: config.portfolios.map((portfolio) => portfolio.id === portfolioId ? updated : portfolio),
+      };
   }
 
   return {
@@ -77,8 +134,79 @@ function ensureBrokerPortfolio(
         brokerId: instance.brokerType,
         brokerInstanceId: instance.id,
         brokerAccountId,
+        lastSyncedAt: syncedAt,
       },
     ],
+  };
+}
+
+function findReusableBrokerPortfolioId(
+  config: AppConfig,
+  instance: BrokerInstanceConfig,
+  accountId: string | undefined,
+): string {
+  if (!accountId) return buildBrokerPortfolioId(instance.id, accountId);
+  const existing = config.portfolios.find((portfolio) =>
+    portfolio.brokerId === instance.brokerType
+    && portfolio.brokerAccountId === accountId
+  );
+  return existing?.id ?? buildBrokerPortfolioId(instance.id, accountId);
+}
+
+function markBrokerInstanceSynced(
+  config: AppConfig,
+  instanceId: string,
+  syncedAt: number,
+): AppConfig {
+  return {
+    ...config,
+    brokerInstances: config.brokerInstances.map((entry) =>
+      entry.id === instanceId ? { ...entry, lastSyncedAt: syncedAt } : entry
+    ),
+  };
+}
+
+function removeStaleBrokerPortfolios(
+  config: AppConfig,
+  instanceId: string,
+  currentPortfolioIds: Set<string>,
+): AppConfig {
+  const portfolios = config.portfolios.filter((portfolio) =>
+    portfolio.brokerInstanceId !== instanceId || currentPortfolioIds.has(portfolio.id)
+  );
+  return portfolios.length === config.portfolios.length
+    ? config
+    : { ...config, portfolios };
+}
+
+function clearBrokerInstanceTickerData(
+  ticker: TickerRecord,
+  instanceId: string,
+  brokerPortfolioIds: Set<string>,
+): TickerRecord | null {
+  const positions = ticker.metadata.positions.filter((position) => position.brokerInstanceId !== instanceId);
+  const remainingPositionPortfolios = new Set(positions.map((position) => position.portfolio));
+  const portfolios = ticker.metadata.portfolios.filter((portfolioId) =>
+    !brokerPortfolioIds.has(portfolioId) || remainingPositionPortfolios.has(portfolioId)
+  );
+  const brokerContracts = (ticker.metadata.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
+
+  if (
+    positions.length === ticker.metadata.positions.length
+    && portfolios.length === ticker.metadata.portfolios.length
+    && brokerContracts.length === (ticker.metadata.broker_contracts ?? []).length
+  ) {
+    return null;
+  }
+
+  return {
+    ...ticker,
+    metadata: {
+      ...ticker.metadata,
+      positions,
+      portfolios,
+      broker_contracts: brokerContracts,
+    },
   };
 }
 
@@ -229,7 +357,7 @@ function updateExistingTicker(
   }
 
   const otherPositions = ticker.metadata.positions.filter(
-    (entry) => !(entry.brokerInstanceId === instance.id && entry.portfolio === portfolioId),
+    (entry) => !(entry.portfolio === portfolioId && entry.broker === instance.brokerType),
   );
   ticker.metadata.positions = [...otherPositions, positionEntry];
   ticker.metadata.broker_contracts = mergeBrokerContracts(
@@ -297,6 +425,7 @@ export async function syncBrokerInstance({
   );
 
   const positions = await broker.importPositions(instance);
+  const syncedAt = Date.now();
 
   let nextConfig = config;
   const accountIds = new Set<string>();
@@ -314,7 +443,7 @@ export async function syncBrokerInstance({
   const portfolioIds: string[] = [];
   if (accountIds.size > 0) {
     for (const accountId of accountIds) {
-      const portfolioId = buildBrokerPortfolioId(instance.id, accountId);
+      const portfolioId = findReusableBrokerPortfolioId(nextConfig, instance, accountId);
       const account = accountMetadata.get(accountId);
       nextConfig = ensureBrokerPortfolio(
         nextConfig,
@@ -323,12 +452,13 @@ export async function syncBrokerInstance({
         account?.name || accountId,
         account?.currency || "USD",
         accountId,
+        syncedAt,
       );
       portfolioIds.push(portfolioId);
     }
   } else {
     const defaultAccount = brokerAccounts[0];
-    const portfolioId = buildBrokerPortfolioId(instance.id, defaultAccount?.accountId);
+    const portfolioId = findReusableBrokerPortfolioId(nextConfig, instance, defaultAccount?.accountId);
     const fallbackName = defaultAccount?.name || defaultAccount?.accountId || instance.label || broker.name;
     nextConfig = ensureBrokerPortfolio(
       nextConfig,
@@ -337,17 +467,36 @@ export async function syncBrokerInstance({
       fallbackName,
       defaultAccount?.currency || "USD",
       defaultAccount?.accountId,
+      syncedAt,
     );
     portfolioIds.push(portfolioId);
   }
 
+  const currentPortfolioIds = new Set(portfolioIds);
+  const brokerPortfolioIds = new Set([
+    ...config.portfolios
+      .filter((portfolio) => portfolio.brokerInstanceId === instance.id)
+      .map((portfolio) => portfolio.id),
+    ...portfolioIds,
+  ]);
+
+  nextConfig = removeStaleBrokerPortfolios(nextConfig, instance.id, currentPortfolioIds);
+  const cleanedTickers = new Map<string, TickerRecord>();
+  for (const ticker of tickers.values()) {
+    const cleanedTicker = clearBrokerInstanceTickerData(ticker, instance.id, brokerPortfolioIds);
+    if (!cleanedTicker) continue;
+    tickers.set(cleanedTicker.metadata.ticker, cleanedTicker);
+    cleanedTickers.set(cleanedTicker.metadata.ticker, cleanedTicker);
+  }
+
   nextConfig = await maybePersistResolvedBrokerConfig(nextConfig, instance, broker, persistResolvedBrokerConfig);
+  nextConfig = markBrokerInstanceSynced(nextConfig, instance.id, syncedAt);
 
   const addedTickers = new Map<string, TickerRecord>();
   const updatedTickers = new Map<string, TickerRecord>();
 
   for (const position of positions) {
-    const portfolioId = buildBrokerPortfolioId(instance.id, position.accountId);
+    const portfolioId = findReusableBrokerPortfolioId(nextConfig, instance, position.accountId);
     const brokerContract = position.brokerContract
       ? {
         ...position.brokerContract,
@@ -366,6 +515,7 @@ export async function syncBrokerInstance({
     } else {
       ticker = updateExistingTicker(ticker, instance, portfolioId, position, positionEntry, brokerContract);
       await tickerRepository.saveTicker(ticker);
+      cleanedTickers.delete(ticker.metadata.ticker);
       if (!addedTickers.has(position.ticker)) {
         updatedTickers.set(position.ticker, ticker);
       }
@@ -376,6 +526,13 @@ export async function syncBrokerInstance({
       addedTickers.set(position.ticker, ticker);
     } else {
       updatedTickers.set(position.ticker, ticker);
+    }
+  }
+
+  for (const ticker of cleanedTickers.values()) {
+    await tickerRepository.saveTicker(ticker);
+    if (!addedTickers.has(ticker.metadata.ticker) && !updatedTickers.has(ticker.metadata.ticker)) {
+      updatedTickers.set(ticker.metadata.ticker, ticker);
     }
   }
 

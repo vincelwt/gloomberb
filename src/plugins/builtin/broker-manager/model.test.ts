@@ -31,7 +31,7 @@ describe("broker manager rows", () => {
   test("derives live status and account summary", () => {
     const config = {
       ...createDefaultConfig("/tmp/gloomberb-broker-manager"),
-      brokerInstances: [createInstance()],
+      brokerInstances: [createInstance({ lastSyncedAt: 900_000 })],
     };
     const rows = buildBrokerProfileRows(
       config,
@@ -50,7 +50,45 @@ describe("broker manager rows", () => {
       state: "connected",
       stateLabel: "Connected",
       accountSummary: "$150.00",
+      lastSyncedAt: 900_000,
     });
+  });
+
+  test("uses generated portfolio sync time when the profile has no direct timestamp", () => {
+    const config = {
+      ...createDefaultConfig("/tmp/gloomberb-broker-manager"),
+      portfolios: [{
+        id: "broker:demo-live:DU1",
+        name: "DU1",
+        currency: "USD",
+        brokerId: "demo",
+        brokerInstanceId: "demo-live",
+        brokerAccountId: "DU1",
+        lastSyncedAt: 750_000,
+      }],
+      brokerInstances: [createInstance()],
+    };
+    const rows = buildBrokerProfileRows(config, new Map([["demo", createAdapter()]]), {});
+
+    expect(rows[0]?.lastSyncedAt).toBe(750_000);
+  });
+
+  test("falls back to cached account update time for older configs", () => {
+    const config = {
+      ...createDefaultConfig("/tmp/gloomberb-broker-manager"),
+      brokerInstances: [createInstance()],
+    };
+    const rows = buildBrokerProfileRows(
+      config,
+      new Map([["demo", createAdapter()]]),
+      {
+        "demo-live": [
+          { accountId: "DU1", name: "DU1", currency: "USD", updatedAt: 650_000 },
+        ],
+      },
+    );
+
+    expect(rows[0]?.lastSyncedAt).toBe(650_000);
   });
 
   test("handles disabled and unavailable profiles before adapter status", () => {

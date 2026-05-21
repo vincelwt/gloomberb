@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { setHttpFetchTransport } from "../../utils/http-transport";
-import { parseFlexAccounts, parseFlexPositions, requestFlexStatement } from "./flex";
+import {
+  parseFlexAccounts,
+  parseFlexPortfolioPerformance,
+  parseFlexPositions,
+  requestFlexStatement,
+} from "./flex";
 
 const originalFetch = globalThis.fetch;
 
@@ -114,6 +119,75 @@ describe("parseFlexAccounts", () => {
   });
 });
 
+describe("parseFlexPortfolioPerformance", () => {
+  test("parses historical NAV rows when a Flex query includes them", () => {
+    const xml = `
+      <FlexQueryResponse>
+        <FlexStatements count="2">
+          <FlexStatement accountId="DU12345" fromDate="20260514" toDate="20260514">
+            <ChangeInNAV accountId="DU12345" currency="USD" endingValue="100000" cumulativeReturn="0" />
+          </FlexStatement>
+          <FlexStatement accountId="DU12345" fromDate="20260515" toDate="20260515">
+            <ChangeInNAV accountId="DU12345" currency="USD" endingValue="101500" cumulativeReturn="1.5" />
+          </FlexStatement>
+        </FlexStatements>
+      </FlexQueryResponse>
+    `;
+
+    expect(parseFlexPortfolioPerformance(xml, "DU12345", 123)).toEqual({
+      accountId: "DU12345",
+      source: "flex",
+      period: "FLEX",
+      currency: "USD",
+      fetchedAt: 123,
+      startDate: "2026-05-14",
+      endDate: "2026-05-15",
+      points: [
+        { date: "2026-05-14", value: 100000, cumulativeReturn: 0 },
+        { date: "2026-05-15", value: 101500, cumulativeReturn: 0.015 },
+      ],
+    });
+  });
+
+  test("matches account aliases in single-account Flex history statements", () => {
+    const xml = `
+      <FlexQueryResponse>
+        <FlexStatements count="1">
+          <FlexStatement accountId="U12345" acctAlias="alias-account" fromDate="20260514" toDate="20260515">
+            <ChangeInNAV accountId="U12345" currency="USD" reportDate="20260514" endingValue="100000" cumulativeReturn="0" />
+            <ChangeInNAV accountId="U12345" currency="USD" reportDate="20260515" endingValue="101000" cumulativeReturn="1.5" />
+          </FlexStatement>
+        </FlexStatements>
+      </FlexQueryResponse>
+    `;
+
+    const performance = parseFlexPortfolioPerformance(xml, "alias-account", 123);
+
+    expect(performance?.accountId).toBe("alias-account");
+    expect(performance?.points).toEqual([
+      { date: "2026-05-14", value: 100000, cumulativeReturn: 0 },
+      { date: "2026-05-15", value: 101000, cumulativeReturn: 0.015 },
+    ]);
+  });
+
+  test("does not match a different account in multi-account Flex history statements", () => {
+    const xml = `
+      <FlexQueryResponse>
+        <FlexStatements count="2">
+          <FlexStatement accountId="U12345" fromDate="20260514" toDate="20260514">
+            <ChangeInNAV accountId="U12345" currency="USD" endingValue="100000" />
+          </FlexStatement>
+          <FlexStatement accountId="U67890" fromDate="20260514" toDate="20260514">
+            <ChangeInNAV accountId="U67890" currency="USD" endingValue="200000" />
+          </FlexStatement>
+        </FlexStatements>
+      </FlexQueryResponse>
+    `;
+
+    expect(parseFlexPortfolioPerformance(xml, "alias-account", 123)).toBeNull();
+  });
+});
+
 describe("requestFlexStatement", () => {
   test("uses the configured HTTP transport for statement requests", async () => {
     const requests: string[] = [];
@@ -139,7 +213,7 @@ describe("requestFlexStatement", () => {
     globalThis.fetch = (async () => new Response(
       "<FlexStatementResponse><ErrorMessage>Load failed</ErrorMessage></FlexStatementResponse>",
       { status: 200 },
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
     let message = "";
     try {

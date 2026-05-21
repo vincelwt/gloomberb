@@ -13,11 +13,12 @@ import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
-import { PluginRenderProvider } from "../../plugin-runtime";
+import { PluginRenderProvider, type PluginRuntimeAccess } from "../../plugin-runtime";
 import { analyticsPlugin } from "./index";
 
 const TEST_PANE_ID = "analytics:test";
 const BROKER_PORTFOLIO_ID = "broker:ibkr-flex:DU12345";
+const GATEWAY_PORTFOLIO_ID = "broker:ibkr-live:DU12345";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let harnessState: ReturnType<typeof createInitialState> | null = null;
@@ -100,6 +101,33 @@ function createSharedTicker(): TickerRecord {
   };
 }
 
+function createBrokerTicker(portfolioId: string, brokerInstanceId: string): TickerRecord {
+  return {
+    metadata: {
+      ticker: "AAPL",
+      exchange: "NASDAQ",
+      currency: "USD",
+      name: "Apple",
+      sector: "Technology",
+      portfolios: [portfolioId],
+      watchlists: [],
+      positions: [{
+        portfolio: portfolioId,
+        shares: 10,
+        avgCost: 100,
+        currency: "USD",
+        broker: "ibkr",
+        brokerInstanceId,
+        brokerAccountId: "DU12345",
+        marketValue: 1250,
+        unrealizedPnl: 250,
+      }],
+      custom: {},
+      tags: [],
+    },
+  };
+}
+
 function createFinancials(price: number): TickerFinancials {
   return {
     annualStatements: [],
@@ -121,17 +149,21 @@ function AnalyticsHarness({
   config,
   brokerAccounts,
   financials,
+  runtime = createTestPluginRuntime(),
+  ticker = createSharedTicker(),
 }: {
   config: AppConfig;
   brokerAccounts?: Record<string, BrokerAccount[]>;
   financials?: TickerFinancials;
+  runtime?: PluginRuntimeAccess;
+  ticker?: TickerRecord;
 }) {
   const initialState = createInitialState(config);
   initialState.focusedPaneId = TEST_PANE_ID;
   initialState.paneState[TEST_PANE_ID] = {
     portfolioId: config.layout.instances[0]?.params?.portfolioId,
   };
-  initialState.tickers = new Map([["AAPL", createSharedTicker()]]);
+  initialState.tickers = new Map([["AAPL", ticker]]);
   initialState.brokerAccounts = brokerAccounts ?? {};
   if (financials) {
     initialState.financials = new Map([["AAPL", financials]]);
@@ -143,7 +175,7 @@ function AnalyticsHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
-        <PluginRenderProvider pluginId={analyticsPlugin.id} runtime={createTestPluginRuntime()}>
+        <PluginRenderProvider pluginId={analyticsPlugin.id} runtime={runtime}>
           <AnalyticsPane
             paneId={TEST_PANE_ID}
             paneType="analytics"
@@ -240,10 +272,20 @@ describe("PortfolioAnalyticsPane", () => {
   });
 
   test("shows broker cash and margin data when account data is available", async () => {
+    const baseConfig = createAnalyticsConfig(BROKER_PORTFOLIO_ID);
+    const config = {
+      ...baseConfig,
+      portfolios: baseConfig.portfolios.map((portfolio) =>
+        portfolio.id === BROKER_PORTFOLIO_ID
+          ? { ...portfolio, lastSyncedAt: Date.now() + 10_000 }
+          : portfolio
+      ),
+    };
+
     await act(async () => {
       testSetup = await testRender(
         <AnalyticsHarness
-          config={createAnalyticsConfig(BROKER_PORTFOLIO_ID)}
+          config={config}
           brokerAccounts={{
             "ibkr-flex": [{
               accountId: "DU12345",
@@ -257,6 +299,9 @@ describe("PortfolioAnalyticsPane", () => {
               excessLiquidity: 12000,
               buyingPower: 30000,
               netLiquidation: 125000,
+              dailyPnl: 900,
+              unrealizedPnl: 777,
+              realizedPnl: -25,
               cashBalances: [
                 { currency: "USD", quantity: -50000, baseValue: -50000, baseCurrency: "USD" },
               ],
@@ -274,11 +319,105 @@ describe("PortfolioAnalyticsPane", () => {
     const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("Net Liq       125k");
     expect(frame).toContain("Cash          -50k");
+    expect(frame).toContain("Day           +900");
+    expect(frame).toContain("P&L           +777");
+    expect(frame).toContain("Realized      -25");
     expect(frame).toContain("Settled       -45k");
     expect(frame).toContain("Avail         15k");
     expect(frame).toContain("Excess        12k");
     expect(frame).toContain("BP            30k");
+    expect(frame).toContain("Synced        just now");
     expect(frame).toContain("Source        Flex Mar 27");
+  });
+
+  test("falls back from a Gateway portfolio to a configured Flex profile for IBKR history", async () => {
+    const calls: Array<{ instanceId: string; accountId: string }> = [];
+    const historyBroker = {
+      id: "ibkr",
+      name: "Interactive Brokers",
+      configSchema: [],
+      validate: async () => true,
+      importPositions: async () => [],
+      getPortfolioPerformance: async (instance: { id: string }, accountId: string) => {
+        calls.push({ instanceId: instance.id, accountId });
+        if (instance.id !== "ibkr-flex") return null;
+        return {
+          accountId,
+          source: "flex" as const,
+          period: "FLEX",
+          currency: "USD",
+          fetchedAt: 1,
+          points: [
+            { date: "2025-01-02", value: 100000, cumulativeReturn: 0 },
+            { date: "2026-05-15", value: 110000, cumulativeReturn: 0.1 },
+          ],
+        };
+      },
+    };
+    const runtime = createTestPluginRuntime({
+      getBrokerAdapter: (brokerType) => brokerType === "ibkr"
+        ? historyBroker
+        : null,
+    });
+    const baseConfig = createAnalyticsConfig(GATEWAY_PORTFOLIO_ID);
+    const config = {
+      ...baseConfig,
+      portfolios: [
+        ...baseConfig.portfolios,
+        {
+          id: GATEWAY_PORTFOLIO_ID,
+          name: "Gateway DU12345",
+          currency: "USD",
+          brokerId: "ibkr",
+          brokerInstanceId: "ibkr-live",
+          brokerAccountId: "DU12345",
+        },
+      ],
+      brokerInstances: [
+        {
+          id: "ibkr-live",
+          brokerType: "ibkr",
+          label: "IBKR Gateway",
+          connectionMode: "gateway",
+          config: { connectionMode: "gateway", gateway: { host: "127.0.0.1" } },
+          enabled: true,
+        },
+        {
+          id: "ibkr-flex",
+          brokerType: "ibkr",
+          label: "IBKR Flex",
+          connectionMode: "flex",
+          config: { connectionMode: "flex", flex: { token: "token", queryId: "query" } },
+          enabled: true,
+        },
+      ],
+    };
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AnalyticsHarness
+          config={config}
+          runtime={runtime}
+          ticker={createBrokerTicker(GATEWAY_PORTFOLIO_ID, "ibkr-live")}
+        />,
+        { width: 100, height: 24 },
+      );
+      await Promise.resolve();
+      await testSetup.renderOnce();
+    });
+
+    await flushFrame();
+    await flushFrame();
+
+    const frame = testSetup!.captureCharFrame();
+    expect(calls).toEqual([
+      { instanceId: "ibkr-live", accountId: "DU12345" },
+      { instanceId: "ibkr-flex", accountId: "DU12345" },
+    ]);
+    expect(frame).toContain("Hist Ret");
+    expect(frame).toContain("+10.00%");
+    expect(frame).toContain("Portfolio History");
+    expect(frame).toContain("Flex FLEX");
   });
 
   test("uses the portfolio pane quote math for value, pnl, and return", async () => {

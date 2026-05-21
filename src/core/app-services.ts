@@ -13,6 +13,7 @@ import type { AppConfig } from "../types/config";
 import type { DataProvider } from "../types/data-provider";
 import { debugLog } from "../utils/debug-log";
 import { measurePerf } from "../utils/perf-marks";
+import { setIbkrPortfolioPerformanceResourceStore } from "../plugins/ibkr/portfolio-performance";
 
 const servicesLog = debugLog.createLogger("services");
 
@@ -40,6 +41,7 @@ export function createAppServices({
   });
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const persistence = measurePerf("startup.services.persistence", () => new AppPersistence(dbPath));
+  setIbkrPortfolioPerformanceResourceStore(persistence.resources);
   const tickerRepository = measurePerf("startup.services.ticker-repository", () => new TickerRepository(persistence.tickers));
   const providerRouter = measurePerf("startup.services.asset-data-router", () => new AssetDataRouter(null, [], persistence.resources));
   const dataProvider: DataProvider = providerRouter;
@@ -89,6 +91,7 @@ export function createAppServices({
       setSharedNewsService(null);
       newsService.stop();
       pluginRegistry.destroy();
+      setIbkrPortfolioPerformanceResourceStore(null);
       persistence.close();
     },
   };

@@ -1,12 +1,20 @@
 import type { BrokerPosition } from "../../types/broker";
 import type { BrokerContractRef } from "../../types/instrument";
-import type { BrokerAccount, BrokerCashBalance } from "../../types/trading";
+import type {
+  BrokerAccount,
+  BrokerCashBalance,
+  BrokerPortfolioPerformance,
+  BrokerPortfolioPerformancePoint,
+} from "../../types/trading";
 import { httpFetch } from "../../utils/http-transport";
 import type { FlexQueryConfig } from "./config";
 import { IBKR_STATEMENT_URL } from "./config";
 
 const IBKR_STATEMENT_GET_URL = "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement";
-const FLEX_STATEMENT_CACHE_MS = 15_000;
+const FLEX_STATEMENT_CACHE_MS = 15 * 60_000;
+const FLEX_STATEMENT_INITIAL_WAIT_MS = 3_000;
+const FLEX_STATEMENT_POLL_DELAY_MS = 5_000;
+const FLEX_STATEMENT_MAX_DOWNLOAD_ATTEMPTS = 60;
 const flexStatementCache = new Map<string, { createdAt: number; promise: Promise<string> }>();
 
 type FlexRequestPhase = "request" | "download";
@@ -56,6 +64,19 @@ function parseFlexTimestamp(raw: string | undefined, fallbackDate: string | unde
   if (!match) return undefined;
   const [, year, month, day] = match;
   return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
+}
+
+function parseFlexDate(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 10);
 }
 
 function decodeXmlText(value: string): string {
@@ -139,12 +160,12 @@ export async function requestFlexStatement(config: FlexQueryConfig): Promise<str
 async function getFlexStatement(
   token: string,
   referenceCode: string,
-  context: Pick<FlexQueryConfig, "endpoint" | "queryId"> = {},
+  context: Partial<Pick<FlexQueryConfig, "endpoint" | "queryId">> = {},
 ): Promise<string> {
-  await new Promise((resolve) => setTimeout(resolve, 3_000));
+  await new Promise((resolve) => setTimeout(resolve, FLEX_STATEMENT_INITIAL_WAIT_MS));
 
   const url = `${IBKR_STATEMENT_GET_URL}?t=${token}&q=${referenceCode}&v=3`;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  for (let attempt = 0; attempt < FLEX_STATEMENT_MAX_DOWNLOAD_ATTEMPTS; attempt += 1) {
     let resp: Response;
     let text: string;
     try {
@@ -165,7 +186,7 @@ async function getFlexStatement(
     }
 
     if (text.includes("Statement generation in progress")) {
-      await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
+      await new Promise((resolve) => setTimeout(resolve, FLEX_STATEMENT_POLL_DELAY_MS));
       continue;
     }
 
@@ -203,6 +224,12 @@ export async function loadFlexStatement(config: FlexQueryConfig): Promise<string
     return getFlexStatement(config.token, referenceCode, config);
   })();
   flexStatementCache.set(cacheKey, { createdAt: Date.now(), promise });
+  promise.catch(() => {
+    const cached = flexStatementCache.get(cacheKey);
+    if (cached?.promise === promise) {
+      flexStatementCache.delete(cacheKey);
+    }
+  });
   setTimeout(() => {
     const cached = flexStatementCache.get(cacheKey);
     if (cached?.promise === promise) {
@@ -368,4 +395,119 @@ export function parseFlexAccounts(xml: string): BrokerAccount[] {
   }
 
   return accounts;
+}
+
+function firstNumberAttribute(
+  attributes: Record<string, string>,
+  names: string[],
+): number | undefined {
+  for (const name of names) {
+    const value = parseNumber(attributes[name]);
+    if (value != null) return value;
+  }
+  return undefined;
+}
+
+function firstStringAttribute(
+  attributes: Record<string, string>,
+  names: string[],
+): string | undefined {
+  for (const name of names) {
+    const value = attributes[name];
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function parseFlexReturn(value: number | undefined): number | undefined {
+  if (value == null) return undefined;
+  return Math.abs(value) > 1 ? value / 100 : value;
+}
+
+function flexAccountTokens(attributes: Record<string, string>): Set<string> {
+  return new Set([
+    attributes.accountId,
+    attributes.acctAlias,
+    attributes.accountAlias,
+    attributes.alias,
+    attributes.name,
+  ].filter((value): value is string => !!value));
+}
+
+export function parseFlexPortfolioPerformance(
+  xml: string,
+  accountId: string,
+  fetchedAt = Date.now(),
+): BrokerPortfolioPerformance | null {
+  const points: BrokerPortfolioPerformancePoint[] = [];
+  let currency: string | undefined;
+
+  const statementRegex = /<FlexStatement\b([^>]*)>([\s\S]*?)<\/FlexStatement>/g;
+  const statements = [...xml.matchAll(statementRegex)].map((statementMatch) => ({
+    attributes: parseAttributes(statementMatch[1] ?? ""),
+    body: statementMatch[2] ?? "",
+  }));
+
+  for (const statement of statements) {
+    const statementAttrs = statement.attributes;
+    const body = statement.body;
+    const statementAccountId = statementAttrs.accountId || "";
+    const statementTokens = flexAccountTokens(statementAttrs);
+    const statementMatchesAccount = statementTokens.has(accountId);
+    if (statementAccountId && !statementMatchesAccount && statements.length !== 1) continue;
+
+    for (const entry of body.matchAll(/<ChangeInNAV\b([^>]*)\/>/g)) {
+      const attributes = parseAttributes(entry[1] ?? "");
+      const entryAccountId = attributes.accountId || statementAccountId;
+      const entryTokens = flexAccountTokens(attributes);
+      const entryMatchesAccount = entryTokens.has(accountId)
+        || (statementMatchesAccount && (!entryAccountId || entryAccountId === statementAccountId));
+      if (entryAccountId && !entryMatchesAccount && statements.length !== 1) continue;
+
+      const date = parseFlexDate(firstStringAttribute(attributes, [
+        "reportDate",
+        "date",
+        "toDate",
+        "asOfDate",
+      ]) ?? statementAttrs.toDate ?? statementAttrs.fromDate);
+      if (!date) continue;
+
+      const value = firstNumberAttribute(attributes, [
+        "endingValue",
+        "endingNAV",
+        "nav",
+        "netAssetValue",
+      ]);
+      const cumulativeReturn = parseFlexReturn(firstNumberAttribute(attributes, [
+        "cumulativeReturn",
+        "timeWeightedReturnCumulative",
+        "twrCumulative",
+        "twr",
+        "mwr",
+      ]));
+      if (value == null && cumulativeReturn == null) continue;
+
+      currency = currency ?? attributes.currency;
+      points.push({ date, value, cumulativeReturn });
+    }
+  }
+
+  const uniquePoints = [...new Map(
+    points
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((point) => [point.date, point] as const),
+  ).values()];
+
+  if (uniquePoints.length === 0) return null;
+
+  return {
+    accountId,
+    source: "flex",
+    period: "FLEX",
+    currency,
+    fetchedAt,
+    startDate: uniquePoints[0]?.date,
+    endDate: uniquePoints.at(-1)?.date,
+    points: uniquePoints,
+  };
 }

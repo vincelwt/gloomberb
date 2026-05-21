@@ -147,8 +147,10 @@ describe("syncBrokerInstance", () => {
         brokerId: "demo",
         brokerInstanceId: "demo-broker",
         brokerAccountId: "ACC-1",
+        lastSyncedAt: expect.any(Number),
       },
     ]);
+    expect(result.config.brokerInstances[0]?.lastSyncedAt).toEqual(expect.any(Number));
     expect(result.positions).toHaveLength(1);
     expect(result.addedTickers).toHaveLength(1);
     expect(result.tickers.get("AAPL")?.metadata.positions).toEqual([
@@ -195,6 +197,144 @@ describe("syncBrokerInstance", () => {
       brokerInstanceId: "demo-personal",
       brokerAccountId: "PERSONAL",
     }));
+  });
+
+  test("removes stale broker portfolios and positions for the same profile when account ids change", async () => {
+    const stalePortfolioId = "broker:demo-broker:OLD-ALIAS";
+    const currentPortfolioId = "broker:demo-broker:ACC-1";
+    const config = {
+      ...createDefaultConfig("/tmp/gloomberb-sync-broker-stale-account"),
+      portfolios: [
+        { id: stalePortfolioId, name: "OLD-ALIAS", currency: "USD", brokerId: "demo", brokerInstanceId: "demo-broker", brokerAccountId: "OLD-ALIAS" },
+      ],
+      brokerInstances: [createBrokerInstance()],
+    };
+    const tickerRepository = createTickerRepository([{
+      metadata: {
+        ticker: "AAPL",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Apple Inc.",
+        portfolios: [stalePortfolioId],
+        watchlists: [],
+        positions: [{
+          portfolio: stalePortfolioId,
+          shares: 10,
+          avgCost: 170,
+          currency: "USD",
+          broker: "demo",
+          brokerInstanceId: "demo-broker",
+          brokerAccountId: "OLD-ALIAS",
+        }],
+        broker_contracts: [{ brokerId: "demo", brokerInstanceId: "demo-broker", conId: 123, symbol: "AAPL" }],
+        custom: {},
+        tags: [],
+      },
+    }]);
+
+    const result = await syncBrokerInstance({
+      config,
+      instanceId: "demo-broker",
+      brokers: new Map([["demo", createDemoBroker()]]),
+      tickerRepository: tickerRepository as any,
+    });
+
+    expect(result.config.portfolios.map((portfolio) => portfolio.id)).toEqual([currentPortfolioId]);
+    expect(result.tickers.get("AAPL")?.metadata.portfolios).toEqual([currentPortfolioId]);
+    expect(result.tickers.get("AAPL")?.metadata.positions).toEqual([
+      expect.objectContaining({
+        portfolio: currentPortfolioId,
+        brokerInstanceId: "demo-broker",
+        brokerAccountId: "ACC-1",
+        shares: 12,
+      }),
+    ]);
+    expect(result.tickers.get("AAPL")?.metadata.broker_contracts).toEqual([]);
+  });
+
+  test("reuses a broker account portfolio across Flex and Gateway profiles", async () => {
+    const flexInstance: BrokerInstanceConfig = {
+      ...createBrokerInstanceWithId("demo-flex"),
+      connectionMode: "flex",
+      config: { connectionMode: "flex", apiKey: "flex-key" },
+    };
+    const gatewayInstance: BrokerInstanceConfig = {
+      ...createBrokerInstanceWithId("demo-gateway"),
+      connectionMode: "gateway",
+      config: { connectionMode: "gateway", apiKey: "gateway-key" },
+    };
+    const flexPortfolioId = "broker:demo-flex:ACC-1";
+    const staleGatewayPortfolioId = "broker:demo-gateway:ACC-1";
+    const config = {
+      ...createDefaultConfig("/tmp/gloomberb-sync-broker-shared-account"),
+      portfolios: [
+        { id: flexPortfolioId, name: "Primary", currency: "USD", brokerId: "demo", brokerInstanceId: "demo-flex", brokerAccountId: "ACC-1" },
+        { id: staleGatewayPortfolioId, name: "Primary", currency: "USD", brokerId: "demo", brokerInstanceId: "demo-gateway", brokerAccountId: "ACC-1" },
+      ],
+      brokerInstances: [flexInstance, gatewayInstance],
+    };
+    const tickerRepository = createTickerRepository([{
+      metadata: {
+        ticker: "AAPL",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Apple Inc.",
+        portfolios: [flexPortfolioId, staleGatewayPortfolioId],
+        watchlists: [],
+        positions: [
+          {
+            portfolio: flexPortfolioId,
+            shares: 10,
+            avgCost: 170,
+            currency: "USD",
+            broker: "demo",
+            brokerInstanceId: "demo-flex",
+            brokerAccountId: "ACC-1",
+          },
+          {
+            portfolio: staleGatewayPortfolioId,
+            shares: 11,
+            avgCost: 171,
+            currency: "USD",
+            broker: "demo",
+            brokerInstanceId: "demo-gateway",
+            brokerAccountId: "ACC-1",
+          },
+        ],
+        broker_contracts: [],
+        custom: {},
+        tags: [],
+      },
+    }]);
+
+    const result = await syncBrokerInstance({
+      config,
+      instanceId: "demo-gateway",
+      brokers: new Map([["demo", createDemoBroker()]]),
+      tickerRepository: tickerRepository as any,
+    });
+
+    expect(result.portfolioIds).toEqual([flexPortfolioId]);
+    expect(result.config.portfolios).toEqual([{
+      id: flexPortfolioId,
+      name: "Primary",
+      currency: "USD",
+      brokerId: "demo",
+      brokerInstanceId: "demo-gateway",
+      brokerAccountId: "ACC-1",
+      lastSyncedAt: expect.any(Number),
+    }]);
+    expect(result.config.brokerInstances.find((instance) => instance.id === "demo-gateway")?.lastSyncedAt)
+      .toEqual(expect.any(Number));
+    expect(result.tickers.get("AAPL")?.metadata.portfolios).toEqual([flexPortfolioId]);
+    expect(result.tickers.get("AAPL")?.metadata.positions).toEqual([
+      expect.objectContaining({
+        portfolio: flexPortfolioId,
+        shares: 12,
+        brokerInstanceId: "demo-gateway",
+        brokerAccountId: "ACC-1",
+      }),
+    ]);
   });
 
   test("restores missing broker portfolios from existing ticker positions", () => {

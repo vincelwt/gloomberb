@@ -2,6 +2,7 @@ import type { BrokerAdapter, BrokerConnectionStatus } from "../../../types/broke
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
 import type { BrokerAccount } from "../../../types/trading";
 import { formatCurrency } from "../../../utils/format";
+import { formatRelativeAge } from "../../../utils/relative-time";
 
 export type BrokerDisplayState =
   | "disabled"
@@ -19,6 +20,7 @@ export interface BrokerProfileRow {
   stateLabel: string;
   message: string;
   updatedAt: number;
+  lastSyncedAt: number;
   accountCount: number;
   accountSummary: string;
   accountIds: string[];
@@ -40,12 +42,7 @@ function formatBrokerMode(value: unknown): string {
 }
 
 export function formatBrokerUpdatedAt(updatedAt: number | undefined, now = Date.now()): string {
-  if (!updatedAt) return "never";
-  const ageMs = Math.max(0, now - updatedAt);
-  if (ageMs < 60_000) return "just now";
-  if (ageMs < 60 * 60_000) return `${Math.floor(ageMs / 60_000)}m ago`;
-  if (ageMs < 24 * 60 * 60_000) return `${Math.floor(ageMs / (60 * 60_000))}h ago`;
-  return `${Math.floor(ageMs / (24 * 60 * 60_000))}d ago`;
+  return formatRelativeAge(updatedAt, now);
 }
 
 function summarizeBrokerAccounts(accounts: BrokerAccount[]): string {
@@ -121,6 +118,14 @@ export function buildBrokerProfileRows(
     const mode = resolveMode(adapter, instance, status);
     const state = resolveState(instance, adapter, mode, status);
     const accounts = brokerAccounts[instance.id] ?? [];
+    const portfolioLastSyncedAt = Math.max(
+      0,
+      ...config.portfolios
+        .filter((portfolio) => portfolio.brokerInstanceId === instance.id)
+        .map((portfolio) => portfolio.lastSyncedAt ?? 0),
+    );
+    const accountLastUpdatedAt = Math.max(0, ...accounts.map((account) => account.updatedAt ?? 0));
+    const lastSyncedAt = instance.lastSyncedAt ?? (portfolioLastSyncedAt || accountLastUpdatedAt);
 
     return {
       id: instance.id,
@@ -132,6 +137,7 @@ export function buildBrokerProfileRows(
       stateLabel: state.label,
       message: state.message,
       updatedAt: state.updatedAt,
+      lastSyncedAt,
       accountCount: accounts.length,
       accountSummary: summarizeBrokerAccounts(accounts),
       accountIds: accounts.map((account) => account.accountId),

@@ -49,6 +49,7 @@ export interface Portfolio {
   brokerId?: string;
   brokerInstanceId?: string;
   brokerAccountId?: string;
+  lastSyncedAt?: number;
 }
 
 export interface Watchlist {

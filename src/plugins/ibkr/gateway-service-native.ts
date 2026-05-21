@@ -111,6 +111,15 @@ export function setResolvedIbkrGatewayListener(listener: ResolvedGatewayListener
 
 type AccountSummaryValueMap = ReadonlyMap<string, { value: string }>;
 type AccountSummaryTags = ReadonlyMap<string, AccountSummaryValueMap>;
+interface AccountPnlSnapshot {
+  dailyPnl?: number;
+  unrealizedPnl?: number;
+  realizedPnl?: number;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
 
 function getAccountSummaryEntry(
   values: AccountSummaryValueMap | undefined,
@@ -237,6 +246,7 @@ export function summarizeBrokerAccount(
   updatedAt: number,
   aggregateTags?: AccountSummaryTags,
   allowAggregateCashBalances = false,
+  pnl?: AccountPnlSnapshot,
 ): BrokerAccount {
   const currency = inferAccountCurrency(tags) ?? (allowAggregateCashBalances ? inferAccountCurrency(aggregateTags) : undefined);
   return {
@@ -253,6 +263,9 @@ export function summarizeBrokerAccount(
     excessLiquidity: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "ExcessLiquidity", currency, allowAggregateCashBalances),
     initMarginReq: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "InitMarginReq", currency, allowAggregateCashBalances),
     maintMarginReq: getAccountSummaryNumberWithAggregateFallback(tags, aggregateTags, "MaintMarginReq", currency, allowAggregateCashBalances),
+    dailyPnl: pnl?.dailyPnl,
+    unrealizedPnl: pnl?.unrealizedPnl,
+    realizedPnl: pnl?.realizedPnl,
     cashBalances: buildCashBalances(tags, aggregateTags, currency, allowAggregateCashBalances),
   };
 }
@@ -269,6 +282,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 const IBKR_DATA_TIMEOUT = 8_000;
+const IBKR_PNL_TIMEOUT = 3_000;
 const IBKR_QUOTE_STREAM_TICKS = "165,221,233";
 
 const HISTORY_PARAMS: Record<TimeRange, { duration: string; size: BarSizeSetting }> = {
@@ -1995,13 +2009,48 @@ export class IbkrGatewayService {
     const updatedAt = Date.now();
     const aggregateTags = summary?.get("All");
     const allowAggregateCashBalances = managedAccounts.length === 1;
+    const pnlByAccount = await this.loadAccountPnlForAccounts(managedAccounts);
     return managedAccounts.map((accountId) => summarizeBrokerAccount(
       accountId,
       summary?.get(accountId),
       updatedAt,
       aggregateTags,
       allowAggregateCashBalances,
+      pnlByAccount.get(accountId),
     ));
+  }
+
+  private async loadAccountPnlForAccounts(accountIds: string[]): Promise<Map<string, AccountPnlSnapshot>> {
+    const entries = await Promise.all(accountIds.map(async (accountId) => {
+      const pnl = await this.loadAccountPnl(accountId);
+      return pnl ? ([accountId, pnl] as const) : null;
+    }));
+    return new Map(entries.filter((entry): entry is readonly [string, AccountPnlSnapshot] => entry != null));
+  }
+
+  private async loadAccountPnl(accountId: string): Promise<AccountPnlSnapshot | null> {
+    if (!this.api || typeof this.api.getPnL !== "function") return null;
+
+    try {
+      const pnl = await firstValueFrom(
+        this.api.getPnL(accountId).pipe(
+          take(1),
+          timeout(IBKR_PNL_TIMEOUT),
+        ),
+      );
+      return {
+        dailyPnl: finiteNumber(pnl.dailyPnL),
+        unrealizedPnl: finiteNumber(pnl.unrealizedPnL),
+        realizedPnl: finiteNumber(pnl.realizedPnL),
+      };
+    } catch (error: any) {
+      gatewayLog.warn("Failed to load IBKR account P&L", {
+        instanceId: this.instanceId,
+        accountId,
+        error: error?.message || String(error || ""),
+      });
+      return null;
+    }
   }
 
   private async loadAccountsAndUpdateSnapshot(): Promise<BrokerAccount[]> {

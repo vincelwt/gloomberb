@@ -1,5 +1,6 @@
 import type { BrokerAdapter, BrokerPosition } from "../../types/broker";
 import {
+  buildPersistedIbkrGatewayConfig,
   buildIbkrConfigFromValues,
   IBKR_CONFIG_FIELDS,
   isFlexConfigured,
@@ -11,6 +12,7 @@ import { getIbkrAccountCachePolicy, getIbkrAccountCacheSourceKey } from "./accou
 import { loadFlexStatement, parseFlexAccounts, parseFlexPositions } from "./flex";
 import { ibkrGatewayManager } from "./gateway-service";
 import { refreshGatewayData } from "./gateway-helpers";
+import { getIbkrPortfolioPerformance } from "./portfolio-performance";
 
 async function importFlexPositions(config: FlexQueryConfig): Promise<BrokerPosition[]> {
   const xml = await loadFlexStatement(config);
@@ -104,7 +106,7 @@ export const ibkrBroker: BrokerAdapter = {
   fromConfigValues(values, previous) {
     const next = buildIbkrConfigFromValues(values);
     const previousConfig = previous ? normalizeIbkrConfig(previous.config) : null;
-    if (!previousConfig || next.connectionMode !== "gateway") return next;
+    if (!previousConfig || next.connectionMode !== "gateway") return next as unknown as Record<string, unknown>;
 
     return {
       ...next,
@@ -114,7 +116,7 @@ export const ibkrBroker: BrokerAdapter = {
         lastSuccessfulPort: previousConfig.gateway.lastSuccessfulPort,
         lastSuccessfulClientId: previousConfig.gateway.lastSuccessfulClientId,
       },
-    };
+    } as unknown as Record<string, unknown>;
   },
 
   async listAccounts(instance) {
@@ -124,6 +126,10 @@ export const ibkrBroker: BrokerAdapter = {
     }
     const xml = await loadFlexStatement(normalized.flex);
     return parseFlexAccounts(xml);
+  },
+
+  async getPortfolioPerformance(instance, accountId) {
+    return getIbkrPortfolioPerformance(instance, accountId);
   },
 
   async searchInstruments(query, instance) {

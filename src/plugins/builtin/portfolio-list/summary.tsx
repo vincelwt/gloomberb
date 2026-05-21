@@ -7,6 +7,7 @@ import type { Portfolio } from "../../../types/ticker";
 import type { BrokerAccount, BrokerCashBalance } from "../../../types/trading";
 import { formatCompact, formatPercentRaw } from "../../../utils/format";
 import { getBrokerInstance } from "../../../utils/broker-instances";
+import { resolvePortfolioAccountMetrics } from "./account-metrics";
 import type { PortfolioSummaryTotals } from "./metrics";
 
 export interface PortfolioSummarySegment {
@@ -44,6 +45,10 @@ function createSummarySegment(
     parts,
     length: parts.reduce((sum, part) => sum + part.text.length, 0) + Math.max(0, parts.length - 1),
   };
+}
+
+function formatSignedCompact(value: number): string {
+  return `${value >= 0 ? "+" : ""}${formatCompact(value)}`;
 }
 
 function fitSummarySegments(candidates: PortfolioSummarySegment[], widthBudget: number): PortfolioSummarySegment[] {
@@ -97,11 +102,22 @@ function findPortfolioAccount(
   const accountId = portfolio.brokerAccountId?.trim();
   const portfolioName = portfolio.name.trim();
   const collectionAccountId = portfolio.id.split(":").pop()?.trim();
+  const explicitAccountIds = [accountId, collectionAccountId === "default" ? undefined : collectionAccountId]
+    .filter((value): value is string => !!value);
 
-  return accounts.find((account) => account.accountId === accountId)
-    ?? accounts.find((account) => account.accountId === portfolioName || account.name === portfolioName)
-    ?? accounts.find((account) => account.accountId === collectionAccountId || account.name === collectionAccountId)
-    ?? (accounts.length === 1 ? accounts[0] : undefined);
+  for (const id of explicitAccountIds) {
+    const matched = accounts.find((account) => account.accountId === id || account.name === id);
+    if (matched) return matched;
+  }
+
+  const nameMatched = accounts.find((account) => account.accountId === portfolioName || account.name === portfolioName);
+  if (nameMatched) return nameMatched;
+
+  return explicitAccountIds.length === 0 && accounts.length === 1 ? accounts[0] : undefined;
+}
+
+function sortAccountsByFreshness(accounts: BrokerAccount[]): BrokerAccount[] {
+  return [...accounts].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
 }
 
 export function resolvePortfolioAccountState(
@@ -112,7 +128,18 @@ export function resolvePortfolioAccountState(
   if (!portfolio?.brokerInstanceId) return null;
 
   const brokerInstance = getBrokerInstance(state.config.brokerInstances, portfolio.brokerInstanceId);
-  const cachedAccounts = state.brokerAccounts[portfolio.brokerInstanceId] ?? [];
+  const relatedInstanceIds = [
+    portfolio.brokerInstanceId,
+    ...state.config.brokerInstances
+      .filter((instance) =>
+        instance.id !== portfolio.brokerInstanceId
+        && instance.brokerType === (portfolio.brokerId ?? brokerInstance?.brokerType)
+      )
+      .map((instance) => instance.id),
+  ];
+  const cachedAccounts = sortAccountsByFreshness(
+    relatedInstanceIds.flatMap((instanceId) => state.brokerAccounts[instanceId] ?? []),
+  );
   const cachedAccount = findPortfolioAccount(cachedAccounts, portfolio);
 
   const liveAccount = brokerInstance
@@ -144,6 +171,7 @@ export function buildPortfolioSummarySegments({
   refreshText?: string;
 }): PortfolioSummarySegment[] {
   const candidates: PortfolioSummarySegment[] = [];
+  const accountMetrics = resolvePortfolioAccountMetrics(totals, accountState?.account);
 
   if (accountState?.account.netLiquidation != null) {
     candidates.push(createSummarySegment("netliq", [
@@ -166,18 +194,24 @@ export function buildPortfolioSummarySegments({
 
   candidates.push(createSummarySegment("day", [
     { text: "Day", tone: "label" },
-    { text: `${totals.dailyPnl >= 0 ? "+" : ""}${formatCompact(totals.dailyPnl)}`, tone: "value", color: priceColor(totals.dailyPnl), bold: true },
-    { text: `(${formatPercentRaw(totals.dailyPnlPct)})`, tone: "muted", color: priceColor(totals.dailyPnlPct) },
+    { text: formatSignedCompact(accountMetrics.dailyPnl), tone: "value", color: priceColor(accountMetrics.dailyPnl), bold: true },
+    { text: `(${formatPercentRaw(accountMetrics.dailyPnlPct)})`, tone: "muted", color: priceColor(accountMetrics.dailyPnlPct) },
   ]));
   candidates.push(createSummarySegment("pnl", [
     { text: "P&L", tone: "label" },
-    { text: `${totals.unrealizedPnl >= 0 ? "+" : ""}${formatCompact(totals.unrealizedPnl)}`, tone: "value", color: priceColor(totals.unrealizedPnl), bold: true },
-    { text: `(${formatPercentRaw(totals.unrealizedPnlPct)})`, tone: "muted", color: priceColor(totals.unrealizedPnlPct) },
+    { text: formatSignedCompact(accountMetrics.unrealizedPnl), tone: "value", color: priceColor(accountMetrics.unrealizedPnl), bold: true },
+    { text: `(${formatPercentRaw(accountMetrics.unrealizedPnlPct)})`, tone: "muted", color: priceColor(accountMetrics.unrealizedPnlPct) },
   ]));
 
   if (accountState) {
     const { account, sourceLabel } = accountState;
     const brokerSegments = [
+      accountMetrics.realizedPnl != null
+        ? createSummarySegment("realized", [
+          { text: "Realized", tone: "label" },
+          { text: formatSignedCompact(accountMetrics.realizedPnl), tone: "value", color: priceColor(accountMetrics.realizedPnl), bold: true },
+        ])
+        : null,
       account.settledCash != null
         ? createSummarySegment("settled", [
           { text: "Settled", tone: "label" },
@@ -245,6 +279,15 @@ export function renderSummarySegments(segments: PortfolioSummarySegment[], width
 
 export function buildDrawerMetricSegments(account: BrokerAccount, widthBudget: number): PortfolioSummarySegment[] {
   const candidates = [
+    account.dailyPnl != null
+      ? createSummarySegment("day", [{ text: "Day", tone: "label" }, { text: formatSignedCompact(account.dailyPnl), tone: "value", color: priceColor(account.dailyPnl), bold: true }])
+      : null,
+    account.unrealizedPnl != null
+      ? createSummarySegment("unreal", [{ text: "Unreal", tone: "label" }, { text: formatSignedCompact(account.unrealizedPnl), tone: "value", color: priceColor(account.unrealizedPnl), bold: true }])
+      : null,
+    account.realizedPnl != null
+      ? createSummarySegment("realized", [{ text: "Realized", tone: "label" }, { text: formatSignedCompact(account.realizedPnl), tone: "value", color: priceColor(account.realizedPnl), bold: true }])
+      : null,
     account.totalCashValue != null
       ? createSummarySegment("cash", [{ text: "Cash", tone: "label" }, { text: formatCompact(account.totalCashValue), tone: "value", bold: true }])
       : null,

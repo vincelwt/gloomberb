@@ -23,6 +23,7 @@ const BROKER_INVOKE_OPERATIONS = new Set([
   "disconnect",
   "getPersistedConfigUpdate",
   "listAccounts",
+  "getPortfolioPerformance",
   "searchInstruments",
   "getTickerFinancials",
   "getQuote",
@@ -102,6 +103,8 @@ function invokeBrokerOperation(
     case "listOpenOrders":
     case "listExecutions":
       return (broker[operation] as any)?.call(broker, instance);
+    case "getPortfolioPerformance":
+      return broker.getPortfolioPerformance?.(instance, args[0] as string);
     case "searchInstruments":
       return broker.searchInstruments?.(args[0] as string, instance);
     case "getTickerFinancials":

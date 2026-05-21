@@ -17,6 +17,7 @@ export interface BrokerInstanceConfig {
   connectionMode?: string;
   config: Record<string, unknown>;
   enabled?: boolean;
+  lastSyncedAt?: number;
 }
 
 export interface ColumnConfig {

@@ -166,7 +166,7 @@ function buildBrokerColumns(width: number): BrokerColumn[] {
     { id: "broker", label: "BROKER", width: brokerWidth, align: "left" },
     { id: "mode", label: "MODE", width: modeWidth, align: "left" },
     { id: "accounts", label: "ACCOUNTS", width: accountWidth, align: "right" },
-    { id: "updated", label: "UPDATED", width: updatedWidth, align: "right" },
+    { id: "updated", label: "SYNCED", width: updatedWidth, align: "right" },
   ];
 }
 
@@ -518,7 +518,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
       case "accounts":
         return { text: row.accountSummary, color: row.accountCount > 0 ? colors.text : colors.textMuted };
       case "updated":
-        return { text: formatBrokerUpdatedAt(row.updatedAt), color: colors.textMuted };
+        return { text: formatBrokerUpdatedAt(row.lastSyncedAt), color: colors.textMuted };
     }
     return { text: "" };
   }, []);
@@ -562,7 +562,8 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
         >
           {detailStatusMessage}
         </Text>
-        <Text fg={colors.textMuted}>{`Updated ${formatBrokerUpdatedAt(selectedRow.updatedAt)}`}</Text>
+        <Text fg={colors.textMuted}>{`Last sync ${formatBrokerUpdatedAt(selectedRow.lastSyncedAt)}`}</Text>
+        <Text fg={colors.textMuted}>{`Status updated ${formatBrokerUpdatedAt(selectedRow.updatedAt)}`}</Text>
         <Box height={1} />
 
         {editDraft && selectedRow.adapter ? (

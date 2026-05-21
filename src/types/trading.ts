@@ -24,7 +24,29 @@ export interface BrokerAccount {
   excessLiquidity?: number;
   initMarginReq?: number;
   maintMarginReq?: number;
+  dailyPnl?: number;
+  unrealizedPnl?: number;
+  realizedPnl?: number;
   cashBalances?: BrokerCashBalance[];
+}
+
+export interface BrokerPortfolioPerformancePoint {
+  date: string;
+  value?: number;
+  cumulativeReturn?: number;
+}
+
+export interface BrokerPortfolioPerformance {
+  accountId: string;
+  source: "flex";
+  period: string;
+  currency?: string;
+  fetchedAt: number;
+  startDate?: string;
+  endDate?: string;
+  lastSuccessfulUpdate?: string;
+  stale?: boolean;
+  points: BrokerPortfolioPerformancePoint[];
 }
 
 export interface BrokerOrderRequest {

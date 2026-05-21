@@ -4,7 +4,14 @@ import type { ChartResolutionSupport, ManualChartResolution } from "../component
 import type { BrokerInstanceConfig } from "./config";
 import type { QuoteSubscriptionTarget } from "./data-provider";
 import type { BrokerContractRef, InstrumentSearchResult } from "./instrument";
-import type { BrokerAccount, BrokerExecution, BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "./trading";
+import type {
+  BrokerAccount,
+  BrokerExecution,
+  BrokerOrder,
+  BrokerOrderPreview,
+  BrokerOrderRequest,
+  BrokerPortfolioPerformance,
+} from "./trading";
 import type { CachePolicy, CachePolicyMap } from "./persistence";
 
 export interface BrokerPosition {
@@ -90,6 +97,7 @@ export interface BrokerAdapter {
   toConfigValues?(instance: BrokerInstanceConfig): Record<string, unknown>;
   fromConfigValues?(values: Record<string, unknown>, previous?: BrokerInstanceConfig): Record<string, unknown>;
   listAccounts?(instance: BrokerInstanceConfig): Promise<BrokerAccount[]>;
+  getPortfolioPerformance?(instance: BrokerInstanceConfig, accountId: string): Promise<BrokerPortfolioPerformance | null>;
   searchInstruments?(query: string, instance: BrokerInstanceConfig): Promise<InstrumentSearchResult[]>;
   getTickerFinancials?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<TickerFinancials>;
   getQuote?(ticker: string, instance: BrokerInstanceConfig, exchange?: string, instrument?: BrokerContractRef | null): Promise<Quote>;

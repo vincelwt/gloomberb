@@ -50,6 +50,7 @@ export function createRemoteBrokerAdapter(adapter: BrokerAdapter): BrokerAdapter
     subscribeStatus: (instance, listener) => getBrokerRemoteClient()?.subscribeStatus(instance.id, listener) ?? (() => {}),
     getPersistedConfigUpdate: (instance) => invoke<Record<string, unknown> | null>(instance, "getPersistedConfigUpdate"),
     listAccounts: (instance) => invoke(instance, "listAccounts"),
+    getPortfolioPerformance: (instance, accountId: string) => invoke(instance, "getPortfolioPerformance", [accountId]),
     searchInstruments: (query, instance) => invoke(instance, "searchInstruments", [query]),
     getTickerFinancials: (ticker, instance, exchange?: string, instrument?: BrokerContractRef | null) =>
       invoke(instance, "getTickerFinancials", [ticker, exchange, instrument]),
