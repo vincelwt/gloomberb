@@ -1,7 +1,5 @@
 import type { MarketState, Quote, QuoteFieldProvenance } from "../types/financials";
-import { colors, priceColor } from "../theme/colors";
-import { formatPercentRaw } from "./format";
-import { formatMarketPrice } from "./market-format";
+import { colors } from "../theme/colors";
 
 export interface ActiveQuoteDisplay {
   price: number;
@@ -88,20 +86,6 @@ export function quoteSourceLabel(
   if (provenance.providerId === "gloomberb-cloud") return "Cloud";
   if (provenance.providerId === "yahoo") return "Yahoo";
   return provenance.providerId;
-}
-
-/** Get extended hours price info (pre-market or after-hours) for display */
-export function getExtendedHoursInfo(quote: Quote | null | undefined): { text: string; color: string } | null {
-  if (!quote) return null;
-  if ((quote.marketState === "PRE" || quote.marketState === "PREPRE") && quote.preMarketPrice != null) {
-    const chg = quote.preMarketChangePercent ?? 0;
-    return { text: `Pre ${formatMarketPrice(quote.preMarketPrice)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
-  }
-  if ((quote.marketState === "POST" || quote.marketState === "POSTPOST") && quote.postMarketPrice != null) {
-    const chg = quote.postMarketChangePercent ?? 0;
-    return { text: `AH ${formatMarketPrice(quote.postMarketPrice)} ${formatPercentRaw(chg)}`, color: priceColor(chg) };
-  }
-  return null;
 }
 
 export function getActiveQuoteDisplay(quote: Quote | null | undefined): ActiveQuoteDisplay | null {

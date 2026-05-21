@@ -223,7 +223,6 @@ export function NewsArticleStackView({
               symbols={tickers}
               width={column.width}
               fallbackColor={selectedColor ?? colors.textBright}
-              liveQuote={false}
             />
           ),
           color: selectedColor ?? colors.textBright,

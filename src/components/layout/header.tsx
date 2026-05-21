@@ -15,7 +15,7 @@ import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../utils/market-format";
-import { marketStateLabel, marketStateColor, getExtendedHoursInfo } from "../../utils/market-status";
+import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../utils/market-status";
 import { VERSION } from "../../version";
 import { TITLEBAR_TRAFFIC_LIGHT_WIDTH } from "./titlebar-overlay";
 
@@ -141,13 +141,11 @@ export function Header() {
     return () => { clearInterval(id); };
   }, [appActive]);
 
-  const spyColor = spyQuote ? priceColor(spyQuote.change) : colors.headerText;
-  const spyText = spyQuote
-    ? `SPY ${formatMarketPrice(spyQuote.price, { assetCategory: "ETF" })} ${formatPercentRaw(spyQuote.changePercent)}`
+  const activeSpyQuote = getActiveQuoteDisplay(spyQuote);
+  const spyColor = activeSpyQuote ? priceColor(activeSpyQuote.change) : colors.headerText;
+  const spyText = activeSpyQuote
+    ? `SPY ${formatMarketPrice(activeSpyQuote.price, { assetCategory: "ETF" })} ${formatPercentRaw(activeSpyQuote.changePercent)}`
     : "SPY —";
-
-  // Extended hours info
-  const extText = getExtendedHoursInfo(spyQuote);
 
   // Market status
   const mktState = spyQuote?.marketState;
@@ -197,11 +195,6 @@ export function Header() {
         <Box paddingRight={1}>
           <Text fg={spyColor}>{spyText}</Text>
         </Box>
-        {extText ? (
-          <Box paddingRight={1}>
-            <Text fg={extText.color}>{extText.text}</Text>
-          </Box>
-        ) : null}
         <Text fg={colors.headerText}>{baseCurrency}</Text>
       </Box>
     );
@@ -229,14 +222,9 @@ export function Header() {
           <Text fg={mktColor}>{mktLabel}</Text>
         </Box>
       )}
-      <Box paddingRight={extText ? 0 : 1}>
+      <Box paddingRight={1}>
         <Text fg={spyColor}>{spyText}</Text>
       </Box>
-      {extText && (
-        <Box paddingRight={1} paddingLeft={1}>
-          <Text fg={extText.color}>{extText.text}</Text>
-        </Box>
-      )}
       <Box paddingRight={1}>
         <Text fg={colors.headerText}>
           {baseCurrency}
